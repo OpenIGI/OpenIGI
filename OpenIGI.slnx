@@ -1,0 +1,30 @@
+<Solution>
+  <Folder Name="/apps/">
+    <Project Path="apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" />
+    <Project Path="src/OpenIGI.Audio.OpenAL/OpenIGI.Audio.OpenAL.csproj" />
+    <Project Path="src/OpenIGI.Audio/OpenIGI.Audio.csproj" />
+    <Project Path="src/OpenIGI.Core/OpenIGI.Core.csproj" />
+    <Project Path="src/OpenIGI.Engine/OpenIGI.Engine.csproj" />
+    <Project Path="src/OpenIGI.Formats/OpenIGI.Formats.csproj" />
+    <Project Path="src/OpenIGI.Game/OpenIGI.Game.csproj" />
+    <Project Path="src/OpenIGI.Input/OpenIGI.Input.csproj" />
+    <Project Path="src/OpenIGI.Modding/OpenIGI.Modding.csproj" />
+    <Project Path="src/OpenIGI.Platform.Desktop/OpenIGI.Platform.Desktop.csproj" />
+    <Project Path="src/OpenIGI.Platform/OpenIGI.Platform.csproj" />
+    <Project Path="src/OpenIGI.Rendering.OpenGL/OpenIGI.Rendering.OpenGL.csproj" />
+    <Project Path="src/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
+    <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
+  </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Engine.Tests/OpenIGI.Engine.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Formats.Tests/OpenIGI.Formats.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Scripting.Tests/OpenIGI.Scripting.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/OpenIGI.Tools.QvmDisasm/OpenIGI.Tools.QvmDisasm.csproj" />
+    <Project Path="tools/OpenIGI.Tools.ResExtract/OpenIGI.Tools.ResExtract.csproj" />
+  </Folder>
+</Solution>

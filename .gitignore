@@ -1,0 +1,39 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+artifacts/
+TestResults/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# NuGet
+*.nupkg
+packages/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Coverage / logs
+*.log
+coverage/
+*.coverage
+*.trx
+
+# Local-only settings
+*.local.json
+
+# Original game data must never be committed
+gamedata/
+*.qvm
+*.res
+*.mef
+*.mtp
+!tests/**/fixtures/**

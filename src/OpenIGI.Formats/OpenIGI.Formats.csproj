@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+  </ItemGroup>
+
+</Project>
