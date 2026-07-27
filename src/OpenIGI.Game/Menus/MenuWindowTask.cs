@@ -65,6 +65,78 @@ public abstract class MenuWindowTask : ContainerTask
     /// <summary>Gets or sets a value indicating whether this item centres itself vertically in its parent.</summary>
     public bool CentreVertically { get; set; }
 
+    /// <summary>Gets a value indicating whether the pointer is over this item and it may be chosen.</summary>
+    /// <remarks>Field <c>+73</c> in the original.</remarks>
+    public bool IsActive { get; private set; }
+
+    /// <summary>Gets a value indicating whether this item is latched under a held button.</summary>
+    /// <remarks>Field <c>+74</c>. Pressing inside latches, so dragging off and back keeps the item armed.</remarks>
+    public bool IsHeld { get; private set; }
+
+    /// <summary>Gets a value indicating whether this item completed a click on the tick just gone.</summary>
+    /// <remarks>Field <c>+75</c>. A click completes on <em>release</em> inside a latched item, not on press.</remarks>
+    public bool WasClicked { get; private set; }
+
+    /// <summary>Tests this item's rectangle against the pointer and updates its interaction flags.</summary>
+    /// <param name="pointer">The pointer state.</param>
+    /// <returns><see langword="true"/> when the item completed a click.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pointer"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// Transcribed from <c>MenuItem_HitTest</c> (<c>0x4248A0</c>). Two details are worth naming because
+    /// they are what make the buttons feel right and are easy to simplify away:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// The containment test is strictly greater than on the left and top edges and strictly less than
+    /// on the right and bottom, so a pointer exactly on any edge is outside.
+    /// </description></item>
+    /// <item><description>
+    /// A click completes on the <em>release</em>, and only if the item was latched by the press and the
+    /// pointer is still inside. Pressing an entry and dragging away cancels it.
+    /// </description></item>
+    /// </list>
+    /// </remarks>
+    public bool HitTest(MenuPointer pointer)
+    {
+        ArgumentNullException.ThrowIfNull(pointer);
+
+        bool inside = pointer.X > LayoutX
+            && pointer.Y > LayoutY
+            && pointer.X < LayoutX + LayoutWidth
+            && pointer.Y < LayoutY + LayoutHeight;
+
+        bool held = (pointer.IsDown && IsHeld) || (pointer.Pressed && inside);
+        bool clicked = IsHeld && pointer.Released && inside;
+
+        IsHeld = held;
+        IsActive = (!pointer.IsDown || held) && inside;
+        WasClicked = clicked;
+        return clicked;
+    }
+
+    /// <summary>Runs the hit-test over this window and every descendant.</summary>
+    /// <param name="pointer">The pointer state.</param>
+    /// <returns>The item that completed a click, or <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="pointer"/> is <see langword="null"/>.</exception>
+    public MenuWindowTask? HitTestSubtree(MenuPointer pointer)
+    {
+        ArgumentNullException.ThrowIfNull(pointer);
+
+        MenuWindowTask? clicked = null;
+        foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>())
+        {
+            if (child.HitTest(pointer))
+            {
+                clicked = child;
+            }
+
+            clicked = child.HitTestSubtree(pointer) ?? clicked;
+        }
+
+        return clicked;
+    }
+
     /// <summary>Reports the size this item occupies in a line-up.</summary>
     /// <param name="width">Receives the width.</param>
     /// <param name="height">Receives the height.</param>

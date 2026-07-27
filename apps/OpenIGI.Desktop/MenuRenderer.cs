@@ -147,7 +147,11 @@ public sealed class MenuRenderer : IDisposable
         }
 
         (int x, int y) = MenuLayout.ToScreen(text.LayoutX, text.LayoutY, screenWidth, screenHeight);
-        Bgra32 colour = MenuLayout.ToPixel(MenuLayout.GetColour(text.ColourIndex, selected: false));
+
+        // The original's render reads a highlight flag the frame propagates down (+77), whose source
+        // is not decompiled yet; the pointer-over state is the same thing for a leaf entry and is what
+        // drives the highlight here. Flagged in the re-note as provisional.
+        Bgra32 colour = MenuLayout.ToPixel(MenuLayout.GetColour(text.ColourIndex, text.IsActive));
 
         font.Draw(batch, label, x, y, colour);
     }

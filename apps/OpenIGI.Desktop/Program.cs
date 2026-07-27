@@ -9,6 +9,7 @@ using OpenIGI.Input;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
+using OpenIGI.Scripting.Expressions;
 using OpenIGI.Rendering.OpenGL;
 using Silk.NET.OpenGL;
 
@@ -97,6 +98,9 @@ using (window)
     using MenuRenderer renderer = new(device, fileSystem, menu.Manager.ResourcePath, strings);
     SpriteBatch batch = new(device);
 
+    MenuPointer pointer = new();
+    ScriptExpressionEvaluator evaluator = new(new DesktopMenuContext(logger));
+
     GameClock clock = new(new SystemTimeSource());
     bool running = true;
     window.CloseRequested += (_, _) => running = false;
@@ -114,6 +118,27 @@ using (window)
                 if (window.Input.Keyboard.WasPressed(KeyCode.Escape))
                 {
                     running = false;
+                }
+
+                if (screen is not null)
+                {
+                    pointer.Update(
+                        (int)window.Input.Mouse.X,
+                        (int)window.Input.Mouse.Y,
+                        window.Width,
+                        window.Height,
+                        window.Input.Mouse.IsDown(MouseButton.Left));
+
+                    if (screen.HitTestSubtree(pointer) is MenuTextTask chosen
+                        && chosen.OnClickScript.Length > 0)
+                    {
+                        logger.Information("Menu", $"'{chosen.TextResource}' -> {chosen.OnClickScript}");
+                        evaluator.Evaluate(ScriptExpressionParser.Parse(chosen.OnClickScript, MenuConstants));
+                        if (evaluator.HasError)
+                        {
+                            logger.Warning("Menu", evaluator.ErrorMessage);
+                        }
+                    }
                 }
 
                 clock.CompleteTick();
@@ -156,3 +181,10 @@ using (window)
 }
 
 return 0;
+
+static int? MenuConstants(string name) => name switch
+{
+    "TRUE" => 1,
+    "FALSE" => 0,
+    _ => null,
+};
