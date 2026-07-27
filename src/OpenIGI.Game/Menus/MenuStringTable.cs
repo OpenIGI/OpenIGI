@@ -9,9 +9,10 @@ namespace OpenIGI.Game.Menus;
 /// <para>
 /// Transcribed from <c>Menu_GetString</c> (<c>0x418EA0</c>). A key is not a label: <c>MenuText</c>
 /// carries <c>"Single Player"</c>, and the text is fetched from the language archive under
-/// <c>LOCAL:&lt;languageDirectory&gt;/&lt;key&gt;</c>. The retail archives (<c>english.res</c> and its
-/// siblings) are pure <c>NAME</c>/<c>CSTR</c> pairs registered under exactly those names, so the
-/// resource registry resolves them once the archive is registered.
+/// <c>LOCAL:&lt;languageDirectory&gt;/&lt;key&gt;</c>, where the directory is the <em>language name</em>.
+/// The retail archive is <c>language/&lt;lang&gt;/menusystem.res</c>, whose <c>NAME</c>/<c>CSTR</c>
+/// pairs are registered as <c>LOCAL:english/Single Player</c> and so on, so the resource registry
+/// resolves them once the archive is registered.
 /// </para>
 /// <para>
 /// <b>A missing key is not an error.</b> The original formats <c>"RM: &lt;key&gt;"</c> — resource
@@ -22,8 +23,19 @@ namespace OpenIGI.Game.Menus;
 /// </remarks>
 public sealed class MenuStringTable
 {
-    /// <summary>The directory the retail menu scripts keep their language archives under.</summary>
-    public const string DefaultLanguageDirectory = "menusystem/language";
+    /// <summary>The language the retail English build resolves keys under.</summary>
+    /// <remarks>
+    /// This is a <em>language name</em>, not a path. <c>menusystem/english.res</c> also exists and
+    /// registers a similar-looking set under <c>LOCAL:menusystem/language/…</c>, but it is a smaller,
+    /// stale set — it is missing <c>Select Player</c>, among others — and is not what the menu reads.
+    /// </remarks>
+    public const string DefaultLanguageDirectory = "english";
+
+    /// <summary>The archive holding the menu's strings for a language.</summary>
+    /// <param name="language">The language name, for example <c>english</c>.</param>
+    /// <returns>The resource name of that language's menu archive.</returns>
+    public static string GetArchiveName(string language = DefaultLanguageDirectory) =>
+        $"LOCAL:language/{language}/menusystem.res";
 
     private readonly Dictionary<string, string> _missing = new(StringComparer.OrdinalIgnoreCase);
     private readonly ResourceRegistry _resources;

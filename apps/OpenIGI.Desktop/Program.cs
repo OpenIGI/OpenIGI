@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Menus;
 using OpenIGI.Input;
@@ -72,18 +73,28 @@ using (window)
     // The UI is authored against the original's 640x480 back buffer; the device stretches it to the
     // window, which is what the original's windowed present does with its own back buffer.
     device.SetViewport(new Viewport(0, 0, window.Width, window.Height));
-    device.Set2DProjection(MenuRenderer.AuthoredWidth, MenuRenderer.AuthoredHeight);
+    device.Set2DProjection(MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
     window.Resized += (_, e) =>
     {
         device.SetViewport(new Viewport(0, 0, e.Width, e.Height));
-        device.Set2DProjection(MenuRenderer.AuthoredWidth, MenuRenderer.AuthoredHeight);
+        device.Set2DProjection(MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
     };
 
     // The menu is data: run the script and draw the tree it builds.
     MenuSystem menu = MenuSystem.Load(fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"), logger);
     MenuScreenTask? screen = menu.GetInitialScreen() ?? (menu.Screens.Count > 0 ? menu.Screens[0] : null);
 
-    using MenuRenderer renderer = new(device, fileSystem, menu.Manager.ResourcePath);
+    // Entry labels are keys into the language archive, so it has to be registered before the
+    // renderer can resolve any of them.
+    ResourceRegistry resources = new(fileSystem, logger);
+    string languageArchive = MenuStringTable.GetArchiveName();
+    if (fileSystem.Exists(languageArchive))
+    {
+        resources.Register(languageArchive, fileSystem.ReadAllBytes(languageArchive));
+    }
+
+    MenuStringTable strings = new(resources);
+    using MenuRenderer renderer = new(device, fileSystem, menu.Manager.ResourcePath, strings);
     SpriteBatch batch = new(device);
 
     GameClock clock = new(new SystemTimeSource());
@@ -114,7 +125,7 @@ using (window)
                 device.Clear(Bgra32.Black);
                 if (screen is not null)
                 {
-                    renderer.Draw(batch, screen);
+                    renderer.Draw(batch, screen, MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
                 }
 
                 clock.CompleteRender();

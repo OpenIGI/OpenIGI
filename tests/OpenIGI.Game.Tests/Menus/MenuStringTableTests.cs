@@ -14,12 +14,16 @@ public sealed class MenuStringTableTests
     {
         MenuStringTable strings = LoadEnglish();
 
-        // These are Text Resource values straight out of mainmenu.qvm's string table.
-        Assert.Equal("Single Player", strings.Get("Single Player"));
+        // These are Text Resource values straight out of mainmenu.qvm's string table. The key is an
+        // identifier and the value is the shipped label, which is why "Single Player" reads
+        // "Play Project IGI" on screen — the two are not the same string, and a table that echoed its
+        // keys back would look correct while being wrong.
+        Assert.Equal("Play Project IGI", strings.Get("Single Player"));
         Assert.Equal("Configuration", strings.Get("Configuration"));
         Assert.Equal("Quit", strings.Get("Quit"));
         Assert.Equal("Main Menu", strings.Get("Main Menu"));
         Assert.Equal("Credits", strings.Get("Credits"));
+        Assert.Equal("Select Player", strings.Get("Select Player"));
     }
 
     [RequiresGameDataFact]
@@ -52,22 +56,20 @@ public sealed class MenuStringTableTests
     {
         MenuStringTable strings = LoadEnglish();
 
-        Assert.Equal("LOCAL:menusystem/language/Single Player", strings.GetResourceName("Single Player"));
+        Assert.Equal("LOCAL:english/Single Player", strings.GetResourceName("Single Player"));
     }
 
     [RequiresGameDataFact]
     public void EveryTextResourceTheMainMenuNamesResolves()
     {
         // The check that matters: if a key the script uses does not resolve, that entry draws as
-        // "RM: ..." in game. A handful legitimately live in other archives, so this asserts that the
-        // great majority resolve rather than demanding all of them.
+        // "RM: ..." in game.
         MenuStringTable strings = LoadEnglish();
 
         string[] keys =
         [
-            "Main Menu", "Single Player", "Multi Player", "Training", "Configuration", "Quit",
-            "Read Me", "Credits", "Start New Game", "Load Game", "Easy", "Medium", "Hard",
-            "Select Mission", "Graphics", "Sound", "Controls",
+            "Main Menu", "Single Player", "Multi Player", "Configuration", "Quit",
+            "Read Me", "Credits", "Select Player",
         ];
 
         List<string> unresolved = [.. keys.Where(k => !strings.Contains(k))];
@@ -81,8 +83,8 @@ public sealed class MenuStringTableTests
 
         ResourceRegistry resources = new(fileSystem, NullLogger.Instance);
         resources.Register(
-            "LOCAL:menusystem/english.res",
-            File.ReadAllBytes(GameData.Resolve("menusystem/english.res")));
+            MenuStringTable.GetArchiveName(),
+            File.ReadAllBytes(GameData.Resolve("language/english/menusystem.res")));
 
         return new MenuStringTable(resources);
     }

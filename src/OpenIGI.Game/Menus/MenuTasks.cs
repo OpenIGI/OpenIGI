@@ -7,7 +7,7 @@ namespace OpenIGI.Game.Menus;
 /// Registered by the original at <c>0x4170A0</c> with an instance size of 10392. Its parameters are
 /// declared by the menu script, not by the engine — see the original.
 /// </remarks>
-public partial class MenuManagerTask : ContainerTask
+public partial class MenuManagerTask : MenuWindowTask
 {
     /// <summary>Gets or sets the screen the manager starts on.</summary>
     [ScriptParam(ScriptParamType.Int32, "Current menuscreen")]
@@ -23,7 +23,7 @@ public partial class MenuManagerTask : ContainerTask
 }
 
 /// <summary>A rectangular group of menu items, laid out by its own spacing rules.</summary>
-public partial class MenuFrameTask : ContainerTask
+public partial class MenuFrameTask : MenuWindowTask
 {
     /// <summary>Gets or sets the sprite drawn as the frame's border.</summary>
     [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
@@ -31,31 +31,31 @@ public partial class MenuFrameTask : ContainerTask
 
     /// <summary>Gets or sets the left edge in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "X-Pos")]
-    public int X { get; set; }
+    public int X { get => LayoutX; set => LayoutX = value; }
 
     /// <summary>Gets or sets the top edge in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Y-Pos")]
-    public int Y { get; set; }
+    public int Y { get => LayoutY; set => LayoutY = value; }
 
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 
     /// <summary>Gets or sets how the frame aligns its children.</summary>
     [ScriptParam(ScriptParamType.Int32, "LineUpMode")]
-    public int LineUpMode { get; set; }
+    public int LineUpMode { get => (int)LineUp; set => LineUp = (MenuLineUpMode)value; }
 
     /// <summary>Gets or sets the horizontal gap between children in pixels.</summary>
     [ScriptParam(ScriptParamType.Int16, "X-Spacing")]
-    public short SpacingX { get; set; }
+    public short SpacingX { get => (short)LayoutSpacingX; set => LayoutSpacingX = value; }
 
     /// <summary>Gets or sets the vertical gap between children in pixels.</summary>
     [ScriptParam(ScriptParamType.Int16, "Y-Spacing")]
-    public short SpacingY { get; set; }
+    public short SpacingY { get => (short)LayoutSpacingY; set => LayoutSpacingY = value; }
 
     /// <summary>Gets or sets a value indicating whether the frame itself can take the selection.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Is Selectable")]
@@ -64,7 +64,7 @@ public partial class MenuFrameTask : ContainerTask
 
 /// <summary>One full-screen menu page.</summary>
 /// <remarks>Registered at <c>0x421750</c> with an instance size of 420.</remarks>
-public partial class MenuScreenTask : ContainerTask
+public partial class MenuScreenTask : MenuWindowTask
 {
     /// <summary>Gets or sets the background picture.</summary>
     [ScriptParam(ScriptParamType.String32, "Background")]
@@ -101,8 +101,22 @@ public partial class MenuScreenTask : ContainerTask
 
 /// <summary>A selectable line of text that runs an expression when clicked.</summary>
 /// <remarks>Registered at <c>0x420CC0</c> with an instance size of 368.</remarks>
-public partial class MenuTextTask : GameTask
+public partial class MenuTextTask : MenuWindowTask
 {
+    /// <summary>Initializes a new instance of the <see cref="MenuTextTask"/> class.</summary>
+    /// <remarks>
+    /// <c>MenuText</c>'s constructor (<c>0x420E90</c>) starts the item at (300, 230) and sets both
+    /// centre flags — which is why a column of entries comes out centred in its frame without the
+    /// script saying so anywhere.
+    /// </remarks>
+    public MenuTextTask()
+    {
+        LayoutX = 300;
+        LayoutY = 230;
+        CentreHorizontally = true;
+        CentreVertically = true;
+    }
+
     /// <summary>Gets or sets the key naming the localised string to draw.</summary>
     [ScriptParam(ScriptParamType.String32, "Text Resource")]
     public string TextResource { get; set; } = string.Empty;
@@ -125,7 +139,7 @@ public partial class MenuTextTask : GameTask
 }
 
 /// <summary>A <see cref="MenuTextTask"/> whose enabled and visible states are expressions.</summary>
-public partial class MenuTextConditionalTask : GameTask
+public partial class MenuTextConditionalTask : MenuWindowTask
 {
     /// <summary>Gets or sets the key naming the localised string to draw.</summary>
     [ScriptParam(ScriptParamType.String32, "Text Resource")]
@@ -157,7 +171,7 @@ public partial class MenuTextConditionalTask : GameTask
 }
 
 /// <summary>A slider bound to a value through get/set expressions.</summary>
-public partial class SlideBarTask : GameTask
+public partial class SlideBarTask : MenuWindowTask
 {
     /// <summary>Gets or sets the sprite drawn as the slider.</summary>
     [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
@@ -193,7 +207,7 @@ public partial class SlideBarTask : GameTask
 }
 
 /// <summary>A drop-down list bound through get/set expressions.</summary>
-public partial class ListBoxTask : GameTask
+public partial class ListBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the sprite drawn as the box.</summary>
     [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
@@ -205,7 +219,7 @@ public partial class ListBoxTask : GameTask
 
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the expression that fills the list.</summary>
     [ScriptParam(ScriptParamType.VarString, "Collect Items Script")]
@@ -225,7 +239,7 @@ public partial class ListBoxTask : GameTask
 }
 
 /// <summary>An on/off switch bound through get/set expressions.</summary>
-public partial class ToggleBoxTask : GameTask
+public partial class ToggleBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the expression that reads the current state.</summary>
     [ScriptParam(ScriptParamType.VarString, "Get Data Script")]
@@ -237,11 +251,11 @@ public partial class ToggleBoxTask : GameTask
 }
 
 /// <summary>A single-line text field bound through get/set expressions.</summary>
-public partial class InputBoxTask : GameTask
+public partial class InputBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the field's width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the largest number of characters the field accepts.</summary>
     [ScriptParam(ScriptParamType.Int32, "String Length")]
@@ -265,7 +279,7 @@ public partial class InputBoxTask : GameTask
 }
 
 /// <summary>A scrolling view of a plain text file.</summary>
-public partial class AsciiBoxTask : GameTask
+public partial class AsciiBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the font to draw with.</summary>
     [ScriptParam(ScriptParamType.String32, "Font Resource")]
@@ -277,15 +291,15 @@ public partial class AsciiBoxTask : GameTask
 
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 }
 
 /// <summary>A scrolling list whose contents come from an expression.</summary>
-public partial class ScrollListBoxTask : GameTask
+public partial class ScrollListBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the font to draw entries with.</summary>
     [ScriptParam(ScriptParamType.String32, "Font Resource")]
@@ -305,11 +319,11 @@ public partial class ScrollListBoxTask : GameTask
 
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 
     /// <summary>Gets or sets the expression run when an entry is chosen.</summary>
     [ScriptParam(ScriptParamType.VarString, "On Select Item")]
@@ -317,15 +331,15 @@ public partial class ScrollListBoxTask : GameTask
 }
 
 /// <summary>A picture chosen from a collected set by an expression.</summary>
-public partial class PictureBoxTask : GameTask
+public partial class PictureBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 
     /// <summary>Gets or sets the expression that fills the picture set.</summary>
     [ScriptParam(ScriptParamType.VarString, "Collect Items")]
@@ -344,7 +358,7 @@ public partial class PictureBoxTask : GameTask
 /// the names were never changed. Keeping them is required: parameters bind by position and the script
 /// declares them under these names.
 /// </remarks>
-public partial class TextBoxTask : GameTask
+public partial class TextBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the font to draw with.</summary>
     [ScriptParam(ScriptParamType.String32, "Font Resource")]
@@ -352,11 +366,11 @@ public partial class TextBoxTask : GameTask
 
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 
     /// <summary>Gets or sets the expression that fills the text set.</summary>
     [ScriptParam(ScriptParamType.VarString, "Collect Items")]
@@ -368,15 +382,15 @@ public partial class TextBoxTask : GameTask
 }
 
 /// <summary>A box that reveals its text one character at a time.</summary>
-public partial class TypeWriterBoxTask : GameTask
+public partial class TypeWriterBoxTask : MenuWindowTask
 {
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 }
 
 /// <summary>The controls-configuration screen's key-binding list.</summary>
@@ -386,7 +400,7 @@ public partial class TypeWriterBoxTask : GameTask
 /// the same arrangement as the structural types. It exports <c>nOffset</c>, which the controls screen
 /// reads back through <c>ControlsMenu_ConvertFloatFromOffset(ControlsMenu_954.nOffset)</c>.
 /// </remarks>
-public partial class ControlsMenuTask : ContainerTask
+public partial class ControlsMenuTask : MenuWindowTask
 {
     /// <summary>Gets or sets the list's scroll offset, exported to script as <c>nOffset</c>.</summary>
     public int Offset { get; set; }
@@ -397,23 +411,23 @@ public partial class ControlsMenuTask : ContainerTask
 /// <c>SwapKeys</c> is a parameter of this type, not a task type of its own — it appears in the script's
 /// string table next to the type names, which is easy to misread.
 /// </remarks>
-public partial class DialogWindowTask : ContainerTask
+public partial class DialogWindowTask : MenuWindowTask
 {
     /// <summary>Gets or sets the left edge in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "X-Pos")]
-    public int X { get; set; }
+    public int X { get => LayoutX; set => LayoutX = value; }
 
     /// <summary>Gets or sets the top edge in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Y-Pos")]
-    public int Y { get; set; }
+    public int Y { get => LayoutY; set => LayoutY = value; }
 
     /// <summary>Gets or sets the width in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get; set; }
+    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
 
     /// <summary>Gets or sets the height in pixels.</summary>
     [ScriptParam(ScriptParamType.Int32, "Height")]
-    public int Height { get; set; }
+    public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 
     /// <summary>Gets or sets a value indicating whether the accept and cancel keys are swapped.</summary>
     [ScriptParam(ScriptParamType.Bool8, "SwapKeys")]
