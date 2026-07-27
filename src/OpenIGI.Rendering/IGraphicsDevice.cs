@@ -1,0 +1,145 @@
+using OpenIGI.Core.Graphics;
+
+namespace OpenIGI.Rendering;
+
+/// <summary>
+/// The renderer seam: everything the engine may ask of a graphics backend.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The member names deliberately mirror the original's <c>RenderMode</c> method names so the mapping
+/// stays checkable — <see cref="SetMode"/> is <c>DisplaySetMode</c>, <see cref="SwapBuffers"/> is
+/// <c>DisplaySwapBuffers</c>, <see cref="SetViewport"/> is <c>ClipWindowPrimitive</c>,
+/// <see cref="BlitPixels"/> is <c>BlitPrimitive</c>, and the texture members are the twelve-method
+/// texture set. See the original and §8.
+/// </para>
+/// <para>
+/// <b>Frame order.</b> The original presents at the <em>start</em> of <c>DisplaySwapBuffers</c> and
+/// begins the new scene at its end, so a frame is <c>SwapBuffers</c> → <c>Clear</c> → draw. Backends
+/// must keep that order: it is what makes the one-render-per-tick interleave in
+/// the original land on the same frame boundaries.
+/// </para>
+/// <para>
+/// <b>Threading.</b> Every member must be called from the thread that created the device.
+/// </para>
+/// </remarks>
+public interface IGraphicsDevice : IDisposable
+{
+    /// <summary>Occurs after the device has recreated resources following a device loss.</summary>
+    /// <remarks>
+    /// The original handles this inline in <c>DisplaySwapBuffers</c>: it evicts managed textures,
+    /// restores all surfaces and re-applies render state. Backends raise this once recovery has
+    /// completed so that callers holding cached device state can re-apply it.
+    /// </remarks>
+    event EventHandler? DeviceRestored;
+
+    /// <summary>Gets what this device supports. Mirrors <c>GetGFXCaps</c>.</summary>
+    GraphicsCapabilities Capabilities { get; }
+
+    /// <summary>Gets the mode the device is currently set to.</summary>
+    DisplayMode CurrentMode { get; }
+
+    /// <summary>Gets or sets a value indicating whether presentation waits for the vertical blank. Mirrors <c>DisplayVSync</c>.</summary>
+    bool VSyncEnabled { get; set; }
+
+    /// <summary>Enumerates the display modes the adapter reports. Mirrors the <c>Enum</c> method.</summary>
+    /// <returns>The available modes. May be empty when the backend cannot enumerate, which is not an error.</returns>
+    IReadOnlyList<DisplayMode> EnumerateDisplayModes();
+
+    /// <summary>Sets the back-buffer size and colour depth. Mirrors <c>DisplaySetMode</c>.</summary>
+    /// <param name="mode">The mode to apply.</param>
+    /// <exception cref="GraphicsDeviceException">The mode could not be applied.</exception>
+    void SetMode(in DisplayMode mode);
+
+    /// <summary>Releases the current mode's resources without destroying the device. Mirrors <c>DisplayUnsetMode</c>.</summary>
+    void UnsetMode();
+
+    /// <summary>Recreates resources lost to a device reset. Mirrors <c>DisplayRestore</c>.</summary>
+    /// <remarks>Backends that cannot lose their device may implement this as a no-op.</remarks>
+    void Restore();
+
+    /// <summary>Clears the colour and depth buffers. Mirrors <c>DisplayClear</c>.</summary>
+    /// <param name="color">The colour to fill with. The alpha channel is ignored, as it is in the original.</param>
+    /// <remarks>The original always clears colour and depth together and always clears depth to <c>1.0</c>.</remarks>
+    void Clear(Bgra32 color);
+
+    /// <summary>Presents the back buffer and opens the next scene. Mirrors <c>DisplaySwapBuffers</c>.</summary>
+    /// <remarks>See the frame-order note on <see cref="IGraphicsDevice"/>: this presents first, then begins.</remarks>
+    void SwapBuffers();
+
+    /// <summary>Restricts rendering to a sub-rectangle of the render target. Mirrors <c>ClipWindowPrimitive</c>.</summary>
+    /// <param name="viewport">The region and depth range.</param>
+    void SetViewport(in Viewport viewport);
+
+    /// <summary>Copies a CPU pixel buffer straight to the render target. Mirrors <c>BlitPrimitive</c>.</summary>
+    /// <param name="x">The destination left edge in pixels.</param>
+    /// <param name="y">The destination top edge in pixels.</param>
+    /// <param name="width">The source width in pixels.</param>
+    /// <param name="height">The source height in pixels.</param>
+    /// <param name="pixels">The source pixels, row-major, <paramref name="width"/> per row.</param>
+    /// <exception cref="ArgumentException"><paramref name="pixels"/> is shorter than <paramref name="width"/> × <paramref name="height"/>.</exception>
+    /// <remarks>Used for splash screens and movie frames, where the source is produced on the CPU.</remarks>
+    void BlitPixels(int x, int y, int width, int height, ReadOnlySpan<Bgra32> pixels);
+
+    /// <summary>Reads the render target back into a pixel buffer. Mirrors <c>SnapshotPrimitive</c>.</summary>
+    /// <param name="width">The width to read in pixels.</param>
+    /// <param name="height">The height to read in pixels.</param>
+    /// <param name="destination">Receives the pixels, row-major and top row first.</param>
+    /// <exception cref="ArgumentException"><paramref name="destination"/> is shorter than <paramref name="width"/> × <paramref name="height"/>.</exception>
+    /// <remarks>
+    /// Rows arrive top-first regardless of what the backend's own framebuffer orientation is, so a
+    /// capture can be written straight out as an image.
+    /// </remarks>
+    void CaptureFrame(int width, int height, Span<Bgra32> destination);
+
+    /// <summary>Allocates a texture and uploads its pixels. Mirrors <c>AllocTexture</c> + <c>DownloadTexture</c>.</summary>
+    /// <param name="description">The texture's size, mip count and sampling.</param>
+    /// <param name="pixels">The whole mip chain, largest level first, each level tightly packed.</param>
+    /// <returns>A handle to the new texture.</returns>
+    /// <exception cref="ArgumentException"><paramref name="pixels"/> does not hold every mip level described.</exception>
+    /// <exception cref="GraphicsDeviceException">The texture could not be created.</exception>
+    TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels);
+
+    /// <summary>Replaces the pixels of one mip level. Mirrors <c>ReloadTexture</c>.</summary>
+    /// <param name="texture">The texture to update.</param>
+    /// <param name="mipLevel">The zero-based mip level.</param>
+    /// <param name="pixels">The replacement pixels for that level, tightly packed.</param>
+    /// <exception cref="ArgumentException">The handle is unknown, or the pixel count does not match the level.</exception>
+    void UpdateTexture(TextureHandle texture, int mipLevel, ReadOnlySpan<Bgra32> pixels);
+
+    /// <summary>Releases a texture. Mirrors <c>DeAllocTexture</c>.</summary>
+    /// <param name="texture">The texture to release. <see cref="TextureHandle.None"/> is ignored.</param>
+    void DestroyTexture(TextureHandle texture);
+
+    /// <summary>Binds a texture to a sampling unit. Mirrors <c>SetActiveTMU</c> followed by the D3D <c>SetTexture</c>.</summary>
+    /// <param name="unit">The zero-based texture unit.</param>
+    /// <param name="texture">The texture to bind, or <see cref="TextureHandle.None"/> to unbind.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="unit"/> is outside <see cref="GraphicsCapabilities.TextureUnits"/>.</exception>
+    void SetTexture(int unit, TextureHandle texture);
+
+    /// <summary>Draws indexed screen-space triangles.</summary>
+    /// <param name="vertices">The vertex buffer.</param>
+    /// <param name="indices">Indices into <paramref name="vertices"/>, three per triangle.</param>
+    /// <param name="texture">The texture to sample, or <see cref="TextureHandle.None"/> for untextured geometry.</param>
+    /// <param name="blend">How fragments combine with the render target.</param>
+    /// <exception cref="ArgumentException"><paramref name="indices"/> is not a multiple of three, or an index is out of range.</exception>
+    /// <remarks>
+    /// This is the primitive every 2D path funnels through: <see cref="SpriteBatch"/> builds the two
+    /// buffers and calls this once per texture and blend-mode run.
+    /// </remarks>
+    void DrawTriangles2D(
+        ReadOnlySpan<Vertex2D> vertices,
+        ReadOnlySpan<ushort> indices,
+        TextureHandle texture,
+        BlendMode blend);
+
+    /// <summary>Sets the pixel size of the coordinate system <see cref="Vertex2D"/> positions are expressed in.</summary>
+    /// <param name="width">The width in pixels.</param>
+    /// <param name="height">The height in pixels.</param>
+    /// <remarks>
+    /// The original's UI is authored against the back-buffer resolution and needs no projection of its
+    /// own; this is the equivalent of that implicit mapping, made explicit so that a UI authored at
+    /// 640×480 can be presented at any window size.
+    /// </remarks>
+    void Set2DProjection(int width, int height);
+}

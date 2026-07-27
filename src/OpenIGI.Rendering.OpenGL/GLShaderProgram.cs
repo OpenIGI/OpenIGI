@@ -1,0 +1,105 @@
+using Silk.NET.OpenGL;
+
+namespace OpenIGI.Rendering.OpenGL;
+
+/// <summary>A compiled and linked GLSL program, with cached uniform locations.</summary>
+internal sealed class GLShaderProgram : IDisposable
+{
+    private readonly GL _gl;
+    private readonly Dictionary<string, int> _uniforms = new(StringComparer.Ordinal);
+
+    private GLShaderProgram(GL gl, uint handle)
+    {
+        _gl = gl;
+        Handle = handle;
+    }
+
+    /// <summary>Gets the GL program name.</summary>
+    public uint Handle { get; }
+
+    /// <summary>Compiles and links a vertex and fragment shader pair.</summary>
+    /// <param name="gl">The GL binding.</param>
+    /// <param name="vertexSource">The vertex shader source.</param>
+    /// <param name="fragmentSource">The fragment shader source.</param>
+    /// <returns>The linked program.</returns>
+    /// <exception cref="GraphicsDeviceException">A shader failed to compile, or the program failed to link.</exception>
+    public static GLShaderProgram Create(GL gl, string vertexSource, string fragmentSource)
+    {
+        uint vertex = Compile(gl, ShaderType.VertexShader, vertexSource);
+        uint fragment;
+        try
+        {
+            fragment = Compile(gl, ShaderType.FragmentShader, fragmentSource);
+        }
+        catch
+        {
+            gl.DeleteShader(vertex);
+            throw;
+        }
+
+        uint program = gl.CreateProgram();
+        gl.AttachShader(program, vertex);
+        gl.AttachShader(program, fragment);
+        gl.LinkProgram(program);
+
+        gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
+        gl.DetachShader(program, vertex);
+        gl.DetachShader(program, fragment);
+        gl.DeleteShader(vertex);
+        gl.DeleteShader(fragment);
+
+        if (linked == 0)
+        {
+            string log = gl.GetProgramInfoLog(program);
+            gl.DeleteProgram(program);
+            throw new GraphicsDeviceException($"Shader program failed to link: {log}");
+        }
+
+        return new GLShaderProgram(gl, program);
+    }
+
+    /// <summary>Makes this program current.</summary>
+    public void Use() => _gl.UseProgram(Handle);
+
+    /// <summary>Sets a <c>vec2</c> uniform.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <param name="x">The first component.</param>
+    /// <param name="y">The second component.</param>
+    public void SetVector2(string name, float x, float y) => _gl.Uniform2(GetLocation(name), x, y);
+
+    /// <summary>Sets an <c>int</c> uniform.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <param name="value">The value.</param>
+    public void SetInt(string name, int value) => _gl.Uniform1(GetLocation(name), value);
+
+    /// <inheritdoc/>
+    public void Dispose() => _gl.DeleteProgram(Handle);
+
+    private static uint Compile(GL gl, ShaderType type, string source)
+    {
+        uint shader = gl.CreateShader(type);
+        gl.ShaderSource(shader, source);
+        gl.CompileShader(shader);
+        gl.GetShader(shader, ShaderParameterName.CompileStatus, out int compiled);
+        if (compiled != 0)
+        {
+            return shader;
+        }
+
+        string log = gl.GetShaderInfoLog(shader);
+        gl.DeleteShader(shader);
+        throw new GraphicsDeviceException($"{type} failed to compile: {log}");
+    }
+
+    private int GetLocation(string name)
+    {
+        if (_uniforms.TryGetValue(name, out int location))
+        {
+            return location;
+        }
+
+        location = _gl.GetUniformLocation(Handle, name);
+        _uniforms[name] = location;
+        return location;
+    }
+}
