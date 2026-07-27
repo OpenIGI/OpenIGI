@@ -1,0 +1,13 @@
+# Normalize line endings: text files use LF in the repo.
+* text=auto eol=lf
+
+# Binary assets (never normalize)
+*.png binary
+*.tex binary
+*.res binary
+*.mef binary
+*.qvm binary
+*.mtp binary
+*.dat binary
+*.wav binary
+*.fnt binary
