@@ -123,6 +123,13 @@ public sealed class QvmInterpreter
         return _values[_depth - 1 - depthFromTop];
     }
 
+    /// <summary>Reads one entry of a call site's argument-offset table.</summary>
+    /// <param name="tableOffset">The code offset of the table, which is the call's offset plus five.</param>
+    /// <param name="index">The argument position, already bounds-checked by the caller.</param>
+    /// <returns>The code offset of that argument's expression block.</returns>
+    internal int ReadArgumentOffset(int tableOffset, int index) =>
+        ReadInt32(_program.Code.Span, tableOffset + (index * 4));
+
     /// <summary>Evaluates one argument block of a call in progress.</summary>
     /// <param name="offset">The code offset of the block.</param>
     /// <param name="want">The representation the caller needs.</param>
@@ -403,10 +410,9 @@ public sealed class QvmInterpreter
             return;
         }
 
-        QvmInstruction instruction = QvmDisassembler.DecodeAt(code, callOffset);
         int savedDepth = _depth;
 
-        QvmValue result = symbol.Invoke(new QvmCallContext(this, symbol, instruction.ArgumentOffsets));
+        QvmValue result = symbol.Invoke(new QvmCallContext(this, symbol, callOffset + 5, argumentCount));
         if (_error != QvmError.None)
         {
             return;
@@ -416,7 +422,7 @@ public sealed class QvmInterpreter
         // reading; the call site is what puts both back.
         _halted = false;
         _depth = savedDepth;
-        _programCounter = callOffset + instruction.Length;
+        _programCounter = callOffset + 5 + (4 * argumentCount);
 
         Push(symbol.ValueType switch
         {

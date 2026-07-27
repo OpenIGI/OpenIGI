@@ -18,12 +18,13 @@ namespace OpenIGI.Scripting.Runtime;
 public sealed class QvmCallContext
 {
     private readonly QvmInterpreter _interpreter;
-    private readonly IReadOnlyList<int> _argumentOffsets;
+    private readonly int _argumentTableOffset;
 
-    internal QvmCallContext(QvmInterpreter interpreter, QvmSymbol symbol, IReadOnlyList<int> argumentOffsets)
+    internal QvmCallContext(QvmInterpreter interpreter, QvmSymbol symbol, int argumentTableOffset, int argumentCount)
     {
         _interpreter = interpreter;
-        _argumentOffsets = argumentOffsets;
+        _argumentTableOffset = argumentTableOffset;
+        ArgumentCount = argumentCount;
         Symbol = symbol;
     }
 
@@ -35,7 +36,7 @@ public sealed class QvmCallContext
 
     /// <summary>Gets the number of arguments the call site passes.</summary>
     /// <remarks>This is the count encoded at the call site, which need not match <see cref="QvmSymbol.ArgumentCount"/>.</remarks>
-    public int ArgumentCount => _argumentOffsets.Count;
+    public int ArgumentCount { get; }
 
     /// <summary>Gets the interpreter running the call, for natives that need to inspect its state.</summary>
     public QvmInterpreter Interpreter => _interpreter;
@@ -101,7 +102,11 @@ public sealed class QvmCallContext
     {
         // The original indexes its argument-offset array unchecked and would read past the call site.
         ArgumentOutOfRangeException.ThrowIfNegative(index);
-        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, _argumentOffsets.Count);
-        return _argumentOffsets[index];
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, ArgumentCount);
+
+        // Read straight from the code section, as the original does: a call site can carry thousands
+        // of arguments (Task_DeclareParameters reaches 2605), and materialising that array per call
+        // would allocate on the hottest path in level loading.
+        return _interpreter.ReadArgumentOffset(_argumentTableOffset, index);
     }
 }

@@ -464,6 +464,44 @@ public sealed class QvmInterpreterTests
     }
 
     [Fact]
+    public void ReadingANonStringSymbolAsAStringSucceedsAndYieldsEmpty()
+    {
+        // The original's pop-as-string reports success for any readable symbol and only writes the
+        // caller's buffer when the symbol really holds a string - so a native that asks for a string
+        // argument and gets an integer constant is told "yes" and reads whatever was in the buffer.
+        // Faithful, and observable: retail AI scripts pass constants like AIACTIONFLAG_NONE.
+        string? asText = null;
+        int asInteger = -1;
+
+        NativeRegistry natives = new();
+        natives.RegisterConstant("AIACTIONFLAG_NONE", 4242);
+        natives.RegisterFunction("AIAction_Patrol", call =>
+        {
+            Assert.True(call.TryGetString(0, out string text));
+            asText = text;
+            asInteger = call.GetInt32(0);
+            return QvmValue.Zero;
+        });
+
+        Run(natives, writer =>
+        {
+            QvmLabel argument = writer.Code.CreateLabel();
+            QvmLabel after = writer.Code.CreateLabel();
+
+            writer.PushSymbol("AIAction_Patrol");
+            writer.Code.Call(argument);
+            writer.Code.Branch(QvmOpcode.Bra, after);
+            writer.Code.MarkLabel(argument);
+            writer.PushSymbol("AIACTIONFLAG_NONE");
+            writer.Code.Emit(QvmOpcode.Brk);
+            writer.Code.MarkLabel(after).Emit(QvmOpcode.Pop).Emit(QvmOpcode.Brk);
+        });
+
+        Assert.Equal(string.Empty, asText);
+        Assert.Equal(4242, asInteger);
+    }
+
+    [Fact]
     public void PoppingAnEmptyStackUnderflows()
     {
         QvmInterpreter interpreter = Build(code => code.Emit(QvmOpcode.Pop));
