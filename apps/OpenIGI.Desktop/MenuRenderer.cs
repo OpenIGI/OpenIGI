@@ -125,12 +125,10 @@ public sealed class MenuRenderer : IDisposable
                 case MenuTextTask text:
                     DrawText(batch, text, screenWidth, screenHeight);
                     break;
+                case MenuFrameTask frame:
+                    DrawFrameBorder(batch, frame, screenWidth, screenHeight);
+                    break;
                 default:
-                    // A MenuFrame's border is eight separate sprites, and assembling them needs the
-                    // two edge helpers the original uses (0x4227A0, 0x4229A0), which are not
-                    // decompiled yet. Until they are a frame contributes its rectangle to the line-up
-                    // and draws nothing itself — which is the whole of its visible contribution to the
-                    // main menu, where no frame carries a Sprite Resource.
                     break;
             }
 
@@ -154,6 +152,63 @@ public sealed class MenuRenderer : IDisposable
         Bgra32 colour = MenuLayout.ToPixel(MenuLayout.GetColour(text.ColourIndex, text.IsActive));
 
         font.Draw(batch, label, x, y, colour);
+    }
+
+    /// <summary>Draws a frame's eight-piece border.</summary>
+    /// <remarks>
+    /// The placement arithmetic lives in <see cref="MenuBorderLayout"/> so it can be tested without a
+    /// device; this only resolves the sprites and draws what it is told, in the neutral colour the
+    /// original passes.
+    /// </remarks>
+    private void DrawFrameBorder(SpriteBatch batch, MenuFrameTask frame, int screenWidth, int screenHeight)
+    {
+        if (frame.SpriteResource.Length == 0 || frame.LayoutWidth <= 0 || frame.LayoutHeight <= 0)
+        {
+            return;
+        }
+
+        SpriteResource?[] pieces = new SpriteResource?[MenuLayout.FramePieceCount];
+        (int Width, int Height)[] sizes = new (int, int)[MenuLayout.FramePieceCount];
+        bool any = false;
+
+        for (int i = 0; i < pieces.Length; i++)
+        {
+            pieces[i] = TryGetSprite(MenuLayout.GetFramePieceName(frame.SpriteResource, i + 1));
+            sizes[i] = (Width(pieces[i]), Height(pieces[i]));
+            any |= pieces[i] is not null;
+        }
+
+        if (!any)
+        {
+            return;
+        }
+
+        (int x, int y) = MenuLayout.ToScreen(frame.LayoutX, frame.LayoutY, screenWidth, screenHeight);
+
+        foreach (MenuBorderPlacement placement in
+            MenuBorderLayout.Compute(frame.LayoutWidth, frame.LayoutHeight, sizes))
+        {
+            Draw(batch, pieces[(int)placement.Piece], x + placement.X, y + placement.Y);
+        }
+    }
+
+    private static int Width(SpriteResource? sprite) =>
+        sprite is null
+            ? 0
+            : Math.Max(sprite.Asset.DefaultWidth, sprite.Asset.Frames.Count > 0 ? sprite.Asset.Frames[0].Width : 0);
+
+    private static int Height(SpriteResource? sprite) =>
+        sprite is null
+            ? 0
+            : Math.Max(sprite.Asset.DefaultHeight, sprite.Asset.Frames.Count > 0 ? sprite.Asset.Frames[0].Height : 0);
+
+    /// <summary>Draws one border piece at its native size, in the neutral colour the original passes.</summary>
+    private static void Draw(SpriteBatch batch, SpriteResource? sprite, int x, int y)
+    {
+        if (sprite is not null && sprite.Asset.Frames.Count > 0)
+        {
+            sprite.Draw(batch, 0, x, y, MenuLayout.ToPixel((MenuLayout.FullIntensity, MenuLayout.FullIntensity, MenuLayout.FullIntensity)));
+        }
     }
 
     /// <summary>Maps an authored rectangle onto the screen, centred rather than scaled.</summary>

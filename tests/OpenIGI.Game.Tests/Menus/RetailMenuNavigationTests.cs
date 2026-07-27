@@ -69,6 +69,19 @@ public sealed class RetailMenuNavigationTests
     }
 
     [RequiresGameDataFact]
+    public void TheMainMenuUsesNoFrameBorders()
+    {
+        // A finding, not an omission: every MenuFrame in mainmenu.qvm has an empty Sprite Resource,
+        // so the main menu is text on a background with no window chrome. The border code is exercised
+        // by MenuBorderLayoutTests instead, since no shipped main-menu data reaches it.
+        Harness menu = Load();
+
+        MenuFrameTask[] frames = [.. menu.System.Screens.SelectMany(s => Descend(s).OfType<MenuFrameTask>())];
+        Assert.NotEmpty(frames);
+        Assert.All(frames, f => Assert.Empty(f.SpriteResource));
+    }
+
+    [RequiresGameDataFact]
     public void EveryEntryOnTheMainScreenHasALabelAndAnAction()
     {
         Harness menu = Load();
