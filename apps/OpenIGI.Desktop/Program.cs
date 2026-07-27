@@ -3,6 +3,8 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Menus;
+using OpenIGI.Input;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
@@ -70,15 +72,18 @@ using (window)
     // The UI is authored against the original's 640x480 back buffer; the device stretches it to the
     // window, which is what the original's windowed present does with its own back buffer.
     device.SetViewport(new Viewport(0, 0, window.Width, window.Height));
-    device.Set2DProjection(PlaceholderMainMenu.AuthoredWidth, PlaceholderMainMenu.AuthoredHeight);
+    device.Set2DProjection(MenuRenderer.AuthoredWidth, MenuRenderer.AuthoredHeight);
     window.Resized += (_, e) =>
     {
         device.SetViewport(new Viewport(0, 0, e.Width, e.Height));
-        device.Set2DProjection(PlaceholderMainMenu.AuthoredWidth, PlaceholderMainMenu.AuthoredHeight);
+        device.Set2DProjection(MenuRenderer.AuthoredWidth, MenuRenderer.AuthoredHeight);
     };
 
-    using MenuAssets assets = MenuAssets.Load(fileSystem, device);
-    PlaceholderMainMenu menu = new(assets);
+    // The menu is data: run the script and draw the tree it builds.
+    MenuSystem menu = MenuSystem.Load(fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"), logger);
+    MenuScreenTask? screen = menu.GetInitialScreen() ?? (menu.Screens.Count > 0 ? menu.Screens[0] : null);
+
+    using MenuRenderer renderer = new(device, fileSystem, menu.Manager.ResourcePath);
     SpriteBatch batch = new(device);
 
     GameClock clock = new(new SystemTimeSource());
@@ -95,20 +100,23 @@ using (window)
         switch (clock.Decide(clock.Now))
         {
             case FrameAction.Tick:
-                menu.Update(window.Input);
-                clock.CompleteTick();
-                if (menu.QuitRequested)
+                if (window.Input.Keyboard.WasPressed(KeyCode.Escape))
                 {
                     running = false;
                 }
 
+                clock.CompleteTick();
                 break;
 
             case FrameAction.Render:
                 // Present first, then open the new frame: the order DisplaySwapBuffers uses.
                 device.SwapBuffers();
                 device.Clear(Bgra32.Black);
-                menu.Draw(batch);
+                if (screen is not null)
+                {
+                    renderer.Draw(batch, screen);
+                }
+
                 clock.CompleteRender();
 
                 if (options.ExitAfterFrames > 0 && clock.FrameCount >= options.ExitAfterFrames)

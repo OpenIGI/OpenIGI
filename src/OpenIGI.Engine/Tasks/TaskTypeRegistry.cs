@@ -177,24 +177,45 @@ public sealed class TaskTypeRegistry
 
         for (int i = 0; i < compiled.Count; i++)
         {
-            // Only the value type has to match: it decides how many arguments are consumed, and a
-            // mismatch silently shifts every following field. The name is prose the editor wrote and
-            // is worth reporting on, but not worth failing over.
-            if (ScriptParamTypeInfo.GetBaseType(compiled[i].Type) != ScriptParamTypeInfo.GetBaseType(declared[i].Type))
+            ScriptParamType compiledType = ScriptParamTypeInfo.GetBaseType(compiled[i].Type);
+            ScriptParamType declaredType = ScriptParamTypeInfo.GetBaseType(declared[i].Type);
+
+            if (compiledType == declaredType)
+            {
+                if (!string.Equals(compiled[i].Name, declared[i].Name, StringComparison.Ordinal))
+                {
+                    _logger.Warning(
+                        LogCategory,
+                        $"Task type '{type.Name}' parameter {i} is named '{declared[i].Name}' in level data " +
+                        $"but '{compiled[i].Name}' in its class.");
+                }
+
+                continue;
+            }
+
+            // What actually corrupts a parse is a change in how many script arguments the parameter
+            // consumes, because Task_New reads them positionally out of one flat list and a different
+            // count shifts every following field. A different type of the same arity does not.
+            if (ScriptParamTypeInfo.GetArgumentCount(compiledType) != ScriptParamTypeInfo.GetArgumentCount(declaredType)
+                || ScriptParamTypeInfo.IsVariableLength(compiledType)
+                || ScriptParamTypeInfo.IsVariableLength(declaredType))
             {
                 throw new EngineFatalException(
                     $"Task type '{type.Name}' parameter {i} ('{declared[i].Name}') is declared as " +
                     $"{ScriptParamTypeInfo.GetName(declared[i].Type)} in level data but as " +
-                    $"{ScriptParamTypeInfo.GetName(compiled[i].Type)} in its class.");
+                    $"{ScriptParamTypeInfo.GetName(compiled[i].Type)} in its class, and the two consume " +
+                    "different numbers of script arguments.");
             }
 
-            if (!string.Equals(compiled[i].Name, declared[i].Name, StringComparison.Ordinal))
-            {
-                _logger.Warning(
-                    LogCategory,
-                    $"Task type '{type.Name}' parameter {i} is named '{declared[i].Name}' in level data " +
-                    $"but '{compiled[i].Name}' in its class.");
-            }
+            // Same arity, different type. This is real: the retail menu scripts declare SlideBar's
+            // eighth parameter as "Set Num Options"/VarString in mainmenu.qvm and as
+            // "Number of options"/Int32 in ingamemenu.qvm. A type's parameter list is per-script, not
+            // global, so this is data variance rather than a bug to fail on.
+            _logger.Warning(
+                LogCategory,
+                $"Task type '{type.Name}' parameter {i} is declared as " +
+                $"{ScriptParamTypeInfo.GetName(declared[i].Type)} ('{declared[i].Name}') in level data " +
+                $"but as {ScriptParamTypeInfo.GetName(compiled[i].Type)} ('{compiled[i].Name}') in its class.");
         }
     }
 }

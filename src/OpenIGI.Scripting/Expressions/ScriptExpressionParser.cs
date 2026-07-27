@@ -61,9 +61,14 @@ public sealed class ScriptExpressionParser
         ScriptExpressionParser parser = new(new ScriptLexer(source, resolveConstant));
         ScriptExpression expression = parser.ParseExpression(LoosestPrecedence, stopAtComma: false);
 
+        // A terminator after a complete expression ends it and is not an error. This is not
+        // permissiveness for its own sake: retail mainmenu.qvm ships
+        // "(Config_GetNumberOfPlayerProfiles() > 1) ? MenuManager_ActivatePopupScreen(930) : TRUE)"
+        // with one ')' too many, and the original's parser simply stops there — a stray terminator
+        // sets its "expression finished" flag rather than raising a diagnostic. Rejecting it would
+        // make a shipped menu entry unusable.
         ScriptToken trailing = parser._lexer.Next();
-        if (trailing.Kind != ScriptTokenKind.End
-            && !(trailing.Kind == ScriptTokenKind.Terminator && trailing.Operator == ScriptOperator.Semicolon))
+        if (trailing.Kind is not (ScriptTokenKind.End or ScriptTokenKind.Terminator))
         {
             throw new ScriptExpressionException("Syntax error", trailing.Line, trailing.Text);
         }
