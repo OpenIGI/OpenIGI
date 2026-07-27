@@ -1,5 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- A helper library, not a test assembly: `dotnet test` must not try to run it. -->
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="xunit" />
   </ItemGroup>

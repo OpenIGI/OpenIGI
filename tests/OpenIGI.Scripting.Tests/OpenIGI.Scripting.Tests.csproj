@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

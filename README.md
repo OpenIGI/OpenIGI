@@ -11,8 +11,14 @@ Innerloop Studios), compatible with the original retail game data. Built on **.N
 Early. **M1 (foundations) is done**: shared math with the original's truncation semantics, an ILFF
 archive reader that parses every `.res`, `.mef` and `.fnt` of a retail install, the virtual file system
 with its alias/device model, the resource registry, the config-variable registry, and the `ResExtract`
-CLI. Gameplay is not implemented yet — work is tracked milestone by milestone in
-[`TODO.md`](TODO.md).
+CLI.
+
+**M2 (scripting) is done**: the QVM bytecode virtual machine — loader, disassembler and interpreter,
+including the deferred call-argument evaluation the original's natives depend on, plus the `QvmDisasm`
+CLI. All 997 `.qvm` scripts of a retail install load and disassemble, and `config.qvm` executes to the
+native-call sequence its bytecode describes.
+
+Gameplay is not implemented yet — work is tracked milestone by milestone in [`TODO.md`](TODO.md).
 
 ## Goals
 - **1:1 game logic** with the original (timing, math, behaviour), rewritten as clean, modern C# —
