@@ -8,8 +8,11 @@ Innerloop Studios), compatible with the original retail game data. Built on **.N
 > it reads the data files from your own legally obtained installation.
 
 ## Status
-Early scaffolding. The solution builds; gameplay is not implemented yet. Work is tracked milestone by
-milestone in [`TODO.md`](TODO.md).
+Early. **M1 (foundations) is done**: shared math with the original's truncation semantics, an ILFF
+archive reader that parses every `.res`, `.mef` and `.fnt` of a retail install, the virtual file system
+with its alias/device model, the resource registry, the config-variable registry, and the `ResExtract`
+CLI. Gameplay is not implemented yet — work is tracked milestone by milestone in
+[`TODO.md`](TODO.md).
 
 ## Goals
 - **1:1 game logic** with the original (timing, math, behaviour), rewritten as clean, modern C# —

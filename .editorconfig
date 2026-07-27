@@ -32,7 +32,8 @@ csharp_style_prefer_switch_expression = true:suggestion
 dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
 
 # Modifiers & readability
-dotnet_style_require_accessibility_modifiers = always:error
+# Interface members are implicitly public; requiring the redundant modifier there adds noise.
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:error
 dotnet_style_readonly_field = true:error
 csharp_prefer_static_local_function = true:warning
 
@@ -54,3 +55,8 @@ dotnet_naming_style.underscore_camel.required_prefix = _
 
 # Documentation
 dotnet_diagnostic.CS1591.severity = error
+
+# CA1720 (identifier contains a type name): the port deliberately mirrors the original engine's own
+# parameter-type vocabulary (Int32, Real32, Real64x3, String256, ...). Renaming those would make the
+# reverse-engineering notes harder to follow than the rule is worth.
+dotnet_diagnostic.CA1720.severity = none
