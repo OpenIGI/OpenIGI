@@ -26,6 +26,14 @@ All 14 retail `objects.qvm` files build their task trees headlessly, and `locati
 an independent third-party decompilation of the same bytecode exactly: 1360 tasks, ten levels deep,
 matching per-depth counts.
 
+**M4 (game loop) is done**: the engine now runs. A fixed 30 Hz schedule built on absolute per-tick
+deadlines rather than a delta accumulator, with the original's catch-up cap, one-render-per-tick latch
+and excluded-time stopwatch; the `Flow` state machine that moves the game between intro, menu, load and
+play, driven by the same `Flow_RequestEvent` command its scripts use; and the level load path. It boots,
+runs and loads a level headlessly — no window, no renderer — and the simulation is provably a function
+of the tick index alone: the same run against clocks of 1, 5, 16 and 100 ms granularity draws different
+numbers of frames and computes identical state.
+
 Rendering, audio and gameplay behaviour are not implemented yet — work is tracked milestone by
 milestone in [`TODO.md`](TODO.md).
 

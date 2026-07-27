@@ -53,10 +53,55 @@ public sealed class TaskTreeWalker
     /// <param name="task">The subtree root to message.</param>
     /// <param name="message">The message to deliver.</param>
     /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The original's <c>Task_SendMessage</c> (<c>0x401D80</c>). Used for one-shot broadcasts such as
+    /// <see cref="TaskMessage.PostLoad"/> — <em>not</em> for the per-tick update, which propagates one
+    /// level at a time through <see cref="SendToChildren"/>.
+    /// </remarks>
     public void Send(GameTask task, TaskMessage message)
     {
         ArgumentNullException.ThrowIfNull(task);
         Dispatch(task, message);
+    }
+
+    /// <summary>Sends a message to a task's immediate children, without descending further.</summary>
+    /// <param name="parent">The task whose children to message.</param>
+    /// <param name="message">The message to deliver.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="parent"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// This one level of propagation — not a recursive broadcast — is how the update message travels.
+    /// The frame arbiter calls it on the tree root, and a task type that wants its subtree to keep
+    /// ticking calls it again from its own update handler (<c>Task_UpdateChildren</c>, <c>0x488700</c>).
+    /// A type whose update method does not forward, or that has none at all, freezes everything beneath
+    /// it — which is exactly what <c>Static</c> and <c>Idle</c> do.
+    /// </para>
+    /// <para>
+    /// Deletion safety works the same way as in <see cref="Send"/>, with one difference: the current
+    /// child is never written to the cursor stack, only its successor. A child deleting <em>itself</em>
+    /// therefore needs no patch, because the walk already holds the successor it will move to.
+    /// </para>
+    /// </remarks>
+    public void SendToChildren(GameTask parent, TaskMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+
+        int slot = Depth;
+        GameTask? child = parent.FirstChild;
+
+        while (child is not null)
+        {
+            // Publish the successor before dispatching, so a handler deleting it can patch this slot.
+            SetCursor(slot, child.NextSibling);
+            Depth = slot + 1;
+
+            child.Receive(message);
+
+            // Re-read rather than reuse: the handler may have run nested walks of its own.
+            slot = Depth - 1;
+            Depth = slot;
+            child = _cursors[slot];
+        }
     }
 
     /// <summary>Patches any pending cursor that names a task about to be deleted.</summary>

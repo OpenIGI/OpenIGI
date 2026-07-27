@@ -36,17 +36,39 @@ internal sealed class WalkerTask : GameTask
 
     public Action? OnUpdated { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether this task passes the tick on to its children.
+    /// </summary>
+    /// <remarks>
+    /// Forwarding is opt-in per task type — the tick reaches the root's children and no further on its
+    /// own — so a walker that stops forwarding freezes its whole subtree, exactly as <c>Static</c> does.
+    /// </remarks>
+    public bool ForwardsToChildren { get; set; } = true;
+
     protected override void OnUpdate()
     {
         Visited?.Add(Tag);
         OnUpdated?.Invoke();
+
+        if (ForwardsToChildren)
+        {
+            ForwardToChildren(TaskMessage.Update);
+        }
     }
 
-    protected override void OnRender() => Rendered?.Add(Tag);
+    protected override void OnRender()
+    {
+        Rendered?.Add(Tag);
+
+        if (ForwardsToChildren)
+        {
+            ForwardToChildren(TaskMessage.Render);
+        }
+    }
 }
 
 /// <summary>A behaviourless grouping task, as retail level data's <c>Container</c> is.</summary>
-internal sealed class ContainerTask : GameTask
+internal sealed class LifecycleProbeTask : GameTask
 {
     public int ParsedCount { get; private set; }
 

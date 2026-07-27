@@ -150,6 +150,39 @@ public sealed class TaskTreeWalkerTests
     }
 
     [Fact]
+    public void TheTickReachesOnlyTheRootsChildrenOnItsOwn()
+    {
+        Fixture fixture = new();
+        WalkerTask gate = fixture.Add(fixture.Tree.Root, "gate");
+        WalkerTask under = fixture.Add(gate, "under");
+        fixture.Add(under, "deeper");
+        gate.ForwardsToChildren = false;
+
+        fixture.Tree.Update();
+
+        // The update message is not a broadcast: the arbiter hands it to the root's children and each of
+        // them decides whether its own subtree ticks. A type that declines — Static and Idle install a
+        // do-nothing update for exactly this reason — freezes everything beneath it, and nothing throws.
+        Assert.Equal(["gate"], fixture.Visited);
+    }
+
+    [Fact]
+    public void ABroadcastReachesTasksTheTickNeverWould()
+    {
+        Fixture fixture = new();
+        WalkerTask gate = fixture.Add(fixture.Tree.Root, "gate");
+        WalkerTask under = fixture.Add(gate, "under");
+        gate.ForwardsToChildren = false;
+        under.ForwardsToChildren = false;
+
+        fixture.Tree.Walker.Send(fixture.Tree.Root, TaskMessage.Update);
+
+        // Task_SendMessage recurses on its own, which is why PostLoad reaches a whole level and the tick
+        // does not. Both walks exist in the original and they are not interchangeable.
+        Assert.Equal(["gate", "under"], fixture.Visited);
+    }
+
+    [Fact]
     public void RenderAndUpdateAreTheSameWalkWithDifferentMessages()
     {
         Fixture fixture = new();

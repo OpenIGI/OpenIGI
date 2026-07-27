@@ -78,6 +78,25 @@ public sealed class TaskScriptCommands
         symbols.RegisterFunction(TaskDeclareParameters, OnDeclareParameters);
     }
 
+    /// <summary>Resets the per-load state before a script runs.</summary>
+    /// <param name="createAsFirstChild">Whether the script's first task prepends rather than appends.</param>
+    /// <remarks>
+    /// <para>
+    /// The original's <c>Script_BeginTaskLoad</c> (<c>0x4F0E50</c>), which every script load calls between
+    /// compiling the script and running it. Its placement matters: a script that fails to load leaves the
+    /// previous load's state in place, because the reset never happens.
+    /// </para>
+    /// <para>
+    /// The original also stores the script path and a line-info slot here, both of which only feed its
+    /// error messages.
+    /// </para>
+    /// </remarks>
+    public void BeginLoad(bool createAsFirstChild = false)
+    {
+        CreateAsFirstChild = createAsFirstChild;
+        FirstCreatedTask = null;
+    }
+
     /// <summary>Points <c>Task_New</c> at the task new top-level tasks should attach to.</summary>
     /// <param name="parent">The parent task.</param>
     /// <exception cref="ArgumentNullException"><paramref name="parent"/> is <see langword="null"/>.</exception>

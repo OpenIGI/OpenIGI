@@ -13,7 +13,7 @@ public sealed class TaskScriptCommandsTests
     public void NestedTaskNewCallsBecomeChildren()
     {
         Fixture fixture = new();
-        fixture.Types.Register<ContainerTask>("Container");
+        fixture.Types.Register<LifecycleProbeTask>("Container");
 
         fixture.Run(QvmExpression.Call(
             "Task_New",
@@ -84,7 +84,7 @@ public sealed class TaskScriptCommandsTests
     {
         Fixture fixture = new();
         fixture.Types.Register<HeightMapTask>("HeightMap");
-        fixture.Types.Register<ContainerTask>("Container");
+        fixture.Types.Register<LifecycleProbeTask>("Container");
 
         fixture.Run(QvmExpression.Call(
             "Task_New",
@@ -275,7 +275,7 @@ public sealed class TaskScriptCommandsTests
     public void PostLoadReachesTheWholeTreeAndParsedReachesEachTaskOnce()
     {
         Fixture fixture = new();
-        fixture.Types.Register<ContainerTask>("Container");
+        fixture.Types.Register<LifecycleProbeTask>("Container");
 
         fixture.Run(QvmExpression.Call(
             "Task_New",
@@ -288,8 +288,8 @@ public sealed class TaskScriptCommandsTests
                 QvmExpression.Text("Container"),
                 QvmExpression.Text("inner"))));
 
-        var outer = (ContainerTask)fixture.Tree.Root.FirstChild!;
-        var inner = (ContainerTask)outer.FirstChild!;
+        var outer = (LifecycleProbeTask)fixture.Tree.Root.FirstChild!;
+        var inner = (LifecycleProbeTask)outer.FirstChild!;
 
         Assert.Equal(1, outer.ParsedCount);
         Assert.Equal(1, inner.ParsedCount);
@@ -305,7 +305,7 @@ public sealed class TaskScriptCommandsTests
     public void ParsedArrivesAfterAChildHasBeenAttached()
     {
         Fixture fixture = new();
-        fixture.Types.Register<ContainerTask>("Container");
+        fixture.Types.Register<LifecycleProbeTask>("Container");
 
         fixture.Run(QvmExpression.Call(
             "Task_New",
@@ -318,7 +318,7 @@ public sealed class TaskScriptCommandsTests
                 QvmExpression.Text("Container"),
                 QvmExpression.Text("inner"))));
 
-        var outer = (ContainerTask)fixture.Tree.Root.FirstChild!;
+        var outer = (LifecycleProbeTask)fixture.Tree.Root.FirstChild!;
 
         // Parsed fires before the nested children are evaluated, matching the original's ordering:
         // property binding, then ExportVars, then the message, then the child expressions.

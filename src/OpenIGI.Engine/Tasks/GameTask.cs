@@ -26,11 +26,24 @@ public abstract class GameTask
     /// <summary>Gets the id a task that was never given a script id reports.</summary>
     public const int NoId = -1;
 
+    private TaskTree? _tree;
+
     /// <summary>Gets the task's type.</summary>
     /// <exception cref="InvalidOperationException">The task has not been created through a <see cref="TaskTree"/>.</exception>
     public TaskType Type =>
         _type ?? throw new InvalidOperationException(
             $"The task of CLR type '{GetType().Name}' was not created through a {nameof(TaskTree)} and has no task type.");
+
+    /// <summary>Gets the tree this task belongs to.</summary>
+    /// <exception cref="InvalidOperationException">The task has not been created through a <see cref="TaskTree"/>.</exception>
+    /// <remarks>
+    /// The original reaches the tree through globals — the id table, the level root, the walker's cursor
+    /// stack — which every task can touch from anywhere. A back-reference gives handlers the same reach
+    /// without the process-wide state, so two trees can exist side by side.
+    /// </remarks>
+    public TaskTree Tree =>
+        _tree ?? throw new InvalidOperationException(
+            $"The task of CLR type '{GetType().Name}' was not created through a {nameof(TaskTree)}.");
 
     /// <summary>Gets the parent task, or <see langword="null"/> for a tree root.</summary>
     public GameTask? Parent { get; private set; }
@@ -183,6 +196,24 @@ public abstract class GameTask
     {
     }
 
+    /// <summary>Passes a message on to this task's immediate children.</summary>
+    /// <param name="message">The message to forward.</param>
+    /// <exception cref="InvalidOperationException">The task has not been created through a <see cref="TaskTree"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// The update message does not broadcast itself down the tree: the frame arbiter delivers it to the
+    /// root's children, and each of those decides whether its own subtree ticks. Forwarding is therefore
+    /// something a task type opts into, by calling this from <see cref="OnUpdate"/> — which is what the
+    /// original's shared <c>Task_UpdateChildren</c> (<c>0x488700</c>) does for the types that install it.
+    /// </para>
+    /// <para>
+    /// A type that does not forward freezes its whole subtree. That is a feature, not an oversight:
+    /// <c>Static</c> and <c>Idle</c> install a do-nothing update precisely so that level geometry costs
+    /// nothing per tick, and the in-game task stops forwarding to pause the world.
+    /// </para>
+    /// </remarks>
+    protected void ForwardToChildren(TaskMessage message) => Tree.Walker.SendToChildren(this, message);
+
     /// <summary>Binds this task's exported variables into a registry.</summary>
     /// <param name="variables">The registry to bind into.</param>
     /// <remarks>
@@ -228,6 +259,8 @@ public abstract class GameTask
     internal void InvokeUnexportVars(ScriptVarRegistry variables) => OnUnexportVars(variables);
 
     internal void SetType(TaskType type) => _type = type;
+
+    internal void SetTree(TaskTree tree) => _tree = tree;
 
     /// <summary>Appends a child at the end of the child list, as <c>Task_New</c> does.</summary>
     internal void AppendChild(GameTask child)
