@@ -18,7 +18,16 @@ including the deferred call-argument evaluation the original's natives depend on
 CLI. All 997 `.qvm` scripts of a retail install load and disassemble, and `config.qvm` executes to the
 native-call sequence its bytecode describes.
 
-Gameplay is not implemented yet — work is tracked milestone by milestone in [`TODO.md`](TODO.md).
+**M3 (task system) is done**: the object model the entire game is built from — a task tree with the
+original's cursor-patching traversal (a task can delete itself, a sibling or a whole subtree from
+inside its own update), the type registry, a source-generated `[ScriptParam]` binder for all 34
+level-data value types, and the live named-variable registry mission scripts read and write through.
+All 14 retail `objects.qvm` files build their task trees headlessly, and `location0/level1` reproduces
+an independent third-party decompilation of the same bytecode exactly: 1360 tasks, ten levels deep,
+matching per-depth counts.
+
+Rendering, audio and gameplay behaviour are not implemented yet — work is tracked milestone by
+milestone in [`TODO.md`](TODO.md).
 
 ## Goals
 - **1:1 game logic** with the original (timing, math, behaviour), rewritten as clean, modern C# —

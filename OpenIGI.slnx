@@ -6,6 +6,7 @@
     <Project Path="src/OpenIGI.Core/OpenIGI.Core.csproj" />
     <Project Path="src/OpenIGI.Engine/OpenIGI.Engine.csproj" />
     <Project Path="src/OpenIGI.Formats/OpenIGI.Formats.csproj" />
+    <Project Path="src/OpenIGI.Generators/OpenIGI.Generators.csproj" />
     <Project Path="src/OpenIGI.Game/OpenIGI.Game.csproj" />
     <Project Path="src/OpenIGI.Input/OpenIGI.Input.csproj" />
     <Project Path="src/OpenIGI.Modding/OpenIGI.Modding.csproj" />

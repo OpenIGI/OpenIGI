@@ -56,6 +56,20 @@ public sealed class NativeRegistry
     /// <exception cref="InvalidOperationException">The name is already registered.</exception>
     public QvmSymbol RegisterVariable(string name, IQvmVariable variable) => Add(QvmSymbol.CreateVariable(name, variable));
 
+    /// <summary>Removes a symbol.</summary>
+    /// <param name="name">The symbol to remove.</param>
+    /// <returns><see langword="true"/> when the name was registered.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Models <c>Script_UnbindVariable</c> (<c>0x4B80A0</c>). Tasks bind named variables when they are
+    /// exported and drop them again on unexport, so the namespace has to shrink as well as grow.
+    /// </remarks>
+    public bool Unregister(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return _symbols.Remove(name);
+    }
+
     /// <summary>Rebinds the object a symbol's native receives.</summary>
     /// <param name="name">The symbol to rebind.</param>
     /// <param name="context">The object to bind.</param>

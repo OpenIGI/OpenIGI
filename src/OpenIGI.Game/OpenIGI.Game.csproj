@@ -10,4 +10,10 @@
     <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Emits the [ScriptParam] binders. Build-time only: nothing of it ships. -->
+    <ProjectReference Include="..\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

@@ -3,6 +3,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenIGI.Engine\OpenIGI.Engine.csproj" />
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
