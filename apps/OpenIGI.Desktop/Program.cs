@@ -99,7 +99,11 @@ using (window)
     SpriteBatch batch = new(device);
 
     MenuPointer pointer = new();
-    ScriptExpressionEvaluator evaluator = new(new DesktopMenuContext(logger));
+    MenuNavigator navigator = new();
+    navigator.Start(menu.Manager.CurrentMenuScreen);
+
+    MenuScriptContext menuContext = new(navigator, logger);
+    ScriptExpressionEvaluator evaluator = new(menuContext);
 
     GameClock clock = new(new SystemTimeSource());
     bool running = true;
@@ -120,7 +124,21 @@ using (window)
                     running = false;
                 }
 
-                if (screen is not null)
+                // Advance the fade, and pick up the screen the navigator moved to.
+                if (navigator.Tick() || screen is null)
+                {
+                    // A popup is a DialogWindow layered over the screen, not a screen of its own, so
+                    // the screen underneath stays current while one is up.
+                    screen = menu.FindScreen(navigator.CurrentScreen) ?? screen;
+                }
+
+                if (navigator.IsLeaving)
+                {
+                    logger.Information("Menu", $"Leaving the menus: {navigator.State}.");
+                    running = false;
+                }
+
+                if (screen is not null && navigator.State == MenuManagerState.Active && menuContext.IsEnabled)
                 {
                     pointer.Update(
                         (int)window.Input.Mouse.X,
@@ -186,5 +204,14 @@ static int? MenuConstants(string name) => name switch
 {
     "TRUE" => 1,
     "FALSE" => 0,
+    "MENUMANAGER_IDLE" => (int)MenuManagerState.Idle,
+    "MENUMANAGER_QUIT" => (int)MenuManagerState.Quit,
+    "MENUMANAGER_QUITTOMAINMENU" => (int)MenuManagerState.QuitToMainMenu,
+    "MENUMANAGER_RESTARTLEVEL" => (int)MenuManagerState.RestartLevel,
+    "MENUMANAGER_STARTGAME" => (int)MenuManagerState.StartGame,
+    "TEXT_BLACK" => 0,
+    "TEXT_WHITE" => 1,
+    "TEXT_GREEN" => 2,
+    "TEXT_ORANGE" => 3,
     _ => null,
 };

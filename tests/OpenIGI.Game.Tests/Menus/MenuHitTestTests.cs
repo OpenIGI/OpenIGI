@@ -17,6 +17,32 @@ public sealed class MenuHitTestTests
     }
 
     [Fact]
+    public void AnEntryWithNoActionTakesNoPart()
+    {
+        // The flag at +76: MenuText_Prepare sets it only when the entry has an On Click Script, and
+        // MenuFrame_Update tests it before hit-testing. It is what stops a container swallowing a
+        // click meant for one of its children.
+        MenuTextTask caption = Item(100, 100, 50, 20);
+        caption.OnClickScript = string.Empty;
+        Assert.False(caption.IsInteractive);
+
+        MenuPointer pointer = new();
+        pointer.Update(125, 110, 640, 480, buttonDown: true);
+        Assert.False(caption.HitTest(pointer));
+        Assert.False(caption.IsActive);
+    }
+
+    [Fact]
+    public void AFrameTakesPartOnlyWhenTheScriptMarksItSelectable()
+    {
+        MenuFrameTask frame = (MenuFrameTask)_tree.New(_tree.Root, _types.Get("MenuFrame"));
+        Assert.False(frame.IsInteractive);
+
+        frame.IsSelectable = true;
+        Assert.True(frame.IsInteractive);
+    }
+
+    [Fact]
     public void ThePointerConvertsOutOfScreenSpaceIntoAuthoredCoordinates()
     {
         // The exact inverse of the centring items are drawn with, so the hit-test always works in
@@ -146,6 +172,9 @@ public sealed class MenuHitTestTests
     private MenuTextTask Item(int x, int y, int width, int height, MenuWindowTask? parent = null)
     {
         MenuTextTask item = (MenuTextTask)_tree.New(parent ?? _tree.Root, _types.Get("MenuText"));
+
+        // An entry only takes part in interaction when it has an action, so every fixture needs one.
+        item.OnClickScript = "MenuManager_PopScreen(FALSE)";
         item.LayoutX = x;
         item.LayoutY = y;
         item.LayoutWidth = width;

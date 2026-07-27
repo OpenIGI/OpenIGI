@@ -65,6 +65,15 @@ public abstract class MenuWindowTask : ContainerTask
     /// <summary>Gets or sets a value indicating whether this item centres itself vertically in its parent.</summary>
     public bool CentreVertically { get; set; }
 
+    /// <summary>Gets a value indicating whether this item takes part in pointer interaction at all.</summary>
+    /// <remarks>
+    /// Field <c>+76</c> in the original, and the reason a container does not swallow its children's
+    /// clicks: <c>MenuFrame_Update</c> (<c>0x422A50</c>) runs its hit-test only when the flag is set,
+    /// and <c>MenuText_Prepare</c> (<c>0x420F40</c>) sets it only for an entry that actually has an
+    /// <c>On Click Script</c>. A frame gets it from its <c>Is Selectable</c> parameter.
+    /// </remarks>
+    public virtual bool IsInteractive => false;
+
     /// <summary>Gets a value indicating whether the pointer is over this item and it may be chosen.</summary>
     /// <remarks>Field <c>+73</c> in the original.</remarks>
     public bool IsActive { get; private set; }
@@ -100,6 +109,14 @@ public abstract class MenuWindowTask : ContainerTask
     public bool HitTest(MenuPointer pointer)
     {
         ArgumentNullException.ThrowIfNull(pointer);
+
+        if (!IsInteractive)
+        {
+            IsActive = false;
+            IsHeld = false;
+            WasClicked = false;
+            return false;
+        }
 
         bool inside = pointer.X > LayoutX
             && pointer.Y > LayoutY

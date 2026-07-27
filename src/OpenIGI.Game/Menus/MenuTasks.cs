@@ -60,6 +60,9 @@ public partial class MenuFrameTask : MenuWindowTask
     /// <summary>Gets or sets a value indicating whether the frame itself can take the selection.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Is Selectable")]
     public bool IsSelectable { get; set; }
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => IsSelectable;
 }
 
 /// <summary>One full-screen menu page.</summary>
@@ -136,6 +139,10 @@ public partial class MenuTextTask : MenuWindowTask
     /// <summary>Gets or sets the sound played when the entry is chosen.</summary>
     [ScriptParam(ScriptParamType.String32, "Click Sound Resource")]
     public string ClickSoundResource { get; set; } = string.Empty;
+
+    /// <inheritdoc/>
+    /// <remarks>An entry with no action is a caption, and the original does not let one take a click.</remarks>
+    public override bool IsInteractive => OnClickScript.Length > 0;
 }
 
 /// <summary>A <see cref="MenuTextTask"/> whose enabled and visible states are expressions.</summary>
@@ -168,6 +175,9 @@ public partial class MenuTextConditionalTask : MenuWindowTask
     /// <summary>Gets or sets the sound played when the entry is chosen.</summary>
     [ScriptParam(ScriptParamType.String32, "Click Sound Resource")]
     public string ClickSoundResource { get; set; } = string.Empty;
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => OnClickScript.Length > 0;
 }
 
 /// <summary>A slider bound to a value through get/set expressions.</summary>

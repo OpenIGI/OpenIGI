@@ -85,6 +85,26 @@ public sealed class MenuSystem
         return menu;
     }
 
+    /// <summary>Gets every popup the script created, in creation order.</summary>
+    /// <remarks>
+    /// A popup is a <c>DialogWindow</c>, not a <c>MenuScreen</c>: <c>mainmenu.qvm</c> declares twelve
+    /// screens numbered 900 and 904–916, and the ids its
+    /// <c>MenuManager_ActivatePopupScreen</c> calls name — 930 upward — are its six
+    /// <c>DialogWindow</c> tasks.
+    /// </remarks>
+    public IReadOnlyList<DialogWindowTask> Popups => [.. Descend(Manager).OfType<DialogWindowTask>()];
+
+    /// <summary>Finds any menu window by the id the script gave it.</summary>
+    /// <param name="id">The script id.</param>
+    /// <returns>The window, or <see langword="null"/> when nothing has that id.</returns>
+    public MenuWindowTask? FindWindow(int id) =>
+        Descend(Manager).OfType<MenuWindowTask>().FirstOrDefault(w => w.Id == id);
+
+    /// <summary>Finds a popup by the id the script gave it.</summary>
+    /// <param name="id">The script id, as <c>MenuManager_ActivatePopupScreen</c> names it.</param>
+    /// <returns>The popup, or <see langword="null"/> when no popup has that id.</returns>
+    public DialogWindowTask? FindPopup(int id) => Popups.FirstOrDefault(p => p.Id == id);
+
     /// <summary>Finds a screen by the id the script gave it.</summary>
     /// <param name="id">The script id, as <c>MenuManager_PushScreen</c> names it.</param>
     /// <returns>The screen, or <see langword="null"/> when no screen has that id.</returns>
