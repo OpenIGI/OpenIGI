@@ -4,6 +4,8 @@ using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Config;
+using OpenIGI.Scripting.Qvm;
 using OpenIGI.Game.Menus;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
@@ -87,6 +89,11 @@ using (window)
         resources.Register(languageArchive, fileSystem.ReadAllBytes(languageArchive));
     }
 
+    // Settings load from the retail config.qvm, and from our own file in preference to it when one
+    // exists. Nothing here ever writes into the original installation.
+    GameConfig configuration = LoadConfiguration(fileSystem, logger);
+    ConfigNatives configNatives = new(configuration, new DesktopConfigHost(device, window));
+
     MenuStringTable strings = new(resources);
     SpriteBatch batch = new(device);
     MenuRenderer? renderer = null;
@@ -121,6 +128,7 @@ using (window)
             menu.Manager.CurrentMenuScreen = options.StartScreen;
         }
 
+        menu.Manager.Configuration = configNatives;
         menu.Manager.Initialize(menu, menuHost, logger);
     };
 
@@ -153,6 +161,7 @@ using (window)
         }
     }
 
+    SaveConfiguration(gamePath, configuration, logger);
     renderer?.Dispose();
     logger.Information(
         "Desktop",
@@ -160,3 +169,45 @@ using (window)
 }
 
 return 0;
+
+
+static GameConfig LoadConfiguration(VirtualFileSystem fileSystem, IIgiLogger logger)
+{
+    // Ours wins when it is there, so a setting changed in OpenIGI survives even though the retail
+    // file is still the fallback.
+    foreach (string path in new[] { ConfigScript.OpenIgiPath, ConfigScript.RetailPath })
+    {
+        if (!fileSystem.Exists(path))
+        {
+            continue;
+        }
+
+        try
+        {
+            return ConfigScript.Load(fileSystem.ReadAllBytes(path), logger);
+        }
+        catch (Exception ex) when (ex is IOException or QvmFormatException)
+        {
+            logger.Warning("Config", $"Could not read {path}: {ex.Message}");
+        }
+    }
+
+    logger.Information("Config", "No configuration found; starting from the defaults.");
+    return GameConfig.CreateDefault();
+}
+
+static void SaveConfiguration(string gamePath, GameConfig configuration, IIgiLogger logger)
+{
+    try
+    {
+        // Written next to the retail file rather than over it, so an original installation is never
+        // modified. The format is identical, so copying it across would work.
+        string path = Path.Combine(gamePath, "openigi-config.qvm");
+        File.WriteAllBytes(path, ConfigScriptWriter.Write(configuration));
+        logger.Information("Config", $"Saved {configuration.Profiles.Count} profile(s) to {path}.");
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        logger.Warning("Config", $"Could not save the configuration: {ex.Message}");
+    }
+}

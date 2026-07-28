@@ -1,4 +1,6 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Game.Config;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Expressions;
 
@@ -31,6 +33,7 @@ public partial class MenuManagerTask
     private MenuSystem? _system;
     private ScriptExpressionEvaluator? _evaluator;
     private MenuScreenTask? _current;
+    private ConfigNatives? _configuration;
     private IIgiLogger _logger = NullLogger.Instance;
 
     /// <summary>Gets the screen stack and fade this manager drives.</summary>
@@ -63,7 +66,11 @@ public partial class MenuManagerTask
         _host = host;
         _logger = logger ?? NullLogger.Instance;
 
-        ScriptContext = new MenuScriptContext(Navigator, _logger) { Variables = variables ?? system.Variables };
+        ScriptContext = new MenuScriptContext(Navigator, _logger)
+        {
+            Variables = variables ?? system.Variables,
+            Fallback = _configuration is null ? null : Invoke,
+        };
         _evaluator = new ScriptExpressionEvaluator(ScriptContext);
 
         Selection.Moved += (_, _) => _host?.PlaySound(MoveSoundName);
@@ -150,8 +157,14 @@ public partial class MenuManagerTask
         }
 
         // `this` binds to whatever task owns the expression, so a slider's Set Data Script writes its
-        // own vValue and not some other control's.
+        // own vValue and not some other control's. A list filler needs the same thing by a different
+        // route: Config_Fill* writes into whichever control is running its collect script.
         ScriptContext.Self = self;
+        if (_configuration is not null)
+        {
+            _configuration.Target = self as MenuWindowTask;
+        }
+
         try
         {
             _evaluator.Evaluate(ScriptExpressionParser.Parse(source, ResolveConstant));
@@ -166,6 +179,29 @@ public partial class MenuManagerTask
             _logger.Warning("Menu", $"{source}: {_evaluator.ErrorMessage}");
         }
     }
+
+    /// <summary>Gets or sets the configuration functions menu expressions may call.</summary>
+    /// <remarks>
+    /// Wired in as the script context's fallback, so a <c>Config_*</c> name the menu evaluates reaches
+    /// the real settings. Without one every configuration screen reads zero.
+    /// </remarks>
+    public ConfigNatives? Configuration
+    {
+        get => _configuration;
+        set
+        {
+            _configuration = value;
+            if (ScriptContext is not null)
+            {
+                ScriptContext.Fallback = value is null ? null : Invoke;
+            }
+        }
+    }
+
+    private QvmValue Invoke(string name, ScriptArguments arguments) =>
+        _configuration is not null && _configuration.TryInvoke(name, arguments, out QvmValue result)
+            ? result
+            : QvmValue.Zero;
 
     /// <summary>Plays a menu sound through the shell.</summary>
     /// <param name="name">The sound resource name.</param>
@@ -188,6 +224,11 @@ public partial class MenuManagerTask
         }
 
         ScriptContext.Self = self;
+        if (_configuration is not null)
+        {
+            _configuration.Target = self as MenuWindowTask;
+        }
+
         double result;
         try
         {
