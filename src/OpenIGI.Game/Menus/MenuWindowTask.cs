@@ -74,6 +74,16 @@ public abstract class MenuWindowTask : ContainerTask
     /// </remarks>
     public virtual bool IsInteractive => false;
 
+    /// <summary>Gets or sets a value indicating whether this item carries the menu's selection.</summary>
+    /// <remarks>
+    /// Field <c>+77</c>, owned by the manager: <c>Menu_SetSelected</c> (<c>0x4186E0</c>) clears it on
+    /// the item leaving the selection and sets it on the one arriving, so exactly one item has it.
+    /// <c>MenuText_Render</c> tests it before drawing an entry lit and putting a glow behind it — so
+    /// this, not the pointer-over state, is the visible highlight. A <c>MenuFrame</c> propagates its own
+    /// value down to its children, which lights a whole group at once.
+    /// </remarks>
+    public bool IsHighlighted { get; set; }
+
     /// <summary>Gets a value indicating whether the pointer is over this item and it may be chosen.</summary>
     /// <remarks>Field <c>+73</c> in the original.</remarks>
     public bool IsActive { get; private set; }

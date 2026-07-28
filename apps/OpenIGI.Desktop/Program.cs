@@ -105,6 +105,9 @@ using (window)
     MenuScriptContext menuContext = new(navigator, logger);
     ScriptExpressionEvaluator evaluator = new(menuContext);
 
+    MenuSelection selection = new();
+    MenuScreenTask? selectionBuiltFor = null;
+
     GameClock clock = new(new SystemTimeSource());
     bool running = true;
     window.CloseRequested += (_, _) => running = false;
@@ -138,8 +141,32 @@ using (window)
                     running = false;
                 }
 
+                if (screen is not null && !ReferenceEquals(screen, selectionBuiltFor))
+                {
+                    selection.Rebuild(screen);
+                    selectionBuiltFor = screen;
+                }
+
                 if (screen is not null && navigator.State == MenuManagerState.Active && menuContext.IsEnabled)
                 {
+                    // Arrow keys move the selection; the pointer moves the same one.
+                    KeyboardState keys = window.Input.Keyboard;
+                    if (keys.WasPressed(KeyCode.Down) || keys.WasPressed(KeyCode.Numpad2))
+                    {
+                        selection.Handle(MenuInputEvent.Next);
+                    }
+
+                    if (keys.WasPressed(KeyCode.Up) || keys.WasPressed(KeyCode.Numpad8))
+                    {
+                        selection.Handle(MenuInputEvent.Previous);
+                    }
+
+                    MenuWindowTask? chosenByKey = null;
+                    if (keys.WasPressed(KeyCode.Return) || keys.WasPressed(KeyCode.NumpadEnter))
+                    {
+                        chosenByKey = selection.Selected;
+                    }
+
                     pointer.Update(
                         (int)window.Input.Mouse.X,
                         (int)window.Input.Mouse.Y,
@@ -147,7 +174,17 @@ using (window)
                         window.Height,
                         window.Input.Mouse.IsDown(MouseButton.Left));
 
-                    if (screen.HitTestSubtree(pointer) is MenuTextTask chosen
+                    MenuWindowTask? hovered = screen.HitTestSubtree(pointer);
+                    foreach (MenuWindowTask item in selection.Items)
+                    {
+                        if (item.IsActive)
+                        {
+                            selection.SelectItem(item);
+                            break;
+                        }
+                    }
+
+                    if ((hovered ?? chosenByKey) is MenuTextTask chosen
                         && chosen.OnClickScript.Length > 0)
                     {
                         logger.Information("Menu", $"'{chosen.TextResource}' -> {chosen.OnClickScript}");
