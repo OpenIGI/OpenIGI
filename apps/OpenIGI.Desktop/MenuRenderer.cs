@@ -29,7 +29,7 @@ public sealed class MenuRenderer : IDisposable
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, BitmapTextRenderer?> _fonts = new(StringComparer.OrdinalIgnoreCase);
     private readonly IGraphicsDevice _device;
-    private readonly IresArchive _archive;
+    private readonly List<IresArchive> _archives = [];
     private readonly MenuStringTable _strings;
 
     /// <summary>Initializes a new instance of the <see cref="MenuRenderer"/> class.</summary>
@@ -37,12 +37,18 @@ public sealed class MenuRenderer : IDisposable
     /// <param name="fileSystem">The virtual file system rooted at the installation.</param>
     /// <param name="resourcePath">The archive named by the menu manager's <c>Resource path</c> parameter.</param>
     /// <param name="strings">The language table entry labels resolve through.</param>
+    /// <param name="extraArchives">
+    /// Further archives to search when the main one does not hold a sprite. The mission briefing images
+    /// live in <c>menusystem/missionsprites.res</c> rather than in the menu's own archive, so a picture
+    /// box cannot find them without this.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public MenuRenderer(
         IGraphicsDevice device,
         VirtualFileSystem fileSystem,
         string resourcePath,
-        MenuStringTable strings)
+        MenuStringTable strings,
+        IEnumerable<string>? extraArchives = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(fileSystem);
@@ -51,7 +57,15 @@ public sealed class MenuRenderer : IDisposable
 
         _device = device;
         _strings = strings;
-        _archive = IresArchive.Read(fileSystem.ReadAllBytes(resourcePath));
+        _archives.Add(IresArchive.Read(fileSystem.ReadAllBytes(resourcePath)));
+
+        foreach (string extra in extraArchives ?? [])
+        {
+            if (fileSystem.Exists(extra))
+            {
+                _archives.Add(IresArchive.Read(fileSystem.ReadAllBytes(extra)));
+            }
+        }
     }
 
     /// <summary>Draws a screen.</summary>
@@ -830,11 +844,20 @@ public sealed class MenuRenderer : IDisposable
             return cached;
         }
 
-        IresEntry? entry = _archive.Entries.FirstOrDefault(
-            e => e.Kind == IresEntryKind.Body
-                && Path.GetFileNameWithoutExtension(e.Name).Equals(
-                    Path.GetFileNameWithoutExtension(name),
-                    StringComparison.OrdinalIgnoreCase));
+        IresEntry? entry = null;
+        foreach (IresArchive archive in _archives)
+        {
+            entry = archive.Entries.FirstOrDefault(
+                e => e.Kind == IresEntryKind.Body
+                    && Path.GetFileNameWithoutExtension(e.Name).Equals(
+                        Path.GetFileNameWithoutExtension(name),
+                        StringComparison.OrdinalIgnoreCase));
+
+            if (entry is not null)
+            {
+                break;
+            }
+        }
 
         SpriteResource? resource = null;
         if (entry is not null)

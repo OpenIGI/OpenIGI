@@ -325,7 +325,21 @@ public partial class MenuManagerTask
         // Every control reads its current value out of the configuration before it is first drawn,
         // which is the 0x424870 slot run over the screen's subtree.
         screen.LoadData();
+
+        // A second pass, because the walk is in creation order and a control may read another's value:
+        // the Select Mission screen builds its picture and description boxes before the list they both
+        // key off, so on the first pass that list has no selection yet. Exactly how the original orders
+        // this is an open item — it may collect for the whole subtree before resolving any active value
+        // — but the observable result is the same and one pass is demonstrably not enough.
+        screen.LoadData();
     }
+
+    /// <summary>Re-reads every control's data on the current screen.</summary>
+    /// <remarks>
+    /// Called when a list's selection changes, so the controls keyed off it — a mission's briefing
+    /// picture and description — follow the selection.
+    /// </remarks>
+    public void ReloadScreenData() => _current?.LoadData();
 
     private void HandleKeys()
     {

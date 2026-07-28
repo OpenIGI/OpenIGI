@@ -43,17 +43,25 @@ public partial class PictureBoxTask
 
     /// <summary>Gets or sets the picture the box is showing, or an empty string.</summary>
     /// <remarks>
-    /// Chosen by <c>Get Active Picture</c> out of the set <c>Collect Items</c> built. Both are filled
-    /// by <c>Config_FillMissionPictureBox</c>, which needs mission data that does not exist yet — so
-    /// this stays empty and the box draws nothing rather than a stand-in.
+    /// Chosen by <c>Get Active Picture</c> out of the set <c>Collect Items</c> built:
+    /// <c>Config_FillMissionPictureBox</c> adds one entry per mission keyed by mission id, and the
+    /// expression yields the id the mission list is sitting on.
     /// </remarks>
     public string Picture { get; set; } = string.Empty;
+
+    /// <summary>Gets the collected pictures, keyed by the id <see cref="GetActivePicture"/> yields.</summary>
+    public IDictionary<int, string> Entries { get; } = new Dictionary<int, string>();
 
     /// <inheritdoc/>
     protected override void OnLoadData()
     {
+        Entries.Clear();
         Run(CollectItems);
-        Run(GetActivePicture);
+
+        // The original collects every entry and then picks one by id, rather than asking the filler
+        // for the selected one — which is why the fill natives walk the whole mission chain.
+        int active = (int)Evaluate(GetActivePicture);
+        Picture = Entries.TryGetValue(active, out string? picture) ? picture : string.Empty;
     }
 }
 
@@ -78,17 +86,28 @@ public partial class TextBoxTask
     /// <summary>Gets the lines the box is showing.</summary>
     /// <remarks>
     /// The instance is 8772 bytes, nearly all of it the text buffer, so the original holds the whole
-    /// block inline. Filled by <c>Config_FillMissionTextBox</c>, which is mission data and not yet
-    /// available.
+    /// block inline. Filled by <c>Config_FillMissionTextBox</c>, one entry per mission keyed by id.
     /// </remarks>
     public IList<string> Lines { get; } = [];
+
+    /// <summary>Gets the collected blocks, keyed by the id <see cref="GetActivePicture"/> yields.</summary>
+    public IDictionary<int, string> Entries { get; } = new Dictionary<int, string>();
 
     /// <inheritdoc/>
     protected override void OnLoadData()
     {
         Lines.Clear();
+        Entries.Clear();
         Run(CollectItems);
-        Run(GetActivePicture);
+
+        int active = (int)Evaluate(GetActivePicture);
+        if (Entries.TryGetValue(active, out string? text) && text.Length > 0)
+        {
+            foreach (string line in text.Split('\n'))
+            {
+                Lines.Add(line.TrimEnd('\r'));
+            }
+        }
     }
 }
 

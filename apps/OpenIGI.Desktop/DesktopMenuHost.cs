@@ -184,9 +184,25 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     public void PlaySound(string name) => _logger.Debug(LogCategory, $"sound '{name}' (audio is M7)");
 
     /// <inheritdoc/>
+    /// <summary>Gets or sets what to do when the menus ask to start play.</summary>
+    /// <remarks>
+    /// The Select Mission screen's OK button is <c>Game_SetMission(id)</c> followed by
+    /// <c>MenuManager_LeaveMenus(-1, MENUMANAGER_STARTGAME)</c>, so the mission is already chosen by the
+    /// time this runs and the handler only has to load it.
+    /// </remarks>
+    public Action? StartGame { get; set; }
+
+    /// <inheritdoc/>
     public void LeaveMenus(MenuManagerState state)
     {
         _logger.Information(LogCategory, $"Leaving the menus: {state}.");
+
+        if (state == MenuManagerState.StartGame && StartGame is not null)
+        {
+            StartGame();
+            return;
+        }
+
         _quit();
     }
 

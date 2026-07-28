@@ -37,6 +37,19 @@ public sealed class MenuStringTable
     public static string GetArchiveName(string language = DefaultLanguageDirectory) =>
         $"LOCAL:language/{language}/menusystem.res";
 
+    /// <summary>Builds the name of the archive holding mission names and briefings.</summary>
+    /// <param name="language">The language directory.</param>
+    /// <returns>The archive's resource name.</returns>
+    /// <remarks>
+    /// A mission descriptor's name and description are <em>keys</em>, not literals:
+    /// <c>DefineMission</c> publishes <c>"Mission 1 Name"</c> and <c>"Mission 1 Desc"</c>, and
+    /// <c>language/&lt;lang&gt;/missions.res</c> resolves them the same way
+    /// <c>menusystem.res</c> resolves a menu entry's label. Registering this archive is what turns the
+    /// mission list from placeholder keys into real titles.
+    /// </remarks>
+    public static string GetMissionArchiveName(string language = DefaultLanguageDirectory) =>
+        $"LOCAL:language/{language}/missions.res";
+
     /// <summary>The language constants a menu script may pass to <c>MenuManager_SetLanguage</c>.</summary>
     /// <remarks>
     /// The original registers these six as integer constants 0–5, from a table of 16-byte entries at

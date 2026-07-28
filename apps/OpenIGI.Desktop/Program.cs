@@ -2,11 +2,14 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
+using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Game.Menus;
+using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
@@ -87,10 +90,15 @@ using (window)
     // Entry labels are keys into the language archive, so it has to be registered before the menu can
     // resolve any of them.
     ResourceRegistry resources = new(fileSystem, logger);
-    string languageArchive = MenuStringTable.GetArchiveName();
-    if (fileSystem.Exists(languageArchive))
+
+    // menusystem.res holds the menu's own labels; missions.res holds the mission names and briefings,
+    // because a descriptor's "Mission 1 Name" is a key into it rather than the title itself.
+    foreach (string archive in new[] { MenuStringTable.GetArchiveName(), MenuStringTable.GetMissionArchiveName() })
     {
-        resources.Register(languageArchive, fileSystem.ReadAllBytes(languageArchive));
+        if (fileSystem.Exists(archive))
+        {
+            resources.Register(archive, fileSystem.ReadAllBytes(archive));
+        }
     }
 
     // Settings load from the retail config.qvm, and from our own file in preference to it when one
@@ -108,6 +116,7 @@ using (window)
     ConfigNatives configNatives = new(configuration, configHost);
 
     MenuStringTable strings = new(resources);
+    configHost.Strings = strings;
     SpriteBatch batch = new(device);
     MenuRenderer? renderer = null;
     bool running = true;
@@ -125,6 +134,41 @@ using (window)
     // updates and renders the menu rather than this loop doing either by hand.
     GameLoop loop = new(host: menuHost, renderer: new DesktopRenderScheduler(device), logger: logger);
 
+    // The mission table is built the way the original builds it: walk LOCAL:missions and run every
+    // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
+    // before the Select Mission screen asks for the list.
+    MissionRegistry missions = new(logger);
+    missions.Register(loop.Natives);
+    GameMissionState missionState = new();
+    missionState.Register(loop.Natives);
+
+    try
+    {
+        missions.Scan(fileSystem, resources, loop.Natives);
+        configHost.Missions = missions;
+    }
+    catch (EngineFatalException ex)
+    {
+        logger.Warning("Mission", $"The mission scan failed, so no missions are selectable: {ex.Message}");
+    }
+
+    menuHost.StartGame = () =>
+    {
+        int id = missionState.PendingMissionId;
+        if (!missions.TryGet(id, out MissionDescriptor? chosen))
+        {
+            logger.Warning("Mission", $"Asked to start mission {id}, which is not registered.");
+            return;
+        }
+
+        logger.Information("Mission", $"Starting {chosen}.");
+        LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources, logger);
+        MissionLoader missionLoader = new(missions, fileSystem, resources, levelLoader, logger);
+        LoadedMission loaded = missionLoader.Load(id);
+        logger.Information("Mission", $"Loaded {loaded}.");
+    };
+
     menuHost.LoadMainMenu = () =>
     {
         MenuSystem menu = MenuSystem.Load(
@@ -132,7 +176,13 @@ using (window)
             loop,
             logger);
 
-        renderer = new MenuRenderer(device, fileSystem, menu.Manager.ResourcePath, strings);
+        // The mission briefing images are in their own archive beside the menu's.
+        renderer = new MenuRenderer(
+            device,
+            fileSystem,
+            menu.Manager.ResourcePath,
+            strings,
+            ["LOCAL:menusystem/missionsprites.res"]);
 
         // -screen is a development shortcut, not a game feature: the script decides where the menu
         // opens, and this overwrites that one parameter before the manager reads it.

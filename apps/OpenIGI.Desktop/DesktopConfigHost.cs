@@ -1,6 +1,7 @@
 using System.Globalization;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
+using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Rendering;
 
@@ -18,6 +19,9 @@ namespace OpenIGI.Desktop;
 /// <param name="window">The window, for the size it is running at.</param>
 public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow window) : IConfigHost
 {
+    /// <summary>The id the mission chain starts at. <c>0x417090</c> returns this constant.</summary>
+    private const int FirstMissionId = 1;
+
     private readonly List<(int Width, int Height)> _modes = [];
 
     /// <summary>Gets or sets what to do when the player picks a resolution.</summary>
@@ -81,17 +85,94 @@ public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow wind
     {
     }
 
-    /// <inheritdoc/>
-    /// <remarks>Missions are M8. Nothing here knows what levels the installation holds.</remarks>
-    public IEnumerable<MenuListItem> GetMissions(int reached) => [];
+    /// <summary>Gets or sets the mission table the Select Mission screen reads.</summary>
+    /// <remarks>
+    /// Populated by the startup scan. Left null the screen shows nothing, which is the honest rendering
+    /// of an installation whose missions could not be read.
+    /// </remarks>
+    public MissionRegistry? Missions { get; set; }
+
+    /// <summary>Gets or sets the table that resolves a descriptor's name and description keys.</summary>
+    public MenuStringTable? Strings { get; set; }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Config_FillMissionSelectionBox</c> (<c>0x405660</c>) walks the mission chain from the first id,
+    /// adding each mission's <em>name</em> keyed by its id, and <b>stops after the one the profile has
+    /// reached</b> — which is what keeps a fresh profile from starting mission 14.
+    /// </remarks>
+    public IEnumerable<MenuListItem> GetMissions(int reached)
+    {
+        foreach (MissionDescriptor mission in Chain())
+        {
+            yield return new MenuListItem(mission.Id, Localise(mission.Name));
+            if (mission.Id == reached)
+            {
+                yield break;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Config_FillMissionPictureBox</c> (<c>0x4056F0</c>) walks the whole chain — no progress stop —
+    /// adding each mission's briefing sprite keyed by id, and the box then picks one.
+    /// </remarks>
     public void FillMissionPictures(MenuWindowTask? target)
     {
+        if (target is not PictureBoxTask box)
+        {
+            return;
+        }
+
+        foreach (MissionDescriptor mission in Chain())
+        {
+            box.Entries[mission.Id] = mission.BriefingSprite;
+        }
     }
 
     /// <inheritdoc/>
+    /// <remarks><c>Config_FillMissionTextBox</c> (<c>0x405760</c>), the same walk with the description.</remarks>
     public void FillMissionText(MenuWindowTask? target)
     {
+        if (target is not TextBoxTask box)
+        {
+            return;
+        }
+
+        foreach (MissionDescriptor mission in Chain())
+        {
+            box.Entries[mission.Id] = Localise(mission.Description);
+        }
     }
+
+    /// <summary>Walks the mission chain from the first id, the way all three fill natives do.</summary>
+    /// <remarks>
+    /// The order is the chain's, not the table's: each descriptor names its successor, and the walk ends
+    /// at <see cref="MissionDescriptor.NextMissionUndefined"/>. A descriptor that pointed at itself would
+    /// otherwise spin, so visited ids are tracked.
+    /// </remarks>
+    private IEnumerable<MissionDescriptor> Chain()
+    {
+        if (Missions is null)
+        {
+            yield break;
+        }
+
+        HashSet<int> seen = [];
+        int id = FirstMissionId;
+        while (id != MissionDescriptor.NextMissionUndefined && seen.Add(id))
+        {
+            if (!Missions.TryGet(id, out MissionDescriptor? mission))
+            {
+                yield break;
+            }
+
+            yield return mission;
+            id = mission.NextMissionId;
+        }
+    }
+
+    /// <summary>Resolves a descriptor's name or description, which are language keys rather than text.</summary>
+    private string Localise(string key) => Strings is null ? key : Strings.Get(key);
 }

@@ -132,6 +132,10 @@ public partial class ListBoxTask
         {
             Manager?.PlaySound(MenuManagerTask.MoveSoundName);
             Run(ModifyDataScript);
+
+            // Controls that key off this one — the mission briefing picture and description — re-read
+            // their data, which is what makes them track the selection.
+            Manager?.ReloadScreenData();
         }
     }
 
