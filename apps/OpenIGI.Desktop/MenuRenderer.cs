@@ -160,6 +160,14 @@ public sealed class MenuRenderer : IDisposable
                     MeasureSlideBar(slider);
                     break;
 
+                case ListBoxTask list:
+                    (list.LeftButton.LayoutWidth, list.LeftButton.LayoutHeight) =
+                        SpriteSize(list.LeftButton.SpriteResource);
+                    (list.RightButton.LayoutWidth, list.RightButton.LayoutHeight) =
+                        SpriteSize(list.RightButton.SpriteResource);
+                    list.MeasureFromParts();
+                    break;
+
                 default:
                     break;
             }
@@ -206,6 +214,9 @@ public sealed class MenuRenderer : IDisposable
                     break;
                 case ToggleBoxTask toggle:
                     DrawToggleBox(batch, toggle, screenWidth, screenHeight);
+                    break;
+                case ListBoxTask list:
+                    DrawListBox(batch, list, screenWidth, screenHeight);
                     break;
                 default:
                     break;
@@ -311,6 +322,34 @@ public sealed class MenuRenderer : IDisposable
 
         Draw(batch, font, on, onX, textY, screenWidth, screenHeight);
         Draw(batch, font, off, offX, textY, screenWidth, screenHeight);
+    }
+
+    /// <summary>Draws a list box: its box, its two arrows and the current entry's label.</summary>
+    /// <remarks>
+    /// <c>ListBox_Render</c> (<c>0x41ED70</c>). The label is centred in the whole control rather than
+    /// in the field between the arrows, and is dropped one pixel — both straight from the original.
+    /// </remarks>
+    private void DrawListBox(SpriteBatch batch, ListBoxTask list, int screenWidth, int screenHeight)
+    {
+        list.PlaceParts();
+
+        DrawWindowBox(batch, list, screenWidth, screenHeight);
+        DrawButton(batch, list.LeftButton, screenWidth, screenHeight);
+        DrawButton(batch, list.RightButton, screenWidth, screenHeight);
+
+        BitmapTextRenderer? font = TryGetFont(list.FontResource);
+        if (font is null || list.Items.Count == 0)
+        {
+            return;
+        }
+
+        string label = list.Fit(list.ActiveLabel, candidate => (int)font.Measure(candidate).Width);
+        (float width, float height) = font.Measure(label);
+
+        int x = list.LayoutX + ((list.LayoutWidth - (int)width) / 2);
+        int y = list.LayoutY + 1 + ((list.LayoutHeight - (int)height) / 2);
+
+        Draw(batch, font, label, x, y, screenWidth, screenHeight);
     }
 
     /// <summary>Draws the black backing and green outline every control sits in.</summary>

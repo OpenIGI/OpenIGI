@@ -266,9 +266,15 @@ public partial class ListBoxTask : MenuWindowTask
     [ScriptParam(ScriptParamType.String32, "Font Resource")]
     public string FontResource { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the width in pixels.</summary>
+    /// <summary>Gets or sets the width of the label field between the two arrows.</summary>
+    /// <remarks>
+    /// <b>Not</b> the control's width, which this repo had it as. <c>ListBox_Prepare</c>
+    /// (<c>0x41EA70</c>) keeps it in its own field at <c>+3052</c> and computes the control's width
+    /// from it — arrows plus this plus six. Aliasing the two made the arrows and the label overlap and
+    /// gave the line-up the wrong size to place.
+    /// </remarks>
     [ScriptParam(ScriptParamType.Int32, "Width")]
-    public int Width { get => LayoutWidth; set => LayoutWidth = value; }
+    public int Width { get; set; }
 
     /// <summary>Gets or sets the expression that fills the list.</summary>
     [ScriptParam(ScriptParamType.VarString, "Collect Items Script")]
