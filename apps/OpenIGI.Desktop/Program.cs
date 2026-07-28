@@ -71,14 +71,18 @@ using (window)
         window.SwapBuffers,
         logger);
 
-    // The UI is authored against the original's 640x480 back buffer and is centred, never scaled.
-    device.SetViewport(new Viewport(0, 0, window.Width, window.Height));
-    device.Set2DProjection(MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
-    window.Resized += (_, e) =>
+    // The UI is authored against the original's 640x480 back buffer and is centred, NEVER SCALED, so
+    // the projection is the back buffer's own size and MenuLayout.ToScreen does the centring. Passing
+    // the authored size here instead scales 640x480 up to fill the window AND then scales the centring
+    // offset with it, which puts the menu in the bottom-right corner of anything but a 640x480 window.
+    Resize(window.Width, window.Height);
+    window.Resized += (_, e) => Resize(e.Width, e.Height);
+
+    void Resize(int width, int height)
     {
-        device.SetViewport(new Viewport(0, 0, e.Width, e.Height));
-        device.Set2DProjection(MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
-    };
+        device.SetViewport(new Viewport(0, 0, width, height));
+        device.Set2DProjection(width, height);
+    }
 
     // Entry labels are keys into the language archive, so it has to be registered before the menu can
     // resolve any of them.

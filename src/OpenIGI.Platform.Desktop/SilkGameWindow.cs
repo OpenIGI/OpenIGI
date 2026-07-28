@@ -139,7 +139,7 @@ public sealed class SilkGameWindow : IGameWindow
     {
         IMonitor monitor = _window.Monitor ?? Silk.NET.Windowing.Monitor.GetMainMonitor(_window);
         List<(int Width, int Height, int RefreshRate)> modes = [];
-        
+
         foreach (VideoMode mode in monitor.GetAllVideoModes())
         {
             if (mode.Resolution is { } size)
