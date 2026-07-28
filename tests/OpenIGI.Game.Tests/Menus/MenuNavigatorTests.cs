@@ -20,7 +20,7 @@ public sealed class MenuNavigatorTests
         RunFade(nav);
         Assert.Equal(MenuManagerState.Active, nav.State);
 
-        Assert.True(nav.Pop(reset: false));
+        Assert.True(nav.Pop(save: false));
         Assert.Equal(900, nav.CurrentScreen);
         Assert.Equal(0, nav.Depth);
     }
@@ -32,11 +32,11 @@ public sealed class MenuNavigatorTests
         MenuNavigator nav = new();
         nav.Start(900);
 
-        nav.Request(904, reset: false);
+        nav.Request(904, save: false);
 
         Assert.Equal(904, nav.CurrentScreen);
         Assert.Equal(0, nav.Depth);
-        Assert.False(nav.Pop(reset: false));
+        Assert.False(nav.Pop(save: false));
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class MenuNavigatorTests
         Assert.Equal(MenuManagerState.EnterScreen, nav.ReturnState);
 
         RunFade(nav);
-        nav.Pop(reset: false);
+        nav.Pop(save: false);
         Assert.Equal(MenuManagerState.ReturnToScreen, nav.ReturnState);
     }
 
@@ -94,7 +94,7 @@ public sealed class MenuNavigatorTests
         MenuNavigator nav = new();
         nav.Start(900);
 
-        Assert.False(nav.Pop(reset: false));
+        Assert.False(nav.Pop(save: false));
         Assert.Equal(900, nav.CurrentScreen);
         Assert.Equal(MenuManagerState.Active, nav.State);
     }

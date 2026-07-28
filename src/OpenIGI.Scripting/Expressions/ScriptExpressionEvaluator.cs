@@ -30,6 +30,13 @@ namespace OpenIGI.Scripting.Expressions;
 /// numeric walks. <c>f() / 0</c> never calls <c>f</c>.
 /// </description></item>
 /// <item><description>
+/// <b>An assignment evaluates its right-hand side twice.</b> <c>Expr_Assign</c> evaluates it to store
+/// it, and then the caller evaluates the same node again to produce the assignment's own value —
+/// which is how the walks get a result in <em>their</em> type from a store made in the target's. So
+/// <c>this.nUserData = Config_GetFlags()</c> calls the native twice, and that is not a transcription
+/// slip.
+/// </description></item>
+/// <item><description>
 /// <b>The comma evaluates left first</b>, then right, and yields the right. In the float walk it runs
 /// the <em>integer</em> evaluator on both sides.
 /// </description></item>
@@ -176,8 +183,10 @@ public sealed class ScriptExpressionEvaluator
                 EvalInt(node.Left);
                 return EvalInt(node.Right);
 
+            // The assignment stores, and then the caller evaluates the right-hand side AGAIN for its
+            // own result rather than reusing what was stored. A call there therefore runs twice.
             case ScriptOperator.Assign:
-                return Assign(node).ToInt32();
+                return Assign(node) ? EvalInt(node.Right) : 0;
 
             // Division tests the divisor before it touches the numerator, so a zero divisor means the
             // left operand is never evaluated at all — a call there does not run.
@@ -263,7 +272,7 @@ public sealed class ScriptExpressionEvaluator
                 return EvalInt(node.Right);
 
             case ScriptOperator.Assign:
-                return Assign(node).ToDouble();
+                return Assign(node) ? EvalReal(node.Right) : 0.0;
 
             // Subtraction is the one operator the float walk evaluates left-first.
             case ScriptOperator.Subtract:
@@ -337,8 +346,7 @@ public sealed class ScriptExpressionEvaluator
                         return EvalText(node.Right);
 
                     case ScriptOperator.Assign:
-                        Assign(node);
-                        return EvalText(node.Right);
+                        return Assign(node) ? EvalText(node.Right) : string.Empty;
                 }
 
                 break;
@@ -367,13 +375,13 @@ public sealed class ScriptExpressionEvaluator
 
     /// <summary>Assigns, running the evaluator the <em>target's</em> declared type names.</summary>
     /// <remarks>This is <c>Expr_Assign</c> (<c>0x4B9040</c>), reached identically from all three walks.</remarks>
-    private QvmValue Assign(ScriptExpression node)
+    private bool Assign(ScriptExpression node)
     {
         ScriptExpression? target = node.Left;
         if (target is null || !target.IsAssignable)
         {
             Fail($"Expression: Cannot assign to constant, line {node.Line}");
-            return QvmValue.FromInt32(0);
+            return false;
         }
 
         QvmValue value = _context.GetValueKind(target.Text) switch
@@ -383,13 +391,13 @@ public sealed class ScriptExpressionEvaluator
             _ => QvmValue.FromInt32(EvalInt(node.Right)),
         };
 
-        if (!_context.TrySetValue(target.Text, value))
+        if (_context.TrySetValue(target.Text, value))
         {
-            Fail($"Unknown identifier '{target.Text}' in expression, line {node.Line}");
-            return QvmValue.FromInt32(0);
+            return true;
         }
 
-        return value;
+        Fail($"Unknown identifier '{target.Text}' in expression, line {node.Line}");
+        return false;
     }
 
     private int FailInt(string message)

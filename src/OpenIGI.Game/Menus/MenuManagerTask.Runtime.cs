@@ -20,8 +20,11 @@ namespace OpenIGI.Game.Menus;
 /// </remarks>
 public partial class MenuManagerTask
 {
-    private const string MoveSound = "menu_high";
-    private const string ChooseSound = "menu_sel";
+    /// <summary>The sound a selection move or a control change plays.</summary>
+    public const string MoveSoundName = "menu_high";
+
+    /// <summary>The sound an entry plays when it is chosen and names no sound of its own.</summary>
+    public const string ChooseSoundName = "menu_sel";
 
     private readonly MenuPointer _pointer = new();
     private IMenuHost? _host;
@@ -63,7 +66,10 @@ public partial class MenuManagerTask
         ScriptContext = new MenuScriptContext(Navigator, _logger) { Variables = variables ?? system.Variables };
         _evaluator = new ScriptExpressionEvaluator(ScriptContext);
 
-        Selection.Moved += (_, _) => _host?.PlaySound(MoveSound);
+        Selection.Moved += (_, _) => _host?.PlaySound(MoveSoundName);
+
+        // A pop or a request that asks to commit writes every control on the screen back out first.
+        Navigator.SaveRequested += (_, _) => _current?.SaveData();
         Navigator.Start(CurrentMenuScreen);
         EnterScreen(system.FindScreen(CurrentMenuScreen));
     }
@@ -71,8 +77,15 @@ public partial class MenuManagerTask
     /// <inheritdoc/>
     protected override void OnUpdate()
     {
+        // The manager's own work comes before the walk into its children, so a key posted this tick
+        // is consumed by the control on the same tick rather than the next one. Every menu type puts
+        // its base chain last for the same reason.
+        Step();
         base.OnUpdate();
+    }
 
+    private void Step()
+    {
         if (_host is null || _system is null)
         {
             return;
@@ -143,6 +156,45 @@ public partial class MenuManagerTask
         }
     }
 
+    /// <summary>Plays a menu sound through the shell.</summary>
+    /// <param name="name">The sound resource name.</param>
+    /// <remarks>Controls announce their own changes, so they need this as much as the manager does.</remarks>
+    public void PlaySound(string name) => _host?.PlaySound(name);
+
+    /// <summary>Evaluates one expression as a number, with <c>this</c> bound to a task.</summary>
+    /// <param name="source">The expression source, which may be empty.</param>
+    /// <param name="self">The task <c>this.</c> refers to while it runs.</param>
+    /// <returns>The value, or zero when there is nothing to evaluate.</returns>
+    /// <remarks>
+    /// A control's data expressions go through the float walk, because that is the only one that can
+    /// carry a slider's carret position. An integer result is the caller's truncation, not this one's.
+    /// </remarks>
+    public double EvaluateReal(string source, GameTask? self = null)
+    {
+        if (_evaluator is null || ScriptContext is null || string.IsNullOrWhiteSpace(source))
+        {
+            return 0.0;
+        }
+
+        ScriptContext.Self = self;
+        double result;
+        try
+        {
+            result = _evaluator.EvaluateReal(ScriptExpressionParser.Parse(source, ResolveConstant));
+        }
+        finally
+        {
+            ScriptContext.Self = null;
+        }
+
+        if (_evaluator.HasError)
+        {
+            _logger.Warning("Menu", $"{source}: {_evaluator.ErrorMessage}");
+        }
+
+        return result;
+    }
+
     /// <summary>Resolves the constants a menu expression may name.</summary>
     /// <param name="name">The identifier.</param>
     /// <returns>The value, or <see langword="null"/> when it is not a constant.</returns>
@@ -182,6 +234,10 @@ public partial class MenuManagerTask
         Selection.Rebuild(screen);
 
         RunAction(screen.OnInitData, screen);
+
+        // Every control reads its current value out of the configuration before it is first drawn,
+        // which is the 0x424870 slot run over the screen's subtree.
+        screen.LoadData();
     }
 
     private void HandleKeys()
@@ -197,8 +253,18 @@ public partial class MenuManagerTask
                     RunAction(_current!.OnPressEscape, _current);
                     break;
 
+                // Left, right and enter are posted to the selected window and acted on by its own
+                // update — the manager itself does nothing with them. See MenuWindowCommand.
                 case MenuInputEvent.Enter:
-                    Choose(Selection.Selected);
+                    Post(MenuWindowCommand.Choose);
+                    break;
+
+                case MenuInputEvent.Left:
+                    Post(MenuWindowCommand.Left);
+                    break;
+
+                case MenuInputEvent.Right:
+                    Post(MenuWindowCommand.Right);
                     break;
 
                 default:
@@ -217,7 +283,9 @@ public partial class MenuManagerTask
 
         _pointer.Set(x, y, buttonDown);
 
-        MenuWindowTask? clicked = _current!.HitTestSubtree(_pointer);
+        // The hit-test only sets each window's flags. Acting on a completed click is the control's
+        // own job, in its update, which is where MenuText_Update reads WasClicked.
+        _current!.HitTestSubtree(_pointer);
 
         // A fresh hover moves the shared selection, which is what lights the entry.
         foreach (MenuWindowTask item in Selection.Items)
@@ -228,23 +296,14 @@ public partial class MenuManagerTask
                 break;
             }
         }
-
-        if (clicked is not null)
-        {
-            Choose(clicked);
-        }
     }
 
-    private void Choose(MenuWindowTask? item)
+    private void Post(MenuWindowCommand command)
     {
-        if (item is not MenuTextTask entry || entry.OnClickScript.Length == 0)
+        if (Selection.Selected is { } selected)
         {
-            return;
+            selected.PendingCommand = command;
         }
-
-        _host?.PlaySound(entry.ClickSoundResource.Length > 0 ? entry.ClickSoundResource : ChooseSound);
-        _logger.Information("Menu", $"'{entry.TextResource}' -> {entry.OnClickScript}");
-        RunAction(entry.OnClickScript, entry);
     }
 
     private bool SwapKeysWanted() =>

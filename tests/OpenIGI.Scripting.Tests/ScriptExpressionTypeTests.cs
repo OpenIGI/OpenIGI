@@ -73,8 +73,11 @@ public sealed class ScriptExpressionTypeTests
         // Expr_Assign is reached identically from all three walks and always dispatches on the target.
         double result = evaluator.EvaluateReal(Parse("ControlsMenu_954.nOffset = 7 / 2"));
 
+        // What was stored and what the expression is worth are not the same number: the store went
+        // through the integer walk because the target is an integer, and then the float walk
+        // re-evaluated the right-hand side for its own result. Both are the original's.
         Assert.Equal(3, context.Integers["ControlsMenu_954.nOffset"]);
-        Assert.Equal(3.0, result);
+        Assert.Equal(3.5, result);
     }
 
     [Fact]
@@ -193,6 +196,22 @@ public sealed class ScriptExpressionTypeTests
         evaluator.Evaluate(Parse("backwards(f(1), f(2))"));
 
         Assert.Equal([2, 1], context.CallOrder);
+    }
+
+    [Fact]
+    public void AnAssignmentEvaluatesItsRightHandSideTwice()
+    {
+        TypedContext context = new();
+        context.Integers["this.nUserData"] = 0;
+
+        ScriptExpressionEvaluator evaluator = new(context);
+
+        // Expr_Assign evaluates the node to store it, and the caller then evaluates the same node
+        // again for its own result. A call on the right therefore runs twice, which retail scripts do
+        // have: this.nUserData = Config_GraphicOptionsGetPerformanceFlags().
+        evaluator.Evaluate(Parse("this.nUserData = f(1)"));
+
+        Assert.Equal([1, 1], context.CallOrder);
     }
 
     private static ScriptExpression Parse(string source) => ScriptExpressionParser.Parse(source, _ => null);

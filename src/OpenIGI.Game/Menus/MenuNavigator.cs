@@ -79,16 +79,30 @@ public sealed class MenuNavigator
     }
 
     /// <summary>Returns to the saved screen. <c>MenuManager_PopScreen</c>.</summary>
-    /// <param name="reset">Whether to reset the screen's data, which the native's argument selects.</param>
+    /// <param name="save">
+    /// Whether to commit the screen's controls before leaving it, which the native's argument selects.
+    /// </param>
     /// <returns><see langword="false"/> when the stack was empty, which leaves the manager where it is.</returns>
     /// <remarks>
+    /// <para>
+    /// <b>Correction.</b> The argument was read here as "reset the screen's data" and ignored. It is
+    /// the opposite: <c>MenuManager_PopScreen</c> (<c>0x417710</c>) opens with
+    /// <c>if (Arg_GetInt(args, 0)) MenuManager_SaveScreenData(manager)</c>, so it decides whether the
+    /// controls are written back through their <c>Set Data Script</c>s. It is the OK-versus-Cancel
+    /// distinction, and dropping it made every options screen commit.
+    /// </para>
+    /// <para>
     /// The original decrements its depth unconditionally and would read below the base of the stack;
     /// refusing is the one place this diverges, and it cannot change behaviour on data that balances
     /// its pushes and pops.
+    /// </para>
     /// </remarks>
-    public bool Pop(bool reset)
+    public bool Pop(bool save)
     {
-        _ = reset;
+        if (save)
+        {
+            SaveRequested?.Invoke(this, EventArgs.Empty);
+        }
 
         if (_stack.Count == 0)
         {
@@ -104,15 +118,29 @@ public sealed class MenuNavigator
 
     /// <summary>Replaces the current screen without touching the stack. <c>MenuManager_RequestScreen</c>.</summary>
     /// <param name="screen">The screen id to move to.</param>
-    /// <param name="reset">Whether to reset the screen's data, which the native's second argument selects.</param>
-    public void Request(int screen, bool reset)
+    /// <param name="save">
+    /// Whether to commit the current screen's controls before leaving it, as in <see cref="Pop"/>.
+    /// <c>MenuManager_RequestScreen</c> (<c>0x4174A0</c>) tests its <em>second</em> argument for this
+    /// and takes the target screen from its first.
+    /// </param>
+    public void Request(int screen, bool save)
     {
-        _ = reset;
+        if (save)
+        {
+            SaveRequested?.Invoke(this, EventArgs.Empty);
+        }
 
         CurrentScreen = screen;
         ReturnState = MenuManagerState.EnterScreen;
         State = MenuManagerState.FadingOut;
     }
+
+    /// <summary>Raised when a navigation asks for the current screen to be committed first.</summary>
+    /// <remarks>
+    /// The manager answers by running the <c>0x424880</c> slot over the screen's subtree, which is what
+    /// writes each control back through its <c>Set Data Script</c>.
+    /// </remarks>
+    public event EventHandler? SaveRequested;
 
     /// <summary>Shows a popup over the current screen. <c>MenuManager_ActivatePopupScreen</c>.</summary>
     /// <param name="screen">The popup screen id.</param>

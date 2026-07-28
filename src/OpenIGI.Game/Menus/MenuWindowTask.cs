@@ -96,6 +96,86 @@ public abstract class MenuWindowTask : ContainerTask
     /// <remarks>Field <c>+75</c>. A click completes on <em>release</em> inside a latched item, not on press.</remarks>
     public bool WasClicked { get; private set; }
 
+    /// <summary>Gets or sets the key the manager has posted for this window to act on.</summary>
+    /// <remarks>
+    /// Field <c>+80</c>. See <see cref="MenuWindowCommand"/> — the manager posts, the control consumes.
+    /// Note that only <c>MenuText_Update</c> (<c>0x4207E0</c>) clears it afterwards; a slider and a
+    /// toggle leave it set, and rely on their own guards to make a repeat harmless.
+    /// </remarks>
+    public MenuWindowCommand PendingCommand { get; set; }
+
+    /// <summary>Gets the manager this window belongs to, by walking up the tree.</summary>
+    /// <remarks>
+    /// Field <c>+68</c> in the original, which the base constructor threads down from the parent. Here
+    /// the tree already has the parent links, so it is a walk rather than a stored copy.
+    /// </remarks>
+    public MenuManagerTask? Manager
+    {
+        get
+        {
+            for (GameTask? task = Parent; task is not null; task = task.Parent)
+            {
+                if (task is MenuManagerTask manager)
+                {
+                    return manager;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>Seeds this window from its <c>Get Data Script</c>, then does the same for its children.</summary>
+    /// <remarks>
+    /// The <c>0x424870</c> class slot. The manager runs it over a screen on the way in, so each control
+    /// reads its current value out of the configuration before it is first drawn. The base does nothing
+    /// but recurse; a control with data overrides <see cref="OnLoadData"/>.
+    /// </remarks>
+    public void LoadData()
+    {
+        OnLoadData();
+        foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>())
+        {
+            child.LoadData();
+        }
+    }
+
+    /// <summary>Writes this window back through its <c>Set Data Script</c>, then its children.</summary>
+    /// <remarks>The <c>0x424880</c> class slot, the mirror of <see cref="LoadData"/>.</remarks>
+    public void SaveData()
+    {
+        OnSaveData();
+        foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>())
+        {
+            child.SaveData();
+        }
+    }
+
+    /// <summary>Reads this window's value from the script. The base does nothing.</summary>
+    protected virtual void OnLoadData()
+    {
+    }
+
+    /// <summary>Writes this window's value back to the script. The base does nothing.</summary>
+    protected virtual void OnSaveData()
+    {
+    }
+
+    /// <summary>Runs one of this window's expressions with <c>this</c> bound to it.</summary>
+    /// <param name="source">The expression source, which may be empty.</param>
+    /// <remarks>The original's <c>Expression_Run(&amp;field, this)</c>, which every control uses.</remarks>
+    protected void Run(string source) => Manager?.RunAction(source, this);
+
+    /// <summary>Evaluates one of this window's expressions as a number, with <c>this</c> bound to it.</summary>
+    /// <param name="source">The expression source.</param>
+    /// <returns>The value, or zero when there is nothing to evaluate.</returns>
+    /// <remarks>
+    /// The original evaluates a control's data expressions through the <em>float</em> walk and truncates
+    /// where it wants an integer — <c>SlideBar_LoadData</c> (<c>0x41FF30</c>) does exactly that — so a
+    /// <c>Get Data Script</c> returning <c>0.75</c> keeps its fraction.
+    /// </remarks>
+    protected double Evaluate(string source) => Manager?.EvaluateReal(source, this) ?? 0.0;
+
     /// <summary>Tests this item's rectangle against the pointer and updates its interaction flags.</summary>
     /// <param name="pointer">The pointer state.</param>
     /// <returns><see langword="true"/> when the item completed a click.</returns>
