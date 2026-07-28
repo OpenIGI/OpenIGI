@@ -45,7 +45,7 @@ if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
 VirtualFileSystem fileSystem = new(logger);
 fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
 
-IPlatformHost platform = new DesktopPlatformHost();
+DesktopPlatformHost platform = new();
 WindowSettings settings = new(
     Title: "OpenIGI",
     Width: options.Width,
