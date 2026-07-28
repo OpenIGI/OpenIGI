@@ -26,6 +26,35 @@ public sealed class BoneSkeleton
         _restTranslations = restTranslations;
     }
 
+    /// <summary>Builds a skeleton directly, for tools and tests.</summary>
+    /// <param name="parents">One parent index per bone, <see cref="NoParent"/> for a root.</param>
+    /// <param name="restTranslations">One rest translation per bone.</param>
+    /// <param name="id">The skeleton id.</param>
+    /// <returns>The skeleton.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The two lists differ in length, or either is empty.</exception>
+    public static BoneSkeleton Create(
+        IReadOnlyList<int> parents,
+        IReadOnlyList<Vector3f> restTranslations,
+        int id = 0)
+    {
+        ArgumentNullException.ThrowIfNull(parents);
+        ArgumentNullException.ThrowIfNull(restTranslations);
+        if (parents.Count == 0)
+        {
+            throw new ArgumentException("A skeleton needs at least one bone.", nameof(parents));
+        }
+
+        if (parents.Count != restTranslations.Count)
+        {
+            throw new ArgumentException(
+                $"{parents.Count} parents against {restTranslations.Count} rest translations.",
+                nameof(restTranslations));
+        }
+
+        return new BoneSkeleton(id, [.. parents], [.. restTranslations]);
+    }
+
     /// <summary>Gets the skeleton id the file declares, which matches the file's name.</summary>
     public int Id { get; }
 
