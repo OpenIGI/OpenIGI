@@ -97,9 +97,8 @@ public sealed class RetailLevelLoadGoldenTests
             Loop = new GameLoop(Time);
 
             // Level data spawns Container, Static and Dynamic without declaring them, and reads TRUE and
-            // FALSE. Everything else it declares itself at the top of the file.
-            Loop.Natives.RegisterConstant("TRUE", 1);
-            Loop.Natives.RegisterConstant("FALSE", 0);
+            // FALSE. Everything else it declares itself at the top of the file. The two constants now
+            // come from GameLoop, which is where the original's script init registers them.
 
             LevelRoot = (LevelTask)Loop.Tasks.New(Loop.Tasks.Root, Loop.Types.Get(EngineTaskTypes.Level));
 

@@ -71,6 +71,12 @@ public sealed class GameLoop
         TaskCommands.Register(Natives, Flow);
         FlowCommands = new FlowScriptCommands(Flow);
         FlowCommands.Register(Natives);
+
+        // The script system registers these itself during its own init (0x4B8BC0), before any script
+        // runs, so they are part of the language rather than of any one subsystem. Retail level data
+        // leans on them heavily: objects.qvm faults on the very first TRUE without them.
+        Natives.RegisterConstant("TRUE", 1);
+        Natives.RegisterConstant("FALSE", 0);
     }
 
     /// <summary>The name the original registers the root task type under.</summary>

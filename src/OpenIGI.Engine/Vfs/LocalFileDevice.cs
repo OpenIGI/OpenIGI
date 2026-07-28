@@ -67,6 +67,20 @@ public sealed class LocalFileDevice : IFileDevice
             .Select(file => ResourcePath.Normalize(Path.GetRelativePath(RootDirectory, file)));
     }
 
+    /// <inheritdoc/>
+    public IEnumerable<string> EnumerateDirectories(string path)
+    {
+        string directory = ToFullPath(path);
+        if (!Directory.Exists(directory))
+        {
+            return [];
+        }
+
+        return Directory
+            .EnumerateDirectories(directory)
+            .Select(child => ResourcePath.Normalize(Path.GetRelativePath(RootDirectory, child)));
+    }
+
     /// <summary>Maps a device-relative path to an absolute path below <see cref="RootDirectory"/>.</summary>
     /// <param name="path">The device-relative path.</param>
     /// <returns>The absolute path.</returns>

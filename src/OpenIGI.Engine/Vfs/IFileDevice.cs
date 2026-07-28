@@ -37,4 +37,14 @@ public interface IFileDevice
     /// <param name="searchPattern">A pattern such as <c>*.res</c>.</param>
     /// <returns>The matching paths relative to the device, or an empty sequence when the directory is absent.</returns>
     IEnumerable<string> EnumerateFiles(string path, string searchPattern);
+
+    /// <summary>Enumerates the immediate sub-directories of a directory on this device.</summary>
+    /// <param name="path">The directory path relative to the device.</param>
+    /// <returns>The sub-directory paths relative to the device, or an empty sequence when the directory is absent.</returns>
+    /// <remarks>
+    /// The original's directory walker (<c>0x4B1420</c>) recurses one level at a time, calling its
+    /// callback for each entry and descending when the entry is a directory. Mission discovery is built
+    /// on exactly that shape, so the device has to be able to report directories as well as files.
+    /// </remarks>
+    IEnumerable<string> EnumerateDirectories(string path);
 }

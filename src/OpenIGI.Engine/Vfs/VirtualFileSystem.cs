@@ -254,6 +254,25 @@ public sealed class VirtualFileSystem
         return results;
     }
 
+    /// <summary>Enumerates the immediate sub-directories of a directory, across every alias variant.</summary>
+    /// <param name="name">The directory name, for example <c>LOCAL:missions</c>.</param>
+    /// <returns>The matching device-prefixed directory paths.</returns>
+    /// <exception cref="EngineFatalException">A candidate names a device that is not registered.</exception>
+    public IReadOnlyList<string> EnumerateDirectories(string name)
+    {
+        List<string> results = [];
+        foreach (string candidate in ResolveCandidates(name))
+        {
+            IFileDevice device = RequireDevice(candidate, out string devicePath);
+            foreach (string child in device.EnumerateDirectories(devicePath))
+            {
+                results.Add($"{device.Name}{ResourcePath.NamespaceSeparator}{child}");
+            }
+        }
+
+        return results;
+    }
+
     private static string DeviceNameOf(string path)
     {
         int separator = path.IndexOf(ResourcePath.NamespaceSeparator, StringComparison.Ordinal);
