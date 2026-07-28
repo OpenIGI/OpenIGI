@@ -364,14 +364,13 @@ public partial class MenuManagerTask
         }
     }
 
-    /// <summary>Routes typed characters to the selected field, if one is selected.</summary>
+    /// <summary>Routes typed characters to the selected field, if one is editing.</summary>
     /// <remarks>
-    /// Only an <c>InputBox</c> takes text. Backspace arrives as a character rather than as a command,
-    /// because that is how a text field sees it.
+    /// Only an <c>InputBox</c> takes text, and only while it owns the keyboard. A field that is merely
+    /// selected does not swallow what the player types.
     /// </remarks>
     private void HandleTyping()
     {
-        // Only a field that is actually editing takes text; a merely selected one does not.
         if (Selection.Selected is not InputBoxTask { IsEditing: true } field)
         {
             return;
