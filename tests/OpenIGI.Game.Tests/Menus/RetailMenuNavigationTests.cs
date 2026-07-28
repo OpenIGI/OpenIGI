@@ -82,6 +82,23 @@ public sealed class RetailMenuNavigationTests
     }
 
     [RequiresGameDataFact]
+    public void TheMainScreenIsABackgroundAndTextAndNothingElse()
+    {
+        // Closing an assumption rather than an omission. The main screen's background is mainmenu.pic
+        // and its children are frames and text only - no PictureBox, and "logo" appears nowhere in
+        // either menu script. logo.pic ships in menusystem.res but the main menu does not draw it, so
+        // a shell that draws one is adding something the data does not ask for.
+        Harness menu = Load();
+
+        Assert.Equal("mainmenu.pic", menu.Screen.Background);
+        Assert.All(
+            Descend(menu.Screen),
+            child => Assert.True(
+                child is MenuFrameTask or MenuTextTask,
+                $"unexpected {child.GetType().Name} on the main screen"));
+    }
+
+    [RequiresGameDataFact]
     public void EveryEntryOnTheMainScreenHasALabelAndAnAction()
     {
         Harness menu = Load();
