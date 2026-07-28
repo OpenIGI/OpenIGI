@@ -37,14 +37,16 @@ public sealed class MefModel
         int triangleCount,
         MefVertex[] vertices,
         IReadOnlyList<MefDrawRecord> drawRecords,
-        MefLightmapInfo? lightmapInfo)
+        IReadOnlyList<MefLightmapPage> lightmapPages,
+        IReadOnlyList<MefAttachment> attachments)
     {
         Container = container;
         Format = format;
         TriangleCount = triangleCount;
         _vertices = vertices;
         DrawRecords = drawRecords;
-        LightmapInfo = lightmapInfo;
+        LightmapPages = lightmapPages;
+        Attachments = attachments;
     }
 
     /// <summary>Gets the underlying container.</summary>
@@ -62,11 +64,28 @@ public sealed class MefModel
     /// <summary>Gets the draw records, in file order.</summary>
     public IReadOnlyList<MefDrawRecord> DrawRecords { get; }
 
-    /// <summary>Gets the object-lightmap descriptor, present only on <see cref="MefMeshFormat.Lightmapped"/> models.</summary>
-    public MefLightmapInfo? LightmapInfo { get; }
+    /// <summary>Gets the baked-lightmap pages, empty on models that carry none.</summary>
+    /// <remarks>
+    /// Nearly every lightmapped model has exactly one page: of the 5628 in the retail corpus, 5520 have
+    /// one, 96 have none, and only twelve have more.
+    /// </remarks>
+    public IReadOnlyList<MefLightmapPage> LightmapPages { get; }
+
+    /// <summary>Gets the attachment points, in file order; see <see cref="MefAttachment"/>.</summary>
+    public IReadOnlyList<MefAttachment> Attachments { get; }
 
     /// <summary>Gets a value indicating whether the model has any geometry.</summary>
     public bool IsEmpty => _vertices.Length == 0;
+
+    /// <summary>Gets a value indicating whether the model encloses space — a room rather than a prop.</summary>
+    /// <remarks>
+    /// Every model carries a <c>TROP</c> chunk but only 41 of level 1's 595 fill it, and those are exactly
+    /// the buildings with interiors. The original spawns such a model as a <c>Sector</c> rather than a
+    /// plain object (<c>0x4DFA50</c>), which puts it on a second child list that is walked after the
+    /// others — and that ordering is what the baked lightmap numbering follows.
+    /// </remarks>
+    public bool IsSector =>
+        Container.TryFindChunk(MefTags.Portals, out IlffChunk portals) && portals.Payload.Length > 0;
 
     /// <summary>Parses a model.</summary>
     /// <param name="data">The <c>.mef</c> bytes, starting at the ILFF header.</param>
@@ -113,7 +132,7 @@ public sealed class MefModel
         int headerVertexCount = ReadInt32(mesh[100..], "the mesh vertex count");
 
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
-        (int vertexCount, int subMeshCount) = ReadRenderHeader(render, format);
+        (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format);
 
         if (vertexCount != headerVertexCount)
         {
@@ -122,23 +141,23 @@ public sealed class MefModel
         }
 
         MefVertex[] vertices = ReadVertices(RequireChunk(container, MefTags.Vertices).Span, format, vertexCount);
+        ReadOnlyCollection<MefLightmapPage> pages = ReadLightmapPages(container, lightmapCount);
         IReadOnlyList<MefDrawRecord> records = ReadDrawRecords(
             RequireChunk(container, MefTags.DrawRecords),
             format,
             subMeshCount,
             vertexCount,
-            triangleCount);
+            triangleCount,
+            pages.Count);
 
-        MefLightmapInfo? lightmap = null;
-        if (container.TryFindChunk(MefTags.LightmapInfo, out IlffChunk chunk) && chunk.Payload.Length >= 4)
-        {
-            ReadOnlySpan<byte> span = chunk.Payload.Span;
-            lightmap = new MefLightmapInfo(
-                BinaryPrimitives.ReadUInt16LittleEndian(span),
-                BinaryPrimitives.ReadUInt16LittleEndian(span[2..]));
-        }
-
-        return new MefModel(container, format, triangleCount, vertices, records, lightmap);
+        return new MefModel(
+            container,
+            format,
+            triangleCount,
+            vertices,
+            records,
+            pages,
+            ReadAttachments(container));
     }
 
     /// <summary>Gets the payload of a chunk this type does not decode, such as collision or portal data.</summary>
@@ -166,10 +185,13 @@ public sealed class MefModel
             ? chunk.Payload
             : throw new PackFormatException($"The model has no '{tag}' chunk.");
 
-    private static (int VertexCount, int SubMeshCount) ReadRenderHeader(ReadOnlySpan<byte> render, MefMeshFormat format)
+    private static (int VertexCount, int SubMeshCount, int LightmapCount) ReadRenderHeader(
+        ReadOnlySpan<byte> render,
+        MefMeshFormat format)
     {
         // Field positions shift with the format; the trailing 24 bytes are the original's runtime binding
-        // block and are zero on disk. Sizes are 48 bytes for Diffuse and 56 for the other two.
+        // block and are zero on disk. Sizes are 48 bytes for Diffuse and 56 for the other two. Only the
+        // lightmapped layout has a page count, and it sits ahead of the counts the other two share.
         (int subMeshOffset, int vertexOffset, int expectedSize) = format switch
         {
             MefMeshFormat.Diffuse => (8, 12, 48),
@@ -184,7 +206,82 @@ public sealed class MefModel
         }
 
         return (ReadInt32(render[vertexOffset..], "the render vertex count"),
-            ReadInt32(render[subMeshOffset..], "the render sub-mesh count"));
+            ReadInt32(render[subMeshOffset..], "the render sub-mesh count"),
+            format == MefMeshFormat.Lightmapped ? ReadInt32(render[4..], "the render lightmap count") : 0);
+    }
+
+    private static ReadOnlyCollection<MefLightmapPage> ReadLightmapPages(IlffContainer container, int declared)
+    {
+        if (!container.TryFindChunk(MefTags.LightmapPages, out IlffChunk chunk))
+        {
+            return declared == 0
+                ? ReadOnlyCollection<MefLightmapPage>.Empty
+                : throw new PackFormatException(
+                    $"The render header declares {declared} lightmap pages but there is no '{MefTags.LightmapPages}' chunk.");
+        }
+
+        ReadOnlySpan<byte> span = chunk.Payload.Span;
+        if (span.Length != declared * MefLightmapPage.Stride)
+        {
+            throw new PackFormatException(
+                $"The '{MefTags.LightmapPages}' chunk is {span.Length} bytes but {declared} pages need "
+                + $"{declared * MefLightmapPage.Stride}.");
+        }
+
+        MefLightmapPage[] pages = new MefLightmapPage[declared];
+        for (int i = 0; i < declared; i++)
+        {
+            ReadOnlySpan<byte> entry = span.Slice(i * MefLightmapPage.Stride, MefLightmapPage.Stride);
+            pages[i] = new MefLightmapPage(
+                BinaryPrimitives.ReadUInt16LittleEndian(entry),
+                BinaryPrimitives.ReadUInt16LittleEndian(entry[2..]));
+        }
+
+        return new ReadOnlyCollection<MefLightmapPage>(pages);
+    }
+
+    private static ReadOnlyCollection<MefAttachment> ReadAttachments(IlffContainer container)
+    {
+        if (!container.TryFindChunk(MefTags.Attachments, out IlffChunk chunk) || chunk.Payload.Length == 0)
+        {
+            return ReadOnlyCollection<MefAttachment>.Empty;
+        }
+
+        ReadOnlySpan<byte> span = chunk.Payload.Span;
+        if (span.Length % MefAttachment.Stride != 0)
+        {
+            throw new PackFormatException(
+                $"The '{MefTags.Attachments}' chunk is {span.Length} bytes, not a whole number of "
+                + $"{MefAttachment.Stride}-byte records.");
+        }
+
+        MefAttachment[] attachments = new MefAttachment[span.Length / MefAttachment.Stride];
+        Span<float> rotation = stackalloc float[Matrix3f.ComponentCount];
+        for (int i = 0; i < attachments.Length; i++)
+        {
+            ReadOnlySpan<byte> record = span.Slice(i * MefAttachment.Stride, MefAttachment.Stride);
+            for (int j = 0; j < rotation.Length; j++)
+            {
+                rotation[j] = BinaryPrimitives.ReadSingleLittleEndian(record[(28 + (j * 4))..]);
+            }
+
+            attachments[i] = new MefAttachment(
+                ReadName(record[..MefAttachment.NameSize]),
+                new Vector3f(
+                    BinaryPrimitives.ReadSingleLittleEndian(record[16..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(record[20..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(record[24..])),
+                Matrix3f.FromRowMajor(rotation),
+                BinaryPrimitives.ReadInt32LittleEndian(record[64..]));
+        }
+
+        return new ReadOnlyCollection<MefAttachment>(attachments);
+    }
+
+    private static string ReadName(ReadOnlySpan<byte> field)
+    {
+        int end = field.IndexOf((byte)0);
+        return System.Text.Encoding.ASCII.GetString(end < 0 ? field : field[..end]);
     }
 
     private static MefVertex[] ReadVertices(ReadOnlySpan<byte> data, MefMeshFormat format, int count)
@@ -230,7 +327,8 @@ public sealed class MefModel
         MefMeshFormat format,
         int subMeshCount,
         int vertexCount,
-        int triangleCount)
+        int triangleCount,
+        int lightmapPageCount)
     {
         ReadOnlySpan<byte> span = chunk.Span;
         int headerSize = MefDrawRecord.HeaderSizeOf(format);
@@ -261,8 +359,15 @@ public sealed class MefModel
                 BinaryPrimitives.ReadSingleLittleEndian(header[8..]));
             int indexCount = BinaryPrimitives.ReadUInt16LittleEndian(header[12..]);
             int materialSlot = BinaryPrimitives.ReadUInt16LittleEndian(header[16..]);
+            int lightmapPage = relative ? BinaryPrimitives.ReadUInt16LittleEndian(header[18..]) : 0;
             int baseVertex = BinaryPrimitives.ReadUInt16LittleEndian(header[(relative ? 20 : 18)..]);
             int span0 = relative ? BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) : 0;
+
+            if (lightmapPage >= lightmapPageCount && lightmapPage != 0)
+            {
+                throw new PackFormatException(
+                    $"Draw record {i} samples lightmap page {lightmapPage} but the model has {lightmapPageCount}.");
+            }
 
             if (indexCount % 3 != 0)
             {
@@ -292,7 +397,7 @@ public sealed class MefModel
                 indices[j] = index;
             }
 
-            records[i] = new MefDrawRecord(centre, materialSlot, baseVertex, span0, relative, indices);
+            records[i] = new MefDrawRecord(centre, materialSlot, lightmapPage, baseVertex, span0, relative, indices);
             triangles += indexCount / 3;
             offset += headerSize + indexBytes;
         }

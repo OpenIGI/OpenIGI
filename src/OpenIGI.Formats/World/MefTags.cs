@@ -40,8 +40,8 @@ public static class MefTags
     /// <summary>Chunk <c>DNER</c> (<c>REND</c>): draw records and 16-bit indices.</summary>
     public static FourCc DrawRecords { get; } = FourCc.FromString("DNER");
 
-    /// <summary>Chunk <c>PMTL</c> (<c>LTMP</c>): the object-lightmap descriptor.</summary>
-    public static FourCc LightmapInfo { get; } = FourCc.FromString("PMTL");
+    /// <summary>Chunk <c>PMTL</c> (<c>LTMP</c>): one size entry per baked object-lightmap page.</summary>
+    public static FourCc LightmapPages { get; } = FourCc.FromString("PMTL");
 
     /// <summary>Chunk <c>HSMC</c> (<c>CMSH</c>): the collision mesh header.</summary>
     public static FourCc CollisionMesh { get; } = FourCc.FromString("HSMC");

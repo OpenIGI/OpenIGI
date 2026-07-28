@@ -29,6 +29,7 @@ public sealed class LoadedPack
     private const string LogCategory = "Pack";
 
     private readonly Dictionary<string, MefModel> _models;
+    private HashSet<string>? _registered;
 
     private LoadedPack(
         string name,
@@ -144,7 +145,16 @@ public sealed class LoadedPack
     /// <param name="name">The model name, for example <c>210_01_1</c>.</param>
     /// <param name="model">Receives the model when the pack holds it.</param>
     /// <returns><see langword="true"/> when the model resolved.</returns>
-    public bool TryGetModel(string name, out MefModel? model) => _models.TryGetValue(name, out model);
+    public bool TryGetModel(string name, out MefModel? model)
+    {
+        // A name resolves only if the pack registered it. The original searches a per-pack list built from
+        // MODS (0x4CEE30), and a models archive can hold entries the pack never names — which matters
+        // because a LOD chain ends at the first name that does not resolve, so an unregistered stray would
+        // lengthen the chain and shift every baked lightmap index after it.
+        _registered ??= new HashSet<string>(Pack.ModelNames, StringComparer.OrdinalIgnoreCase);
+        model = null;
+        return _registered.Contains(name) && _models.TryGetValue(name, out model);
+    }
 
     /// <summary>Resolves the diffuse texture a draw record samples.</summary>
     /// <param name="instance">The instance being drawn.</param>

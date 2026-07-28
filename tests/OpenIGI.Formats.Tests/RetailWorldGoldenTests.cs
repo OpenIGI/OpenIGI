@@ -115,7 +115,26 @@ public sealed class RetailWorldGoldenTests
                     // A lightmapped model's records tile its vertex array end to end.
                     if (model.Format == MefMeshFormat.Lightmapped)
                     {
-                        Assert.NotNull(model.LightmapInfo);
+                        // The page table, the render header's page count and the largest page any draw
+                        // record names all agree, for every lightmapped model in the corpus. That triple
+                        // agreement is what identifies the record field at offset 18 as a page index.
+                        int highestPage = -1;
+                        foreach (MefDrawRecord record in model.DrawRecords)
+                        {
+                            highestPage = Math.Max(highestPage, record.LightmapPage);
+                        }
+
+                        if (model.DrawRecords.Count > 0)
+                        {
+                            Assert.Equal(model.LightmapPages.Count, highestPage + 1);
+                        }
+
+                        foreach (MefLightmapPage page in model.LightmapPages)
+                        {
+                            Assert.InRange(page.Width, 1, 256);
+                            Assert.InRange(page.Height, 1, 256);
+                        }
+
                         int running = 0;
                         foreach (MefDrawRecord record in model.DrawRecords)
                         {
@@ -127,7 +146,7 @@ public sealed class RetailWorldGoldenTests
                     }
                     else
                     {
-                        Assert.Null(model.LightmapInfo);
+                        Assert.Empty(model.LightmapPages);
                     }
                 }
                 catch (Exception ex) when (ex is PackFormatException or IlffFormatException)

@@ -32,6 +32,7 @@ public readonly record struct MefDrawRecord
     /// <summary>Initializes a new instance of the <see cref="MefDrawRecord"/> struct.</summary>
     /// <param name="centre">The record's centre point.</param>
     /// <param name="materialSlot">The material slot, or <see cref="NoMaterialSlot"/>.</param>
+    /// <param name="lightmapPage">The lightmap page this record samples, or zero when it has none.</param>
     /// <param name="baseVertex">The first vertex this record uses.</param>
     /// <param name="vertexSpan">The number of vertices from <paramref name="baseVertex"/>, or zero when unknown.</param>
     /// <param name="indicesAreRelative">Whether indices are relative to <paramref name="baseVertex"/>.</param>
@@ -39,6 +40,7 @@ public readonly record struct MefDrawRecord
     public MefDrawRecord(
         Vector3f centre,
         int materialSlot,
+        int lightmapPage,
         int baseVertex,
         int vertexSpan,
         bool indicesAreRelative,
@@ -46,6 +48,7 @@ public readonly record struct MefDrawRecord
     {
         Centre = centre;
         MaterialSlot = materialSlot;
+        LightmapPage = lightmapPage;
         BaseVertex = baseVertex;
         VertexSpan = vertexSpan;
         IndicesAreRelative = indicesAreRelative;
@@ -61,6 +64,15 @@ public readonly record struct MefDrawRecord
     /// the same model drawn by two instances can use different textures. Records may share a slot.
     /// </remarks>
     public int MaterialSlot { get; }
+
+    /// <summary>Gets the index into <see cref="MefModel.LightmapPages"/> of the page this record samples.</summary>
+    /// <remarks>
+    /// Only <see cref="MefMeshFormat.Lightmapped"/> models have this field, at offset 18 of the record; the
+    /// other formats have no lightmap and report zero. The original selects records by comparing it to the
+    /// page it is baking (<c>0x523D40</c>), and across the whole retail corpus the largest value a model
+    /// uses is exactly one less than its page count.
+    /// </remarks>
+    public int LightmapPage { get; }
 
     /// <summary>Gets the first vertex this record uses.</summary>
     public int BaseVertex { get; }
