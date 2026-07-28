@@ -103,6 +103,28 @@ public sealed class GameClock
     /// <summary>Gets the current wall-clock reading.</summary>
     public int Now => _time.Milliseconds;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether a frame may render more than once between simulation
+    /// ticks.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Off, which is the original's behaviour, <see cref="HasRendered"/> latches after each render and
+    /// the next one has to wait for a tick — so presentation is capped at <see cref="TickRate"/>, 30 Hz.
+    /// That was right for a 2000-era 60 Hz CRT and is visibly wrong on a 144 Hz panel, where it shows as
+    /// judder rather than as a low number.
+    /// </para>
+    /// <para>
+    /// On, the arbiter renders on every frame a tick is not due for, so presentation is bounded by vsync
+    /// instead. It changes no simulation timing whatsoever: the tick deadlines are absolute and derived
+    /// from <see cref="TickCount"/>, ticks still take priority over renders, and a render advances no
+    /// state — so the determinism contract in the original is untouched and
+    /// the same input produces the same ticks. What it does change is that anything reading wall clock
+    /// per frame rather than per tick — the fly-through camera — moves smoothly.
+    /// </para>
+    /// </remarks>
+    public bool RenderEveryFrame { get; set; }
+
     /// <summary>Gets the deadline for the next tick, in the time source's milliseconds.</summary>
     /// <remarks>
     /// <para>
@@ -140,7 +162,7 @@ public sealed class GameClock
             return FrameAction.Tick;
         }
 
-        return HasRendered ? FrameAction.Idle : FrameAction.Render;
+        return HasRendered && !RenderEveryFrame ? FrameAction.Idle : FrameAction.Render;
     }
 
     /// <summary>Determines whether a simulation tick may run at a given clock reading.</summary>

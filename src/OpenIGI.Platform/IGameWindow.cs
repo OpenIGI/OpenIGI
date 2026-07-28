@@ -37,8 +37,23 @@ public interface IGameWindow : IDisposable
     /// <summary>Gets the client area height in pixels.</summary>
     int Height { get; }
 
-    /// <summary>Gets or sets a value indicating whether the window covers the screen.</summary>
-    bool IsFullscreen { get; set; }
+    /// <summary>Gets or sets how the window relates to the screen it is on.</summary>
+    /// <remarks>
+    /// Assigning this switches modes in place; the framebuffer follows through <see cref="Resized"/>,
+    /// so a caller does not have to rebuild the device.
+    /// </remarks>
+    WindowMode Mode { get; set; }
+
+    /// <summary>Gets a value indicating whether the window covers the screen.</summary>
+    bool IsFullscreen => Mode != WindowMode.Windowed;
+
+    /// <summary>Gets the refresh rate the window is presenting at, in hertz, or zero if unknown.</summary>
+    /// <remarks>
+    /// Under <see cref="WindowMode.BorderlessFullscreen"/> this is the desktop's rate, which is the only
+    /// one a composited window can be presented at — a borderless window cannot drive the display faster
+    /// than the desktop it sits on.
+    /// </remarks>
+    int RefreshRate { get; }
 
     /// <summary>Gets or sets a value indicating whether the system cursor is shown over the window.</summary>
     bool CursorVisible { get; set; }
@@ -76,7 +91,8 @@ public interface IGameWindow : IDisposable
     /// <param name="height">The new height in pixels.</param>
     /// <remarks>
     /// What the graphics screen's resolution list acts on. The back buffer follows through the
-    /// <see cref="Resized"/> event, so a caller does not have to rebuild the device.
+    /// <see cref="Resized"/> event, so a caller does not have to rebuild the device. It has no effect
+    /// under <see cref="WindowMode.BorderlessFullscreen"/>, whose size is the desktop's by definition.
     /// </remarks>
     void Resize(int width, int height);
 

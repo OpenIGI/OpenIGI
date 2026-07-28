@@ -1,13 +1,16 @@
+using OpenIGI.Platform;
+
 namespace OpenIGI.Desktop;
 
 /// <summary>
 /// The command-line options the desktop shell understands.
 /// </summary>
 /// <param name="GamePath">The original installation to read data from.</param>
-/// <param name="Fullscreen">Whether to open fullscreen.</param>
-/// <param name="Width">The window client width in pixels.</param>
-/// <param name="Height">The window client height in pixels.</param>
+/// <param name="Mode">How the window relates to the screen.</param>
+/// <param name="Width">The window client width in pixels, or zero for the monitor's own.</param>
+/// <param name="Height">The window client height in pixels, or zero for the monitor's own.</param>
 /// <param name="VSync">Whether presentation waits for the vertical blank.</param>
+/// <param name="UncapFrameRate">Whether to render on every frame rather than once per simulation tick.</param>
 /// <param name="ScreenshotPath">Where to write a capture of the first rendered frames, or <see langword="null"/> to run normally.</param>
 /// <param name="ExitAfterFrames">Quit after this many rendered frames, or zero to run until closed.</param>
 /// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
@@ -25,10 +28,11 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 public readonly record struct DesktopOptions(
     string? GamePath,
-    bool Fullscreen,
+    WindowMode Mode,
     int Width,
     int Height,
     bool VSync,
+    bool UncapFrameRate,
     string? ScreenshotPath,
     int ExitAfterFrames,
     int StartScreen,
@@ -51,10 +55,17 @@ public readonly record struct DesktopOptions(
         ArgumentNullException.ThrowIfNull(args);
 
         string? gamePath = Environment.GetEnvironmentVariable(GamePathVariable);
-        bool fullscreen = false;
+
+        // Null until a mode flag is seen, so -size can imply windowed without overriding an explicit
+        // -borderless that came before or after it.
+        WindowMode? mode = null;
         bool vsync = true;
-        int width = 640;
-        int height = 480;
+        bool uncapFrameRate = false;
+
+        // Zero, not 640x480: the default mode is borderless, whose size is the monitor's, and a size
+        // only becomes meaningful once -window or -fullscreen has been asked for.
+        int width = 0;
+        int height = 0;
         string? screenshot = null;
         (double X, double Y, double Z)? cameraPosition = null;
         int exitAfterFrames = 0;
@@ -72,15 +83,24 @@ public readonly record struct DesktopOptions(
 
             if (arg.Equals("window", StringComparison.OrdinalIgnoreCase))
             {
-                fullscreen = false;
+                mode = WindowMode.Windowed;
             }
-            else if (arg.Equals("fullscreen", StringComparison.OrdinalIgnoreCase))
+            else if (arg.Equals("borderless", StringComparison.OrdinalIgnoreCase))
             {
-                fullscreen = true;
+                mode = WindowMode.BorderlessFullscreen;
+            }
+            else if (arg.Equals("fullscreen", StringComparison.OrdinalIgnoreCase)
+                || arg.Equals("exclusive", StringComparison.OrdinalIgnoreCase))
+            {
+                mode = WindowMode.ExclusiveFullscreen;
             }
             else if (arg.Equals("novsync", StringComparison.OrdinalIgnoreCase))
             {
                 vsync = false;
+            }
+            else if (arg.Equals("uncapped", StringComparison.OrdinalIgnoreCase))
+            {
+                uncapFrameRate = true;
             }
             else if (arg.Equals("game", StringComparison.OrdinalIgnoreCase))
             {
@@ -181,12 +201,27 @@ public readonly record struct DesktopOptions(
             }
         }
 
+        // Borderless unless told otherwise. Naming a size is by itself a request for a window, because
+        // a borderless one ignores it -- honouring the flag and dropping the size would be the more
+        // surprising of the two readings.
+        WindowMode resolvedMode = mode ?? (width > 0 ? WindowMode.Windowed : WindowMode.BorderlessFullscreen);
+
+        // A window with no size asked for is the original's 640x480 boot, not the monitor's resolution:
+        // a decorated window the size of the whole desktop is nobody's intent. Fullscreen is the other
+        // way round, where no size means the monitor's own.
+        if (resolvedMode == WindowMode.Windowed && width <= 0)
+        {
+            width = 640;
+            height = 480;
+        }
+
         return new DesktopOptions(
             gamePath,
-            fullscreen,
+            resolvedMode,
             width,
             height,
             vsync,
+            uncapFrameRate,
             screenshot,
             exitAfterFrames,
             startScreen,
@@ -216,10 +251,16 @@ public readonly record struct DesktopOptions(
         options:
           -game <dir>      Original installation to read data from.
                            Defaults to the IGI_GAME_PATH environment variable.
-          -window          Run windowed. This is the default.
-          -fullscreen      Run fullscreen.
-          -size WxH        Client size when windowed. Default 640x480.
+          -borderless      Cover the screen with an undecorated window at the monitor's
+                           own resolution and refresh rate. This is the default.
+          -window          Run windowed. Implied by -size.
+          -fullscreen      Take over the monitor and switch its display mode.
+                           -exclusive is the same thing.
+          -size WxH        Client size when windowed or exclusive.
+                           Default 640x480 windowed, the monitor's own fullscreen.
           -novsync         Do not wait for the vertical blank.
+          -uncapped        Render every frame instead of once per 30 Hz simulation tick.
+                           Simulation timing is unaffected.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
           -screen <id>     Open on this menu screen instead of the one the script names.

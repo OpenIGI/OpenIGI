@@ -10,11 +10,15 @@ public sealed class DesktopPlatformHost : IPlatformHost
 
     /// <inheritdoc/>
     /// <returns>A <see cref="SilkGameWindow"/>, already initialised so its GL context can be used.</returns>
+    /// <remarks>
+    /// A zero width or height is not an error: it means "whatever the monitor is", which is what
+    /// borderless always uses and what the other modes fall back to. A negative one is a caller bug.
+    /// </remarks>
     public IGameWindow CreateWindow(in WindowSettings settings)
     {
-        if (settings.Width <= 0 || settings.Height <= 0)
+        if (settings.Width < 0 || settings.Height < 0)
         {
-            throw new PlatformException($"Window size {settings.Width}x{settings.Height} is not positive.");
+            throw new PlatformException($"Window size {settings.Width}x{settings.Height} is negative.");
         }
 
         return new SilkGameWindow(settings);

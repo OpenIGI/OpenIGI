@@ -50,7 +50,7 @@ WindowSettings settings = new(
     Title: "OpenIGI",
     Width: options.Width,
     Height: options.Height,
-    Fullscreen: options.Fullscreen,
+    Mode: options.Mode,
     CursorVisible: false,
     VSync: options.VSync);
 
@@ -67,11 +67,13 @@ catch (PlatformException ex)
 
 using (window)
 {
+    ReportDisplay(window, options, logger);
+
     GL gl = GL.GetApi(window.GLContext);
 
     using GLGraphicsDevice device = new(
         gl,
-        new DisplayMode(window.Width, window.Height, 32, 0),
+        new DisplayMode(window.Width, window.Height, 32, window.RefreshRate),
         window.SwapBuffers,
         logger);
 
@@ -109,6 +111,15 @@ using (window)
     {
         ApplyResolution = (w, h) =>
         {
+            if (window.Mode == WindowMode.BorderlessFullscreen)
+            {
+                logger.Information(
+                    "Config",
+                    $"Resolution {w}x{h} was chosen but the window is borderless fullscreen, whose size "
+                        + "is the desktop's. Run with -window or -fullscreen for it to take effect.");
+                return;
+            }
+
             window.Resize(w, h);
             logger.Information("Config", $"Resolution set to {w}x{h}.");
         },
@@ -135,6 +146,10 @@ using (window)
     // updates and renders the menu rather than this loop doing either by hand.
     DesktopRenderScheduler scheduler = new(device);
     GameLoop loop = new(host: menuHost, renderer: scheduler, logger: logger);
+
+    // The arbiter renders at most once per simulation tick, so the picture is 30 Hz however fast the
+    // monitor is. Lifting the latch presents every vsync instead and leaves the tick schedule alone.
+    loop.Clock.RenderEveryFrame = options.UncapFrameRate;
 
     // The mission table is built the way the original builds it: walk LOCAL:missions and run every
     // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
@@ -412,6 +427,55 @@ using (window)
 
 return 0;
 
+
+// What the window actually ended up as, which is not always what was asked for: a borderless window is
+// composited by the desktop, so it presents at the desktop's refresh rate and cannot raise it. Saying
+// so is the difference between "165 Hz was requested" and "60 Hz is what you are seeing".
+static void ReportDisplay(SilkGameWindow window, DesktopOptions options, IIgiLogger logger)
+{
+    DesktopDisplay display = window.Display;
+    string rate = window.RefreshRate > 0 ? $"{window.RefreshRate} Hz" : "an unreported refresh rate";
+
+    logger.Information(
+        "Desktop",
+        $"{window.Mode} at {window.Width}x{window.Height} @ {rate}"
+            + (display.MaxRefreshRate > 0 ? $" (monitor tops out at {display.MaxRefreshRate} Hz here)" : string.Empty)
+            + (options.VSync ? ", vsync on." : ", vsync off."));
+
+    logger.Information(
+        "Desktop",
+        $"Backend reports {window.BackendState}; monitor origin ({display.Origin.X},{display.Origin.Y}), "
+            + $"desktop {display.DesktopSize.X}x{display.DesktopSize.Y} @ {display.DesktopRefreshRate} Hz, "
+            + $"work area {display.WorkArea.Size.X}x{display.WorkArea.Size.Y}.");
+
+    if (window.Mode == WindowMode.BorderlessFullscreen
+        && display.MaxRefreshRate > 0
+        && display.DesktopRefreshRate > 0
+        && display.DesktopRefreshRate < display.MaxRefreshRate)
+    {
+        logger.Warning(
+            "Desktop",
+            $"The monitor supports {display.MaxRefreshRate} Hz at {display.DesktopSize.X}x{display.DesktopSize.Y} "
+                + $"but the desktop is set to {display.DesktopRefreshRate} Hz. A borderless window presents "
+                + "through the compositor and cannot exceed that -- raise it in Windows display settings, "
+                + "or run with -fullscreen to have the display mode set for you.");
+    }
+    else if (display.IsBelowMaxRefreshRate)
+    {
+        logger.Warning(
+            "Desktop",
+            $"Opened at {display.RefreshRate} Hz although the monitor reports {display.MaxRefreshRate} Hz "
+                + $"at {display.Size.X}x{display.Size.Y}.");
+    }
+
+    if (!options.UncapFrameRate)
+    {
+        logger.Information(
+            "Desktop",
+            "Rendering is latched to one frame per 30 Hz simulation tick, as the original is. "
+                + "Pass -uncapped to present on every vsync instead.");
+    }
+}
 
 static GameConfig LoadConfiguration(VirtualFileSystem fileSystem, IIgiLogger logger)
 {

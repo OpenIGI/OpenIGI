@@ -27,17 +27,48 @@ public sealed class SilkGameWindow : IGameWindow
 {
     private readonly IWindow _window;
     private readonly IInputContext _input;
+    private readonly Vector2D<int> _windowedSize;
+    private WindowMode _mode;
     private bool _cursorVisible;
     private bool _cursorLocked;
     private bool _disposed;
 
     internal SilkGameWindow(in WindowSettings settings)
     {
+        // The monitor has to be resolved before the window exists, because borderless is a size and a
+        // position rather than a state and both come from it.
+        IMonitor monitor = Silk.NET.Windowing.Monitor.GetMainMonitor(null);
+        DesktopDisplay display = DesktopDisplay.Resolve(monitor, settings);
+
+        _mode = settings.Mode;
+        _windowedSize = settings.Width > 0 && settings.Height > 0
+            ? new Vector2D<int>(settings.Width, settings.Height)
+            : display.DesktopSize;
+
         WindowOptions options = WindowOptions.Default with
         {
             Title = settings.Title,
-            Size = new Vector2D<int>(settings.Width, settings.Height),
-            WindowState = settings.Fullscreen ? WindowState.Fullscreen : WindowState.Normal,
+            Size = display.Size,
+            WindowState = settings.Mode == WindowMode.ExclusiveFullscreen
+                ? WindowState.Fullscreen
+                : WindowState.Normal,
+
+            // Borderless is exactly this: no decoration, and a client area placed over the whole of the
+            // monitor's desktop area. Silk has no state for it, because as far as the platform is
+            // concerned it *is* a normal window.
+            WindowBorder = settings.Mode == WindowMode.BorderlessFullscreen
+                ? WindowBorder.Hidden
+                : WindowOptions.Default.WindowBorder,
+            Position = settings.Mode == WindowMode.BorderlessFullscreen
+                ? display.Origin
+                : WindowOptions.Default.Position,
+
+            // Asked for only when the display mode is actually ours to set. A borderless window that
+            // names a video mode is asking the backend to switch the monitor, which is the one thing
+            // borderless exists not to do.
+            VideoMode = settings.Mode == WindowMode.ExclusiveFullscreen
+                ? new VideoMode(display.Size, display.RefreshRate)
+                : WindowOptions.Default.VideoMode,
             VSync = settings.VSync,
             API = new GraphicsAPI(
                 ContextAPI.OpenGL,
@@ -48,6 +79,8 @@ public sealed class SilkGameWindow : IGameWindow
             ShouldSwapAutomatically = false,
         };
 
+        Display = display;
+
         try
         {
             _window = Window.Create(options);
@@ -56,7 +89,7 @@ public sealed class SilkGameWindow : IGameWindow
         catch (Exception ex)
         {
             throw new PlatformException(
-                $"Could not create a {settings.Width}x{settings.Height} OpenGL 3.3 window. "
+                $"Could not create a {display.Size.X}x{display.Size.Y} OpenGL 3.3 window. "
                 + "A driver supporting OpenGL 3.3 core is required.",
                 ex);
         }
@@ -96,12 +129,43 @@ public sealed class SilkGameWindow : IGameWindow
     /// <inheritdoc/>
     public int Height => _window.FramebufferSize.Y;
 
+    /// <summary>Gets what the monitor this window opened on reports, and what was chosen from it.</summary>
+    public DesktopDisplay Display { get; }
+
+    /// <summary>Gets the backend's own description of the window, for confirming what it really is.</summary>
+    /// <remarks>
+    /// Borderless and exclusive look alike from the outside — both cover the screen — but only one of
+    /// them takes the display away from the desktop. This reports which actually happened rather than
+    /// which was asked for.
+    /// </remarks>
+    public string BackendState =>
+        $"state {_window.WindowState}, border {_window.WindowBorder}, "
+            + $"position ({_window.Position.X},{_window.Position.Y}), size {_window.Size.X}x{_window.Size.Y}";
+
     /// <inheritdoc/>
-    public bool IsFullscreen
+    public WindowMode Mode
     {
-        get => _window.WindowState == WindowState.Fullscreen;
-        set => _window.WindowState = value ? WindowState.Fullscreen : WindowState.Normal;
+        get => _mode;
+        set
+        {
+            if (_mode == value)
+            {
+                return;
+            }
+
+            _mode = value;
+            ApplyMode();
+        }
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Borderless presents through the compositor, so its rate is the desktop's whatever the monitor is
+    /// capable of; only an exclusive window gets the mode that was asked for.
+    /// </remarks>
+    public int RefreshRate => _mode == WindowMode.BorderlessFullscreen
+        ? Display.DesktopRefreshRate
+        : Display.RefreshRate;
 
     /// <inheritdoc/>
     public bool CursorVisible
@@ -175,11 +239,43 @@ public sealed class SilkGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Ignored while borderless: the window's size is the desktop's, and shrinking it would leave an
+    /// undecorated window floating over the wallpaper with no way to move it.
+    /// </remarks>
     public void Resize(int width, int height)
     {
-        if (width > 0 && height > 0)
+        if (width > 0 && height > 0 && _mode != WindowMode.BorderlessFullscreen)
         {
             _window.Size = new Vector2D<int>(width, height);
+        }
+    }
+
+    /// <summary>Moves the window between windowed, borderless and exclusive without recreating it.</summary>
+    private void ApplyMode()
+    {
+        switch (_mode)
+        {
+            case WindowMode.BorderlessFullscreen:
+                // Order matters: leaving the fullscreen state first gives the platform back a normal
+                // window to undecorate, and the position has to be set after the border is dropped
+                // because dropping it moves the client area by the old border's thickness.
+                _window.WindowState = WindowState.Normal;
+                _window.WindowBorder = WindowBorder.Hidden;
+                _window.Position = Display.Origin;
+                _window.Size = Display.DesktopSize;
+                break;
+
+            case WindowMode.ExclusiveFullscreen:
+                _window.WindowBorder = WindowBorder.Resizable;
+                _window.WindowState = WindowState.Fullscreen;
+                break;
+
+            default:
+                _window.WindowState = WindowState.Normal;
+                _window.WindowBorder = WindowBorder.Resizable;
+                _window.Size = _windowedSize;
+                break;
         }
     }
 
