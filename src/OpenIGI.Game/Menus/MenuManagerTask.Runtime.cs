@@ -123,7 +123,11 @@ public partial class MenuManagerTask
 
         if (Navigator.IsLeaving)
         {
-            _host.LeaveMenus(Navigator.State);
+            // Clear it before the host runs: leaving is a one-shot request, and the handler for
+            // StartGame loads a whole mission. Leaving the state set re-ran that load every tick.
+            MenuManagerState leaving = Navigator.State;
+            Navigator.CompleteLeave();
+            _host.LeaveMenus(leaving);
             return;
         }
 

@@ -221,6 +221,21 @@ public sealed class MenuNavigator
         }
     }
 
+    /// <summary>Marks the leave as delivered, so it is acted on once rather than every tick.</summary>
+    /// <remarks>
+    /// A leave state is a <em>request</em>: the manager hands it to the host and the menus are done. It
+    /// has to be cleared, because <see cref="Tick"/> has no transition out of one — while a leave that
+    /// quits hid that (the process was going away anyway), one that starts a mission does not, and the
+    /// mission loaded again on every tick.
+    /// </remarks>
+    public void CompleteLeave()
+    {
+        if (IsLeaving)
+        {
+            State = MenuManagerState.Halted;
+        }
+    }
+
     /// <summary>Gets a value indicating whether the manager is asking the host to leave the menus.</summary>
     public bool IsLeaving =>
         State is MenuManagerState.Quit

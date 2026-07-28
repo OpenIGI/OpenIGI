@@ -120,8 +120,15 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     /// <summary>Gets the state the menus last left with, or null while they have not.</summary>
     public MenuManagerState? LeftWith { get; private set; }
 
+    /// <summary>Gets how many times the menus have asked to leave.</summary>
+    public int LeaveCount { get; private set; }
+
     /// <inheritdoc/>
-    public void LeaveMenus(MenuManagerState state) => LeftWith = state;
+    public void LeaveMenus(MenuManagerState state)
+    {
+        LeftWith = state;
+        LeaveCount++;
+    }
 }
 
 /// <summary>A configuration host with a small, fixed mission list.</summary>

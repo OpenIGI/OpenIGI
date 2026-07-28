@@ -132,6 +132,16 @@ public sealed class MenuMissionSelectTests
         }
 
         Assert.Equal(MenuManagerState.StartGame, harness.Host.LeftWith);
+
+        // Once, not once per tick. Leaving is a request; nothing transitions out of a leave state, so
+        // without clearing it the StartGame handler reloaded the whole mission every tick.
+        int delivered = harness.Host.LeaveCount;
+        for (int i = 0; i < 20; i++)
+        {
+            Tick(harness);
+        }
+
+        Assert.Equal(delivered, harness.Host.LeaveCount);
     }
 
     private static ScrollListBoxTask MissionList(Harness harness) => Find<ScrollListBoxTask>(harness);
