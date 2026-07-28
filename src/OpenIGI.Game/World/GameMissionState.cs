@@ -1,3 +1,4 @@
+using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
@@ -21,6 +22,28 @@ public sealed class GameMissionState
 
     /// <summary>Gets the mission id chosen, or zero when none has been.</summary>
     public int PendingMissionId { get; private set; }
+
+    /// <summary>Serves <c>Game_SetMission</c> to the menu's expression evaluator.</summary>
+    /// <param name="name">The native being called.</param>
+    /// <param name="arguments">Its arguments.</param>
+    /// <returns>The result, or <see langword="null"/> when the name is not this one.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="arguments"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A menu expression is evaluated by the menu's own evaluator rather than by the script VM, so the
+    /// registration below does not reach it and the menus need this second door.
+    /// </remarks>
+    public QvmValue? TryInvokeFromMenu(string name, ScriptArguments arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+
+        if (!string.Equals(name, SetMissionNative, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        PendingMissionId = arguments.GetInt32(0);
+        return QvmValue.FromInt32(1);
+    }
 
     /// <summary>Registers <c>Game_SetMission</c>.</summary>
     /// <param name="natives">The script namespace the menu scripts resolve against.</param>

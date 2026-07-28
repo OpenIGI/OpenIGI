@@ -172,8 +172,12 @@ public sealed class MenuScriptContext : IScriptExpressionContext
                 IsEnabled = arguments.GetBoolean(0);
                 return true;
 
-            case "MenuManager_LeaveMenus" when arguments.Count >= 1:
-                _stack.Leave((MenuManagerState)arguments.GetInt32(0));
+            // The state is the SECOND argument: the retail scripts read
+            // MenuManager_LeaveMenus(-1, MENUMANAGER_STARTGAME) and MenuManager_LeaveMenus(0,
+            // MENUMANAGER_QUIT). The original (0x417790) reads argument 0 into a field of its own and
+            // argument 1 as the state; taking the first as the state made starting a mission throw.
+            case "MenuManager_LeaveMenus" when arguments.Count >= 2:
+                _stack.Leave((MenuManagerState)arguments.GetInt32(1), arguments.GetInt32(0));
                 return true;
 
             case "MenuManager_SetLanguage" when arguments.Count >= 1:

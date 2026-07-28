@@ -31,6 +31,7 @@ public partial class MenuManagerTask
     private readonly MenuPointer _pointer = new();
     private IMenuHost? _host;
     private MenuSystem? _system;
+    private readonly HashSet<string> _unknownNatives = new(StringComparer.Ordinal);
     private ScriptExpressionEvaluator? _evaluator;
     private MenuScreenTask? _current;
     private ConfigNatives? _configuration;
@@ -230,10 +231,37 @@ public partial class MenuManagerTask
         }
     }
 
-    private QvmValue Invoke(string name, ScriptArguments arguments) =>
-        _configuration is not null && _configuration.TryInvoke(name, arguments, out QvmValue result)
-            ? result
-            : QvmValue.Zero;
+    /// <summary>Gets or sets a resolver for natives outside the menu and configuration sets.</summary>
+    /// <remarks>
+    /// The menus call a few functions that belong to the game rather than to the menu system —
+    /// <c>Game_SetMission</c> is the one the mission screen needs. They cannot go through the QVM symbol
+    /// table, because a menu expression is parsed and evaluated by the menu's own evaluator, not by the
+    /// script VM. Returning <see langword="null"/> means "not mine".
+    /// </remarks>
+    public Func<string, ScriptArguments, QvmValue?>? ExternalNatives { get; set; }
+
+    private QvmValue Invoke(string name, ScriptArguments arguments)
+    {
+        if (_configuration is not null && _configuration.TryInvoke(name, arguments, out QvmValue result))
+        {
+            return result;
+        }
+
+        if (ExternalNatives?.Invoke(name, arguments) is { } external)
+        {
+            return external;
+        }
+
+        // An unknown native used to evaluate to zero in silence, which is how a mission started with id
+        // zero rather than the one that was selected. Reporting it once per name keeps a missing native
+        // visible without filling the log every tick.
+        if (_unknownNatives.Add(name))
+        {
+            _logger.Warning("Menu", $"No native named '{name}'; it evaluates to zero.");
+        }
+
+        return QvmValue.Zero;
+    }
 
     /// <summary>Plays a menu sound through the shell.</summary>
     /// <param name="name">The sound resource name.</param>

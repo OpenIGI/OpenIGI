@@ -175,7 +175,18 @@ public sealed class MenuNavigatorTests
         Run(evaluator, "MenuManager_SetEnabled(FALSE)");
         Assert.False(context.IsEnabled);
 
-        Run(evaluator, "MenuManager_LeaveMenus(MENUMANAGER_QUIT, 0)");
+        // The state is the SECOND argument — retail scripts read MenuManager_LeaveMenus(0,
+        // MENUMANAGER_QUIT) and (-1, MENUMANAGER_STARTGAME). This test had the pair the wrong way round,
+        // which is how reading argument 0 as the state survived: -1 then threw "Not a leave state".
+        Run(evaluator, "MenuManager_LeaveMenus(0, MENUMANAGER_QUIT)");
+
+        // Leaving fades out first; the leave state is entered at the bottom of the fade.
+        Assert.Equal(MenuManagerState.FadingOut, nav.State);
+        while (nav.State == MenuManagerState.FadingOut)
+        {
+            nav.Tick();
+        }
+
         Assert.True(nav.IsLeaving);
         Assert.Equal(MenuManagerState.Quit, nav.State);
     }

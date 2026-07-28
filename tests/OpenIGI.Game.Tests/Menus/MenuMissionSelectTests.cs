@@ -2,6 +2,7 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Time;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -91,6 +92,48 @@ public sealed class MenuMissionSelectTests
         Assert.Equal(StubConfigHost.PictureFor(list.Items[2].Id), picture.Picture);
     }
 
+    [RequiresGameDataFact]
+    public void OkStartsTheSelectedMission()
+    {
+        Harness harness = Boot();
+        ScrollListBoxTask list = MissionList(harness);
+
+        ClickRow(harness, list, 1);
+        int chosen = list.ActiveId;
+
+        // The OK entry runs Game_SetMission(ScrollListBox_964.nActiveID) followed by
+        // MenuManager_LeaveMenus(-1, MENUMANAGER_STARTGAME). Reading the *first* argument as the state
+        // threw "Not a leave state" for -1, which is what starting a mission used to do.
+        MenuTextTask ok = Descendants(harness.Menu.Manager.CurrentScreen!)
+            .OfType<MenuTextTask>()
+            .First(e => e.OnClickScript.Contains("MENUMANAGER_STARTGAME", StringComparison.Ordinal));
+
+        Assert.True(ok.IsInteractive, "the OK entry is not clickable");
+        Assert.True(ok.LayoutWidth > 0 && ok.LayoutHeight > 0, "the OK entry has no measured size");
+
+        int okX = ok.LayoutX + (ok.LayoutWidth / 2);
+        int okY = ok.LayoutY + (ok.LayoutHeight / 2);
+
+        harness.Host.MoveTo(okX, okY, down: true);
+        Tick(harness);
+        harness.Host.MoveTo(okX, okY, down: false);
+        Tick(harness);
+
+        Assert.Equal(chosen, harness.Missions.PendingMissionId);
+
+        // Leaving fades out first and only then enters the leave state, which is what the original's
+        // state 6 plus a parked state does.
+        Assert.Equal(MenuManagerState.FadingOut, harness.Menu.Manager.Navigator.State);
+        Assert.Equal(-1, harness.Menu.Manager.Navigator.LeaveParameter);
+
+        for (int i = 0; i < 40 && harness.Host.LeftWith is null; i++)
+        {
+            Tick(harness);
+        }
+
+        Assert.Equal(MenuManagerState.StartGame, harness.Host.LeftWith);
+    }
+
     private static ScrollListBoxTask MissionList(Harness harness) => Find<ScrollListBoxTask>(harness);
 
     private static T Find<T>(Harness harness)
@@ -137,11 +180,15 @@ public sealed class MenuMissionSelectTests
         PointerHost host = new();
         GameLoop loop = new(time: time, host: host);
 
+        GameMissionState missions = new();
+        missions.Register(loop.Natives);
+
         MenuSystem? menu = null;
         host.OnShowMainMenu = () =>
         {
             menu = MenuSystem.Load(File.ReadAllBytes(GameData.Resolve("menusystem/mainmenu.qvm")), loop);
             menu.Manager.Configuration = new ConfigNatives(new GameConfig(), new StubConfigHost());
+            menu.Manager.ExternalNatives = missions.TryInvokeFromMenu;
             menu.Manager.CurrentMenuScreen = 914;
             menu.Manager.Initialize(menu, host);
         };
@@ -154,7 +201,7 @@ public sealed class MenuMissionSelectTests
             loop.RunFrame();
         }
 
-        Harness harness = new(loop, time, host, menu!);
+        Harness harness = new(loop, time, host, menu!, missions);
         for (int i = 0; i < 30; i++)
         {
             Tick(harness);
@@ -163,5 +210,10 @@ public sealed class MenuMissionSelectTests
         return harness;
     }
 
-    private sealed record Harness(GameLoop Loop, ManualTimeSource Time, PointerHost Host, MenuSystem Menu);
+    private sealed record Harness(
+        GameLoop Loop,
+        ManualTimeSource Time,
+        PointerHost Host,
+        MenuSystem Menu,
+        GameMissionState Missions);
 }

@@ -75,8 +75,31 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     public IEnumerable<MenuInputEvent> DrainEvents() => [];
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A <c>MenuText</c> gets its size from the renderer measuring its label, so without a stand-in size
+    /// every entry is a zero-width rectangle and the pointer can never be over one.
+    /// </remarks>
     public void PrepareScreen(MenuScreenTask screen)
     {
+        ArgumentNullException.ThrowIfNull(screen);
+
+        foreach (MenuTextTask entry in Descend(screen).OfType<MenuTextTask>())
+        {
+            entry.LayoutWidth = 80;
+            entry.LayoutHeight = 16;
+        }
+    }
+
+    private static IEnumerable<MenuWindowTask> Descend(MenuWindowTask window)
+    {
+        foreach (MenuWindowTask child in window.Children.OfType<MenuWindowTask>())
+        {
+            yield return child;
+            foreach (MenuWindowTask descendant in Descend(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     /// <inheritdoc/>
@@ -94,10 +117,11 @@ public sealed class PointerHost : IFlowHost, IMenuHost
     {
     }
 
+    /// <summary>Gets the state the menus last left with, or null while they have not.</summary>
+    public MenuManagerState? LeftWith { get; private set; }
+
     /// <inheritdoc/>
-    public void LeaveMenus(MenuManagerState state)
-    {
-    }
+    public void LeaveMenus(MenuManagerState state) => LeftWith = state;
 }
 
 /// <summary>A configuration host with a small, fixed mission list.</summary>

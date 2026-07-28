@@ -228,10 +228,25 @@ public sealed class MenuNavigator
             or MenuManagerState.RestartLevel
             or MenuManagerState.StartGame;
 
-    /// <summary>Puts the manager into one of the leave states.</summary>
-    /// <param name="state">The state, which must be one <see cref="IsLeaving"/> recognises.</param>
+    /// <summary>Gets the value the script passed alongside the leave state.</summary>
+    /// <remarks>
+    /// The original stores it on the manager (<c>+32</c>) next to the pending state. Retail scripts pass
+    /// <c>-1</c> when starting a game and <c>0</c> when quitting; nothing observed reads it back, so it
+    /// is carried rather than interpreted.
+    /// </remarks>
+    public int LeaveParameter { get; private set; }
+
+    /// <summary>Starts leaving the menus, fading out first.</summary>
+    /// <param name="state">The state to enter once the fade completes.</param>
+    /// <param name="parameter">The value the script passed alongside it.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="state"/> is not a leave state.</exception>
-    public void Leave(MenuManagerState state)
+    /// <remarks>
+    /// <c>MenuManager_LeaveMenus</c> (<c>0x417790</c>) does not enter the leave state directly: it sets
+    /// the manager's state to <c>6</c> — <see cref="MenuManagerState.FadingOut"/> — and parks the
+    /// requested state beside it, so the menus fade before play begins. That is the same
+    /// <see cref="ReturnState"/> mechanism a screen push uses.
+    /// </remarks>
+    public void Leave(MenuManagerState state, int parameter = 0)
     {
         if (state is not (MenuManagerState.Quit
             or MenuManagerState.QuitToMainMenu
@@ -241,6 +256,8 @@ public sealed class MenuNavigator
             throw new ArgumentOutOfRangeException(nameof(state), state, "Not a leave state.");
         }
 
-        State = state;
+        LeaveParameter = parameter;
+        ReturnState = state;
+        State = MenuManagerState.FadingOut;
     }
 }

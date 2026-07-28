@@ -192,6 +192,11 @@ using (window)
         }
 
         menu.Manager.Configuration = configNatives;
+
+        // Game_SetMission belongs to the game, not the menu system, and a menu expression is evaluated
+        // by the menu's own evaluator rather than by the script VM — so registering it with the VM is
+        // not enough to make the Select Mission screen's OK button work.
+        menu.Manager.ExternalNatives = missionState.TryInvokeFromMenu;
         menu.Manager.Initialize(menu, menuHost, logger);
     };
 
