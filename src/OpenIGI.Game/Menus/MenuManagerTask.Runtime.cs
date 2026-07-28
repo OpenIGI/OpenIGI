@@ -320,6 +320,18 @@ public partial class MenuManagerTask
 
     private void HandleKeys()
     {
+        // A field that owns the keyboard takes every key before anything else sees it, which is what
+        // lets it use left, right, home and end for editing without the menu navigating away.
+        if (Selection.Selected is InputBoxTask { IsEditing: true } editing)
+        {
+            foreach (MenuInputEvent key in _host!.DrainEvents())
+            {
+                editing.Edit(key);
+            }
+
+            return;
+        }
+
         foreach (MenuInputEvent raw in _host!.DrainEvents())
         {
             // A popup that asks for it swaps the two direction pairs on the way in.
@@ -359,21 +371,15 @@ public partial class MenuManagerTask
     /// </remarks>
     private void HandleTyping()
     {
-        if (Selection.Selected is not InputBoxTask field)
+        // Only a field that is actually editing takes text; a merely selected one does not.
+        if (Selection.Selected is not InputBoxTask { IsEditing: true } field)
         {
             return;
         }
 
         foreach (char typed in _host!.DrainTypedText())
         {
-            if (typed == '')
-            {
-                field.Backspace();
-            }
-            else if (!char.IsControl(typed))
-            {
-                field.TypeCharacter(typed);
-            }
+            field.TypeCharacter(typed);
         }
     }
 

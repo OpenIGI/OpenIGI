@@ -138,7 +138,7 @@ public sealed class MenuSelection
     /// <returns>The event when it should be forwarded to the selected item, otherwise <see cref="MenuInputEvent.None"/>.</returns>
     /// <remarks>
     /// The manager handles the two movement codes itself and passes <see cref="MenuInputEvent.Left"/>,
-    /// <see cref="MenuInputEvent.Right"/> and <see cref="MenuInputEvent.Alternate"/> to whatever is
+    /// <see cref="MenuInputEvent.Right"/> and <see cref="MenuInputEvent.Enter"/> to whatever is
     /// selected. <see cref="MenuInputEvent.Enter"/> and <see cref="MenuInputEvent.Escape"/> are latched
     /// by the caller rather than dispatched here.
     /// </remarks>
@@ -152,7 +152,7 @@ public sealed class MenuSelection
             case MenuInputEvent.Previous:
                 MovePrevious();
                 return MenuInputEvent.None;
-            case MenuInputEvent.Left or MenuInputEvent.Right or MenuInputEvent.Alternate:
+            case MenuInputEvent.Left or MenuInputEvent.Right or MenuInputEvent.Enter:
                 return Selected is null ? MenuInputEvent.None : input;
             default:
                 return MenuInputEvent.None;

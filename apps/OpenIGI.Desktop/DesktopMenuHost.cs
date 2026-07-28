@@ -148,6 +148,10 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
         KeyCode.Right or KeyCode.Numpad6 => MenuInputEvent.Right,
         KeyCode.Return or KeyCode.NumpadEnter => MenuInputEvent.Enter,
         KeyCode.Escape => MenuInputEvent.Escape,
+        KeyCode.Backspace => MenuInputEvent.Backspace,
+        KeyCode.Delete => MenuInputEvent.Delete,
+        KeyCode.Home => MenuInputEvent.Home,
+        KeyCode.End => MenuInputEvent.End,
         _ => null,
     };
 

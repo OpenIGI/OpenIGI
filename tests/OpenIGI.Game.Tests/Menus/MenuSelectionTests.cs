@@ -146,7 +146,7 @@ public sealed class MenuSelectionTests
     [Theory]
     [InlineData(MenuInputEvent.Left)]
     [InlineData(MenuInputEvent.Right)]
-    [InlineData(MenuInputEvent.Alternate)]
+    [InlineData(MenuInputEvent.Enter)]
     public void TheOtherCodesAreForwardedToTheSelectedItem(MenuInputEvent input)
     {
         // A slider or a toggle takes its input this way.
@@ -185,13 +185,19 @@ public sealed class MenuSelectionTests
     [Fact]
     public void TheEventCodesAreTheOnesTheOriginalUses()
     {
+        // Pinned by InputBox_Update's switch (0x41D450), which is the only place in the binary that
+        // names all of them at once. Enter was -8 here and Escape -11; both were wrong, and -7 had
+        // been guessed as an "alternate action" it never was.
         Assert.Equal(-1, (int)MenuInputEvent.Left);
         Assert.Equal(-2, (int)MenuInputEvent.Right);
         Assert.Equal(-3, (int)MenuInputEvent.Previous);
         Assert.Equal(-4, (int)MenuInputEvent.Next);
-        Assert.Equal(-7, (int)MenuInputEvent.Alternate);
-        Assert.Equal(-8, (int)MenuInputEvent.Enter);
-        Assert.Equal(-11, (int)MenuInputEvent.Escape);
+        Assert.Equal(-5, (int)MenuInputEvent.Backspace);
+        Assert.Equal(-6, (int)MenuInputEvent.Delete);
+        Assert.Equal(-7, (int)MenuInputEvent.Enter);
+        Assert.Equal(-8, (int)MenuInputEvent.Escape);
+        Assert.Equal(-9, (int)MenuInputEvent.Home);
+        Assert.Equal(-10, (int)MenuInputEvent.End);
     }
 
     [Fact]

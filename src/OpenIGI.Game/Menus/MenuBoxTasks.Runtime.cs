@@ -112,27 +112,32 @@ public partial class AsciiBoxTask
     /// <summary>Gets the lines read out of <see cref="AsciiBoxTask.TextFile"/>.</summary>
     public IList<string> Lines { get; } = [];
 
+    /// <summary>Gets the scrollbar the box owns.</summary>
+    /// <remarks>
+    /// <b>Correction:</b> an earlier revision had this scrolling on left and right like a list. It
+    /// does not. <c>AsciiBox_Update</c> (<c>0x41CD20</c>) reads <c>SlideBar_GetIndex</c> on the
+    /// slider it holds at <c>+244</c> and walks its line pointer to match — so the bar is the
+    /// control and the box just follows it.
+    /// </remarks>
+    public SlideBarTask ScrollBar { get; } = new() { Horizontal = false };
+
     /// <inheritdoc/>
-    /// <remarks>Scrolling is what a reader does with it, so it takes the selection.</remarks>
-    public override bool IsInteractive => true;
+    public override IEnumerable<MenuWindowTask> OwnedWindows => [ScrollBar];
+
+    /// <inheritdoc/>
+    /// <remarks>The bar takes the selection; the box itself is not clickable.</remarks>
+    public override bool IsInteractive => false;
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Up and down scroll rather than moving the selection away, which is the behaviour a text
-    /// viewer needs. The command is cleared, as <c>MenuText</c>'s is.
+    /// The offset follows the bar's option index, one stop per line. The original walks a pointer
+    /// through the NUL-terminated lines one at a time in whichever direction it has to move; the
+    /// result is the same line, and the walk is only there because it has no line array to index.
     /// </remarks>
     protected override void OnUpdate()
     {
-        if (PendingCommand == MenuWindowCommand.Left && ScrollOffset > 0)
-        {
-            ScrollOffset--;
-        }
-        else if (PendingCommand == MenuWindowCommand.Right && ScrollOffset < Math.Max(0, Lines.Count - 1))
-        {
-            ScrollOffset++;
-        }
-
-        PendingCommand = MenuWindowCommand.None;
+        ScrollBar.NumOptions = Math.Max(1, Lines.Count);
+        ScrollOffset = Math.Clamp(ScrollBar.GetIndex(), 0, Math.Max(0, Lines.Count - 1));
         base.OnUpdate();
     }
 }
@@ -198,24 +203,37 @@ public partial class TypeWriterBoxTask
     /// <summary>Gets the text as it should be drawn this tick.</summary>
     public string VisibleText => Text.Length == 0 ? string.Empty : Text[..Math.Clamp(Revealed, 0, Text.Length)];
 
-    /// <inheritdoc/>
+    /// <summary>The ticks between one revealed character and the next.</summary>
     /// <remarks>
-    /// One character per tick. The original's rate comes from a field this repo has not read, so the
-    /// step is a stated assumption rather than a transcription — it is listed in the re-note, and
-    /// nothing in the shipped menus animates long enough for the difference to show.
+    /// <b>Correction:</b> an earlier revision assumed one character per tick and said so. It is one
+    /// every three — <c>TypeWriterBox_Update</c> (<c>0x41A600</c>) reloads its countdown at
+    /// <c>+108</c> with 3 after each character, and only reveals when the countdown has run out.
     /// </remarks>
+    public const int TicksPerCharacter = 3;
+
+    /// <summary>Gets or sets the ticks left before the next character appears.</summary>
+    public int Countdown { get; set; }
+
+    /// <inheritdoc/>
     protected override void OnUpdate()
     {
         Advance();
         base.OnUpdate();
     }
 
-    /// <summary>Reveals the next character.</summary>
+    /// <summary>Counts down, and reveals the next character when the count runs out.</summary>
     public void Advance()
     {
+        if (Countdown > 0)
+        {
+            Countdown--;
+            return;
+        }
+
         if (Revealed < Text.Length)
         {
             Revealed++;
+            Countdown = TicksPerCharacter;
         }
     }
 }

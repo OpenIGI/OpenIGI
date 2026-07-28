@@ -56,7 +56,7 @@ public sealed class MenuBoxTests
     [Fact]
     public void AFieldTypesBackspacesAndStopsAtItsBuffer()
     {
-        InputBoxTask field = new() { StringLength = 5 };
+        InputBoxTask field = new() { MaxLength = 6 };
 
         foreach (char c in "abcdefgh")
         {
@@ -75,7 +75,7 @@ public sealed class MenuBoxTests
     {
         // A script asking for more than the buffer holds gets the buffer, because the buffer is what
         // truncates.
-        InputBoxTask field = new() { StringLength = 500 };
+        InputBoxTask field = new() { MaxLength = 500 };
 
         for (int i = 0; i < 200; i++)
         {
@@ -97,13 +97,75 @@ public sealed class MenuBoxTests
     }
 
     [Fact]
-    public void ATypeWriterRevealsOneCharacterPerTick()
+    public void ATypeWriterRevealsOneCharacterEveryThreeTicks()
     {
         TypeWriterBoxTask typer = new() { Text = "abc" };
 
-        Assert.Equal(string.Empty, typer.VisibleText);
+        // The first character is immediate — the countdown starts at zero — and each one after it
+        // waits three ticks, which is what TypeWriterBox_Update reloads +108 with.
         typer.Advance();
         Assert.Equal("a", typer.VisibleText);
+
+        typer.Advance();
+        typer.Advance();
+        typer.Advance();
+        Assert.Equal("a", typer.VisibleText);
+
+        typer.Advance();
+        Assert.Equal("ab", typer.VisibleText);
+    }
+
+    [Fact]
+    public void AFieldIsModalAndTakesTheKeysWhileEditing()
+    {
+        InputBoxTask field = new() { StringLength = 0 };
+
+        Assert.False(field.IsEditing);
+        field.BeginEditing();
+        Assert.True(field.IsEditing);
+
+        field.TypeCharacter('a');
+        field.TypeCharacter('b');
+        field.Edit(MenuInputEvent.Left);
+        field.TypeCharacter('X');
+
+        // The caret moved, so the insert went in the middle rather than at the end.
+        Assert.Equal("aXb", field.Data);
+
+        field.Edit(MenuInputEvent.Home);
+        Assert.Equal(0, field.Caret);
+        field.Edit(MenuInputEvent.End);
+        Assert.Equal(3, field.Caret);
+
+        field.Edit(MenuInputEvent.Enter);
+        Assert.False(field.IsEditing);
+    }
+
+    [Fact]
+    public void AFieldRefusesTheOneCharacterThatWouldBreakTheSaveFile()
+    {
+        InputBoxTask field = new();
+        field.BeginEditing();
+
+        // A double quote ends up inside a string literal in config.qvm; the original will not take one.
+        Assert.False(field.TypeCharacter('"'));
+        Assert.True(field.TypeCharacter('a'));
+        Assert.Equal("a", field.Data);
+    }
+
+    [Fact]
+    public void AFieldHoldsOneLessThanItsDeclaredMaximum()
+    {
+        InputBoxTask field = new() { MaxLength = 5 };
+        field.BeginEditing();
+
+        for (int i = 0; i < 20; i++)
+        {
+            field.TypeCharacter('x');
+        }
+
+        // The check is length < max - 1, so a field declaring five holds four.
+        Assert.Equal(4, field.Data.Length);
     }
 
     private static (int, int, int, int) Rect(MenuWindowTask w) =>
