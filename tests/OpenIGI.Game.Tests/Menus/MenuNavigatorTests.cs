@@ -1,5 +1,6 @@
 using OpenIGI.Game.Menus;
 using OpenIGI.Scripting.Expressions;
+using OpenIGI.Scripting.Runtime;
 using Xunit;
 
 namespace OpenIGI.Game.Tests.Menus;
@@ -154,7 +155,7 @@ public sealed class MenuNavigatorTests
         nav.Start(900);
 
         List<string> fallbackCalls = [];
-        MenuScriptContext context = new(nav) { Fallback = (name, _) => { fallbackCalls.Add(name); return 1; } };
+        MenuScriptContext context = new(nav) { Fallback = (name, _) => { fallbackCalls.Add(name); return QvmValue.FromInt32(1); } };
         ScriptExpressionEvaluator evaluator = new(context);
 
         Run(evaluator, "MenuManager_RequestScreen(904, FALSE) && Game_UpdateVolume()");

@@ -1,4 +1,5 @@
 using OpenIGI.Scripting.Expressions;
+using OpenIGI.Scripting.Runtime;
 using Xunit;
 
 namespace OpenIGI.Scripting.Tests;
@@ -51,7 +52,7 @@ public sealed class ScriptExpressionEvaluatorTests
     public void TheCommaIsTheExceptionAndEvaluatesLeftFirst()
     {
         RecordingContext context = new();
-        context.Returns["f"] = 9;
+        context.Returns["f"] = QvmValue.FromInt32(9);
 
         int result = Evaluate("f(1), f(2)", context);
 
@@ -63,7 +64,7 @@ public sealed class ScriptExpressionEvaluatorTests
     public void LogicalOperatorsShortCircuit()
     {
         RecordingContext context = new();
-        context.Returns["f"] = 1;
+        context.Returns["f"] = QvmValue.FromInt32(1);
 
         Assert.Equal(0, Evaluate("0 && f(1)", context));
         Assert.Empty(context.CallOrder);
@@ -114,7 +115,7 @@ public sealed class ScriptExpressionEvaluatorTests
     public void NamesAreReadThroughTheContext()
     {
         RecordingContext context = new();
-        context.Values["this.nUserData"] = 42;
+        context.Set("this.nUserData", 42);
 
         Assert.Equal(42, Evaluate("this.nUserData", context));
         Assert.Equal(43, Evaluate("this.nUserData + 1", context));
@@ -124,10 +125,10 @@ public sealed class ScriptExpressionEvaluatorTests
     public void AssignmentStoresThroughTheContextAndYieldsTheValue()
     {
         RecordingContext context = new();
-        context.Values["this.nUserData"] = 0;
+        context.Set("this.nUserData", 0);
 
         Assert.Equal(7, Evaluate("this.nUserData = 3 + 4", context));
-        Assert.Equal(7, context.Values["this.nUserData"]);
+        Assert.Equal(7, context.Values["this.nUserData"].ToInt32());
     }
 
     [Fact]
@@ -167,7 +168,7 @@ public sealed class ScriptExpressionEvaluatorTests
     public void TheRetailContentControlActionPicksItsBranch()
     {
         RecordingContext context = new();
-        context.Returns["Config_IsContentControlPasswordEnabled"] = 0;
+        context.Returns["Config_IsContentControlPasswordEnabled"] = QvmValue.FromInt32(0);
 
         Evaluate(
             "Config_IsContentControlPasswordEnabled() ? MenuManager_ActivatePopupScreen(932) : MenuManager_PushScreen(915)",
@@ -181,8 +182,8 @@ public sealed class ScriptExpressionEvaluatorTests
     public void TheRetailSoundScreenActionRunsBothCalls()
     {
         RecordingContext context = new();
-        context.Returns["MenuManager_RequestScreen"] = 1;
-        context.Returns["Game_UpdateVolume"] = 1;
+        context.Returns["MenuManager_RequestScreen"] = QvmValue.FromInt32(1);
+        context.Returns["Game_UpdateVolume"] = QvmValue.FromInt32(1);
 
         Assert.Equal(
             1,
@@ -195,11 +196,11 @@ public sealed class ScriptExpressionEvaluatorTests
     public void TheRetailPerformanceFlagsRoundTripThroughATaskProperty()
     {
         RecordingContext context = new();
-        context.Values["this.nUserData"] = 0;
-        context.Returns["Config_GraphicOptionsGetPerformanceFlags"] = 0x2A;
+        context.Set("this.nUserData", 0);
+        context.Returns["Config_GraphicOptionsGetPerformanceFlags"] = QvmValue.FromInt32(0x2A);
 
         Evaluate("this.nUserData = Config_GraphicOptionsGetPerformanceFlags()", context);
-        Assert.Equal(0x2A, context.Values["this.nUserData"]);
+        Assert.Equal(0x2A, context.Values["this.nUserData"].ToInt32());
 
         Evaluate("Config_GraphicOptionsSetPerformanceFlags(this.nUserData)", context);
         Assert.Equal([0x2A], context.LastArguments);
@@ -218,9 +219,9 @@ public sealed class ScriptExpressionEvaluatorTests
 
     private sealed class RecordingContext : IScriptExpressionContext
     {
-        public Dictionary<string, int> Values { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, QvmValue> Values { get; } = new(StringComparer.Ordinal);
 
-        public Dictionary<string, int> Returns { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, QvmValue> Returns { get; } = new(StringComparer.Ordinal);
 
         public List<int> CallOrder { get; } = [];
 
@@ -228,9 +229,15 @@ public sealed class ScriptExpressionEvaluatorTests
 
         public int[] LastArguments { get; private set; } = [];
 
-        public bool TryGetValue(string name, out int value) => Values.TryGetValue(name, out value);
+        /// <summary>Records an integer name, which is what most of these expressions read.</summary>
+        public void Set(string name, int value) => Values[name] = QvmValue.FromInt32(value);
 
-        public bool TrySetValue(string name, int value)
+        public bool TryGetValue(string name, out QvmValue value) => Values.TryGetValue(name, out value);
+
+        public QvmValueKind GetValueKind(string name) =>
+            Values.TryGetValue(name, out QvmValue value) ? value.Kind : QvmValueKind.None;
+
+        public bool TrySetValue(string name, QvmValue value)
         {
             if (!Values.ContainsKey(name))
             {
@@ -241,18 +248,25 @@ public sealed class ScriptExpressionEvaluatorTests
             return true;
         }
 
-        public bool TryInvoke(string name, ReadOnlySpan<int> arguments, out int result)
+        public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
             CalledNames.Add(name);
-            LastArguments = arguments.ToArray();
 
-            // "f" records its first argument so evaluation order is observable.
-            if (name == "f" && arguments.Length > 0)
+            int[] pulled = new int[arguments.Count];
+            for (int i = 0; i < pulled.Length; i++)
             {
-                CallOrder.Add(arguments[0]);
+                pulled[i] = arguments.GetInt32(i);
             }
 
-            result = Returns.GetValueOrDefault(name);
+            LastArguments = pulled;
+
+            // "f" records its first argument so evaluation order is observable.
+            if (name == "f" && pulled.Length > 0)
+            {
+                CallOrder.Add(pulled[0]);
+            }
+
+            result = Returns.GetValueOrDefault(name, QvmValue.Zero);
             return true;
         }
     }

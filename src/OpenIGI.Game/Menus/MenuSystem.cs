@@ -37,6 +37,14 @@ public sealed class MenuSystem
     /// <summary>Gets the manager the script created.</summary>
     public MenuManagerTask Manager { get; }
 
+    /// <summary>Gets the registry the menu's named variables are bound in.</summary>
+    /// <remarks>
+    /// <c>Task_New</c> exports each task as it creates it, so by the time the script has run every
+    /// <c>SlideBar_950.vValue</c> in it is already a live alias onto the task's field. Menu expressions
+    /// read and write these.
+    /// </remarks>
+    public ScriptVarRegistry? Variables { get; private init; }
+
     /// <summary>Gets every screen the script created, in creation order.</summary>
     public IReadOnlyList<MenuScreenTask> Screens => [.. Descend(Manager).OfType<MenuScreenTask>()];
 
@@ -78,7 +86,7 @@ public sealed class MenuSystem
         MenuManagerTask manager = Descend(tree.Root).OfType<MenuManagerTask>().FirstOrDefault()
             ?? throw new EngineFatalException("The menu script built no MenuManager.");
 
-        MenuSystem menu = new(tree, types, natives, manager);
+        MenuSystem menu = new(tree, types, natives, manager) { Variables = variables };
         log.Information(
             "Menu",
             $"Loaded {menu.Screens.Count} screen(s) from '{manager.ResourcePath}', starting on {manager.CurrentMenuScreen}.");
@@ -127,7 +135,7 @@ public sealed class MenuSystem
         MenuManagerTask manager = Descend(loop.Tasks.Root).OfType<MenuManagerTask>().FirstOrDefault()
             ?? throw new EngineFatalException("The menu script built no MenuManager.");
 
-        MenuSystem menu = new(loop.Tasks, loop.Types, loop.Natives, manager);
+        MenuSystem menu = new(loop.Tasks, loop.Types, loop.Natives, manager) { Variables = loop.Variables };
         log.Information(
             "Menu",
             $"Loaded {menu.Screens.Count} screen(s) from '{manager.ResourcePath}', starting on {manager.CurrentMenuScreen}.");

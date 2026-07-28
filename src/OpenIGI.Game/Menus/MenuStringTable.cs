@@ -37,6 +37,21 @@ public sealed class MenuStringTable
     public static string GetArchiveName(string language = DefaultLanguageDirectory) =>
         $"LOCAL:language/{language}/menusystem.res";
 
+    /// <summary>The language constants a menu script may pass to <c>MenuManager_SetLanguage</c>.</summary>
+    /// <remarks>
+    /// The original registers these six as integer constants 0–5, from a table of 16-byte entries at
+    /// <c>0x53331C</c>. <c>USA</c> is a sixth <em>language</em>, not a region flag: it selects a
+    /// separate string set from British English.
+    /// </remarks>
+    public static IReadOnlyList<string> LanguageNames { get; } =
+        ["english", "german", "french", "italian", "spanish", "usa"];
+
+    /// <summary>Maps a language constant to its directory name.</summary>
+    /// <param name="language">The constant, as <c>MenuManager_SetLanguage</c> receives it.</param>
+    /// <returns>The directory name, or <see cref="DefaultLanguageDirectory"/> for an unknown value.</returns>
+    public static string LanguageNameOf(int language) =>
+        language >= 0 && language < LanguageNames.Count ? LanguageNames[language] : DefaultLanguageDirectory;
+
     private readonly Dictionary<string, string> _missing = new(StringComparer.OrdinalIgnoreCase);
     private readonly ResourceRegistry _resources;
 

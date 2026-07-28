@@ -71,6 +71,23 @@ public sealed class ScriptVarRegistry
     public string BindReal(GameTask task, string field, Func<double> get, Action<double> set) =>
         Bind(task, field, new QvmFloatVariable(get, set));
 
+    /// <summary>Binds a fixed-capacity text field.</summary>
+    /// <param name="task">The owning task.</param>
+    /// <param name="field">The field name, such as <c>zData</c>.</param>
+    /// <param name="get">Reads the current value.</param>
+    /// <param name="set">Stores a new value.</param>
+    /// <param name="capacity">The buffer size in bytes, including the terminator.</param>
+    /// <returns>The symbol name that was bound.</returns>
+    /// <remarks>
+    /// The original stores these in a fixed char array and its assignment is
+    /// <c>strncpy(dst, src, capacity - 1)</c> with an explicit terminator, so a longer value is
+    /// truncated rather than rejected.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="field"/> is empty.</exception>
+    public string BindText(GameTask task, string field, Func<string> get, Action<string> set, int capacity) =>
+        Bind(task, field, new QvmStringVariable(get, set, capacity));
+
     /// <summary>Binds a boolean field, which the original stores as one byte.</summary>
     /// <param name="task">The owning task.</param>
     /// <param name="field">The field name, such as <c>isOn</c>.</param>
@@ -227,6 +244,25 @@ public sealed class ScriptVarRegistry
 
         value = default;
         return false;
+    }
+
+    /// <summary>Gets the type a bound variable declares.</summary>
+    /// <param name="symbol">The full name, such as <c>SlideBar_950.vValue</c>.</param>
+    /// <returns>
+    /// The declared type, or <see cref="QvmValueKind.None"/> when the name is not a bound variable.
+    /// </returns>
+    /// <remarks>
+    /// An assignment picks its evaluator from this — the original's symbol type tag of 1, 2 or 3. See
+    /// the original.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="symbol"/> is <see langword="null"/>.</exception>
+    public QvmValueKind GetValueKind(string symbol)
+    {
+        ArgumentNullException.ThrowIfNull(symbol);
+
+        return _symbols.TryResolve(symbol, out QvmSymbol? resolved) && resolved.Variable is { } variable
+            ? variable.ValueType
+            : QvmValueKind.None;
     }
 
     /// <summary>Writes a bound variable by its full symbol name.</summary>

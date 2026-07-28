@@ -1,33 +1,44 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Scripting.Expressions;
 
 /// <summary>
-/// Evaluates a parsed expression.
+/// Evaluates a parsed expression, in whichever of the language's three types the caller asks for.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Transcribed from <c>Expr_EvalInt</c> (<c>0x4B9120</c>). Four of its behaviours are observable and
-/// are reproduced deliberately rather than tidied:
+/// Transcribed from the original's three walks over the same tree — <c>Expr_EvalInt</c>
+/// (<c>0x4B9120</c>), <c>Expr_EvalFloat</c> (<c>0x4B9660</c>) and <c>Expr_EvalString</c>
+/// (<c>0x4B8CE0</c>). Which one runs is decided by the consumer, never by the expression: an
+/// assignment picks by its target's declared type, and a native picks per argument. The same source
+/// therefore has three different values depending on who asks, and <c>this.vValue</c> reading
+/// <c>0.75</c> as a float and <c>0</c> as an integer is correct behaviour rather than a rounding bug.
+/// </para>
+/// <para>
+/// Behaviours that are observable and are reproduced deliberately rather than tidied:
 /// </para>
 /// <list type="number">
 /// <item><description>
-/// <b>Everything is a 32-bit integer.</b> The tokenizer parses numbers as <c>double</c>, but the
-/// evaluator truncates each literal toward zero on the way in and every operator works on
-/// <see cref="int"/>. There is no floating-point arithmetic in this language at all.
+/// <b>Binary operands evaluate right-to-left</b> in the integer walk, for every arithmetic, bitwise
+/// and comparison operator. With a call on each side — which retail menu scripts do have — the calls
+/// happen in that order, so this is not free to "correct". The float walk keeps that order except for
+/// <c>-</c>, which it alone evaluates left-first.
 /// </description></item>
 /// <item><description>
-/// <b>Binary operands evaluate right-to-left.</b> The original computes its right operand first and
-/// then its left, for every arithmetic, bitwise and comparison operator. With a call on each side —
-/// which retail menu scripts do have — the calls happen in that order, so this is not free to
-/// "correct".
+/// <b>Division tests the divisor first and gives up before evaluating the numerator</b>, in both
+/// numeric walks. <c>f() / 0</c> never calls <c>f</c>.
 /// </description></item>
 /// <item><description>
-/// <b>The comma is the exception</b>: it evaluates left first, then right, and yields the right.
+/// <b>The comma evaluates left first</b>, then right, and yields the right. In the float walk it runs
+/// the <em>integer</em> evaluator on both sides.
 /// </description></item>
 /// <item><description>
-/// <b>Division by zero yields zero</b> and raises the script error flag rather than faulting. The
-/// original defines this case, so it is not a divergence.
+/// <b>Division by zero yields zero</b> and raises the script error flag rather than faulting.
+/// </description></item>
+/// <item><description>
+/// <b>The float walk has no bitwise or shift operators at all</b> — no case in the switch — so each
+/// one falls through to zero there.
 /// </description></item>
 /// </list>
 /// <para>
@@ -58,7 +69,7 @@ public sealed class ScriptExpressionEvaluator
     /// <summary>Gets the message describing the last error, or an empty string.</summary>
     public string ErrorMessage { get; private set; } = string.Empty;
 
-    /// <summary>Evaluates an expression.</summary>
+    /// <summary>Evaluates an expression as an integer, clearing the error state first.</summary>
     /// <param name="expression">The expression to evaluate.</param>
     /// <returns>The result.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
@@ -68,7 +79,33 @@ public sealed class ScriptExpressionEvaluator
 
         HasError = false;
         ErrorMessage = string.Empty;
-        return Eval(expression);
+        return EvalInt(expression);
+    }
+
+    /// <summary>Evaluates an expression as a <see cref="double"/>, clearing the error state first.</summary>
+    /// <param name="expression">The expression to evaluate.</param>
+    /// <returns>The result.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    public double EvaluateReal(ScriptExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        HasError = false;
+        ErrorMessage = string.Empty;
+        return EvalReal(expression);
+    }
+
+    /// <summary>Evaluates an expression as text, clearing the error state first.</summary>
+    /// <param name="expression">The expression to evaluate.</param>
+    /// <returns>The result, or an empty string.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    public string EvaluateText(ScriptExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+
+        HasError = false;
+        ErrorMessage = string.Empty;
+        return EvalText(expression);
     }
 
     /// <summary>Evaluates an expression as a condition.</summary>
@@ -76,7 +113,20 @@ public sealed class ScriptExpressionEvaluator
     /// <returns><see langword="true"/> when the result is non-zero.</returns>
     public bool EvaluateCondition(ScriptExpression expression) => Evaluate(expression) != 0;
 
-    private int Eval(ScriptExpression? node)
+    /// <summary>Evaluates a sub-expression as an integer without disturbing the error state.</summary>
+    /// <param name="expression">The expression to evaluate.</param>
+    /// <returns>The result.</returns>
+    /// <remarks>This is what a native's <c>Arg_GetInt</c> reaches, mid-evaluation.</remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="expression"/> is <see langword="null"/>.</exception>
+    public int EvaluateInt32(ScriptExpression expression)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        return EvalInt(expression);
+    }
+
+    // ---- the integer walk: Expr_EvalInt (0x4B9120) ----
+
+    private int EvalInt(ScriptExpression? node)
     {
         if (node is null)
         {
@@ -93,79 +143,60 @@ public sealed class ScriptExpressionEvaluator
             // A string has no integer value; the original's integer path returns zero for one.
             ScriptExpressionKind.String => 0,
 
-            ScriptExpressionKind.Group => Eval(node.Left),
-            ScriptExpressionKind.Identifier => EvalIdentifier(node),
-            ScriptExpressionKind.Conditional => Eval(node.Left) != 0 ? Eval(node.Right) : Eval(node.Extra),
-            ScriptExpressionKind.Operator => EvalOperator(node),
+            ScriptExpressionKind.Group => EvalInt(node.Left),
+            ScriptExpressionKind.Identifier => Resolve(node).ToInt32(),
+            ScriptExpressionKind.Conditional => EvalInt(node.Left) != 0 ? EvalInt(node.Right) : EvalInt(node.Extra),
+            ScriptExpressionKind.Operator => EvalIntOperator(node),
             _ => 0,
         };
     }
 
-    private int EvalIdentifier(ScriptExpression node)
-    {
-        if (node.IsCall)
-        {
-            int[] arguments = new int[node.Arguments.Count];
-            for (int i = 0; i < arguments.Length; i++)
-            {
-                arguments[i] = Eval(node.Arguments[i]);
-            }
-
-            if (_context.TryInvoke(node.Text, arguments, out int result))
-            {
-                return result;
-            }
-
-            return Fail($"Unknown identifier '{node.Text}' in expression, line {node.Line}");
-        }
-
-        if (_context.TryGetValue(node.Text, out int value))
-        {
-            return value;
-        }
-
-        return Fail($"Unknown identifier '{node.Text}' in expression, line {node.Line}");
-    }
-
-    private int EvalOperator(ScriptExpression node)
+    private int EvalIntOperator(ScriptExpression node)
     {
         // Unary operators take their operand from the right child, as they do in the original.
         switch (node.Operator)
         {
             case ScriptOperator.UnaryPlus:
-                return Eval(node.Right);
+                return EvalInt(node.Right);
             case ScriptOperator.UnaryMinus:
-                return -Eval(node.Right);
+                return -EvalInt(node.Right);
             case ScriptOperator.BitwiseNot:
-                return ~Eval(node.Right);
+                return ~EvalInt(node.Right);
             case ScriptOperator.Not:
-                return Eval(node.Right) == 0 ? 1 : 0;
+                return EvalInt(node.Right) == 0 ? 1 : 0;
 
             // Short-circuiting operators must not pre-evaluate, so they come before the general path.
             case ScriptOperator.LogicalAnd:
-                return Eval(node.Left) != 0 && Eval(node.Right) != 0 ? 1 : 0;
+                return EvalInt(node.Left) != 0 && EvalInt(node.Right) != 0 ? 1 : 0;
             case ScriptOperator.LogicalOr:
-                return Eval(node.Left) != 0 || Eval(node.Right) != 0 ? 1 : 0;
+                return EvalInt(node.Left) != 0 || EvalInt(node.Right) != 0 ? 1 : 0;
 
             // The comma is the one operator that evaluates left first.
             case ScriptOperator.Comma:
-                Eval(node.Left);
-                return Eval(node.Right);
+                EvalInt(node.Left);
+                return EvalInt(node.Right);
 
             case ScriptOperator.Assign:
-                return EvalAssignment(node);
+                return Assign(node).ToInt32();
+
+            // Division tests the divisor before it touches the numerator, so a zero divisor means the
+            // left operand is never evaluated at all — a call there does not run.
+            case ScriptOperator.Divide:
+            {
+                int divisor = EvalInt(node.Right);
+                return divisor != 0 ? EvalInt(node.Left) / divisor : FailInt("Division by zero in expression");
+            }
         }
 
         // Everything else: right operand first, then left. Deliberate — see the remarks.
-        int right = Eval(node.Right);
-        int left = Eval(node.Left);
+        int right = EvalInt(node.Right);
+        int left = EvalInt(node.Left);
 
         return node.Operator switch
         {
             ScriptOperator.Add => left + right,
             ScriptOperator.Subtract => left - right,
             ScriptOperator.Multiply => left * right,
-            ScriptOperator.Divide => right != 0 ? left / right : Fail("Division by zero in expression"),
             ScriptOperator.BitwiseOr => left | right,
             ScriptOperator.BitwiseXor => left ^ right,
             ScriptOperator.BitwiseAnd => left & right,
@@ -184,31 +215,207 @@ public sealed class ScriptExpressionEvaluator
         };
     }
 
-    private int EvalAssignment(ScriptExpression node)
+    // ---- the float walk: Expr_EvalFloat (0x4B9660) ----
+
+    private double EvalReal(ScriptExpression? node)
+    {
+        if (node is null)
+        {
+            return 0.0;
+        }
+
+        return node.Kind switch
+        {
+            ScriptExpressionKind.Constant => node.Constant,
+            ScriptExpressionKind.Number => node.Number,
+            ScriptExpressionKind.String => 0.0,
+            ScriptExpressionKind.Group => EvalReal(node.Left),
+            ScriptExpressionKind.Identifier => Resolve(node).ToDouble(),
+
+            // The condition stays in float and is truncated to test it.
+            ScriptExpressionKind.Conditional =>
+                IgiMath.TruncToInt32(EvalReal(node.Left)) != 0 ? EvalReal(node.Right) : EvalReal(node.Extra),
+
+            ScriptExpressionKind.Operator => EvalRealOperator(node),
+            _ => 0.0,
+        };
+    }
+
+    private double EvalRealOperator(ScriptExpression node)
+    {
+        switch (node.Operator)
+        {
+            case ScriptOperator.UnaryPlus:
+                return EvalReal(node.Right);
+            case ScriptOperator.UnaryMinus:
+                return -EvalReal(node.Right);
+            case ScriptOperator.Not:
+                return EvalReal(node.Right) == 0.0 ? 1.0 : 0.0;
+
+            case ScriptOperator.LogicalAnd:
+                return EvalReal(node.Left) != 0.0 && EvalReal(node.Right) != 0.0 ? 1.0 : 0.0;
+            case ScriptOperator.LogicalOr:
+                return EvalReal(node.Left) != 0.0 || EvalReal(node.Right) != 0.0 ? 1.0 : 0.0;
+
+            // The float walk hands the comma to the integer walk, both sides.
+            case ScriptOperator.Comma:
+                EvalInt(node.Left);
+                return EvalInt(node.Right);
+
+            case ScriptOperator.Assign:
+                return Assign(node).ToDouble();
+
+            // Subtraction is the one operator the float walk evaluates left-first.
+            case ScriptOperator.Subtract:
+            {
+                double leftFirst = EvalReal(node.Left);
+                return leftFirst - EvalReal(node.Right);
+            }
+
+            // As in the integer walk, a zero divisor means the left operand never runs.
+            case ScriptOperator.Divide:
+            {
+                double divisor = EvalReal(node.Right);
+                return divisor != 0.0 ? EvalReal(node.Left) / divisor : FailReal("Division by zero in expression");
+            }
+        }
+
+        double right = EvalReal(node.Right);
+        double left = EvalReal(node.Left);
+
+        return node.Operator switch
+        {
+            ScriptOperator.Add => left + right,
+            ScriptOperator.Multiply => left * right,
+            ScriptOperator.Equal => left == right ? 1.0 : 0.0,
+            ScriptOperator.NotEqual => left != right ? 1.0 : 0.0,
+            ScriptOperator.Less => left < right ? 1.0 : 0.0,
+            ScriptOperator.Greater => left > right ? 1.0 : 0.0,
+            ScriptOperator.LessOrEqual => left <= right ? 1.0 : 0.0,
+            ScriptOperator.GreaterOrEqual => left >= right ? 1.0 : 0.0,
+
+            // The bitwise and shift operators have no case at all in the original's float switch, so
+            // they fall through to zero. Nothing retail reaches this, but it is defined.
+            _ => 0.0,
+        };
+    }
+
+    // ---- the string walk: Expr_EvalString (0x4B8CE0) ----
+
+    private string EvalText(ScriptExpression? node)
+    {
+        if (node is null)
+        {
+            return string.Empty;
+        }
+
+        switch (node.Kind)
+        {
+            case ScriptExpressionKind.String:
+                return node.Text;
+
+            case ScriptExpressionKind.Group:
+                return EvalText(node.Left);
+
+            case ScriptExpressionKind.Identifier:
+                return Resolve(node).ToText();
+
+            // A number in a string expression is an error, where a string in an integer expression is
+            // silently zero. The asymmetry is the original's.
+            case ScriptExpressionKind.Number:
+            case ScriptExpressionKind.Constant:
+                return FailText($"Numeric member in string expression. Line {node.Line}.");
+
+            case ScriptExpressionKind.Operator:
+                switch (node.Operator)
+                {
+                    case ScriptOperator.Add:
+                        return EvalText(node.Left) + EvalText(node.Right);
+
+                    case ScriptOperator.Comma:
+                        EvalText(node.Left);
+                        return EvalText(node.Right);
+
+                    case ScriptOperator.Assign:
+                        Assign(node);
+                        return EvalText(node.Right);
+                }
+
+                break;
+        }
+
+        return FailText($"Syntax error in string expression, line {node.Line}");
+    }
+
+    // ---- shared: name resolution and assignment ----
+
+    private QvmValue Resolve(ScriptExpression node)
+    {
+        if (node.IsCall && _context.TryInvoke(node.Text, new ScriptArguments(this, node.Arguments), out QvmValue result))
+        {
+            return result;
+        }
+
+        if (!node.IsCall && _context.TryGetValue(node.Text, out QvmValue value))
+        {
+            return value;
+        }
+
+        Fail($"Unknown identifier '{node.Text}' in expression, line {node.Line}");
+        return QvmValue.FromInt32(0);
+    }
+
+    /// <summary>Assigns, running the evaluator the <em>target's</em> declared type names.</summary>
+    /// <remarks>This is <c>Expr_Assign</c> (<c>0x4B9040</c>), reached identically from all three walks.</remarks>
+    private QvmValue Assign(ScriptExpression node)
     {
         ScriptExpression? target = node.Left;
         if (target is null || !target.IsAssignable)
         {
-            return Fail($"Expression: Cannot assign to constant, line {node.Line}");
+            Fail($"Expression: Cannot assign to constant, line {node.Line}");
+            return QvmValue.FromInt32(0);
         }
 
-        int value = Eval(node.Right);
+        QvmValue value = _context.GetValueKind(target.Text) switch
+        {
+            QvmValueKind.Float => QvmValue.FromDouble(EvalReal(node.Right)),
+            QvmValueKind.String => QvmValue.FromString(EvalText(node.Right)),
+            _ => QvmValue.FromInt32(EvalInt(node.Right)),
+        };
+
         if (!_context.TrySetValue(target.Text, value))
         {
-            return Fail($"Unknown identifier '{target.Text}' in expression, line {node.Line}");
+            Fail($"Unknown identifier '{target.Text}' in expression, line {node.Line}");
+            return QvmValue.FromInt32(0);
         }
 
         return value;
     }
 
-    private int Fail(string message)
+    private int FailInt(string message)
+    {
+        Fail(message);
+        return 0;
+    }
+
+    private double FailReal(string message)
+    {
+        Fail(message);
+        return 0.0;
+    }
+
+    private string FailText(string message)
+    {
+        Fail(message);
+        return string.Empty;
+    }
+
+    private void Fail(string message)
     {
         HasError = true;
         if (ErrorMessage.Length == 0)
         {
             ErrorMessage = message;
         }
-
-        return 0;
     }
 }

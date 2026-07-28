@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Menus;
@@ -45,8 +46,12 @@ public partial class MenuManagerTask
     /// <param name="system">The loaded menu, used to resolve screen ids.</param>
     /// <param name="host">The shell providing input, presentation and sound.</param>
     /// <param name="logger">Where to report menu activity.</param>
+    /// <param name="variables">
+    /// The namespace the menu's named variables are bound in. Defaults to
+    /// <paramref name="system"/>'s, which is what a script loaded into a game loop has.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public void Initialize(MenuSystem system, IMenuHost host, IIgiLogger? logger = null)
+    public void Initialize(MenuSystem system, IMenuHost host, IIgiLogger? logger = null, ScriptVarRegistry? variables = null)
     {
         ArgumentNullException.ThrowIfNull(system);
         ArgumentNullException.ThrowIfNull(host);
@@ -55,7 +60,7 @@ public partial class MenuManagerTask
         _host = host;
         _logger = logger ?? NullLogger.Instance;
 
-        ScriptContext = new MenuScriptContext(Navigator, _logger);
+        ScriptContext = new MenuScriptContext(Navigator, _logger) { Variables = variables ?? system.Variables };
         _evaluator = new ScriptExpressionEvaluator(ScriptContext);
 
         Selection.Moved += (_, _) => _host?.PlaySound(MoveSound);
@@ -111,15 +116,27 @@ public partial class MenuManagerTask
 
     /// <summary>Runs one menu action expression.</summary>
     /// <param name="source">The expression source, which may be empty.</param>
+    /// <param name="self">The task <c>this.</c> refers to while it runs.</param>
     /// <remarks>Reports a failure to the log and carries on, as the original does.</remarks>
-    public void RunAction(string source)
+    public void RunAction(string source, GameTask? self = null)
     {
-        if (_evaluator is null || string.IsNullOrWhiteSpace(source))
+        if (_evaluator is null || ScriptContext is null || string.IsNullOrWhiteSpace(source))
         {
             return;
         }
 
-        _evaluator.Evaluate(ScriptExpressionParser.Parse(source, ResolveConstant));
+        // `this` binds to whatever task owns the expression, so a slider's Set Data Script writes its
+        // own vValue and not some other control's.
+        ScriptContext.Self = self;
+        try
+        {
+            _evaluator.Evaluate(ScriptExpressionParser.Parse(source, ResolveConstant));
+        }
+        finally
+        {
+            ScriptContext.Self = null;
+        }
+
         if (_evaluator.HasError)
         {
             _logger.Warning("Menu", $"{source}: {_evaluator.ErrorMessage}");
@@ -164,7 +181,7 @@ public partial class MenuManagerTask
         screen.Arrange();
         Selection.Rebuild(screen);
 
-        RunAction(screen.OnInitData);
+        RunAction(screen.OnInitData, screen);
     }
 
     private void HandleKeys()
@@ -177,7 +194,7 @@ public partial class MenuManagerTask
             switch (input)
             {
                 case MenuInputEvent.Escape:
-                    RunAction(_current!.OnPressEscape);
+                    RunAction(_current!.OnPressEscape, _current);
                     break;
 
                 case MenuInputEvent.Enter:
@@ -227,7 +244,7 @@ public partial class MenuManagerTask
 
         _host?.PlaySound(entry.ClickSoundResource.Length > 0 ? entry.ClickSoundResource : ChooseSound);
         _logger.Information("Menu", $"'{entry.TextResource}' -> {entry.OnClickScript}");
-        RunAction(entry.OnClickScript);
+        RunAction(entry.OnClickScript, entry);
     }
 
     private bool SwapKeysWanted() =>

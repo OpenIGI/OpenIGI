@@ -100,6 +100,22 @@ public partial class MenuScreenTask : MenuWindowTask
     /// <summary>Gets or sets the expression run when the screen's data changes.</summary>
     [ScriptParam(ScriptParamType.VarString, "On Change Data")]
     public string OnChangeData { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the screen's scratch value, exported to script as <c>nUserData</c>.</summary>
+    /// <remarks>
+    /// The graphics screen keeps its pending performance flags here across three expressions —
+    /// <c>this.nUserData = Config_GraphicOptionsGetPerformanceFlags()</c> on init and
+    /// <c>MenuScreen_905.nUserData</c> from a slider — which is what makes it a real field rather than
+    /// a local.
+    /// </remarks>
+    public int UserData { get; set; }
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindInt(this, "nUserData", () => UserData, value => UserData = value);
+    }
 }
 
 /// <summary>A selectable line of text that runs an expression when clicked.</summary>
@@ -214,6 +230,29 @@ public partial class SlideBarTask : MenuWindowTask
     /// <summary>Gets or sets the expression giving the number of discrete options.</summary>
     [ScriptParam(ScriptParamType.VarString, "Set Num Options")]
     public string SetNumOptions { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the carret's position along the bar, exported as <c>vValue</c>.</summary>
+    /// <remarks>
+    /// This is a <c>double</c>, not an integer: <c>SlideBar_ExportVars</c> (<c>0x4200C0</c>) binds it
+    /// through the eight-byte float registrar. Every retail slider expression depends on it —
+    /// <c>Config_SoundOptionsSetMusicVolume(this.vValue)</c> would read 0 for any volume below full if
+    /// this were an <c>int</c>.
+    /// </remarks>
+    public double Value { get; set; }
+
+    /// <summary>Gets or sets the slider's discrete position, exported to script as <c>nValue</c>.</summary>
+    public int Position { get; set; }
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => true;
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindReal(this, "vValue", () => Value, value => Value = value);
+        variables.BindInt(this, "nValue", () => Position, value => Position = value);
+    }
 }
 
 /// <summary>A drop-down list bound through get/set expressions.</summary>
@@ -246,6 +285,23 @@ public partial class ListBoxTask : MenuWindowTask
     /// <summary>Gets or sets the expression run after the selection changes.</summary>
     [ScriptParam(ScriptParamType.VarString, "Modify Data Script")]
     public string ModifyDataScript { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the selected entry, exported to script as <c>nActiveID</c>.</summary>
+    /// <remarks>
+    /// The graphics screen reads one list box's selection to fill another:
+    /// <c>Config_FillScreenResolutionListBox(ListBox_951.nActiveID)</c>.
+    /// </remarks>
+    public int ActiveId { get; set; }
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => true;
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindInt(this, "nActiveID", () => ActiveId, value => ActiveId = value);
+    }
 }
 
 /// <summary>An on/off switch bound through get/set expressions.</summary>
@@ -258,6 +314,19 @@ public partial class ToggleBoxTask : MenuWindowTask
     /// <summary>Gets or sets the expression that writes the new state.</summary>
     [ScriptParam(ScriptParamType.VarString, "Set Data Script")]
     public string SetDataScript { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the switch's state, exported to script as <c>isOn</c>.</summary>
+    public bool IsOn { get; set; }
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => true;
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindBool(this, "isOn", () => IsOn, value => IsOn = value);
+    }
 }
 
 /// <summary>A single-line text field bound through get/set expressions.</summary>
@@ -286,6 +355,27 @@ public partial class InputBoxTask : MenuWindowTask
     /// <summary>Gets or sets a value indicating whether typed characters are masked.</summary>
     [ScriptParam(ScriptParamType.Bool8, "Hide Input")]
     public bool HideInput { get; set; }
+
+    /// <summary>The size of the original's text buffer, including its terminator.</summary>
+    /// <remarks>
+    /// <c>InputBox_ExportVars</c> (<c>0x41DB30</c>) binds 40 bytes at <c>+84</c>, so a longer value is
+    /// truncated to 39 characters rather than rejected. The <c>String Length</c> parameter is a
+    /// separate, smaller limit the editor sets per field.
+    /// </remarks>
+    public const int DataCapacity = 40;
+
+    /// <summary>Gets or sets the text typed into the field, exported to script as <c>zData</c>.</summary>
+    public string Data { get; set; } = string.Empty;
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => true;
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindText(this, "zData", () => Data, value => Data = value, DataCapacity);
+    }
 }
 
 /// <summary>A scrolling view of a plain text file.</summary>
@@ -338,6 +428,19 @@ public partial class ScrollListBoxTask : MenuWindowTask
     /// <summary>Gets or sets the expression run when an entry is chosen.</summary>
     [ScriptParam(ScriptParamType.VarString, "On Select Item")]
     public string OnSelectItem { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the selected entry's id, exported to script as <c>nActiveID</c>.</summary>
+    public int ActiveId { get; set; }
+
+    /// <inheritdoc/>
+    public override bool IsInteractive => true;
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindInt(this, "nActiveID", () => ActiveId, value => ActiveId = value);
+    }
 }
 
 /// <summary>A picture chosen from a collected set by an expression.</summary>
@@ -413,7 +516,24 @@ public partial class TypeWriterBoxTask : MenuWindowTask
 public partial class ControlsMenuTask : MenuWindowTask
 {
     /// <summary>Gets or sets the list's scroll offset, exported to script as <c>nOffset</c>.</summary>
+    /// <remarks>The controls screen reads it back: <c>ControlsMenu_ConvertFloatFromOffset(ControlsMenu_954.nOffset)</c>.</remarks>
     public int Offset { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the bindings are due to be reset.</summary>
+    /// <remarks>
+    /// The reset popup's confirm entry writes it: <c>ControlsMenu_954.isReset = TRUE,
+    /// ToggleBox_957.isOn = FALSE, MenuManager_DeactivatePopuScreen()</c>. The screen acts on it and
+    /// clears it, which is why the write and the reset are two separate steps.
+    /// </remarks>
+    public bool IsReset { get; set; }
+
+    /// <inheritdoc/>
+    protected override void OnExportVars(ScriptVarRegistry variables)
+    {
+        base.OnExportVars(variables);
+        variables.BindInt(this, "nOffset", () => Offset, value => Offset = value);
+        variables.BindBool(this, "isReset", () => IsReset, value => IsReset = value);
+    }
 }
 
 /// <summary>A modal popup window.</summary>

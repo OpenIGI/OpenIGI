@@ -1,3 +1,5 @@
+using OpenIGI.Scripting.Runtime;
+
 namespace OpenIGI.Scripting.Expressions;
 
 /// <summary>
@@ -14,25 +16,43 @@ namespace OpenIGI.Scripting.Expressions;
 /// <c>MenuScreen_905.nActiveID</c> — naming a property of the owning task or of an exported instance.
 /// The context decides which; the evaluator only distinguishes "called" from "read".
 /// </para>
+/// <para>
+/// Values are typed, because the language is: a symbol carries a type tag of 1, 2 or 3 — integer,
+/// <c>double</c> or string — and an assignment picks its evaluator from the <em>target's</em> tag.
+/// </para>
 /// </remarks>
 public interface IScriptExpressionContext
 {
-    /// <summary>Reads a name's value.</summary>
+    /// <summary>Reads a name's value, in whatever type its storage declares.</summary>
     /// <param name="name">The name, possibly a dotted member path.</param>
     /// <param name="value">Receives the value.</param>
     /// <returns><see langword="false"/> when the name is unknown, which the evaluator reports as <c>"Unknown identifier"</c>.</returns>
-    bool TryGetValue(string name, out int value);
+    bool TryGetValue(string name, out QvmValue value);
+
+    /// <summary>Gets the type a name's storage declares.</summary>
+    /// <param name="name">The name, possibly a dotted member path.</param>
+    /// <returns>
+    /// The tag, or <see cref="QvmValueKind.None"/> when the name is unknown. An assignment runs the
+    /// evaluator this names, so an unknown target falls back to the integer path.
+    /// </returns>
+    QvmValueKind GetValueKind(string name);
 
     /// <summary>Assigns to a name.</summary>
     /// <param name="name">The name, possibly a dotted member path.</param>
-    /// <param name="value">The value to store.</param>
+    /// <param name="value">The value to store, already evaluated in the target's type.</param>
     /// <returns><see langword="false"/> when the name is unknown or not assignable.</returns>
-    bool TrySetValue(string name, int value);
+    bool TrySetValue(string name, QvmValue value);
 
     /// <summary>Calls a native function.</summary>
     /// <param name="name">The function name.</param>
-    /// <param name="arguments">The already-evaluated arguments, in source order.</param>
+    /// <param name="arguments">The <em>unevaluated</em> arguments.</param>
     /// <param name="result">Receives the return value.</param>
     /// <returns><see langword="false"/> when no such function exists.</returns>
-    bool TryInvoke(string name, ReadOnlySpan<int> arguments, out int result);
+    /// <remarks>
+    /// Arguments arrive unevaluated because that is how the original works: a native is registered with
+    /// an arity and no parameter types, and its body pulls each argument through <c>Arg_GetInt</c>,
+    /// <c>Arg_GetFloat</c> or <c>Arg_GetString</c> as it wants it. An argument a native never reads is
+    /// never evaluated, and the order of two arguments' side effects is the callee's to choose.
+    /// </remarks>
+    bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result);
 }

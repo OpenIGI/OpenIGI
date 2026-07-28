@@ -131,6 +131,20 @@ public readonly struct QvmValue : IEquatable<QvmValue>
         _ => 0f,
     };
 
+    /// <summary>Converts the value to the full-width floating-point slot of the return union.</summary>
+    /// <returns>The 64-bit form, or zero for values that are not numbers.</returns>
+    /// <remarks>
+    /// The union's floating-point slot is eight bytes wide and <c>Expr_EvalFloat</c> reads all eight of
+    /// them, so a float-typed variable round-trips at <c>double</c> precision. <see cref="ToSingle"/>
+    /// is the narrower read the QVM stack does.
+    /// </remarks>
+    public double ToDouble() => Kind switch
+    {
+        QvmValueKind.Integer or QvmValueKind.Address => _integer,
+        QvmValueKind.Float => _number,
+        _ => 0.0,
+    };
+
     /// <summary>Converts the value to the string slot of the original's return union.</summary>
     /// <returns>The text, or the empty string for values that are not text.</returns>
     /// <remarks>

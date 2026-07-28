@@ -1,4 +1,6 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.Scripting.Expressions;
 
 namespace OpenIGI.Game.Menus;
@@ -19,6 +21,13 @@ public sealed class MenuScriptContext : IScriptExpressionContext
 {
     private const string LogCategory = "MenuScript";
 
+    /// <summary>The prefix an expression uses for the task it belongs to.</summary>
+    /// <remarks>
+    /// Retail menu scripts write <c>this.nUserData</c>, <c>this.isOn</c>, <c>this.vValue</c> and
+    /// <c>this.nActiveID</c>. It resolves against whatever task the expression is running for.
+    /// </remarks>
+    public const string SelfPrefix = "this.";
+
     private readonly MenuNavigator _stack;
     private readonly IIgiLogger _logger;
 
@@ -34,8 +43,13 @@ public sealed class MenuScriptContext : IScriptExpressionContext
     }
 
     /// <summary>Gets or sets the handler for names this context does not implement.</summary>
-    /// <remarks>Returns the value the call should evaluate to. The default logs and answers zero.</remarks>
-    public Func<string, int[], int>? Fallback { get; set; }
+    /// <remarks>
+    /// Returns the value the call should evaluate to; the default logs and answers zero. The arguments
+    /// arrive unevaluated, so a handler pulls each one in the type it wants — which is what a native
+    /// does in the original, and the only way <c>Config_SoundOptionsSetMusicVolume(this.vValue)</c>
+    /// sees <c>0.75</c> rather than <c>0</c>.
+    /// </remarks>
+    public Func<string, ScriptArguments, QvmValue>? Fallback { get; set; }
 
     /// <summary>Gets the names this context implements itself.</summary>
     public static IReadOnlyList<string> NativeNames { get; } =
@@ -58,18 +72,67 @@ public sealed class MenuScriptContext : IScriptExpressionContext
     /// <summary>Gets the language the script last selected, or an empty string.</summary>
     public string Language { get; private set; } = string.Empty;
 
-    /// <inheritdoc/>
-    public bool TryGetValue(string name, out int value)
+    /// <summary>Gets or sets the registry a member path resolves through.</summary>
+    /// <remarks>
+    /// The named-variable export from <c>task-system.md</c> §8: a task binds <c>TypeName_id.field</c>
+    /// as a live alias onto its own field, so <c>MenuScreen_905.nUserData</c> is a symbol lookup and
+    /// nothing more. Menu expressions read <em>and write</em> these.
+    /// </remarks>
+    public ScriptVarRegistry? Variables { get; set; }
+
+    /// <summary>Gets or sets the task <c>this.</c> refers to while an expression runs.</summary>
+    public GameTask? Self { get; set; }
+
+    /// <summary>Resolves a member path against the current task, expanding <c>this.</c>.</summary>
+    /// <param name="name">The identifier.</param>
+    /// <returns>The full symbol name, or <see langword="null"/> when the name is not a member path.</returns>
+    public string? ResolveMemberPath(string name)
     {
-        _logger.Debug(LogCategory, $"read {name} (unimplemented, reads 0)");
-        value = 0;
+        if (string.IsNullOrEmpty(name) || !name.Contains('.', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (!name.StartsWith(SelfPrefix, StringComparison.Ordinal))
+        {
+            return name;
+        }
+
+        return Self is null ? null : $"{Self.Name}.{name[SelfPrefix.Length..]}";
+    }
+
+    /// <inheritdoc/>
+    public bool TryGetValue(string name, out QvmValue value)
+    {
+        if (Variables is not null
+            && ResolveMemberPath(name) is { } symbol
+            && Variables.TryRead(symbol, out value))
+        {
+            return true;
+        }
+
+        _logger.Debug(LogCategory, $"read {name} (unresolved, reads 0)");
+        value = QvmValue.Zero;
         return true;
     }
 
     /// <inheritdoc/>
-    public bool TrySetValue(string name, int value)
+    public QvmValueKind GetValueKind(string name) =>
+        Variables is not null && ResolveMemberPath(name) is { } symbol
+            ? Variables.GetValueKind(symbol)
+            : QvmValueKind.None;
+
+    /// <inheritdoc/>
+    public bool TrySetValue(string name, QvmValue value)
     {
-        _logger.Debug(LogCategory, $"write {name} = {value} (unimplemented)");
+        if (Variables is not null
+            && ResolveMemberPath(name) is { } symbol
+            && Variables.TryWrite(symbol, value))
+        {
+            return true;
+        }
+
+        _logger.Debug(LogCategory, $"write {name} = {value} (unresolved)");
         return true;
     }
 
@@ -78,42 +141,43 @@ public sealed class MenuScriptContext : IScriptExpressionContext
     /// All three navigation natives return 1, so an expression such as
     /// <c>MenuManager_RequestScreen(904, FALSE) &amp;&amp; Game_UpdateVolume()</c> runs both sides.
     /// </remarks>
-    public bool TryInvoke(string name, ReadOnlySpan<int> arguments, out int result)
+    public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
     {
-        result = 1;
+        ArgumentNullException.ThrowIfNull(arguments);
+        result = QvmValue.FromInt32(1);
 
         switch (name)
         {
-            case "MenuManager_PushScreen" when arguments.Length >= 1:
-                _stack.Push(arguments[0]);
+            case "MenuManager_PushScreen" when arguments.Count >= 1:
+                _stack.Push(arguments.GetInt32(0));
                 return true;
 
-            case "MenuManager_PopScreen" when arguments.Length >= 1:
-                _stack.Pop(arguments[0] != 0);
+            case "MenuManager_PopScreen" when arguments.Count >= 1:
+                _stack.Pop(arguments.GetBoolean(0));
                 return true;
 
-            case "MenuManager_RequestScreen" when arguments.Length >= 2:
-                _stack.Request(arguments[0], arguments[1] != 0);
+            case "MenuManager_RequestScreen" when arguments.Count >= 2:
+                _stack.Request(arguments.GetInt32(0), arguments.GetBoolean(1));
                 return true;
 
-            case "MenuManager_ActivatePopupScreen" when arguments.Length >= 1:
-                _stack.ActivatePopup(arguments[0]);
+            case "MenuManager_ActivatePopupScreen" when arguments.Count >= 1:
+                _stack.ActivatePopup(arguments.GetInt32(0));
                 return true;
 
             case "MenuManager_DeactivatePopuScreen":
                 _stack.DeactivatePopup();
                 return true;
 
-            case "MenuManager_SetEnabled" when arguments.Length >= 1:
-                IsEnabled = arguments[0] != 0;
+            case "MenuManager_SetEnabled" when arguments.Count >= 1:
+                IsEnabled = arguments.GetBoolean(0);
                 return true;
 
-            case "MenuManager_LeaveMenus" when arguments.Length >= 1:
-                _stack.Leave((MenuManagerState)arguments[0]);
+            case "MenuManager_LeaveMenus" when arguments.Count >= 1:
+                _stack.Leave((MenuManagerState)arguments.GetInt32(0));
                 return true;
 
-            case "MenuManager_SetLanguage" when arguments.Length >= 1:
-                Language = arguments[0].ToString(System.Globalization.CultureInfo.InvariantCulture);
+            case "MenuManager_SetLanguage" when arguments.Count >= 1:
+                Language = MenuStringTable.LanguageNameOf(arguments.GetInt32(0));
                 return true;
 
             case "MenuManager_ForceUpdateWindow":
@@ -122,17 +186,14 @@ public sealed class MenuScriptContext : IScriptExpressionContext
                 return true;
 
             default:
-                int[] copied = arguments.ToArray();
                 if (Fallback is not null)
                 {
-                    result = Fallback(name, copied);
+                    result = Fallback(name, arguments);
                     return true;
                 }
 
-                _logger.Information(
-                    LogCategory,
-                    $"{name}({string.Join(", ", copied)}) (unimplemented, returns 0)");
-                result = 0;
+                _logger.Information(LogCategory, $"{name}/{arguments.Count} (unimplemented, returns 0)");
+                result = QvmValue.Zero;
                 return true;
         }
     }
