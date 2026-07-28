@@ -96,6 +96,15 @@ public abstract class MenuWindowTask : ContainerTask
     /// <remarks>Field <c>+75</c>. A click completes on <em>release</em> inside a latched item, not on press.</remarks>
     public bool WasClicked { get; private set; }
 
+    /// <summary>Sets or clears the completed-click flag, for tests that have no pointer.</summary>
+    /// <param name="clicked">What to set it to.</param>
+    /// <remarks>
+    /// The flag is normally owned by <see cref="HitTest"/>, which recomputes it every tick. A control's
+    /// own update is what reads it, and testing that path needs a way to set it without driving a whole
+    /// pointer through the manager — including clearing it, which the hit-test would do for real.
+    /// </remarks>
+    public void SetClickedForTest(bool clicked) => WasClicked = clicked;
+
     /// <summary>Gets or sets the key the manager has posted for this window to act on.</summary>
     /// <remarks>
     /// Field <c>+80</c>. See <see cref="MenuWindowCommand"/> — the manager posts, the control consumes.

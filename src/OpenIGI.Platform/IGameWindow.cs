@@ -54,6 +54,14 @@ public interface IGameWindow : IDisposable
     /// <summary>Gets a value indicating whether a close has been requested and the loop should end.</summary>
     bool IsClosing { get; }
 
+    /// <summary>Lists the display modes the monitor this window is on reports.</summary>
+    /// <returns>The modes, in whatever order the platform gives them.</returns>
+    /// <remarks>
+    /// The graphics configuration screen needs real modes to offer; a window that cannot enumerate
+    /// them returns only the one it is running at, which is honest rather than empty.
+    /// </remarks>
+    IReadOnlyList<(int Width, int Height, int RefreshRate)> GetDisplayModes();
+
     /// <summary>Gets the input state this window's message pump feeds.</summary>
     InputState Input { get; }
 

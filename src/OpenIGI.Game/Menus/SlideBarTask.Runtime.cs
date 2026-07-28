@@ -108,8 +108,12 @@ public partial class SlideBarTask
     public void ApplyPendingCommand()
     {
         bool changed = false;
+        (int trackX, int trackY, _, _) = PlaceParts();
 
-        if (PendingCommand == MenuWindowCommand.Left)
+        // Exactly one of three inputs, in this order: the left arrow, the right arrow, then dragging
+        // the carret. An arrow is checked by its own click flag OR by the posted key, which is what
+        // makes the mouse and the keyboard the same gesture.
+        if (LeftButton.WasClicked || PendingCommand == MenuWindowCommand.Left)
         {
             if (Value > 0.0)
             {
@@ -117,9 +121,17 @@ public partial class SlideBarTask
                 changed = true;
             }
         }
-        else if (PendingCommand == MenuWindowCommand.Right && Value < 1.0)
+        else if (RightButton.WasClicked || PendingCommand == MenuWindowCommand.Right)
         {
-            Value += StepSize;
+            if (Value < 1.0)
+            {
+                Value += StepSize;
+                changed = true;
+            }
+        }
+        else if (TryDrag(trackX, trackY, out double dragged))
+        {
+            Value = dragged;
             changed = true;
         }
 
@@ -132,6 +144,39 @@ public partial class SlideBarTask
             Manager?.PlaySound(MenuManagerTask.MoveSoundName);
             Run(ModifyDataScript);
         }
+    }
+
+    /// <summary>Reads a carret drag, when the pointer is holding this control.</summary>
+    /// <param name="trackX">The track's left edge.</param>
+    /// <param name="trackY">The track's top edge.</param>
+    /// <param name="value">Receives the position the pointer names.</param>
+    /// <returns><see langword="false"/> when nothing is being dragged.</returns>
+    /// <remarks>
+    /// The travel is the bar less the carret's own size, because the carret is placed by its top-left
+    /// corner — so the pointer maps onto <c>(pointer - trackOrigin) / (Size - carretSize)</c>. The
+    /// original gates this on the <em>held</em> flag rather than a completed click, which is what
+    /// makes it a drag rather than a jump.
+    /// </remarks>
+    private bool TryDrag(int trackX, int trackY, out double value)
+    {
+        value = Value;
+
+        if (Manager is not { Pointer: { } pointer } || !IsHeld)
+        {
+            return false;
+        }
+
+        int travel = Horizontal ? Size - CarretWidth : Size - CarretHeight;
+        if (travel <= 0)
+        {
+            return false;
+        }
+
+        value = Horizontal
+            ? (double)(pointer.X - trackX) / travel
+            : (double)(pointer.Y - trackY) / travel;
+
+        return true;
     }
 
     /// <summary>Snaps the carret to its nearest stop, clamps it, and recomputes the option index.</summary>

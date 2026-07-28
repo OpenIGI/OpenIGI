@@ -99,6 +99,52 @@ public sealed class MenuControlTests
     }
 
     [Fact]
+    public void ClickingASlidersArrowStepsItJustAsTheKeyDoes()
+    {
+        SlideBarTask slider = new() { Value = 0.5, Size = 100 };
+
+        // The original tests the arrow's own click flag OR the posted key in one condition, which is
+        // what stops the mouse and the keyboard disagreeing about what a step is.
+        // The step is a float in the original (+168 is 0.05f), so the arithmetic carries a float's
+        // error into a double — 0.5 - 0.05f is 0.44999999925, not 0.45.
+        slider.LeftButton.SetClickedForTest(true);
+        slider.ApplyPendingCommand();
+        Assert.Equal(0.45, slider.Value, 6);
+
+        // The hit-test clears the flag every tick; do the same, or the left arrow wins again.
+        slider.LeftButton.SetClickedForTest(false);
+        slider.RightButton.SetClickedForTest(true);
+        slider.ApplyPendingCommand();
+        Assert.Equal(0.5, slider.Value, 6);
+    }
+
+    [Fact]
+    public void ClickingASwitchsHalfSetsItJustAsTheKeyDoes()
+    {
+        ToggleBoxTask toggle = new() { IsOn = true };
+        toggle.PlaceParts();
+
+        toggle.OffHalf.SetClickedForTest(true);
+        toggle.ApplyPendingCommand();
+        Assert.False(toggle.IsOn);
+
+        toggle.OffHalf.SetClickedForTest(false);
+        toggle.OnHalf.SetClickedForTest(true);
+        toggle.ApplyPendingCommand();
+        Assert.True(toggle.IsOn);
+    }
+
+    [Fact]
+    public void ASwitchsHalvesCoverItsTwoSides()
+    {
+        ToggleBoxTask toggle = new() { LayoutX = 100, LayoutY = 50, LayoutWidth = 51, LayoutHeight = 15 };
+        toggle.PlaceParts();
+
+        Assert.Equal((100, 50, 25, 15), (toggle.OnHalf.LayoutX, toggle.OnHalf.LayoutY, toggle.OnHalf.LayoutWidth, toggle.OnHalf.LayoutHeight));
+        Assert.Equal((125, 50, 26, 15), (toggle.OffHalf.LayoutX, toggle.OffHalf.LayoutY, toggle.OffHalf.LayoutWidth, toggle.OffHalf.LayoutHeight));
+    }
+
+    [Fact]
     public void ASwitchSplitsItsWidthWithTheOddPixelGoingRight()
     {
         ToggleBoxTask toggle = new() { LayoutX = 100, LayoutWidth = 51 };

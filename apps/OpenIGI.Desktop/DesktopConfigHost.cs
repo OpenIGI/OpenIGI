@@ -1,3 +1,4 @@
+using System.Globalization;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Platform;
@@ -17,6 +18,15 @@ namespace OpenIGI.Desktop;
 /// <param name="window">The window, for the size it is running at.</param>
 public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow window) : IConfigHost
 {
+    private readonly List<(int Width, int Height)> _modes = [];
+
+    /// <summary>Gets or sets what to do when the player picks a resolution.</summary>
+    /// <remarks>
+    /// The original stores the choice on the profile and applies it when the screen is committed.
+    /// Applying it is the shell's job, so the shell supplies the handler.
+    /// </remarks>
+    public Action<int, int>? ApplyResolution { get; set; }
+
     /// <inheritdoc/>
     public int DefaultDisplayMode => 0;
 
@@ -30,11 +40,34 @@ public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow wind
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The one mode the window is actually running at. Mode enumeration belongs with the platform
-    /// layer's display support, which is not built.
+    /// The distinct sizes the monitor reports, smallest first, de-duplicated across refresh rates —
+    /// the menu's list is of resolutions, not of modes, so two entries differing only in Hz would
+    /// read as a repeat. The id is the index, which is what the profile stores.
     /// </remarks>
-    public IEnumerable<MenuListItem> GetDisplayModes(int device) =>
-        [new MenuListItem(0, $"{window.Width}x{window.Height}")];
+    public IEnumerable<MenuListItem> GetDisplayModes(int device)
+    {
+        if (_modes.Count == 0)
+        {
+            _modes.AddRange(window.GetDisplayModes()
+                .Select(mode => (mode.Width, mode.Height))
+                .Distinct()
+                .OrderBy(mode => mode.Width)
+                .ThenBy(mode => mode.Height));
+        }
+
+        return _modes.Select((mode, index) => new MenuListItem(
+            index,
+            string.Create(CultureInfo.InvariantCulture, $"{mode.Width}x{mode.Height}")));
+    }
+
+    /// <inheritdoc/>
+    public void SetResolution(int mode)
+    {
+        if (mode >= 0 && mode < _modes.Count)
+        {
+            ApplyResolution?.Invoke(_modes[mode].Width, _modes[mode].Height);
+        }
+    }
 
     /// <inheritdoc/>
     public int GetDeviceIndex(string guid) => 0;

@@ -45,6 +45,13 @@ public partial class MenuManagerTask
     /// <summary>Gets the script namespace menu actions are evaluated against.</summary>
     public MenuScriptContext? ScriptContext { get; private set; }
 
+    /// <summary>Gets the pointer state every control hit-tests against.</summary>
+    /// <remarks>
+    /// The original's controls read it out of the manager the same way — <c>MenuItem_HitTest</c>
+    /// fetches the manager's pointer block rather than being handed one.
+    /// </remarks>
+    public MenuPointer Pointer => _pointer;
+
     /// <summary>Gets the screen currently being shown.</summary>
     public MenuScreenTask? CurrentScreen => _current;
 

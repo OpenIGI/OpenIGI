@@ -130,6 +130,26 @@ public sealed class SilkGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The monitor's current mode, and only that. <b>This is not the full list</b>: the
+    /// <c>IMonitor</c> this Silk version exposes has no mode enumeration on it, so there is nothing
+    /// here to enumerate from. Reporting the one real mode is the honest answer; making up a ladder of
+    /// 640x480 through 1920x1080 would give the menu resolutions this window cannot actually take.
+    /// </para>
+    /// <para>
+    /// The consequence is visible: the graphics screen's resolution list has one entry and stepping it
+    /// does nothing. Fixing it means a display-mode API in the platform layer, which is tracked.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<(int Width, int Height, int RefreshRate)> GetDisplayModes()
+    {
+        IMonitor? monitor = _window.Monitor ?? Silk.NET.Windowing.Monitor.GetMainMonitor(_window);
+        Vector2D<int> size = monitor?.VideoMode.Resolution ?? new Vector2D<int>(Width, Height);
+        return [(size.X, size.Y, monitor?.VideoMode.RefreshRate ?? 0)];
+    }
+
+    /// <inheritdoc/>
     public void PumpEvents()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

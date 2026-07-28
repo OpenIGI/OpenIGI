@@ -118,6 +118,7 @@ public sealed class ConfigNatives
 
             case "Config_GraphicOptionsSetResolution":
                 Apply(p, x => x.DisplayMode = arguments.GetInt32(0));
+                _host.SetResolution(p?.DisplayMode ?? 0);
                 return true;
 
             case "Config_GraphicOptionsGetGamma":

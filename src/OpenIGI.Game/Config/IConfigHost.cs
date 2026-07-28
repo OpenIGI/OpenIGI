@@ -39,6 +39,10 @@ public interface IConfigHost
     /// <returns>The GUID.</returns>
     string GetDeviceGuid(int device);
 
+    /// <summary>Applies a resolution the player chose.</summary>
+    /// <param name="mode">The index into <see cref="GetDisplayModes"/>.</param>
+    void SetResolution(int mode);
+
     /// <summary>Applies a gamma setting immediately, so the slider previews.</summary>
     /// <param name="gamma">The gamma, 0 to 1.</param>
     void SetGamma(float gamma);
@@ -81,6 +85,11 @@ public sealed class NullConfigHost : IConfigHost
 
     /// <inheritdoc/>
     public string GetDeviceGuid(int device) => PlayerProfile.DefaultDeviceGuid;
+
+    /// <inheritdoc/>
+    public void SetResolution(int mode)
+    {
+    }
 
     /// <inheritdoc/>
     public void SetGamma(float gamma)

@@ -64,6 +64,35 @@ public partial class ToggleBoxTask
     /// <summary>Gets the left edge of the <c>off</c> half.</summary>
     public int OffHalfX => LayoutX + (LayoutWidth >> 1);
 
+    /// <summary>Gets the <c>on</c> half, which is a window so that it can be clicked.</summary>
+    /// <remarks>Field <c>+148</c>, a plain <c>MenuWindow</c> the constructor makes with no parent.</remarks>
+    public MenuButtonTask OnHalf { get; } = new();
+
+    /// <summary>Gets the <c>off</c> half.</summary>
+    /// <remarks>Field <c>+152</c>.</remarks>
+    public MenuButtonTask OffHalf { get; } = new();
+
+    /// <inheritdoc/>
+    public override IEnumerable<MenuWindowTask> OwnedWindows => [OnHalf, OffHalf];
+
+    /// <summary>Puts the two halves over their sides of the control.</summary>
+    /// <remarks>
+    /// <c>ToggleBox_Update</c> (<c>0x41E020</c>) does this every tick before hit-testing them, because
+    /// the line-up may have moved the control since the last one.
+    /// </remarks>
+    public void PlaceParts()
+    {
+        OnHalf.LayoutX = LayoutX;
+        OnHalf.LayoutY = LayoutY;
+        OnHalf.LayoutWidth = OnHalfWidth;
+        OnHalf.LayoutHeight = LayoutHeight;
+
+        OffHalf.LayoutX = OffHalfX;
+        OffHalf.LayoutY = LayoutY;
+        OffHalf.LayoutWidth = OffHalfWidth;
+        OffHalf.LayoutHeight = LayoutHeight;
+    }
+
     /// <inheritdoc/>
     protected override void OnUpdate()
     {
@@ -75,7 +104,10 @@ public partial class ToggleBoxTask
     /// <remarks>The body of <c>ToggleBox_Update</c>, without the base chain.</remarks>
     public void ApplyPendingCommand()
     {
-        if (PendingCommand == MenuWindowCommand.Left)
+        PlaceParts();
+
+        // Either half's own click, or the posted key — the mouse and the keyboard are one gesture.
+        if (OnHalf.WasClicked || PendingCommand == MenuWindowCommand.Left)
         {
             if (!IsOn)
             {
@@ -83,7 +115,7 @@ public partial class ToggleBoxTask
                 IsOn = true;
             }
         }
-        else if (PendingCommand == MenuWindowCommand.Right && IsOn)
+        else if ((OffHalf.WasClicked || PendingCommand == MenuWindowCommand.Right) && IsOn)
         {
             Manager?.PlaySound(MenuManagerTask.MoveSoundName);
             IsOn = false;
