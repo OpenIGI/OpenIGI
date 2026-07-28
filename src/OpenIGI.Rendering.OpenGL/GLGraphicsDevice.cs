@@ -597,6 +597,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _meshProgram.SetMatrix4("uProjection", _projection);
         _meshProgram.SetInt("uDiffuse", 0);
         _meshProgram.SetInt("uLightmap", 1);
+        _meshProgram.SetFloat("uAlphaTest", Mesh3DShaders.AlphaTestThreshold);
 
         // An absent lightmap binds white, so the modulate becomes the identity and the shader needs no
         // branch -- the same trick the 2D path uses for untextured draws.

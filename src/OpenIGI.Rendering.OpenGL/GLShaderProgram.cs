@@ -73,6 +73,11 @@ internal sealed class GLShaderProgram : IDisposable
     /// <param name="value">The value.</param>
     public void SetInt(string name, int value) => _gl.Uniform1(GetLocation(name), value);
 
+    /// <summary>Sets a <c>float</c> uniform.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <param name="value">The value.</param>
+    public void SetFloat(string name, float value) => _gl.Uniform1(GetLocation(name), value);
+
     /// <summary>Sets a <c>mat4</c> uniform.</summary>
     /// <param name="name">The uniform name.</param>
     /// <param name="value">The matrix, written out column-major as GL expects.</param>
