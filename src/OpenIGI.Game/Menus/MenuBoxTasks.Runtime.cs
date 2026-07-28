@@ -181,6 +181,9 @@ public partial class ScrollListBoxTask
     /// </remarks>
     protected override void OnUpdate()
     {
+        TickClickTimer();
+
+        int before = Index;
         if (Items.Count > 0)
         {
             if (PendingCommand == MenuWindowCommand.Left && Index > 0)
@@ -192,7 +195,15 @@ public partial class ScrollListBoxTask
                 Index++;
             }
 
+            // The original refreshes nActiveID from the selected row every update, not only when the
+            // selection moves, which is what keeps a script reading it in the same tick correct.
             ActiveId = Items[Index].Id;
+        }
+
+        if (Index != before)
+        {
+            KeepSelectionVisible();
+            Manager?.ReloadScreenData();
         }
 
         PendingCommand = MenuWindowCommand.None;

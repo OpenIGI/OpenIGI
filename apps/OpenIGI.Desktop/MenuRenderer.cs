@@ -241,7 +241,7 @@ public sealed class MenuRenderer : IDisposable
                     break;
                 case ScrollListBoxTask scroll:
                     DrawWindowBox(batch, scroll, screenWidth, screenHeight);
-                    DrawInBox(batch, scroll, scroll.FontResource, [.. scroll.Items.Select(i => i.Label)], scroll.Index, screenWidth, screenHeight);
+                    DrawScrollList(batch, scroll, screenWidth, screenHeight);
                     break;
                 case AsciiBoxTask ascii:
                     DrawWindowBox(batch, ascii, screenWidth, screenHeight);
@@ -658,6 +658,46 @@ public sealed class MenuRenderer : IDisposable
             0,
             Centred(box.LayoutX, box.LayoutY, box.LayoutWidth, box.LayoutHeight, screenWidth, screenHeight),
             Bgra32.White);
+    }
+
+    /// <summary>Draws a scrolling list: rows from its scroll offset, with the selected row lit.</summary>
+    /// <remarks>
+    /// The original draws the row at <c>selected - scrollOffset</c> in a second colour with a bar behind
+    /// it (<c>0x41C080</c>), which is what tells you which entry OK will act on. The control needs the
+    /// row height for its own hit-testing and the font lives here, so it is published back as we draw.
+    /// </remarks>
+    private void DrawScrollList(SpriteBatch batch, ScrollListBoxTask box, int screenWidth, int screenHeight)
+    {
+        BitmapTextRenderer? font = TryGetFont(box.FontResource.Length > 0 ? box.FontResource : DefaultBoxFont);
+        if (font is null)
+        {
+            return;
+        }
+
+        int lineHeight = Math.Max(1, (int)font.Measure("A").Height);
+        box.RowHeight = lineHeight;
+
+        int rows = Math.Max(1, box.LayoutHeight / lineHeight);
+        for (int row = 0; row < rows; row++)
+        {
+            int index = box.ScrollOffset + row;
+            if (index < 0 || index >= box.Items.Count)
+            {
+                break;
+            }
+
+            int y = box.LayoutY + 1 + (row * lineHeight);
+            if (index == box.Index)
+            {
+                // The selected row gets a bar behind it, the way MenuText lights the selected entry:
+                // the same green at the highlighted level (GetColour's (c * 0.5) + 64).
+                batch.FillRect(
+                    Centred(box.LayoutX + 2, y, box.LayoutWidth - 4, lineHeight, screenWidth, screenHeight),
+                    MenuLayout.ToPixel(MenuLayout.GetColour(MenuLayout.GreenIndex, selected: true)));
+            }
+
+            Draw(batch, font, box.Items[index].Label, box.LayoutX + 2, y, screenWidth, screenHeight);
+        }
     }
 
     /// <summary>Draws as many lines as fit inside a control, starting at a scroll offset.</summary>

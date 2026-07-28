@@ -248,7 +248,20 @@ public abstract class MenuWindowTask : ContainerTask
         IsHeld = held;
         IsActive = (!pointer.IsDown || held) && inside;
         WasClicked = clicked;
+        OnPointer(pointer, inside);
         return clicked;
+    }
+
+    /// <summary>Lets a control read the pointer itself, after the shared hit-test has run.</summary>
+    /// <param name="pointer">The pointer state.</param>
+    /// <param name="inside">Whether the pointer is within this window's rectangle.</param>
+    /// <remarks>
+    /// A <c>ScrollListBox</c> needs the pointer's position and not just "was clicked": it maps the
+    /// vertical offset onto one of its rows and selects that row (<c>0x41BDD0</c>). The base does
+    /// nothing, so controls that only care about clicks are unaffected.
+    /// </remarks>
+    protected virtual void OnPointer(MenuPointer pointer, bool inside)
+    {
     }
 
     /// <summary>Gets the windows this one owns outright, which are not children in the task tree.</summary>
