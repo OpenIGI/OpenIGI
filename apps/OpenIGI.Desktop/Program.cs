@@ -113,6 +113,14 @@ using (window)
             logger);
 
         renderer = new MenuRenderer(device, fileSystem, menu.Manager.ResourcePath, strings);
+
+        // -screen is a development shortcut, not a game feature: the script decides where the menu
+        // opens, and this overwrites that one parameter before the manager reads it.
+        if (options.StartScreen > 0)
+        {
+            menu.Manager.CurrentMenuScreen = options.StartScreen;
+        }
+
         menu.Manager.Initialize(menu, menuHost, logger);
     };
 

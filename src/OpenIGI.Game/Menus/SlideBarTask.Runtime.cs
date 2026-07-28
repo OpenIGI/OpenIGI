@@ -20,6 +20,25 @@ namespace OpenIGI.Game.Menus;
 /// </remarks>
 public partial class SlideBarTask
 {
+    /// <summary>Initializes a new instance of the <see cref="SlideBarTask"/> class.</summary>
+    /// <remarks>
+    /// <c>SlideBar_Construct</c> (<c>0x41F5A0</c>) starts the control at (300, 230) with both centre
+    /// flags set, a horizontal bar 50 pixels long and a step of 0.05 — the same position and centring
+    /// a <c>MenuText</c> gets, so a slider drops into a column of entries without the script saying so.
+    /// </remarks>
+    public SlideBarTask()
+    {
+        LayoutX = 300;
+        LayoutY = 230;
+        CentreHorizontally = true;
+        CentreVertically = true;
+        Size = DefaultSize;
+        Horizontal = true;
+    }
+
+    /// <inheritdoc/>
+    public override IEnumerable<MenuWindowTask> OwnedWindows => [LeftButton, RightButton];
+
     /// <summary>The step a continuous slider moves per key press, when nothing overrides it.</summary>
     /// <remarks><c>SlideBar_Construct</c> (<c>0x41F5A0</c>) stores <c>0x3D4CCCCD</c>, which is 0.05f.</remarks>
     public const float DefaultStep = 0.05f;
@@ -27,6 +46,33 @@ public partial class SlideBarTask
     /// <summary>The bar's length in pixels when the script does not give one.</summary>
     /// <remarks>The constructor's <c>+172 = 50</c>.</remarks>
     public const int DefaultSize = 50;
+
+    /// <summary>Gets the left arrow, which steps the carret down.</summary>
+    /// <remarks>Field <c>+152</c>, a <c>MenuButton</c> the constructor makes.</remarks>
+    public MenuButtonTask LeftButton { get; } = new();
+
+    /// <summary>Gets the right arrow, which steps the carret up.</summary>
+    /// <remarks>Field <c>+156</c>.</remarks>
+    public MenuButtonTask RightButton { get; } = new();
+
+    /// <summary>Gets the sprite drawn as the carret, or an empty string.</summary>
+    /// <remarks>
+    /// <c>SlideBar_Prepare</c> (<c>0x41F740</c>) derives all three sprite names from the one
+    /// <c>Sprite Resource</c> parameter: <c>_1.spr</c> is the left arrow, <c>_2.spr</c> the right and
+    /// <c>_3.spr</c> the carret. A slider whose resource is <c>slide</c> therefore wants
+    /// <c>slide_1.spr</c>, <c>slide_2.spr</c> and <c>slide_3.spr</c> in the menu archive.
+    /// </remarks>
+    public string CarretSprite => SpriteResource.Length > 0 ? $"{SpriteResource}_3.spr" : string.Empty;
+
+    /// <summary>Gets the pixel size of the carret sprite, filled in by whatever loaded it.</summary>
+    /// <remarks>
+    /// The measure and the carret's travel both need it, and neither belongs in a renderer. It stays
+    /// zero until something resolves the sprite, and a zero-sized carret simply does not move.
+    /// </remarks>
+    public int CarretWidth { get; set; }
+
+    /// <summary>Gets the pixel height of the carret sprite.</summary>
+    public int CarretHeight { get; set; }
 
     /// <summary>Gets or sets the number of discrete stops, or zero when the slider is continuous.</summary>
     /// <remarks>Field <c>+584</c>, evaluated from <c>Set Num Options</c> each time the data is loaded.</remarks>
@@ -158,4 +204,89 @@ public partial class SlideBarTask
 
     /// <inheritdoc/>
     protected override void OnSaveData() => Run(SetDataScript);
+
+    /// <summary>Names the two arrows' sprites and sizes the control around them.</summary>
+    /// <remarks>
+    /// <c>SlideBar_Prepare</c> (<c>0x41F740</c>). It also reads <c>Carret Speed</c> here rather than at
+    /// load time, so a slider's step is fixed once when the screen is built.
+    /// </remarks>
+    protected override void OnPrepare()
+    {
+        Step = CarretSpeed.Length > 0 ? (float)Evaluate(CarretSpeed) : DefaultStep;
+
+        if (SpriteResource.Length > 0)
+        {
+            LeftButton.SpriteResource = $"{SpriteResource}_1.spr";
+            RightButton.SpriteResource = $"{SpriteResource}_2.spr";
+        }
+    }
+
+    /// <summary>Sizes the control from its two arrows, its bar length and its carret.</summary>
+    /// <remarks>
+    /// The tail of <c>SlideBar_Prepare</c>. Along the bar it is the two arrows plus the bar plus six
+    /// pixels of padding; across it, four pixels plus the tallest of the three sprites.
+    /// <para>
+    /// One quirk is reproduced rather than tidied: the across-axis size falls back to bare padding —
+    /// 4 — when no carret sprite is loaded, <em>ignoring the arrows entirely</em>. The original only
+    /// consults the arrows inside the branch guarded by the carret being present.
+    /// </para>
+    /// </remarks>
+    public void MeasureFromParts()
+    {
+        int along = 4;
+        int across = 4;
+
+        if (Horizontal)
+        {
+            along = LeftButton.LayoutWidth + Size + RightButton.LayoutWidth + 6;
+            if (CarretWidth > 0 || CarretHeight > 0)
+            {
+                int arrows = Math.Max(LeftButton.LayoutHeight, RightButton.LayoutHeight);
+                across = (arrows <= CarretHeight ? CarretHeight : arrows) + 4;
+            }
+
+            LayoutWidth = along;
+            LayoutHeight = across;
+            return;
+        }
+
+        along = LeftButton.LayoutHeight + Size + RightButton.LayoutHeight + 6;
+        if (CarretWidth > 0 || CarretHeight > 0)
+        {
+            int arrows = Math.Max(LeftButton.LayoutWidth, RightButton.LayoutWidth);
+            across = (arrows <= CarretWidth ? CarretWidth : arrows) + 4;
+        }
+
+        LayoutWidth = across;
+        LayoutHeight = along;
+    }
+
+    /// <summary>Places the two arrows and reports where the bar and the carret sit.</summary>
+    /// <returns>The track origin and the carret's offset along it, in authored pixels.</returns>
+    /// <remarks>
+    /// <c>SlideBar_Render</c> (<c>0x41FCE0</c>) does this every frame, and the update hit-tests against
+    /// the same rectangle — so the arithmetic is here rather than in a renderer, where the update could
+    /// not reach it.
+    /// </remarks>
+    public (int TrackX, int TrackY, int CarretX, int CarretY) PlaceParts()
+    {
+        int x = LayoutX + 2;
+        int y = LayoutY + 2;
+
+        LeftButton.LayoutX = x;
+        LeftButton.LayoutY = y;
+
+        if (Horizontal)
+        {
+            x += LeftButton.LayoutWidth + 1;
+            RightButton.LayoutX = Size + x + 1;
+            RightButton.LayoutY = y;
+            return (x, y, x + (int)((Size - CarretWidth) * Value), y);
+        }
+
+        y += LeftButton.LayoutHeight + 1;
+        RightButton.LayoutX = x;
+        RightButton.LayoutY = Size + y + 1;
+        return (x, y, x, y + (int)((Size - CarretHeight) * Value));
+    }
 }

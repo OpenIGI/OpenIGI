@@ -19,6 +19,41 @@ namespace OpenIGI.Game.Menus;
 /// </remarks>
 public partial class ToggleBoxTask
 {
+    /// <summary>Initializes a new instance of the <see cref="ToggleBoxTask"/> class.</summary>
+    /// <remarks>
+    /// <c>ToggleBox_Construct</c> (<c>0x41DDD0</c>) fixes the control at 50 by 15 — it never measures
+    /// its words — sets both centre flags, and starts <b>on</b>. The default matters: a screen whose
+    /// <c>Get Data Script</c> is empty shows Yes rather than No.
+    /// </remarks>
+    public ToggleBoxTask()
+    {
+        LayoutWidth = DefaultWidth;
+        LayoutHeight = DefaultHeight;
+        CentreHorizontally = true;
+        CentreVertically = true;
+        IsOn = true;
+    }
+
+    /// <summary>The control's width in pixels, which is fixed rather than measured.</summary>
+    public const int DefaultWidth = 50;
+
+    /// <summary>The control's height in pixels.</summary>
+    public const int DefaultHeight = 15;
+
+    /// <summary>The font a switch draws its two words in.</summary>
+    /// <remarks>
+    /// Hard-coded in <c>ToggleBox_Prepare</c> (<c>0x41DF30</c>), not a parameter — a <c>ToggleBox</c>
+    /// declares only its two data scripts, so there is nowhere for a script to say otherwise.
+    /// </remarks>
+    public const string FontResource = "font4.fnt";
+
+    /// <summary>The language key for the <c>on</c> label.</summary>
+    /// <remarks>Looked up through the same table entry labels use, so it translates with everything else.</remarks>
+    public const string OnTextResource = "Yes";
+
+    /// <summary>The language key for the <c>off</c> label.</summary>
+    public const string OffTextResource = "No";
+
     /// <summary>Gets the width of the <c>on</c> half of the control.</summary>
     /// <remarks><c>w &gt;&gt; 1</c>, so the truncation goes to this half.</remarks>
     public int OnHalfWidth => LayoutWidth >> 1;

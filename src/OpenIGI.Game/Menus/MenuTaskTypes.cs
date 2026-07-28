@@ -59,6 +59,10 @@ public static class MenuTaskTypes
 
         // Spawned without a declaration because it takes no parameters, like the structural types.
         types.Register<ControlsMenuTask>("ControlsMenu", parent);
+
+        // Two more the engine owns rather than the script: no menu file names either, but a SlideBar
+        // builds a pair of MenuButtons in its constructor and they have to resolve to a type.
+        types.Register<MenuButtonTask>("MenuButton", parent);
     }
 
     /// <summary>Registers the constants a menu script names.</summary>

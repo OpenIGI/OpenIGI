@@ -139,19 +139,54 @@ public sealed class MenuRenderer : IDisposable
     {
         foreach (MenuWindowTask child in window.Children.OfType<MenuWindowTask>())
         {
-            if (child is MenuTextTask text)
+            switch (child)
             {
-                (string label, BitmapTextRenderer? font) = Resolve(text.TextResource, text.FontResource);
-                if (font is not null && label.Length > 0)
+                case MenuTextTask text:
                 {
-                    (float width, float height) = font.Measure(label);
-                    text.LayoutWidth = (int)width;
-                    text.LayoutHeight = (int)height;
+                    (string label, BitmapTextRenderer? font) = Resolve(text.TextResource, text.FontResource);
+                    if (font is not null && label.Length > 0)
+                    {
+                        (float width, float height) = font.Measure(label);
+                        text.LayoutWidth = (int)width;
+                        text.LayoutHeight = (int)height;
+                    }
+
+                    break;
                 }
+
+                // A slider's size comes out of its three sprites, so they have to be resolved before
+                // it can be measured — which is the order SlideBar_Prepare has too.
+                case SlideBarTask slider:
+                    MeasureSlideBar(slider);
+                    break;
+
+                default:
+                    break;
             }
 
             MeasureText(child);
         }
+    }
+
+    /// <summary>Sizes a slider's arrows and carret from their sprites, then the slider from those.</summary>
+    private void MeasureSlideBar(SlideBarTask slider)
+    {
+        (slider.LeftButton.LayoutWidth, slider.LeftButton.LayoutHeight) = SpriteSize(slider.LeftButton.SpriteResource);
+        (slider.RightButton.LayoutWidth, slider.RightButton.LayoutHeight) = SpriteSize(slider.RightButton.SpriteResource);
+        (slider.CarretWidth, slider.CarretHeight) = SpriteSize(slider.CarretSprite);
+
+        slider.MeasureFromParts();
+    }
+
+    private (int Width, int Height) SpriteSize(string name)
+    {
+        if (name.Length == 0 || TryGetSprite(name) is not { } sprite || sprite.Asset.Frames.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        SpriteFrame frame = sprite.Asset.Frames[0];
+        return ((int)frame.Width, (int)frame.Height);
     }
 
     private void DrawSubtree(SpriteBatch batch, MenuWindowTask window, int screenWidth, int screenHeight)
@@ -165,6 +200,12 @@ public sealed class MenuRenderer : IDisposable
                     break;
                 case MenuFrameTask frame:
                     DrawFrameBorder(batch, frame, screenWidth, screenHeight);
+                    break;
+                case SlideBarTask slider:
+                    DrawSlideBar(batch, slider, screenWidth, screenHeight);
+                    break;
+                case ToggleBoxTask toggle:
+                    DrawToggleBox(batch, toggle, screenWidth, screenHeight);
                     break;
                 default:
                     break;
@@ -189,6 +230,126 @@ public sealed class MenuRenderer : IDisposable
         Bgra32 colour = MenuLayout.ToPixel(MenuLayout.GetColour(text.ColourIndex, text.IsHighlighted));
 
         font.Draw(batch, label, x, y, colour);
+    }
+
+    /// <summary>Draws a slider: its box, its two arrows and its carret.</summary>
+    /// <remarks>
+    /// <c>SlideBar_Render</c> (<c>0x41FCE0</c>). The placement is <see cref="SlideBarTask.PlaceParts"/>
+    /// so that the update hit-tests the same rectangle this draws into; only the sprite lookups and the
+    /// screen mapping are here.
+    /// </remarks>
+    private void DrawSlideBar(SpriteBatch batch, SlideBarTask slider, int screenWidth, int screenHeight)
+    {
+        (_, _, int carretX, int carretY) = slider.PlaceParts();
+
+        DrawWindowBox(batch, slider, screenWidth, screenHeight);
+        DrawButton(batch, slider.LeftButton, screenWidth, screenHeight);
+        DrawButton(batch, slider.RightButton, screenWidth, screenHeight);
+
+        if (TryGetSprite(slider.CarretSprite) is { } carret && carret.Asset.Frames.Count > 0)
+        {
+            (int x, int y) = MenuLayout.ToScreen(carretX, carretY, screenWidth, screenHeight);
+            carret.DrawFrame(batch, carret.Asset.Frames[0], x, y, 1f, 1f, Bgra32.White);
+        }
+    }
+
+    /// <summary>Draws one of a slider's arrows.</summary>
+    /// <remarks><c>MenuButton_Render</c> (<c>0x421600</c>) draws its sprite at its own position and nothing else.</remarks>
+    private void DrawButton(SpriteBatch batch, MenuButtonTask button, int screenWidth, int screenHeight)
+    {
+        if (TryGetSprite(button.SpriteResource) is not { } sprite || sprite.Asset.Frames.Count == 0)
+        {
+            return;
+        }
+
+        (int x, int y) = MenuLayout.ToScreen(button.LayoutX, button.LayoutY, screenWidth, screenHeight);
+        sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, 1f, 1f, Bgra32.White);
+    }
+
+    /// <summary>Draws a switch: its box, its two words and a tint over whichever one is chosen.</summary>
+    /// <remarks>
+    /// <c>ToggleBox_Render</c> (<c>0x41E130</c>). The words sit at the quarter and three-quarter points
+    /// of the control's width, each centred on its own measured width and vertically centred in the
+    /// control. The tint goes over the chosen half <em>after</em> the text, so it colours the word.
+    /// </remarks>
+    private void DrawToggleBox(SpriteBatch batch, ToggleBoxTask toggle, int screenWidth, int screenHeight)
+    {
+        DrawWindowBox(batch, toggle, screenWidth, screenHeight);
+
+        BitmapTextRenderer? font = TryGetFont(ToggleBoxTask.FontResource);
+        if (font is null)
+        {
+            return;
+        }
+
+        string on = _strings.Get(ToggleBoxTask.OnTextResource);
+        string off = _strings.Get(ToggleBoxTask.OffTextResource);
+
+        // Integer division throughout, as the original's does — the halving of an odd width and an
+        // odd text width both truncate.
+        (float onWidth, float onHeight) = font.Measure(on);
+        (float offWidth, _) = font.Measure(off);
+
+        int textY = toggle.LayoutY + ((toggle.LayoutHeight - (int)onHeight) / 2);
+        int onX = toggle.LayoutX + (toggle.LayoutWidth / 4) - ((int)onWidth / 2);
+        int offX = toggle.LayoutX + (3 * toggle.LayoutWidth / 4) - ((int)offWidth / 2);
+
+        // The chosen half is tinted with the same green the selection uses, lightened when the whole
+        // control carries the selection — GetColour's (c * 0.5) + 64, arrived at independently here.
+        //
+        // DIVERGENCE: the original submits this AFTER the two words, which through a painter's-order
+        // batch paints over the very word it is meant to mark. It goes behind them here. This is the
+        // third place the original's submission order only makes sense if its 2D calls are not
+        // immediate; see the re-note.
+        Bgra32 tint = MenuLayout.ToPixel(MenuLayout.GetColour(MenuLayout.GreenIndex, toggle.IsHighlighted));
+        int halfX = toggle.IsOn ? toggle.LayoutX : toggle.OffHalfX;
+        int halfWidth = toggle.IsOn ? toggle.OnHalfWidth : toggle.OffHalfWidth;
+
+        batch.FillRect(
+            Centred(halfX, toggle.LayoutY, halfWidth, toggle.LayoutHeight, screenWidth, screenHeight),
+            tint);
+
+        Draw(batch, font, on, onX, textY, screenWidth, screenHeight);
+        Draw(batch, font, off, offX, textY, screenWidth, screenHeight);
+    }
+
+    /// <summary>Draws the black backing and green outline every control sits in.</summary>
+    /// <remarks>
+    /// <c>MenuWindow_DrawBox</c> (<c>0x424980</c>). The original submits the outline and <em>then</em>
+    /// the black fill, which through a painter's-order batch would cover it; the fill goes first here,
+    /// for the same reason the pointer is drawn last. See the re-note.
+    /// </remarks>
+    private static void DrawWindowBox(SpriteBatch batch, MenuWindowTask window, int screenWidth, int screenHeight)
+    {
+        if (window.LayoutWidth <= 0 || window.LayoutHeight <= 0)
+        {
+            return;
+        }
+
+        batch.FillRect(
+            Centred(window.LayoutX, window.LayoutY, window.LayoutWidth, window.LayoutHeight, screenWidth, screenHeight),
+            Bgra32.FromRgba(0, 0, 0, (byte)(byte.MaxValue * MenuLayout.BoxFillAlpha)));
+
+        Bgra32 edge = MenuLayout.ToPixel(MenuLayout.GetColour(MenuLayout.GreenIndex, window.IsHighlighted));
+
+        foreach ((int x, int y, int width, int height) in
+            MenuLayout.GetBoxOutline(window.LayoutX, window.LayoutY, window.LayoutWidth, window.LayoutHeight))
+        {
+            batch.FillRect(Centred(x, y, width, height, screenWidth, screenHeight), edge);
+        }
+    }
+
+    private static void Draw(
+        SpriteBatch batch,
+        BitmapTextRenderer font,
+        string label,
+        int x,
+        int y,
+        int screenWidth,
+        int screenHeight)
+    {
+        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight);
+        font.Draw(batch, label, screenX, screenY, Bgra32.White);
     }
 
     /// <summary>Draws a frame's eight-piece border.</summary>

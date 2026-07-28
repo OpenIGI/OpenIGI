@@ -506,6 +506,28 @@ public partial class TypeWriterBoxTask : MenuWindowTask
     public int Height { get => LayoutHeight; set => LayoutHeight = value; }
 }
 
+/// <summary>One of a slider's two arrow buttons.</summary>
+/// <remarks>
+/// A seventeenth type — <c>MenuButton</c> (<c>0x421430</c>, 152 bytes, one parameter) — that no script
+/// declares or instantiates. <c>SlideBar</c>'s constructor makes two of them, and
+/// <c>MenuButton_Render</c> (<c>0x421600</c>) does nothing but draw its own sprite at its own
+/// position. It exists so that the arrows get the same hit-testing every other menu window has.
+/// </remarks>
+public partial class MenuButtonTask : MenuWindowTask
+{
+    /// <summary>Gets or sets the sprite this button draws.</summary>
+    /// <remarks>
+    /// Its owner fills this in: <c>SlideBar_Prepare</c> writes <c>"&lt;resource&gt;_1.spr"</c> into the
+    /// left button and <c>"_2.spr"</c> into the right.
+    /// </remarks>
+    [ScriptParam(ScriptParamType.String32, "Sprite Resource")]
+    public string SpriteResource { get; set; } = string.Empty;
+
+    /// <inheritdoc/>
+    /// <remarks>An arrow is clickable, which is the whole reason it is a window rather than a sprite.</remarks>
+    public override bool IsInteractive => true;
+}
+
 /// <summary>The controls-configuration screen's key-binding list.</summary>
 /// <remarks>
 /// The one menu type <c>mainmenu.qvm</c> spawns without a <c>Task_DeclareParameters</c> block: it

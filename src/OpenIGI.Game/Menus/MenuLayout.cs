@@ -76,6 +76,48 @@ public static class MenuLayout
             : (r, g, b);
     }
 
+    /// <summary>The index of <c>TEXT_GREEN</c> in <see cref="Colours"/>.</summary>
+    /// <remarks>
+    /// The controls' own drawing does not go through a <c>ColourIndex</c> parameter — a switch's tint
+    /// and a window's outline are green in the code, not in the data — but they are the same green and
+    /// take the same lightening when selected, so they index the same table.
+    /// </remarks>
+    public const int GreenIndex = 2;
+
+    /// <summary>The alpha the window box's black backing is filled at, relative to the draw alpha.</summary>
+    /// <remarks><c>MenuWindow_DrawBox</c> (<c>0x424980</c>) is called with <c>0.5</c> by every control.</remarks>
+    public const float BoxFillAlpha = 0.5f;
+
+    /// <summary>Builds the four one-pixel rectangles that make a control's outline.</summary>
+    /// <param name="x">The window's left edge.</param>
+    /// <param name="y">The window's top edge.</param>
+    /// <param name="width">The window's width.</param>
+    /// <param name="height">The window's height.</param>
+    /// <returns>Top, right, bottom and left edges, in that order.</returns>
+    /// <remarks>
+    /// <c>MenuWindow_DrawBox</c> submits a four-vertex loop at <c>(x+1, y+1)</c>, <c>(x+w, y+1)</c>,
+    /// <c>(x+w, y+h)</c> and <c>(x+1, y+h)</c> — inset by one on the left and top and flush on the
+    /// right and bottom, which is asymmetric and is kept that way. Drawing it as four thin rectangles
+    /// rather than a line loop is a rendering choice; the pixels it covers are the same.
+    /// </remarks>
+    public static (int X, int Y, int Width, int Height)[] GetBoxOutline(int x, int y, int width, int height)
+    {
+        int left = x + 1;
+        int top = y + 1;
+        int right = x + width;
+        int bottom = y + height;
+        int span = Math.Max(0, right - left);
+        int drop = Math.Max(0, bottom - top);
+
+        return
+        [
+            (left, top, span, 1),
+            (right, top, 1, drop),
+            (left, bottom, span, 1),
+            (left, top, 1, drop),
+        ];
+    }
+
     /// <summary>Converts a colour on the original's 0–128 scale to a renderable pixel.</summary>
     /// <param name="colour">The colour components.</param>
     /// <returns>The opaque pixel.</returns>

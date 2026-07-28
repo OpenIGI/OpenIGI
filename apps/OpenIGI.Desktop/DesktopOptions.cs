@@ -10,6 +10,7 @@ namespace OpenIGI.Desktop;
 /// <param name="VSync">Whether presentation waits for the vertical blank.</param>
 /// <param name="ScreenshotPath">Where to write a capture of the first rendered frames, or <see langword="null"/> to run normally.</param>
 /// <param name="ExitAfterFrames">Quit after this many rendered frames, or zero to run until closed.</param>
+/// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
 /// <remarks>
 /// The original parses its command line with a case-insensitive prefix scan (<c>Win_ParseCmdOption</c>,
 /// <c>0x48F360</c>) and understands <c>Window</c>, <c>WinInput</c>, <c>Germany</c> and
@@ -23,7 +24,8 @@ public readonly record struct DesktopOptions(
     int Height,
     bool VSync,
     string? ScreenshotPath,
-    int ExitAfterFrames)
+    int ExitAfterFrames,
+    int StartScreen)
 {
     /// <summary>Gets the environment variable consulted when no path is given on the command line.</summary>
     public const string GamePathVariable = "IGI_GAME_PATH";
@@ -43,6 +45,7 @@ public readonly record struct DesktopOptions(
         int height = 480;
         string? screenshot = null;
         int exitAfterFrames = 0;
+        int startScreen = 0;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -95,13 +98,21 @@ public readonly record struct DesktopOptions(
                     throw new ArgumentException($"-frames expects a non-negative count, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("screen", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "screen");
+                if (!int.TryParse(value, out startScreen) || startScreen < 0)
+                {
+                    throw new ArgumentException($"-screen expects a screen id, got '{value}'.", nameof(args));
+                }
+            }
             else
             {
                 throw new ArgumentException($"Unknown option '{args[i]}'.", nameof(args));
             }
         }
 
-        return new DesktopOptions(gamePath, fullscreen, width, height, vsync, screenshot, exitAfterFrames);
+        return new DesktopOptions(gamePath, fullscreen, width, height, vsync, screenshot, exitAfterFrames, startScreen);
     }
 
     /// <summary>Gets the usage text.</summary>
@@ -122,6 +133,8 @@ public readonly record struct DesktopOptions(
           -novsync         Do not wait for the vertical blank.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
+          -screen <id>     Open on this menu screen instead of the one the script names.
+                           mainmenu.qvm has 900 and 904-916.
         """;
 
     private static string Next(string[] args, ref int index, string option)

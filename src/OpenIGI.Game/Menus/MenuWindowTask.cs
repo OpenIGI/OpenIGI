@@ -140,6 +140,26 @@ public abstract class MenuWindowTask : ContainerTask
         }
     }
 
+    /// <summary>Resolves this window's own resources, then its children's.</summary>
+    /// <remarks>
+    /// The <c>sub_4F1A70</c> class slot — <c>SlideBar_Prepare</c> (<c>0x41F740</c>) and
+    /// <c>ToggleBox_Prepare</c> (<c>0x41DF30</c>) are the two that do anything. It runs before the
+    /// screen is measured, because what it resolves is what there is to measure.
+    /// </remarks>
+    public void PrepareSubtree()
+    {
+        OnPrepare();
+        foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>())
+        {
+            child.PrepareSubtree();
+        }
+    }
+
+    /// <summary>Resolves this window's own resources. The base does nothing.</summary>
+    protected virtual void OnPrepare()
+    {
+    }
+
     /// <summary>Writes this window back through its <c>Set Data Script</c>, then its children.</summary>
     /// <remarks>The <c>0x424880</c> class slot, the mirror of <see cref="LoadData"/>.</remarks>
     public void SaveData()
@@ -222,6 +242,15 @@ public abstract class MenuWindowTask : ContainerTask
         return clicked;
     }
 
+    /// <summary>Gets the windows this one owns outright, which are not children in the task tree.</summary>
+    /// <remarks>
+    /// A <c>SlideBar</c>'s two arrows and a <c>ToggleBox</c>'s two halves are created with no parent
+    /// (<c>Task_Create(0, class, 0)</c>) and held in the owner's own fields, and the owner's render and
+    /// update reach them by hand rather than through a child walk. They still have to be hit-tested,
+    /// which is the whole reason they are windows, so the hit-test visits them here.
+    /// </remarks>
+    public virtual IEnumerable<MenuWindowTask> OwnedWindows => [];
+
     /// <summary>Runs the hit-test over this window and every descendant.</summary>
     /// <param name="pointer">The pointer state.</param>
     /// <returns>The item that completed a click, or <see langword="null"/>.</returns>
@@ -231,7 +260,7 @@ public abstract class MenuWindowTask : ContainerTask
         ArgumentNullException.ThrowIfNull(pointer);
 
         MenuWindowTask? clicked = null;
-        foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>())
+        foreach (MenuWindowTask child in Children.OfType<MenuWindowTask>().Concat(OwnedWindows))
         {
             if (child.HitTest(pointer))
             {

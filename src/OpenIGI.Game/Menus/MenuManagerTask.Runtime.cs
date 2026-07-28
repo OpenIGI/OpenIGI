@@ -240,6 +240,9 @@ public partial class MenuManagerTask
         }
 
         _current = screen;
+
+        // Resources first, because the sizes the line-up needs come out of them.
+        screen.PrepareSubtree();
         _host?.PrepareScreen(screen);
         screen.Arrange();
         Selection.Rebuild(screen);
