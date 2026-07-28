@@ -110,13 +110,28 @@ public partial class MenuManagerTask
             return;
         }
 
-        if (_current is null || Navigator.State != MenuManagerState.Active || ScriptContext?.IsEnabled != true)
+        if (_current is null)
+        {
+            return;
+        }
+
+        // The hit-test runs on EVERY tick, not only while active. In the original each control calls
+        // MenuItem_HitTest from its own update — MenuText_Update (0x4207E0) does it unconditionally —
+        // so the flags are recomputed whatever the manager is doing.
+        //
+        // Skipping it during a fade latches them instead, and a latched WasClicked re-runs the entry's
+        // On Click Script every tick: the push that started the fade fires again, restarts the fade,
+        // and the menu never reaches Active again. That reads as a freeze, because the same Active
+        // gate gates the keys, the pointer and the cursor.
+        UpdatePointer();
+
+        if (Navigator.State != MenuManagerState.Active || ScriptContext?.IsEnabled != true)
         {
             return;
         }
 
         HandleKeys();
-        HandlePointer();
+        MoveSelectionToHover();
     }
 
     /// <inheritdoc/>
@@ -329,7 +344,12 @@ public partial class MenuManagerTask
         }
     }
 
-    private void HandlePointer()
+    /// <summary>Reads the pointer and refreshes every window's interaction flags.</summary>
+    /// <remarks>
+    /// The hit-test only sets the flags. Acting on a completed click is the control's own job, in its
+    /// update, which is where <c>MenuText_Update</c> reads them.
+    /// </remarks>
+    private void UpdatePointer()
     {
         if (!_host!.TryGetPointer(out int x, out int y, out bool buttonDown))
         {
@@ -337,12 +357,13 @@ public partial class MenuManagerTask
         }
 
         _pointer.Set(x, y, buttonDown);
-
-        // The hit-test only sets each window's flags. Acting on a completed click is the control's
-        // own job, in its update, which is where MenuText_Update reads WasClicked.
         _current!.HitTestSubtree(_pointer);
+    }
 
-        // A fresh hover moves the shared selection, which is what lights the entry.
+    /// <summary>Moves the shared selection onto whatever the pointer is over.</summary>
+    /// <remarks>This is the part that must not run during a fade: it is what lights an entry.</remarks>
+    private void MoveSelectionToHover()
+    {
         foreach (MenuWindowTask item in Selection.Items)
         {
             if (item.IsActive)
