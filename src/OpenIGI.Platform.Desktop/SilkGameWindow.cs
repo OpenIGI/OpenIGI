@@ -131,22 +131,34 @@ public sealed class SilkGameWindow : IGameWindow
 
     /// <inheritdoc/>
     /// <remarks>
-    /// <para>
-    /// The monitor's current mode, and only that. <b>This is not the full list</b>: the
-    /// <c>IMonitor</c> this Silk version exposes has no mode enumeration on it, so there is nothing
-    /// here to enumerate from. Reporting the one real mode is the honest answer; making up a ladder of
-    /// 640x480 through 1920x1080 would give the menu resolutions this window cannot actually take.
-    /// </para>
-    /// <para>
-    /// The consequence is visible: the graphics screen's resolution list has one entry and stepping it
-    /// does nothing. Fixing it means a display-mode API in the platform layer, which is tracked.
-    /// </para>
+    /// Every mode the monitor reports, from <c>IMonitor.GetAllVideoModes</c>. The caller
+    /// de-duplicates by size, because the menu's list is of resolutions rather than of modes and two
+    /// entries differing only in refresh rate would read as a repeat.
     /// </remarks>
     public IReadOnlyList<(int Width, int Height, int RefreshRate)> GetDisplayModes()
     {
-        IMonitor? monitor = _window.Monitor ?? Silk.NET.Windowing.Monitor.GetMainMonitor(_window);
-        Vector2D<int> size = monitor?.VideoMode.Resolution ?? new Vector2D<int>(Width, Height);
-        return [(size.X, size.Y, monitor?.VideoMode.RefreshRate ?? 0)];
+        IMonitor monitor = _window.Monitor ?? Silk.NET.Windowing.Monitor.GetMainMonitor(_window);
+        List<(int Width, int Height, int RefreshRate)> modes = [];
+        
+        foreach (VideoMode mode in monitor.GetAllVideoModes())
+        {
+            if (mode.Resolution is { } size)
+            {
+                modes.Add((size.X, size.Y, mode.RefreshRate ?? 0));
+            }
+        }
+
+        // A monitor that reports nothing still has to offer the mode it is on.
+        return modes.Count > 0 ? modes : [(Width, Height, 0)];
+    }
+
+    /// <inheritdoc/>
+    public void Resize(int width, int height)
+    {
+        if (width > 0 && height > 0)
+        {
+            _window.Size = new Vector2D<int>(width, height);
+        }
     }
 
     /// <inheritdoc/>

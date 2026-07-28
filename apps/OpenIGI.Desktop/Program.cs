@@ -92,7 +92,16 @@ using (window)
     // Settings load from the retail config.qvm, and from our own file in preference to it when one
     // exists. Nothing here ever writes into the original installation.
     GameConfig configuration = LoadConfiguration(fileSystem, logger);
-    ConfigNatives configNatives = new(configuration, new DesktopConfigHost(device, window));
+    DesktopConfigHost configHost = new(device, window)
+    {
+        ApplyResolution = (w, h) =>
+        {
+            window.Resize(w, h);
+            logger.Information("Config", $"Resolution set to {w}x{h}.");
+        },
+    };
+
+    ConfigNatives configNatives = new(configuration, configHost);
 
     MenuStringTable strings = new(resources);
     SpriteBatch batch = new(device);

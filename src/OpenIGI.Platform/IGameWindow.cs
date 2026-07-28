@@ -62,6 +62,15 @@ public interface IGameWindow : IDisposable
     /// </remarks>
     IReadOnlyList<(int Width, int Height, int RefreshRate)> GetDisplayModes();
 
+    /// <summary>Resizes the window's client area.</summary>
+    /// <param name="width">The new width in pixels.</param>
+    /// <param name="height">The new height in pixels.</param>
+    /// <remarks>
+    /// What the graphics screen's resolution list acts on. The back buffer follows through the
+    /// <see cref="Resized"/> event, so a caller does not have to rebuild the device.
+    /// </remarks>
+    void Resize(int width, int height);
+
     /// <summary>Gets the input state this window's message pump feeds.</summary>
     InputState Input { get; }
 
