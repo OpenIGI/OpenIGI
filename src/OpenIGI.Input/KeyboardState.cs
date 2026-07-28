@@ -37,6 +37,7 @@ public sealed class KeyboardState
     private readonly byte[] _current = new byte[KeyCount];
     private readonly byte[] _previous = new byte[KeyCount];
     private readonly Queue<KeyCode> _presses = new();
+    private readonly Queue<char> _characters = new();
 
     /// <summary>Gets the current state bytes, one per scan code.</summary>
     public ReadOnlySpan<byte> Current => _current;
@@ -74,6 +75,7 @@ public sealed class KeyboardState
         _current.AsSpan().CopyTo(_previous);
         _current.AsSpan().Clear();
         _presses.Clear();
+        _characters.Clear();
     }
 
     /// <summary>Sets one key's state without taking a shadow. For hosts that receive key events rather than polling a device.</summary>
@@ -126,6 +128,36 @@ public sealed class KeyboardState
         return true;
     }
 
+    /// <summary>Records a typed character.</summary>
+    /// <param name="character">The character the platform decoded.</param>
+    /// <remarks>
+    /// Separate from the press queue because a key and a character are different things: the same
+    /// press yields <c>KEY_A</c> and either <c>a</c> or <c>A</c> depending on modifiers and layout,
+    /// and only the platform knows which. A text field wants the character.
+    /// </remarks>
+    public void EnqueueCharacter(char character)
+    {
+        if (_characters.Count < PressQueueCapacity)
+        {
+            _characters.Enqueue(character);
+        }
+    }
+
+    /// <summary>Takes the oldest typed character that has not been read yet.</summary>
+    /// <param name="character">Receives the character.</param>
+    /// <returns><see langword="false"/> when nothing is waiting.</returns>
+    public bool TryDequeueCharacter(out char character)
+    {
+        if (_characters.Count == 0)
+        {
+            character = default;
+            return false;
+        }
+
+        character = _characters.Dequeue();
+        return true;
+    }
+
     private void EnqueuePress(KeyCode key)
     {
         if (_presses.Count < PressQueueCapacity)
@@ -167,6 +199,7 @@ public sealed class KeyboardState
     public void Reset()
     {
         _presses.Clear();
+        _characters.Clear();
         _current.AsSpan().Clear();
         _previous.AsSpan().Clear();
     }

@@ -374,6 +374,10 @@ public partial class InputBoxTask : MenuWindowTask
     public string Data { get; set; } = string.Empty;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <c>InputBox_Construct</c> sets <c>+76</c> itself rather than taking it from a parameter, so a
+    /// field is always clickable — it is the only one of the six that does.
+    /// </remarks>
     public override bool IsInteractive => true;
 
     /// <inheritdoc/>

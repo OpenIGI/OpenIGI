@@ -25,6 +25,7 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     private const string LogCategory = "Menu";
 
     private readonly List<MenuInputEvent> _events = [];
+    private readonly List<char> _typed = [];
     private readonly IIgiLogger _logger;
     private readonly InputState _input;
     private readonly SpriteBatch _batch;
@@ -156,6 +157,19 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     /// <inheritdoc/>
     public void DrawScreen(MenuScreenTask screen) =>
         _renderer()?.Draw(_batch, screen, _screenWidth(), _screenHeight());
+
+    /// <inheritdoc/>
+    /// <remarks>Drained from the window's own character queue, which is separate from the key queue.</remarks>
+    public IEnumerable<char> DrainTypedText()
+    {
+        _typed.Clear();
+        while (_input.Keyboard.TryDequeueCharacter(out char typed))
+        {
+            _typed.Add(typed);
+        }
+
+        return _typed;
+    }
 
     /// <inheritdoc/>
     public void DrawPointer(int x, int y) =>

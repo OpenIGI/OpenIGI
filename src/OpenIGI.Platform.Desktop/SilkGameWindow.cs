@@ -224,6 +224,7 @@ public sealed class SilkGameWindow : IGameWindow
         {
             keyboard.KeyDown += (_, key, _) => SetKey(key, down: true);
             keyboard.KeyUp += (_, key, _) => SetKey(key, down: false);
+            keyboard.KeyChar += (_, character) => Input.Keyboard.EnqueueCharacter(character);
         }
 
         foreach (IMouse mouse in _input.Mice)

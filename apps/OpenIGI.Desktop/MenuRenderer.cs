@@ -218,6 +218,29 @@ public sealed class MenuRenderer : IDisposable
                 case ListBoxTask list:
                     DrawListBox(batch, list, screenWidth, screenHeight);
                     break;
+                case InputBoxTask input:
+                    DrawWindowBox(batch, input, screenWidth, screenHeight);
+                    DrawInBox(batch, input, string.Empty, [input.VisibleText], 0, screenWidth, screenHeight);
+                    break;
+                case ScrollListBoxTask scroll:
+                    DrawWindowBox(batch, scroll, screenWidth, screenHeight);
+                    DrawInBox(batch, scroll, scroll.FontResource, [.. scroll.Items.Select(i => i.Label)], scroll.Index, screenWidth, screenHeight);
+                    break;
+                case AsciiBoxTask ascii:
+                    DrawWindowBox(batch, ascii, screenWidth, screenHeight);
+                    DrawInBox(batch, ascii, ascii.FontResource, [.. ascii.Lines], ascii.ScrollOffset, screenWidth, screenHeight);
+                    break;
+                case TextBoxTask text2:
+                    DrawWindowBox(batch, text2, screenWidth, screenHeight);
+                    DrawInBox(batch, text2, text2.FontResource, [.. text2.Lines], 0, screenWidth, screenHeight);
+                    break;
+                case TypeWriterBoxTask typer:
+                    DrawWindowBox(batch, typer, screenWidth, screenHeight);
+                    DrawInBox(batch, typer, string.Empty, [typer.VisibleText], 0, screenWidth, screenHeight);
+                    break;
+                case PictureBoxTask picture:
+                    DrawPictureBox(batch, picture, screenWidth, screenHeight);
+                    break;
                 default:
                     break;
             }
@@ -351,6 +374,70 @@ public sealed class MenuRenderer : IDisposable
 
         Draw(batch, font, label, x, y, screenWidth, screenHeight);
     }
+
+    /// <summary>Draws the picture a picture box has chosen, if it has one.</summary>
+    /// <remarks>
+    /// The set is filled by <c>Config_FillMissionPictureBox</c>, which needs mission data that does not
+    /// exist yet, so this normally draws the empty box and nothing in it.
+    /// </remarks>
+    private void DrawPictureBox(SpriteBatch batch, PictureBoxTask box, int screenWidth, int screenHeight)
+    {
+        DrawWindowBox(batch, box, screenWidth, screenHeight);
+
+        if (box.Picture.Length == 0 || TryGetSprite(box.Picture) is not { } sprite)
+        {
+            return;
+        }
+
+        sprite.DrawStretched(
+            batch,
+            0,
+            Centred(box.LayoutX, box.LayoutY, box.LayoutWidth, box.LayoutHeight, screenWidth, screenHeight),
+            Bgra32.White);
+    }
+
+    /// <summary>Draws as many lines as fit inside a control, starting at a scroll offset.</summary>
+    /// <remarks>
+    /// One shared routine because all five text-carrying boxes do the same thing: clip to the box, one
+    /// line per row, starting from whichever line the control has scrolled to. Nothing is wrapped —
+    /// the sources that fill these are already line-broken.
+    /// </remarks>
+    private void DrawInBox(
+        SpriteBatch batch,
+        MenuWindowTask box,
+        string fontResource,
+        IReadOnlyList<string> lines,
+        int firstLine,
+        int screenWidth,
+        int screenHeight)
+    {
+        BitmapTextRenderer? font = TryGetFont(fontResource.Length > 0 ? fontResource : DefaultBoxFont);
+        if (font is null || lines.Count == 0)
+        {
+            return;
+        }
+
+        int lineHeight = Math.Max(1, (int)font.Measure("A").Height);
+        int rows = Math.Max(1, box.LayoutHeight / lineHeight);
+
+        for (int row = 0; row < rows; row++)
+        {
+            int index = firstLine + row;
+            if (index < 0 || index >= lines.Count)
+            {
+                break;
+            }
+
+            Draw(batch, font, lines[index], box.LayoutX + 2, box.LayoutY + 1 + (row * lineHeight), screenWidth, screenHeight);
+        }
+    }
+
+    /// <summary>The font a box falls back to when its script names none.</summary>
+    /// <remarks>
+    /// <c>TypeWriterBox</c> declares only a width and a height, so it has no font parameter at all.
+    /// This is the one the rest of the menu's body text uses.
+    /// </remarks>
+    public const string DefaultBoxFont = "font3.fnt";
 
     /// <summary>Draws the black backing and green outline every control sits in.</summary>
     /// <remarks>

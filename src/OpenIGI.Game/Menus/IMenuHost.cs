@@ -39,6 +39,15 @@ public interface IMenuHost
     /// <param name="screen">The screen to draw.</param>
     void DrawScreen(MenuScreenTask screen);
 
+    /// <summary>Takes the characters typed since the last tick.</summary>
+    /// <returns>The characters, in the order they were typed.</returns>
+    /// <remarks>
+    /// Separate from <see cref="DrainEvents"/> because these are text, not commands: an
+    /// <c>InputBox</c> wants the letter, and every other control wants nothing to do with it. A host
+    /// with no text input returns nothing.
+    /// </remarks>
+    IEnumerable<char> DrainTypedText() => [];
+
     /// <summary>Draws the mouse cursor at a position in authored 640x480 space.</summary>
     /// <param name="x">The horizontal position.</param>
     /// <param name="y">The vertical position.</param>

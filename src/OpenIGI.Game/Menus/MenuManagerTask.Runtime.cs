@@ -138,6 +138,7 @@ public partial class MenuManagerTask
         }
 
         HandleKeys();
+        HandleTyping();
         MoveSelectionToHover();
     }
 
@@ -347,6 +348,31 @@ public partial class MenuManagerTask
                 default:
                     Selection.Handle(input);
                     break;
+            }
+        }
+    }
+
+    /// <summary>Routes typed characters to the selected field, if one is selected.</summary>
+    /// <remarks>
+    /// Only an <c>InputBox</c> takes text. Backspace arrives as a character rather than as a command,
+    /// because that is how a text field sees it.
+    /// </remarks>
+    private void HandleTyping()
+    {
+        if (Selection.Selected is not InputBoxTask field)
+        {
+            return;
+        }
+
+        foreach (char typed in _host!.DrainTypedText())
+        {
+            if (typed == '')
+            {
+                field.Backspace();
+            }
+            else if (!char.IsControl(typed))
+            {
+                field.TypeCharacter(typed);
             }
         }
     }
