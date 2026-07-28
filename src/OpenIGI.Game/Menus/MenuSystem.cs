@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -78,6 +79,55 @@ public sealed class MenuSystem
             ?? throw new EngineFatalException("The menu script built no MenuManager.");
 
         MenuSystem menu = new(tree, types, natives, manager);
+        log.Information(
+            "Menu",
+            $"Loaded {menu.Screens.Count} screen(s) from '{manager.ResourcePath}', starting on {manager.CurrentMenuScreen}.");
+
+        return menu;
+    }
+
+    /// <summary>Runs a menu script inside an existing game loop, so its tasks live under the flow.</summary>
+    /// <param name="script">The script bytecode.</param>
+    /// <param name="loop">The loop whose task tree, types and script namespace to use.</param>
+    /// <param name="logger">Where to report progress.</param>
+    /// <returns>The loaded menu.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <exception cref="EngineFatalException">The script faulted, or built no manager.</exception>
+    /// <remarks>
+    /// This is the shape the original has: the menu is a subtree of the flow task, so the frame walk
+    /// updates and renders it like anything else. The loop has already registered <c>Task_New</c> and
+    /// <c>Task_DeclareParameters</c>, so only the menu types and constants are added here.
+    /// </remarks>
+    public static MenuSystem Load(ReadOnlyMemory<byte> script, GameLoop loop, IIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(loop);
+        IIgiLogger log = logger ?? NullLogger.Instance;
+
+        MenuTaskTypes.RegisterAll(loop.Types);
+        MenuTaskTypes.RegisterConstants(loop.Natives);
+
+        if (!loop.Natives.Contains("TRUE"))
+        {
+            loop.Natives.RegisterConstant("TRUE", 1);
+        }
+
+        if (!loop.Natives.Contains("FALSE"))
+        {
+            loop.Natives.RegisterConstant("FALSE", 0);
+        }
+
+        QvmInterpreter interpreter = new(QvmProgram.Read(script), loop.Natives);
+        QvmError error = interpreter.Run();
+        if (error != QvmError.None)
+        {
+            throw new EngineFatalException(
+                $"The menu script faulted with {error}: {interpreter.ErrorMessage} ({interpreter.ErrorIdentifier})");
+        }
+
+        MenuManagerTask manager = Descend(loop.Tasks.Root).OfType<MenuManagerTask>().FirstOrDefault()
+            ?? throw new EngineFatalException("The menu script built no MenuManager.");
+
+        MenuSystem menu = new(loop.Tasks, loop.Types, loop.Natives, manager);
         log.Information(
             "Menu",
             $"Loaded {menu.Screens.Count} screen(s) from '{manager.ResourcePath}', starting on {manager.CurrentMenuScreen}.");

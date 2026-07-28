@@ -1,15 +1,13 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
-using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Menus;
-using OpenIGI.Input;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
-using OpenIGI.Scripting.Expressions;
 using OpenIGI.Rendering.OpenGL;
 using Silk.NET.OpenGL;
 
@@ -41,7 +39,7 @@ if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
 VirtualFileSystem fileSystem = new(logger);
 fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
 
-IPlatformHost host = new DesktopPlatformHost();
+IPlatformHost platform = new DesktopPlatformHost();
 WindowSettings settings = new(
     Title: "OpenIGI",
     Width: options.Width,
@@ -53,7 +51,7 @@ WindowSettings settings = new(
 SilkGameWindow window;
 try
 {
-    window = (SilkGameWindow)host.CreateWindow(settings);
+    window = (SilkGameWindow)platform.CreateWindow(settings);
 }
 catch (PlatformException ex)
 {
@@ -71,8 +69,7 @@ using (window)
         window.SwapBuffers,
         logger);
 
-    // The UI is authored against the original's 640x480 back buffer; the device stretches it to the
-    // window, which is what the original's windowed present does with its own back buffer.
+    // The UI is authored against the original's 640x480 back buffer and is centred, never scaled.
     device.SetViewport(new Viewport(0, 0, window.Width, window.Height));
     device.Set2DProjection(MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
     window.Resized += (_, e) =>
@@ -81,12 +78,8 @@ using (window)
         device.Set2DProjection(MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
     };
 
-    // The menu is data: run the script and draw the tree it builds.
-    MenuSystem menu = MenuSystem.Load(fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"), logger);
-    MenuScreenTask? screen = menu.GetInitialScreen() ?? (menu.Screens.Count > 0 ? menu.Screens[0] : null);
-
-    // Entry labels are keys into the language archive, so it has to be registered before the
-    // renderer can resolve any of them.
+    // Entry labels are keys into the language archive, so it has to be registered before the menu can
+    // resolve any of them.
     ResourceRegistry resources = new(fileSystem, logger);
     string languageArchive = MenuStringTable.GetArchiveName();
     if (fileSystem.Exists(languageArchive))
@@ -95,160 +88,67 @@ using (window)
     }
 
     MenuStringTable strings = new(resources);
-    using MenuRenderer renderer = new(device, fileSystem, menu.Manager.ResourcePath, strings);
     SpriteBatch batch = new(device);
-
-    MenuPointer pointer = new();
-    MenuNavigator navigator = new();
-    navigator.Start(menu.Manager.CurrentMenuScreen);
-
-    MenuScriptContext menuContext = new(navigator, logger);
-    ScriptExpressionEvaluator evaluator = new(menuContext);
-
-    MenuSelection selection = new();
-    MenuScreenTask? selectionBuiltFor = null;
-
-    GameClock clock = new(new SystemTimeSource());
+    MenuRenderer? renderer = null;
     bool running = true;
+
+    DesktopMenuHost menuHost = new(
+        window.Input,
+        batch,
+        () => renderer,
+        () => window.Width,
+        () => window.Height,
+        () => running = false,
+        logger);
+
+    // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk
+    // updates and renders the menu rather than this loop doing either by hand.
+    GameLoop loop = new(host: menuHost, renderer: new DesktopRenderScheduler(device), logger: logger);
+
+    menuHost.LoadMainMenu = () =>
+    {
+        MenuSystem menu = MenuSystem.Load(
+            fileSystem.ReadAllBytes("LOCAL:menusystem/mainmenu.qvm"),
+            loop,
+            logger);
+
+        renderer = new MenuRenderer(device, fileSystem, menu.Manager.ResourcePath, strings);
+        menu.Manager.Initialize(menu, menuHost, logger);
+    };
+
+    loop.Flow.Request(FlowEvent.MainMenu);
+
     window.CloseRequested += (_, _) => running = false;
-
     window.Show();
-    logger.Information("Desktop", $"{host.Name} up on {device.Capabilities.Renderer}.");
+    logger.Information("Desktop", $"{platform.Name} up on {device.Capabilities.Renderer}.");
 
-    while (running && !window.IsClosing)
+    while (running && loop.IsRunning && !window.IsClosing)
     {
         window.PumpEvents();
 
-        switch (clock.Decide(clock.Now))
+        if (loop.RunFrame() != FrameOutcome.Render)
         {
-            case FrameAction.Tick:
-                if (window.Input.Keyboard.WasPressed(KeyCode.Escape))
-                {
-                    running = false;
-                }
+            continue;
+        }
 
-                // Advance the fade, and pick up the screen the navigator moved to.
-                if (navigator.Tick() || screen is null)
-                {
-                    // A popup is a DialogWindow layered over the screen, not a screen of its own, so
-                    // the screen underneath stays current while one is up.
-                    screen = menu.FindScreen(navigator.CurrentScreen) ?? screen;
-                }
+        if (options.ExitAfterFrames > 0 && loop.Clock.FrameCount >= options.ExitAfterFrames)
+        {
+            if (options.ScreenshotPath is { } screenshotPath)
+            {
+                Bgra32[] capture = new Bgra32[window.Width * window.Height];
+                device.CaptureFrame(window.Width, window.Height, capture);
+                BitmapWriter.Write(screenshotPath, window.Width, window.Height, capture);
+                logger.Information("Desktop", $"Wrote {window.Width}x{window.Height} capture to {screenshotPath}.");
+            }
 
-                if (navigator.IsLeaving)
-                {
-                    logger.Information("Menu", $"Leaving the menus: {navigator.State}.");
-                    running = false;
-                }
-
-                if (screen is not null && !ReferenceEquals(screen, selectionBuiltFor))
-                {
-                    selection.Rebuild(screen);
-                    selectionBuiltFor = screen;
-                }
-
-                if (screen is not null && navigator.State == MenuManagerState.Active && menuContext.IsEnabled)
-                {
-                    // Arrow keys move the selection; the pointer moves the same one.
-                    KeyboardState keys = window.Input.Keyboard;
-                    if (keys.WasPressed(KeyCode.Down) || keys.WasPressed(KeyCode.Numpad2))
-                    {
-                        selection.Handle(MenuInputEvent.Next);
-                    }
-
-                    if (keys.WasPressed(KeyCode.Up) || keys.WasPressed(KeyCode.Numpad8))
-                    {
-                        selection.Handle(MenuInputEvent.Previous);
-                    }
-
-                    MenuWindowTask? chosenByKey = null;
-                    if (keys.WasPressed(KeyCode.Return) || keys.WasPressed(KeyCode.NumpadEnter))
-                    {
-                        chosenByKey = selection.Selected;
-                    }
-
-                    pointer.Update(
-                        (int)window.Input.Mouse.X,
-                        (int)window.Input.Mouse.Y,
-                        window.Width,
-                        window.Height,
-                        window.Input.Mouse.IsDown(MouseButton.Left));
-
-                    MenuWindowTask? hovered = screen.HitTestSubtree(pointer);
-                    foreach (MenuWindowTask item in selection.Items)
-                    {
-                        if (item.IsActive)
-                        {
-                            selection.SelectItem(item);
-                            break;
-                        }
-                    }
-
-                    if ((hovered ?? chosenByKey) is MenuTextTask chosen
-                        && chosen.OnClickScript.Length > 0)
-                    {
-                        logger.Information("Menu", $"'{chosen.TextResource}' -> {chosen.OnClickScript}");
-                        evaluator.Evaluate(ScriptExpressionParser.Parse(chosen.OnClickScript, MenuConstants));
-                        if (evaluator.HasError)
-                        {
-                            logger.Warning("Menu", evaluator.ErrorMessage);
-                        }
-                    }
-                }
-
-                clock.CompleteTick();
-                break;
-
-            case FrameAction.Render:
-                // Present first, then open the new frame: the order DisplaySwapBuffers uses.
-                device.SwapBuffers();
-                device.Clear(Bgra32.Black);
-                if (screen is not null)
-                {
-                    renderer.Draw(batch, screen, MenuLayout.AuthoredWidth, MenuLayout.AuthoredHeight);
-                }
-
-                clock.CompleteRender();
-
-                if (options.ExitAfterFrames > 0 && clock.FrameCount >= options.ExitAfterFrames)
-                {
-                    if (options.ScreenshotPath is { } screenshotPath)
-                    {
-                        Bgra32[] capture = new Bgra32[window.Width * window.Height];
-                        device.CaptureFrame(window.Width, window.Height, capture);
-                        BitmapWriter.Write(screenshotPath, window.Width, window.Height, capture);
-                        logger.Information("Desktop", $"Wrote {window.Width}x{window.Height} capture to {screenshotPath}.");
-                    }
-
-                    running = false;
-                }
-
-                break;
-
-            default:
-                break;
+            running = false;
         }
     }
 
+    renderer?.Dispose();
     logger.Information(
         "Desktop",
-        $"Shutting down after {clock.TickCount} ticks and {clock.FrameCount} frames.");
+        $"Shutting down after {loop.Clock.TickCount} ticks and {loop.Clock.FrameCount} frames.");
 }
 
 return 0;
-
-static int? MenuConstants(string name) => name switch
-{
-    "TRUE" => 1,
-    "FALSE" => 0,
-    "MENUMANAGER_IDLE" => (int)MenuManagerState.Idle,
-    "MENUMANAGER_QUIT" => (int)MenuManagerState.Quit,
-    "MENUMANAGER_QUITTOMAINMENU" => (int)MenuManagerState.QuitToMainMenu,
-    "MENUMANAGER_RESTARTLEVEL" => (int)MenuManagerState.RestartLevel,
-    "MENUMANAGER_STARTGAME" => (int)MenuManagerState.StartGame,
-    "TEXT_BLACK" => 0,
-    "TEXT_WHITE" => 1,
-    "TEXT_GREEN" => 2,
-    "TEXT_ORANGE" => 3,
-    _ => null,
-};

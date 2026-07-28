@@ -65,9 +65,6 @@ public sealed class MenuRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(screen);
 
-        MeasureText(screen);
-        screen.Arrange();
-
         batch.Begin();
 
         if (TryGetSprite(screen.Background) is { Asset.TileLayout: not null } background)
@@ -94,6 +91,15 @@ public sealed class MenuRenderer : IDisposable
 
         _sprites.Clear();
         _fonts.Clear();
+    }
+
+    /// <summary>Resolves and measures a screen's labels so the line-up has sizes to work with.</summary>
+    /// <param name="screen">The screen about to be shown.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="screen"/> is <see langword="null"/>.</exception>
+    public void Prepare(MenuScreenTask screen)
+    {
+        ArgumentNullException.ThrowIfNull(screen);
+        MeasureText(screen);
     }
 
     /// <summary>Resolves and measures every label, so the line-up has sizes to work with.</summary>

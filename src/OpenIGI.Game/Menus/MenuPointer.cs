@@ -52,6 +52,22 @@ public sealed class MenuPointer
         Released = !buttonDown && buttonDown != wasDown;
     }
 
+    /// <summary>Updates the pointer from a position already in authored coordinates.</summary>
+    /// <param name="x">The horizontal position in authored pixels.</param>
+    /// <param name="y">The vertical position in authored pixels.</param>
+    /// <param name="buttonDown">Whether the button is held this tick.</param>
+    /// <remarks>For a host that has already mapped the position; <see cref="Update"/> does the mapping itself.</remarks>
+    public void Set(int x, int y, bool buttonDown)
+    {
+        bool wasDown = IsDown;
+
+        X = x;
+        Y = y;
+        IsDown = buttonDown;
+        Pressed = buttonDown && buttonDown != wasDown;
+        Released = !buttonDown && buttonDown != wasDown;
+    }
+
     /// <summary>Clears the button signals, as the manager's inactive state does.</summary>
     public void ClearButtons()
     {
