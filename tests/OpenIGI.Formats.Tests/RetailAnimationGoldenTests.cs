@@ -292,6 +292,70 @@ public sealed class RetailAnimationGoldenTests
         }
     }
 
+    [RequiresGameDataFact]
+    public void SamplingEveryRetailTrackYieldsUnitQuaternions()
+    {
+        // End to end over real data: SQUAD across every segment of every bone of every clip, sampled
+        // off the key grid so the interpolation actually runs, plus past the end so the cyclic wrap
+        // gets exercised. Slerp preserves unit length, so anything that drifts is a weighting bug.
+        int samples = 0;
+
+        foreach (string name in Names)
+        {
+            BoneAnimationSet set = Load(name);
+            foreach (BoneAnimation animation in set.Animations)
+            {
+                bool cyclic = (animation.Flags & 0x80000000u) != 0;
+
+                for (int bone = 0; bone < animation.BoneCount; bone++)
+                {
+                    IReadOnlyList<BoneRotationKey> track = animation.Rotations(bone);
+                    if (track.Count < 2)
+                    {
+                        continue;
+                    }
+
+                    float step = MathF.Max(animation.Duration / 12f, 1f);
+                    for (float t = 0f; t <= animation.Duration + BoneAnimation.FrameStep; t += step)
+                    {
+                        Quaternion32 q = BoneRotationSampler.Sample(track, t, animation.Duration, cyclic);
+                        float length = MathF.Sqrt((q.X * q.X) + (q.Y * q.Y) + (q.Z * q.Z) + (q.W * q.W));
+
+                        Assert.Equal(1f, length, 3);
+                        samples++;
+                    }
+                }
+            }
+        }
+
+        Assert.Equal(63_540, samples);
+    }
+
+    [RequiresGameDataFact]
+    public void TheCyclicFlagIsTheOnlyBitEverSet()
+    {
+        // 0x4D5295 tests bit 31 and nothing else reads the word. If another bit ever appears, the
+        // flag is carrying more than the cyclic marker and §5.5 needs revisiting.
+        int cyclic = 0;
+        int total = 0;
+
+        foreach (string name in Names)
+        {
+            foreach (BoneAnimation animation in Load(name).Animations)
+            {
+                Assert.Equal(0u, animation.Flags & ~0x80000000u);
+                total++;
+                if ((animation.Flags & 0x80000000u) != 0)
+                {
+                    cyclic++;
+                }
+            }
+        }
+
+        Assert.Equal(376, total);
+        Assert.Equal(126, cyclic);
+    }
+
     private static string[] Names => ["000", "001", "002", "003", "005", "006"];
 
     private static BoneAnimationSet Load(string name)
