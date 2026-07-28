@@ -45,6 +45,13 @@ public partial class MenuManagerTask
     /// <summary>Gets the script namespace menu actions are evaluated against.</summary>
     public MenuScriptContext? ScriptContext { get; private set; }
 
+    /// <summary>Gets the turning green overlay every screen draws behind itself.</summary>
+    /// <remarks>
+    /// The manager owns it — field <c>+10208</c> — and <c>MenuScreen_Render</c> reaches back for it,
+    /// which is why it lives here and not on the screen.
+    /// </remarks>
+    public BackgroundFxTask BackgroundFx { get; } = new();
+
     /// <summary>Gets the pointer state every control hit-tests against.</summary>
     /// <remarks>
     /// The original's controls read it out of the manager the same way — <c>MenuItem_HitTest</c>
@@ -91,6 +98,8 @@ public partial class MenuManagerTask
     /// <inheritdoc/>
     protected override void OnUpdate()
     {
+        BackgroundFx.Receive(TaskMessage.Update);
+
         // The manager's own work comes before the walk into its children, so a key posted this tick
         // is consumed by the control on the same tick rather than the next one. Every menu type puts
         // its base chain last for the same reason.
