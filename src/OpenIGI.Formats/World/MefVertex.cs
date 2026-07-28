@@ -22,7 +22,7 @@ public readonly struct MefVertex
     /// <summary>The stride in bytes of a <see cref="MefMeshFormat.Diffuse"/> vertex on disk.</summary>
     public const int DiffuseStride = 32;
 
-    /// <summary>The stride in bytes of an <see cref="MefMeshFormat.Unbatched"/> or <see cref="MefMeshFormat.Lightmapped"/> vertex on disk.</summary>
+    /// <summary>The stride in bytes of an <see cref="MefMeshFormat.Skinned"/> or <see cref="MefMeshFormat.Lightmapped"/> vertex on disk.</summary>
     public const int LightmappedStride = 40;
 
     /// <summary>Initializes a new instance of the <see cref="MefVertex"/> struct.</summary>

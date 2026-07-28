@@ -30,6 +30,7 @@ public sealed class MefModel
     public const float SupportedVersion = 0.1f;
 
     private readonly MefVertex[] _vertices;
+    private readonly MefSkinInfluence[] _skinInfluences;
 
     private MefModel(
         IlffContainer container,
@@ -38,7 +39,10 @@ public sealed class MefModel
         MefVertex[] vertices,
         IReadOnlyList<MefDrawRecord> drawRecords,
         IReadOnlyList<MefLightmapPage> lightmapPages,
-        IReadOnlyList<MefAttachment> attachments)
+        IReadOnlyList<MefAttachment> attachments,
+        int baseVertexCount,
+        int extraInfluenceCount,
+        MefSkinInfluence[] skinInfluences)
     {
         Container = container;
         Format = format;
@@ -47,7 +51,27 @@ public sealed class MefModel
         DrawRecords = drawRecords;
         LightmapPages = lightmapPages;
         Attachments = attachments;
+        BaseVertexCount = baseVertexCount;
+        ExtraInfluenceCount = extraInfluenceCount;
+        _skinInfluences = skinInfluences;
     }
+
+    /// <summary>Gets the number of vertices the skinner places directly by their one bone.</summary>
+    /// <remarks>
+    /// Equal to the vertex count for every format but <see cref="MefMeshFormat.Skinned"/>, where the
+    /// array continues with <see cref="ExtraInfluenceCount"/> extra influences.
+    /// </remarks>
+    public int BaseVertexCount { get; }
+
+    /// <summary>Gets the number of extra weighted influences that follow the base vertices.</summary>
+    public int ExtraInfluenceCount { get; }
+
+    /// <summary>Gets the skin binding of each entry in the vertex array, or empty when not skinned.</summary>
+    /// <remarks>
+    /// Indexed exactly like the vertex array: the first <see cref="BaseVertexCount"/> entries belong to
+    /// base vertices, the rest to extra influences. See <see cref="MefSkinInfluence"/>.
+    /// </remarks>
+    public IReadOnlyList<MefSkinInfluence> SkinInfluences => _skinInfluences;
 
     /// <summary>Gets the underlying container.</summary>
     public IlffContainer Container { get; }
@@ -140,7 +164,29 @@ public sealed class MefModel
                 $"The mesh header declares {headerVertexCount} vertices but the render header declares {vertexCount}.");
         }
 
-        MefVertex[] vertices = ReadVertices(RequireChunk(container, MefTags.Vertices).Span, format, vertexCount);
+        ReadOnlySpan<byte> vertexBytes = RequireChunk(container, MefTags.Vertices).Span;
+        MefVertex[] vertices = ReadVertices(vertexBytes, format, vertexCount);
+
+        // A skinned model splits its vertex array in two: the base vertices, then the extra weighted
+        // influences that accumulate into them. The render header carries both counts, and they sum to
+        // the array length in all 537 retail skinned models.
+        int baseVertexCount = vertexCount;
+        int extraInfluenceCount = 0;
+        MefSkinInfluence[] influences = [];
+        if (format == MefMeshFormat.Skinned)
+        {
+            extraInfluenceCount = ReadInt32(render[12..], "the render extra-influence count");
+            baseVertexCount = ReadInt32(render[16..], "the render base vertex count");
+            if (extraInfluenceCount < 0 || baseVertexCount < 0
+                || baseVertexCount + extraInfluenceCount != vertexCount)
+            {
+                throw new PackFormatException(
+                    $"A skinned model declares {baseVertexCount} base vertices and {extraInfluenceCount} "
+                        + $"extra influences, which do not sum to its {vertexCount} vertices.");
+            }
+
+            influences = ReadSkinInfluences(vertexBytes, vertexCount);
+        }
         ReadOnlyCollection<MefLightmapPage> pages = ReadLightmapPages(container, lightmapCount);
         IReadOnlyList<MefDrawRecord> records = ReadDrawRecords(
             RequireChunk(container, MefTags.DrawRecords),
@@ -157,7 +203,10 @@ public sealed class MefModel
             vertices,
             records,
             pages,
-            ReadAttachments(container));
+            ReadAttachments(container),
+            baseVertexCount,
+            extraInfluenceCount,
+            influences);
     }
 
     /// <summary>Gets the payload of a chunk this type does not decode, such as collision or portal data.</summary>
@@ -195,7 +244,7 @@ public sealed class MefModel
         (int subMeshOffset, int vertexOffset, int expectedSize) = format switch
         {
             MefMeshFormat.Diffuse => (8, 12, 48),
-            MefMeshFormat.Unbatched => (8, 20, 56),
+            MefMeshFormat.Skinned => (8, 20, 56),
             _ => (12, 16, 56),
         };
 
@@ -320,6 +369,23 @@ public sealed class MefModel
         }
 
         return vertices;
+    }
+
+    private static MefSkinInfluence[] ReadSkinInfluences(ReadOnlySpan<byte> data, int count)
+    {
+        MefSkinInfluence[] influences = new MefSkinInfluence[count];
+        for (int i = 0; i < count; i++)
+        {
+            ReadOnlySpan<byte> binding =
+                data.Slice((i * MefVertex.LightmappedStride) + MefSkinInfluence.OffsetInVertex,
+                    MefSkinInfluence.SizeInBytes);
+            influences[i] = new MefSkinInfluence(
+                BinaryPrimitives.ReadSingleLittleEndian(binding),
+                BinaryPrimitives.ReadUInt16LittleEndian(binding[4..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(binding[6..]));
+        }
+
+        return influences;
     }
 
     private static ReadOnlyCollection<MefDrawRecord> ReadDrawRecords(

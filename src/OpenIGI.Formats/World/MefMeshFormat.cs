@@ -17,10 +17,16 @@ public enum MefMeshFormat
     Diffuse = 0,
 
     /// <summary>
-    /// 40-byte vertices, same layout as <see cref="Lightmapped"/>, but the original never batches these
-    /// meshes — they are the large ones, and each owns its vertex buffer. Draw-record indices are absolute.
+    /// 40-byte vertices carrying a <b>skin binding</b> in place of the lightmap UV, drawn by the bone
+    /// path. These are the animated models: the render header splits the array into base vertices and
+    /// extra weighted influences, and each vertex names the bone that moves it.
     /// </summary>
-    Unbatched = 1,
+    /// <remarks>
+    /// Previously read as "the same layout as <see cref="Lightmapped"/>, just never batched". That was
+    /// wrong: <c>0x49F700</c> takes the bone path on exactly this format, and the last eight bytes are
+    /// <c>{ f32 weight, u16 targetVertex, u16 boneIndex }</c>.
+    /// </remarks>
+    Skinned = 1,
 
     /// <summary>
     /// 40-byte vertices (position, normal, diffuse UV, lightmap UV) with a <c>LTMP</c> descriptor.

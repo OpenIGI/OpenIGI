@@ -9,12 +9,12 @@ namespace OpenIGI.Formats.World;
 /// <para>
 /// Records are packed back to back and fill the chunk exactly; there are as many as the render header's
 /// sub-mesh count. The header is 28 bytes for <see cref="MefMeshFormat.Diffuse"/> and
-/// <see cref="MefMeshFormat.Unbatched"/> models and 32 bytes for <see cref="MefMeshFormat.Lightmapped"/>
+/// <see cref="MefMeshFormat.Skinned"/> models and 32 bytes for <see cref="MefMeshFormat.Lightmapped"/>
 /// ones, followed by <c>indexCount</c> 16-bit indices.
 /// </para>
 /// <para>
 /// Indices are <em>relative</em> to <see cref="BaseVertex"/> in every format. An earlier reading had
-/// the Diffuse and Unbatched formats indexing the whole vertex array; measurement over mission 1's
+/// the Diffuse and Skinned formats indexing the whole vertex array; measurement over mission 1's
 /// multi-record models (the truck <c>622_01_1</c> most visibly) showed every record's indices span
 /// exactly the run up to the next record's base. <see cref="IndicesAreRelative"/> remains for the
 /// record's own bookkeeping.
@@ -25,7 +25,7 @@ public readonly record struct MefDrawRecord
     /// <summary>The material slot value that means "no material", stored as <c>0xFFFF</c>.</summary>
     public const int NoMaterialSlot = 0xFFFF;
 
-    /// <summary>The header size in bytes for <see cref="MefMeshFormat.Diffuse"/> and <see cref="MefMeshFormat.Unbatched"/> models.</summary>
+    /// <summary>The header size in bytes for <see cref="MefMeshFormat.Diffuse"/> and <see cref="MefMeshFormat.Skinned"/> models.</summary>
     public const int CompactHeaderSize = 28;
 
     /// <summary>The header size in bytes for <see cref="MefMeshFormat.Lightmapped"/> models.</summary>
