@@ -23,7 +23,11 @@ public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, IReadOn
 /// The slot to resolve against the drawing instance's material list, or
 /// <see cref="OpenIGI.Formats.World.MefDrawRecord.NoMaterialSlot"/> when the subset draws untextured.
 /// </param>
-public readonly record struct MeshSubset(int IndexOffset, int IndexCount, int MaterialSlot)
+/// <param name="LightmapPage">
+/// The index into the model's <see cref="OpenIGI.Formats.World.MefModel.LightmapPages"/> of the baked
+/// page this subset samples; zero on models that have none.
+/// </param>
+public readonly record struct MeshSubset(int IndexOffset, int IndexCount, int MaterialSlot, int LightmapPage)
 {
     /// <summary>Gets a value indicating whether this subset has a material.</summary>
     public bool HasMaterial => MaterialSlot != OpenIGI.Formats.World.MefDrawRecord.NoMaterialSlot;

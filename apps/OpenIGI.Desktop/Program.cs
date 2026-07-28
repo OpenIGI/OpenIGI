@@ -143,9 +143,16 @@ using (window)
     GameMissionState missionState = new();
     missionState.Register(loop.Natives);
 
+    // The magic-object table is what turns a level's few hundred scripted objects into its full
+    // contents: every model's attachments name an entry here. Loading it is a startup step, like the
+    // mission scan, because a level's own scripts never mention it.
+    MagicObjectRegistry magic = new(logger);
+    magic.Register(loop.Natives);
+
     try
     {
         missions.Scan(fileSystem, resources, loop.Natives);
+        magic.Load(resources, loop.Natives);
         configHost.Missions = missions;
     }
     catch (EngineFatalException ex)
@@ -172,7 +179,7 @@ using (window)
         MissionLoader missionLoader = new(missions, fileSystem, resources, levelLoader, logger);
         LoadedMission loaded = missionLoader.Load(id);
 
-        scene = WorldScene.Build(loaded, levelRoot, logger);
+        scene = WorldScene.Build(loaded, levelRoot, magic, logger);
         world = new WorldRenderer(device, resources, logger);
 
         // Open on the middle of what was placed, backed off and looking down slightly, so the first
@@ -295,7 +302,7 @@ using (window)
                 reportedWorld = true;
                 logger.Information(
                     "World",
-                    $"Drew {world.LastDrawCount} sub-mesh(es), {world.LastTriangleCount} triangles from {camera.Position}.");
+                    $"Drew {world.LastDrawCount} sub-mesh(es), {world.LastLightmappedCount} lightmapped, {world.LastTriangleCount} triangles from {camera.Position}.");
             }
         }
 

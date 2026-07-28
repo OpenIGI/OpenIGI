@@ -73,7 +73,7 @@ public static class MefMeshBuilder
                 indices[cursor++] = (ushort)record.ToVertexIndex(index);
             }
 
-            subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot));
+            subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot, record.LightmapPage));
         }
 
         return new MeshGeometry(vertices, indices, new ReadOnlyCollection<MeshSubset>(subsets));

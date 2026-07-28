@@ -1,7 +1,9 @@
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
@@ -32,6 +34,8 @@ public sealed class WorldRenderer : IDisposable
     private readonly Dictionary<string, MeshHandle> _meshes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _missingTextures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TextureHandle[]> _lightmaps = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, IresEntry>? _lightmapArchive;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="WorldRenderer"/> class.</summary>
@@ -55,6 +59,13 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets how many triangles the last <see cref="Draw"/> submitted.</summary>
     public int LastTriangleCount { get; private set; }
 
+    /// <summary>Gets how many of the last <see cref="Draw"/>'s sub-meshes sampled a baked lightmap.</summary>
+    /// <remarks>
+    /// Worth reporting rather than assuming: a sub-mesh whose bake is missing still draws, just unshaded,
+    /// so a broken binding looks like a slightly flat picture rather than like an error.
+    /// </remarks>
+    public int LastLightmappedCount { get; private set; }
+
     /// <summary>Draws a scene from a camera.</summary>
     /// <param name="scene">The scene to draw.</param>
     /// <param name="camera">The camera to draw from.</param>
@@ -75,6 +86,7 @@ public sealed class WorldRenderer : IDisposable
 
         int draws = 0;
         int triangles = 0;
+        int lit = 0;
 
         foreach (WorldPlacement placement in scene.Placements)
         {
@@ -91,6 +103,7 @@ public sealed class WorldRenderer : IDisposable
             }
 
             Matrix4f modelView = camera.CreateModelView(placement.Position, placement.Orientation);
+            TextureHandle[] pages = GetLightmapPages(scene, placement);
 
             foreach (MeshSubset subset in geometry.Subsets)
             {
@@ -106,22 +119,33 @@ public sealed class WorldRenderer : IDisposable
                     diffuse = GetTexture(texture);
                 }
 
+                // Each sub-mesh names the page it samples; a model with none, or one whose bake is
+                // absent, draws with the device's white lightmap and is simply unshaded.
+                TextureHandle lightmap = subset.LightmapPage < pages.Length
+                    ? pages[subset.LightmapPage]
+                    : TextureHandle.None;
+
                 _device.DrawMesh(
                     mesh,
                     subset.IndexOffset,
                     subset.IndexCount,
                     modelView,
                     diffuse,
-                    TextureHandle.None,
+                    lightmap,
                     BlendMode.Opaque);
 
                 draws++;
                 triangles += subset.TriangleCount;
+                if (lightmap.IsValid)
+                {
+                    lit++;
+                }
             }
         }
 
         LastDrawCount = draws;
         LastTriangleCount = triangles;
+        LastLightmappedCount = lit;
     }
 
     /// <inheritdoc/>
@@ -139,11 +163,20 @@ public sealed class WorldRenderer : IDisposable
             _device.DestroyMesh(mesh);
         }
 
+        foreach (TextureHandle[] pages in _lightmaps.Values)
+        {
+            foreach (TextureHandle page in pages)
+            {
+                _device.DestroyTexture(page);
+            }
+        }
+
         foreach (TextureHandle texture in _textures.Values)
         {
             _device.DestroyTexture(texture);
         }
 
+        _lightmaps.Clear();
         _meshes.Clear();
         _textures.Clear();
         _geometry.Clear();
@@ -180,6 +213,90 @@ public sealed class WorldRenderer : IDisposable
 
         _meshes[name] = handle;
         return handle;
+    }
+
+    /// <summary>Gets the uploaded pages of a placement's baked lightmap, empty when it has none.</summary>
+    /// <remarks>
+    /// One <c>.olm</c> entry holds every page of one model at one level of detail, so this uploads them
+    /// together and caches by entry name. Level 1's archive is 1308 entries, but only the ones actually
+    /// drawn are ever touched.
+    /// </remarks>
+    private TextureHandle[] GetLightmapPages(WorldScene scene, WorldPlacement placement)
+    {
+        if (!placement.HasLightmap)
+        {
+            return [];
+        }
+
+        string entryName = placement.LightmapEntryName();
+        if (_lightmaps.TryGetValue(entryName, out TextureHandle[]? cached))
+        {
+            return cached;
+        }
+
+        TextureHandle[] pages = [];
+        if (GetLightmapArchive(scene).TryGetValue(entryName, out IresEntry? entry) && entry is not null)
+        {
+            try
+            {
+                ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data);
+                pages = new TextureHandle[lightmap.Images.Count];
+                for (int i = 0; i < pages.Length; i++)
+                {
+                    ObjectLightmapImage image = lightmap.Images[i];
+
+                    // A page is an atlas of this model's own surfaces, so it clamps rather than repeats:
+                    // wrapping would bleed one surface's light onto another at the edges.
+                    pages[i] = _device.CreateTexture(
+                        new TextureDescription(
+                            image.Width,
+                            image.Height,
+                            1,
+                            TextureFilter.Linear,
+                            TextureAddressMode.Clamp),
+                        MemoryMarshal.Cast<byte, Bgra32>(image.Pixels.Span));
+                }
+            }
+            catch (Exception ex) when (ex is PackFormatException or ArgumentException or GraphicsDeviceException)
+            {
+                _logger.Warning(LogCategory, $"Lightmap '{entryName}' did not load: {ex.Message}");
+                pages = [];
+            }
+        }
+
+        _lightmaps[entryName] = pages;
+        return pages;
+    }
+
+    private Dictionary<string, IresEntry> GetLightmapArchive(WorldScene scene)
+    {
+        if (_lightmapArchive is not null)
+        {
+            return _lightmapArchive;
+        }
+
+        _lightmapArchive = new Dictionary<string, IresEntry>(StringComparer.OrdinalIgnoreCase);
+        if (scene.Mission.TryReadLightmapArchive(_resources, out IresArchive? archive) && archive is not null)
+        {
+            foreach (IresEntry entry in archive.Entries)
+            {
+                _lightmapArchive[BareEntryName(entry.Name)] = entry;
+            }
+
+            _logger.Information(LogCategory, $"Object lightmaps: {_lightmapArchive.Count} entries.");
+        }
+        else
+        {
+            _logger.Warning(LogCategory, "The level has no object-lightmap archive; the world draws unshaded.");
+        }
+
+        return _lightmapArchive;
+    }
+
+    private static string BareEntryName(string name)
+    {
+        int slash = name.LastIndexOfAny(['/', '\\']);
+        return slash >= 0 ? name[(slash + 1)..] : name;
     }
 
     private TextureHandle GetTexture(string name)

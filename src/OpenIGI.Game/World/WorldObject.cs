@@ -97,13 +97,17 @@ public sealed class WorldObject
     /// <param name="modelNames">The owner's model names, in the order its task subtree places them.</param>
     /// <param name="resolve">Looks one model name up.</param>
     /// <param name="magic">The magic-object table an attachment name is resolved through.</param>
-    /// <returns>The trees, in the same order, sharing one lightmap numbering.</returns>
+    /// <returns>
+    /// One entry per input name, in the same order and sharing one lightmap numbering, with
+    /// <see langword="null"/> where a name did not resolve. The alignment is deliberate: the caller knows
+    /// which task each name came from and needs to keep that link.
+    /// </returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
     /// The count runs across the whole owner, not per placement: an object's baked lightmaps are one set,
     /// so the second placement's first model carries on where the first placement's tree left off.
     /// </remarks>
-    public static IReadOnlyList<WorldObject> BuildAll(
+    public static IReadOnlyList<WorldObject?> BuildAll(
         IEnumerable<string> modelNames,
         ModelResolver resolve,
         MagicObjectRegistry magic)
@@ -112,15 +116,11 @@ public sealed class WorldObject
         ArgumentNullException.ThrowIfNull(resolve);
         ArgumentNullException.ThrowIfNull(magic);
 
-        List<WorldObject> roots = [];
+        List<WorldObject?> roots = [];
         int next = 0;
         foreach (string name in modelNames)
         {
-            WorldObject? root = Build(name, Vector3f.Zero, Matrix3f.Identity, resolve, magic, ref next, depth: 0);
-            if (root is not null)
-            {
-                roots.Add(root);
-            }
+            roots.Add(Build(name, Vector3f.Zero, Matrix3f.Identity, resolve, magic, ref next, depth: 0));
         }
 
         return roots;

@@ -49,16 +49,24 @@ public sealed class WorldScene
     /// <summary>The task parameter naming an object's orientation.</summary>
     public const string OrientationParameter = "Orientation";
 
+    /// <summary>The task type whose <c>Filename</c> names an object's baked-lightmap set.</summary>
+    public const string LightmapInfoType = "LightmapInfo";
+
+    /// <summary>The <see cref="LightmapInfoType"/> parameter holding the set name.</summary>
+    public const string LightmapFilenameParameter = "Filename";
+
     private WorldScene(
         LoadedMission mission,
         IReadOnlyList<WorldPlacement> placements,
         int unresolved,
-        int unplaced)
+        int unplaced,
+        int attached)
     {
         Mission = mission;
         Placements = placements;
         UnresolvedCount = unresolved;
         UnplacedCount = unplaced;
+        AttachedCount = attached;
     }
 
     /// <summary>Gets the mission the scene was built from.</summary>
@@ -73,13 +81,29 @@ public sealed class WorldScene
     /// <summary>Gets how many tasks named a model but declared no position this recognises.</summary>
     public int UnplacedCount { get; }
 
+    /// <summary>Gets how many placements came from model attachments rather than from the level script.</summary>
+    /// <remarks>
+    /// These are the magic objects (see <see cref="MagicObjectRegistry"/>) and they are the majority of a
+    /// level's contents: the script names 501 objects in level 1, and their models attach thousands more.
+    /// Zero when <see cref="Build"/> was given no magic-object table.
+    /// </remarks>
+    public int AttachedCount { get; }
+
     /// <summary>Walks a level's task tree and joins every placed model to its pack instance.</summary>
     /// <param name="mission">The loaded mission, with both packs bound.</param>
     /// <param name="levelRoot">The task the level's subtree hangs off.</param>
+    /// <param name="magic">
+    /// The magic-object table. Without it a level draws only what its script names — every model's
+    /// attachments, and the baked-lightmap numbering that depends on them, are left out.
+    /// </param>
     /// <param name="logger">Where to report placements that do not resolve.</param>
     /// <returns>The scene.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static WorldScene Build(LoadedMission mission, GameTask levelRoot, IIgiLogger? logger = null)
+    public static WorldScene Build(
+        LoadedMission mission,
+        GameTask levelRoot,
+        MagicObjectRegistry? magic = null,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(levelRoot);
@@ -100,9 +124,19 @@ public sealed class WorldScene
             }
         }
 
+        // Which baked-lightmap set each placing task belongs to, and where in it the task's own model
+        // sits. Both come from expanding the owner's whole subtree at once, because the numbering is a
+        // single running count across it — see WorldObject.
+        Dictionary<GameTask, (string Set, WorldObject Root)> lightmapped = [];
+        if (magic is not null)
+        {
+            BindLightmapSets(levelRoot, mission, magic, lightmapped);
+        }
+
         List<WorldPlacement> placements = [];
         int unresolved = 0;
         int unplaced = 0;
+        int attached = 0;
 
         foreach (GameTask task in Walk(levelRoot))
         {
@@ -127,24 +161,168 @@ public sealed class WorldScene
             }
 
             declared.TryGetValue(OrientationParameter, out object? rawOrientation);
+            Matrix3f orientation = rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
 
+            lightmapped.TryGetValue(task, out (string Set, WorldObject Root) bake);
             placements.Add(new WorldPlacement(
                 position,
-                rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity,
+                orientation,
                 bound.Instance,
                 bound.Pack,
                 bound.Model,
-                task.Name));
+                task.Name,
+                bake.Set ?? string.Empty,
+                bake.Root?.LightmapIndex ?? -1));
+
+            // Everything the model attaches, and everything those attach in turn. The tree is only
+            // available when a magic-object table was supplied; without one a level draws its shells and
+            // none of their contents.
+            if (bake.Root is not null)
+            {
+                attached += AddAttached(bake.Root, position, orientation, bake.Set ?? string.Empty, task.Name, byName, placements);
+            }
+            else if (magic is not null
+                && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
+                && loose is not null)
+            {
+                attached += AddAttached(loose, position, orientation, string.Empty, task.Name, byName, placements);
+            }
         }
 
         log.Information(
             LogCategory,
             $"Scene: {placements.Count} placement(s) over {byName.Count} bound instance(s)"
+                + $", {attached} attached"
                 + (unresolved > 0 ? $", {unresolved} unresolved" : string.Empty)
                 + (unplaced > 0 ? $", {unplaced} with no position" : string.Empty)
                 + ".");
 
-        return new WorldScene(mission, new ReadOnlyCollection<WorldPlacement>(placements), unresolved, unplaced);
+        return new WorldScene(
+            mission,
+            new ReadOnlyCollection<WorldPlacement>(placements),
+            unresolved,
+            unplaced,
+            attached);
+    }
+
+    /// <summary>
+    /// Expands every lightmap owner's subtree and records, per placing task, which set it belongs to and
+    /// the tree its own model heads.
+    /// </summary>
+    private static void BindLightmapSets(
+        GameTask levelRoot,
+        LoadedMission mission,
+        MagicObjectRegistry magic,
+        Dictionary<GameTask, (string Set, WorldObject Root)> bound)
+    {
+        foreach (GameTask owner in Walk(levelRoot))
+        {
+            if (!TryGetLightmapSet(owner, out string set))
+            {
+                continue;
+            }
+
+            List<GameTask> placing = [];
+            List<string> models = [];
+            foreach (GameTask task in Subtree(owner))
+            {
+                if (task is DeclaredTask declared
+                    && declared.TryGetValue(ModelParameter, out object? raw)
+                    && raw is string name
+                    && name.Length > 0)
+                {
+                    placing.Add(task);
+                    models.Add(name);
+                }
+            }
+
+            IReadOnlyList<WorldObject?> roots = WorldObject.BuildAll(models, mission.TryGetModel, magic);
+            for (int i = 0; i < roots.Count; i++)
+            {
+                if (roots[i] is { } root)
+                {
+                    bound[placing[i]] = (set, root);
+                }
+            }
+        }
+    }
+
+    /// <summary>Reads the set name off a task's <c>LightmapInfo</c> child, if it has one.</summary>
+    private static bool TryGetLightmapSet(GameTask task, out string set)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            if (child is DeclaredTask declared
+                && string.Equals(declared.Type.Name, LightmapInfoType, StringComparison.Ordinal)
+                && declared.TryGetValue(LightmapFilenameParameter, out object? raw)
+                && raw is string name
+                && name.Length > 0)
+            {
+                set = name;
+                return true;
+            }
+        }
+
+        set = string.Empty;
+        return false;
+    }
+
+    /// <summary>Places a node's attached children, and theirs, in the parent's frame.</summary>
+    /// <remarks>
+    /// An attachment's position is in its parent model's space and in the same engine units as a vertex,
+    /// so it converts to metres the same way a placement's does. The rotations compose in the order the
+    /// camera already uses for a placement's own orientation.
+    /// </remarks>
+    private static int AddAttached(
+        WorldObject node,
+        Vector3d position,
+        Matrix3f orientation,
+        string set,
+        string taskName,
+        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
+        List<WorldPlacement> placements)
+    {
+        int added = 0;
+        foreach (WorldObject child in node.Children)
+        {
+            Vector3f offset = orientation.Transform(child.Position);
+            Vector3d childPosition = new(
+                position.X + (offset.X / UnitsPerMetre),
+                position.Y + (offset.Y / UnitsPerMetre),
+                position.Z + (offset.Z / UnitsPerMetre));
+            Matrix3f childOrientation = orientation * child.Orientation;
+
+            // A child draws only if its model is also a pack instance, because the textures a sub-mesh
+            // uses are named by the instance, not by the model. Its subtree is walked either way: the
+            // lightmap numbering already counted it, and its own children may well be instances.
+            if (byName.TryGetValue(child.Name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
+            {
+                placements.Add(new WorldPlacement(
+                    childPosition,
+                    childOrientation,
+                    bound.Instance,
+                    bound.Pack,
+                    bound.Model,
+                    taskName,
+                    set,
+                    set.Length > 0 ? child.LightmapIndex : -1));
+                added++;
+            }
+
+            added += AddAttached(child, childPosition, childOrientation, set, taskName, byName, placements);
+        }
+
+        return added;
+    }
+
+    /// <summary>Walks a task and everything under it, the task itself first.</summary>
+    private static IEnumerable<GameTask> Subtree(GameTask task)
+    {
+        yield return task;
+        foreach (GameTask descendant in Walk(task))
+        {
+            yield return descendant;
+        }
     }
 
     /// <summary>Reads whichever position parameter a placing task declares.</summary>

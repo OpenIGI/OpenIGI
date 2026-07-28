@@ -5,6 +5,8 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.Ilff;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
@@ -97,6 +99,76 @@ public sealed class RetailWorldSceneTests
         }
 
         Assert.True(built > 400, $"expected geometry for the level's objects, got {built}");
+    }
+
+    [RequiresGameDataFact]
+    public void TheSceneCarriesTheAttachedObjectsAndABindableLightmapForEachOne()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+
+        GameLoop loop = new(new ManualTimeSource());
+        LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+
+        MissionRegistry registry = new();
+        registry.Register(loop.Natives);
+        registry.Scan(fileSystem, resources, loop.Natives);
+
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+
+        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
+        LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader).Load(1);
+        WorldScene scene = WorldScene.Build(mission, levelRoot, magic);
+
+        // Without the magic-object table the level is only its shells.
+        WorldScene bare = WorldScene.Build(mission, levelRoot);
+        Assert.Equal(0, bare.AttachedCount);
+        Assert.True(
+            scene.Placements.Count > bare.Placements.Count,
+            $"attachments added nothing: {scene.Placements.Count} vs {bare.Placements.Count}");
+        Assert.True(scene.AttachedCount > 100, $"expected the level's attached contents, got {scene.AttachedCount}");
+
+        Assert.True(mission.TryReadLightmapArchive(resources, out IresArchive? archive));
+        Dictionary<string, IresEntry> entries = new(StringComparer.OrdinalIgnoreCase);
+        foreach (IresEntry entry in archive!.Entries)
+        {
+            entries[entry.Name[(entry.Name.LastIndexOfAny(['/', '\\']) + 1)..]] = entry;
+        }
+
+        // The binding the renderer performs, checked here rather than by looking at pixels: the entry a
+        // placement names must exist and must be sized like the model's own lightmap page.
+        int bound = 0;
+        List<string> failures = [];
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!placement.HasLightmap)
+            {
+                continue;
+            }
+
+            string name = placement.LightmapEntryName();
+            if (!entries.TryGetValue(name, out IresEntry? entry))
+            {
+                // A model with no faces is never baked, so its index is simply absent from the archive.
+                continue;
+            }
+
+            bound++;
+            ObjectLightmap lightmap = ObjectLightmap.Read(entry.Data);
+            IReadOnlyList<MefLightmapPage> pages = placement.Model.LightmapPages;
+            if (pages.Count != lightmap.Images.Count
+                || (pages.Count > 0
+                    && (pages[0].Width != lightmap.Images[0].Width || pages[0].Height != lightmap.Images[0].Height)))
+            {
+                failures.Add($"{name}: {placement.Instance.Name} pages [{string.Join(",", pages)}]");
+            }
+        }
+
+        Assert.True(failures.Count == 0, string.Join("\n", failures.Take(8)));
+        Assert.True(bound > 200, $"expected the level's baked objects to bind, got {bound}");
     }
 
     private static (WorldScene Scene, LoadedMission Mission) Build()

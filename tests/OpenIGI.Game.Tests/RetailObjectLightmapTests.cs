@@ -234,7 +234,9 @@ public sealed class RetailObjectLightmapTests
             }
         }
 
-        return WorldObject.BuildAll(names, mission.TryGetModel, magic);
+        // BuildAll keeps a slot per input name so a caller can pair trees with tasks; this one only wants
+        // the trees, in order.
+        return [.. WorldObject.BuildAll(names, mission.TryGetModel, magic).OfType<WorldObject>()];
     }
 
     private static IEnumerable<GameTask> Walk(GameTask task)
