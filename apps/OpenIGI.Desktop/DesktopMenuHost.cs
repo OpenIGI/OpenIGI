@@ -108,23 +108,47 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Maps this frame's key presses onto the abstract codes the manager consumes. Only edges are
-    /// reported, so holding a key moves the selection once.
+    /// <para>
+    /// Drains the keyboard's press <em>queue</em> and maps each press onto the abstract code the
+    /// manager consumes, which is what <c>MenuManager_HandleKeys</c> (<c>0x418580</c>) does with
+    /// <c>Input_HasEvent</c>/<c>Input_NextEvent</c>.
+    /// </para>
+    /// <para>
+    /// It has to be a queue rather than a per-frame edge test. The window dispatches key events at the
+    /// display's rate and the manager reads them from a task update at the simulation's 30 Hz, so a
+    /// press that begins and ends between two ticks — or simply one whose frame is not a tick frame —
+    /// has its edge overwritten by the next frame's shadow before any tick can see it. That is what
+    /// made the arrow keys and enter appear dead.
+    /// </para>
     /// </remarks>
     public IEnumerable<MenuInputEvent> DrainEvents()
     {
         _events.Clear();
-        KeyboardState keys = _input.Keyboard;
 
-        Add(keys.WasPressed(KeyCode.Down) || keys.WasPressed(KeyCode.Numpad2), MenuInputEvent.Next);
-        Add(keys.WasPressed(KeyCode.Up) || keys.WasPressed(KeyCode.Numpad8), MenuInputEvent.Previous);
-        Add(keys.WasPressed(KeyCode.Left) || keys.WasPressed(KeyCode.Numpad4), MenuInputEvent.Left);
-        Add(keys.WasPressed(KeyCode.Right) || keys.WasPressed(KeyCode.Numpad6), MenuInputEvent.Right);
-        Add(keys.WasPressed(KeyCode.Return) || keys.WasPressed(KeyCode.NumpadEnter), MenuInputEvent.Enter);
-        Add(keys.WasPressed(KeyCode.Escape), MenuInputEvent.Escape);
+        while (_input.Keyboard.TryDequeuePress(out KeyCode key))
+        {
+            if (Map(key) is { } mapped)
+            {
+                _events.Add(mapped);
+            }
+        }
 
         return _events;
     }
+
+    /// <summary>Maps a key onto the manager's abstract code.</summary>
+    /// <param name="key">The key that was pressed.</param>
+    /// <returns>The code, or <see langword="null"/> for a key the menu does not use.</returns>
+    private static MenuInputEvent? Map(KeyCode key) => key switch
+    {
+        KeyCode.Down or KeyCode.Numpad2 => MenuInputEvent.Next,
+        KeyCode.Up or KeyCode.Numpad8 => MenuInputEvent.Previous,
+        KeyCode.Left or KeyCode.Numpad4 => MenuInputEvent.Left,
+        KeyCode.Right or KeyCode.Numpad6 => MenuInputEvent.Right,
+        KeyCode.Return or KeyCode.NumpadEnter => MenuInputEvent.Enter,
+        KeyCode.Escape => MenuInputEvent.Escape,
+        _ => null,
+    };
 
     /// <inheritdoc/>
     public void PrepareScreen(MenuScreenTask screen) => _renderer()?.Prepare(screen);
@@ -132,6 +156,10 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     /// <inheritdoc/>
     public void DrawScreen(MenuScreenTask screen) =>
         _renderer()?.Draw(_batch, screen, _screenWidth(), _screenHeight());
+
+    /// <inheritdoc/>
+    public void DrawPointer(int x, int y) =>
+        _renderer()?.DrawPointer(_batch, x, y, _screenWidth(), _screenHeight());
 
     /// <inheritdoc/>
     /// <remarks>Audio is M7; the request is logged so the wiring is visible before there is a mixer.</remarks>
@@ -149,14 +177,6 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
          y + (MenuLayout.AuthoredHeight / 2) - (height >> 1));
 
     private (int X, int Y) ToAuthored(int x, int y) => ToAuthoredCore(x, y, _screenWidth(), _screenHeight());
-
-    private void Add(bool pressed, MenuInputEvent input)
-    {
-        if (pressed)
-        {
-            _events.Add(input);
-        }
-    }
 
     private void NotYet(string what) =>
         _logger.Information(LogCategory, $"Flow asked for {what}, which is not implemented yet.");

@@ -26,8 +26,17 @@ public sealed class KeyboardState
     /// <summary>The byte value the original writes for a key that is down.</summary>
     public const byte DownValue = 0x80;
 
+    /// <summary>The most presses the queue holds before it starts dropping them.</summary>
+    /// <remarks>
+    /// The original's event queue is a fixed ring, and a full one refuses further writes rather than
+    /// growing. The cap matters here for the same reason it does there: a consumer that stops draining
+    /// — a level load, a stalled frame — must not be able to make the queue grow without bound.
+    /// </remarks>
+    public const int PressQueueCapacity = 64;
+
     private readonly byte[] _current = new byte[KeyCount];
     private readonly byte[] _previous = new byte[KeyCount];
+    private readonly Queue<KeyCode> _presses = new();
 
     /// <summary>Gets the current state bytes, one per scan code.</summary>
     public ReadOnlySpan<byte> Current => _current;
@@ -49,6 +58,14 @@ public sealed class KeyboardState
         _current.AsSpan().CopyTo(_previous);
         _current.AsSpan().Clear();
         keys.CopyTo(_current);
+
+        for (int i = 0; i < keys.Length; i++)
+        {
+            if ((_current[i] & DownValue) != 0 && (_previous[i] & DownValue) == 0)
+            {
+                EnqueuePress((KeyCode)i);
+            }
+        }
     }
 
     /// <summary>Takes the frame shadow and clears every key, as the original does when the device cannot be read.</summary>
@@ -56,13 +73,66 @@ public sealed class KeyboardState
     {
         _current.AsSpan().CopyTo(_previous);
         _current.AsSpan().Clear();
+        _presses.Clear();
     }
 
     /// <summary>Sets one key's state without taking a shadow. For hosts that receive key events rather than polling a device.</summary>
     /// <param name="key">The key.</param>
     /// <param name="down"><see langword="true"/> when the key is down.</param>
-    /// <remarks>Pair with <see cref="BeginFrame"/>, which takes the shadow once per frame.</remarks>
-    public void SetKey(KeyCode key, bool down) => _current[(byte)key] = down ? DownValue : (byte)0;
+    /// <remarks>
+    /// Pair with <see cref="BeginFrame"/>, which takes the shadow once per frame. A rising edge is also
+    /// queued — see <see cref="TryDequeuePress"/> — because a consumer running slower than the host's
+    /// event dispatch would otherwise never see it.
+    /// </remarks>
+    public void SetKey(KeyCode key, bool down)
+    {
+        bool wasDown = (_current[(byte)key] & DownValue) != 0;
+        _current[(byte)key] = down ? DownValue : (byte)0;
+
+        if (down && !wasDown)
+        {
+            EnqueuePress(key);
+        }
+    }
+
+    /// <summary>Gets the number of presses waiting to be read.</summary>
+    public int PendingPressCount => _presses.Count;
+
+    /// <summary>Takes the oldest press that has not been read yet.</summary>
+    /// <param name="key">Receives the key.</param>
+    /// <returns><see langword="false"/> when nothing is waiting.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the original's input event queue — <c>Input_HasEvent</c> (<c>0x48A910</c>) and
+    /// <c>Input_NextEvent</c> (<c>0x48A8D0</c>), which <c>MenuManager_HandleKeys</c> drains in a
+    /// <c>while</c> loop. It is not an alternative spelling of <see cref="WasPressed"/>.
+    /// </para>
+    /// <para>
+    /// The difference is only visible when the reader and the host run at different rates, which is
+    /// exactly the menu's situation: presses are dispatched at the display's rate and read at the
+    /// simulation's 30 Hz. <see cref="WasPressed"/> compares against a shadow taken every frame, so a
+    /// press between two ticks is overwritten before any tick sees it — the queue keeps it.
+    /// </para>
+    /// </remarks>
+    public bool TryDequeuePress(out KeyCode key)
+    {
+        if (_presses.Count == 0)
+        {
+            key = default;
+            return false;
+        }
+
+        key = _presses.Dequeue();
+        return true;
+    }
+
+    private void EnqueuePress(KeyCode key)
+    {
+        if (_presses.Count < PressQueueCapacity)
+        {
+            _presses.Enqueue(key);
+        }
+    }
 
     /// <summary>Takes the frame shadow, leaving the current state in place.</summary>
     /// <remarks>
@@ -96,6 +166,7 @@ public sealed class KeyboardState
     /// <summary>Clears both the current state and the shadow.</summary>
     public void Reset()
     {
+        _presses.Clear();
         _current.AsSpan().Clear();
         _previous.AsSpan().Clear();
     }

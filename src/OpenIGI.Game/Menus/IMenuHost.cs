@@ -39,6 +39,16 @@ public interface IMenuHost
     /// <param name="screen">The screen to draw.</param>
     void DrawScreen(MenuScreenTask screen);
 
+    /// <summary>Draws the mouse cursor at a position in authored 640x480 space.</summary>
+    /// <param name="x">The horizontal position.</param>
+    /// <param name="y">The vertical position.</param>
+    /// <remarks>
+    /// The cursor is <c>pointer.spr</c> out of the manager's own archive, loaded by
+    /// <c>MenuManager_LoadScreen</c> (<c>0x417CF0</c>) into the pointer window at <c>+10184</c>. The
+    /// operating system's cursor is hidden, so if this draws nothing there is nothing to aim with.
+    /// </remarks>
+    void DrawPointer(int x, int y);
+
     /// <summary>Plays one of the menu's sounds.</summary>
     /// <param name="name">The sound resource, <c>menu_high</c> when the selection moves and <c>menu_sel</c> when an entry is chosen.</param>
     void PlaySound(string name);

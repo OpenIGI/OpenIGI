@@ -81,6 +81,38 @@ public sealed class MenuRenderer : IDisposable
         batch.End();
     }
 
+    /// <summary>The cursor sprite the manager loads out of its own archive.</summary>
+    /// <remarks><c>MenuManager_LoadScreen</c> (<c>0x417CF0</c>) names it literally.</remarks>
+    public const string PointerSprite = "pointer.spr";
+
+    /// <summary>Draws the mouse cursor.</summary>
+    /// <param name="batch">The batch to draw into.</param>
+    /// <param name="x">The horizontal position in authored space.</param>
+    /// <param name="y">The vertical position in authored space.</param>
+    /// <param name="screenWidth">The back-buffer width in pixels.</param>
+    /// <param name="screenHeight">The back-buffer height in pixels.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="batch"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The sprite's hot spot is its top-left corner: the frame carries its own offsets and
+    /// <see cref="SpriteResource.DrawFrame"/> applies them, so the position is passed through
+    /// unadjusted rather than being nudged to centre the tip.
+    /// </remarks>
+    public void DrawPointer(SpriteBatch batch, int x, int y, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+
+        if (TryGetSprite(PointerSprite) is not { } pointer || pointer.Asset.Frames.Count == 0)
+        {
+            return;
+        }
+
+        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight);
+
+        batch.Begin();
+        pointer.DrawFrame(batch, pointer.Asset.Frames[0], screenX, screenY, 1f, 1f, Bgra32.White);
+        batch.End();
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

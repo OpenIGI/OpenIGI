@@ -168,6 +168,10 @@ public sealed class MenuMemberAccessTests
         {
         }
 
+        public void DrawPointer(int x, int y)
+        {
+        }
+
         public void PlaySound(string name)
         {
         }

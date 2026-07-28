@@ -213,6 +213,10 @@ public sealed class MenuFlowBootTests
 
         public void DrawScreen(MenuScreenTask screen) => Drawn++;
 
+        public void DrawPointer(int x, int y) => PointerDrawn++;
+
+        public int PointerDrawn { get; private set; }
+
         public void PlaySound(string name) => Sounds.Add(name);
 
         public void LeaveMenus(MenuManagerState state) => Left = state;
