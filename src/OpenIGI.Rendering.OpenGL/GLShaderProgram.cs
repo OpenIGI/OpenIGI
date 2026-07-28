@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using Silk.NET.OpenGL;
 
 namespace OpenIGI.Rendering.OpenGL;
@@ -71,6 +72,19 @@ internal sealed class GLShaderProgram : IDisposable
     /// <param name="name">The uniform name.</param>
     /// <param name="value">The value.</param>
     public void SetInt(string name, int value) => _gl.Uniform1(GetLocation(name), value);
+
+    /// <summary>Sets a <c>mat4</c> uniform.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <param name="value">The matrix, written out column-major as GL expects.</param>
+    public unsafe void SetMatrix4(string name, in Matrix4f value)
+    {
+        Span<float> elements = stackalloc float[Matrix4f.ComponentCount];
+        value.CopyColumnMajorTo(elements);
+        fixed (float* data = elements)
+        {
+            _gl.UniformMatrix4(GetLocation(name), 1, false, data);
+        }
+    }
 
     /// <inheritdoc/>
     public void Dispose() => _gl.DeleteProgram(Handle);

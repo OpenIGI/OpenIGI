@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using Silk.NET.OpenGL;
 
 namespace OpenIGI.Rendering.OpenGL;
@@ -34,9 +35,15 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private readonly Action _present;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<uint, GLTexture> _textures = [];
+    private readonly Dictionary<uint, GLMesh> _meshes = [];
     private readonly TextureHandle[] _boundTextures = new TextureHandle[MaxTextureUnits];
 
     private GLShaderProgram _program = null!;
+    private GLShaderProgram _meshProgram = null!;
+    private uint _nextMeshId = 1;
+    private Matrix4f _projection = Matrix4f.Identity;
+    private DepthState _depthState = DepthState.Disabled;
+    private CullMode _cullMode = CullMode.None;
     private uint _vertexArray;
     private uint _vertexBuffer;
     private uint _indexBuffer;
@@ -127,6 +134,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _gl.Disable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.CullFace);
+        _depthState = DepthState.Disabled;
+        _cullMode = CullMode.None;
         _blend = BlendMode.Opaque;
         ApplyBlend(BlendMode.AlphaBlend);
         SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
@@ -140,9 +149,22 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         ThrowIfDisposed();
 
         // The original always clears colour and depth together, and depth always to 1.0.
+        // glClear honours the depth mask, so a TestOnly draw earlier in the frame would silently stop
+        // the depth buffer from clearing; force the mask on across the clear and put it back after.
+        bool maskedOff = _depthState == DepthState.TestOnly;
+        if (maskedOff)
+        {
+            _gl.DepthMask(true);
+        }
+
         _gl.ClearColor(color.R / 255.0f, color.G / 255.0f, color.B / 255.0f, 1.0f);
         _gl.ClearDepth(1.0);
         _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+        if (maskedOff)
+        {
+            _gl.DepthMask(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -400,6 +422,204 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public unsafe MeshHandle CreateMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
+    {
+        ThrowIfDisposed();
+
+        if (indices.Length % 3 != 0)
+        {
+            throw new ArgumentException($"An index buffer must be a multiple of three, got {indices.Length}.", nameof(indices));
+        }
+
+        if (vertices.IsEmpty || indices.IsEmpty)
+        {
+            throw new ArgumentException("A mesh needs at least one triangle.", nameof(indices));
+        }
+
+        if (vertices.Length > ushort.MaxValue + 1)
+        {
+            throw new ArgumentException(
+                $"A 16-bit index buffer addresses at most {ushort.MaxValue + 1} vertices, got {vertices.Length}.",
+                nameof(vertices));
+        }
+
+        foreach (ushort index in indices)
+        {
+            if (index >= vertices.Length)
+            {
+                throw new ArgumentException($"Index {index} is past the {vertices.Length} vertices supplied.", nameof(indices));
+            }
+        }
+
+        uint array = _gl.GenVertexArray();
+        uint vertexBuffer = _gl.GenBuffer();
+        uint indexBuffer = _gl.GenBuffer();
+
+        _gl.BindVertexArray(array);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, vertexBuffer);
+        _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * Vertex3D.Size), vertices, BufferUsageARB.StaticDraw);
+        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, indexBuffer);
+        _gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(indices.Length * sizeof(ushort)), indices, BufferUsageARB.StaticDraw);
+
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)0);
+        _gl.EnableVertexAttribArray(1);
+        _gl.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)12);
+        _gl.EnableVertexAttribArray(2);
+        _gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)24);
+        _gl.EnableVertexAttribArray(3);
+        _gl.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)32);
+
+        _gl.BindVertexArray(0);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, 0);
+
+        MeshHandle handle = new(_nextMeshId++);
+        _meshes[handle.Id] = new GLMesh(array, vertexBuffer, indexBuffer, indices.Length);
+        return handle;
+    }
+
+    /// <inheritdoc/>
+    public void DestroyMesh(MeshHandle mesh)
+    {
+        ThrowIfDisposed();
+
+        if (mesh.IsValid && _meshes.Remove(mesh.Id, out GLMesh entry))
+        {
+            _gl.DeleteVertexArray(entry.VertexArray);
+            _gl.DeleteBuffer(entry.VertexBuffer);
+            _gl.DeleteBuffer(entry.IndexBuffer);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void SetDepthState(DepthState state)
+    {
+        ThrowIfDisposed();
+
+        if (_depthState == state)
+        {
+            return;
+        }
+
+        _depthState = state;
+        switch (state)
+        {
+            case DepthState.Disabled:
+                // The mask stays on: with the test disabled GL writes no depth anyway, and leaving it
+                // off would also stop Clear from clearing the depth buffer.
+                _gl.Disable(EnableCap.DepthTest);
+                _gl.DepthMask(true);
+                break;
+            case DepthState.TestAndWrite:
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.DepthFunc(DepthFunction.Lequal);
+                _gl.DepthMask(true);
+                break;
+            case DepthState.TestOnly:
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.DepthFunc(DepthFunction.Lequal);
+                _gl.DepthMask(false);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state), state, "Unknown depth state.");
+        }
+    }
+
+    /// <inheritdoc/>
+    public void SetCullMode(CullMode mode)
+    {
+        ThrowIfDisposed();
+
+        if (_cullMode == mode)
+        {
+            return;
+        }
+
+        _cullMode = mode;
+        if (mode == CullMode.None)
+        {
+            _gl.Disable(EnableCap.CullFace);
+            return;
+        }
+
+        _gl.Enable(EnableCap.CullFace);
+        _gl.FrontFace(FrontFaceDirection.Ccw);
+        _gl.CullFace(mode == CullMode.Clockwise ? TriangleFace.Front : TriangleFace.Back);
+    }
+
+    /// <inheritdoc/>
+    public void SetProjection(in Matrix4f projection)
+    {
+        ThrowIfDisposed();
+        _projection = projection;
+    }
+
+    /// <inheritdoc/>
+    public unsafe void DrawMesh(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        TextureHandle diffuse,
+        TextureHandle lightmap,
+        BlendMode blend)
+    {
+        ThrowIfDisposed();
+
+        if (!_meshes.TryGetValue(mesh.Id, out GLMesh entry))
+        {
+            throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(indexOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(indexCount);
+
+        if (indexCount % 3 != 0)
+        {
+            throw new ArgumentException($"A draw must cover whole triangles, got {indexCount} indices.", nameof(indexCount));
+        }
+
+        if (indexOffset + indexCount > entry.IndexCount)
+        {
+            throw new ArgumentException(
+                $"Indices {indexOffset}..{indexOffset + indexCount} lie outside the mesh's {entry.IndexCount}.",
+                nameof(indexCount));
+        }
+
+        if (indexCount == 0)
+        {
+            return;
+        }
+
+        _meshProgram.Use();
+        _meshProgram.SetMatrix4("uModelView", modelView);
+        _meshProgram.SetMatrix4("uProjection", _projection);
+        _meshProgram.SetInt("uDiffuse", 0);
+        _meshProgram.SetInt("uLightmap", 1);
+
+        // An absent lightmap binds white, so the modulate becomes the identity and the shader needs no
+        // branch -- the same trick the 2D path uses for untextured draws.
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, diffuse.IsValid ? Resolve(diffuse, nameof(diffuse)).Name : _whiteTexture);
+        _gl.ActiveTexture(TextureUnit.Texture1);
+        _gl.BindTexture(TextureTarget.Texture2D, lightmap.IsValid ? Resolve(lightmap, nameof(lightmap)).Name : _whiteTexture);
+        _gl.ActiveTexture(TextureUnit.Texture0);
+
+        ApplyBlend(blend);
+
+        _gl.BindVertexArray(entry.VertexArray);
+        _gl.DrawElements(
+            PrimitiveType.Triangles,
+            (uint)indexCount,
+            DrawElementsType.UnsignedShort,
+            (void*)(indexOffset * sizeof(ushort)));
+        _gl.BindVertexArray(0);
+
+        _boundTextures[0] = diffuse;
+    }
+
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -408,6 +628,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         }
 
         _disposed = true;
+
+        foreach (GLMesh mesh in _meshes.Values)
+        {
+            _gl.DeleteVertexArray(mesh.VertexArray);
+            _gl.DeleteBuffer(mesh.VertexBuffer);
+            _gl.DeleteBuffer(mesh.IndexBuffer);
+        }
+
+        _meshes.Clear();
+        _meshProgram?.Dispose();
 
         foreach (GLTexture entry in _textures.Values)
         {
@@ -447,6 +677,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private unsafe void CreatePipeline()
     {
         _program = GLShaderProgram.Create(_gl, Sprite2DShaders.Vertex, Sprite2DShaders.Fragment);
+        _meshProgram = GLShaderProgram.Create(_gl, Mesh3DShaders.Vertex, Mesh3DShaders.Fragment);
 
         _vertexArray = _gl.GenVertexArray();
         _vertexBuffer = _gl.GenBuffer();
@@ -475,6 +706,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _gl.Disable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.CullFace);
+        _depthState = DepthState.Disabled;
+        _cullMode = CullMode.None;
         ApplyBlend(BlendMode.AlphaBlend);
 
         _logger.Information(
@@ -612,4 +845,6 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels);
+
+    private readonly record struct GLMesh(uint VertexArray, uint VertexBuffer, uint IndexBuffer, int IndexCount);
 }

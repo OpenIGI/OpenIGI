@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
 
@@ -142,4 +143,57 @@ public interface IGraphicsDevice : IDisposable
     /// 640×480 can be presented at any window size.
     /// </remarks>
     void Set2DProjection(int width, int height);
+
+    /// <summary>Uploads a mesh and returns a handle to it.</summary>
+    /// <param name="vertices">The vertices.</param>
+    /// <param name="indices">Indices into <paramref name="vertices"/>, three per triangle.</param>
+    /// <returns>A handle to the new mesh.</returns>
+    /// <exception cref="ArgumentException"><paramref name="indices"/> is not a multiple of three, or an index is out of range.</exception>
+    /// <exception cref="GraphicsDeviceException">The mesh could not be created.</exception>
+    /// <remarks>
+    /// Meshes are immutable once uploaded. The original packs many models into a shared vertex buffer
+    /// and flushes it when the running vertex count would pass 65535 (<c>0x49B430</c>/<c>0x49B4B0</c>) —
+    /// a constraint of the hardware it targeted, not of the data, so OpenIGI gives each model its own
+    /// buffer and keeps the 16-bit indices the models already use.
+    /// </remarks>
+    MeshHandle CreateMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices);
+
+    /// <summary>Releases a mesh.</summary>
+    /// <param name="mesh">The mesh to release. <see cref="MeshHandle.None"/> is ignored.</param>
+    void DestroyMesh(MeshHandle mesh);
+
+    /// <summary>Sets how subsequent draws interact with the depth buffer.</summary>
+    /// <param name="state">The depth behaviour.</param>
+    void SetDepthState(DepthState state);
+
+    /// <summary>Sets which triangle facings subsequent draws discard.</summary>
+    /// <param name="mode">The culling rule.</param>
+    void SetCullMode(CullMode mode);
+
+    /// <summary>Sets the projection applied to subsequent <see cref="DrawMesh"/> calls.</summary>
+    /// <param name="projection">The view-to-clip transform.</param>
+    /// <remarks>Set once per frame; the per-object transform travels with each draw instead.</remarks>
+    void SetProjection(in Matrix4f projection);
+
+    /// <summary>Draws part of a mesh.</summary>
+    /// <param name="mesh">The mesh to draw.</param>
+    /// <param name="indexOffset">The first index to draw.</param>
+    /// <param name="indexCount">How many indices to draw; a multiple of three.</param>
+    /// <param name="modelView">The model-to-view transform, from <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/>.</param>
+    /// <param name="diffuse">The diffuse texture, or <see cref="TextureHandle.None"/> for untextured geometry.</param>
+    /// <param name="lightmap">The lightmap texture, or <see cref="TextureHandle.None"/> to skip the lightmap term.</param>
+    /// <param name="blend">How fragments combine with the render target.</param>
+    /// <exception cref="ArgumentException">The handle is unknown, or the range lies outside the mesh.</exception>
+    /// <remarks>
+    /// One call per sub-mesh: a model's draw records each name their own texture, so a model with four
+    /// records is four calls into the same mesh at different index ranges.
+    /// </remarks>
+    void DrawMesh(
+        MeshHandle mesh,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        TextureHandle diffuse,
+        TextureHandle lightmap,
+        BlendMode blend);
 }
