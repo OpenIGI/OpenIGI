@@ -68,6 +68,15 @@ internal sealed class GLShaderProgram : IDisposable
     /// <param name="y">The second component.</param>
     public void SetVector2(string name, float x, float y) => _gl.Uniform2(GetLocation(name), x, y);
 
+    /// <summary>Sets a <c>vec4</c> uniform.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <param name="x">The first component.</param>
+    /// <param name="y">The second component.</param>
+    /// <param name="z">The third component.</param>
+    /// <param name="w">The fourth component.</param>
+    public void SetVector4(string name, float x, float y, float z, float w) =>
+        _gl.Uniform4(GetLocation(name), x, y, z, w);
+
     /// <summary>Sets an <c>int</c> uniform.</summary>
     /// <param name="name">The uniform name.</param>
     /// <param name="value">The value.</param>

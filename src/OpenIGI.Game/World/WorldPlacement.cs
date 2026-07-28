@@ -33,6 +33,15 @@ public sealed record WorldPlacement(
     string LightmapSet = "",
     int LightmapIndex = -1)
 {
+    /// <summary>Gets pre-deformed geometry that replaces the model's own, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// A spline segment's vertices are bent along its waypoints' curve, so the mesh is unique to the
+    /// placement rather than shared by every instance of the model. When set, the renderer uploads this
+    /// under <see cref="TaskName"/> — which must then be unique — and draws it with the placement's
+    /// transform as usual.
+    /// </remarks>
+    public MeshGeometry? BentGeometry { get; init; }
+
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
     public bool HasLightmap => LightmapIndex >= 0 && LightmapSet.Length > 0;
 

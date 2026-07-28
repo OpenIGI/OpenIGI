@@ -3,6 +3,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
@@ -36,6 +37,98 @@ public sealed class WorldScene
 
     /// <summary>The task parameter naming an object's model.</summary>
     public const string ModelParameter = "Model";
+
+    /// <summary>The parameter naming a spline waypoint's segment model.</summary>
+    /// <remarks>
+    /// A <c>SplineObj</c> is a chain of <c>SplineObjWaypoint</c>s, each naming the mesh that spans from
+    /// it towards the next — level 1's railway and roads are built from these. <b>Divergence:</b> the
+    /// original bends the segment through a run of matrices along the spline
+    /// (<c>Number of Matrices / Segment</c>); here each segment is placed rigidly at its waypoint's
+    /// authored position and orientation, which shows the road but does not curve it between waypoints.
+    /// </remarks>
+    public const string SegmentModelParameter = "Segment Model";
+
+    /// <summary>The task type whose model comes from <see cref="SegmentModelParameter"/>.</summary>
+    public const string SplineWaypointType = "SplineObjWaypoint";
+
+    /// <summary>The task type that chains the waypoints; its child order is the chain order.</summary>
+    public const string SplineObjType = "SplineObj";
+
+    /// <summary>The security-camera task type, whose models are engine-supplied rather than declared.</summary>
+    public const string SecurityCameraType = "SCamera";
+
+    /// <summary>The two models an <c>SCamera</c> builds in — its constructor (<c>0x4423F0</c>) hard-codes both.</summary>
+    /// <remarks>
+    /// The camera head and its mount. They are placed and numbered like any script-declared model,
+    /// which is why a level's lightmap archive has entries no <c>Model</c> parameter accounts for.
+    /// </remarks>
+    public static readonly IReadOnlyList<string> SecurityCameraModels = ["313_01_1", "313_02_1"];
+
+    /// <summary>Lists the model names a task places, in the order the object walk counts them.</summary>
+    /// <param name="task">The task to read.</param>
+    /// <returns>The names; empty for a task that places nothing.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
+    public static IEnumerable<string> PlacedModelNames(DeclaredTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        if (task.TryGetValue(ModelParameter, out object? raw) && raw is string name && name.Length > 0)
+        {
+            yield return name;
+        }
+
+        if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
+        {
+            foreach (string model in SecurityCameraModels)
+            {
+                yield return model;
+            }
+        }
+
+        // A wall switch's model is the literal name "switch" (sub_4450F0), like "waypoint" and
+        // "missing" a lowercase entry the common pack registers.
+        if (string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal))
+        {
+            yield return "switch";
+        }
+
+        // A spline waypoint owns the segment that spans from the previous waypoint to it
+        // (sub_500EF0), and that segment object is numbered like any other. The chain's first
+        // waypoint has no previous, so its named model builds no segment and counts nothing.
+        if (string.Equals(task.Type.Name, SplineWaypointType, StringComparison.Ordinal)
+            && task.TryGetValue(SegmentModelParameter, out object? segment)
+            && segment is string segmentName
+            && segmentName.Length > 0
+            && HasEarlierWaypointSibling(task))
+        {
+            yield return segmentName;
+        }
+    }
+
+    /// <summary>Tells whether a waypoint has a waypoint sibling before it under the same parent.</summary>
+    private static bool HasEarlierWaypointSibling(DeclaredTask waypoint)
+    {
+        if (waypoint.Parent is not { } parent)
+        {
+            return false;
+        }
+
+        foreach (GameTask sibling in parent.Children)
+        {
+            if (ReferenceEquals(sibling, waypoint))
+            {
+                return false;
+            }
+
+            if (sibling is DeclaredTask declared
+                && string.Equals(declared.Type.Name, SplineWaypointType, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>The task parameters an object's position may be named by, in order of preference.</summary>
     /// <remarks>
@@ -124,10 +217,11 @@ public sealed class WorldScene
             }
         }
 
-        // Which baked-lightmap set each placing task belongs to, and where in it the task's own model
-        // sits. Both come from expanding the owner's whole subtree at once, because the numbering is a
-        // single running count across it — see WorldObject.
-        Dictionary<GameTask, (string Set, WorldObject Root)> lightmapped = [];
+        // Which baked-lightmap set each placing task belongs to, and where in it each of the task's
+        // models sits — one entry per placed model, because a security camera places two. Both come
+        // from expanding the owner's whole subtree at once, because the numbering is a single running
+        // count across it — see WorldObject.
+        Dictionary<GameTask, List<(string Set, WorldObject Root)>> lightmapped = [];
         if (magic is not null)
         {
             BindLightmapSets(levelRoot, mission, magic, lightmapped);
@@ -140,59 +234,76 @@ public sealed class WorldScene
 
         foreach (GameTask task in Walk(levelRoot))
         {
-            if (task is not DeclaredTask declared
-                || !declared.TryGetValue(ModelParameter, out object? rawModel)
-                || rawModel is not string name
-                || name.Length == 0)
+            if (task is not DeclaredTask declared)
             {
                 continue;
             }
 
-            if (!byName.TryGetValue(name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
+            // Spline waypoints do not place their own model — each names the segment that spans from
+            // it to the next waypoint, and the chains are laid below once every waypoint is known.
+            if (string.Equals(declared.Type.Name, SplineWaypointType, StringComparison.Ordinal))
             {
-                unresolved++;
                 continue;
             }
 
-            if (!TryGetPosition(declared, out Vector3d position))
-            {
-                unplaced++;
-                continue;
-            }
+            lightmapped.TryGetValue(task, out List<(string Set, WorldObject Root)>? bakes);
 
-            declared.TryGetValue(OrientationParameter, out object? rawOrientation);
-            Matrix3f orientation = rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
-
-            lightmapped.TryGetValue(task, out (string Set, WorldObject Root) bake);
-            placements.Add(new WorldPlacement(
-                position,
-                orientation,
-                bound.Instance,
-                bound.Pack,
-                bound.Model,
-                task.Name,
-                bake.Set ?? string.Empty,
-                bake.Root?.LightmapIndex ?? -1));
-
-            // Everything the model attaches, and everything those attach in turn. The tree is only
-            // available when a magic-object table was supplied; without one a level draws its shells and
-            // none of their contents.
-            if (bake.Root is not null)
+            int slot = 0;
+            foreach (string name in PlacedModelNames(declared))
             {
-                attached += AddAttached(bake.Root, position, orientation, bake.Set ?? string.Empty, task.Name, byName, placements);
-            }
-            else if (magic is not null
-                && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
-                && loose is not null)
-            {
-                attached += AddAttached(loose, position, orientation, string.Empty, task.Name, byName, placements);
+                int modelSlot = slot++;
+                if (!byName.TryGetValue(name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
+                {
+                    unresolved++;
+                    continue;
+                }
+
+                if (!TryGetPosition(declared, out Vector3d position))
+                {
+                    unplaced++;
+                    continue;
+                }
+
+                declared.TryGetValue(OrientationParameter, out object? rawOrientation);
+                Matrix3f orientation = rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
+
+                (string Set, WorldObject Root) bake = bakes is not null && modelSlot < bakes.Count
+                    ? bakes[modelSlot]
+                    : default;
+
+                placements.Add(new WorldPlacement(
+                    position,
+                    orientation,
+                    bound.Instance,
+                    bound.Pack,
+                    bound.Model,
+                    task.Name,
+                    bake.Set ?? string.Empty,
+                    bake.Root?.LightmapIndex ?? -1));
+
+                // Everything the model attaches, and everything those attach in turn. The tree is only
+                // available when a magic-object table was supplied; without one a level draws its
+                // shells and none of their contents.
+                if (bake.Root is not null)
+                {
+                    attached += AddAttached(bake.Root, position, orientation, bake.Set ?? string.Empty, task.Name, byName, placements);
+                }
+                else if (magic is not null
+                    && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
+                    && loose is not null)
+                {
+                    attached += AddAttached(loose, position, orientation, string.Empty, task.Name, byName, placements);
+                }
             }
         }
+
+        int segments = AddSplineSegments(levelRoot, byName, placements);
 
         log.Information(
             LogCategory,
             $"Scene: {placements.Count} placement(s) over {byName.Count} bound instance(s)"
                 + $", {attached} attached"
+                + (segments > 0 ? $", {segments} spline segment(s)" : string.Empty)
                 + (unresolved > 0 ? $", {unresolved} unresolved" : string.Empty)
                 + (unplaced > 0 ? $", {unplaced} with no position" : string.Empty)
                 + ".");
@@ -205,6 +316,248 @@ public sealed class WorldScene
             attached);
     }
 
+    /// <summary>Lays every <c>SplineObj</c> chain: one bent segment per consecutive waypoint pair.</summary>
+    /// <remarks>
+    /// <para>
+    /// A segment spans from the <em>previous</em> waypoint to the waypoint that names its model, which
+    /// is <c>sub_500EF0</c>'s arrangement — a chain of N waypoints lays N−1 segments and the first
+    /// waypoint's own <c>Segment Model</c> goes unused. The curve is the one <c>sub_4E4530</c> builds:
+    /// a Hermite cubic between the two waypoint positions whose tangents are the waypoints' local X
+    /// axes scaled by the chord length, evaluated here per vertex rather than at the original's
+    /// <c>NumAreas</c> sampled matrices — the same curve, continuously.
+    /// </para>
+    /// <para>
+    /// A vertex's local X picks its place along the curve (the original measures the model's X extent
+    /// the same way, <c>sub_4E4530</c>'s tail); its local Y and Z ride the curve's zero-roll frame.
+    /// <b>Divergence:</b> the original also interpolates a twist angle between the endpoint
+    /// orientations; every level-1 waypoint is authored yaw-only, so the twist is dropped until a
+    /// level needs it.
+    /// </para>
+    /// </remarks>
+    private static int AddSplineSegments(
+        GameTask levelRoot,
+        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
+        List<WorldPlacement> placements)
+    {
+        int added = 0;
+        int chain = 0;
+        foreach (GameTask task in Walk(levelRoot))
+        {
+            if (task is not DeclaredTask spline
+                || !string.Equals(spline.Type.Name, SplineObjType, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            chain++;
+            List<(DeclaredTask Task, Vector3d Position)> waypoints = [];
+            foreach (GameTask child in spline.Children)
+            {
+                if (child is DeclaredTask waypoint
+                    && string.Equals(waypoint.Type.Name, SplineWaypointType, StringComparison.Ordinal)
+                    && TryGetPosition(waypoint, out Vector3d position))
+                {
+                    waypoints.Add((waypoint, position));
+                }
+            }
+
+            for (int i = 1; i < waypoints.Count; i++)
+            {
+                (DeclaredTask waypoint, Vector3d to) = waypoints[i];
+                (DeclaredTask previous, Vector3d from) = waypoints[i - 1];
+
+                if (!waypoint.TryGetValue(SegmentModelParameter, out object? raw)
+                    || raw is not string name
+                    || name.Length == 0
+                    || !byName.TryGetValue(name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
+                {
+                    continue;
+                }
+
+                MeshGeometry? bent = BendSegment(bound.Model, from, to, Tangent(previous), Tangent(waypoint));
+                if (bent is null)
+                {
+                    continue;
+                }
+
+                placements.Add(new WorldPlacement(
+                    from,
+                    Matrix3f.Identity,
+                    bound.Instance,
+                    bound.Pack,
+                    bound.Model,
+                    $"spline:{chain}:{i}",
+                    string.Empty,
+                    -1)
+                {
+                    BentGeometry = bent,
+                });
+                added++;
+            }
+        }
+
+        return added;
+
+        // The tangent direction is the waypoint orientation's local X axis in world space — the
+        // matrix's first column, exactly the elements [0], [3], [6] that sub_4E4530 reads.
+        static Vector3f Tangent(DeclaredTask waypoint)
+        {
+            waypoint.TryGetValue(OrientationParameter, out object? raw);
+            Matrix3f m = raw is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
+            return new Vector3f(m.M11, m.M21, m.M31);
+        }
+    }
+
+    /// <summary>Bends one segment model along its span's Hermite curve.</summary>
+    /// <param name="model">The segment model, authored along its local X.</param>
+    /// <param name="from">The span's start, in metres — also the placement's position.</param>
+    /// <param name="to">The span's end, in metres.</param>
+    /// <param name="fromTangent">The start waypoint's unit tangent.</param>
+    /// <param name="toTangent">The end waypoint's unit tangent.</param>
+    /// <returns>The geometry, positioned relative to <paramref name="from"/>, or <see langword="null"/>.</returns>
+    private static MeshGeometry? BendSegment(
+        MefModel model,
+        Vector3d from,
+        Vector3d to,
+        Vector3f fromTangent,
+        Vector3f toTangent)
+    {
+        if (model.IsEmpty || model.DrawRecords.Count == 0)
+        {
+            return null;
+        }
+
+        ReadOnlySpan<MefVertex> source = model.Vertices;
+        float minX = float.MaxValue;
+        float maxX = float.MinValue;
+        foreach (MefVertex vertex in source)
+        {
+            minX = Math.Min(minX, vertex.Position.X);
+            maxX = Math.Max(maxX, vertex.Position.X);
+        }
+
+        float length = maxX - minX;
+        if (length <= 0)
+        {
+            return null;
+        }
+
+        // The Hermite endpoints relative to the span's start, with tangents scaled by the chord — the
+        // v79 factor sub_4E4530 multiplies both endpoint axes by.
+        double dx = to.X - from.X;
+        double dy = to.Y - from.Y;
+        double dz = to.Z - from.Z;
+        double chord = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        if (chord < 1e-3)
+        {
+            return null;
+        }
+
+        Span<double> t0 = [fromTangent.X * chord, fromTangent.Y * chord, fromTangent.Z * chord];
+        Span<double> t1 = [toTangent.X * chord, toTangent.Y * chord, toTangent.Z * chord];
+        Span<double> p1 = [dx, dy, dz];
+
+        Vertex3D[] vertices = new Vertex3D[source.Length];
+        for (int i = 0; i < source.Length; i++)
+        {
+            MefVertex v = source[i];
+            double t = Math.Clamp((v.Position.X - minX) / length, 0.0, 1.0);
+
+            // Hermite basis and its derivative, once per vertex.
+            double t2 = t * t;
+            double t3 = t2 * t;
+            double h00 = (2 * t3) - (3 * t2) + 1;
+            double h10 = t3 - (2 * t2) + t;
+            double h01 = (-2 * t3) + (3 * t2);
+            double h11 = t3 - t2;
+            double d00 = (6 * t2) - (6 * t);
+            double d10 = (3 * t2) - (4 * t) + 1;
+            double d01 = (6 * t) - (6 * t2);
+            double d11 = (3 * t2) - (2 * t);
+
+            double px = (h10 * t0[0]) + (h01 * p1[0]) + (h11 * t1[0]);
+            double py = (h10 * t0[1]) + (h01 * p1[1]) + (h11 * t1[1]);
+            double pz = (h10 * t0[2]) + (h01 * p1[2]) + (h11 * t1[2]);
+            _ = h00; // the start point is the origin, so its term vanishes
+
+            double gx = (d00 * 0) + (d10 * t0[0]) + (d01 * p1[0]) + (d11 * t1[0]);
+            double gy = (d10 * t0[1]) + (d01 * p1[1]) + (d11 * t1[1]);
+            double gz = (d10 * t0[2]) + (d01 * p1[2]) + (d11 * t1[2]);
+
+            // The curve's zero-roll frame: X down the tangent, Y level, Z perpendicular up — what
+            // sub_4E4530 builds through sub_4B38E0 from the direction angles with no twist.
+            double glen = Math.Sqrt((gx * gx) + (gy * gy) + (gz * gz));
+            if (glen < 1e-9)
+            {
+                gx = dx / chord;
+                gy = dy / chord;
+                gz = dz / chord;
+                glen = 1.0;
+            }
+
+            double fx = gx / glen;
+            double fy = gy / glen;
+            double fz = gz / glen;
+
+            double sx = -fy;
+            double sy = fx;
+            double slen = Math.Sqrt((sx * sx) + (sy * sy));
+            if (slen < 1e-9)
+            {
+                sx = 0.0;
+                sy = 1.0;
+                slen = 1.0;
+            }
+
+            sx /= slen;
+            sy /= slen;
+
+            double ux = -(fz * sy);
+            double uy = fz * sx;
+            double uz = (fx * sy) - (fy * sx);
+
+            double offY = v.Position.Y / UnitsPerMetre;
+            double offZ = v.Position.Z / UnitsPerMetre;
+
+            vertices[i] = new Vertex3D(
+                new Vector3f(
+                    (float)(px + (sx * offY) + (ux * offZ)),
+                    (float)(py + (sy * offY) + (uy * offZ)),
+                    (float)(pz + (uz * offZ))),
+                new Vector3f(
+                    (float)((fx * v.Normal.X) + (sx * v.Normal.Y) + (ux * v.Normal.Z)),
+                    (float)((fy * v.Normal.X) + (sy * v.Normal.Y) + (uy * v.Normal.Z)),
+                    (float)((fz * v.Normal.X) + (uz * v.Normal.Z))),
+                v.DiffuseU,
+                v.DiffuseV,
+                v.LightmapU,
+                v.LightmapV);
+        }
+
+        int total = 0;
+        foreach (MefDrawRecord record in model.DrawRecords)
+        {
+            total += record.Indices.Length;
+        }
+
+        ushort[] indices = new ushort[total];
+        List<MeshSubset> subsets = new(model.DrawRecords.Count);
+        int cursor = 0;
+        foreach (MefDrawRecord record in model.DrawRecords)
+        {
+            ReadOnlySpan<ushort> run = record.Indices.Span;
+            int start = cursor;
+            foreach (ushort index in run)
+            {
+                indices[cursor++] = (ushort)record.ToVertexIndex(index);
+            }
+
+            subsets.Add(new MeshSubset(start, run.Length, record.MaterialSlot, record.LightmapPage));
+        }
+
+        return new MeshGeometry(vertices, indices, new ReadOnlyCollection<MeshSubset>(subsets));
+    }
+
     /// <summary>
     /// Expands every lightmap owner's subtree and records, per placing task, which set it belongs to and
     /// the tree its own model heads.
@@ -213,7 +566,7 @@ public sealed class WorldScene
         GameTask levelRoot,
         LoadedMission mission,
         MagicObjectRegistry magic,
-        Dictionary<GameTask, (string Set, WorldObject Root)> bound)
+        Dictionary<GameTask, List<(string Set, WorldObject Root)>> bound)
     {
         foreach (GameTask owner in Walk(levelRoot))
         {
@@ -226,10 +579,12 @@ public sealed class WorldScene
             List<string> models = [];
             foreach (GameTask task in Subtree(owner))
             {
-                if (task is DeclaredTask declared
-                    && declared.TryGetValue(ModelParameter, out object? raw)
-                    && raw is string name
-                    && name.Length > 0)
+                if (task is not DeclaredTask declared)
+                {
+                    continue;
+                }
+
+                foreach (string name in PlacedModelNames(declared))
                 {
                     placing.Add(task);
                     models.Add(name);
@@ -239,10 +594,17 @@ public sealed class WorldScene
             IReadOnlyList<WorldObject?> roots = WorldObject.BuildAll(models, mission.TryGetModel, magic);
             for (int i = 0; i < roots.Count; i++)
             {
-                if (roots[i] is { } root)
+                if (roots[i] is not { } root)
                 {
-                    bound[placing[i]] = (set, root);
+                    continue;
                 }
+
+                if (!bound.TryGetValue(placing[i], out List<(string Set, WorldObject Root)>? list))
+                {
+                    bound[placing[i]] = list = [];
+                }
+
+                list.Add((set, root));
             }
         }
     }

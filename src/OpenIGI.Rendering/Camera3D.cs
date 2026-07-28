@@ -80,7 +80,12 @@ public readonly struct Camera3D
             modelPosition.Y - Position.Y,
             modelPosition.Z - Position.Z);
 
-        Vector3d viewOffset = Orientation.Transform(offset);
+        // The world-to-view rotation dots the orientation's rows, because the rows are the view axes —
+        // the original's sub_512C30 computes M · (world − camera) exactly this way. Transform() applies
+        // the engine's row-vector convention, which dots the columns: that is the inverse rotation, and
+        // using it here shears the translation against the rotation half of the same matrix. Invisible
+        // at yaw zero only because this frame's pitch-only matrices are symmetric.
+        Vector3d viewOffset = Orientation.Transposed().Transform(offset);
         return Matrix4f.CreateRigid(
             Orientation * modelOrientation,
             new Vector3f((float)viewOffset.X, (float)viewOffset.Y, (float)viewOffset.Z));
@@ -99,7 +104,9 @@ public readonly struct Camera3D
     /// </remarks>
     public Matrix4f GetViewMatrix()
     {
-        Vector3d translation = Orientation.Transform(new Vector3d(-Position.X, -Position.Y, -Position.Z));
+        // Rows-dot-vector for the same reason as CreateModelView: the translation must be rotated by
+        // the same world-to-view rotation the matrix's 3×3 half applies.
+        Vector3d translation = Orientation.Transposed().Transform(new Vector3d(-Position.X, -Position.Y, -Position.Z));
         return Matrix4f.CreateRigid(
             Orientation,
             new Vector3f((float)translation.X, (float)translation.Y, (float)translation.Z));

@@ -90,13 +90,17 @@ public sealed class WorldRenderer : IDisposable
 
         foreach (WorldPlacement placement in scene.Placements)
         {
-            MeshGeometry? geometry = GetGeometry(placement);
+            // Bent geometry is unique to its placement — a spline segment shaped to its own span — so
+            // it is cached under the placement's task name rather than the shared model name.
+            MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
             if (geometry is null)
             {
                 continue;
             }
 
-            MeshHandle mesh = GetMesh(placement.Instance.Name, geometry);
+            MeshHandle mesh = GetMesh(
+                placement.BentGeometry is null ? placement.Instance.Name : placement.TaskName,
+                geometry);
             if (!mesh.IsValid)
             {
                 continue;

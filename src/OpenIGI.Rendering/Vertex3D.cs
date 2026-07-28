@@ -1,17 +1,24 @@
 using System.Runtime.InteropServices;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
 
 /// <summary>
-/// A world-space vertex: position, normal, a diffuse texture coordinate and a lightmap coordinate.
+/// A world-space vertex: position, normal, a diffuse texture coordinate, a lightmap coordinate and a
+/// modulating colour.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The layout is deliberately the original's 40-byte model vertex — the D3D flexible vertex format
+/// The first 40 bytes are deliberately the original's model vertex — the D3D flexible vertex format
 /// <c>XYZ|NORMAL|TEX2</c> that the retail engine builds its vertex buffers with — so a
 /// <c>.mef</c> model's vertex data maps across without rearrangement. Models that carry only one texture
 /// coordinate set leave the lightmap channel at zero.
+/// </para>
+/// <para>
+/// <see cref="Colour"/> is the one addition, and the terrain path is what needs it: the original packs
+/// its exponential fog into a vertex alpha byte, and cross-fades one ground material into another by
+/// weighting each material's pass per vertex. Models pass <see cref="Bgra32.White"/> and are unaffected.
 /// </para>
 /// <para>
 /// Positions are in whatever space the caller's world matrix expects. World positions themselves are
@@ -23,7 +30,10 @@ namespace OpenIGI.Rendering;
 public readonly struct Vertex3D
 {
     /// <summary>The size of one vertex in bytes.</summary>
-    public const int Size = 40;
+    public const int Size = 44;
+
+    /// <summary>The byte offset of <see cref="Colour"/> within the vertex.</summary>
+    public const int ColourOffset = 40;
 
     /// <summary>Initializes a new instance of the <see cref="Vertex3D"/> struct.</summary>
     /// <param name="position">The position.</param>
@@ -32,13 +42,15 @@ public readonly struct Vertex3D
     /// <param name="diffuseV">The diffuse texture V coordinate.</param>
     /// <param name="lightmapU">The lightmap U coordinate.</param>
     /// <param name="lightmapV">The lightmap V coordinate.</param>
+    /// <param name="colour">The modulating colour; white leaves the sampled texture alone.</param>
     public Vertex3D(
         Vector3f position,
         Vector3f normal,
         float diffuseU,
         float diffuseV,
         float lightmapU = 0f,
-        float lightmapV = 0f)
+        float lightmapV = 0f,
+        Bgra32 colour = default)
     {
         Position = position;
         Normal = normal;
@@ -46,6 +58,7 @@ public readonly struct Vertex3D
         DiffuseV = diffuseV;
         LightmapU = lightmapU;
         LightmapV = lightmapV;
+        Colour = colour == default ? Bgra32.White : colour;
     }
 
     /// <summary>Gets the position.</summary>
@@ -65,6 +78,14 @@ public readonly struct Vertex3D
 
     /// <summary>Gets the lightmap V coordinate.</summary>
     public float LightmapV { get; }
+
+    /// <summary>Gets the colour the sampled texture is modulated by.</summary>
+    /// <remarks>
+    /// A default-constructed <see cref="Vertex3D"/> has a transparent black colour, which is why the
+    /// constructor promotes <see langword="default"/> to <see cref="Bgra32.White"/>: a caller that does
+    /// not care about the channel should not have to name it.
+    /// </remarks>
+    public Bgra32 Colour { get; }
 
     /// <inheritdoc/>
     public override string ToString() => $"{Position} uv=({DiffuseU}, {DiffuseV})";

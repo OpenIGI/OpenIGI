@@ -40,6 +40,7 @@ public sealed class MissionLoader
     private readonly VirtualFileSystem _fileSystem;
     private readonly ResourceRegistry _resources;
     private readonly LevelLoader _levelLoader;
+    private readonly TerrainLoader? _terrainLoader;
     private readonly IIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MissionLoader"/> class.</summary>
@@ -48,13 +49,19 @@ public sealed class MissionLoader
     /// <param name="resources">Where packs and scripts are read from.</param>
     /// <param name="levelLoader">Builds the level's task tree from <c>objects.qvm</c>.</param>
     /// <param name="logger">The logger for load diagnostics.</param>
+    /// <param name="terrainLoader">
+    /// Loads the level's terrain. Optional because it needs the script namespace the terrain's own two
+    /// natives are registered into, which not every caller has; without one the mission loads without
+    /// terrain and says so in <see cref="LoadedMission.PendingSteps"/>.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public MissionLoader(
         MissionRegistry registry,
         VirtualFileSystem fileSystem,
         ResourceRegistry resources,
         LevelLoader levelLoader,
-        IIgiLogger? logger = null)
+        IIgiLogger? logger = null,
+        TerrainLoader? terrainLoader = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(fileSystem);
@@ -65,6 +72,7 @@ public sealed class MissionLoader
         _fileSystem = fileSystem;
         _resources = resources;
         _levelLoader = levelLoader;
+        _terrainLoader = terrainLoader;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -86,8 +94,25 @@ public sealed class MissionLoader
 
         List<string> pending = [];
 
-        // 3-4. Terrain. The loader is not written yet; say so rather than pretend the world is complete.
-        pending.Add($"terrain from '{descriptor.TerrainBasePath}'");
+        // 3-4. Terrain, from the extensionless base path the loader appends each extension to. It runs
+        //      before the packs because its own script has to see a clean namespace for its two natives.
+        TerrainData? terrain = null;
+        if (_terrainLoader is null)
+        {
+            pending.Add($"terrain from '{descriptor.TerrainBasePath}'");
+        }
+        else
+        {
+            terrain = _terrainLoader.Load(descriptor.TerrainBasePath);
+            if (terrain is null)
+            {
+                pending.Add($"terrain from '{descriptor.TerrainBasePath}' (files absent)");
+            }
+            else if (!terrain.IsUsable)
+            {
+                pending.Add($"terrain from '{descriptor.TerrainBasePath}' ({string.Join("; ", terrain.Defects)})");
+            }
+        }
 
         // 5-6. The common pack, opened from its own directory with LOCAL:common/ as the fallback.
         LoadedPack common = LoadedPack.Open(
@@ -119,7 +144,7 @@ public sealed class MissionLoader
             _logger.Warning(LogCategory, $"Mission {descriptor.Id} loaded without: {string.Join(", ", pending)}.");
         }
 
-        return new LoadedMission(descriptor, common, level, pending);
+        return new LoadedMission(descriptor, common, level, pending, terrain);
     }
 
     private void MountShared(List<string> pending)

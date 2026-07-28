@@ -12,6 +12,11 @@ namespace OpenIGI.Desktop;
 /// <param name="ExitAfterFrames">Quit after this many rendered frames, or zero to run until closed.</param>
 /// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
 /// <param name="StartMission">Load this mission at boot instead of opening the menus, or zero.</param>
+/// <param name="LogCamera">Whether to print the fly-through camera's input and orientation every frame.</param>
+/// <param name="CameraYaw">The yaw in radians the fly-through camera opens on.</param>
+/// <param name="CameraPitch">The pitch in radians the fly-through camera opens on.</param>
+/// <param name="CameraHeight">Extra metres above the level to open at.</param>
+/// <param name="TerrainViewDistance">Override the terrain level-of-detail distance, or zero for the derived one.</param>
 /// <remarks>
 /// The original parses its command line with a case-insensitive prefix scan (<c>Win_ParseCmdOption</c>,
 /// <c>0x48F360</c>) and understands <c>Window</c>, <c>WinInput</c>, <c>Germany</c> and
@@ -27,7 +32,12 @@ public readonly record struct DesktopOptions(
     string? ScreenshotPath,
     int ExitAfterFrames,
     int StartScreen,
-    int StartMission)
+    int StartMission,
+    bool LogCamera,
+    float CameraYaw,
+    float CameraPitch,
+    float CameraHeight,
+    int TerrainViewDistance)
 {
     /// <summary>Gets the environment variable consulted when no path is given on the command line.</summary>
     public const string GamePathVariable = "IGI_GAME_PATH";
@@ -46,7 +56,13 @@ public readonly record struct DesktopOptions(
         int width = 640;
         int height = 480;
         string? screenshot = null;
+        (double X, double Y, double Z)? cameraPosition = null;
         int exitAfterFrames = 0;
+        bool logCamera = false;
+        float cameraYaw = 0f;
+        float cameraPitch = -0.12f;
+        float cameraHeight = 0f;
+        int terrainViewDistance = 0;
         int startScreen = 0;
         int startMission = 0;
 
@@ -109,6 +125,48 @@ public readonly record struct DesktopOptions(
                     throw new ArgumentException($"-frames expects a non-negative count, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("yaw", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "yaw");
+                if (!float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out cameraYaw))
+                {
+                    throw new ArgumentException($"-yaw expects a number of radians, got '{value}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("pitch", StringComparison.OrdinalIgnoreCase))
+            {
+                cameraPitch = ParseNumber(Next(args, ref i, "pitch"), "pitch", args);
+            }
+            else if (arg.Equals("up", StringComparison.OrdinalIgnoreCase))
+            {
+                cameraHeight = ParseNumber(Next(args, ref i, "up"), "up", args);
+            }
+            else if (arg.Equals("campos", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "campos");
+                string[] parts = value.Split(',');
+                if (parts.Length != 3
+                    || !double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double px)
+                    || !double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double py)
+                    || !double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double pz))
+                {
+                    throw new ArgumentException($"-campos expects X,Y,Z in metres, got '{value}'.", nameof(args));
+                }
+
+                cameraPosition = (px, py, pz);
+            }
+            else if (arg.Equals("viewdist", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "viewdist");
+                if (!int.TryParse(value, out terrainViewDistance) || terrainViewDistance < 0)
+                {
+                    throw new ArgumentException($"-viewdist expects a non-negative number, got '{value}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("camlog", StringComparison.OrdinalIgnoreCase))
+            {
+                logCamera = true;
+            }
             else if (arg.Equals("screen", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "screen");
@@ -123,8 +181,28 @@ public readonly record struct DesktopOptions(
             }
         }
 
-        return new DesktopOptions(gamePath, fullscreen, width, height, vsync, screenshot, exitAfterFrames, startScreen, startMission);
+        return new DesktopOptions(
+            gamePath,
+            fullscreen,
+            width,
+            height,
+            vsync,
+            screenshot,
+            exitAfterFrames,
+            startScreen,
+            startMission,
+            logCamera,
+            cameraYaw,
+            cameraPitch,
+            cameraHeight,
+            terrainViewDistance)
+        {
+            CameraPosition = cameraPosition,
+        };
     }
+
+    /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
+    public (double X, double Y, double Z)? CameraPosition { get; init; }
 
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
@@ -146,7 +224,13 @@ public readonly record struct DesktopOptions(
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
           -screen <id>     Open on this menu screen instead of the one the script names.
                            mainmenu.qvm has 900 and 904-916.
+          -campos X,Y,Z    Open the fly-through camera at this world position in metres.
         """;
+
+    private static float ParseNumber(string value, string option, string[] args) =>
+        float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float number)
+            ? number
+            : throw new ArgumentException($"-{option} expects a number, got '{value}'.", nameof(args));
 
     private static string Next(string[] args, ref int index, string option)
     {

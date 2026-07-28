@@ -49,9 +49,13 @@ public sealed class WorldObject
     public Matrix3f Orientation { get; }
 
     /// <summary>
-    /// Gets the lightmap index of this node's most detailed model; level <c>n</c> is at
-    /// <c>LightmapIndex + n</c>.
+    /// Gets the lightmap index of this node's most detailed model, or <c>-1</c> for a node that claims
+    /// none; level <c>n</c> is at <c>LightmapIndex + n</c>.
     /// </summary>
+    /// <remarks>
+    /// Only a node whose most detailed model is <see cref="MefMeshFormat.Lightmapped"/> claims indices
+    /// — the original's list builders test the format before emitting entries.
+    /// </remarks>
     public int LightmapIndex { get; }
 
     /// <summary>Gets the children this node's model attaches, in attachment order.</summary>
@@ -62,7 +66,7 @@ public sealed class WorldObject
     {
         get
         {
-            int total = Models.Count;
+            int total = LightmapIndex >= 0 ? Models.Count : 0;
             foreach (WorldObject child in _children)
             {
                 total += child.LightmapCount;
@@ -144,9 +148,16 @@ public sealed class WorldObject
         }
 
         // The index is claimed before the children are walked, which is what makes the numbering
-        // depth-first: a node owns one lightmap per level of detail, then its subtree follows.
-        WorldObject node = new(modelName, models, position, orientation, next);
-        next += models.Count;
+        // depth-first: a node owns one lightmap per level of detail, then its subtree follows. Only a
+        // node whose most detailed model is the lightmapped format claims any — the list builders
+        // (0x4DC050 and 0x4DC190) test the mesh format for exactly 3 before emitting entries, so a
+        // diffuse-format prop in the tree consumes nothing and its children carry on unshifted.
+        bool lightmapped = models.Highest.Format == MefMeshFormat.Lightmapped;
+        WorldObject node = new(modelName, models, position, orientation, lightmapped ? next : -1);
+        if (lightmapped)
+        {
+            next += models.Count;
+        }
 
         // Attachments whose model encloses space become sectors, which the original puts on a separate
         // child list that it walks only after the ordinary one. Both keep attachment order within

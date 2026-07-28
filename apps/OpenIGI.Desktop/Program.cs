@@ -133,7 +133,8 @@ using (window)
 
     // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk
     // updates and renders the menu rather than this loop doing either by hand.
-    GameLoop loop = new(host: menuHost, renderer: new DesktopRenderScheduler(device), logger: logger);
+    DesktopRenderScheduler scheduler = new(device);
+    GameLoop loop = new(host: menuHost, renderer: scheduler, logger: logger);
 
     // The mission table is built the way the original builds it: walk LOCAL:missions and run every
     // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
@@ -163,7 +164,15 @@ using (window)
     bool reportedWorld = false;
     WorldScene? scene = null;
     WorldRenderer? world = null;
+    TerrainRenderer? terrain = null;
+    SkyRenderer? sky = null;
     FreeCamera? camera = null;
+
+    // The camera's projection, in one place: the terrain traversal needs the same field of view the
+    // projection matrix is built from, or it would cull against a frustum the picture does not have.
+    // The far plane is shared with the sky, which sizes its dome from it.
+    const float verticalFieldOfView = 1.2f;
+    const float farPlane = 4000f;
 
     void StartMission(int id)
     {
@@ -176,15 +185,40 @@ using (window)
         logger.Information("Mission", $"Starting {chosen}.");
         LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources, logger);
-        MissionLoader missionLoader = new(missions, fileSystem, resources, levelLoader, logger);
+        TerrainLoader terrainLoader = new(resources, loop.Natives, logger);
+        MissionLoader missionLoader = new(missions, fileSystem, resources, levelLoader, logger, terrainLoader);
         LoadedMission loaded = missionLoader.Load(id);
 
         scene = WorldScene.Build(loaded, levelRoot, magic, logger);
         world = new WorldRenderer(device, resources, logger);
 
+        // A level whose terrain files are not live data — level 14 is exactly that — draws its objects
+        // over nothing rather than following offsets into whatever the geometry blob happens to hold.
+        // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
+        terrain?.Dispose();
+        terrain = loaded.Terrain is { IsUsable: true } usable
+            ? new TerrainRenderer(device, TerrainSurface.Build(usable, levelRoot, logger), logger)
+            : null;
+
+        // The sky is script data on the level's task tree; its fog colour is also what the frame
+        // clears to, so the horizon meets sky-coloured backing rather than black.
+        sky?.Dispose();
+        sky = new SkyRenderer(device, fileSystem, levelRoot, farPlane, logger);
+        if (sky.HasSky)
+        {
+            scheduler.ClearColour = new OpenIGI.Core.Graphics.Bgra32(
+                (byte)Math.Clamp((int)(sky.FogColour.Z * 255f), 0, 255),
+                (byte)Math.Clamp((int)(sky.FogColour.Y * 255f), 0, 255),
+                (byte)Math.Clamp((int)(sky.FogColour.X * 255f), 0, 255),
+                255);
+        }
+
         // Open on the middle of what was placed, backed off and looking down slightly, so the first
         // frame shows the level rather than the inside of whichever object happens to be at the origin.
-        camera = CreateCamera(scene);
+        // -campos overrides that with an exact spot, which is how a bug at a known position is looked at.
+        camera = options.CameraPosition is { } at
+            ? new FreeCamera(new Vector3d(at.X, at.Y, at.Z), options.CameraYaw, options.CameraPitch)
+            : CreateCamera(scene, options.CameraYaw, options.CameraPitch, options.CameraHeight);
 
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.
@@ -194,11 +228,11 @@ using (window)
 
     menuHost.StartGame = () => StartMission(missionState.PendingMissionId);
 
-    static FreeCamera CreateCamera(WorldScene scene)
+    static FreeCamera CreateCamera(WorldScene scene, float yaw, float pitch, float height)
     {
         if (scene.Placements.Count == 0)
         {
-            return new FreeCamera(default);
+            return new FreeCamera(default, yaw, pitch);
         }
 
         // Medians, not a bounding box or a mean: a level is a dense cluster with a few far-flung
@@ -225,9 +259,9 @@ using (window)
 
         // Standing back a hundred metres, twenty-five up, looking north and slightly down.
         return new FreeCamera(
-            new Vector3d(centreX, centreY - 100.0, ground + 25.0),
-            yaw: 0f,
-            pitch: -0.12f);
+            new Vector3d(centreX, centreY - 100.0, ground + 25.0 + height),
+            yaw,
+            pitch);
     }
 
     menuHost.LoadMainMenu = () =>
@@ -276,9 +310,42 @@ using (window)
     window.Show();
     logger.Information("Desktop", $"{platform.Name} up on {device.Capabilities.Renderer}.");
 
+    int lastCameraMilliseconds = loop.TimeSource.Milliseconds;
+
     while (running && loop.IsRunning && !window.IsClosing)
     {
         window.PumpEvents();
+
+        // The camera is advanced on every pass of the loop, not only on the passes that render. The
+        // pump clears the mouse's motion accumulator, and the loop pumps several times per rendered
+        // frame — so consuming it only on a render threw most of the mouse movement away and made the
+        // view lurch. It also runs on real elapsed time: a fixed step tied flying speed to the frame
+        // rate, which is not what a person moving a mouse expects.
+        if (camera is not null)
+        {
+            int nowMilliseconds = loop.TimeSource.Milliseconds;
+            float elapsed = Math.Clamp((nowMilliseconds - lastCameraMilliseconds) / 1000f, 0f, 0.1f);
+            lastCameraMilliseconds = nowMilliseconds;
+
+            float rawX = window.Input.Mouse.DeltaX;
+            float rawY = window.Input.Mouse.DeltaY;
+            bool right = window.Input.Mouse.IsDown(OpenIGI.Input.MouseButton.Right);
+
+            camera.Update(window.Input, elapsed);
+
+            // The cursor is locked away while a mouse button is held, the way a scene editor's is, so
+            // the view keeps turning however far the mouse is dragged. It comes back on release.
+            window.CursorLocked = camera.IsCapturingMouse;
+
+            if (options.LogCamera && (right || rawX != 0f || rawY != 0f))
+            {
+                logger.Information(
+                    "Camera",
+                    $"rmb={(right ? 1 : 0)} raw=({rawX:0.##},{rawY:0.##}) pos=({camera.Position.X:0.##},"
+                        + $"{camera.Position.Y:0.##},{camera.Position.Z:0.##}) fwd={camera.Camera.Orientation.Row3} "
+                        + $"right={camera.Camera.Orientation.Row1} dt={elapsed:0.####}");
+            }
+        }
 
         if (loop.RunFrame() != FrameOutcome.Render)
         {
@@ -287,15 +354,19 @@ using (window)
 
         if (scene is not null && world is not null && camera is not null)
         {
-            camera.Update(window.Input, 1f / 30f, mouseLook: false);
-            world.Draw(
-                scene,
-                camera.Camera,
-                Matrix4f.CreatePerspective(
-                    verticalFieldOfView: 1.2f,
-                    aspectRatio: (float)window.Width / Math.Max(1, window.Height),
-                    near: 0.2f,
-                    far: 4000f));
+            float aspectRatio = (float)window.Width / Math.Max(1, window.Height);
+            Matrix4f projection = Matrix4f.CreatePerspective(
+                verticalFieldOfView,
+                aspectRatio,
+                near: 0.2f,
+                far: farPlane);
+
+            // The sky is behind everything and writes no depth, so it goes first; then terrain, which
+            // is opaque and covers most of the screen, so drawing it before the objects gives the
+            // depth test the most to reject.
+            sky?.Draw(camera.Camera, projection, loop.TimeSource.Milliseconds / 1000f);
+            terrain?.Draw(camera.Camera, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
+            world.Draw(scene, camera.Camera, projection);
 
             if (!reportedWorld)
             {
@@ -303,6 +374,15 @@ using (window)
                 logger.Information(
                     "World",
                     $"Drew {world.LastDrawCount} sub-mesh(es), {world.LastLightmappedCount} lightmapped, {world.LastTriangleCount} triangles from {camera.Position}.");
+
+                if (terrain is not null)
+                {
+                    logger.Information(
+                        "Terrain",
+                        $"Drew {terrain.LastChunkCount} chunk(s) in {terrain.LastPassCount} material pass(es), "
+                            + $"{terrain.LastTriangleCount} triangles, from {terrain.LastVisitedCount} "
+                            + $"octree node(s) visited, over {terrain.TileCount} ground tile(s).");
+                }
             }
         }
 
@@ -321,6 +401,9 @@ using (window)
     }
 
     SaveConfiguration(gamePath, configuration, logger);
+    sky?.Dispose();
+    terrain?.Dispose();
+    world?.Dispose();
     renderer?.Dispose();
     logger.Information(
         "Desktop",

@@ -105,6 +105,13 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public void SetProjection(in Matrix4f projection) => Projection = projection;
 
+    public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha) =>
+        DetailFade = (scale, offset, slope, fadeAlpha);
+
+    public void ClearDetailFade() => DetailFade = null;
+
+    public (float Scale, float Offset, float Slope, bool FadeAlpha)? DetailFade { get; private set; }
+
     public void DrawMesh(
         MeshHandle mesh,
         int indexOffset,

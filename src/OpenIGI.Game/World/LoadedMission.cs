@@ -15,11 +15,17 @@ namespace OpenIGI.Game.World;
 /// The steps of the original's sequence this load did not perform, as human-readable descriptions. Empty
 /// once M6 and M7 close.
 /// </param>
+/// <param name="Terrain">
+/// The level's terrain, or <see langword="null"/> when the loader was given no
+/// <see cref="TerrainLoader"/> or the level ships none. Check
+/// <see cref="TerrainData.IsUsable"/> before drawing it: level 14's files exist but are not live data.
+/// </param>
 public sealed record LoadedMission(
     MissionDescriptor Descriptor,
     LoadedPack CommonPack,
     LoadedPack LevelPack,
-    IReadOnlyList<string> PendingSteps)
+    IReadOnlyList<string> PendingSteps,
+    TerrainData? Terrain = null)
 {
     /// <summary>Gets a value indicating whether every step of the original's sequence ran.</summary>
     public bool IsComplete => PendingSteps.Count == 0;

@@ -43,6 +43,15 @@ public interface IGameWindow : IDisposable
     /// <summary>Gets or sets a value indicating whether the system cursor is shown over the window.</summary>
     bool CursorVisible { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether the cursor is held inside the window.</summary>
+    /// <remarks>
+    /// A locked cursor is hidden and cannot leave, so mouse motion keeps arriving however far the user
+    /// drags. That is what a look-around control needs: without it the pointer reaches the edge of the
+    /// screen and the view stops turning. Merely hiding the cursor is not enough, which is why this is
+    /// separate from <see cref="CursorVisible"/>.
+    /// </remarks>
+    bool CursorLocked { get; set; }
+
     /// <summary>Gets a value indicating whether the window has input focus.</summary>
     /// <remarks>
     /// The original releases every key when its input device cannot be read, which is what focus loss

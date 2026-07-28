@@ -28,6 +28,7 @@ public sealed class SilkGameWindow : IGameWindow
     private readonly IWindow _window;
     private readonly IInputContext _input;
     private bool _cursorVisible;
+    private bool _cursorLocked;
     private bool _disposed;
 
     internal SilkGameWindow(in WindowSettings settings)
@@ -108,7 +109,28 @@ public sealed class SilkGameWindow : IGameWindow
         get => _cursorVisible;
         set
         {
+            if (_cursorVisible == value)
+            {
+                return;
+            }
+
             _cursorVisible = value;
+            ApplyCursorMode();
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool CursorLocked
+    {
+        get => _cursorLocked;
+        set
+        {
+            if (_cursorLocked == value)
+            {
+                return;
+            }
+
+            _cursorLocked = value;
             ApplyCursorMode();
         }
     }
@@ -271,7 +293,12 @@ public sealed class SilkGameWindow : IGameWindow
     {
         foreach (IMouse mouse in _input.Mice)
         {
-            mouse.Cursor.CursorMode = _cursorVisible ? CursorMode.Normal : CursorMode.Hidden;
+            // Raw is the same lock as Disabled but without the desktop's pointer acceleration applied,
+            // which is what a look control wants; not every backend offers it, so Disabled is the
+            // fallback and both hide the cursor on their own.
+            mouse.Cursor.CursorMode = _cursorLocked
+                ? (mouse.Cursor.IsSupported(CursorMode.Raw) ? CursorMode.Raw : CursorMode.Disabled)
+                : _cursorVisible ? CursorMode.Normal : CursorMode.Hidden;
         }
     }
 }

@@ -87,6 +87,52 @@ public sealed class Camera3DTests
     }
 
     [Fact]
+    public void ModelViewPlacesAModelAheadOfAYawedCamera()
+    {
+        // A quarter turn of yaw faces +X, so a model due east sits straight ahead. This is the case the
+        // symmetric pitch-only matrices cannot catch: rotating the offset by the transposed orientation
+        // passes every yaw-zero test and puts this model off to the side instead.
+        Camera3D camera = new(default, Camera3D.LookRotation(MathF.PI / 2f, 0f));
+        Vector3f origin = camera.CreateModelView(new Vector3d(60d, 0d, 0d)).TransformPoint(default);
+
+        Assert.Equal(0f, origin.X, Tolerance);
+        Assert.Equal(0f, origin.Y, Tolerance);
+        Assert.Equal(60f, origin.Z, Tolerance);
+    }
+
+    [Fact]
+    public void ModelViewTranslationAgreesWithItsRotation()
+    {
+        // One world point, expressed relative to two different model origins — the terrain's situation,
+        // where neighbouring chunks share their edge vertices. Both spellings must land on the same view
+        // position, or adjacent chunks tear apart; they only can if the translation is rotated by the
+        // same rotation the matrix's 3x3 half applies to the vertices.
+        Camera3D camera = new(new Vector3d(3d, -7d, 11d), Camera3D.LookRotation(0.7f, -0.3f));
+        Vector3f world = new(25f, 40f, 5f);
+
+        Vector3f fromOrigin = camera.CreateModelView(default).TransformPoint(world);
+        Vector3f fromNearby = camera.CreateModelView(new Vector3d(10d, 20d, -4d))
+            .TransformPoint(new Vector3f(15f, 20f, 9f));
+
+        Assert.Equal(fromOrigin.X, fromNearby.X, Tolerance);
+        Assert.Equal(fromOrigin.Y, fromNearby.Y, Tolerance);
+        Assert.Equal(fromOrigin.Z, fromNearby.Z, Tolerance);
+    }
+
+    [Fact]
+    public void ViewMatrixPlacesAPointAheadOfAYawedCamera()
+    {
+        // The same yawed-translation case for the standalone view matrix, which rotates the camera
+        // position itself rather than a model offset.
+        Camera3D camera = new(new Vector3d(100d, 200d, 30d), Camera3D.LookRotation(MathF.PI / 2f, 0f));
+        Vector3f ahead = camera.GetViewMatrix().TransformPoint(new Vector3f(160f, 200f, 30f));
+
+        Assert.Equal(0f, ahead.X, Tolerance);
+        Assert.Equal(0f, ahead.Y, Tolerance);
+        Assert.Equal(60f, ahead.Z, Tolerance);
+    }
+
+    [Fact]
     public void ModelOrientationComposesWithTheCameraRotation()
     {
         Camera3D camera = new(default, Camera3D.LookRotation(MathF.PI / 2f, 0f));

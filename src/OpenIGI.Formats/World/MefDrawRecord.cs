@@ -13,9 +13,11 @@ namespace OpenIGI.Formats.World;
 /// ones, followed by <c>indexCount</c> 16-bit indices.
 /// </para>
 /// <para>
-/// The index base differs by format and this is the trap: a lightmapped model's indices are
-/// <em>relative</em> to <see cref="BaseVertex"/> and bounded by <see cref="VertexSpan"/>, while the other
-/// two formats index the whole vertex array. <see cref="IndicesAreRelative"/> says which.
+/// Indices are <em>relative</em> to <see cref="BaseVertex"/> in every format. An earlier reading had
+/// the Diffuse and Unbatched formats indexing the whole vertex array; measurement over mission 1's
+/// multi-record models (the truck <c>622_01_1</c> most visibly) showed every record's indices span
+/// exactly the run up to the next record's base. <see cref="IndicesAreRelative"/> remains for the
+/// record's own bookkeeping.
 /// </para>
 /// </remarks>
 public readonly record struct MefDrawRecord

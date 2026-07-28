@@ -175,6 +175,26 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>Set once per frame; the per-object transform travels with each draw instead.</remarks>
     void SetProjection(in Matrix4f projection);
 
+    /// <summary>Applies the terrain LOD fade to subsequent <see cref="DrawMesh"/> calls.</summary>
+    /// <param name="scale">What one unit of Chebyshev camera distance is worth.</param>
+    /// <param name="offset">Subtracted from the scaled distance.</param>
+    /// <param name="slope">Scales the offset distance into the fade's <c>[0, 1]</c>.</param>
+    /// <param name="fadeAlpha">
+    /// Whether the draw's alpha also fades out with the factor — the detail pass does, the base pass
+    /// only morphs.
+    /// </param>
+    /// <remarks>
+    /// The fade is <c>t = clamp((chebyshev * scale - offset) * slope, 0, 1)</c> per vertex, the distance
+    /// taken along the world axes, exactly as <c>sub_512C30</c> computes it. While set, a vertex slides
+    /// onto the morph target its normal channel carries as <c>t</c> rises — the seam morph — and with
+    /// <paramref name="fadeAlpha"/> the alpha is additionally multiplied by <c>1 - t</c>. Cleared by
+    /// <see cref="ClearDetailFade"/>; draws between the two calls are affected, everything else is not.
+    /// </remarks>
+    void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha);
+
+    /// <summary>Stops the terrain fade; subsequent <see cref="DrawMesh"/> calls draw unmodified.</summary>
+    void ClearDetailFade();
+
     /// <summary>Draws part of a mesh.</summary>
     /// <param name="mesh">The mesh to draw.</param>
     /// <param name="indexOffset">The first index to draw.</param>

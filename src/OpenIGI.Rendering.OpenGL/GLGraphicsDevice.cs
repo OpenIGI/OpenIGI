@@ -42,6 +42,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private GLShaderProgram _meshProgram = null!;
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
+    private (float Scale, float Offset, float Slope, float Enabled) _detailFade;
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
     private uint _vertexArray;
@@ -469,6 +470,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _gl.VertexAttribPointer(2, 2, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)24);
         _gl.EnableVertexAttribArray(3);
         _gl.VertexAttribPointer(3, 2, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)32);
+        _gl.EnableVertexAttribArray(4);
+        _gl.VertexAttribPointer(
+            4,
+            4,
+            VertexAttribPointerType.UnsignedByte,
+            true,
+            Vertex3D.Size,
+            (void*)Vertex3D.ColourOffset);
 
         _gl.BindVertexArray(0);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
@@ -556,6 +565,20 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha)
+    {
+        ThrowIfDisposed();
+        _detailFade = (scale, offset, slope, fadeAlpha ? 2f : 1f);
+    }
+
+    /// <inheritdoc/>
+    public void ClearDetailFade()
+    {
+        ThrowIfDisposed();
+        _detailFade = default;
+    }
+
+    /// <inheritdoc/>
     public unsafe void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -597,7 +620,17 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _meshProgram.SetMatrix4("uProjection", _projection);
         _meshProgram.SetInt("uDiffuse", 0);
         _meshProgram.SetInt("uLightmap", 1);
-        _meshProgram.SetFloat("uAlphaTest", Mesh3DShaders.AlphaTestThreshold);
+        _meshProgram.SetVector4(
+            "uDetailFade",
+            _detailFade.Scale,
+            _detailFade.Offset,
+            _detailFade.Slope,
+            _detailFade.Enabled);
+        // The cut-out threshold belongs to opaque draws only. A blended draw is asking for a gradient,
+        // and testing it at a half would punch out exactly the half of the gradient it wants to keep.
+        _meshProgram.SetFloat(
+            "uAlphaTest",
+            blend == BlendMode.Opaque ? Mesh3DShaders.AlphaTestThreshold : 0f);
 
         // An absent lightmap binds white, so the modulate becomes the identity and the shader needs no
         // branch -- the same trick the 2D path uses for untextured draws.

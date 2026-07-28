@@ -51,19 +51,24 @@ public sealed class RetailObjectLightmapTests
     /// </summary>
     /// <param name="missionId">The mission to check.</param>
     /// <remarks>
-    /// <b>Four of the fourteen levels are pinned here, not all of them.</b> On these the agreement is
-    /// total — every entry of every set, thousands of them, lands on a model whose lightmap page is
-    /// exactly the size of the stored image. On the other ten the walk comes out a handful of nodes short
-    /// or long per set, and because the numbering is positional that shifts every index after the first
-    /// discrepancy, so those levels are not silently half-checked here. What is still missing from the
-    /// walk is an open item; <see cref="EveryLightmapSetStartsAtItsOwnersModel"/> holds everywhere and
-    /// covers all fourteen meanwhile. See <c>TODO.md</c>.
+    /// <b>Five of the fourteen levels are pinned here.</b> Three walk rules came out of the binary and
+    /// each moved levels into agreement: the original's list builders (<c>0x4DC050</c>, <c>0x4DC190</c>)
+    /// emit entries only for a node whose most detailed model is mesh format 3, so a diffuse-format prop
+    /// claims no indices; an <c>SCamera</c> carries two engine-supplied models (<c>313_01_1</c>,
+    /// <c>313_02_1</c>, hard-coded in <c>0x4423F0</c>) and a <c>Switch</c> the literal model
+    /// <c>switch</c> (<c>0x4450F0</c>); and a spline waypoint's segment is numbered like any object.
+    /// The other nine levels still come out nodes short around engine-spawned objects — a switch's
+    /// archive trio <c>16x1, 8x1, 2x1</c> against the model's single page shows the spawn path
+    /// (<c>sub_4CE090</c>, reached from <c>sub_4DCCB0</c>) resolves more than the model name alone.
+    /// Reading that spawn is the remaining open item; <see cref="EveryLightmapSetStartsAtItsOwnersModel"/>
+    /// holds everywhere meanwhile. See <c>TODO.md</c>.
     /// </remarks>
     [RequiresGameDataTheory]
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(4)]
     [InlineData(7)]
+    [InlineData(9)]
     public void EveryLightmapIndexLandsOnAModelOfMatchingPageSize(int missionId)
     {
         (LoadedMission mission, LevelTask levelRoot, MagicObjectRegistry magic, ResourceRegistry resources) =
@@ -99,6 +104,11 @@ public sealed class RetailObjectLightmapTests
             {
                 foreach (WorldObject inner in node.Walk())
                 {
+                    if (inner.LightmapIndex < 0)
+                    {
+                        continue;
+                    }
+
                     for (int level = 0; level < inner.Models.Count; level++)
                     {
                         byIndex[inner.LightmapIndex + level] = (inner.Models.Names[level], inner.Models[level]);
@@ -225,12 +235,9 @@ public sealed class RetailObjectLightmapTests
         List<string> names = [];
         foreach (GameTask task in Walk(owner))
         {
-            if (task is DeclaredTask declared
-                && declared.TryGetValue(WorldScene.ModelParameter, out object? raw)
-                && raw is string name
-                && name.Length > 0)
+            if (task is DeclaredTask declared)
             {
-                names.Add(name);
+                names.AddRange(WorldScene.PlacedModelNames(declared));
             }
         }
 

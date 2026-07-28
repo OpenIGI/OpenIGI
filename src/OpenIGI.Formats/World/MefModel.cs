@@ -339,7 +339,13 @@ public sealed class MefModel
             return ReadOnlyCollection<MefDrawRecord>.Empty;
         }
 
-        bool relative = format == MefMeshFormat.Lightmapped;
+        // The 32-byte lightmapped header carries a page and a span the 28-byte compact one lacks; but
+        // the *indices* are relative to the record's base vertex in every format. That was measured,
+        // not assumed: over mission 1's nine multi-record Diffuse models every record's indices run
+        // exactly [0, next record's base - own base), and none is consistent with whole-array
+        // indexing — the truck (622_01_1, thirty records) is the model that showed it, drawing
+        // scrambled under the earlier absolute reading. Single-record models draw the same either way.
+        bool lightmappedHeader = format == MefMeshFormat.Lightmapped;
 
         MefDrawRecord[] records = new MefDrawRecord[subMeshCount];
         int offset = 0;
@@ -359,9 +365,9 @@ public sealed class MefModel
                 BinaryPrimitives.ReadSingleLittleEndian(header[8..]));
             int indexCount = BinaryPrimitives.ReadUInt16LittleEndian(header[12..]);
             int materialSlot = BinaryPrimitives.ReadUInt16LittleEndian(header[16..]);
-            int lightmapPage = relative ? BinaryPrimitives.ReadUInt16LittleEndian(header[18..]) : 0;
-            int baseVertex = BinaryPrimitives.ReadUInt16LittleEndian(header[(relative ? 20 : 18)..]);
-            int span0 = relative ? BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) : 0;
+            int lightmapPage = lightmappedHeader ? BinaryPrimitives.ReadUInt16LittleEndian(header[18..]) : 0;
+            int baseVertex = BinaryPrimitives.ReadUInt16LittleEndian(header[(lightmappedHeader ? 20 : 18)..]);
+            int span0 = lightmappedHeader ? BinaryPrimitives.ReadUInt16LittleEndian(header[22..]) : 0;
 
             if (lightmapPage >= lightmapPageCount && lightmapPage != 0)
             {
@@ -384,20 +390,21 @@ public sealed class MefModel
 
             ushort[] indices = new ushort[indexCount];
             ReadOnlySpan<byte> raw = span.Slice(offset + headerSize, indexBytes);
-            int limit = relative ? span0 : vertexCount;
+            // The compact header states no span, so the bound is the rest of the vertex array.
+            int limit = span0 > 0 ? span0 : vertexCount - baseVertex;
             for (int j = 0; j < indexCount; j++)
             {
                 ushort index = BinaryPrimitives.ReadUInt16LittleEndian(raw[(j * 2)..]);
                 if (index >= limit)
                 {
                     throw new PackFormatException(
-                        $"Draw record {i} index {j} is {index}, past its {(relative ? "vertex span" : "vertex count")} of {limit}.");
+                        $"Draw record {i} index {j} is {index}, past its vertex span of {limit}.");
                 }
 
                 indices[j] = index;
             }
 
-            records[i] = new MefDrawRecord(centre, materialSlot, lightmapPage, baseVertex, span0, relative, indices);
+            records[i] = new MefDrawRecord(centre, materialSlot, lightmapPage, baseVertex, span0, true, indices);
             triangles += indexCount / 3;
             offset += headerSize + indexBytes;
         }
