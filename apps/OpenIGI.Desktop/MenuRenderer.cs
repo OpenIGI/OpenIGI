@@ -76,6 +76,7 @@ public sealed class MenuRenderer : IDisposable
                 BlendMode.Opaque);
         }
 
+        DrawLogo(batch, screenWidth, screenHeight);
         DrawSubtree(batch, screen, screenWidth, screenHeight);
 
         batch.End();
@@ -374,6 +375,47 @@ public sealed class MenuRenderer : IDisposable
 
         Draw(batch, font, label, x, y, screenWidth, screenHeight);
     }
+
+    /// <summary>Draws the logo every screen carries above its contents.</summary>
+    /// <remarks>
+    /// <c>MenuScreen_Prepare</c> (<c>0x421A70</c>) loads this for every screen, not just the first —
+    /// it is the engine's, not the script's, which is why it appears in no menu file.
+    /// </remarks>
+    private void DrawLogo(SpriteBatch batch, int screenWidth, int screenHeight)
+    {
+        if (TryGetSprite(MenuScreenTask.LogoResource) is not { } logo)
+        {
+            return;
+        }
+
+        // A .pic is a tile grid, so its size is the grid times the tile — the same shape the
+        // background uses. A plain sprite reports its first frame instead.
+        (int width, int height) = logo.Asset.TileLayout is { } grid && logo.Asset.Frames.Count > 0
+            ? (grid.Columns * (int)logo.Asset.Frames[0].Width, grid.Rows * (int)logo.Asset.Frames[0].Height)
+            : ((int)LogoWidth(logo), (int)LogoHeight(logo));
+
+        RectF destination = Centred(
+            MenuScreenTask.GetLogoX(width, unitedStates: false),
+            MenuScreenTask.LogoY,
+            width,
+            height,
+            screenWidth,
+            screenHeight);
+
+        if (logo.Asset.TileLayout is not null)
+        {
+            logo.DrawTiled(batch, destination, Bgra32.White, BlendMode.AlphaBlend);
+            return;
+        }
+
+        logo.DrawStretched(batch, 0, destination, Bgra32.White);
+    }
+
+    private static float LogoWidth(SpriteResource logo) =>
+        logo.Asset.Frames.Count > 0 ? logo.Asset.Frames[0].Width : 0f;
+
+    private static float LogoHeight(SpriteResource logo) =>
+        logo.Asset.Frames.Count > 0 ? logo.Asset.Frames[0].Height : 0f;
 
     /// <summary>Draws the picture a picture box has chosen, if it has one.</summary>
     /// <remarks>

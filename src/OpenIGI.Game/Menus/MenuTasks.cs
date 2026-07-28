@@ -110,6 +110,44 @@ public partial class MenuScreenTask : MenuWindowTask
     /// </remarks>
     public int UserData { get; set; }
 
+    /// <summary>The logo every screen draws above its contents.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Correction.</b> An earlier revision concluded "there is no logo" because <c>logo</c> appears
+    /// nowhere in either menu script. That inference was backwards: the script not naming something
+    /// says nothing about whether the engine draws it. <c>MenuScreen_Prepare</c> (<c>0x421A70</c>)
+    /// loads it into <c>+152</c> for <em>every</em> screen, right after the background.
+    /// </para>
+    /// <para>
+    /// The US build uses <c>logo_us.pic</c> and shifts it twelve pixels right; every other build uses
+    /// <c>logo.pic</c> with no offset.
+    /// </para>
+    /// </remarks>
+    public const string LogoResource = "logo.pic";
+
+    /// <summary>The logo the US build uses instead.</summary>
+    public const string UnitedStatesLogoResource = "logo_us.pic";
+
+    /// <summary>The horizontal nudge the US logo takes.</summary>
+    public const int UnitedStatesLogoOffsetX = 12;
+
+    /// <summary>Gets the logo's top edge in authored pixels.</summary>
+    /// <remarks>
+    /// <c>(backBufferHeight / 2) - 220</c> in the original, which in authored space — where the height
+    /// is 480 — is twenty pixels from the top. It is expressed against the back buffer there because
+    /// the original composes in back-buffer coordinates; here the centring is <c>MenuLayout</c>'s job.
+    /// </remarks>
+    public const int LogoY = (MenuLayout.AuthoredHeight / 2) - 220;
+
+    /// <summary>Gets the logo's left edge for a given logo width.</summary>
+    /// <param name="logoWidth">The logo's width in pixels.</param>
+    /// <param name="unitedStates">Whether this is the US build.</param>
+    /// <returns>The left edge in authored pixels.</returns>
+    /// <remarks>Centred on the authored 640, then nudged: <c>(int)(320 - width * 0.5) + offset</c>.</remarks>
+    public static int GetLogoX(int logoWidth, bool unitedStates) =>
+        (int)((MenuLayout.AuthoredWidth / 2) - (logoWidth * 0.5))
+        + (unitedStates ? UnitedStatesLogoOffsetX : 0);
+
     /// <inheritdoc/>
     protected override void OnExportVars(ScriptVarRegistry variables)
     {
