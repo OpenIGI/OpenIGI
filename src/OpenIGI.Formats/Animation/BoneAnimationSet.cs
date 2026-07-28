@@ -167,9 +167,9 @@ public sealed class BoneAnimationSet
 
             // A one-key track is read only for its value and time; the tangents are meaningless with
             // nothing to interpolate towards, and the original never copies them.
-            Vector3f inTangent = full ? ReadVector3(key[16..]) : default;
-            Vector3f outTangent = full ? ReadVector3(key[28..]) : default;
-            keys[i] = new BoneTranslationKey(position, time, inTangent, outTangent);
+            Vector3f outTangent = full ? ReadVector3(key[16..]) : default;
+            Vector3f inTangent = full ? ReadVector3(key[28..]) : default;
+            keys[i] = new BoneTranslationKey(position, time, outTangent, inTangent);
         }
 
         return keys;
@@ -208,9 +208,9 @@ public sealed class BoneAnimationSet
                 ReadOnlySpan<byte> key = span[(stride * i)..];
                 Quaternion32 rotation = ReadQuaternion(key);
                 float time = BinaryPrimitives.ReadSingleLittleEndian(key[16..]);
-                Quaternion32 inTangent = full ? ReadQuaternion(key[20..]) : rotation;
-                Quaternion32 outTangent = full ? ReadQuaternion(key[36..]) : rotation;
-                keys[i] = new BoneRotationKey(rotation, time, inTangent, outTangent);
+                Quaternion32 outTangent = full ? ReadQuaternion(key[20..]) : rotation;
+                Quaternion32 inTangent = full ? ReadQuaternion(key[36..]) : rotation;
+                keys[i] = new BoneRotationKey(rotation, time, outTangent, inTangent);
             }
 
             tracks[bone] = keys;
