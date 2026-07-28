@@ -158,10 +158,9 @@ public partial class ScrollListBoxTask
         _clickedRow = Index;
         KeepSelectionVisible();
 
+        // Nothing else has to be told: the controls keyed off this list re-evaluate their own
+        // expression every update, which is why the original can move a row and reload nothing.
         Manager?.PlaySound(MenuManagerTask.MoveSoundName);
-
-        // Controls keyed off this list — the mission briefing picture and description — re-read.
-        Manager?.ReloadScreenData();
     }
 
     /// <summary>Keeps the selected row inside the visible window, the way the original nudges its scroll bar.</summary>

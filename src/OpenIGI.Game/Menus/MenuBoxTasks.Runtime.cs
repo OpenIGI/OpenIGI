@@ -53,13 +53,39 @@ public partial class PictureBoxTask
     public IDictionary<int, string> Entries { get; } = new Dictionary<int, string>();
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The original collects every entry and then picks one by id, rather than asking the filler for the
+    /// selected one — which is why the fill natives walk the whole mission chain. Collecting happens
+    /// here, once; which entry is showing is decided every update.
+    /// </remarks>
     protected override void OnLoadData()
     {
         Entries.Clear();
         Run(CollectItems);
+        Resolve();
+    }
 
-        // The original collects every entry and then picks one by id, rather than asking the filler
-        // for the selected one — which is why the fill natives walk the whole mission chain.
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <c>Get Active Picture</c> is re-evaluated every tick because it names <em>another control's</em>
+    /// value — on the mission screen, the list's <c>nActiveID</c>. That is how the picture follows the
+    /// selection with nothing having to tell it the selection moved, and it is why the original's
+    /// <c>ScrollListBox_Update</c> can change a row without reloading any data.
+    /// </remarks>
+    protected override void OnUpdate()
+    {
+        Resolve();
+        base.OnUpdate();
+    }
+
+    /// <summary>Picks the entry the expression names out of the collected set.</summary>
+    private void Resolve()
+    {
+        if (GetActivePicture.Length == 0)
+        {
+            return;
+        }
+
         int active = (int)Evaluate(GetActivePicture);
         Picture = Entries.TryGetValue(active, out string? picture) ? picture : string.Empty;
     }
@@ -93,14 +119,44 @@ public partial class TextBoxTask
     /// <summary>Gets the collected blocks, keyed by the id <see cref="GetActivePicture"/> yields.</summary>
     public IDictionary<int, string> Entries { get; } = new Dictionary<int, string>();
 
+    private int _shown = int.MinValue;
+
     /// <inheritdoc/>
+    /// <remarks>Collecting happens here, once; which entry is showing is decided every update.</remarks>
     protected override void OnLoadData()
     {
         Lines.Clear();
         Entries.Clear();
+        _shown = int.MinValue;
         Run(CollectItems);
+        Resolve();
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>See <see cref="PictureBoxTask.OnUpdate"/>: the expression names another control's value.</remarks>
+    protected override void OnUpdate()
+    {
+        Resolve();
+        base.OnUpdate();
+    }
+
+    /// <summary>Breaks the entry the expression names into lines, when it is not the one already shown.</summary>
+    private void Resolve()
+    {
+        if (GetActivePicture.Length == 0)
+        {
+            return;
+        }
 
         int active = (int)Evaluate(GetActivePicture);
+        if (active == _shown)
+        {
+            return;
+        }
+
+        _shown = active;
+        Lines.Clear();
+
         if (Entries.TryGetValue(active, out string? text) && text.Length > 0)
         {
             foreach (string line in text.Split('\n'))
@@ -203,7 +259,6 @@ public partial class ScrollListBoxTask
         if (Index != before)
         {
             KeepSelectionVisible();
-            Manager?.ReloadScreenData();
         }
 
         PendingCommand = MenuWindowCommand.None;

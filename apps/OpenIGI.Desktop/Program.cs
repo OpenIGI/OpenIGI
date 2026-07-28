@@ -31,7 +31,7 @@ catch (ArgumentException ex)
 
 IIgiLogger logger = new ConsoleLogger();
 
-string? gamePath = options.GamePath;
+string? gamePath = options.GamePath ?? @"S:\I'm Going In\pc";
 if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
 {
     Console.Error.WriteLine(
