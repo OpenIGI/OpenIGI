@@ -77,6 +77,7 @@ public sealed class MenuRenderer : IDisposable
         }
 
         DrawLogo(batch, screenWidth, screenHeight);
+        DrawScreenPanel(batch, screen, screenWidth, screenHeight);
         DrawSubtree(batch, screen, screenWidth, screenHeight);
 
         batch.End();
@@ -375,6 +376,61 @@ public sealed class MenuRenderer : IDisposable
 
         Draw(batch, font, label, x, y, screenWidth, screenHeight);
     }
+
+    /// <summary>Draws the green panel a screen frames its contents with.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>MenuScreen_DrawPanel</c> (<c>0x421CD0</c>), and the reason the main menu looked bare. The
+    /// rectangle is the screen's own <c>Frame x0/y0/x1/y1</c> parameters, each plus one, and it is
+    /// three separate submissions:
+    /// </para>
+    /// <list type="number">
+    /// <item><description>A four-corner quad filled green, alpha <c>0.2</c> at the top fading to
+    /// <c>0.05</c> at the bottom — this is the tint over the wall.</description></item>
+    /// <item><description>A closed five-vertex line loop in <c>(0, 0.75, 0)</c> — the border.</description></item>
+    /// <item><description>A horizontal line twenty pixels below the top edge — the rule under the
+    /// screen's title.</description></item>
+    /// </list>
+    /// <para>
+    /// The whole panel is scaled horizontally out of the centre by the manager's fade alpha, so it
+    /// opens outwards as a screen appears rather than cutting in.
+    /// </para>
+    /// </remarks>
+    private static void DrawScreenPanel(SpriteBatch batch, MenuScreenTask screen, int screenWidth, int screenHeight)
+    {
+        MenuScreenPanel panel = MenuScreenPanel.For(screen, screen.Manager?.Navigator.Alpha ?? MenuNavigator.FullAlpha);
+        if (panel.IsEmpty)
+        {
+            return;
+        }
+
+        RectF area = Centred(panel.X0, panel.Y0, panel.X1 - panel.X0, panel.Y1 - panel.Y0, screenWidth, screenHeight);
+
+        Bgra32 top = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(panel.Alpha * MenuScreenPanel.TopFillAlpha));
+        Bgra32 bottom = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(panel.Alpha * MenuScreenPanel.BottomFillAlpha));
+
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(area.X, area.Y, 0f, 0f, top),
+            new Vertex2D(area.X + area.Width, area.Y, 1f, 0f, top),
+            new Vertex2D(area.X + area.Width, area.Y + area.Height, 1f, 1f, bottom),
+            new Vertex2D(area.X, area.Y + area.Height, 0f, 1f, bottom));
+
+        // The border, and the rule under the title, both in the darker green the outline uses.
+        Bgra32 edge = Bgra32.FromRgba(0, MenuScreenPanel.EdgeGreen, 0, Alpha(panel.Alpha));
+
+        foreach ((int x, int y, int width, int height) in
+            MenuLayout.GetBoxOutline(panel.X0, panel.Y0, panel.X1 - panel.X0, panel.Y1 - panel.Y0))
+        {
+            batch.FillRect(Centred(x, y, width, height, screenWidth, screenHeight), edge);
+        }
+
+        batch.FillRect(
+            Centred(panel.X0, panel.Y0 + MenuScreenPanel.TitleRuleOffset, panel.X1 - panel.X0, 1, screenWidth, screenHeight),
+            edge);
+    }
+
+    private static byte Alpha(float value) => (byte)Math.Clamp(value * byte.MaxValue, 0f, byte.MaxValue);
 
     /// <summary>Draws the logo every screen carries above its contents.</summary>
     /// <remarks>
