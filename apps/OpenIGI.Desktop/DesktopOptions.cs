@@ -11,6 +11,7 @@ namespace OpenIGI.Desktop;
 /// <param name="ScreenshotPath">Where to write a capture of the first rendered frames, or <see langword="null"/> to run normally.</param>
 /// <param name="ExitAfterFrames">Quit after this many rendered frames, or zero to run until closed.</param>
 /// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
+/// <param name="StartMission">Load this mission at boot instead of opening the menus, or zero.</param>
 /// <remarks>
 /// The original parses its command line with a case-insensitive prefix scan (<c>Win_ParseCmdOption</c>,
 /// <c>0x48F360</c>) and understands <c>Window</c>, <c>WinInput</c>, <c>Germany</c> and
@@ -25,7 +26,8 @@ public readonly record struct DesktopOptions(
     bool VSync,
     string? ScreenshotPath,
     int ExitAfterFrames,
-    int StartScreen)
+    int StartScreen,
+    int StartMission)
 {
     /// <summary>Gets the environment variable consulted when no path is given on the command line.</summary>
     public const string GamePathVariable = "IGI_GAME_PATH";
@@ -46,6 +48,7 @@ public readonly record struct DesktopOptions(
         string? screenshot = null;
         int exitAfterFrames = 0;
         int startScreen = 0;
+        int startMission = 0;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -80,6 +83,14 @@ public readonly record struct DesktopOptions(
                     throw new ArgumentException($"-size expects WIDTHxHEIGHT, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("mission", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "mission");
+                if (!int.TryParse(value, out startMission) || startMission <= 0)
+                {
+                    throw new ArgumentException($"-mission expects a mission id, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("screenshot", StringComparison.OrdinalIgnoreCase))
             {
                 screenshot = Next(args, ref i, "screenshot");
@@ -112,7 +123,7 @@ public readonly record struct DesktopOptions(
             }
         }
 
-        return new DesktopOptions(gamePath, fullscreen, width, height, vsync, screenshot, exitAfterFrames, startScreen);
+        return new DesktopOptions(gamePath, fullscreen, width, height, vsync, screenshot, exitAfterFrames, startScreen, startMission);
     }
 
     /// <summary>Gets the usage text.</summary>

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
 
@@ -24,9 +25,13 @@ public static class MefMeshBuilder
 {
     /// <summary>Flattens a model's vertices and draw records into device-ready buffers.</summary>
     /// <param name="model">The model to convert.</param>
+    /// <param name="scale">
+    /// A factor applied to every position. Model vertices use the same units as world positions, so pass
+    /// <c>1 / <see cref="WorldScene.UnitsPerMetre"/></c> to get metres.
+    /// </param>
     /// <returns>The geometry, or <see langword="null"/> when the model has nothing to draw.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="model"/> is <see langword="null"/>.</exception>
-    public static MeshGeometry? Build(MefModel model)
+    public static MeshGeometry? Build(MefModel model, float scale = 1f)
     {
         ArgumentNullException.ThrowIfNull(model);
 
@@ -40,7 +45,13 @@ public static class MefMeshBuilder
         for (int i = 0; i < source.Length; i++)
         {
             MefVertex v = source[i];
-            vertices[i] = new Vertex3D(v.Position, v.Normal, v.DiffuseU, v.DiffuseV, v.LightmapU, v.LightmapV);
+            vertices[i] = new Vertex3D(
+                new Vector3f(v.Position.X * scale, v.Position.Y * scale, v.Position.Z * scale),
+                v.Normal,
+                v.DiffuseU,
+                v.DiffuseV,
+                v.LightmapU,
+                v.LightmapV);
         }
 
         int total = 0;

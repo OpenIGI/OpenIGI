@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -152,9 +153,13 @@ using (window)
         logger.Warning("Mission", $"The mission scan failed, so no missions are selectable: {ex.Message}");
     }
 
-    menuHost.StartGame = () =>
+    bool reportedWorld = false;
+    WorldScene? scene = null;
+    WorldRenderer? world = null;
+    FreeCamera? camera = null;
+
+    void StartMission(int id)
     {
-        int id = missionState.PendingMissionId;
         if (!missions.TryGet(id, out MissionDescriptor? chosen))
         {
             logger.Warning("Mission", $"Asked to start mission {id}, which is not registered.");
@@ -166,8 +171,57 @@ using (window)
         LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources, logger);
         MissionLoader missionLoader = new(missions, fileSystem, resources, levelLoader, logger);
         LoadedMission loaded = missionLoader.Load(id);
+
+        scene = WorldScene.Build(loaded, levelRoot, logger);
+        world = new WorldRenderer(device, resources, logger);
+
+        // Open on the middle of what was placed, backed off and looking down slightly, so the first
+        // frame shows the level rather than the inside of whichever object happens to be at the origin.
+        camera = CreateCamera(scene);
+
+        // The menus are done; without dropping the renderer the last screen would keep drawing over
+        // the world.
+        renderer = null;
         logger.Information("Mission", $"Loaded {loaded}.");
-    };
+    }
+
+    menuHost.StartGame = () => StartMission(missionState.PendingMissionId);
+
+    static FreeCamera CreateCamera(WorldScene scene)
+    {
+        if (scene.Placements.Count == 0)
+        {
+            return new FreeCamera(default);
+        }
+
+        // Medians, not a bounding box or a mean: a level is a dense cluster with a few far-flung
+        // outliers, so a box centre lands in the empty part and a mean gets dragged towards whatever is
+        // furthest away. The median height is the ground, because most objects sit on it.
+        double[] xs = new double[scene.Placements.Count];
+        double[] ys = new double[scene.Placements.Count];
+        double[] zs = new double[scene.Placements.Count];
+
+        for (int i = 0; i < scene.Placements.Count; i++)
+        {
+            xs[i] = scene.Placements[i].Position.X;
+            ys[i] = scene.Placements[i].Position.Y;
+            zs[i] = scene.Placements[i].Position.Z;
+        }
+
+        Array.Sort(xs);
+        Array.Sort(ys);
+        Array.Sort(zs);
+
+        double centreX = xs[xs.Length / 2];
+        double centreY = ys[ys.Length / 2];
+        double ground = zs[zs.Length / 2];
+
+        // Standing back a hundred metres, twenty-five up, looking north and slightly down.
+        return new FreeCamera(
+            new Vector3d(centreX, centreY - 100.0, ground + 25.0),
+            yaw: 0f,
+            pitch: -0.12f);
+    }
 
     menuHost.LoadMainMenu = () =>
     {
@@ -200,7 +254,16 @@ using (window)
         menu.Manager.Initialize(menu, menuHost, logger);
     };
 
-    loop.Flow.Request(FlowEvent.MainMenu);
+    // -mission is a development shortcut: it skips the menus and drops straight into a level, which is
+    // how the fly-through gets captured without anyone clicking OK.
+    if (options.StartMission > 0)
+    {
+        StartMission(options.StartMission);
+    }
+    else
+    {
+        loop.Flow.Request(FlowEvent.MainMenu);
+    }
 
     window.CloseRequested += (_, _) => running = false;
     window.Show();
@@ -213,6 +276,27 @@ using (window)
         if (loop.RunFrame() != FrameOutcome.Render)
         {
             continue;
+        }
+
+        if (scene is not null && world is not null && camera is not null)
+        {
+            camera.Update(window.Input, 1f / 30f, mouseLook: false);
+            world.Draw(
+                scene,
+                camera.Camera,
+                Matrix4f.CreatePerspective(
+                    verticalFieldOfView: 1.2f,
+                    aspectRatio: (float)window.Width / Math.Max(1, window.Height),
+                    near: 0.2f,
+                    far: 4000f));
+
+            if (!reportedWorld)
+            {
+                reportedWorld = true;
+                logger.Information(
+                    "World",
+                    $"Drew {world.LastDrawCount} sub-mesh(es), {world.LastTriangleCount} triangles from {camera.Position}.");
+            }
         }
 
         if (options.ExitAfterFrames > 0 && loop.Clock.FrameCount >= options.ExitAfterFrames)
