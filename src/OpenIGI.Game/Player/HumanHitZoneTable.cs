@@ -36,6 +36,13 @@ public readonly record struct HumanHitZone(float Multiplier, int LimbAnimation, 
 /// damage factor takes. A Glock's 0.25 into a torso worth 1.0 is a quarter of a human, which is why it
 /// takes four.
 /// </para>
+/// <para>
+/// <b>The player's multipliers are script data, not compiled constants.</b> <c>DefineHumanPlayer</c>
+/// (<c>0x410070</c>) writes <c>humanplayer.qvm</c>'s arguments 9–25 over the player's table and 26–42
+/// over a second one. The values compiled into the executable are a <i>stale initialiser</i> the script
+/// overwrites — reading them instead of the script gives the player a headshot multiplier it does not
+/// have.
+/// </para>
 /// </remarks>
 public static class HumanHitZoneTable
 {
@@ -49,14 +56,22 @@ public static class HumanHitZoneTable
     /// <summary>The multiplier that makes a zone a one-hit kill.</summary>
     /// <remarks>
     /// <c>100.0</c> against a maximum of 1.0, so any weapon in the game with a damage factor above
-    /// 0.01 kills instantly there. Both of the zones carrying it are head-and-neck ones.
+    /// 0.01 kills instantly there. Both of the zones carrying it are head-and-neck ones — and only on
+    /// the <b>soldier</b> table; the player's head is worth 1.0.
     /// </remarks>
     public const float LethalMultiplier = 100f;
 
-    /// <summary>The player's table, at <c>0x5389F8</c>.</summary>
+    /// <summary>The player's table, at <c>0x5389F8</c>, with the multipliers the script writes.</summary>
     /// <remarks>
-    /// The table at <c>0x538B08</c> is byte-for-byte identical to this one — the two 17-row tables that
-    /// sat unexplained since M8 are both hit-zone tables, and they hold the same data.
+    /// <para>
+    /// <b>The player has no headshot bonus.</b> Its head and neck are worth <c>1.0</c>, the same as its
+    /// torso — so nothing one-shots the player through the head, which is the opposite of what the
+    /// executable's stale initialiser (100.0 there) suggests.
+    /// </para>
+    /// <para>
+    /// The animation ids are <i>not</i> overwritten by the script, only the multipliers, so those are
+    /// the compiled values.
+    /// </para>
     /// </remarks>
     public static IReadOnlyList<HumanHitZone> Player { get; } =
     [
@@ -75,15 +90,31 @@ public static class HumanHitZoneTable
         new(1.0f, 63, 201, 202),
         new(1.0f, 63, 201, 202),
         new(1.0f, 63, 215, 215),
-        new(LethalMultiplier, 63, 112, 112),
-        new(LethalMultiplier, 63, 204, 204),
+        new(1.0f, 63, 112, 112),
+        new(1.0f, 63, 204, 204),
     ];
 
-    /// <summary>The soldiers' table, at <c>0x53F1D0</c>.</summary>
+    /// <summary>
+    /// The second table the script fills, at <c>0x538B08</c> — <b>written and never read</b>.
+    /// </summary>
     /// <remarks>
-    /// The multipliers are <b>identical</b> to the player's; only the animation ids differ, because a
-    /// soldier does not share the player's animation set. So a soldier is exactly as tough as the
-    /// player and takes damage in exactly the same proportions.
+    /// <c>DefineHumanPlayer</c> writes arguments 26–42 here and nothing in the executable ever reads
+    /// it. Its head and neck carry <c>100000</c>, a thousand times the soldier table's already-lethal
+    /// 100, which suggests it was an alternative the game stopped using. Kept because a reader
+    /// comparing the two tables should know one of them is dead rather than assume they are variants
+    /// in use.
+    /// </remarks>
+    public static IReadOnlyList<float> UnusedSecondTable { get; } =
+    [
+        0.5f, 0.75f, 1f, 0.5f, 0.75f, 1f, 0.5f, 0.75f, 1f, 0.5f, 0.75f, 1f, 1f, 1f, 1f, 100000f, 100000f,
+    ];
+
+    /// <summary>The soldiers' table, at <c>0x53F1D0</c> — compiled, and not overwritten.</summary>
+    /// <remarks>
+    /// <b>A soldier is not as tough as the player.</b> Limbs and torso match, but a soldier's head and
+    /// neck carry <see cref="LethalMultiplier"/> where the player's carry 1.0 — so a headshot kills an
+    /// AI outright and does nothing special to the player. <c>DefineHumanPlayer</c> never touches this
+    /// table, so unlike the player's these really are the compiled values.
     /// </remarks>
     public static IReadOnlyList<HumanHitZone> Soldier { get; } =
     [

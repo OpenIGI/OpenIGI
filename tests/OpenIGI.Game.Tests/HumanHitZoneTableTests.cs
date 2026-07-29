@@ -37,13 +37,20 @@ public sealed class HumanHitZoneTableTests
     }
 
     [Fact]
-    public void ThePlayerAndTheSoldiersAreEquallyTough()
+    public void ASoldierIsNotAsToughAsThePlayerInTheHead()
     {
-        // Only the animation ids differ, because a soldier does not share the player's animation set.
-        // Every multiplier is the same, so a soldier takes damage in exactly the player's proportions.
-        Assert.Equal(
-            HumanHitZoneTable.Player.Select(z => z.Multiplier),
-            HumanHitZoneTable.Soldier.Select(z => z.Multiplier));
+        // Limbs and torso match exactly, so a body shot costs the same either way.
+        for (int zone = 0; zone <= HumanDamage.RearZone; zone++)
+        {
+            Assert.Equal(HumanHitZoneTable.Player[zone].Multiplier, HumanHitZoneTable.Soldier[zone].Multiplier);
+        }
+
+        // The head and neck do not. A soldier's are lethal; the player's are worth a torso.
+        foreach (int zone in new[] { HumanDamage.ProximityZone, 16 })
+        {
+            Assert.Equal(HumanHitZoneTable.LethalMultiplier, HumanHitZoneTable.Soldier[zone].Multiplier);
+            Assert.Equal(1f, HumanHitZoneTable.Player[zone].Multiplier);
+        }
 
         Assert.NotEqual(
             HumanHitZoneTable.Player.Select(z => z.LimbAnimation),
@@ -78,31 +85,36 @@ public sealed class HumanHitZoneTableTests
     }
 
     [Fact]
-    public void TheProximityZoneIsAOneHitKillWhichIsWhatMakesItTheHead()
+    public void TheProximityZoneIsAOneHitKillOnASoldier()
     {
-        // The strongest evidence yet that zone 15 is the head: a multiplier of 100 against a maximum of
-        // 1.0 means anything with a damage factor above 0.01 kills instantly.
-        Assert.Equal(HumanHitZoneTable.LethalMultiplier, HumanHitZoneTable.Player[HumanDamage.ProximityZone].Multiplier);
+        // The evidence that zone 15 is the head: on a soldier its multiplier is 100 against a maximum
+        // of 1.0, so anything with a damage factor above 0.01 kills instantly there.
+        Assert.Equal(
+            HumanHitZoneTable.LethalMultiplier,
+            HumanHitZoneTable.Soldier[HumanDamage.ProximityZone].Multiplier);
         Assert.Equal(1, HumanHitZoneTable.HitsToKill(0.05f, HumanHitZoneTable.LethalMultiplier));
 
-        // Zone 16 - the sub-objects the map sends there - is lethal too, so the head and neck are one
-        // region split in two.
-        Assert.Equal(HumanHitZoneTable.LethalMultiplier, HumanHitZoneTable.Player[16].Multiplier);
-
-        // And they are the only two.
+        // Zone 16 is lethal too, so head and neck are one region split in two - and they are the only
+        // two on the soldier's table.
         Assert.Equal(
             [HumanDamage.ProximityZone, 16],
-            HumanHitZoneTable.Player
+            HumanHitZoneTable.Soldier
                 .Index()
                 .Where(p => p.Item.Multiplier >= HumanHitZoneTable.LethalMultiplier)
                 .Select(p => p.Index));
+
+        // The player's table has none at all.
+        Assert.DoesNotContain(
+            HumanHitZoneTable.Player,
+            z => z.Multiplier >= HumanHitZoneTable.LethalMultiplier);
     }
 
     [RequiresGameDataFact]
     public void EveryWeaponInTheRosterKillsInstantlyWithAHeadshot()
     {
         // The weakest weapon in the game has a damage factor of 0.05, which is still five times what a
-        // lethal zone needs. So there is no weapon a headshot fails to kill with.
+        // lethal zone needs. So there is no weapon a headshot fails to kill a SOLDIER with - the player
+        // has no lethal zone at all.
         WeaponTypeRegistry weapons = LoadWeapons();
 
         foreach (WeaponType weapon in weapons.Weapons.Where(w => w.DamageFactor > 0f))
@@ -171,6 +183,42 @@ public sealed class HumanHitZoneTableTests
 
     private static IEnumerable<int> Reactions(IReadOnlyList<HumanHitZone> table) =>
         table.SelectMany(z => new[] { z.ReactionA, z.ReactionB }).Distinct().Order();
+
+    [RequiresGameDataFact]
+    public void TheHitZoneMultipliersComeFromHumanPlayerQvm()
+    {
+        // The two halves of this meet here. M8 read humanplayer.qvm's 43 arguments and found that 9
+        // onwards were two 17-row tables it could not name. M9 found what the tables ARE, from the
+        // binary. DefineHumanPlayer (0x410070) writes arguments 9..25 into 0x5389F8 and 26..42 into
+        // 0x538B08 - which are the hit-zone tables - so the multipliers are script data, not compiled
+        // constants, and the port should read them from the script.
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+
+        HumanPlayerConfig config = new();
+        config.Register(loop.Natives);
+        config.Load(resources, loop.Natives);
+
+        Assert.NotNull(config.Parameters);
+        HumanPlayerParameters parameters = config.Parameters;
+
+        Assert.Equal(HumanDamage.ZoneCount, HumanPlayerParameters.TableRowCount);
+        Assert.Equal(9, HumanPlayerParameters.FirstTableArgument);
+
+        // The script's own values are the multipliers this port hardcoded from the binary's static
+        // initialiser. If those disagreed, the static data would be stale and the script would win.
+        // The script's values are the player's real multipliers - head and neck worth a torso, not
+        // lethal. The executable's compiled initialiser says 100 there and is stale.
+        Assert.Equal(
+            HumanHitZoneTable.Player.Select(z => z.Multiplier),
+            parameters.FirstTable);
+
+        // The second table the script fills is written and never read; its head and neck carry 100000.
+        Assert.Equal(HumanHitZoneTable.UnusedSecondTable, parameters.SecondTable);
+        Assert.NotEqual(parameters.FirstTable, parameters.SecondTable);
+    }
 
     private static IEnumerable<int> Ids(IReadOnlyList<HumanHitZone> table) =>
         table.SelectMany(z => new[] { z.LimbAnimation, z.ReactionA, z.ReactionB }).Distinct().Order();
