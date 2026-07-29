@@ -183,6 +183,12 @@ using (window)
     SkyRenderer? sky = null;
     FreeCamera? camera = null;
 
+    // The walking player. F1 swaps between it and the free camera: the camera is how a level is
+    // inspected, the player is how it is stood in. Both draw through the same Camera3D.
+    PlayerCamera? player = null;
+    TerrainData? playerTerrain = null;
+    bool playerMode = false;
+
     // The camera's projection, in one place: the terrain traversal needs the same field of view the
     // projection matrix is built from, or it would cull against a frustum the picture does not have.
     // The far plane is shared with the sky, which sizes its dome from it.
@@ -234,6 +240,32 @@ using (window)
         camera = options.CameraPosition is { } at
             ? new FreeCamera(new Vector3d(at.X, at.Y, at.Z), options.CameraYaw, options.CameraPitch)
             : CreateCamera(scene, options.CameraYaw, options.CameraPitch, options.CameraHeight);
+
+        // The player stands where the camera looks from, dropped onto whatever is under it. A level
+        // whose terrain is not live data has nothing to stand on, so the player stays unavailable and
+        // F1 does nothing.
+        playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
+        player = null;
+        playerMode = false;
+
+        if (playerTerrain is not null)
+        {
+            PlayerCamera candidate = new();
+            if (candidate.Place(playerTerrain, camera.Position, options.CameraYaw))
+            {
+                player = candidate;
+                playerMode = options.StartWalking;
+                logger.Information(
+                    "Player",
+                    playerMode
+                        ? $"Walking from {candidate.Position}; F1 returns to the free camera."
+                        : $"Standing by at {candidate.Position}; press F1 to walk.");
+            }
+            else
+            {
+                logger.Warning("Player", "No ground under the opening view, so F1 has nothing to stand on.");
+            }
+        }
 
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.
@@ -336,6 +368,27 @@ using (window)
         // frame — so consuming it only on a render threw most of the mouse movement away and made the
         // view lurch. It also runs on real elapsed time: a fixed step tied flying speed to the frame
         // rate, which is not what a person moving a mouse expects.
+        // F1 swaps between flying and walking. The player takes the camera's position when it is
+        // switched on, so the swap happens where you were looking.
+        if (window.Input.Keyboard.WasPressed(OpenIGI.Input.KeyCode.F1) && player is not null && camera is not null)
+        {
+            playerMode = !playerMode;
+            if (playerMode)
+            {
+                if (!player.Place(playerTerrain!, camera.Position, camera.Yaw))
+                {
+                    playerMode = false;
+                    logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
+                }
+            }
+            else
+            {
+                camera.MoveTo(player.Camera.Position, player.Body.Yaw, player.Body.Pitch);
+            }
+
+            logger.Information("Player", playerMode ? "Walking." : "Flying.");
+        }
+
         if (camera is not null)
         {
             int nowMilliseconds = loop.TimeSource.Milliseconds;
@@ -346,11 +399,21 @@ using (window)
             float rawY = window.Input.Mouse.DeltaY;
             bool right = window.Input.Mouse.IsDown(OpenIGI.Input.MouseButton.Right);
 
-            camera.Update(window.Input, elapsed);
+            if (playerMode && player is not null)
+            {
+                // Looking is per frame so the view is as smooth as the display allows; the body itself
+                // moves on the fixed tick below, so it steps identically whatever the frame rate.
+                player.Look(window.Input, elapsed);
+                window.CursorLocked = player.IsCapturingMouse;
+            }
+            else
+            {
+                camera.Update(window.Input, elapsed);
 
-            // The cursor is locked away while a mouse button is held, the way a scene editor's is, so
-            // the view keeps turning however far the mouse is dragged. It comes back on release.
-            window.CursorLocked = camera.IsCapturingMouse;
+                // The cursor is locked away while a mouse button is held, the way a scene editor's is,
+                // so the view keeps turning however far the mouse is dragged. It comes back on release.
+                window.CursorLocked = camera.IsCapturingMouse;
+            }
 
             if (options.LogCamera && (right || rawX != 0f || rawY != 0f))
             {
@@ -362,7 +425,17 @@ using (window)
             }
         }
 
-        if (loop.RunFrame() != FrameOutcome.Render)
+        FrameOutcome outcome = loop.RunFrame();
+
+        // The body advances on the simulation tick, never on elapsed time - that is what keeps its
+        // motion the game's own rather than the display's.
+        if (outcome is FrameOutcome.Tick or FrameOutcome.Render
+            && playerMode && player is not null && playerTerrain is not null)
+        {
+            player.Tick(window.Input, playerTerrain);
+        }
+
+        if (outcome != FrameOutcome.Render)
         {
             continue;
         }
@@ -379,9 +452,11 @@ using (window)
             // The sky is behind everything and writes no depth, so it goes first; then terrain, which
             // is opaque and covers most of the screen, so drawing it before the objects gives the
             // depth test the most to reject.
-            sky?.Draw(camera.Camera, projection, loop.TimeSource.Milliseconds / 1000f);
-            terrain?.Draw(camera.Camera, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
-            world.Draw(scene, camera.Camera, projection);
+            Camera3D eye = playerMode && player is not null ? player.Camera : camera.Camera;
+
+            sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
+            terrain?.Draw(eye, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
+            world.Draw(scene, eye, projection);
 
             if (!reportedWorld)
             {

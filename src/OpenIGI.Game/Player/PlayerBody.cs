@@ -177,6 +177,16 @@ public sealed class PlayerBody
         IsGrounded = false;
     }
 
+    /// <summary>How far a placement search looks below its start, in world units.</summary>
+    /// <remarks>
+    /// Half a kilometre. Placement is <b>not</b> the runtime ground query and does not share its
+    /// four-metre reach: dropping a player into a level starts from wherever the caller was looking,
+    /// which may be tens of metres up. The search walks down in whole probe lengths and takes the
+    /// first ground it meets, so it lands on the highest surface below the start rather than the
+    /// lowest.
+    /// </remarks>
+    public const double PlacementSearchUnits = 500.0 * 4096.0;
+
     /// <summary>Drops the player onto the ground beneath it, for placing one at the start of a level.</summary>
     /// <param name="terrain">The level's terrain.</param>
     /// <returns><see langword="false"/> when there is nothing under the player to stand on.</returns>
@@ -186,14 +196,21 @@ public sealed class PlayerBody
         ArgumentNullException.ThrowIfNull(terrain);
 
         double from = Position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
-        if (!TerrainHeightQuery.TryGetGround(terrain, Position.X, Position.Y, from, out TerrainGround ground))
+        double floor = from - PlacementSearchUnits;
+
+        while (from > floor)
         {
-            return false;
+            if (TerrainHeightQuery.TryGetGround(terrain, Position.X, Position.Y, from, out TerrainGround ground))
+            {
+                Position = new Vector3d(Position.X, Position.Y, ground.Height);
+                Velocity = default;
+                IsGrounded = true;
+                return true;
+            }
+
+            from -= TerrainHeightQuery.SearchDepthUnits;
         }
 
-        Position = new Vector3d(Position.X, Position.Y, ground.Height);
-        Velocity = default;
-        IsGrounded = true;
-        return true;
+        return false;
     }
 }

@@ -101,6 +101,24 @@ public sealed class FreeCamera
     /// <summary>Gets the camera as the renderer wants it.</summary>
     public Camera3D Camera => new(Position, Camera3D.LookRotation(_yaw, _pitch));
 
+    /// <summary>Gets which way the camera faces, in radians.</summary>
+    public float Yaw => _yaw;
+
+    /// <summary>Gets how far up or down the camera looks, in radians.</summary>
+    public float Pitch => _pitch;
+
+    /// <summary>Puts the camera somewhere, facing a given way.</summary>
+    /// <param name="position">Where to put it.</param>
+    /// <param name="yaw">Which way to face, in radians.</param>
+    /// <param name="pitch">How far up or down to look, in radians.</param>
+    /// <remarks>Used to hand the view back from the walking player, so a swap does not jump.</remarks>
+    public void MoveTo(Vector3d position, float yaw, float pitch)
+    {
+        Position = position;
+        _yaw = yaw;
+        _pitch = pitch;
+    }
+
     /// <summary>Advances the camera by one frame of input.</summary>
     /// <param name="input">The input state.</param>
     /// <param name="seconds">How long the frame lasted.</param>
