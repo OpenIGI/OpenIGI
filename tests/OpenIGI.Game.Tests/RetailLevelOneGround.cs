@@ -4,6 +4,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -57,6 +58,29 @@ internal static class RetailLevelOneGround
         }
     }
 
+    private static LoadedMission? _mission;
+
+    /// <summary>Every model level 1's packs carry, for format probes.</summary>
+    public static IEnumerable<MefModel> Models()
+    {
+        Find();
+        if (_mission is null)
+        {
+            yield break;
+        }
+
+        foreach (LoadedPack pack in new[] { _mission.CommonPack, _mission.LevelPack })
+        {
+            foreach (MtpInstance instance in pack.Instances)
+            {
+                if (pack.TryGetModel(instance, out MefModel? model) && model is not null)
+                {
+                    yield return model;
+                }
+            }
+        }
+    }
+
     private static TerrainData LoadTerrain(out WorldScene scene)
     {
         VirtualFileSystem fileSystem = new();
@@ -80,6 +104,7 @@ internal static class RetailLevelOneGround
             .Load(1);
 
         Assert.NotNull(mission.Terrain);
+        _mission = mission;
         scene = WorldScene.Build(mission, levelRoot, magic);
         return mission.Terrain;
     }
