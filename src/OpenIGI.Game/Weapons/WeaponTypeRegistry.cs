@@ -169,6 +169,23 @@ public sealed class WeaponTypeRegistry
     /// <remarks>Models the linear search at <c>0x413BD0</c>.</remarks>
     public bool TryGet(int weaponId, out WeaponType weapon) => _byId.TryGetValue(weaponId, out weapon!);
 
+    /// <summary>Looks a weapon up by the <c>WEAPON_ID_*</c> symbol a script names it with.</summary>
+    /// <param name="scriptId">The symbol, e.g. <c>WEAPON_ID_KNIFE</c>.</param>
+    /// <param name="weapon">Receives the weapon when the symbol is known.</param>
+    /// <returns><see langword="true"/> when the roster carries it.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="scriptId"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// This is the lookup a <b>level</b> needs, as opposed to the two the executable does: a mission's
+    /// <c>objects.qvm</c> declares its loadout with these symbols rather than with numeric ids, so
+    /// <see cref="Player.PlayerLoadout"/> resolves through here.
+    /// </remarks>
+    public bool TryGetByScriptId(string scriptId, out WeaponType weapon)
+    {
+        ArgumentNullException.ThrowIfNull(scriptId);
+        weapon = _weapons.Find(candidate => string.Equals(candidate.ScriptId, scriptId, StringComparison.Ordinal))!;
+        return weapon is not null;
+    }
+
     /// <summary>Looks a weapon up by the model it is drawn with.</summary>
     /// <param name="gunModel">The model name.</param>
     /// <param name="weapon">Receives the first weapon using that model.</param>

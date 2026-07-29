@@ -306,6 +306,15 @@ using (window)
                 logger.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
             }
 
+            // What the mission arms you with is declared, not computed: weapon tasks hang off the
+            // level's own HumanPlayer. Reading it is the first link in drawing a gun; the rest of that
+            // chain - a first-person view and the weapon's model - is not built yet, so for now this
+            // reports the loadout rather than showing it.
+            if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
+            {
+                logger.Information("Player", $"Carrying {loadout}.");
+            }
+
             // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
             // with a Position and a Gamma. Standing there is standing where the game starts you.
             bool placed = PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn)

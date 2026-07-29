@@ -60,6 +60,15 @@ internal static class RetailLevelOneGround
 
     private static LoadedMission? _mission;
     private static WorldScene? _scene;
+    private static LevelTask? _levelRoot;
+
+    /// <summary>Level 1's loaded task tree.</summary>
+    public static LevelTask LevelRoot()
+    {
+        Find();
+        Assert.NotNull(_levelRoot);
+        return _levelRoot;
+    }
 
     /// <summary>Level 1's built scene, for tests that need its placements.</summary>
     public static WorldScene Scene()
@@ -108,6 +117,7 @@ internal static class RetailLevelOneGround
         TerrainLoader terrainLoader = new(resources, loop.Natives);
 
         LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        _levelRoot = levelRoot;
         LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
         LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader, null, terrainLoader)
             .Load(1);
