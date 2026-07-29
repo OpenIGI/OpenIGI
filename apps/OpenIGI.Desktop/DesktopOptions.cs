@@ -10,7 +10,6 @@ namespace OpenIGI.Desktop;
 /// <param name="Width">The window client width in pixels, or zero for the monitor's own.</param>
 /// <param name="Height">The window client height in pixels, or zero for the monitor's own.</param>
 /// <param name="VSync">Whether presentation waits for the vertical blank.</param>
-/// <param name="UncapFrameRate">Whether to render on every frame rather than once per simulation tick.</param>
 /// <param name="ScreenshotPath">Where to write a capture of the first rendered frames, or <see langword="null"/> to run normally.</param>
 /// <param name="ExitAfterFrames">Quit after this many rendered frames, or zero to run until closed.</param>
 /// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
@@ -33,7 +32,6 @@ public readonly record struct DesktopOptions(
     int Width,
     int Height,
     bool VSync,
-    bool UncapFrameRate,
     string? ScreenshotPath,
     int ExitAfterFrames,
     int StartScreen,
@@ -62,7 +60,6 @@ public readonly record struct DesktopOptions(
         // -borderless that came before or after it.
         WindowMode? mode = null;
         bool vsync = true;
-        bool uncapFrameRate = false;
 
         // Zero, not 640x480: the default mode is borderless, whose size is the monitor's, and a size
         // only becomes meaningful once -window or -fullscreen has been asked for.
@@ -100,10 +97,6 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("novsync", StringComparison.OrdinalIgnoreCase))
             {
                 vsync = false;
-            }
-            else if (arg.Equals("uncapped", StringComparison.OrdinalIgnoreCase))
-            {
-                uncapFrameRate = true;
             }
             else if (arg.Equals("game", StringComparison.OrdinalIgnoreCase))
             {
@@ -234,7 +227,6 @@ public readonly record struct DesktopOptions(
             width,
             height,
             vsync,
-            uncapFrameRate,
             screenshot,
             exitAfterFrames,
             startScreen,
@@ -273,8 +265,6 @@ public readonly record struct DesktopOptions(
           -size WxH        Client size when windowed or exclusive.
                            Default 640x480 windowed, the monitor's own fullscreen.
           -novsync         Do not wait for the vertical blank.
-          -uncapped        Render every frame instead of once per 30 Hz simulation tick.
-                           Simulation timing is unaffected.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
           -screen <id>     Open on this menu screen instead of the one the script names.

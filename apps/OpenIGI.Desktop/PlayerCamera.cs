@@ -99,6 +99,19 @@ public sealed class PlayerCamera
         _animator = new HumanLocomotionAnimator(set);
     }
 
+    /// <summary>Makes the level's placed objects solid.</summary>
+    /// <param name="walls">The index built over the scene's placements.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="walls"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Without this the body still stands on the terrain and falls off it, but walks through every
+    /// crate and wall in the level — which is what it did before the sweep existed.
+    /// </remarks>
+    public void UseWalls(ObjectCollisionIndex walls)
+    {
+        ArgumentNullException.ThrowIfNull(walls);
+        _body.Walls = walls.Caster();
+    }
+
     /// <summary>Gives the player the tuning <c>humanplayer.qvm</c> publishes.</summary>
     /// <param name="parameters">The script's 43 values, converted into engine units.</param>
     /// <exception cref="ArgumentNullException"><paramref name="parameters"/> is <see langword="null"/>.</exception>

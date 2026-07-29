@@ -148,10 +148,6 @@ using (window)
     DesktopRenderScheduler scheduler = new(device);
     GameLoop loop = new(host: menuHost, renderer: scheduler, logger: logger);
 
-    // The arbiter renders at most once per simulation tick, so the picture is 30 Hz however fast the
-    // monitor is. Lifting the latch presents every vsync instead and leaves the tick schedule alone.
-    loop.Clock.RenderEveryFrame = options.UncapFrameRate;
-
     // The mission table is built the way the original builds it: walk LOCAL:missions and run every
     // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
     // before the Select Mission screen asks for the list.
@@ -275,6 +271,17 @@ using (window)
             catch (Exception ex) when (ex is IOException or InvalidDataException)
             {
                 logger.Warning("Player", $"Could not read the player's animations: {ex.Message}");
+            }
+
+            // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
+            // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
+            if (scene is not null)
+            {
+                ObjectCollisionIndex walls = ObjectCollisionIndex.Build(scene.Placements);
+                candidate.UseWalls(walls);
+                logger.Information(
+                    "Player",
+                    $"{walls.Count} placed object(s) are solid, {walls.TriangleCount} collision triangle(s).");
             }
 
             // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
@@ -602,14 +609,6 @@ static void ReportDisplay(SilkGameWindow window, DesktopOptions options, IIgiLog
             "Desktop",
             $"Opened at {display.RefreshRate} Hz although the monitor reports {display.MaxRefreshRate} Hz "
                 + $"at {display.Size.X}x{display.Size.Y}.");
-    }
-
-    if (!options.UncapFrameRate)
-    {
-        logger.Information(
-            "Desktop",
-            "Rendering is latched to one frame per 30 Hz simulation tick, as the original is. "
-                + "Pass -uncapped to present on every vsync instead.");
     }
 }
 

@@ -1,0 +1,122 @@
+using OpenIGI.Core.Numerics;
+
+namespace OpenIGI.Game.World;
+
+/// <summary>Where a ray met a surface.</summary>
+/// <param name="Position">The point of contact, in world units.</param>
+/// <param name="Normal">The surface's outward normal, unit length.</param>
+/// <param name="Distance">How far along the ray the contact sits, in world units.</param>
+public readonly record struct WorldRayHit(Vector3d Position, Vector3f Normal, double Distance);
+
+/// <summary>Casts a ray at the world and reports the nearest surface it meets.</summary>
+/// <param name="origin">Where the ray starts, in world units.</param>
+/// <param name="end">Where it stops.</param>
+/// <param name="hit">Receives the nearest contact.</param>
+/// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
+/// <remarks>
+/// This is the shape of what <c>0x4CDB20</c> does for one ray of its batch. Keeping it a delegate is
+/// what lets the sweep in <see cref="Player.HumanWallSweep"/> be tested against surfaces built by hand
+/// rather than only against a loaded level.
+/// </remarks>
+public delegate bool WorldRayCast(Vector3d origin, Vector3d end, out WorldRayHit hit);
+
+/// <summary>Ray against a triangle.</summary>
+/// <remarks>
+/// <para>
+/// The Möller–Trumbore test. <b>This is geometry, not transcription</b> — unlike everything around it,
+/// it was not read out of the executable. A ray-triangle intersection has one answer, and the original's
+/// own test (reached through <c>0x4CDB20</c>'s shape dispatch) has not been read. What <i>was</i> read,
+/// and is what actually decides how the player moves, is which surfaces count as walls and what happens
+/// when one is met — see <see cref="Player.HumanWallSweep"/>.
+/// </para>
+/// <para>
+/// Both faces are hit. A collision mesh's winding is not established, and treating one side as
+/// invisible would let the player walk out through a wall they had somehow got behind.
+/// </para>
+/// </remarks>
+public static class RayTriangle
+{
+    /// <summary>How near parallel a ray may be to a triangle before it counts as missing it.</summary>
+    public const double ParallelEpsilon = 1e-9;
+
+    /// <summary>Intersects a ray with a triangle.</summary>
+    /// <param name="origin">The ray's start.</param>
+    /// <param name="direction">Its direction; need not be unit length.</param>
+    /// <param name="a">The first vertex.</param>
+    /// <param name="b">The second.</param>
+    /// <param name="c">The third.</param>
+    /// <param name="distance">
+    /// Receives the hit's distance as a fraction of <paramref name="direction"/>, so a value in
+    /// <c>[0, 1)</c> lies within the segment.
+    /// </param>
+    /// <remarks>
+    /// <b>The far end is exclusive</b>, and that matters more than it looks. After a slide the body
+    /// rests exactly one skin width off the wall, so the next tick's ray — which reaches a skin further
+    /// than the move — ends precisely on that same surface. Counting it would make the sweep slide to
+    /// the same point ten times over and then revert the move entirely, so walking into any wall would
+    /// stop you dead instead of letting you slide along it.
+    /// </remarks>
+    /// <returns><see langword="false"/> when the ray misses.</returns>
+    public static bool Intersect(
+        Vector3d origin,
+        Vector3d direction,
+        Vector3d a,
+        Vector3d b,
+        Vector3d c,
+        out double distance)
+    {
+        distance = 0.0;
+
+        Vector3d ab = new(b.X - a.X, b.Y - a.Y, b.Z - a.Z);
+        Vector3d ac = new(c.X - a.X, c.Y - a.Y, c.Z - a.Z);
+
+        Vector3d p = Cross(direction, ac);
+        double determinant = Dot(ab, p);
+
+        if (Math.Abs(determinant) < ParallelEpsilon)
+        {
+            return false;
+        }
+
+        double inverse = 1.0 / determinant;
+        Vector3d t = new(origin.X - a.X, origin.Y - a.Y, origin.Z - a.Z);
+
+        double u = Dot(t, p) * inverse;
+        if (u < 0.0 || u > 1.0)
+        {
+            return false;
+        }
+
+        Vector3d q = Cross(t, ab);
+        double v = Dot(direction, q) * inverse;
+        if (v < 0.0 || u + v > 1.0)
+        {
+            return false;
+        }
+
+        distance = Dot(ac, q) * inverse;
+        return distance >= 0.0 && distance < 1.0;
+    }
+
+    /// <summary>The triangle's unit normal.</summary>
+    /// <param name="a">The first vertex.</param>
+    /// <param name="b">The second.</param>
+    /// <param name="c">The third.</param>
+    /// <returns>The normal, or zero for a degenerate triangle.</returns>
+    public static Vector3d Normal(Vector3d a, Vector3d b, Vector3d c)
+    {
+        Vector3d ab = new(b.X - a.X, b.Y - a.Y, b.Z - a.Z);
+        Vector3d ac = new(c.X - a.X, c.Y - a.Y, c.Z - a.Z);
+        Vector3d n = Cross(ab, ac);
+
+        double length = Math.Sqrt(Dot(n, n));
+        return length > 0.0 ? new Vector3d(n.X / length, n.Y / length, n.Z / length) : default;
+    }
+
+    private static Vector3d Cross(Vector3d l, Vector3d r) => new(
+        (l.Y * r.Z) - (l.Z * r.Y),
+        (l.Z * r.X) - (l.X * r.Z),
+        (l.X * r.Y) - (l.Y * r.X));
+
+    private static double Dot(Vector3d l, Vector3d r) => (l.X * r.X) + (l.Y * r.Y) + (l.Z * r.Z);
+}

@@ -31,11 +31,12 @@ public readonly record struct PlayerCommand(
 /// </para>
 /// <para>
 /// <b>What is faithful and what is not.</b> Gravity, the air control, the root-motion scale and
-/// rotation, the tick rate, the eye height and the ground query are all read from the game — the
-/// tunables from <see cref="Parameters"/>, which is the script's own. What is <i>not</i> here
-/// is the object sweep — <c>0x4CDB20</c> is unread — so the body collides with terrain only and walks
-/// through placed models. The locomotion state machine (<c>player.md</c> §5) also is not driving the
-/// animation choice yet; the caller supplies the delta translation.
+/// rotation, the tick rate, the eye height, the ground query, the wall sweep and the slope slide are
+/// all read from the game — the tunables from <see cref="Parameters"/>, which is the script's own.
+/// What is <i>not</i> is the broad phase: <see cref="Walls"/> walks a flat list of placed objects
+/// rather than the octree <c>0x4C6940</c> commits into. It finds the same surfaces. The locomotion
+/// state machine drives the direction (<see cref="HumanLocomotionStates.ForDirection"/>) but not yet
+/// the full 49-state graph.
 /// </para>
 /// </remarks>
 public sealed class PlayerBody
@@ -132,6 +133,28 @@ public sealed class PlayerBody
     /// </remarks>
     public Vector3f InheritedVelocity { get; set; }
 
+    /// <summary>Gets or sets the ray cast the wall sweep uses, or <see langword="null"/> for terrain only.</summary>
+    /// <remarks>
+    /// Build one with <see cref="ObjectCollisionIndex.Build"/> and hand over its
+    /// <see cref="ObjectCollisionIndex.Caster"/>. Left unset the body still stands, walks and falls —
+    /// it simply walks through anything placed, which is what it did before the sweep existed.
+    /// </remarks>
+    public WorldRayCast? Walls { get; set; }
+
+    /// <summary>Gets whether the last tick's move was stopped by a wall.</summary>
+    /// <remarks>Flag <c>0x8</c> in <c>Human+756</c>, raised by <c>0x461A70</c> when it slides.</remarks>
+    public bool TouchedWall { get; private set; }
+
+    /// <summary>Gets the slope slide the body has accumulated, in units per tick.</summary>
+    /// <remarks>
+    /// <see cref="HumanSlopeSlide"/>'s four bands, damped by 0.9 a tick. Zero on anything under 45°,
+    /// which is most ground.
+    /// </remarks>
+    public Vector3f SlopeSlide { get; private set; }
+
+    /// <summary>Gets the normal of the ground under the feet, or <see langword="null"/> when airborne.</summary>
+    public Vector3f? GroundNormal { get; private set; }
+
     /// <summary>Gets whether the player is standing on something.</summary>
     public bool IsGrounded { get; private set; }
 
@@ -171,7 +194,10 @@ public sealed class PlayerBody
         // The move is velocity PLUS the animation's step, always - 0x4614B0 adds them rather than
         // choosing between them. On the ground the velocity is zero and the step carries; in the air
         // the falling animation covers no ground and the velocity carries.
-        Vector3d next = new(Position.X + step.X, Position.Y + step.Y, Position.Z);
+        Vector3d next = new(
+            Position.X + step.X + SlopeSlide.X,
+            Position.Y + step.Y + SlopeSlide.Y,
+            Position.Z + SlopeSlide.Z);
 
         bool tookOff = false;
 
@@ -230,7 +256,27 @@ public sealed class PlayerBody
             next = new Vector3d(next.X + Velocity.X, next.Y + Velocity.Y, next.Z + Velocity.Z);
         }
 
+        // The walls, then the ground. 0x4614B0 runs the world sweep (0x461A70) before the ground query
+        // (0x462390) for the same reason: sliding along a wall changes where you land.
+        if (Walls is not null)
+        {
+            HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, IsGrounded, IsCrouched, Walls);
+            next = swept.Destination;
+            TouchedWall = swept.TouchedWall;
+        }
+        else
+        {
+            TouchedWall = false;
+        }
+
         Settle(ref next, terrain);
+
+        // The slide is accumulated from the ground under the feet, damped, and carried into the next
+        // tick's move - which is why a slope you cannot stand on keeps moving you after you stop
+        // pressing anything.
+        SlopeSlide = HumanSlopeSlide.Damp(
+            HumanSlopeSlide.Accumulate(SlopeSlide, IsGrounded ? GroundNormal : null));
+
         Position = next;
     }
 
@@ -350,6 +396,7 @@ public sealed class PlayerBody
         if (!TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
         {
             IsGrounded = false;
+            GroundNormal = null;
             return;
         }
 
@@ -362,10 +409,12 @@ public sealed class PlayerBody
             position = new Vector3d(position.X, position.Y, ground.Height);
             Velocity = new Vector3f(Velocity.X, Velocity.Y, 0f);
             IsGrounded = true;
+            GroundNormal = new Vector3f((float)ground.NormalX, (float)ground.NormalY, (float)ground.NormalZ);
             return;
         }
 
         IsGrounded = false;
+        GroundNormal = null;
     }
 
     /// <summary>How far a placement search looks below its start, in world units.</summary>

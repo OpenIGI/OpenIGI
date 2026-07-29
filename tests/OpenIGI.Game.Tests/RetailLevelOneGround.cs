@@ -59,6 +59,15 @@ internal static class RetailLevelOneGround
     }
 
     private static LoadedMission? _mission;
+    private static WorldScene? _scene;
+
+    /// <summary>Level 1's built scene, for tests that need its placements.</summary>
+    public static WorldScene Scene()
+    {
+        Find();
+        Assert.NotNull(_scene);
+        return _scene;
+    }
 
     /// <summary>Every model level 1's packs carry, for format probes.</summary>
     public static IEnumerable<MefModel> Models()
@@ -106,6 +115,7 @@ internal static class RetailLevelOneGround
         Assert.NotNull(mission.Terrain);
         _mission = mission;
         scene = WorldScene.Build(mission, levelRoot, magic);
+        _scene = scene;
         return mission.Terrain;
     }
 
