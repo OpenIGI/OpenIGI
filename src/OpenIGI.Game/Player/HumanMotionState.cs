@@ -11,6 +11,19 @@ namespace OpenIGI.Game.Player;
 /// where a bit's <em>meaning</em> is inferred rather than read, the member says so.
 /// </para>
 /// </remarks>
+/// <remarks>
+/// <para>
+/// <b>The four movement flags are the action mask's own bits shifted up five.</b> The binding table
+/// (<see cref="PlayerAction"/>) gives <c>MoveLeft</c> 0x1, <c>MoveRight</c> 0x2, <c>MoveUp</c> 0x4 and
+/// <c>MoveDown</c> 0x8; here they are 0x20, 0x40, 0x80 and 0x100, in the same order.
+/// </para>
+/// <para>
+/// Which is which was settled by the animations rather than by the names: state 0's per-tick
+/// (<c>0x4087B0</c>) sends 0x80 to state 1, 0x100 to state 4, 0x40 to state 7 and 0x20 to state 8, and
+/// sampling those states' root-motion tracks shows them travelling +Y, −Y, +X and −X — forward,
+/// backward, right and left.
+/// </para>
+/// </remarks>
 [Flags]
 public enum HumanMotionState : uint
 {
@@ -23,17 +36,17 @@ public enum HumanMotionState : uint
     /// </summary>
     OnGround = 0x4,
 
-    /// <summary>A movement direction. Drives idle → state 8, or state 16 when crouched.</summary>
-    Move20 = 0x20,
+    /// <summary>Strafing left — the action mask's <c>MoveLeft</c>, shifted up five.</summary>
+    MoveLeft = 0x20,
 
-    /// <summary>A movement direction. Drives idle → state 7, or state 15 when crouched.</summary>
-    Move40 = 0x40,
+    /// <summary>Strafing right.</summary>
+    MoveRight = 0x40,
 
-    /// <summary>A movement direction. Drives idle → state 1, or state 9 when crouched.</summary>
-    Move80 = 0x80,
+    /// <summary>Moving forward.</summary>
+    MoveForward = 0x80,
 
-    /// <summary>A movement direction. Drives idle → state 4, or state 12 when crouched.</summary>
-    Move100 = 0x100,
+    /// <summary>Moving backward.</summary>
+    MoveBackward = 0x100,
 
     /// <summary>Drives idle → state 19, the lowest-priority transition out of idle.</summary>
     Turn = 0x2000,

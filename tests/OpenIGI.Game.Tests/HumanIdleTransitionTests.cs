@@ -20,7 +20,7 @@ public sealed class HumanIdleTransitionTests
         // First test in the chain: even a dying human that is also moving and jumping falls.
         HumanMotionState everything =
             HumanMotionState.Death46 | HumanMotionState.Death47 |
-            HumanMotionState.Move80 | HumanMotionState.Turn;
+            HumanMotionState.MoveForward | HumanMotionState.Turn;
 
         Assert.Equal(
             HumanIdleTransitions.Falling,
@@ -30,8 +30,8 @@ public sealed class HumanIdleTransitionTests
     [Fact]
     public void DeathBeatsMovement()
     {
-        Assert.Equal(46, HumanIdleTransitions.Next(Grounded | HumanMotionState.Death46 | HumanMotionState.Move80, false));
-        Assert.Equal(47, HumanIdleTransitions.Next(Grounded | HumanMotionState.Death47 | HumanMotionState.Move80, false));
+        Assert.Equal(46, HumanIdleTransitions.Next(Grounded | HumanMotionState.Death46 | HumanMotionState.MoveForward, false));
+        Assert.Equal(47, HumanIdleTransitions.Next(Grounded | HumanMotionState.Death47 | HumanMotionState.MoveForward, false));
 
         // 46 is tested before 47.
         Assert.Equal(
@@ -42,10 +42,10 @@ public sealed class HumanIdleTransitionTests
     [Fact]
     public void TheFourDirectionsMapToTheirStandingStates()
     {
-        Assert.Equal(1, HumanIdleTransitions.Next(Grounded | HumanMotionState.Move80, false));
-        Assert.Equal(4, HumanIdleTransitions.Next(Grounded | HumanMotionState.Move100, false));
-        Assert.Equal(7, HumanIdleTransitions.Next(Grounded | HumanMotionState.Move40, false));
-        Assert.Equal(8, HumanIdleTransitions.Next(Grounded | HumanMotionState.Move20, false));
+        Assert.Equal(1, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward, false));
+        Assert.Equal(4, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveBackward, false));
+        Assert.Equal(7, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveRight, false));
+        Assert.Equal(8, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveLeft, false));
     }
 
     [Fact]
@@ -53,10 +53,10 @@ public sealed class HumanIdleTransitionTests
     {
         HumanMotionState crouched = Grounded | HumanMotionState.Crouched;
 
-        Assert.Equal(9, HumanIdleTransitions.Next(crouched | HumanMotionState.Move80, false));
-        Assert.Equal(12, HumanIdleTransitions.Next(crouched | HumanMotionState.Move100, false));
-        Assert.Equal(15, HumanIdleTransitions.Next(crouched | HumanMotionState.Move40, false));
-        Assert.Equal(16, HumanIdleTransitions.Next(crouched | HumanMotionState.Move20, false));
+        Assert.Equal(9, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveForward, false));
+        Assert.Equal(12, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveBackward, false));
+        Assert.Equal(15, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveRight, false));
+        Assert.Equal(16, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveLeft, false));
     }
 
     [Fact]
@@ -65,10 +65,10 @@ public sealed class HumanIdleTransitionTests
         // Holding two directions at once takes the earlier test, not a diagonal.
         Assert.Equal(
             1,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Move80 | HumanMotionState.Move20, false));
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward | HumanMotionState.MoveLeft, false));
         Assert.Equal(
             4,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Move100 | HumanMotionState.Move40, false));
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveBackward | HumanMotionState.MoveRight, false));
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class HumanIdleTransitionTests
         // button goes down takes the walk state and the jump edge is spent.
         Assert.Equal(
             1,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Move80, jumpEdge: true));
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward, jumpEdge: true));
 
         Assert.Equal(
             HumanIdleTransitions.Jump,

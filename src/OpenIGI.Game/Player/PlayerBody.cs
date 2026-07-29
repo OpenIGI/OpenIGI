@@ -130,6 +130,75 @@ public sealed class PlayerBody
         Position = next;
     }
 
+    /// <summary>Advances the player by one tick, taking its movement from its own animation.</summary>
+    /// <param name="command">What the player asked for.</param>
+    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="animator">The locomotion animator, which supplies the delta translation.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// The faithful path: the input becomes motion flags, the flags pick a locomotion state
+    /// (<see cref="HumanIdleTransitions"/>, transcribed from state zero's own per-tick), the state names
+    /// an animation, and the animation's root-motion track says how far the body moved. No speed
+    /// constant is consulted anywhere.
+    /// </para>
+    /// <para>
+    /// <b>What is still missing:</b> only the transitions <i>out of idle</i> are driven. The full
+    /// 49-state graph — the turns, the transitions between movement states, the stance changes — is
+    /// mapped in <see cref="HumanLocomotionGraph"/> and not yet walked, so a direction change restarts
+    /// a cycle rather than blending through the state the original would pass through.
+    /// </para>
+    /// </remarks>
+    public void TickAnimated(in PlayerCommand command, TerrainData terrain, HumanLocomotionAnimator animator)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+        ArgumentNullException.ThrowIfNull(animator);
+
+        animator.Enter(SelectState(command));
+        Tick(command, terrain, animator.Advance());
+    }
+
+    /// <summary>Turns this tick's intent into the locomotion state the original would be in.</summary>
+    /// <remarks>
+    /// The order is state zero's own: airborne first, then the stance, then the four movement bits in
+    /// the order forward, backward, right, left. Diagonals therefore resolve to a single state — the
+    /// first bit that matches — exactly as the original resolves them.
+    /// </remarks>
+    private int SelectState(in PlayerCommand command)
+    {
+        if (!IsGrounded)
+        {
+            return HumanLocomotionGraph.Falling;
+        }
+
+        HumanMotionState flags = HumanMotionState.OnGround;
+
+        if (command.Crouch)
+        {
+            flags |= HumanMotionState.Crouched;
+        }
+
+        if (command.Forward > 0f)
+        {
+            flags |= HumanMotionState.MoveForward;
+        }
+        else if (command.Forward < 0f)
+        {
+            flags |= HumanMotionState.MoveBackward;
+        }
+
+        if (command.Strafe > 0f)
+        {
+            flags |= HumanMotionState.MoveRight;
+        }
+        else if (command.Strafe < 0f)
+        {
+            flags |= HumanMotionState.MoveLeft;
+        }
+
+        return HumanIdleTransitions.Next(flags, command.Jump);
+    }
+
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>
     /// <remarks>
     /// <para>

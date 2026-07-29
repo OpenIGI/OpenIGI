@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
@@ -17,10 +18,9 @@ namespace OpenIGI.Desktop;
 /// stays smooth at any frame rate.
 /// </para>
 /// <para>
-/// <b>Movement is root motion.</b> There is no speed constant to set: the body moves by the animation's
-/// own delta translation. Until the locomotion state machine is driving the animation choice, the walk
-/// and run deltas here stand in for what the animation would carry — which is a divergence, and the one
-/// place in the walking player where a number is chosen rather than read.
+/// <b>Movement is root motion, from the animation.</b> There is no speed constant anywhere: the input
+/// picks a locomotion state, the state names an animation, and the animation's root-motion track says
+/// how far the body moved. Changing the animation changes the speed, which is how the original works.
 /// </para>
 /// </remarks>
 public sealed class PlayerCamera
@@ -55,6 +55,7 @@ public sealed class PlayerCamera
     public const double UnitsPerMetre = 4096.0;
 
     private readonly PlayerBody _body = new();
+    private HumanLocomotionAnimator? _animator;
     private bool _wasCapturing;
     private bool _jumpHeld;
 
@@ -84,6 +85,22 @@ public sealed class PlayerCamera
         _body.Yaw = yaw;
         return _body.PlaceOnGround(terrain);
     }
+
+    /// <summary>Gives the player the animation set its skeleton uses.</summary>
+    /// <param name="set">The set, normally <c>000.iff</c> — the one the player's own skeleton indexes.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="set"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Without this the player still stands and falls but cannot walk, because nothing supplies a
+    /// delta translation — which is the honest failure mode rather than a guessed speed.
+    /// </remarks>
+    public void UseAnimations(BoneAnimationSet set)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        _animator = new HumanLocomotionAnimator(set);
+    }
+
+    /// <summary>Gets the locomotion state the player is in, for diagnostics.</summary>
+    public int LocomotionState => _animator?.State ?? 0;
 
     /// <summary>Puts the player at a spawn the level declared.</summary>
     /// <param name="terrain">The level's terrain.</param>
@@ -171,26 +188,15 @@ public sealed class PlayerCamera
 
         PlayerCommand command = new(forward, strafe, 0f, 0f, run, crouch, jump);
 
-        float speed = run ? RunDeltaPerTick : WalkDeltaPerTick;
-        if (crouch)
+        if (_animator is null)
         {
-            speed *= 0.5f;
+            // No animation set, so nothing can say how far a step covers. Standing and falling still
+            // work; walking does not, which is better than inventing a speed.
+            _body.Tick(command, terrain, default);
+            return;
         }
 
-        // X is sideways and Y is forward, matching the view's right and forward axes. Putting them the
-        // other way round walks the player at right angles to where it is looking.
-        //
-        // Diagonal movement is normalised, or walking into a corner would be faster than walking at a
-        // wall - a mistake the original does not make because its animations carry the translation.
-        Vector3f delta = new(strafe * speed, forward * speed, 0f);
-        float lengthSquared = (delta.X * delta.X) + (delta.Y * delta.Y);
-        if (lengthSquared > speed * speed)
-        {
-            float scale = speed / MathF.Sqrt(lengthSquared);
-            delta = new Vector3f(delta.X * scale, delta.Y * scale, 0f);
-        }
-
-        _body.Tick(command, terrain, delta);
+        _body.TickAnimated(command, terrain, _animator);
     }
 
     private static float Axis(KeyboardState keys, KeyCode positive, KeyCode negative)

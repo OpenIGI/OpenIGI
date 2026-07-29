@@ -257,6 +257,26 @@ using (window)
         {
             PlayerCamera candidate = new();
 
+            // Walking is the animation's own root motion, so without a set the player can stand and
+            // fall but not walk. 000.iff is the set the player's skeleton indexes.
+            try
+            {
+                string animations = Path.Combine(gamePath, "common", "anims", "000.iff");
+                if (File.Exists(animations))
+                {
+                    candidate.UseAnimations(
+                        OpenIGI.Formats.Animation.BoneAnimationSet.Read(File.ReadAllBytes(animations)));
+                }
+                else
+                {
+                    logger.Warning("Player", $"No animation set at {animations}; the player cannot walk.");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException)
+            {
+                logger.Warning("Player", $"Could not read the player's animations: {ex.Message}");
+            }
+
             // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
             // with a Position and a Gamma. Standing there is standing where the game starts you.
             bool placed = PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn)

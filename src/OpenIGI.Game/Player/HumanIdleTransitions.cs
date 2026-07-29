@@ -60,22 +60,22 @@ public static class HumanIdleTransitions
         bool crouched = (flags & HumanMotionState.Crouched) != 0;
 
         // The four directions are tested in the same order either way; only the target changes.
-        if ((flags & HumanMotionState.Move80) != 0)
+        if ((flags & HumanMotionState.MoveForward) != 0)
         {
             return crouched ? 9 : 1;
         }
 
-        if ((flags & HumanMotionState.Move100) != 0)
+        if ((flags & HumanMotionState.MoveBackward) != 0)
         {
             return crouched ? 12 : 4;
         }
 
-        if ((flags & HumanMotionState.Move40) != 0)
+        if ((flags & HumanMotionState.MoveRight) != 0)
         {
             return crouched ? 15 : 7;
         }
 
-        if ((flags & HumanMotionState.Move20) != 0)
+        if ((flags & HumanMotionState.MoveLeft) != 0)
         {
             return crouched ? 16 : 8;
         }
@@ -102,10 +102,10 @@ public static class HumanIdleTransitions
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="direction"/> is not a movement bit.</exception>
     public static int ForDirection(HumanMotionState direction, bool crouched) => direction switch
     {
-        HumanMotionState.Move80 => crouched ? 9 : 1,
-        HumanMotionState.Move100 => crouched ? 12 : 4,
-        HumanMotionState.Move40 => crouched ? 15 : 7,
-        HumanMotionState.Move20 => crouched ? 16 : 8,
+        HumanMotionState.MoveForward => crouched ? 9 : 1,
+        HumanMotionState.MoveBackward => crouched ? 12 : 4,
+        HumanMotionState.MoveRight => crouched ? 15 : 7,
+        HumanMotionState.MoveLeft => crouched ? 16 : 8,
         _ => throw new ArgumentOutOfRangeException(nameof(direction), direction, "Not a movement bit."),
     };
 }
