@@ -2,6 +2,7 @@ using OpenIGI.TestSupport;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -51,36 +52,56 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
-    public void APlayerWalksInTheDirectionItFaces()
+    public void APlayerWalksAlongTheAxisItIsLookingDown()
+    {
+        // The check that stops the walk drifting away from the view again: the step the body takes is
+        // compared against the camera's OWN forward axis, not against a hand-written expectation. If
+        // the facing basis is ever transposed or the delta's axes swapped, this fails.
+        Vector3f delta = new(0f, (float)(UnitsPerMetre / 30.0 / HumanMotion.DefaultDeltaTranslationScale), 0f);
+
+        foreach (float yaw in new[] { 0f, MathF.PI / 2f, 2.3f, -1.1f })
+        {
+            (TerrainData terrain, PlayerBody player) = OnLevelOne();
+            player.Yaw = yaw;
+            Vector3d start = player.Position;
+
+            for (int tick = 0; tick < 30; tick++)
+            {
+                player.Tick(default, terrain, delta);
+            }
+
+            double movedX = player.Position.X - start.X;
+            double movedY = player.Position.Y - start.Y;
+            double distance = Math.Sqrt((movedX * movedX) + (movedY * movedY));
+
+            Assert.True(distance > 0.9 * UnitsPerMetre, $"yaw {yaw}: walked only {distance / UnitsPerMetre:0.##} m");
+
+            // The camera's forward at this yaw, flattened.
+            Matrix3f view = Camera3D.LookRotation(yaw, 0f);
+            Vector3f forward = view.Row3;
+
+            double dot = ((movedX / distance) * forward.X) + ((movedY / distance) * forward.Y);
+            Assert.True(dot > 0.999, $"yaw {yaw}: walked {dot:0.###} along the way it was looking");
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void StrafingGoesSidewaysNotForward()
     {
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        player.Yaw = 0f;
         Vector3d start = player.Position;
 
-        // A metre a second, which is what a walk animation's delta would carry.
+        // X is the sideways axis; at yaw zero the view looks along +Y, so strafing must move along X.
         Vector3f delta = new((float)(UnitsPerMetre / 30.0 / HumanMotion.DefaultDeltaTranslationScale), 0f, 0f);
 
-        player.Yaw = 0f;
         for (int tick = 0; tick < 30; tick++)
         {
             player.Tick(default, terrain, delta);
         }
 
-        double movedX = player.Position.X - start.X;
-        Assert.True(movedX > 0.9 * UnitsPerMetre, $"walked only {movedX / UnitsPerMetre:0.##} m");
-        Assert.Equal(start.Y, player.Position.Y, 1e-6);
-
-        // Turned a quarter turn, the same delta walks along Y instead.
-        (terrain, player) = OnLevelOne();
-        start = player.Position;
-        player.Yaw = MathF.PI / 2f;
-
-        for (int tick = 0; tick < 30; tick++)
-        {
-            player.Tick(default, terrain, delta);
-        }
-
-        Assert.True(player.Position.Y - start.Y > 0.9 * UnitsPerMetre);
-        Assert.Equal(start.X, player.Position.X, 1.0);
+        Assert.True(player.Position.X - start.X > 0.9 * UnitsPerMetre);
+        Assert.Equal(start.Y, player.Position.Y, 1.0);
     }
 
     [RequiresGameDataFact]

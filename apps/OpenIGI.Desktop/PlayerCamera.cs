@@ -120,17 +120,22 @@ public sealed class PlayerCamera
         ArgumentNullException.ThrowIfNull(input);
 
         MouseState mouse = input.Mouse;
-        bool looking = mouse.IsDown(MouseButton.Right);
 
-        // The frame a button goes down is skipped: capturing the cursor warps it, and that warp arrives
-        // as a movement the player never made. FreeCamera does the same for the same reason.
-        bool settling = looking && !_wasCapturing;
-        _wasCapturing = looking;
-        IsCapturingMouse = looking;
+        // A first-person view looks wherever the mouse goes - no button held. That is the difference
+        // between standing in a level and inspecting one, and holding right mouse to turn is a scene
+        // view's idiom that FreeCamera keeps and this must not.
+        IsCapturingMouse = true;
 
-        if (looking && !settling)
+        // The first frame is still skipped: capturing the cursor warps it, and that warp arrives as a
+        // movement the player never made.
+        bool settling = !_wasCapturing;
+        _wasCapturing = true;
+
+        if (!settling)
         {
-            _body.Yaw -= mouse.DeltaX * MouseSensitivity;
+            // Mouse right turns right. The camera's forward is (sin yaw, cos yaw), so turning right -
+            // from +Y toward +X - means yaw increases.
+            _body.Yaw += mouse.DeltaX * MouseSensitivity;
             _body.Pitch = Math.Clamp(
                 _body.Pitch - (mouse.DeltaY * MouseSensitivity),
                 -PlayerBody.PitchLimit,
@@ -138,7 +143,7 @@ public sealed class PlayerCamera
         }
 
         KeyboardState keys = input.Keyboard;
-        _body.Yaw -= Axis(keys, KeyCode.Right, KeyCode.Left) * seconds * KeyTurnRate;
+        _body.Yaw += Axis(keys, KeyCode.Right, KeyCode.Left) * seconds * KeyTurnRate;
     }
 
     /// <summary>Advances the body by one simulation tick.</summary>
@@ -152,6 +157,8 @@ public sealed class PlayerCamera
 
         KeyboardState keys = input.Keyboard;
 
+        // The action names are the game's own, from the binding table at 0x536558: MoveUp and
+        // MoveDown are forward and back - named for the screen, as the era's binding dialogs were.
         float forward = Axis(keys, KeyCode.W, KeyCode.S);
         float strafe = Axis(keys, KeyCode.D, KeyCode.A);
         bool run = keys.IsDown(KeyCode.LeftShift) || keys.IsDown(KeyCode.RightShift);
@@ -170,9 +177,12 @@ public sealed class PlayerCamera
             speed *= 0.5f;
         }
 
+        // X is sideways and Y is forward, matching the view's right and forward axes. Putting them the
+        // other way round walks the player at right angles to where it is looking.
+        //
         // Diagonal movement is normalised, or walking into a corner would be faster than walking at a
         // wall - a mistake the original does not make because its animations carry the translation.
-        Vector3f delta = new(forward * speed, strafe * speed, 0f);
+        Vector3f delta = new(strafe * speed, forward * speed, 0f);
         float lengthSquared = (delta.X * delta.X) + (delta.Y * delta.Y);
         if (lengthSquared > speed * speed)
         {

@@ -266,16 +266,21 @@ using (window)
             if (placed)
             {
                 player = candidate;
-                playerMode = options.StartWalking;
+
+                // Walking is what starting a mission means. The free camera is the debugging tool, so
+                // it is the thing you switch to rather than the thing you start in.
+                playerMode = !options.StartFlying;
                 logger.Information(
                     "Player",
                     playerMode
-                        ? $"Walking from {candidate.Position}; F1 returns to the free camera."
-                        : $"Standing by at {candidate.Position}; press F1 to walk.");
+                        ? $"Standing at {candidate.Position}; F1 for the free camera."
+                        : $"Free camera; F1 to stand at {candidate.Position}.");
             }
             else
             {
-                logger.Warning("Player", "No ground under the opening view, so F1 has nothing to stand on.");
+                logger.Warning(
+                    "Player",
+                    "Nothing to stand on at the level's spawn, so this mission opens in the free camera.");
             }
         }
 

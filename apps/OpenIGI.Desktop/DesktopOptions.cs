@@ -16,7 +16,7 @@ namespace OpenIGI.Desktop;
 /// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
 /// <param name="StartMission">Load this mission at boot instead of opening the menus, or zero.</param>
 /// <param name="LogCamera">Whether to print the fly-through camera's input and orientation every frame.</param>
-/// <param name="StartWalking">Whether to open standing on the ground rather than flying.</param>
+/// <param name="StartFlying">Whether to open in the free camera instead of standing on the ground.</param>
 /// <param name="CameraYaw">The yaw in radians the fly-through camera opens on.</param>
 /// <param name="CameraPitch">The pitch in radians the fly-through camera opens on.</param>
 /// <param name="CameraHeight">Extra metres above the level to open at.</param>
@@ -39,7 +39,7 @@ public readonly record struct DesktopOptions(
     int StartScreen,
     int StartMission,
     bool LogCamera,
-    bool StartWalking,
+    bool StartFlying,
     float CameraYaw,
     float CameraPitch,
     float CameraHeight,
@@ -72,7 +72,7 @@ public readonly record struct DesktopOptions(
         (double X, double Y, double Z)? cameraPosition = null;
         int exitAfterFrames = 0;
         bool logCamera = false;
-        bool startWalking = false;
+        bool startFlying = false;
         float cameraYaw = 0f;
         float cameraPitch = -0.12f;
         float cameraHeight = 0f;
@@ -190,9 +190,15 @@ public readonly record struct DesktopOptions(
             {
                 logCamera = true;
             }
+            else if (arg.Equals("freecam", StringComparison.OrdinalIgnoreCase))
+            {
+                startFlying = true;
+            }
             else if (arg.Equals("player", StringComparison.OrdinalIgnoreCase))
             {
-                startWalking = true;
+                // Walking is the default now, so this is kept only so an existing command line does
+                // not fail. It asks for what already happens.
+                startFlying = false;
             }
             else if (arg.Equals("screen", StringComparison.OrdinalIgnoreCase))
             {
@@ -234,7 +240,7 @@ public readonly record struct DesktopOptions(
             startScreen,
             startMission,
             logCamera,
-            startWalking,
+            startFlying,
             cameraYaw,
             cameraPitch,
             cameraHeight,

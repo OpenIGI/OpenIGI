@@ -93,8 +93,8 @@ public sealed class PlayerBody
     /// <param name="command">What the player asked for.</param>
     /// <param name="terrain">The level's terrain, for the ground query.</param>
     /// <param name="rootDelta">
-    /// The animation's delta translation for this tick, in the body's own frame. Zero when the player
-    /// is not moving; the caller takes it from the locomotion animation.
+    /// The animation's delta translation for this tick, in the body's own frame: <b>X is sideways and
+    /// Y is forward</b>, matching the view's right and forward axes.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
     public void Tick(in PlayerCommand command, TerrainData terrain, Vector3f rootDelta)
@@ -132,8 +132,18 @@ public sealed class PlayerBody
 
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>
     /// <remarks>
+    /// <para>
     /// Only yaw turns the body: the pitch is the view's alone, so looking down does not walk a player
     /// into the floor.
+    /// </para>
+    /// <para>
+    /// <b>The columns are the view's own axes</b>, because the root-motion multiply reads the matrix by
+    /// rows. <see cref="OpenIGI.Rendering.Camera3D.LookRotation"/> gives right as
+    /// <c>(cos, −sin, 0)</c> and forward as <c>(sin, cos, 0)</c>; putting those in as columns is what
+    /// makes a delta of <c>(strafe, forward, 0)</c> come out along the axes the player is looking down.
+    /// Building it the other way up transposes it, and the player then walks at right angles to the
+    /// view — which is exactly the bug this comment exists to stop recurring.
+    /// </para>
     /// </remarks>
     private static Matrix3f FacingBasis(float yaw)
     {
@@ -141,8 +151,8 @@ public sealed class PlayerBody
         float sin = MathF.Sin(yaw);
 
         return Matrix3f.FromRows(
-            new Vector3f(cos, -sin, 0f),
-            new Vector3f(sin, cos, 0f),
+            new Vector3f(cos, sin, 0f),
+            new Vector3f(-sin, cos, 0f),
             new Vector3f(0f, 0f, 1f));
     }
 
