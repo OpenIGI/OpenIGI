@@ -39,15 +39,15 @@ public sealed class HumanHitZoneTableTests
     [Fact]
     public void ThePlayerAndTheSoldiersAreEquallyTough()
     {
-        // Only the bone indices and the reaction ids differ, because the skeletons differ. Every
-        // multiplier is the same, so a soldier takes damage in exactly the player's proportions.
+        // Only the animation ids differ, because a soldier does not share the player's animation set.
+        // Every multiplier is the same, so a soldier takes damage in exactly the player's proportions.
         Assert.Equal(
             HumanHitZoneTable.Player.Select(z => z.Multiplier),
             HumanHitZoneTable.Soldier.Select(z => z.Multiplier));
 
         Assert.NotEqual(
-            HumanHitZoneTable.Player.Select(z => z.BoneIndex),
-            HumanHitZoneTable.Soldier.Select(z => z.BoneIndex));
+            HumanHitZoneTable.Player.Select(z => z.LimbAnimation),
+            HumanHitZoneTable.Soldier.Select(z => z.LimbAnimation));
     }
 
     [Fact]
@@ -61,10 +61,10 @@ public sealed class HumanHitZoneTableTests
             Assert.Equal(0.75f, HumanHitZoneTable.Player[chainStart + 1].Multiplier);
             Assert.Equal(1.0f, HumanHitZoneTable.Player[chainStart + 2].Multiplier);
 
-            // And all three share a bone, which is what makes them one limb.
+            // And all three share an animation, which is what makes them one limb.
             Assert.Equal(
-                HumanHitZoneTable.Player[chainStart].BoneIndex,
-                HumanHitZoneTable.Player[chainStart + 2].BoneIndex);
+                HumanHitZoneTable.Player[chainStart].LimbAnimation,
+                HumanHitZoneTable.Player[chainStart + 2].LimbAnimation);
         }
     }
 
@@ -131,6 +131,53 @@ public sealed class HumanHitZoneTableTests
         WeaponType glock = weapons.Weapons.First(x => x.ScriptId == "WEAPON_ID_GLOCK");
         Assert.Equal(8, HumanHitZoneTable.HitsToKill(glock.DamageFactor, HumanHitZoneTable.Player[0].Multiplier));
     }
+
+    [RequiresGameDataFact]
+    public void AllThreeTrailingFieldsAreAnimationIdsInTheOwningClassesOwnSet()
+    {
+        // They read like bone indices and they are not: the skeletons carry 33 bones and the player's
+        // values run to 97. Every one of them resolves as an animation in the set its own class uses,
+        // and the two tables' values do not resolve in each other's - which is what settles it.
+        Formats.Animation.BoneAnimationSet player = LoadSet("000");
+        Formats.Animation.BoneAnimationSet soldier = LoadSet("001");
+
+        Assert.Equal(33, player.Skeleton.BoneCount);
+
+        int[] playerIds = [.. Ids(HumanHitZoneTable.Player)];
+        int[] soldierIds = [.. Ids(HumanHitZoneTable.Soldier)];
+
+        // A bone index could not exceed the bone count; these do.
+        Assert.Contains(playerIds, id => id > player.Skeleton.BoneCount);
+
+        Assert.All(playerIds, id => Assert.True(player.TryGet(id, out _), $"player id {id}"));
+        Assert.All(soldierIds, id => Assert.True(soldier.TryGet(id, out _), $"soldier id {id}"));
+
+        // They are per-set. An id is only an index, so the ranges overlap and some of each table's
+        // values happen to exist in the other set too - but never all of them, which is what says the
+        // tables are addressing their own class's animations rather than a shared numbering.
+        int[] playerReactions = [.. Reactions(HumanHitZoneTable.Player)];
+        int[] soldierReactions = [.. Reactions(HumanHitZoneTable.Soldier)];
+
+        Assert.Equal(playerReactions.Length, playerReactions.Count(id => player.TryGet(id, out _)));
+        Assert.Equal(soldierReactions.Length, soldierReactions.Count(id => soldier.TryGet(id, out _)));
+
+        Assert.True(
+            playerReactions.Count(id => soldier.TryGet(id, out _)) < playerReactions.Length,
+            "the player's reaction ids should not all exist in a soldier's set");
+        Assert.True(
+            soldierReactions.Count(id => player.TryGet(id, out _)) < soldierReactions.Length,
+            "the soldiers' reaction ids should not all exist in the player's set");
+    }
+
+    private static IEnumerable<int> Reactions(IReadOnlyList<HumanHitZone> table) =>
+        table.SelectMany(z => new[] { z.ReactionA, z.ReactionB }).Distinct().Order();
+
+    private static IEnumerable<int> Ids(IReadOnlyList<HumanHitZone> table) =>
+        table.SelectMany(z => new[] { z.LimbAnimation, z.ReactionA, z.ReactionB }).Distinct().Order();
+
+    private static Formats.Animation.BoneAnimationSet LoadSet(string name) =>
+        Formats.Animation.BoneAnimationSet.Read(
+            File.ReadAllBytes(Path.Combine(GameData.RequireRoot(), "common", "anims", $"{name}.iff")));
 
     private static WeaponTypeRegistry LoadWeapons()
     {

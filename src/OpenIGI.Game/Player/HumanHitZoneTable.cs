@@ -6,12 +6,19 @@ namespace OpenIGI.Game.Player;
 /// <param name="Multiplier">
 /// What a hit in this zone multiplies the weapon's damage factor by.
 /// </param>
-/// <param name="BoneIndex">
-/// The bone this zone hangs off. Constant within each limb, so the three zones of an arm share one.
+/// <param name="LimbAnimation">
+/// The animation this body part plays. Constant within each limb, so the three zones of an arm share
+/// one.
 /// </param>
-/// <param name="ReactionA">The first of two per-zone ids, believed to be reaction or death animations.</param>
+/// <param name="ReactionA">The first of two per-zone animations.</param>
 /// <param name="ReactionB">The second. Equal to <paramref name="ReactionA"/> for the last three zones.</param>
-public readonly record struct HumanHitZone(float Multiplier, int BoneIndex, int ReactionA, int ReactionB);
+/// <remarks>
+/// <b>All three are animation ids</b>, not bone indices — verified against the retail sets: every one of
+/// the player table's five distinct values resolves in <c>000.iff</c> and none in a soldier set, and
+/// the soldier table's five resolve in the soldier sets and not the player's. They cannot be bone
+/// indices because the skeletons carry 33 bones and the values run to 97.
+/// </remarks>
+public readonly record struct HumanHitZone(float Multiplier, int LimbAnimation, int ReactionA, int ReactionB);
 
 /// <summary>
 /// The per-class hit-zone tables, and what they say about how much a hit hurts.
@@ -74,8 +81,8 @@ public static class HumanHitZoneTable
 
     /// <summary>The soldiers' table, at <c>0x53F1D0</c>.</summary>
     /// <remarks>
-    /// The multipliers are <b>identical</b> to the player's; only the bone indices and the reaction ids
-    /// differ, because the soldier skeleton is not the player's. So a soldier is exactly as tough as the
+    /// The multipliers are <b>identical</b> to the player's; only the animation ids differ, because a
+    /// soldier does not share the player's animation set. So a soldier is exactly as tough as the
     /// player and takes damage in exactly the same proportions.
     /// </remarks>
     public static IReadOnlyList<HumanHitZone> Soldier { get; } =
