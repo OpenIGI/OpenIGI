@@ -99,6 +99,24 @@ internal static class RetailLevelOneGround
         }
     }
 
+    /// <summary>Every instance name level 1's packs declare.</summary>
+    public static IEnumerable<string> InstanceNames()
+    {
+        Find();
+        if (_mission is null)
+        {
+            yield break;
+        }
+
+        foreach (LoadedPack pack in new[] { _mission.CommonPack, _mission.LevelPack })
+        {
+            foreach (MtpInstance instance in pack.Instances)
+            {
+                yield return instance.Name;
+            }
+        }
+    }
+
     private static TerrainData LoadTerrain(out WorldScene scene)
     {
         VirtualFileSystem fileSystem = new();
