@@ -9,8 +9,8 @@ namespace OpenIGI.Game.Player;
 /// carries is recorded below, because the sampler writes the slots out of bit order and the mapping is
 /// the only thing tying a slot back to a binding. <b>What the bits mean is not yet resolved</b> — the
 /// binding table that names them has not been read — so the action slots are numbered rather than
-/// given invented names. Two exceptions are established by their use in <c>HumanPlayer_Update</c> and
-/// are named accordingly.
+/// given invented names. The named exceptions are the ones a consumer identifies outright: the debug
+/// chords, and <see cref="Jump"/>, which locomotion state 0 tests by name.
 /// </para>
 /// </remarks>
 public enum PlayerInputSlot
@@ -48,8 +48,12 @@ public enum PlayerInputSlot
     /// <summary>Action bit <c>0x800</c>.</summary>
     Action10 = 10,
 
-    /// <summary>Action bit <c>0x1000</c>.</summary>
-    Action11 = 11,
+    /// <summary>
+    /// Action bit <c>0x1000</c> — <b>jump</b>. Named from locomotion state 0's per-tick function
+    /// (<c>0x4087B0</c>), which tests this slot's rising edge against the previous frame and moves to
+    /// state 28, the state that plays <c>"jump_1"</c> and applies the jump speeds.
+    /// </summary>
+    Jump = 11,
 
     /// <summary>Action bit <c>0x8000</c>.</summary>
     Action12 = 12,
