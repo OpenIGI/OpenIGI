@@ -25,6 +25,24 @@ namespace OpenIGI.Platform.Desktop;
 /// </remarks>
 public sealed class SilkGameWindow : IGameWindow
 {
+    /// <summary>How far a borderless window is allowed to hang off the bottom-right of the monitor.</summary>
+    /// <remarks>
+    /// <para>
+    /// A borderless window whose client rectangle matches the monitor's <em>exactly</em> is the pattern
+    /// both DWM and the NVIDIA OpenGL driver look for before they unredirect it: the compositor is taken
+    /// out of the path and the window is handed the display. That is exclusive fullscreen in all but
+    /// name — a black flash on the way in, alt-tab minimising the window instead of leaving it drawn
+    /// behind what is in front of it, and the rest of the desktop stalled while it has focus. It is also
+    /// exactly what borderless is chosen to avoid.
+    /// </para>
+    /// <para>
+    /// Hanging one pixel off the right and bottom edges fails that equality test, so the window stays
+    /// composited, while still covering every pixel of the screen. The cost is a one-pixel column and
+    /// row of the framebuffer that is never visible.
+    /// </para>
+    /// </remarks>
+    private const int BorderlessOverhang = 1;
+
     private readonly IWindow _window;
     private readonly IInputContext _input;
     private readonly Vector2D<int> _windowedSize;
@@ -48,7 +66,9 @@ public sealed class SilkGameWindow : IGameWindow
         WindowOptions options = WindowOptions.Default with
         {
             Title = settings.Title,
-            Size = display.Size,
+            Size = settings.Mode == WindowMode.BorderlessFullscreen
+                ? BorderlessSize(display)
+                : display.Size,
             WindowState = settings.Mode == WindowMode.ExclusiveFullscreen
                 ? WindowState.Fullscreen
                 : WindowState.Normal,
@@ -251,6 +271,11 @@ public sealed class SilkGameWindow : IGameWindow
         }
     }
 
+    /// <summary>The client size a borderless window covering <paramref name="display"/> is given.</summary>
+    /// <seealso cref="BorderlessOverhang"/>
+    private static Vector2D<int> BorderlessSize(in DesktopDisplay display) =>
+        display.DesktopSize + new Vector2D<int>(BorderlessOverhang, BorderlessOverhang);
+
     /// <summary>Moves the window between windowed, borderless and exclusive without recreating it.</summary>
     private void ApplyMode()
     {
@@ -263,7 +288,7 @@ public sealed class SilkGameWindow : IGameWindow
                 _window.WindowState = WindowState.Normal;
                 _window.WindowBorder = WindowBorder.Hidden;
                 _window.Position = Display.Origin;
-                _window.Size = Display.DesktopSize;
+                _window.Size = BorderlessSize(Display);
                 break;
 
             case WindowMode.ExclusiveFullscreen:
