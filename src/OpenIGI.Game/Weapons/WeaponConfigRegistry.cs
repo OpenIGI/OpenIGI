@@ -7,22 +7,26 @@ using OpenIGI.Scripting.Runtime;
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>
-/// The weapon roster, read from <c>weapons/weaponconfig.qsc</c>.
+/// The weapon roster as <c>weapons/weaponconfig.qsc</c> declares it — <b>not</b> the table the game runs on.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The script is an ordinary task tree, so loading it is just running it against the task system. What
-/// makes this registry more than a list is the second job it does: each weapon carries both a numeric
-/// <see cref="WeaponConfigTask.WeaponId"/> and the <c>WEAPON_ID_*</c> symbol name it publishes that id
-/// under, and pairing them is what gives the <b>pattern-registered</b> weapon symbols their values
-/// (<c>player.md</c> §3.5).
+/// The script is an ordinary task tree, so loading it is just running it against the task system, and
+/// it does describe all twenty-four weapons in the same field order as the live path. But it is
+/// <b>inert</b>: <c>0x402070</c> loads it after the weapons themselves, and the <c>WeaponConfig</c>
+/// ctor (<c>0x407BB0</c>) only zeroes its own storage and defaults the id to <c>-1</c>. Nothing in the
+/// firing, HUD or AI code reads the tree. <see cref="WeaponTypeRegistry"/> is the real roster.
 /// </para>
 /// <para>
-/// That is the mechanism <see cref="Player.HumanPlayerConfig"/> was working around: run this first and
-/// its placeholder numbering never fires.
+/// It is not dead weight, though. A <c>WeaponConfig</c> instance is 1800 bytes, which is exactly the
+/// 32-byte task header plus the 1768-byte runtime record, and its extra fiftieth parameter — <c>Is
+/// weapon selectable when empty</c> — lands at the very offset the live loader hardcodes to 1. So this
+/// is the <i>same struct</i>, declared a field further on: an intended replacement for
+/// <c>DefineWeaponType</c> that shipped without ever being wired up. That makes it a genuine
+/// cross-check on the live reader, which is what the tests use it for.
 /// </para>
 /// </remarks>
-public sealed class WeaponRegistry
+public sealed class WeaponConfigRegistry
 {
     private const string LogCategory = "Weapons";
 
@@ -39,9 +43,9 @@ public sealed class WeaponRegistry
     private readonly Dictionary<int, WeaponConfigTask> _byId = [];
     private readonly IIgiLogger _logger;
 
-    /// <summary>Initializes a new instance of the <see cref="WeaponRegistry"/> class.</summary>
+    /// <summary>Initializes a new instance of the <see cref="WeaponConfigRegistry"/> class.</summary>
     /// <param name="logger">The logger for load diagnostics; defaults to a sink that discards them.</param>
-    public WeaponRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
+    public WeaponConfigRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
 
     /// <summary>Gets the weapons, in script order.</summary>
     public IReadOnlyList<WeaponConfigTask> Weapons => _weapons;

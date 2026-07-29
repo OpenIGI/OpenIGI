@@ -20,7 +20,7 @@ public sealed class RetailWeaponConfigTests
     [RequiresGameDataFact]
     public void TheRosterIsTwentyFourWeapons()
     {
-        WeaponRegistry weapons = Load(out _, out _);
+        WeaponConfigRegistry weapons = Load(out _, out _);
 
         Assert.Equal(24, weapons.Weapons.Count);
         Assert.Equal(24, weapons.ById.Count);
@@ -33,7 +33,7 @@ public sealed class RetailWeaponConfigTests
     {
         // A reader that assumed "position in the file is the id" would be wrong: the Glock is first
         // and is id 1, but the Colt is second and is 21.
-        WeaponRegistry weapons = Load(out _, out _);
+        WeaponConfigRegistry weapons = Load(out _, out _);
 
         Assert.Equal(1, weapons.Weapons[0].WeaponId);
         Assert.Equal(21, weapons.Weapons[1].WeaponId);
@@ -51,7 +51,7 @@ public sealed class RetailWeaponConfigTests
         // The special types are numbered from 10000 up and their directories are NAMED instead
         // (GRENADE, DRAGUNOV, MEDIPACK), so the id does not give the directory and the mapping lives
         // in the ammo scripts. The knife is -1 because it consumes nothing.
-        WeaponRegistry weapons = Load(out _, out _);
+        WeaponConfigRegistry weapons = Load(out _, out _);
         string ammoRoot = Path.Combine(GameData.RequireRoot(), "ammo");
         int numeric = 0;
         int special = 0;
@@ -87,7 +87,7 @@ public sealed class RetailWeaponConfigTests
     {
         // The burst cap is either 1 or the magazine, never anything between - so it is a mode flag
         // expressed as a number rather than a tunable.
-        WeaponRegistry weapons = Load(out _, out _);
+        WeaponConfigRegistry weapons = Load(out _, out _);
 
         foreach (WeaponConfigTask weapon in weapons.Weapons)
         {
@@ -106,7 +106,7 @@ public sealed class RetailWeaponConfigTests
         // legs are already running a locomotion state, so only its torso plays the weapon. The
         // full-body ones (Stand/Move/Fire/Reload) are for AI soldiers and are NOT all in 000: the
         // Glock's FireAnim1 of 16 is in every shipped set except the player's.
-        WeaponRegistry weapons = Load(out _, out _);
+        WeaponConfigRegistry weapons = Load(out _, out _);
         Formats.Animation.BoneAnimationSet player = LoadSet("000");
 
         int upper = 0;
@@ -149,7 +149,7 @@ public sealed class RetailWeaponConfigTests
         // This is the divergence the player config recorded: WEAPON_ID_* are pattern-registered, so
         // their values live in the weapon roster rather than in the executable. Load the roster first
         // and humanplayer.qvm resolves them for real - no placeholder is invented at all.
-        WeaponRegistry weapons = Load(out ResourceRegistry resources, out NativeRegistry natives);
+        WeaponConfigRegistry weapons = Load(out ResourceRegistry resources, out NativeRegistry natives);
 
         int published = weapons.PublishScriptIds(natives);
         Assert.Equal(24, published);
@@ -173,7 +173,7 @@ public sealed class RetailWeaponConfigTests
     [RequiresGameDataFact]
     public void TheWeaponCycleAndTheRosterAgree()
     {
-        WeaponRegistry weapons = Load(out ResourceRegistry resources, out NativeRegistry natives);
+        WeaponConfigRegistry weapons = Load(out ResourceRegistry resources, out NativeRegistry natives);
         weapons.PublishScriptIds(natives);
 
         HumanPlayerConfig player = new();
@@ -191,7 +191,7 @@ public sealed class RetailWeaponConfigTests
         Formats.Animation.BoneAnimationSet.Read(
             File.ReadAllBytes(Path.Combine(GameData.RequireRoot(), "common", "anims", $"{name}.iff")));
 
-    private static WeaponRegistry Load(out ResourceRegistry resources, out NativeRegistry natives)
+    private static WeaponConfigRegistry Load(out ResourceRegistry resources, out NativeRegistry natives)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -199,7 +199,7 @@ public sealed class RetailWeaponConfigTests
 
         GameLoop loop = new(new ManualTimeSource());
         natives = loop.Natives;
-        WeaponRegistry.RegisterTypes(loop.Types);
+        WeaponConfigRegistry.RegisterTypes(loop.Types);
 
         // The script names enum constants the engine owns. Numbering them by symbol order is the same
         // deliberate fallback the magic-object registry uses; nothing here depends on their values.
@@ -214,7 +214,7 @@ public sealed class RetailWeaponConfigTests
             }
         }
 
-        WeaponRegistry weapons = new();
+        WeaponConfigRegistry weapons = new();
         weapons.Load(resources, natives, loop.Tasks);
         return weapons;
     }
