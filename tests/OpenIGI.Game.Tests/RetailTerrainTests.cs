@@ -487,6 +487,91 @@ public sealed class RetailTerrainTests
     }
 
     /// <summary>The middle of a level, by median rather than by bounding box.</summary>
+    [RequiresGameDataFact]
+    public void ThePointDescentReachesRealDepthOverTheLevelsOwnGround()
+    {
+        // The descent 0x4C9A30 does, against the octree the renderer already walks. If the collision
+        // query and the renderer disagreed about the tree, this is where it would show.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+        Assert.True(terrain.IsUsable);
+
+        (double centreX, double centreY, double ground) = Medians(scene);
+
+        int deepest = 0;
+        int sampled = 0;
+
+        // A grid over the middle of the level, at the height its objects sit at.
+        for (int dx = -4; dx <= 4; dx++)
+        {
+            for (int dy = -4; dy <= 4; dy++)
+            {
+                Vector3i point = new(
+                    (int)((centreX + (dx * 8.0)) * WorldScene.UnitsPerMetre),
+                    (int)((centreY + (dy * 8.0)) * WorldScene.UnitsPerMetre),
+                    (int)(ground * WorldScene.UnitsPerMetre));
+
+                TerrainDescentCursor cursor = TerrainPointDescent.Descend(terrain.Octree, point);
+                sampled++;
+                deepest = Math.Max(deepest, cursor.Depth);
+
+                // Whatever depth it reached, the cube it reports contains the point.
+                Assert.InRange(point.X, cursor.Centre.X - cursor.Extent, cursor.Centre.X + cursor.Extent);
+                Assert.InRange(point.Y, cursor.Centre.Y - cursor.Extent, cursor.Centre.Y + cursor.Extent);
+                Assert.InRange(point.Z, cursor.Centre.Z - cursor.Extent, cursor.Centre.Z + cursor.Extent);
+
+                // And it names a node that exists, at a legal orientation.
+                Assert.InRange(cursor.NodeIndex, 0, terrain.Octree.Count - 1);
+                Assert.InRange(cursor.Orientation, 0, TerrainOrientation.Count - 1);
+                Assert.InRange(cursor.Depth, 0, TerrainPointDescent.MaximumDepth);
+                Assert.Equal(TerrainOctree.RootExtent >> cursor.Depth, cursor.Extent);
+            }
+        }
+
+        Assert.Equal(81, sampled);
+
+        // The real check: over authored ground the tree is deep, not a root stub. Retail level 1 reaches
+        // the traversal's own minimum chunk exponent, so the descent must get at least that far.
+        Assert.True(
+            deepest >= TerrainTraversal.MinimumExponent,
+            $"deepest descent was {deepest}, which is shallower than the authored terrain");
+    }
+
+    [RequiresGameDataFact]
+    public void ThePointDescentAgreesWithTheChunksTheTraversalEmits()
+    {
+        // Two independent walks of one tree: the renderer's view-driven collect, and the collision
+        // module's point descent. Descending to a chunk's own centre must land on that chunk's cube.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+
+        (double centreX, double centreY, double ground) = Medians(scene);
+        Camera3D camera = new(
+            new Vector3d(
+                centreX * WorldScene.UnitsPerMetre,
+                centreY * WorldScene.UnitsPerMetre,
+                (ground + 30.0) * WorldScene.UnitsPerMetre),
+            Camera3D.LookRotation(0f, -0.3f));
+
+        List<TerrainChunk> chunks = [];
+        TerrainTraversal.Collect(terrain.Octree, TerrainView.FromPerspective(camera, 1.2f, 16f / 9f), chunks);
+        Assert.NotEmpty(chunks);
+
+        int checkedChunks = 0;
+        foreach (TerrainChunk chunk in chunks.Take(64))
+        {
+            Vector3i centre = new((int)chunk.Position.X, (int)chunk.Position.Y, (int)chunk.Position.Z);
+            TerrainDescentCursor cursor = TerrainPointDescent.Descend(terrain.Octree, centre, chunk.LodExponent);
+
+            // The descent got at least as deep as the chunk sits, and its cube covers the chunk's origin.
+            Assert.InRange(centre.X, cursor.Centre.X - cursor.Extent, cursor.Centre.X + cursor.Extent);
+            Assert.InRange(centre.Y, cursor.Centre.Y - cursor.Extent, cursor.Centre.Y + cursor.Extent);
+            checkedChunks++;
+        }
+
+        Assert.True(checkedChunks > 0);
+    }
+
     private static (double X, double Y, double Z) Medians(WorldScene scene)
     {
         double[] xs = new double[scene.Placements.Count];

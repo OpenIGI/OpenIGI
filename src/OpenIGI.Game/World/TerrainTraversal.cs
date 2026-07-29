@@ -222,9 +222,6 @@ public static class TerrainTraversal
         public Vector3i World => new(X, Y, Z);
     }
 
-    /// <summary>Three integers; the descent's accumulators.</summary>
-    private readonly record struct Vector3i(int X, int Y, int Z);
-
     /// <summary>Everything the recursion needs that does not change as it goes.</summary>
     private ref struct State(
         TerrainOctree tree,
