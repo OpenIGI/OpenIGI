@@ -37,3 +37,4 @@ gamedata/
 *.mef
 *.mtp
 !tests/**/fixtures/**
+*.stackdump
