@@ -233,6 +233,87 @@ public sealed class PlayerBodyTests
         Assert.Equal(0f, player.Velocity.Z);
     }
 
+    [RequiresGameDataFact]
+    public void ARunningJumpCarriesTheDirectionItTookOffIn()
+    {
+        // The original takes the direction you are already moving, normalises it, and gives it a fixed
+        // horizontal speed. You do not steer in mid-air - you carry the momentum you had.
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        player.Yaw = 0f;
+        Vector3d start = player.Position;
+
+        Vector3f delta = new(0f, 300f, 0f);
+        PlayerCommand jump = new(1f, 0f, 0f, 0f, false, false, Jump: true);
+
+        player.Tick(jump, terrain, delta);
+        Assert.False(player.IsGrounded);
+
+        // The horizontal velocity is the take-off speed, not the animation's - measured after the same
+        // tick's drag, which is why the expectation carries the 0.99.
+        double takeOff = 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+        double speed = Math.Sqrt((player.Velocity.X * player.Velocity.X) + (player.Velocity.Y * player.Velocity.Y));
+        Assert.Equal(takeOff * HumanMotion.DragPerTick, speed, 1.0);
+
+        // 17.5 km/h is 4.86 m/s, which is all but the run animation's own speed: a running jump keeps
+        // the pace you were going.
+        Assert.Equal(4.86, takeOff * 30.0 / UnitsPerMetre, 0.01);
+
+        // And it goes the way the step went, at yaw zero that is +Y.
+        Assert.True(player.Velocity.Y > 0f);
+        Assert.Equal(0f, player.Velocity.X, 1e-3f);
+
+        // Releasing the keys mid-air changes nothing: the momentum carries.
+        int ticks = 0;
+        while (!player.IsGrounded && ticks < 300)
+        {
+            player.Tick(default, terrain, default);
+            ticks++;
+        }
+
+        Assert.True(player.Position.Y - start.Y > 1.0 * UnitsPerMetre, "the jump should carry forward");
+    }
+
+    [RequiresGameDataFact]
+    public void AStandingJumpGoesStraightUp()
+    {
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        Vector3d start = player.Position;
+
+        player.Tick(new PlayerCommand(0f, 0f, 0f, 0f, false, false, Jump: true), terrain, default);
+
+        Assert.Equal(0f, player.Velocity.X);
+        Assert.Equal(0f, player.Velocity.Y);
+        Assert.True(player.Velocity.Z > 0f);
+
+        while (!player.IsGrounded)
+        {
+            player.Tick(default, terrain, default);
+        }
+
+        Assert.Equal(start.X, player.Position.X, 1e-6);
+        Assert.Equal(start.Y, player.Position.Y, 1e-6);
+    }
+
+    [RequiresGameDataFact]
+    public void TheAnimationDoesNotAlsoMoveTheBodyWhileItIsAirborne()
+    {
+        // On the ground the animation moves the body; in the air the velocity does. If both applied a
+        // jump would travel at twice its speed.
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        player.Yaw = 0f;
+
+        player.Tick(new PlayerCommand(0f, 0f, 0f, 0f, false, false, Jump: true), terrain, default);
+        Assert.False(player.IsGrounded);
+
+        Vector3d before = player.Position;
+        float velocityY = player.Velocity.Y;
+
+        // Feeding a large delta while airborne must not shift the body by it.
+        player.Tick(default, terrain, new Vector3f(0f, 5000f, 0f));
+
+        Assert.Equal(before.Y + velocityY, player.Position.Y, 1.0);
+    }
+
     private static (TerrainData Terrain, PlayerBody Player) OnLevelOne()
     {
         (TerrainData terrain, double x, double y, double z) = RetailLevelOneGround.Find();

@@ -464,9 +464,11 @@ using (window)
 
         FrameOutcome outcome = loop.RunFrame();
 
-        // The body advances on the simulation tick, never on elapsed time - that is what keeps its
-        // motion the game's own rather than the display's.
-        if (outcome is FrameOutcome.Tick or FrameOutcome.Render
+        // The body advances on the simulation tick and ONLY on it. Tick and Render are mutually
+        // exclusive outcomes - a render is not a tick - so including Render here stepped the player
+        // once per drawn frame as well, and at an uncapped frame rate that is several times 30 Hz.
+        // The player then moved as fast as the display was quick, which is exactly what it looked like.
+        if (outcome is FrameOutcome.Tick
             && playerMode && player is not null && playerTerrain is not null)
         {
             player.Tick(window.Input, playerTerrain);

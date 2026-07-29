@@ -62,6 +62,15 @@ public sealed class PlayerBody
     /// <remarks><see cref="HumanPlayerParameters.JumpVerticalSpeed"/>; 1024 in retail.</remarks>
     public double JumpSpeed { get; init; } = 1024.0;
 
+    /// <summary>The horizontal speed a jump carries, in units per tick.</summary>
+    /// <remarks>
+    /// <see cref="HumanPlayerParameters.JumpHorizontalSpeed"/> — 17.5 km/h, which is 663.7 units a
+    /// tick, or 4.86 m/s. That is almost exactly the run speed the forward animation covers, so a
+    /// running jump carries the pace you were already going.
+    /// </remarks>
+    public double JumpHorizontalSpeed { get; init; } =
+        17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+
     /// <summary>How far the pitch may travel from level, in radians.</summary>
     public const float PitchLimit = 1.5533431f;
 
@@ -112,11 +121,27 @@ public sealed class PlayerBody
         // speed constant - see HumanMotion.ApplyRootMotion.
         Vector3f step = HumanMotion.ApplyRootMotion(rootDelta, FacingBasis(Yaw));
 
-        Vector3d next = new(Position.X + step.X, Position.Y + step.Y, Position.Z);
+        // On the ground the animation moves the body; in the air the velocity does, and the two must
+        // not both apply or a jump would travel at twice its speed.
+        Vector3d next = IsGrounded
+            ? new Vector3d(Position.X + step.X, Position.Y + step.Y, Position.Z)
+            : Position;
 
         if (IsGrounded && command.Jump)
         {
-            Velocity = new Vector3f(Velocity.X, Velocity.Y, (float)JumpSpeed);
+            // A jump takes the direction you are ALREADY moving, normalised, at a fixed horizontal
+            // speed - it does not read the keys again. That is why you cannot steer in mid-air: you
+            // carry the momentum you had at take-off and nothing changes it until you land.
+            float horizontalX = 0f;
+            float horizontalY = 0f;
+            float length = MathF.Sqrt((step.X * step.X) + (step.Y * step.Y));
+            if (length > 0f)
+            {
+                horizontalX = step.X / length * (float)JumpHorizontalSpeed;
+                horizontalY = step.Y / length * (float)JumpHorizontalSpeed;
+            }
+
+            Velocity = new Vector3f(horizontalX, horizontalY, (float)JumpSpeed);
             IsGrounded = false;
         }
 
