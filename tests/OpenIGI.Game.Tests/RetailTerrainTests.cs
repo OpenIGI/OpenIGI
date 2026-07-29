@@ -662,6 +662,138 @@ public sealed class RetailTerrainTests
         Assert.InRange(point.Y, leaf.Origin.Y - (2 * leaf.Cursor.Extent), leaf.Origin.Y + (2 * leaf.Cursor.Extent));
     }
 
+    [RequiresGameDataFact]
+    public void TheGroundQueryFindsRealTerrainUnderLevelOne()
+    {
+        // The whole chain end to end - descend, reach the leaf, interpolate the triangle - which is the
+        // query nothing in the port could do before.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+
+        (double centreX, double centreY, double ground) = Medians(scene);
+
+        // A body standing on the ground, which is what this query is for: its reach is about four
+        // metres, so probing from twenty would legitimately find nothing.
+        double from = (ground + 2.0) * WorldScene.UnitsPerMetre;
+
+        int hits = 0;
+        int sampled = 0;
+        List<double> heights = [];
+
+        for (int dx = -6; dx <= 6; dx++)
+        {
+            for (int dy = -6; dy <= 6; dy++)
+            {
+                double x = (centreX + (dx * 6.0)) * WorldScene.UnitsPerMetre;
+                double y = (centreY + (dy * 6.0)) * WorldScene.UnitsPerMetre;
+                sampled++;
+
+                if (!TerrainHeightQuery.TryGetGround(terrain, x, y, from, out TerrainGround hit))
+                {
+                    continue;
+                }
+
+                hits++;
+                heights.Add(hit.Height);
+
+                Assert.True(hit.Height <= from, $"ground {hit.Height} was above the query at {from}");
+                Assert.True(from - hit.Height <= TerrainHeightQuery.SearchDepthUnits + 1.0);
+
+                double length = Math.Sqrt(
+                    (hit.NormalX * hit.NormalX) + (hit.NormalY * hit.NormalY) + (hit.NormalZ * hit.NormalZ));
+                Assert.Equal(1.0, length, 1e-9);
+            }
+        }
+
+        Assert.Equal(169, sampled);
+        Assert.True(hits > sampled / 2, $"only {hits} of {sampled} samples found ground");
+
+        // The heights are a plausible surface rather than nonsense. They may legitimately be equal -
+        // the middle of level 1 is largely flat - so the spread is asserted bounded, not non-zero.
+        Assert.True(
+            heights.Max() - heights.Min() < 200.0 * WorldScene.UnitsPerMetre,
+            "the height spread is too large to be one surface");
+    }
+
+    [RequiresGameDataFact]
+    public void TheGroundQueryIsStableAndItsReachIsBounded()
+    {
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+        (double centreX, double centreY, double ground) = Medians(scene);
+
+        // Not every point over a level has terrain under it - the octree does not author empty air - so
+        // find one that does before testing how it behaves.
+        double x = 0.0;
+        double y = centreY * WorldScene.UnitsPerMetre;
+        bool located = false;
+        for (int step = 0; step < 40 && !located; step++)
+        {
+            x = (centreX + (step * 4.0)) * WorldScene.UnitsPerMetre;
+            located = TerrainHeightQuery.TryGetGround(
+                terrain, x, y, (ground + 1.0) * WorldScene.UnitsPerMetre, out _);
+        }
+
+        Assert.True(located, "no sample over the middle of the level had terrain under it");
+
+        double from = (ground + 1.0) * WorldScene.UnitsPerMetre;
+        Assert.True(TerrainHeightQuery.TryGetGround(terrain, x, y, from, out TerrainGround near));
+        Assert.True(TerrainHeightQuery.TryGetGround(terrain, x, y, from, out TerrainGround again));
+
+        // Asking twice gives the same answer, which a player standing on it depends on.
+        Assert.Equal(near.Height, again.Height);
+
+        // Starting higher, but still within reach, finds the same floor.
+        Assert.True(TerrainHeightQuery.TryGetGround(
+            terrain, x, y, near.Height + (2.0 * WorldScene.UnitsPerMetre), out TerrainGround higher));
+        Assert.Equal(near.Height, higher.Height);
+
+        // And the reach really is bounded: past the search depth the same point finds nothing. That is
+        // the query behaving as the original does - it probes for a body already near the ground, and
+        // the human's own step-down budgets are all well inside it.
+        Assert.False(TerrainHeightQuery.TryGetGround(
+            terrain, x, y, near.Height + TerrainHeightQuery.SearchDepthUnits + 4096.0, out _));
+
+        Assert.Equal(4.0, TerrainHeightQuery.SearchDepthUnits / WorldScene.UnitsPerMetre, 0.01);
+    }
+
+    [RequiresGameDataFact]
+    public void TheGroundUnderTheLevelsObjectsIsNearWhereTheySit()
+    {
+        // The check that says the query is in the right coordinate frame at all: a level's objects are
+        // placed on its ground, so the ground under them should be close to their own height. If the
+        // bias, the leaf frame or the scale were wrong this would be wildly off rather than slightly.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+
+        int compared = 0;
+        int near = 0;
+
+        foreach (WorldPlacement placement in scene.Placements.Take(400))
+        {
+            double x = placement.Position.X * WorldScene.UnitsPerMetre;
+            double y = placement.Position.Y * WorldScene.UnitsPerMetre;
+            double z = placement.Position.Z * WorldScene.UnitsPerMetre;
+
+            if (!TerrainHeightQuery.TryGetGround(
+                    terrain, x, y, z + (2.0 * WorldScene.UnitsPerMetre), out TerrainGround hit))
+            {
+                continue;
+            }
+
+            compared++;
+            if (Math.Abs(hit.Height - z) < 10.0 * WorldScene.UnitsPerMetre)
+            {
+                near++;
+            }
+        }
+
+        Assert.True(compared > 50, $"only {compared} placements resolved to ground");
+        Assert.True(
+            near > compared / 2,
+            $"only {near} of {compared} placements sat within ten metres of the ground under them");
+    }
+
     private static (double X, double Y, double Z) Medians(WorldScene scene)
     {
         double[] xs = new double[scene.Placements.Count];
