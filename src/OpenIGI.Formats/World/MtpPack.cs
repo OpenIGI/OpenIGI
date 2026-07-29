@@ -23,7 +23,7 @@ public sealed class MtpPack
 {
     private MtpPack(
         MtpFile file,
-        IReadOnlyList<string> bankNames,
+        IReadOnlyList<string> animationSetNames,
         IReadOnlyList<string> soundNames,
         IReadOnlyList<string> volumeNames,
         IReadOnlyList<string> modelNames,
@@ -33,7 +33,7 @@ public sealed class MtpPack
         IReadOnlyList<MtpInstance> instances)
     {
         File = file;
-        BankNames = bankNames;
+        AnimationSetNames = animationSetNames;
         SoundNames = soundNames;
         VolumeNames = volumeNames;
         ModelNames = modelNames;
@@ -46,8 +46,9 @@ public sealed class MtpPack
     /// <summary>Gets the underlying chunk list.</summary>
     public MtpFile File { get; }
 
-    /// <summary>Gets the sound bank names from <c>BANM</c>.</summary>
-    public IReadOnlyList<string> BankNames { get; }
+    /// <summary>Gets the animation set names from <c>BANM</c> — each loads <c>anims/&lt;name&gt;.iff</c>.</summary>
+    /// <remarks><c>location0</c> names the six shipped sets; no retail level pack names any.</remarks>
+    public IReadOnlyList<string> AnimationSetNames { get; }
 
     /// <summary>Gets the sound names from <c>SNDS</c>. Empty in every retail pack.</summary>
     public IReadOnlyList<string> SoundNames { get; }
@@ -99,7 +100,7 @@ public sealed class MtpPack
 
         return new MtpPack(
             file,
-            ReadNames(file, MtpTags.BankNames, required: false),
+            ReadNames(file, MtpTags.AnimationSetNames, required: false),
             ReadNames(file, MtpTags.SoundNames, required: false),
             ReadNames(file, MtpTags.VolumeNames, required: false),
             ReadNames(file, MtpTags.ModelNames, required: true),

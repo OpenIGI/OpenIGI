@@ -1,3 +1,4 @@
+using OpenIGI.Formats.Animation;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -48,6 +49,33 @@ public sealed record LoadedMission(
     /// </remarks>
     public bool TryGetModel(string name, out MefModel? model) =>
         LevelPack.TryGetModel(name, out model) || CommonPack.TryGetModel(name, out model);
+
+    /// <summary>Resolves an animation set by the skeleton id its own <c>BOSH</c> chunk declares.</summary>
+    /// <param name="skeletonId">The skeleton id — a soldier's <c>Bone Heirachy</c> parameter.</param>
+    /// <param name="set">Receives the set when either pack loaded it.</param>
+    /// <returns><see langword="true"/> when a set with that skeleton id was loaded.</returns>
+    /// <remarks>
+    /// The original registers sets into global tables indexed by the id out of <c>BOSH</c>
+    /// (<c>0x4D67A0</c>), so a set loaded later overwrites an earlier one with the same id. Packs open
+    /// common-then-level, so asking the level pack first gives the same precedence.
+    /// </remarks>
+    public bool TryGetAnimationSet(int skeletonId, out BoneAnimationSet? set)
+    {
+        foreach (LoadedPack pack in new[] { LevelPack, CommonPack })
+        {
+            foreach (BoneAnimationSet candidate in pack.AnimationSets)
+            {
+                if (candidate.Skeleton.Id == skeletonId)
+                {
+                    set = candidate;
+                    return true;
+                }
+            }
+        }
+
+        set = null;
+        return false;
+    }
 
     /// <summary>Reads the level's baked object lightmaps.</summary>
     /// <param name="resources">Where the archive is read from.</param>

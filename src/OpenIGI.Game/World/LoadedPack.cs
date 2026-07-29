@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Formats.Iff;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
 
@@ -28,6 +30,15 @@ public sealed class LoadedPack
 {
     private const string LogCategory = "Pack";
 
+    /// <summary>The directory a pack's <c>BANM</c> animation sets load from.</summary>
+    /// <remarks>
+    /// Not the pack's own directory: <c>0x4CF910</c> prefers a second root whenever it is non-empty,
+    /// and <c>Mission_Load</c> pins that root to the literal <c>"LOCAL:common/"</c> (<c>0x415C92</c>)
+    /// before either pack opens. The shipped sets are at <c>common/anims/</c>; the pack directories
+    /// hold no <c>anims/</c> at all.
+    /// </remarks>
+    public const string AnimationSetRoot = "LOCAL:common/";
+
     private readonly Dictionary<string, MefModel> _models;
     private HashSet<string>? _registered;
 
@@ -36,13 +47,15 @@ public sealed class LoadedPack
         string directory,
         MtpPack pack,
         Dictionary<string, MefModel> models,
-        IReadOnlyList<string> missingModels)
+        IReadOnlyList<string> missingModels,
+        IReadOnlyList<BoneAnimationSet> animationSets)
     {
         Name = name;
         Directory = directory;
         Pack = pack;
         _models = models;
         MissingModels = missingModels;
+        AnimationSets = animationSets;
     }
 
     /// <summary>Gets the pack name, for example <c>level1</c>.</summary>
@@ -60,6 +73,14 @@ public sealed class LoadedPack
 
     /// <summary>Gets the instances the pack places, in <c>VNAM</c> order.</summary>
     public IReadOnlyList<MtpInstance> Instances => Pack.Instances;
+
+    /// <summary>Gets the animation sets the pack's <c>BANM</c> chunk names, in declaration order.</summary>
+    /// <remarks>
+    /// <c>location0</c> names the six shipped sets; retail level packs name none. Each set carries the
+    /// skeleton id out of its own <c>BOSH</c> chunk, which is the id a soldier's <c>Bone Heirachy</c>
+    /// parameter indexes — see the original.
+    /// </remarks>
+    public IReadOnlyList<BoneAnimationSet> AnimationSets { get; }
 
     /// <summary>Opens and binds a pack.</summary>
     /// <param name="directory">The resource directory the pack lives in, for example <c>LOCAL:missions/location0/level1/</c>.</param>
@@ -79,6 +100,28 @@ public sealed class LoadedPack
         string dir = directory.EndsWith('/') ? directory : directory + "/";
 
         MtpPack pack = ReadPack($"{dir}{name}.mtp", resources);
+
+        // The animation sets come first because Pack_Bind (0x4CF080) loads them first, before either
+        // archive binds - and from the shared common root, not the pack's own directory.
+        List<BoneAnimationSet> sets = [];
+        foreach (string setName in pack.AnimationSetNames)
+        {
+            string path = $"{AnimationSetRoot}anims/{setName}.iff";
+            if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
+            {
+                log.Warning(LogCategory, $"Animation set '{path}' is absent.");
+                continue;
+            }
+
+            try
+            {
+                sets.Add(BoneAnimationSet.Read(bytes));
+            }
+            catch (IffFormatException ex)
+            {
+                log.Warning(LogCategory, $"Animation set '{path}' did not parse: {ex.Message}");
+            }
+        }
 
         // The textures archive is registered but not decoded here: a texture becomes pixels only when
         // the renderer asks for it, and the original defers the same way.
@@ -119,7 +162,13 @@ public sealed class LoadedPack
             LogCategory,
             $"Opened pack '{name}': {models.Count} model(s), {pack.TextureNames.Count} texture(s), {pack.Instances.Count} instance(s).");
 
-        return new LoadedPack(name, dir, pack, models, new ReadOnlyCollection<string>(missing));
+        return new LoadedPack(
+            name,
+            dir,
+            pack,
+            models,
+            new ReadOnlyCollection<string>(missing),
+            new ReadOnlyCollection<BoneAnimationSet>(sets));
     }
 
     /// <summary>Resolves an instance's model.</summary>

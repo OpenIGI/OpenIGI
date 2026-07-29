@@ -1,3 +1,5 @@
+using OpenIGI.Core.Graphics;
+
 namespace OpenIGI.Game.Menus;
 
 /// <summary>
@@ -39,13 +41,22 @@ public sealed class MenuPointer
     /// <param name="screenWidth">The back-buffer width in pixels.</param>
     /// <param name="screenHeight">The back-buffer height in pixels.</param>
     /// <param name="buttonDown">Whether the button is held this tick.</param>
-    public void Update(int screenX, int screenY, int screenWidth, int screenHeight, bool buttonDown)
+    /// <param name="scale">The magnification the menu is drawn at; see <see cref="UiScale"/>.</param>
+    public void Update(
+        int screenX,
+        int screenY,
+        int screenWidth,
+        int screenHeight,
+        bool buttonDown,
+        int scale = UiScale.Native)
     {
         bool wasDown = IsDown;
 
-        // The inverse of MenuLayout.ToScreen, so the hit-test sees authored coordinates.
-        X = screenX + (MenuLayout.AuthoredWidth / 2) - (screenWidth >> 1);
-        Y = screenY + (MenuLayout.AuthoredHeight / 2) - (screenHeight >> 1);
+        // The inverse of MenuLayout.ToScreen, so the hit-test sees authored coordinates. It has to
+        // undo the magnification too, or the mouse would land somewhere other than what it points at.
+        int s = scale < UiScale.Native ? UiScale.Native : scale;
+        X = ((screenX - (screenWidth >> 1)) / s) + (MenuLayout.AuthoredWidth / 2);
+        Y = ((screenY - (screenHeight >> 1)) / s) + (MenuLayout.AuthoredHeight / 2);
 
         IsDown = buttonDown;
         Pressed = buttonDown && buttonDown != wasDown;

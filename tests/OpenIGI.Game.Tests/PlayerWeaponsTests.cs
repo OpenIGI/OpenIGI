@@ -1,0 +1,601 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
+using Xunit;
+
+namespace OpenIGI.Game.Tests;
+
+/// <summary>
+/// Drives the weapon machine and the gun together, and measures what comes out.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The point of these is the <b>cadence</b>. Nothing in the human counts rounds: the firing state asks
+/// for one on every tick the trigger is down and the gun answers when its own cooldown allows, so the
+/// spacing between rounds has to fall out of <c>Rounds/Minute</c> alone. A test that stubbed the gun
+/// would prove nothing.
+/// </para>
+/// <para>
+/// The weapon records here are the retail ones, transcribed as literals so the test runs without game
+/// data; <see cref="RetailWeaponFiringTests"/> checks the same numbers against the real scripts.
+/// </para>
+/// </remarks>
+public sealed class PlayerWeaponsTests
+{
+    private static readonly int[] Cycle = [20, 1, 7];
+
+    /// <summary>The knife, as <c>weapons/KNIFE/weapon.qvm</c> declares it.</summary>
+    private static WeaponType Knife => new()
+    {
+        WeaponId = 20,
+        ScriptId = "WEAPON_ID_KNIFE",
+        Category = WeaponCategory.Knife,
+        CalibreId = -1,
+        RoundsPerMinute = 140,
+        RoundsPerClip = -1,
+        MaximumRoundsPerBurst = 1,
+        BulletsPerRound = 1,
+        EffectiveRange = 1f,
+        StandAnimation = 26,
+        FireAnimation1 = 28,
+        FireAnimation2 = 29,
+        FireAnimation3 = 30,
+    };
+
+    /// <summary>The Glock 17 — semi-automatic, because its burst cap is one.</summary>
+    private static WeaponType Glock => new()
+    {
+        WeaponId = 1,
+        ScriptId = "WEAPON_ID_GLOCK",
+        Category = WeaponCategory.Pistol,
+        CalibreId = 919,
+        RoundsPerMinute = 400,
+        RoundsPerClip = 17,
+        MaximumRoundsPerBurst = 1,
+        BulletsPerRound = 1,
+        EffectiveRange = 80f,
+        MinimumSpread = -1.5f,
+        MaximumSpread = 1.5f,
+        FixedRecoilX = 1.5f,
+        StandAnimation = 14,
+        FireAnimation1 = 16,
+        FireAnimation2 = -1,
+        FireAnimation3 = -1,
+    };
+
+    /// <summary>The MP5 SD3 — fully automatic, because its burst cap is the whole magazine.</summary>
+    private static WeaponType Mp5Sd => new()
+    {
+        WeaponId = 7,
+        ScriptId = "WEAPON_ID_MP5SD",
+        Category = WeaponCategory.Gun,
+        CalibreId = 919,
+        RoundsPerMinute = 700,
+        RoundsPerClip = 32,
+        MaximumRoundsPerBurst = 32,
+        BulletsPerRound = 1,
+        EffectiveRange = 80f,
+        MinimumSpread = -2f,
+        MaximumSpread = 2f,
+        FixedRecoilX = 0.8f,
+        RandomRecoilX = 0.8f,
+        StandAnimation = 18,
+        FireAnimation1 = 20,
+    };
+
+    private static AmmoType NineMillimetre => new() { AmmoId = 0, ScriptId = "AMMO_ID_919", CalibreId = 919 };
+
+    [Fact]
+    public void TheFirstEntryOfTheCycleThePlayerCarriesEndsUpInHand()
+    {
+        // Human+3400 starts at -1, so the first tick advances to cycle index 0. The shipped cycle
+        // starts with the knife, which is why level 1 opens with a blade.
+        PlayerWeapons weapons = new(Cycle);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Carry(Knife);
+
+        Assert.Null(weapons.InHand);
+
+        Equip(weapons);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+    }
+
+    [Fact]
+    public void TheCycleSkipsWhatIsNotCarried()
+    {
+        PlayerWeapons weapons = new(Cycle);
+        weapons.Carry(Mp5Sd, NineMillimetre);
+
+        Equip(weapons);
+
+        // Entries 0 and 1 -- knife and Glock -- are not carried, so it steps on to the MP5SD.
+        Assert.Equal("WEAPON_ID_MP5SD", weapons.InHand?.Weapon.ScriptId);
+    }
+
+    [Fact]
+    public void NextWeaponStepsThroughTheCycle()
+    {
+        PlayerWeapons weapons = new(Cycle);
+        weapons.Carry(Knife);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Carry(Mp5Sd, NineMillimetre);
+
+        Equip(weapons);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+
+        PlayerInputState input = new();
+        Press(weapons, input, PlayerInputSlot.NextWeapon);
+        Assert.Equal("WEAPON_ID_GLOCK", weapons.InHand?.Weapon.ScriptId);
+
+        Press(weapons, input, PlayerInputSlot.NextWeapon);
+        Assert.Equal("WEAPON_ID_MP5SD", weapons.InHand?.Weapon.ScriptId);
+
+        // And it wraps.
+        Press(weapons, input, PlayerInputSlot.NextWeapon);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+    }
+
+    [Fact]
+    public void BothSwayAnglesArriveOnTheSameTick()
+    {
+        // 35 degrees at 0.0581776 and 20 degrees at 0.0332444 are both 10.5 ticks. The rates were
+        // chosen to make the pair one motion; a port that picked its own would tip the rig crooked on
+        // the way down.
+        HumanViewSway sway = new();
+        sway.Lower();
+
+        int pitchArrived = -1;
+        int yawArrived = -1;
+        for (int tick = 1; tick <= 40; tick++)
+        {
+            sway.Advance();
+
+            if (pitchArrived < 0 && sway.Pitch == HumanViewSway.LoweredPitch)
+            {
+                pitchArrived = tick;
+            }
+
+            if (yawArrived < 0 && sway.Yaw == HumanViewSway.LoweredYaw)
+            {
+                yawArrived = tick;
+            }
+        }
+
+        Assert.Equal(HumanViewSway.TicksToTravel, pitchArrived);
+        Assert.Equal(HumanViewSway.TicksToTravel, yawArrived);
+        Assert.True(sway.Settled);
+    }
+
+    [Fact]
+    public void TheSwaySnapsToItsTargetRatherThanApproachingIt()
+    {
+        // The exact equality in Settled is only safe because the step snaps on overshoot. A step that
+        // merely got close would leave every weapon state waiting for ever.
+        HumanViewSway sway = new();
+        sway.MoveTo(-1f, 0f, 0.3f, 0f);
+
+        for (int i = 0; i < 10; i++)
+        {
+            sway.Advance();
+        }
+
+        Assert.Equal(-1f, sway.Pitch);
+        Assert.True(sway.Settled);
+    }
+
+    [Fact]
+    public void AWeaponSwapHidesTheExchangeBehindTheLoweredRig()
+    {
+        // The whole point of the animation: the model is not exchanged until the rig is out of the
+        // frame, and control does not come back until it has returned.
+        PlayerWeapons weapons = new(Cycle);
+        weapons.Carry(Knife);
+        weapons.Carry(Glock, NineMillimetre);
+        Equip(weapons);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.NextWeapon));
+        Assert.Equal(HumanWeaponState.ChangingWeapon, weapons.State);
+
+        // The rig tips out of the frame, and all the way down the knife is still what you are holding.
+        for (int i = 0; i < HumanViewSway.TicksToTravel - 1; i++)
+        {
+            Tick(weapons, input, Frame());
+            Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+        }
+
+        Assert.True(weapons.Sway.Settled);
+        Assert.Equal(HumanViewSway.LoweredPitch, weapons.Sway.Pitch);
+        Assert.Equal(HumanViewSway.LoweredYaw, weapons.Sway.Yaw);
+
+        // The tick it has arrived is the tick the model changes, and the rig starts back up.
+        Tick(weapons, input, Frame());
+        Assert.Equal("WEAPON_ID_GLOCK", weapons.InHand?.Weapon.ScriptId);
+        Assert.Equal(0f, weapons.Sway.TargetPitch);
+        Assert.Equal(HumanWeaponState.ChangingWeapon, weapons.State);
+
+        // Control is not handed back until it is up again, and that takes the same eleven ticks.
+        int raising = 0;
+        while (weapons.State == HumanWeaponState.ChangingWeapon && raising < 4 * HumanViewSway.TicksToTravel)
+        {
+            Tick(weapons, input, Frame());
+            raising++;
+        }
+
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Assert.Equal(0f, weapons.Sway.Pitch);
+        Assert.Equal(HumanViewSway.TicksToTravel, raising);
+    }
+
+    [Fact]
+    public void TheSwayIsTheIdentityWhenNothingIsBeingPutAway()
+    {
+        PlayerWeapons weapons = new([20]);
+        weapons.Carry(Knife);
+        Equip(weapons);
+
+        Assert.True(weapons.Sway.Settled);
+        Assert.Equal(Matrix3f.Identity, weapons.Sway.ToMatrix());
+    }
+
+    [Fact]
+    public void HoldingFireWithTheKnifeGivesExactlyOneSwing()
+    {
+        // Maximum Rounds/Burst is 1 and the burst counter only resets when the trigger is released, so
+        // leaning on the button does nothing after the first strike.
+        PlayerWeapons weapons = new([20]);
+        weapons.Carry(Knife);
+
+        Equip(weapons);
+        int rounds = Run(weapons, fire: true, ticks: 90);
+
+        Assert.Equal(1, rounds);
+    }
+
+    [Fact]
+    public void TheKnifeSwingsEveryTwelveTicks()
+    {
+        // 140 rounds a minute is trunc(60/140 * 30) = 12 ticks -- 0.4 seconds. Nothing here chooses
+        // that; it is the roster's Rounds/Minute through the gun's clock.
+        Assert.Equal(12, GunTiming.TicksPerRound(140));
+
+        PlayerWeapons weapons = new([20]);
+        weapons.Carry(Knife);
+        Equip(weapons);
+
+        List<int> spacing = Spacing(weapons, tapEvery: 1, ticks: 200);
+        Assert.NotEmpty(spacing);
+        Assert.All(spacing, gap => Assert.Equal(12, gap));
+    }
+
+    [Fact]
+    public void TheKnifeNeitherSpendsNorEmpties()
+    {
+        // Calibre -1 means no ammunition record, and both the empty test and the decrement sit behind
+        // it. Rounds/Clip is -1 and stays -1.
+        PlayerWeapons weapons = new([20]);
+        weapons.Carry(Knife);
+        Equip(weapons);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        Assert.False(held.Gun.ConsumesAmmunition);
+
+        int rounds = Spacing(weapons, tapEvery: 1, ticks: 400).Count + 1;
+        Assert.True(rounds > 10, $"only {rounds} strikes in 400 ticks.");
+        Assert.Equal(-1, held.Gun.RoundsInClip);
+    }
+
+    [Fact]
+    public void TheGlockIsSemiAutomaticAndSpendsOneRoundPerPull()
+    {
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 100);
+        Equip(weapons);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        int before = held.Gun.RoundsInClip;
+        Assert.Equal(17, before);
+
+        int rounds = Run(weapons, fire: true, ticks: 60);
+        Assert.Equal(1, rounds);
+        Assert.Equal(before - 1, held.Gun.RoundsInClip);
+    }
+
+    [Fact]
+    public void TheGlockFiresEveryFourTicksWhenTapped()
+    {
+        // 400 rounds a minute is 4.5 ticks exactly, and the original TRUNCATES: the Glock's real rate
+        // is 450, not its nominal 400.
+        Assert.Equal(4, GunTiming.TicksPerRound(400));
+
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 200);
+        Equip(weapons);
+
+        List<int> spacing = Spacing(weapons, tapEvery: 1, ticks: 60);
+        Assert.NotEmpty(spacing);
+        Assert.All(spacing, gap => Assert.Equal(4, gap));
+    }
+
+    [Fact]
+    public void TheMp5SdKeepsFiringWhileHeldAndEmptiesItsMagazine()
+    {
+        Assert.Equal(2, GunTiming.TicksPerRound(700));
+
+        PlayerWeapons weapons = new([7]);
+        weapons.Carry(Mp5Sd, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 0);
+        Equip(weapons);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        Assert.Equal(32, held.Gun.RoundsInClip);
+
+        // Two ticks a round over the whole magazine is 64 ticks; give it a margin and check the
+        // magazine is what stopped it, not the cap.
+        int rounds = Run(weapons, fire: true, ticks: 120);
+
+        Assert.Equal(32, rounds);
+        Assert.Equal(0, held.Gun.RoundsInClip);
+    }
+
+    [Fact]
+    public void TheMp5SdsBurstCapAndItsMagazineRunOutTogether()
+    {
+        // Maximum Rounds/Burst equals Rounds/Clip on every automatic weapon in the roster, which is
+        // how one comparison gives both semi-automatic and fully automatic behaviour.
+        Assert.Equal(Mp5Sd.RoundsPerClip, Mp5Sd.MaximumRoundsPerBurst);
+    }
+
+    [Fact]
+    public void AnEmptyMagazineReloadsWithoutBeingAsked()
+    {
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 50);
+        Equip(weapons, clipEnded: false);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        held.Gun.State.RoundsInClip = 0;
+
+        // The Ready state's reload branch is `(Reload pressed || clip == 0) && reserve && ...`, so an
+        // empty magazine takes it with no button at all. The clip-end flag is what releases it, which
+        // is why the rounds have not moved yet.
+        Tick(weapons, new PlayerInputState(), Frame());
+        Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+        Assert.Equal(0, held.Gun.RoundsInClip);
+
+        Tick(weapons, new PlayerInputState(), Frame(), clipEnded: true);
+        Assert.Equal(17, held.Gun.RoundsInClip);
+        Assert.Equal(50 - 17, weapons.Ammunition.Count(NineMillimetre.AmmoId));
+    }
+
+    [Fact]
+    public void AReloadKeepsWhatIsAlreadyInTheMagazine()
+    {
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 50);
+        Equip(weapons);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        held.Gun.State.RoundsInClip = 8;
+
+        int moved = held.Gun.Reload(weapons.Ammunition);
+
+        // Nine, not seventeen: there is no lost-partial-magazine rule anywhere in this game.
+        Assert.Equal(9, moved);
+        Assert.Equal(17, held.Gun.RoundsInClip);
+        Assert.Equal(41, weapons.Ammunition.Count(NineMillimetre.AmmoId));
+    }
+
+    [Fact]
+    public void FiringAnEmptyWeaponWithNoReserveGoesDry()
+    {
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        Equip(weapons);
+
+        weapons.InHand!.Value.Gun.State.RoundsInClip = 0;
+
+        Run(weapons, fire: true, ticks: 1);
+        Assert.Equal(HumanWeaponState.DryFire, weapons.State);
+    }
+
+    [Fact]
+    public void EveryShotStartsAtTheEyeAndGoesDownTheBarrel()
+    {
+        PlayerWeapons weapons = new([20]);
+        weapons.Carry(Knife);
+        Equip(weapons);
+
+        Vector3d eye = new(1000, 2000, 3000);
+        Vector3f forward = new(0f, 1f, 0f);
+
+        PlayerInputState input = new();
+        input.Accept(Frame(PlayerInputSlot.Fire));
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.True(weapons.ResolveFire(eye, forward, new Vector3f(1f, 0f, 0f), new Vector3f(0f, 0f, 1f)));
+
+        GunProjectile shot = Assert.Single(weapons.Shots);
+        Assert.Equal(eye, shot.Origin);
+
+        // The knife's spread is zero, so the cone sampling is skipped entirely and the strike goes
+        // straight down the barrel -- and 1 metre of effective range is 4096 units of reach.
+        Assert.Equal(forward.X, shot.Direction.X, 6);
+        Assert.Equal(forward.Y, shot.Direction.Y, 6);
+        Assert.Equal(forward.Z, shot.Direction.Z, 6);
+        Assert.Equal(4096f, shot.RangeInUnits);
+    }
+
+    [Fact]
+    public void TheGlocksRecoilIsExactlyItsFixedTermEveryShot()
+    {
+        // Fixed 1.5 degrees in pitch with both random terms at zero, so the disc sample is drawn and
+        // then multiplied by nothing -- every Glock shot kicks identically.
+        IgiRandom random = new(7);
+        for (int i = 0; i < 20; i++)
+        {
+            (float x, float z) = HeldGun.SampleRecoil(Glock, random);
+            Assert.Equal(1.5f * GunFiring.DegreesToRadians, x, 6);
+            Assert.Equal(0f, z, 6);
+        }
+    }
+
+    [Fact]
+    public void TheKnifeHasNoRecoilAtAll()
+    {
+        IgiRandom random = new(3);
+        (float x, float z) = HeldGun.SampleRecoil(Knife, random);
+
+        Assert.Equal(0f, x);
+        Assert.Equal(0f, z);
+    }
+
+    [Fact]
+    public void TheRandomRecoilLandsInsideTheUnitDiscScaledByTheWeapon()
+    {
+        IgiRandom random = new(11);
+        float limit = (0.8f + 0.8f) * GunFiring.DegreesToRadians;
+
+        for (int i = 0; i < 200; i++)
+        {
+            (float x, float z) = HeldGun.SampleRecoil(Mp5Sd, random);
+
+            // Fixed 0.8 plus random 0.8 across a unit disc, so pitch is within [0, 1.6] degrees and
+            // yaw is pinned at zero because the MP5SD's Z terms are both zero.
+            Assert.InRange(x, 0f, limit + 1e-5f);
+            Assert.Equal(0f, z, 6);
+        }
+    }
+
+    [Fact]
+    public void RecoilAccumulatesAndDecaysByATenthEachTick()
+    {
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 100);
+        Equip(weapons);
+
+        Run(weapons, fire: true, ticks: 1);
+        float afterOne = weapons.RecoilPitch;
+        Assert.True(afterOne > 0f);
+
+        // No further round for three ticks -- the cooldown is four -- so the only thing happening is
+        // the 0.9 damping.
+        Equip(weapons);
+        Assert.Equal(afterOne * PlayerWeapons.RecoilDamping, weapons.RecoilPitch, 6);
+    }
+
+    // Runs until the cycle has put a weapon in hand and the machine is idle again. The swap is a
+    // TWO-PHASE lowering and raising of the rig -- 11 ticks each way -- so it is not instant.
+    private static void Equip(PlayerWeapons weapons, bool clipEnded = true)
+    {
+        PlayerInputState input = new();
+        for (int i = 0; i < 4 * HumanViewSway.TicksToTravel; i++)
+        {
+            Tick(weapons, input, Frame(), clipEnded);
+            if (weapons.State == HumanWeaponState.Ready && weapons.InHand is not null)
+            {
+                return;
+            }
+        }
+
+        Assert.Fail("the weapon cycle never put anything in hand.");
+    }
+
+    private static PlayerInputFrame Frame(params PlayerInputSlot[] pressed)
+    {
+        PlayerInputFrame frame = default;
+        foreach (PlayerInputSlot slot in pressed)
+        {
+            if (PlayerInputBindings.TryGetAction(slot, out PlayerAction action))
+            {
+                frame[(int)slot] = (uint)action;
+            }
+        }
+
+        return frame;
+    }
+
+    private static void Tick(
+        PlayerWeapons weapons,
+        PlayerInputState input,
+        PlayerInputFrame frame,
+        bool clipEnded = false)
+    {
+        input.Accept(frame);
+        weapons.Tick(input, clipEnded, onGround: true);
+
+        // Where 0x464BD0 steps the weapon-change lowering: after the machine has read it. Without this
+        // a swap never completes, because the state that swaps waits for the rig to arrive.
+        weapons.Sway.Advance();
+        weapons.ResolveFire(default, new Vector3f(0f, 1f, 0f), new Vector3f(1f, 0f, 0f), new Vector3f(0f, 0f, 1f));
+    }
+
+    // A tap, then long enough for the swap's lowering and raising to run out.
+    private static void Press(PlayerWeapons weapons, PlayerInputState input, PlayerInputSlot slot)
+    {
+        Tick(weapons, input, Frame(slot));
+        for (int i = 0; i < 4 * HumanViewSway.TicksToTravel; i++)
+        {
+            Tick(weapons, input, Frame());
+            if (weapons.State == HumanWeaponState.Ready)
+            {
+                return;
+            }
+        }
+    }
+
+    // The rig is stood in for by reporting the clip as finished every tick. That is what a LOOPING
+    // stand clip does on its wrap and what a one-shot clip does once it is clamped at its duration, and
+    // it is the conservative choice: a state that waits on the flag gets to leave, so the cadence these
+    // measure comes from the gun's clock alone and never from an animation this test invented.
+    private static int Run(PlayerWeapons weapons, bool fire, int ticks, bool clipEnded = true)
+    {
+        PlayerInputState input = new();
+        PlayerInputFrame frame = fire ? Frame(PlayerInputSlot.Fire) : Frame();
+
+        int rounds = 0;
+        for (int i = 0; i < ticks; i++)
+        {
+            Tick(weapons, input, frame, clipEnded);
+            if (weapons.FiredThisTick)
+            {
+                rounds++;
+            }
+        }
+
+        return rounds;
+    }
+
+    // Taps the trigger every `tapEvery` ticks and reports the gaps between the rounds that went off.
+    private static List<int> Spacing(PlayerWeapons weapons, int tapEvery, int ticks)
+    {
+        PlayerInputState input = new();
+        List<int> gaps = [];
+        int last = -1;
+
+        for (int i = 0; i < ticks; i++)
+        {
+            bool down = i % (tapEvery * 2) < tapEvery;
+            Tick(weapons, input, down ? Frame(PlayerInputSlot.Fire) : Frame(), clipEnded: true);
+
+            if (!weapons.FiredThisTick)
+            {
+                continue;
+            }
+
+            if (last >= 0)
+            {
+                gaps.Add(i - last);
+            }
+
+            last = i;
+        }
+
+        return gaps;
+    }
+}

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Menus;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
@@ -206,11 +207,26 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
         _quit();
     }
 
-    private static (int X, int Y) ToAuthoredCore(int x, int y, int width, int height) =>
-        (x + (MenuLayout.AuthoredWidth / 2) - (width >> 1),
-         y + (MenuLayout.AuthoredHeight / 2) - (height >> 1));
+    // The exact inverse of MenuLayout.ToScreen, magnification included -- if this and the renderer
+    // disagreed about the scale the cursor would sit somewhere other than what it is pointing at.
+    private static (int X, int Y) ToAuthoredCore(int x, int y, int width, int height, int scale)
+    {
+        int s = scale < UiScale.Native ? UiScale.Native : scale;
+        return (
+            ((x - (width >> 1)) / s) + (MenuLayout.AuthoredWidth / 2),
+            ((y - (height >> 1)) / s) + (MenuLayout.AuthoredHeight / 2));
+    }
 
-    private (int X, int Y) ToAuthored(int x, int y) => ToAuthoredCore(x, y, _screenWidth(), _screenHeight());
+    private (int X, int Y) ToAuthored(int x, int y)
+    {
+        int width = _screenWidth();
+        int height = _screenHeight();
+        return ToAuthoredCore(x, y, width, height, UiScale.Resolve(Scale, width, height));
+    }
+
+    /// <summary>Gets or sets the magnification the menu is drawn at; <see cref="UiScale.Automatic"/> derives one.</summary>
+    /// <remarks>It must match the renderer's, because this is the hit-test's half of the same mapping.</remarks>
+    public int Scale { get; set; } = UiScale.Automatic;
 
     private void NotYet(string what) =>
         _logger.Information(LogCategory, $"Flow asked for {what}, which is not implemented yet.");

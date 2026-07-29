@@ -11,6 +11,7 @@ using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
@@ -141,7 +142,12 @@ using (window)
         () => window.Width,
         () => window.Height,
         () => running = false,
-        logger);
+        logger)
+    {
+        // The menu and its hit-test have to agree about the magnification -- this is the inverse of
+        // what MenuRenderer draws with. See UiScale for why the interface is scaled at all.
+        Scale = options.UiScale,
+    };
 
     // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk
     // updates and renders the menu rather than this loop doing either by hand.
@@ -178,6 +184,8 @@ using (window)
     }
 
     bool reportedWorld = false;
+    bool reportedShot = false;
+    int reportedHumanHits = 0;
     WorldScene? scene = null;
     WorldRenderer? world = null;
     TerrainRenderer? terrain = null;
@@ -187,14 +195,27 @@ using (window)
     // The walking player. F1 swaps between it and the free camera: the camera is how a level is
     // inspected, the player is how it is stood in. Both draw through the same Camera3D.
     PlayerCamera? player = null;
+    HeldWeaponRenderer? heldWeapon = null;
+    StatusScreenRenderer? hud = null;
+    BulletMarkRenderer? marks = null;
+    LoadedMission? loadedMissionForWeapon = null;
+    ViewModelRenderer? arms = null;
+    SoldierRenderer? soldiers = null;
     TerrainData? playerTerrain = null;
     bool playerMode = false;
 
     // The camera's projection, in one place: the terrain traversal needs the same field of view the
     // projection matrix is built from, or it would cull against a frustum the picture does not have.
     // The far plane is shared with the sky, which sizes its dome from it.
-    const float verticalFieldOfView = 1.2f;
+    //
+    // The field of view is the original's, not a chosen one. HumanView's constructor (0x4643A0) sets
+    // its half-tangent to tan(45 degrees) = 1.0, the camera copies it to HumanCamera+96 and submits it
+    // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own 115/sqrt(tanX)
+    // view distance independently confirms. So the horizontal field of view is 90 degrees and the
+    // vertical one follows from the window's aspect, rather than the other way round.
     const float farPlane = 4000f;
+    static float VerticalFieldOfView(float aspectRatio) =>
+        2f * MathF.Atan(HumanView.DefaultTanX / MathF.Max(aspectRatio, 0.0001f));
 
     void StartMission(int id)
     {
@@ -213,6 +234,23 @@ using (window)
 
         scene = WorldScene.Build(loaded, levelRoot, magic, logger);
         world = new WorldRenderer(device, resources, logger);
+
+        // The walls. Built here because two consumers want it: the player's collision, and the
+        // soldiers' ground probe - a guard's declared Position is only where it starts, and without
+        // the settle the retail integrator performs, floor-authored spawns bury the body to the waist.
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+
+        // The soldiers the level places. Each names its own model, skeleton and stand animation
+        // (player.md section 15); the sets they index were loaded when the packs opened. They are not
+        // WorldScene placements - a human task is a typed task, and the original draws it through the
+        // bone path, not the static one.
+        soldiers?.Dispose();
+        soldiers = new SoldierRenderer(device, resources, logger);
+        soldiers.Load(
+            loaded,
+            levelRoot,
+            loaded.Terrain is { IsUsable: true } standing ? standing : null,
+            solids.Caster());
 
         // A level whose terrain files are not live data — level 14 is exactly that — draws its objects
         // over nothing rather than following offsets into whatever the geometry blob happens to hold.
@@ -275,13 +313,46 @@ using (window)
 
             // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
             // walking through crates and buildings; the solidity is in each model's own HSMC mesh.
-            if (scene is not null)
+            // The index is the one built above for the soldiers' ground probe.
+            candidate.UseWalls(solids);
+            logger.Information(
+                "Player",
+                $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
+
+            // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
+            // symbols that get their values as the two tables are read, so the rosters have to load
+            // before humanplayer.qvm runs -- otherwise every id in its weapon cycle is a placeholder
+            // and the cycle names weapons nobody carries. section 8.
+            WeaponTypeRegistry weaponRoster = new(logger);
+            AmmoTypeRegistry ammoTable = new(logger);
+            GameMaterialRegistry materialTable = new(logger);
+            try
             {
-                ObjectCollisionIndex walls = ObjectCollisionIndex.Build(scene.Placements);
-                candidate.UseWalls(walls);
-                logger.Information(
-                    "Player",
-                    $"{walls.Count} placed object(s) are solid, {walls.TriangleCount} collision triangle(s).");
+                weaponRoster.Register(loop.Natives);
+                weaponRoster.Load(fileSystem, resources, loop.Natives);
+                ammoTable.Register(loop.Natives);
+                ammoTable.Load(fileSystem, resources, loop.Natives);
+
+                // What every surface in the world is made of, and therefore what a round leaves on it.
+                materialTable.Register(loop.Natives);
+                if (fileSystem.Exists(GameMaterialRegistry.ScriptResource))
+                {
+                    resources.Register(
+                        GameMaterialRegistry.ScriptResource,
+                        fileSystem.ReadAllBytes(GameMaterialRegistry.ScriptResource));
+                }
+                else
+                {
+                    logger.Warning("Material", $"No material table at {GameMaterialRegistry.ScriptResource}.");
+                }
+
+                int materialCount = materialTable.Load(resources, loop.Natives);
+                candidate.UseMaterials(materialTable);
+                logger.Information("Material", $"Read {materialCount} game material(s).");
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
+            {
+                logger.Warning("Weapon", $"Could not read the weapon or ammunition tables: {ex.Message}");
             }
 
             // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
@@ -292,6 +363,14 @@ using (window)
                 config.Register(loop.Natives);
                 config.Load(resources, loop.Natives);
 
+                if (config.PlaceholderIds.Count > 0)
+                {
+                    logger.Warning(
+                        "Player",
+                        $"humanplayer.qvm left {config.PlaceholderIds.Count} id(s) unresolved; the weapon "
+                            + "cycle may name weapons that do not exist.");
+                }
+
                 if (config.Parameters is { } tuning)
                 {
                     candidate.UseParameters(tuning);
@@ -300,19 +379,83 @@ using (window)
                 {
                     logger.Warning("Player", "humanplayer.qvm published no parameters; using the retail defaults.");
                 }
+
+                // The same script says which weapon starts in hand, and it is not a guess any more:
+                // 0x40F760's cycle index begins at -1, so the first update lands on entry 0 of
+                // DefineHumanPlayerWeaponCycle and steps on until it finds one you carry. The shipped
+                // list starts with the knife. section 16.7.
+                candidate.UseWeaponCycle(config.WeaponCycle);
+
+                // And the nine categories the number keys select — 0x411000 reads exactly this table.
+                candidate.Weapons?.UseCategories(config.Categories);
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
             {
                 logger.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
             }
 
+            // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
+            // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
+            // without it there is nothing to draw a gun on.
+            try
+            {
+                string viewRig = Path.Combine(gamePath, "common", "anims", "005.iff");
+                if (File.Exists(viewRig))
+                {
+                    candidate.UseViewRig(
+                        OpenIGI.Formats.Animation.BoneAnimationSet.Read(File.ReadAllBytes(viewRig)));
+
+                    // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
+                    // skinning: 005_01_1 is mesh format 1.
+                    arms?.Dispose();
+                    arms = new ViewModelRenderer(device, resources, logger);
+                    if (!arms.Load(loaded))
+                    {
+                        arms.Dispose();
+                        arms = null;
+                    }
+                }
+                else
+                {
+                    logger.Warning("Player", $"No view rig at {viewRig}; no weapon can be held.");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException)
+            {
+                logger.Warning("Player", $"Could not read the first-person rig: {ex.Message}");
+            }
+
             // What the mission arms you with is declared, not computed: weapon tasks hang off the
-            // level's own HumanPlayer. Reading it is the first link in drawing a gun; the rest of that
-            // chain - a first-person view and the weapon's model - is not built yet, so for now this
-            // reports the loadout rather than showing it.
+            // level's own HumanPlayer, and every WEAPON_ID_* resolves to a roster entry naming a
+            // Gun Model. With the rig in place that model can finally be put where the game puts it.
+            heldWeapon?.Dispose();
+    hud?.Dispose();
+    marks?.Dispose();
+            heldWeapon = null;
+
             if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
             {
                 logger.Information("Player", $"Carrying {loadout}.");
+                heldWeapon = CarryLoadout(candidate, loadout, loaded, weaponRoster, ammoTable);
+                loadedMissionForWeapon = loaded;
+
+                // The player's rounds are offered to the soldiers, which own their own health.
+                if (soldiers is { } guards)
+                {
+                    candidate.Humans = guards.Shooter();
+                }
+
+                // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
+                marks?.Dispose();
+                marks = new BulletMarkRenderer(device, resources, logger);
+
+                hud?.Dispose();
+                hud = new StatusScreenRenderer(device, logger);
+                if (!hud.Load(fileSystem))
+                {
+                    hud.Dispose();
+                    hud = null;
+                }
             }
 
             // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
@@ -346,6 +489,76 @@ using (window)
         // the world.
         renderer = null;
         logger.Information("Mission", $"Loaded {loaded}.");
+    }
+
+    // Puts a weapon in the player's hands and loads the model its roster entry names.
+    //
+    // Hands the player everything the mission declares, with the ammunition each weapon draws from.
+    // WHICH of them ends up in hand is no longer decided here: the weapon cycler's index starts at -1
+    // and the first tick lands on entry 0 of DefineHumanPlayerWeaponCycle, stepping on until it finds
+    // one that is carried. That retires the divergence this function used to carry -- see
+    // the original. The renderer's model follows whatever ends up in hand.
+    HeldWeaponRenderer? CarryLoadout(
+        PlayerCamera candidate,
+        PlayerLoadout loadout,
+        LoadedMission loadedMission,
+        WeaponTypeRegistry roster,
+        AmmoTypeRegistry ammunition)
+    {
+        if (candidate.View is null || loadout.Weapons.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (LoadoutWeapon declared in loadout.Weapons)
+        {
+            if (!roster.TryGetByScriptId(declared.WeaponId, out WeaponType weapon))
+            {
+                logger.Warning("Weapon", $"{declared.WeaponId} is not in the roster; it is not carried.");
+                continue;
+            }
+
+            // A weapon finds its ammunition by naming a Calibre ID, and -1 -- the knife's -- names
+            // none at all, which is exactly why a knife never runs out.
+            bool hasAmmo = ammunition.TryGetByCalibre(weapon.CalibreId, out AmmoType ammo);
+            candidate.Carry(weapon, hasAmmo ? ammo : null);
+        }
+
+        foreach (LoadoutAmmo declared in loadout.Ammunition)
+        {
+            AmmoType? pool = ammunition.Types.FirstOrDefault(a =>
+                string.Equals(a.ScriptId, declared.AmmoId, StringComparison.Ordinal));
+
+            if (pool is not null)
+            {
+                candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
+            }
+        }
+
+        return new HeldWeaponRenderer(device, resources, logger);
+    }
+
+    // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
+    // anything on the tick the weapon actually changed.
+    void FollowHeldWeapon(PlayerCamera candidate, HeldWeaponRenderer? renderer, LoadedMission loadedMission)
+    {
+        if (renderer is null || !candidate.WeaponChanged)
+        {
+            return;
+        }
+
+        candidate.AcknowledgeWeaponChange();
+
+        if (candidate.HeldWeaponType is not { } weapon)
+        {
+            return;
+        }
+
+        if (renderer.Load(loadedMission, weapon.GunModel))
+        {
+            logger.Information("Weapon", $"Holding {weapon.ScriptId} ('{weapon.GunModel}') on view bone "
+                + $"{HumanAttachPoints.FirstPersonWeapon}.");
+        }
     }
 
     menuHost.StartGame = () => StartMission(missionState.PendingMissionId);
@@ -399,7 +612,10 @@ using (window)
             fileSystem,
             menu.Manager.ResourcePath,
             strings,
-            ["LOCAL:menusystem/missionsprites.res"]);
+            ["LOCAL:menusystem/missionsprites.res"])
+        {
+            Scale = options.UiScale,
+        };
 
         // -screen is a development shortcut, not a game feature: the script decides where the menu
         // opens, and this overwrites that one parameter before the manager reads it.
@@ -510,6 +726,37 @@ using (window)
             && playerMode && player is not null && playerTerrain is not null)
         {
             player.Tick(window.Input, playerTerrain);
+
+            // The first round of a mission, reported once — the same one-shot diagnostic the world
+            // draw uses. It is what says the whole chain arrived: the trigger reached the state
+            // machine, the machine reached the gun, the gun's clock let a round out, and the round
+            // went somewhere.
+            if (!reportedShot && player.FiredThisTick && player.HeldWeaponType is { } fired)
+            {
+                reportedShot = true;
+                string where = player.Impacts.Count == 0
+                    ? "nowhere"
+                    : player.Impacts[0].HitSomething
+                        ? $"{player.Impacts[0].Position}"
+                        : $"nothing inside {fired.EffectiveRange} m";
+
+                logger.Information(
+                    "Weapon",
+                    $"Fired {fired.ScriptId} — {GunTiming.TicksPerRound(fired.RoundsPerMinute)} tick(s) "
+                        + $"a round at {fired.RoundsPerMinute} rpm, "
+                        + $"{player.Weapons?.InHand?.Gun.RoundsInClip} left in the magazine, into {where}.");
+            }
+
+            // Every round that lands on a guard, reported once each so the zone and the kill are
+            // visible without a per-shot log.
+            if (player.HumanHits != reportedHumanHits)
+            {
+                reportedHumanHits = player.HumanHits;
+                logger.Information(
+                    "Weapon",
+                    $"Hit a guard in zone {player.LastHumanZone} "
+                        + $"({reportedHumanHits} hit(s), {soldiers?.Killed ?? 0} killed).");
+            }
         }
 
         if (outcome != FrameOutcome.Render)
@@ -520,10 +767,15 @@ using (window)
         if (scene is not null && world is not null && camera is not null)
         {
             float aspectRatio = (float)window.Width / Math.Max(1, window.Height);
+            float verticalFieldOfView = VerticalFieldOfView(aspectRatio);
+            // The near plane is the original's default: 0x493580 initialises it to 409.6 units, which
+            // is 0.1 m. (Scripts can move it through the SetNearClippingPlane native, 0x497D00.) At
+            // 0.2 the plane reached twice as far as retail's and cut into any wall the sweep lets the
+            // body stand 2.5 mm from.
             Matrix4f projection = Matrix4f.CreatePerspective(
                 verticalFieldOfView,
                 aspectRatio,
-                near: 0.2f,
+                near: 0.1f,
                 far: farPlane);
 
             // The sky is behind everything and writes no depth, so it goes first; then terrain, which
@@ -534,6 +786,88 @@ using (window)
             sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
             terrain?.Draw(eye, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
             world.Draw(scene, eye, projection);
+
+            // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
+            // never swaps in the view-model block for them (player.md section 15.3).
+            soldiers?.Draw(eye, projection);
+
+            // The marks rounds have left, over the world and under the first-person rig.
+            if (marks is not null && player is not null)
+            {
+                marks.Draw(player.Marks, eye, projection);
+            }
+
+            // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
+            // then ask the human where the weapon is and draw that. Only in player mode, because the
+            // original draws it out of the human's own render and the free camera is not a human.
+            if (playerMode && player is { View: { } rig })
+            {
+                // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
+                // than the frame.
+                if (player.PoseChanged)
+                {
+                    arms?.Invalidate();
+                    player.AcknowledgePose();
+                }
+
+                // The view model gets its OWN projection: 0x49F700 saves the current view block,
+                // rebuilds [16..19] from dword_B81700 -- HumanCamera+220, filled from HumanView+488 =
+                // tan(30 degrees) -- and restores it afterwards, for any bone model with no LOD chain,
+                // which the HumanView is (0x464660 leaves +212 at zero). The rebuild is sub_497D70's
+                // own algebra, the SAME build every camera pass uses: [16] is the plain half-angle
+                // tangent, [18] = halfWidth / [16] and [19] = Aspect43 * [18] are the pixel scales the
+                // projection divides through (sub_50FE60 publishes them as the per-vertex xScale and
+                // yScale). So against the world's tan(45), the arms and the weapon really are drawn
+                // tan45/tan30 = 1.732x magnified about the screen centre -- which moves a hand held
+                // below centre DOWN and out of frame. That is what holds the glove below the bottom
+                // edge in retail. (An earlier pass refuted this as "larger is the wrong direction";
+                // larger is exactly what hides it.) section 14.7.
+                //
+                // The vertical tangent is 3/4 of the horizontal one and does NOT follow the window's
+                // aspect: [19] = Aspect43() * [18] works out to yScale = halfHeight / (0.75 * tan) at
+                // EVERY aspect, so retail's vertical framing -- the glove at the bottom edge -- is
+                // aspect-invariant. Dividing the tangent by the aspect instead (the world's widescreen
+                // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
+                // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
+                float viewModelFieldOfView = 2f * MathF.Atan(0.75f * rig.ViewModelTanX);
+                Matrix4f viewModelProjection = Matrix4f.CreatePerspective(
+                    viewModelFieldOfView,
+                    aspectRatio,
+                    near: 0.1f,
+                    far: farPlane);
+
+                arms?.Draw(rig, eye, viewModelProjection);
+
+                // Cycling weapons changes the model as well as the animations, so the renderer has to
+                // follow whatever the cycle put in hand.
+                if (loadedMissionForWeapon is { } missionForWeapon)
+                {
+                    FollowHeldWeapon(player, heldWeapon, missionForWeapon);
+                }
+
+                if (player.HeldWeapon is { } attachment && heldWeapon is { IsReady: true })
+                {
+                    heldWeapon.Draw(attachment, eye, viewModelProjection);
+                }
+
+                // The HUD goes over everything, in 2D. StatusScreen's render sends one message to the
+                // weapon in hand and the weapon draws its own readout -- so what appears is the roster
+                // record's own SightDisplayType and AmmoDisplayType, not a choice made here.
+                if (hud is { IsReady: true } && player.Weapons is { } carried)
+                {
+                    device.Set2DProjection(window.Width, window.Height);
+                    batch.Begin();
+                    hud.Draw(
+                        batch,
+                        carried.InHand?.Weapon,
+                        carried.InHand?.Gun.RoundsInClip ?? 0,
+                        carried.InHand is { } inHand ? inHand.Gun.Reserve(carried.Ammunition) : 0,
+                        window.Width,
+                        window.Height,
+                        UiScale.Resolve(options.UiScale, window.Width, window.Height));
+                    batch.End();
+                }
+            }
 
             if (!reportedWorld)
             {
@@ -571,6 +905,10 @@ using (window)
     sky?.Dispose();
     terrain?.Dispose();
     world?.Dispose();
+    soldiers?.Dispose();
+    heldWeapon?.Dispose();
+    hud?.Dispose();
+    marks?.Dispose();
     renderer?.Dispose();
     logger.Information(
         "Desktop",

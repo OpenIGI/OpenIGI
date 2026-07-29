@@ -16,8 +16,13 @@ public static class MtpTags
     /// <summary>The form type of a resource pack, <c>MTP </c> — note the trailing space.</summary>
     public static FourCc Mtp { get; } = FourCc.FromString("MTP ");
 
-    /// <summary>Chunk <c>BANM</c>: sound bank names.</summary>
-    public static FourCc BankNames { get; } = FourCc.FromString("BANM");
+    /// <summary>Chunk <c>BANM</c>: animation set names.</summary>
+    /// <remarks>
+    /// Long misread as sound bank names. <c>Pack_Bind</c> (<c>0x4CF080</c>) loads each name as
+    /// <c>&lt;packDir&gt;anims/&lt;name&gt;.iff</c> before the texture and model archives bind — see
+    /// the original.
+    /// </remarks>
+    public static FourCc AnimationSetNames { get; } = FourCc.FromString("BANM");
 
     /// <summary>Chunk <c>SNDS</c>: sound names. Empty in every retail pack.</summary>
     public static FourCc SoundNames { get; } = FourCc.FromString("SNDS");

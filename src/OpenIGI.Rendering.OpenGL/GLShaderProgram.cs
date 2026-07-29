@@ -62,11 +62,36 @@ internal sealed class GLShaderProgram : IDisposable
     /// <summary>Makes this program current.</summary>
     public void Use() => _gl.UseProgram(Handle);
 
+    /// <summary>Resolves a uniform's location so a caller can set it without naming it again.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <returns>The location, or -1 when the linker optimized the uniform away.</returns>
+    /// <remarks>
+    /// The per-name overloads below go through a string-keyed dictionary on every call, which is
+    /// invisible at a few sets per frame and is not at several per draw. A caller on a hot path resolves
+    /// its locations once, at link time, and uses the by-location overloads from then on.
+    /// </remarks>
+    public int LocationOf(string name) => GetLocation(name);
+
+    /// <summary>Sets a <c>vec2</c> uniform.</summary>
+    /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
+    /// <param name="x">The first component.</param>
+    /// <param name="y">The second component.</param>
+    public void SetVector2(int location, float x, float y) => _gl.Uniform2(location, x, y);
+
     /// <summary>Sets a <c>vec2</c> uniform.</summary>
     /// <param name="name">The uniform name.</param>
     /// <param name="x">The first component.</param>
     /// <param name="y">The second component.</param>
     public void SetVector2(string name, float x, float y) => _gl.Uniform2(GetLocation(name), x, y);
+
+    /// <summary>Sets a <c>vec4</c> uniform.</summary>
+    /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
+    /// <param name="x">The first component.</param>
+    /// <param name="y">The second component.</param>
+    /// <param name="z">The third component.</param>
+    /// <param name="w">The fourth component.</param>
+    public void SetVector4(int location, float x, float y, float z, float w) =>
+        _gl.Uniform4(location, x, y, z, w);
 
     /// <summary>Sets a <c>vec4</c> uniform.</summary>
     /// <param name="name">The uniform name.</param>
@@ -78,9 +103,19 @@ internal sealed class GLShaderProgram : IDisposable
         _gl.Uniform4(GetLocation(name), x, y, z, w);
 
     /// <summary>Sets an <c>int</c> uniform.</summary>
+    /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
+    /// <param name="value">The value.</param>
+    public void SetInt(int location, int value) => _gl.Uniform1(location, value);
+
+    /// <summary>Sets an <c>int</c> uniform.</summary>
     /// <param name="name">The uniform name.</param>
     /// <param name="value">The value.</param>
     public void SetInt(string name, int value) => _gl.Uniform1(GetLocation(name), value);
+
+    /// <summary>Sets a <c>float</c> uniform.</summary>
+    /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
+    /// <param name="value">The value.</param>
+    public void SetFloat(int location, float value) => _gl.Uniform1(location, value);
 
     /// <summary>Sets a <c>float</c> uniform.</summary>
     /// <param name="name">The uniform name.</param>
@@ -88,17 +123,22 @@ internal sealed class GLShaderProgram : IDisposable
     public void SetFloat(string name, float value) => _gl.Uniform1(GetLocation(name), value);
 
     /// <summary>Sets a <c>mat4</c> uniform.</summary>
-    /// <param name="name">The uniform name.</param>
+    /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
     /// <param name="value">The matrix, written out column-major as GL expects.</param>
-    public unsafe void SetMatrix4(string name, in Matrix4f value)
+    public unsafe void SetMatrix4(int location, in Matrix4f value)
     {
         Span<float> elements = stackalloc float[Matrix4f.ComponentCount];
         value.CopyColumnMajorTo(elements);
         fixed (float* data = elements)
         {
-            _gl.UniformMatrix4(GetLocation(name), 1, false, data);
+            _gl.UniformMatrix4(location, 1, false, data);
         }
     }
+
+    /// <summary>Sets a <c>mat4</c> uniform.</summary>
+    /// <param name="name">The uniform name.</param>
+    /// <param name="value">The matrix, written out column-major as GL expects.</param>
+    public void SetMatrix4(string name, in Matrix4f value) => SetMatrix4(GetLocation(name), value);
 
     /// <inheritdoc/>
     public void Dispose() => _gl.DeleteProgram(Handle);

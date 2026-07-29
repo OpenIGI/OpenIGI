@@ -36,10 +36,28 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private readonly IIgiLogger _logger;
     private readonly Dictionary<uint, GLTexture> _textures = [];
     private readonly Dictionary<uint, GLMesh> _meshes = [];
-    private readonly TextureHandle[] _boundTextures = new TextureHandle[MaxTextureUnits];
+
+    // The GL names currently bound to each texture unit. Zero is GL's own initial state, so this starts
+    // out truthful; every bind in this class goes through BindTexture, so it stays that way.
+    private readonly uint[] _textureNames = new uint[MaxTextureUnits];
 
     private GLShaderProgram _program = null!;
     private GLShaderProgram _meshProgram = null!;
+    private MeshUniforms _meshUniforms;
+    private int _spriteInverseScreen = -1;
+
+    // Shadows of the bindings and of the mesh program's uniform values. A level is drawn as thousands of
+    // sub-meshes, most of them sharing a transform, a texture and a blend with the one before -- so the
+    // redundant call is the common case rather than the exception, and each one is a driver round trip.
+    private uint _currentProgram;
+    private uint _currentVertexArray;
+    private int _activeTextureUnit = -1;
+    private bool _meshUniformsPrimed;
+    private Matrix4f _sentModelView;
+    private Matrix4f _sentProjection;
+    private (float Scale, float Offset, float Slope, float Enabled) _sentDetailFade;
+    private float _sentAlphaTest;
+
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private (float Scale, float Offset, float Slope, float Enabled) _detailFade;
@@ -141,6 +159,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         ApplyBlend(BlendMode.AlphaBlend);
         SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
 
+        // The shadows below describe a context this call cannot vouch for, so they are dropped rather
+        // than trusted: the next draw re-binds and re-uploads everything it needs.
+        _currentProgram = 0;
+        _currentVertexArray = 0;
+        _activeTextureUnit = -1;
+        _meshUniformsPrimed = false;
+        Array.Clear(_textureNames);
+
         DeviceRestored?.Invoke(this, EventArgs.Empty);
     }
 
@@ -175,11 +201,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _present();
 
-        // The original unbinds both texture stages and resets its batch counters immediately after
-        // presenting, so the new frame starts from a known state rather than inheriting the last one's.
-        for (int unit = 0; unit < _boundTextures.Length; unit++)
+        // The original unbinds both texture stages immediately after presenting, so the new frame starts
+        // from a known state rather than inheriting the last one's. It really unbinds now: the old code
+        // only cleared a table nothing read, which left the claim in this comment untrue.
+        for (int unit = 0; unit < _textureNames.Length; unit++)
         {
-            _boundTextures[unit] = TextureHandle.None;
+            BindTexture(unit, 0);
         }
     }
 
@@ -303,7 +330,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         }
 
         uint name = _gl.GenTexture();
-        _gl.BindTexture(TextureTarget.Texture2D, name);
+        BindTextureForUpload(name);
 
         int offset = 0;
         for (int level = 0; level < description.MipLevels; level++)
@@ -314,7 +341,6 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         }
 
         ApplySampling(description);
-        _gl.BindTexture(TextureTarget.Texture2D, 0);
 
         uint id = _nextTextureId++;
         _textures[id] = new GLTexture(name, description.Width, description.Height, description.MipLevels);
@@ -339,9 +365,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
                 nameof(pixels));
         }
 
-        _gl.BindTexture(TextureTarget.Texture2D, entry.Name);
+        BindTextureForUpload(entry.Name);
         UploadLevel(mipLevel, w, h, pixels[..(w * h)]);
-        _gl.BindTexture(TextureTarget.Texture2D, 0);
     }
 
     /// <inheritdoc/>
@@ -355,6 +380,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         if (_textures.Remove(texture.Id, out GLTexture entry))
         {
             _gl.DeleteTexture(entry.Name);
+
+            // Deleting a bound texture unbinds it, so the shadow has to follow or the next draw that
+            // wanted white on that unit would skip the bind and sample a deleted name.
+            for (int unit = 0; unit < _textureNames.Length; unit++)
+            {
+                if (_textureNames[unit] == entry.Name)
+                {
+                    _textureNames[unit] = 0;
+                }
+            }
         }
     }
 
@@ -365,9 +400,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         ArgumentOutOfRangeException.ThrowIfNegative(unit);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(unit, Capabilities.TextureUnits);
 
-        _gl.ActiveTexture(TextureUnit.Texture0 + unit);
-        _gl.BindTexture(TextureTarget.Texture2D, texture.IsValid ? Resolve(texture, nameof(texture)).Name : _whiteTexture);
-        _boundTextures[unit] = texture;
+        BindTexture(unit, NameOf(texture, nameof(texture)));
     }
 
     /// <inheritdoc/>
@@ -396,21 +429,22 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
                 nameof(vertices));
         }
 
-        _program.Use();
-        _program.SetVector2("uInverseScreen", 2.0f / _projectionWidth, 2.0f / _projectionHeight);
-        _program.SetInt("uTexture", 0);
+        UseProgram(_program);
 
-        _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindTexture(TextureTarget.Texture2D, texture.IsValid ? Resolve(texture, nameof(texture)).Name : _whiteTexture);
+        // uTexture is a constant and is set once at link time; the screen size changes only on a resize,
+        // but it is one uniform on a path that draws a handful of batches per frame rather than
+        // thousands, so it is not worth shadowing.
+        _program.SetVector2(_spriteInverseScreen, 2.0f / _projectionWidth, 2.0f / _projectionHeight);
+
+        BindTexture(0, NameOf(texture, nameof(texture)));
 
         ApplyBlend(blend);
 
-        _gl.BindVertexArray(_vertexArray);
+        BindVertexArray(_vertexArray);
         UploadStream(BufferTargetARB.ArrayBuffer, _vertexBuffer, vertices, Vertex2D.Size);
         UploadStream(BufferTargetARB.ElementArrayBuffer, _indexBuffer, indices, sizeof(ushort));
 
         _gl.DrawElements(PrimitiveType.Triangles, (uint)indices.Length, DrawElementsType.UnsignedShort, (void*)0);
-        _gl.BindVertexArray(0);
     }
 
     /// <inheritdoc/>
@@ -444,19 +478,17 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
                 nameof(vertices));
         }
 
-        foreach (ushort index in indices)
+        int highest = HighestIndex(indices);
+        if (highest >= vertices.Length)
         {
-            if (index >= vertices.Length)
-            {
-                throw new ArgumentException($"Index {index} is past the {vertices.Length} vertices supplied.", nameof(indices));
-            }
+            throw new ArgumentException($"Index {highest} is past the {vertices.Length} vertices supplied.", nameof(indices));
         }
 
         uint array = _gl.GenVertexArray();
         uint vertexBuffer = _gl.GenBuffer();
         uint indexBuffer = _gl.GenBuffer();
 
-        _gl.BindVertexArray(array);
+        BindVertexArray(array);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, vertexBuffer);
         _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * Vertex3D.Size), vertices, BufferUsageARB.StaticDraw);
         _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, indexBuffer);
@@ -479,7 +511,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             Vertex3D.Size,
             (void*)Vertex3D.ColourOffset);
 
-        _gl.BindVertexArray(0);
+        // Unbound before the buffer bindings are cleared, or clearing the element array would record
+        // "no indices" into the array object that was just configured.
+        BindVertexArray(0);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
         _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, 0);
 
@@ -498,6 +532,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _gl.DeleteVertexArray(entry.VertexArray);
             _gl.DeleteBuffer(entry.VertexBuffer);
             _gl.DeleteBuffer(entry.IndexBuffer);
+
+            // Deleting the bound array reverts GL to zero; the shadow has to say so.
+            if (_currentVertexArray == entry.VertexArray)
+            {
+                _currentVertexArray = 0;
+            }
         }
     }
 
@@ -615,42 +655,76 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             return;
         }
 
-        _meshProgram.Use();
-        _meshProgram.SetMatrix4("uModelView", modelView);
-        _meshProgram.SetMatrix4("uProjection", _projection);
-        _meshProgram.SetInt("uDiffuse", 0);
-        _meshProgram.SetInt("uLightmap", 1);
-        _meshProgram.SetVector4(
-            "uDetailFade",
-            _detailFade.Scale,
-            _detailFade.Offset,
-            _detailFade.Slope,
-            _detailFade.Enabled);
+        UseProgram(_meshProgram);
+
+        // Every uniform below used to be re-uploaded on every sub-mesh. The projection is fixed for the
+        // whole pass, the fade and the alpha test change a handful of times, and consecutive sub-meshes
+        // of one object share a transform -- so almost all of that traffic was the driver being told
+        // what it already knew. The sampler units are constant and are set once, at link time.
         // The cut-out threshold belongs to opaque draws only. A blended draw is asking for a gradient,
         // and testing it at a half would punch out exactly the half of the gradient it wants to keep.
-        _meshProgram.SetFloat(
-            "uAlphaTest",
-            blend == BlendMode.Opaque ? Mesh3DShaders.AlphaTestThreshold : 0f);
+        float alphaTest = blend == BlendMode.Opaque ? Mesh3DShaders.AlphaTestThreshold : 0f;
 
-        // An absent lightmap binds white, so the modulate becomes the identity and the shader needs no
-        // branch -- the same trick the 2D path uses for untextured draws.
-        _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindTexture(TextureTarget.Texture2D, diffuse.IsValid ? Resolve(diffuse, nameof(diffuse)).Name : _whiteTexture);
-        _gl.ActiveTexture(TextureUnit.Texture1);
-        _gl.BindTexture(TextureTarget.Texture2D, lightmap.IsValid ? Resolve(lightmap, nameof(lightmap)).Name : _whiteTexture);
-        _gl.ActiveTexture(TextureUnit.Texture0);
+        if (!_meshUniformsPrimed)
+        {
+            _meshUniformsPrimed = true;
+            _sentModelView = modelView;
+            _sentProjection = _projection;
+            _sentDetailFade = _detailFade;
+            _sentAlphaTest = alphaTest;
+            _meshProgram.SetMatrix4(_meshUniforms.ModelView, modelView);
+            _meshProgram.SetMatrix4(_meshUniforms.Projection, _projection);
+            _meshProgram.SetVector4(
+                _meshUniforms.DetailFade,
+                _detailFade.Scale,
+                _detailFade.Offset,
+                _detailFade.Slope,
+                _detailFade.Enabled);
+            _meshProgram.SetFloat(_meshUniforms.AlphaTest, alphaTest);
+        }
+        else
+        {
+            if (_sentModelView != modelView)
+            {
+                _sentModelView = modelView;
+                _meshProgram.SetMatrix4(_meshUniforms.ModelView, modelView);
+            }
+
+            if (_sentProjection != _projection)
+            {
+                _sentProjection = _projection;
+                _meshProgram.SetMatrix4(_meshUniforms.Projection, _projection);
+            }
+
+            if (_sentDetailFade != _detailFade)
+            {
+                _sentDetailFade = _detailFade;
+                _meshProgram.SetVector4(
+                    _meshUniforms.DetailFade,
+                    _detailFade.Scale,
+                    _detailFade.Offset,
+                    _detailFade.Slope,
+                    _detailFade.Enabled);
+            }
+
+            if (_sentAlphaTest != alphaTest)
+            {
+                _sentAlphaTest = alphaTest;
+                _meshProgram.SetFloat(_meshUniforms.AlphaTest, alphaTest);
+            }
+        }
+
+        BindTexture(0, NameOf(diffuse, nameof(diffuse)));
+        BindTexture(1, NameOf(lightmap, nameof(lightmap)));
 
         ApplyBlend(blend);
 
-        _gl.BindVertexArray(entry.VertexArray);
+        BindVertexArray(entry.VertexArray);
         _gl.DrawElements(
             PrimitiveType.Triangles,
             (uint)indexCount,
             DrawElementsType.UnsignedShort,
             (void*)(indexOffset * sizeof(ushort)));
-        _gl.BindVertexArray(0);
-
-        _boundTextures[0] = diffuse;
     }
 
     /// <inheritdoc/>
@@ -713,11 +787,28 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _program = GLShaderProgram.Create(_gl, Sprite2DShaders.Vertex, Sprite2DShaders.Fragment);
         _meshProgram = GLShaderProgram.Create(_gl, Mesh3DShaders.Vertex, Mesh3DShaders.Fragment);
 
+        // Resolved once, here, so no draw ever looks a uniform up by name again.
+        _spriteInverseScreen = _program.LocationOf("uInverseScreen");
+        _meshUniforms = new MeshUniforms(
+            _meshProgram.LocationOf("uModelView"),
+            _meshProgram.LocationOf("uProjection"),
+            _meshProgram.LocationOf("uDetailFade"),
+            _meshProgram.LocationOf("uAlphaTest"));
+
+        // Which unit each sampler reads is fixed by the pipeline and never varies by draw, so it is set
+        // now rather than four times per sub-mesh. A uniform belongs to its program, so both survive the
+        // program switches between the 2D and 3D passes.
+        UseProgram(_program);
+        _program.SetInt("uTexture", 0);
+        UseProgram(_meshProgram);
+        _meshProgram.SetInt("uDiffuse", 0);
+        _meshProgram.SetInt("uLightmap", 1);
+
         _vertexArray = _gl.GenVertexArray();
         _vertexBuffer = _gl.GenBuffer();
         _indexBuffer = _gl.GenBuffer();
 
-        _gl.BindVertexArray(_vertexArray);
+        BindVertexArray(_vertexArray);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _vertexBuffer);
         _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, _indexBuffer);
 
@@ -728,15 +819,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _gl.EnableVertexAttribArray(2);
         _gl.VertexAttribPointer(2, 4, VertexAttribPointerType.UnsignedByte, true, Vertex2D.Size, (void*)16);
 
-        _gl.BindVertexArray(0);
+        BindVertexArray(0);
 
         Span<Bgra32> white = [Bgra32.White];
         _whiteTexture = _gl.GenTexture();
-        _gl.BindTexture(TextureTarget.Texture2D, _whiteTexture);
+        BindTextureForUpload(_whiteTexture);
         UploadLevel(0, 1, 1, white);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Nearest);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Nearest);
-        _gl.BindTexture(TextureTarget.Texture2D, 0);
 
         _gl.Disable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.CullFace);
@@ -800,7 +890,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _blitHeight = 0;
         }
 
-        _gl.BindTexture(TextureTarget.Texture2D, _blitTexture);
+        BindTextureForUpload(_blitTexture);
         UploadLevel(0, width, height, pixels[..(width * height)]);
 
         if (_blitWidth != width || _blitHeight != height)
@@ -809,8 +899,6 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _blitWidth = width;
             _blitHeight = height;
         }
-
-        _gl.BindTexture(TextureTarget.Texture2D, 0);
     }
 
     private void ApplyBlend(BlendMode blend)
@@ -876,7 +964,121 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         return entry;
     }
 
+    /// <summary>Finds the largest value in an index buffer.</summary>
+    /// <remarks>
+    /// A running maximum rather than a bounds test per index, so the whole check is a handful of SIMD
+    /// maxima instead of a compare-and-branch for every index of every sub-mesh in a level. The reported
+    /// index is the largest rather than the first offending one, which localises the fault just as well.
+    /// </remarks>
+    private static int HighestIndex(ReadOnlySpan<ushort> indices)
+    {
+        ushort highest = 0;
+        int i = 0;
+
+        if (System.Numerics.Vector.IsHardwareAccelerated && indices.Length >= System.Numerics.Vector<ushort>.Count)
+        {
+            System.Numerics.Vector<ushort> lanes = System.Numerics.Vector<ushort>.Zero;
+            for (; i <= indices.Length - System.Numerics.Vector<ushort>.Count; i += System.Numerics.Vector<ushort>.Count)
+            {
+                lanes = System.Numerics.Vector.Max(lanes, new System.Numerics.Vector<ushort>(indices[i..]));
+            }
+
+            for (int lane = 0; lane < System.Numerics.Vector<ushort>.Count; lane++)
+            {
+                highest = Math.Max(highest, lanes[lane]);
+            }
+        }
+
+        for (; i < indices.Length; i++)
+        {
+            highest = Math.Max(highest, indices[i]);
+        }
+
+        return highest;
+    }
+
+    /// <summary>Makes a program current, skipping the call when it already is.</summary>
+    private void UseProgram(GLShaderProgram program)
+    {
+        if (_currentProgram == program.Handle)
+        {
+            return;
+        }
+
+        program.Use();
+        _currentProgram = program.Handle;
+    }
+
+    /// <summary>Binds a vertex array, skipping the call when it is already bound.</summary>
+    /// <remarks>
+    /// Nothing here unbinds to zero when it is done. The old code did, which meant every draw paid for
+    /// two binds instead of one and the next draw could never hit the shadow; GL has no state that a
+    /// left-bound array corrupts, because everything that configures one binds it first.
+    /// </remarks>
+    private void BindVertexArray(uint array)
+    {
+        if (_currentVertexArray == array)
+        {
+            return;
+        }
+
+        _gl.BindVertexArray(array);
+        _currentVertexArray = array;
+    }
+
+    /// <summary>Binds a texture name to a unit, skipping the call when it is already there.</summary>
+    private void BindTexture(int unit, uint name)
+    {
+        if (_textureNames[unit] == name)
+        {
+            return;
+        }
+
+        if (_activeTextureUnit != unit)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0 + unit);
+            _activeTextureUnit = unit;
+        }
+
+        _gl.BindTexture(TextureTarget.Texture2D, name);
+        _textureNames[unit] = name;
+    }
+
+    /// <summary>Binds a texture so it can be uploaded to or have its sampling set.</summary>
+    /// <remarks>
+    /// Unit zero, and left bound afterwards: an upload has no unit of its own, and unbinding to zero on
+    /// the way out only guarantees that the next draw has to bind again. The shadow records it either
+    /// way, so nothing downstream can be misled.
+    /// <para>
+    /// Unlike <see cref="BindTexture"/> this always leaves unit zero <em>active</em>, even when the
+    /// binding itself can be skipped. <c>glTexImage2D</c> and <c>glTexParameter</c> act on whichever unit
+    /// is active, so a skipped switch would send the upload to a texture bound on some other unit.
+    /// </para>
+    /// </remarks>
+    private void BindTextureForUpload(uint name)
+    {
+        if (_activeTextureUnit != 0)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0);
+            _activeTextureUnit = 0;
+        }
+
+        if (_textureNames[0] != name)
+        {
+            _gl.BindTexture(TextureTarget.Texture2D, name);
+            _textureNames[0] = name;
+        }
+    }
+
+    /// <summary>Resolves a handle to the GL name a draw should bind for it.</summary>
+    /// <remarks>An absent texture binds white, so a modulate becomes the identity and the shader needs no branch.</remarks>
+    private uint NameOf(TextureHandle handle, string parameterName) =>
+        handle.IsValid ? Resolve(handle, parameterName).Name : _whiteTexture;
+
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
+
+    /// <summary>The mesh program's uniform locations, resolved once when it is linked.</summary>
+    private readonly record struct MeshUniforms(int ModelView, int Projection, int DetailFade, int AlphaTest);
 
     private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels);
 

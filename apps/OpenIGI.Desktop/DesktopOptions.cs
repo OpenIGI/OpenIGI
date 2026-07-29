@@ -19,6 +19,7 @@ namespace OpenIGI.Desktop;
 /// <param name="CameraYaw">The yaw in radians the fly-through camera opens on.</param>
 /// <param name="CameraPitch">The pitch in radians the fly-through camera opens on.</param>
 /// <param name="CameraHeight">Extra metres above the level to open at.</param>
+/// <param name="UiScale">How much to magnify the 640x480-authored interface; 0 derives it from the window.</param>
 /// <param name="TerrainViewDistance">Override the terrain level-of-detail distance, or zero for the derived one.</param>
 /// <remarks>
 /// The original parses its command line with a case-insensitive prefix scan (<c>Win_ParseCmdOption</c>,
@@ -41,7 +42,8 @@ public readonly record struct DesktopOptions(
     float CameraYaw,
     float CameraPitch,
     float CameraHeight,
-    int TerrainViewDistance)
+    int TerrainViewDistance,
+    int UiScale)
 {
     /// <summary>Gets the environment variable consulted when no path is given on the command line.</summary>
     public const string GamePathVariable = "IGI_GAME_PATH";
@@ -68,6 +70,7 @@ public readonly record struct DesktopOptions(
         string? screenshot = null;
         (double X, double Y, double Z)? cameraPosition = null;
         int exitAfterFrames = 0;
+        int uiScale = OpenIGI.Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
         bool startFlying = false;
         float cameraYaw = 0f;
@@ -121,6 +124,16 @@ public readonly record struct DesktopOptions(
                 if (!int.TryParse(value, out startMission) || startMission <= 0)
                 {
                     throw new ArgumentException($"-mission expects a mission id, got '{value}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("uiscale", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "uiscale");
+                if (!int.TryParse(value, out uiScale) || uiScale < 0)
+                {
+                    throw new ArgumentException(
+                        $"-uiscale expects 0 for automatic or a positive whole number, got '{value}'.",
+                        nameof(args));
                 }
             }
             else if (arg.Equals("screenshot", StringComparison.OrdinalIgnoreCase))
@@ -236,7 +249,8 @@ public readonly record struct DesktopOptions(
             cameraYaw,
             cameraPitch,
             cameraHeight,
-            terrainViewDistance)
+            terrainViewDistance,
+            uiScale)
         {
             CameraPosition = cameraPosition,
         };
@@ -267,6 +281,9 @@ public readonly record struct DesktopOptions(
           -novsync         Do not wait for the vertical blank.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
+          -uiscale <n>     Magnify the 640x480-authored menus and HUD by a whole number.
+                           0 (the default) picks one from the window size; 1 is the original's
+                           own size, which on a modern display is very small.
           -screen <id>     Open on this menu screen instead of the one the script names.
                            mainmenu.qvm has 900 and 904-916.
           -campos X,Y,Z    Open the fly-through camera at this world position in metres.

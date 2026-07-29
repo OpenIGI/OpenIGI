@@ -65,10 +65,19 @@ public partial class HumanPlayerTask : HumanTask
 
 /// <summary>An AI-driven character — the original's <c>HumanSoldier</c>.</summary>
 /// <remarks>
-/// Its two extra parameters are the ones the player's list lacks: <b><c>Bone Heirachy</c> is the
-/// skeleton id</b> and <c>Stand Animation</c> the clip it starts in. Both are read straight off the
-/// task and handed to the bone object by <c>0x454F10</c>, which is what settles that a model does not
-/// name its own skeleton (<c>animation.md</c> §7.3).
+/// <para>
+/// Registered at <c>0x45CAB0</c>, 3408 bytes. Its two extra parameters are the ones the player's list
+/// lacks: <b><c>Bone Heirachy</c> is the skeleton id</b> (default 1, at <c>+3320</c>) and
+/// <c>Stand Animation</c> the clip it stands in (default −1, at <c>+3324</c>; −1 or an id the set
+/// lacks falls back to 2). The init handler <c>0x456E50</c> reads both and hands the skeleton to the
+/// bone object, which is what settles that a model does not name its own skeleton
+/// (<c>animation.md</c> §7.3) — and the mesh comes from the ordinary <c>Model</c> parameter, resolved
+/// by name in the chained <c>Human</c> handler <c>0x45F890</c>. See <c>player.md</c> §15.
+/// </para>
+/// <para>
+/// The siblings <c>HumanSoldierFemale</c>/<c>HumanSoldierRPG</c>/<c>HumanSoldierPistol</c> exist in
+/// the engine but no retail level declares them, so only this one is transcribed.
+/// </para>
 /// </remarks>
 public partial class HumanSoldierTask : HumanTask
 {

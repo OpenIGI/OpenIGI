@@ -647,7 +647,11 @@ public sealed class WorldScene
         int added = 0;
         foreach (WorldObject child in node.Children)
         {
-            Vector3f offset = orientation.Transform(child.Position);
+            // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
+            // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
+            // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
+            // composition below is already the column-vector convention's parent∘child order.
+            Vector3f offset = orientation.Transposed().Transform(child.Position);
             Vector3d childPosition = new(
                 position.X + (offset.X / UnitsPerMetre),
                 position.Y + (offset.Y / UnitsPerMetre),
@@ -714,33 +718,13 @@ public sealed class WorldScene
     /// <returns>The rotation.</returns>
     /// <remarks>
     /// A <c>Real32x9</c> parameter is three angles on the wire, not nine components, and the original
-    /// concatenates three axis rotations in <c>sub_4B38E0</c>. <b>That function's axis order is an open
-    /// item</b>, so this composes Z(gamma)·Y(beta)·X(alpha) — which is right for the overwhelming
-    /// majority of level-1 placements, where alpha and beta are zero and only gamma turns the object
-    /// about the vertical axis. Objects that tilt are the ones to check once the order is pinned.
+    /// concatenates three axis rotations in <c>0x4B38E0</c>. That function's axis order <b>has now been
+    /// read</b> and is Z(gamma)·Y(beta)·X(alpha), which is what this always composed — see
+    /// <see cref="Matrix3f.FromEngineEulerAngles"/>, where the composition now lives so the world and
+    /// the first-person eye share one reading of it.
     /// </remarks>
-    public static Matrix3f ToOrientation(Vector3f angles)
-    {
-        Matrix3f x = RotationX(angles.X);
-        Matrix3f y = RotationY(angles.Y);
-        Matrix3f z = RotationZ(angles.Z);
-        return z * y * x;
-    }
-
-    private static Matrix3f RotationX(float a) => Matrix3f.FromRows(
-        new Vector3f(1f, 0f, 0f),
-        new Vector3f(0f, MathF.Cos(a), -MathF.Sin(a)),
-        new Vector3f(0f, MathF.Sin(a), MathF.Cos(a)));
-
-    private static Matrix3f RotationY(float a) => Matrix3f.FromRows(
-        new Vector3f(MathF.Cos(a), 0f, MathF.Sin(a)),
-        new Vector3f(0f, 1f, 0f),
-        new Vector3f(-MathF.Sin(a), 0f, MathF.Cos(a)));
-
-    private static Matrix3f RotationZ(float a) => Matrix3f.FromRows(
-        new Vector3f(MathF.Cos(a), -MathF.Sin(a), 0f),
-        new Vector3f(MathF.Sin(a), MathF.Cos(a), 0f),
-        new Vector3f(0f, 0f, 1f));
+    public static Matrix3f ToOrientation(Vector3f angles) =>
+        Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z);
 
     private static IEnumerable<GameTask> Walk(GameTask root)
     {

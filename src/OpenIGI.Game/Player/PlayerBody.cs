@@ -49,8 +49,13 @@ public sealed class PlayerBody
     public const double StandingEyeHeight = HumanWallProbe.HighProbeStandingInUnits;
 
     /// <summary>How high the eye sits while crouched.</summary>
-    /// <remarks>The crouched middle probe, <see cref="HumanWallProbe.MiddleProbeCrouchingInUnits"/>, doubled.</remarks>
-    public const double CrouchingEyeHeight = HumanWallProbe.MiddleProbeCrouchingInUnits * 2.0;
+    /// <remarks>
+    /// The crouched head height, exactly as standing uses the standing head height: the wall probe's
+    /// crouched high sample, <see cref="HumanWallProbe.HighProbeCrouchingInUnits"/> — 1.3 m. An earlier
+    /// pass doubled the crouched <i>middle</i> probe instead, which put the eye at 0.4 m — knee height —
+    /// low enough to dip under the drawn terrain on any uneven ground.
+    /// </remarks>
+    public const double CrouchingEyeHeight = HumanWallProbe.HighProbeCrouchingInUnits;
 
     /// <summary>How fast the eye moves between standing and crouched, in units per tick.</summary>
     /// <remarks>

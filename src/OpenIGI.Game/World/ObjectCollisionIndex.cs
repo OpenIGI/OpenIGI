@@ -215,12 +215,20 @@ public sealed class ObjectCollisionIndex
 
         public static Entry Create(MefCollisionMesh mesh, Vector3d origin, Matrix3f orientation)
         {
+            // Local-to-world is the COLUMN-vector product M·v — the renderer's `uModelView * v`, and
+            // the convention the original itself uses for a placement's Real32x9 (it reads elements
+            // [0],[3],[6], the first column, as the local X axis in world space). Matrix3f.Transform
+            // is the row-vector product v·M, the inverse rotation: using it here spun every rotated
+            // object's collision the wrong way round its origin, so fences could be walked through
+            // and doorways sat behind solid wall. The transpose makes Transform compute M·v.
+            Matrix3f rotation = orientation.Transposed();
+
             // The vertices are placed once at build time. A level's collision geometry does not move,
             // and transforming a ray into every model's own frame instead would cost more than it saves.
             Vector3d[] vertices = new Vector3d[mesh.Vertices.Count];
             for (int i = 0; i < vertices.Length; i++)
             {
-                Vector3f local = orientation.Transform(mesh.Vertices[i]);
+                Vector3f local = rotation.Transform(mesh.Vertices[i]);
                 vertices[i] = new Vector3d(origin.X + local.X, origin.Y + local.Y, origin.Z + local.Z);
             }
 
@@ -230,7 +238,7 @@ public sealed class ObjectCollisionIndex
             if (mesh.Spheres.Count > 0)
             {
                 MefCollisionSphere root = mesh.Spheres[0];
-                Vector3f placed = orientation.Transform(root.Centre);
+                Vector3f placed = rotation.Transform(root.Centre);
                 centre = new Vector3d(origin.X + placed.X, origin.Y + placed.Y, origin.Z + placed.Z);
                 radius = root.Radius;
             }
@@ -290,7 +298,8 @@ public sealed class ObjectCollisionIndex
                         origin.Y + (direction.Y * t),
                         origin.Z + (direction.Z * t)),
                     new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
-                    t * length);
+                    t * length,
+                    face.Material);
             }
 
             return found;

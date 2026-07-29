@@ -26,6 +26,49 @@ public sealed class BoneAnimationSet
         _byId = byId;
     }
 
+    /// <summary>Builds a set directly, for tools and tests.</summary>
+    /// <param name="skeleton">The skeleton the clips animate.</param>
+    /// <param name="animations">The clips. Ids need not be contiguous; the table is sparse.</param>
+    /// <returns>The set.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">A clip has a negative id, or does not cover every bone.</exception>
+    /// <remarks>
+    /// The id limit is derived as the highest id plus one, which is what a writer would have to declare
+    /// in <c>BALH</c> for the same set to load.
+    /// </remarks>
+    public static BoneAnimationSet Create(BoneSkeleton skeleton, params BoneAnimation[] animations)
+    {
+        ArgumentNullException.ThrowIfNull(skeleton);
+        ArgumentNullException.ThrowIfNull(animations);
+
+        int limit = 0;
+        foreach (BoneAnimation animation in animations)
+        {
+            ArgumentNullException.ThrowIfNull(animation);
+            if (animation.Id < 0)
+            {
+                throw new ArgumentException($"Animation id {animation.Id} is negative.", nameof(animations));
+            }
+
+            if (animation.BoneCount != skeleton.BoneCount)
+            {
+                throw new ArgumentException(
+                    $"Animation {animation.Id} carries {animation.BoneCount} tracks for {skeleton.BoneCount} bones.",
+                    nameof(animations));
+            }
+
+            limit = Math.Max(limit, animation.Id + 1);
+        }
+
+        BoneAnimation?[] byId = new BoneAnimation?[limit];
+        foreach (BoneAnimation animation in animations)
+        {
+            byId[animation.Id] = animation;
+        }
+
+        return new BoneAnimationSet(skeleton, [.. animations], byId);
+    }
+
     /// <summary>Gets the skeleton the clips animate.</summary>
     public BoneSkeleton Skeleton { get; }
 

@@ -48,16 +48,29 @@ public static class MenuLayout
     /// <param name="y">The authored vertical position.</param>
     /// <param name="screenWidth">The back-buffer width in pixels.</param>
     /// <param name="screenHeight">The back-buffer height in pixels.</param>
+    /// <param name="scale">The magnification the menu is drawn at; see <see cref="UiScale"/>.</param>
     /// <returns>The screen position in pixels.</returns>
     /// <remarks>
+    /// <para>
     /// The original computes <c>(screenWidth &gt;&gt; 1) + x - 320</c> and
     /// <c>(screenHeight &gt;&gt; 1) + y - 240</c>. So the menu is <b>centred at its authored size, not
     /// scaled</b>: at 1024×768 the text stays 640×480-sized in the middle of the screen rather than
-    /// growing. Scaling it to fill would be a visible divergence, and an easy one to introduce by
-    /// accident.
+    /// growing.
+    /// </para>
+    /// <para>
+    /// <b>Divergence.</b> On a display several times that size, faithful is unreadable — so the offset
+    /// from the centre is magnified by a whole number (<see cref="UiScale"/>). At
+    /// <see cref="UiScale.Native"/> this is exactly the original's arithmetic, and the caller has to
+    /// magnify the art by the same amount or the layout and the sprites will disagree.
+    /// </para>
     /// </remarks>
-    public static (int X, int Y) ToScreen(int x, int y, int screenWidth, int screenHeight) =>
-        ((screenWidth >> 1) + x - (AuthoredWidth / 2), (screenHeight >> 1) + y - (AuthoredHeight / 2));
+    public static (int X, int Y) ToScreen(int x, int y, int screenWidth, int screenHeight, int scale = UiScale.Native)
+    {
+        int s = scale < UiScale.Native ? UiScale.Native : scale;
+        return (
+            (screenWidth >> 1) + ((x - (AuthoredWidth / 2)) * s),
+            (screenHeight >> 1) + ((y - (AuthoredHeight / 2)) * s));
+    }
 
     /// <summary>Gets a colour from the table, on the original's 0–128 scale.</summary>
     /// <param name="colourIndex">The <c>ColourIndex</c> parameter. Only the low four bits are used.</param>

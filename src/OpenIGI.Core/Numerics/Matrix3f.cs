@@ -150,6 +150,54 @@ public readonly struct Matrix3f : IEquatable<Matrix3f>, IFormattable
             values[6], values[7], values[8]);
     }
 
+    /// <summary>Builds a rotation about the X axis.</summary>
+    /// <param name="radians">The angle.</param>
+    /// <returns>The rotation.</returns>
+    public static Matrix3f RotationX(float radians) => FromRows(
+        new Vector3f(1f, 0f, 0f),
+        new Vector3f(0f, MathF.Cos(radians), -MathF.Sin(radians)),
+        new Vector3f(0f, MathF.Sin(radians), MathF.Cos(radians)));
+
+    /// <summary>Builds a rotation about the Y axis.</summary>
+    /// <param name="radians">The angle.</param>
+    /// <returns>The rotation.</returns>
+    public static Matrix3f RotationY(float radians) => FromRows(
+        new Vector3f(MathF.Cos(radians), 0f, MathF.Sin(radians)),
+        new Vector3f(0f, 1f, 0f),
+        new Vector3f(-MathF.Sin(radians), 0f, MathF.Cos(radians)));
+
+    /// <summary>Builds a rotation about the Z axis — the game's vertical.</summary>
+    /// <param name="radians">The angle.</param>
+    /// <returns>The rotation.</returns>
+    public static Matrix3f RotationZ(float radians) => FromRows(
+        new Vector3f(MathF.Cos(radians), -MathF.Sin(radians), 0f),
+        new Vector3f(MathF.Sin(radians), MathF.Cos(radians), 0f),
+        new Vector3f(0f, 0f, 1f));
+
+    /// <summary>
+    /// Composes the engine's three Euler angles into a rotation, as <c>0x4B38E0</c> does.
+    /// </summary>
+    /// <param name="alpha">The first angle, about X.</param>
+    /// <param name="beta">The second angle, about Y.</param>
+    /// <param name="gamma">The third angle, about Z — the one a level's <c>Gamma</c> carries.</param>
+    /// <returns><c>Z(gamma) · Y(beta) · X(alpha)</c>.</returns>
+    /// <remarks>
+    /// <para>
+    /// Read out of <c>0x4B38E0</c> rather than guessed. It writes <c>Z(gamma)</c> first
+    /// (<c>0x4B3BE0</c>), then right-multiplies by <c>Y(beta)</c> (<c>0x4B3BA0</c>) and then by
+    /// <c>X(alpha)</c> (<c>0x4B3B60</c>) — each step's arithmetic is <c>M · R</c>, dotting the running
+    /// matrix's rows with the new rotation's columns. The three builders are the textbook axis
+    /// rotations, row-major, with the drift counter of the 40-byte orientation block at their
+    /// <c>+36</c>.
+    /// </para>
+    /// <para>
+    /// This is the one convention the engine uses for both level placements and the first-person eye
+    /// (<c>0x464BD0</c> builds the eye as <c>Z(yaw) · Y(0) · X(pitch)</c>).
+    /// </para>
+    /// </remarks>
+    public static Matrix3f FromEngineEulerAngles(float alpha, float beta, float gamma) =>
+        RotationZ(gamma) * RotationY(beta) * RotationX(alpha);
+
     /// <summary>Multiplies two matrices.</summary>
     /// <param name="left">The left operand.</param>
     /// <param name="right">The right operand.</param>

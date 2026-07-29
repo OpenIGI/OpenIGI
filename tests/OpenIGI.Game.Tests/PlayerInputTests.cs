@@ -22,13 +22,13 @@ public sealed class PlayerInputTests
         // The sampler stores `mask & bit`, so slot 12 holds 0x8000 rather than 1 and slot 31 holds
         // 0x40000000. Anything comparing a slot to 1 reads them as released.
         PlayerInputFrame frame = default;
-        frame[(int)PlayerInputSlot.Action12] = 0x8000;
-        frame[(int)PlayerInputSlot.Action31] = 0x40000000;
+        frame[(int)PlayerInputSlot.Peek] = 0x8000;
+        frame[(int)PlayerInputSlot.WeaponCategory9] = 0x40000000;
 
-        Assert.True(frame.IsSet(PlayerInputSlot.Action12));
-        Assert.True(frame.IsSet(PlayerInputSlot.Action31));
-        Assert.NotEqual(1f, frame[(int)PlayerInputSlot.Action12]);
-        Assert.False(frame.IsSet(PlayerInputSlot.Action13));
+        Assert.True(frame.IsSet(PlayerInputSlot.Peek));
+        Assert.True(frame.IsSet(PlayerInputSlot.WeaponCategory9));
+        Assert.NotEqual(1f, frame[(int)PlayerInputSlot.Peek]);
+        Assert.False(frame.IsSet(PlayerInputSlot.SelectedWeaponScratch));
     }
 
     [Fact]
@@ -48,18 +48,18 @@ public sealed class PlayerInputTests
     {
         PlayerInputState state = new();
         PlayerInputFrame pressed = default;
-        pressed[(int)PlayerInputSlot.Action20] = 0x40000;
+        pressed[(int)PlayerInputSlot.ToggleWalkRun] = 0x40000;
 
         Assert.True(state.Accept(pressed));
-        Assert.True(state.IsRisingEdge(PlayerInputSlot.Action20));
+        Assert.True(state.IsRisingEdge(PlayerInputSlot.ToggleWalkRun));
 
         // Held for a second tick: still set, but no longer an edge.
         Assert.True(state.Accept(pressed));
-        Assert.True(state.IsSet(PlayerInputSlot.Action20));
-        Assert.False(state.IsRisingEdge(PlayerInputSlot.Action20));
+        Assert.True(state.IsSet(PlayerInputSlot.ToggleWalkRun));
+        Assert.False(state.IsRisingEdge(PlayerInputSlot.ToggleWalkRun));
 
         Assert.True(state.Accept(default));
-        Assert.True(state.IsFallingEdge(PlayerInputSlot.Action20));
+        Assert.True(state.IsFallingEdge(PlayerInputSlot.ToggleWalkRun));
     }
 
     [Fact]
@@ -67,15 +67,15 @@ public sealed class PlayerInputTests
     {
         PlayerInputState state = new();
         PlayerInputFrame pressed = default;
-        pressed[(int)PlayerInputSlot.Action20] = 0x40000;
+        pressed[(int)PlayerInputSlot.ToggleWalkRun] = 0x40000;
         state.Accept(pressed);
 
         state.IsFrozen = true;
         Assert.False(state.Accept(default));
 
         // The action is still held and no edge fired, because neither frame moved.
-        Assert.True(state.IsSet(PlayerInputSlot.Action20));
-        Assert.True(state.IsRisingEdge(PlayerInputSlot.Action20));
+        Assert.True(state.IsSet(PlayerInputSlot.ToggleWalkRun));
+        Assert.True(state.IsRisingEdge(PlayerInputSlot.ToggleWalkRun));
     }
 
     [Fact]

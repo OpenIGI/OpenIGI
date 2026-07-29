@@ -28,6 +28,14 @@ public sealed class MenuRenderer : IDisposable
 {
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, BitmapTextRenderer?> _fonts = new(StringComparer.OrdinalIgnoreCase);
+    private int _scale = UiScale.Native;
+
+    /// <summary>Gets or sets the magnification asked for; <see cref="UiScale.Automatic"/> derives one.</summary>
+    public int Scale { get; set; } = UiScale.Automatic;
+
+    /// <summary>Gets the magnification the last draw used.</summary>
+    public int EffectiveScale => _scale;
+
     private readonly IGraphicsDevice _device;
     private readonly List<IresArchive> _archives = [];
     private readonly MenuStringTable _strings;
@@ -79,6 +87,11 @@ public sealed class MenuRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(screen);
 
+        // The whole screen is authored at 640x480 and the original centres it without scaling. On a
+        // modern display that is a small island in the middle, so the offsets AND the art are both
+        // magnified by the same whole number -- see UiScale. Scale.Set from the host, or derived.
+        _scale = UiScale.Resolve(Scale, screenWidth, screenHeight);
+
         batch.Begin();
 
         if (TryGetSprite(screen.Background) is { Asset.TileLayout: not null } background)
@@ -123,10 +136,10 @@ public sealed class MenuRenderer : IDisposable
             return;
         }
 
-        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight);
+        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight, _scale);
 
         batch.Begin();
-        pointer.DrawFrame(batch, pointer.Asset.Frames[0], screenX, screenY, 1f, 1f, Bgra32.White);
+        pointer.DrawFrame(batch, pointer.Asset.Frames[0], screenX, screenY, _scale, _scale, Bgra32.White);
         batch.End();
     }
 
@@ -274,13 +287,13 @@ public sealed class MenuRenderer : IDisposable
             return;
         }
 
-        (int x, int y) = MenuLayout.ToScreen(text.LayoutX, text.LayoutY, screenWidth, screenHeight);
+        (int x, int y) = MenuLayout.ToScreen(text.LayoutX, text.LayoutY, screenWidth, screenHeight, _scale);
 
         // MenuText_Render tests the selection flag at +77, which the manager owns and which the mouse
         // and the keyboard both move — not the pointer-over state.
         Bgra32 colour = MenuLayout.ToPixel(MenuLayout.GetColour(text.ColourIndex, text.IsHighlighted));
 
-        font.Draw(batch, label, x, y, colour);
+        font.Draw(batch, label, x, y, colour, _scale, _scale);
     }
 
     /// <summary>Draws a slider: its box, its two arrows and its carret.</summary>
@@ -299,8 +312,8 @@ public sealed class MenuRenderer : IDisposable
 
         if (TryGetSprite(slider.CarretSprite) is { } carret && carret.Asset.Frames.Count > 0)
         {
-            (int x, int y) = MenuLayout.ToScreen(carretX, carretY, screenWidth, screenHeight);
-            carret.DrawFrame(batch, carret.Asset.Frames[0], x, y, 1f, 1f, Bgra32.White);
+            (int x, int y) = MenuLayout.ToScreen(carretX, carretY, screenWidth, screenHeight, _scale);
+            carret.DrawFrame(batch, carret.Asset.Frames[0], x, y, _scale, _scale, Bgra32.White);
         }
     }
 
@@ -313,8 +326,8 @@ public sealed class MenuRenderer : IDisposable
             return;
         }
 
-        (int x, int y) = MenuLayout.ToScreen(button.LayoutX, button.LayoutY, screenWidth, screenHeight);
-        sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, 1f, 1f, Bgra32.White);
+        (int x, int y) = MenuLayout.ToScreen(button.LayoutX, button.LayoutY, screenWidth, screenHeight, _scale);
+        sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, _scale, _scale, Bgra32.White);
     }
 
     /// <summary>Draws a switch: its box, its two words and a tint over whichever one is chosen.</summary>
@@ -398,7 +411,7 @@ public sealed class MenuRenderer : IDisposable
     /// current frame count and at one past it. Two faint passes a frame apart are what give the lines
     /// their doubled edge; one pass at double the alpha does not look the same.
     /// </remarks>
-    private static void DrawBackgroundFx(SpriteBatch batch, BackgroundFxTask? fx, int screenWidth, int screenHeight)
+    private void DrawBackgroundFx(SpriteBatch batch, BackgroundFxTask? fx, int screenWidth, int screenHeight)
     {
         if (fx is null)
         {
@@ -409,7 +422,7 @@ public sealed class MenuRenderer : IDisposable
         DrawBackgroundFxPass(batch, fx.Time + 1f, screenWidth, screenHeight);
     }
 
-    private static void DrawBackgroundFxPass(SpriteBatch batch, float time, int screenWidth, int screenHeight)
+    private void DrawBackgroundFxPass(SpriteBatch batch, float time, int screenWidth, int screenHeight)
     {
         Bgra32 lineColour = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(BackgroundFxTask.LineAlpha));
         Bgra32 circleColour = Bgra32.FromRgba(0, byte.MaxValue, 0, Alpha(BackgroundFxTask.CircleAlpha));
@@ -442,7 +455,7 @@ public sealed class MenuRenderer : IDisposable
     /// The count is <c>(int)(radius * pi / 10)</c> capped at forty, so a small circle is visibly a
     /// polygon and a large one is not. Reproduced rather than smoothed.
     /// </remarks>
-    private static void DrawFxCircle(
+    private void DrawFxCircle(
         SpriteBatch batch,
         BackgroundFxCircle circle,
         in BackgroundFxTransform m,
@@ -476,7 +489,7 @@ public sealed class MenuRenderer : IDisposable
         }
     }
 
-    private static void DrawFxGrid(
+    private void DrawFxGrid(
         SpriteBatch batch,
         in BackgroundFxGrid grid,
         in BackgroundFxTransform m,
@@ -511,7 +524,7 @@ public sealed class MenuRenderer : IDisposable
     /// close as this batch gets without a line pipeline, and at these alphas the difference does not
     /// show.
     /// </remarks>
-    private static void DrawFxSegment(
+    private void DrawFxSegment(
         SpriteBatch batch,
         float ax,
         float ay,
@@ -521,8 +534,8 @@ public sealed class MenuRenderer : IDisposable
         int screenWidth,
         int screenHeight)
     {
-        (int x0, int y0) = MenuLayout.ToScreen((int)ax, (int)ay, screenWidth, screenHeight);
-        (int x1, int y1) = MenuLayout.ToScreen((int)bx, (int)by, screenWidth, screenHeight);
+        (int x0, int y0) = MenuLayout.ToScreen((int)ax, (int)ay, screenWidth, screenHeight, _scale);
+        (int x1, int y1) = MenuLayout.ToScreen((int)bx, (int)by, screenWidth, screenHeight, _scale);
 
         float dx = x1 - x0;
         float dy = y1 - y0;
@@ -562,7 +575,7 @@ public sealed class MenuRenderer : IDisposable
     /// opens outwards as a screen appears rather than cutting in.
     /// </para>
     /// </remarks>
-    private static void DrawScreenPanel(SpriteBatch batch, MenuScreenTask screen, int screenWidth, int screenHeight)
+    private void DrawScreenPanel(SpriteBatch batch, MenuScreenTask screen, int screenWidth, int screenHeight)
     {
         MenuScreenPanel panel = MenuScreenPanel.For(screen, screen.Manager?.Navigator.Alpha ?? MenuNavigator.FullAlpha);
         if (panel.IsEmpty)
@@ -749,7 +762,7 @@ public sealed class MenuRenderer : IDisposable
     /// the black fill, which through a painter's-order batch would cover it; the fill goes first here,
     /// for the same reason the pointer is drawn last. See the re-note.
     /// </remarks>
-    private static void DrawWindowBox(SpriteBatch batch, MenuWindowTask window, int screenWidth, int screenHeight)
+    private void DrawWindowBox(SpriteBatch batch, MenuWindowTask window, int screenWidth, int screenHeight)
     {
         if (window.LayoutWidth <= 0 || window.LayoutHeight <= 0)
         {
@@ -769,7 +782,7 @@ public sealed class MenuRenderer : IDisposable
         }
     }
 
-    private static void Draw(
+    private void Draw(
         SpriteBatch batch,
         BitmapTextRenderer font,
         string label,
@@ -778,8 +791,8 @@ public sealed class MenuRenderer : IDisposable
         int screenWidth,
         int screenHeight)
     {
-        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight);
-        font.Draw(batch, label, screenX, screenY, Bgra32.White);
+        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight, _scale);
+        font.Draw(batch, label, screenX, screenY, Bgra32.White, _scale, _scale);
     }
 
     /// <summary>Draws a frame's eight-piece border.</summary>
@@ -811,7 +824,7 @@ public sealed class MenuRenderer : IDisposable
             return;
         }
 
-        (int x, int y) = MenuLayout.ToScreen(frame.LayoutX, frame.LayoutY, screenWidth, screenHeight);
+        (int x, int y) = MenuLayout.ToScreen(frame.LayoutX, frame.LayoutY, screenWidth, screenHeight, _scale);
 
         foreach (MenuBorderPlacement placement in
             MenuBorderLayout.Compute(frame.LayoutWidth, frame.LayoutHeight, sizes))
@@ -831,19 +844,20 @@ public sealed class MenuRenderer : IDisposable
             : Math.Max(sprite.Asset.DefaultHeight, sprite.Asset.Frames.Count > 0 ? sprite.Asset.Frames[0].Height : 0);
 
     /// <summary>Draws one border piece at its native size, in the neutral colour the original passes.</summary>
-    private static void Draw(SpriteBatch batch, SpriteResource? sprite, int x, int y)
+    private void Draw(SpriteBatch batch, SpriteResource? sprite, int x, int y)
     {
         if (sprite is not null && sprite.Asset.Frames.Count > 0)
         {
-            sprite.Draw(batch, 0, x, y, MenuLayout.ToPixel((MenuLayout.FullIntensity, MenuLayout.FullIntensity, MenuLayout.FullIntensity)));
+            sprite.DrawFrame(batch, sprite.Asset.Frames[0], x, y, _scale, _scale, MenuLayout.ToPixel((MenuLayout.FullIntensity, MenuLayout.FullIntensity, MenuLayout.FullIntensity)));
         }
     }
 
     /// <summary>Maps an authored rectangle onto the screen, centred rather than scaled.</summary>
-    private static RectF Centred(int x, int y, int width, int height, int screenWidth, int screenHeight)
+    // The size is magnified along with the origin, so a box authored 100 wide stays 100 AUTHORED wide.
+    private RectF Centred(int x, int y, int width, int height, int screenWidth, int screenHeight)
     {
-        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight);
-        return new RectF(screenX, screenY, width, height);
+        (int screenX, int screenY) = MenuLayout.ToScreen(x, y, screenWidth, screenHeight, _scale);
+        return new RectF(screenX, screenY, width * _scale, height * _scale);
     }
 
     private (string Label, BitmapTextRenderer? Font) Resolve(string textResource, string fontResource) =>

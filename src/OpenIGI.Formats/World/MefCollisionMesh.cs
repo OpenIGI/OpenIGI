@@ -10,8 +10,11 @@ namespace OpenIGI.Formats.World;
 /// <param name="I1">The second.</param>
 /// <param name="I2">The third.</param>
 /// <param name="Material">
-/// The fourth field, believed to select a row of <see cref="MefCollisionMesh.Materials"/>. Zero
-/// throughout the sampled models, so its role is recorded rather than asserted.
+/// The fourth field: a row of this mesh's own <c>TAMC</c> table.
+/// <b>Correction</b> — an earlier reading recorded this as "zero throughout the sampled models". It is
+/// not: across level 1's models the selectors span <c>0</c> to <c>Materials − 1</c>, so it is a real
+/// per-face index. What a <c>TAMC</c> row then says about the <i>game</i> material is still unread; see
+/// the original.
 /// </param>
 public readonly record struct MefCollisionFace(int I0, int I1, int I2, int Material);
 

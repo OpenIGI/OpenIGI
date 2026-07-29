@@ -1,0 +1,294 @@
+using System.Runtime.InteropServices;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Animation;
+using OpenIGI.Formats.Textures;
+using OpenIGI.Formats.World;
+using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
+using OpenIGI.Rendering;
+
+namespace OpenIGI.Desktop;
+
+/// <summary>Draws the player's own arms — the skinned model <c>005_01_1</c> on the first-person rig.</summary>
+/// <remarks>
+/// <para>
+/// This is the first half of what <c>0x4644A0</c> draws, and the reason the port could not draw it
+/// before: <c>005_01_1</c> is mesh format 1, the <b>skinned</b> format, so its vertices have to be
+/// pushed through the bone palette every time the pose changes (<c>0x49B700</c>, ported as
+/// <see cref="MefSkinner"/>) rather than handed to the device once.
+/// </para>
+/// <para>
+/// The original skins into a shared dynamic vertex buffer it locks with <c>DISCARD</c>/<c>NOOVERWRITE</c>.
+/// This rebuilds the mesh instead, and only when the pose has actually moved — which for a single-key
+/// idle is once. That is a port-level difference in bookkeeping, not in what is drawn.
+/// </para>
+/// </remarks>
+public sealed class ViewModelRenderer : IDisposable
+{
+    private const string LogCategory = "ViewModel";
+
+    private readonly IGraphicsDevice _device;
+    private readonly ResourceRegistry _resources;
+    private readonly IIgiLogger _logger;
+    private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+
+    private MefModel? _model;
+    private MeshGeometry? _geometry;
+    private Vertex3D[] _skinned = [];
+    private MeshHandle _mesh = MeshHandle.None;
+    private MtpInstance? _instance;
+    private LoadedPack? _pack;
+    private bool _poseIsStale = true;
+    private bool _disposed;
+
+    /// <summary>Initializes a new instance of the <see cref="ViewModelRenderer"/> class.</summary>
+    /// <param name="device">The device to upload to and draw with.</param>
+    /// <param name="resources">Where texture bytes are read from.</param>
+    /// <param name="logger">Where to report problems.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    public ViewModelRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(resources);
+
+        _device = device;
+        _resources = resources;
+        _logger = logger ?? NullLogger.Instance;
+    }
+
+    /// <summary>Gets whether the arms are loaded and can be drawn.</summary>
+    public bool IsReady => _geometry is not null && _model is not null;
+
+    /// <summary>Loads the view model a <see cref="HumanView"/> names.</summary>
+    /// <param name="mission">The mission whose packs hold it.</param>
+    /// <returns><see langword="true"/> when it resolved and is a skinned model with something to draw.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="mission"/> is <see langword="null"/>.</exception>
+    public bool Load(LoadedMission mission)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        Release();
+
+        if (!mission.TryGetModel(HumanView.ModelName, out MefModel? model) || model is null)
+        {
+            _logger.Warning(LogCategory, $"The mission's packs do not hold '{HumanView.ModelName}'.");
+            return false;
+        }
+
+        if (!MefSkinner.IsSkinned(model))
+        {
+            _logger.Warning(LogCategory, $"'{HumanView.ModelName}' is {model.Format}, not a skinned model.");
+            return false;
+        }
+
+        _geometry = MefMeshBuilder.Build(model, 1f);
+        if (_geometry is null)
+        {
+            _logger.Warning(LogCategory, $"'{HumanView.ModelName}' has nothing to draw.");
+            return false;
+        }
+
+        _model = model;
+        _skinned = [.. _geometry.Vertices];
+        _poseIsStale = true;
+        (_pack, _instance) = FindInstance(mission, HumanView.ModelName);
+
+        _logger.Information(
+            LogCategory,
+            $"Arms '{HumanView.ModelName}': {model.BaseVertexCount} vertices, "
+                + $"{model.ExtraInfluenceCount} extra influence(s), highest bone {MefSkinner.HighestBone(model)}.");
+        return true;
+    }
+
+    /// <summary>Marks the pose as changed, so the next draw re-skins.</summary>
+    public void Invalidate() => _poseIsStale = true;
+
+    /// <summary>Draws the arms posed by a rig.</summary>
+    /// <param name="view">The first-person rig.</param>
+    /// <param name="camera">The eye the scene is drawn from.</param>
+    /// <param name="projection">The view-to-clip transform.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="view"/> is <see langword="null"/>.</exception>
+    public void Draw(HumanView view, in Camera3D camera, in Matrix4f projection)
+    {
+        ArgumentNullException.ThrowIfNull(view);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_geometry is null || _model is null)
+        {
+            return;
+        }
+
+        if (_poseIsStale || !_mesh.IsValid)
+        {
+            if (!Reskin(view))
+            {
+                return;
+            }
+        }
+
+        // Drawn at the object's position with its own 3x3. The skin itself is built from a pose whose
+        // root rotation is the IDENTITY, and the object's rotation is applied here instead -- which is
+        // exactly equivalent, because the root rotation only ever left-multiplies every bone, and it
+        // means turning to look does not force a re-skin. The original bakes it into the palette and
+        // pays that cost every frame.
+        Vector3d origin = view.Position;
+        Vector3d metres = new(
+            origin.X / WorldScene.UnitsPerMetre,
+            origin.Y / WorldScene.UnitsPerMetre,
+            origin.Z / WorldScene.UnitsPerMetre);
+
+        _device.SetProjection(projection);
+        _device.SetCullMode(CullMode.None);
+        _device.SetDepthState(DepthState.TestAndWrite);
+
+        Matrix4f modelView = camera.CreateModelView(metres, view.Orientation);
+
+        foreach (MeshSubset subset in _geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && _instance is { } instance
+                && _pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = GetTexture(texture);
+            }
+
+            _device.DrawMesh(
+                _mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                diffuse,
+                TextureHandle.None,
+                BlendMode.Opaque);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Release();
+
+        foreach (TextureHandle texture in _textures.Values)
+        {
+            _device.DestroyTexture(texture);
+        }
+
+        _textures.Clear();
+    }
+
+    private bool Reskin(HumanView view)
+    {
+        try
+        {
+            // The unrotated pose: see Draw for why the object's own 3x3 is left out of it.
+            BonePose pose = view.Bones.Pose();
+            MefSkinner.Skin(_model!, pose, (float)(1.0 / WorldScene.UnitsPerMetre), _skinned);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.Warning(LogCategory, $"The arms could not be posed: {ex.Message}");
+            _geometry = null;
+            return false;
+        }
+
+        if (_mesh.IsValid)
+        {
+            _device.DestroyMesh(_mesh);
+            _mesh = MeshHandle.None;
+        }
+
+        try
+        {
+            _mesh = _device.CreateMesh(_skinned, _geometry!.Indices);
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+        {
+            _logger.Warning(LogCategory, $"The arms did not upload: {ex.Message}");
+            _geometry = null;
+            return false;
+        }
+
+        _poseIsStale = false;
+        return true;
+    }
+
+    private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string name)
+    {
+        foreach (LoadedPack pack in new[] { mission.CommonPack, mission.LevelPack })
+        {
+            foreach (MtpInstance instance in pack.Instances)
+            {
+                if (string.Equals(instance.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (pack, instance);
+                }
+            }
+        }
+
+        return (null, null);
+    }
+
+    private void Release()
+    {
+        if (_mesh.IsValid)
+        {
+            _device.DestroyMesh(_mesh);
+        }
+
+        _mesh = MeshHandle.None;
+        _geometry = null;
+        _model = null;
+        _skinned = [];
+        _instance = null;
+        _pack = null;
+    }
+
+    private TextureHandle GetTexture(string name)
+    {
+        if (_textures.TryGetValue(name, out TextureHandle cached))
+        {
+            return cached;
+        }
+
+        TextureHandle handle = TextureHandle.None;
+        if (_resources.TryLoad(LoadedPack.TextureResourceName(name), out ReadOnlyMemory<byte> bytes))
+        {
+            try
+            {
+                TextureImage image = TexFile.Load(bytes.Span);
+                handle = _device.CreateTexture(
+                    new TextureDescription(
+                        image.Width,
+                        image.Height,
+                        image.MipLevels,
+                        TextureFilter.Linear,
+                        TextureAddressMode.Repeat),
+                    image.Pixels);
+            }
+            catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
+            {
+                _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
+            }
+        }
+
+        _textures[name] = handle;
+        return handle;
+    }
+}

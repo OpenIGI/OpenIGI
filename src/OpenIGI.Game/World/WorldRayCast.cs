@@ -6,7 +6,23 @@ namespace OpenIGI.Game.World;
 /// <param name="Position">The point of contact, in world units.</param>
 /// <param name="Normal">The surface's outward normal, unit length.</param>
 /// <param name="Distance">How far along the ray the contact sits, in world units.</param>
-public readonly record struct WorldRayHit(Vector3d Position, Vector3f Normal, double Distance);
+/// <param name="Material">
+/// Which material the struck face is made of — the fourth field of its
+/// <see cref="Formats.World.MefCollisionFace"/>, and a row of the game material table.
+/// </param>
+/// <remarks>
+/// <para>
+/// <b>The material is what decides what a hit looks like.</b> The original never lets a bullet choose
+/// its own mark: <c>0x4083C0</c> packages the impact and dispatches it to the <i>material's</i> own
+/// task class, so a round through glass and into brick leaves two different marks without the shot
+/// knowing about either. Carrying the index here is what makes that lookup possible at all.
+/// </para>
+/// </remarks>
+public readonly record struct WorldRayHit(
+    Vector3d Position,
+    Vector3f Normal,
+    double Distance,
+    int Material = 0);
 
 /// <summary>Casts a ray at the world and reports the nearest surface it meets.</summary>
 /// <param name="origin">Where the ray starts, in world units.</param>

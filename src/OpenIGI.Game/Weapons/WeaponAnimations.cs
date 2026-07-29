@@ -27,10 +27,17 @@ public readonly record struct WeaponAnimations(
 /// <c>0x489F20</c> and <c>0x489ED0</c>.
 /// </para>
 /// <para>
-/// The table is where the <b>upper-body split</b> becomes concrete: every action names <i>both</i> a
-/// full-body and an upper-body clip, and the human plays whichever its skeleton has. That is why a
-/// weapon's <c>UpperBody*</c> ids resolve in the player's animation set and its full-body ids do not —
-/// the player's legs are already running a locomotion state, so only the torso track is used.
+/// The table is where the <b>upper-body split</b> becomes concrete, and the split is between two
+/// <i>skeletons</i> rather than two tracks on one. <c>0x489F20</c> plays the full-body id on <b>bone 0
+/// of the first-person view rig</b> — <c>human-&gt;view-&gt;boneObj</c>, which <c>0x464660</c> built
+/// from skeleton 5 — and <c>0x489ED0</c> plays the upper-body id on <b>bone 1 of the human's own
+/// skeleton-0 rig</b>, with orientation type 5 over the root orientation at <c>Human+1616</c>.
+/// </para>
+/// <para>
+/// So a weapon's full-body ids are ids in <c>005.iff</c> and its <c>UpperBody*</c> ids are ids in
+/// <c>000.iff</c>. An earlier note here read the full-body ids as simply not resolving in the player's
+/// set; they resolve, in the other set. <c>RetailHumanViewTests</c> checks every full-body id of every
+/// one of the 24 weapons against <c>005.iff</c>.
 /// </para>
 /// <para>
 /// The blend is <c>0.4</c> seconds for the standing and moving actions and immediate for firing,
@@ -88,6 +95,10 @@ public static class WeaponAnimationTable
             WeaponAction.Reload =>
                 new(weapon.ReloadAnimation, weapon.UpperBodyReloadAnimation, false, false, immediate, immediate),
 
+            // Both tracks go quiet past the third variant, not just the full-body one.
+            WeaponAction.Fire when fireVariant is < 0 or >= 3 =>
+                new(-1, -1, false, false, immediate, immediate),
+
             WeaponAction.Fire =>
                 new(FireClip(weapon, fireVariant), weapon.UpperBodyFireAnimation, false, false, immediate, immediate),
 
@@ -99,10 +110,44 @@ public static class WeaponAnimationTable
         };
     }
 
+    /// <summary>
+    /// How much of a clip <see cref="WeaponAction.FireTimed"/> skips, given one uniform sample.
+    /// </summary>
+    /// <param name="uniformSample">A draw on 0–1 from the engine's own stream.</param>
+    /// <returns>The clip time to start at, in the clip's own units.</returns>
+    /// <remarks>
+    /// <para>
+    /// The original computes <c>flt_A54658 * (rand01() * 0.175) * 30.0</c> and hands it to
+    /// <c>sub_4D65B0</c>, which writes it to the clip's <b><c>+44</c></b>. <c>+44</c> is the
+    /// <i>clock</i> — <c>sub_4D4B60</c> does <c>clip[+44] += clip[+40]</c> and compares <c>+44</c>
+    /// against the duration — and the <i>rate</i> is <c>+40</c>, which a different function sets. So a
+    /// shot's animation <b>starts part-way in</b> rather than playing at a random speed. An earlier note
+    /// here had it the other way round.
+    /// </para>
+    /// <para>
+    /// <c>flt_A54658</c> is <c>4800 / 30 = 160</c>, set once by <c>sub_4D2D30(30.0)</c>. The same
+    /// constant converts a blend from seconds to ticks, which is the cross-check on its value.
+    /// </para>
+    /// </remarks>
+    public static float TimedFireStart(float uniformSample) =>
+        ClipTimeScale * (uniformSample * TimedFireSpread) * 30f;
+
+    /// <summary>The engine's clip-time scale, <c>4800 / 30</c>.</summary>
+    public const float ClipTimeScale = 160f;
+
+    /// <summary>How much of the clip a timed shot may skip, before scaling.</summary>
+    /// <remarks><c>0.175</c>, the literal in <c>0x4137E0</c>'s action 6.</remarks>
+    public const float TimedFireSpread = 0.175f;
+
+    // The switch is a chain of equality tests with no wrap: at three and above BOTH ids stay at their
+    // initial -1, and -1 means play nothing. It is not `variant % 3`. In retail the fall-through is
+    // unreachable because the striking state caps its own requests below three, but a port that wrapped
+    // instead would play a fourth swing the original does not.
     private static int FireClip(WeaponType weapon, int variant) => variant switch
     {
+        0 => weapon.FireAnimation1,
         1 => weapon.FireAnimation2,
         2 => weapon.FireAnimation3,
-        _ => weapon.FireAnimation1,
+        _ => -1,
     };
 }
