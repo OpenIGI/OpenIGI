@@ -572,6 +572,96 @@ public sealed class RetailTerrainTests
         Assert.True(checkedChunks > 0);
     }
 
+    [RequiresGameDataFact]
+    public void TheLeafQueryLandsOnGeometryOverTheLevelsOwnGround()
+    {
+        // The front of 0x4CB050: descend to depth 16 and restate the point in the leaf's frame. This is
+        // the step before the surface test, so what it must prove is that real ground actually resolves
+        // to real triangles.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+
+        (double centreX, double centreY, double ground) = Medians(scene);
+
+        int found = 0;
+        int sampled = 0;
+        long triangles = 0;
+
+        for (int dx = -6; dx <= 6; dx++)
+        {
+            for (int dy = -6; dy <= 6; dy++)
+            {
+                Vector3i point = new(
+                    (int)((centreX + (dx * 6.0)) * WorldScene.UnitsPerMetre),
+                    (int)((centreY + (dy * 6.0)) * WorldScene.UnitsPerMetre),
+                    (int)(ground * WorldScene.UnitsPerMetre));
+
+                sampled++;
+                if (!TerrainLeafQuery.TryFindLeaf(terrain, point, out TerrainLeaf leaf))
+                {
+                    continue;
+                }
+
+                found++;
+                triangles += leaf.Block.TriangleCount;
+
+                // A leaf that answered carries geometry, at the surface depth, with the right scale.
+                Assert.Equal(TerrainLeafQuery.SurfaceDepth, leaf.Cursor.Depth);
+                Assert.False(leaf.Block.IsEmpty);
+                Assert.Equal(TerrainOctree.RootExtent >> TerrainLeafQuery.SurfaceDepth, leaf.Cursor.Extent);
+                Assert.Equal(leaf.Cursor.Extent / 24.0, leaf.UnitScale);
+
+                // Every packed vertex sits inside the leaf, which is what the +-24 encoding promises.
+                for (int i = 0; i < leaf.Block.VertexCount; i++)
+                {
+                    TerrainPackedVertex vertex = leaf.Block.Vertex(i);
+                    Assert.InRange(vertex.X, -24, 24);
+                    Assert.InRange(vertex.Y, -24, 24);
+                    Assert.InRange(vertex.Z, -24, 24);
+                }
+
+                // And every triangle indexes a vertex it has.
+                for (int i = 0; i < leaf.Block.TriangleCount; i++)
+                {
+                    TerrainTriangle triangle = leaf.Block.Triangle(i);
+                    Assert.InRange(triangle.I0, 0, leaf.Block.VertexCount - 1);
+                    Assert.InRange(triangle.I1, 0, leaf.Block.VertexCount - 1);
+                    Assert.InRange(triangle.I2, 0, leaf.Block.VertexCount - 1);
+                }
+            }
+        }
+
+        Assert.Equal(169, sampled);
+
+        // The point of the test: over the middle of a real level, most samples find real ground.
+        Assert.True(found > sampled / 2, $"only {found} of {sampled} samples reached terrain geometry");
+        Assert.True(triangles > 0);
+    }
+
+    [RequiresGameDataFact]
+    public void TheLeafCornerMaskAgreesWithTheLeafExtent()
+    {
+        // The original snaps X and Y with 0xFFFF8000 and works Z off the node centre. That mask is only
+        // right if it is twice the leaf half-extent, which is worth pinning rather than assuming.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+
+        (double centreX, double centreY, double ground) = Medians(scene);
+        Vector3i point = new(
+            (int)(centreX * WorldScene.UnitsPerMetre),
+            (int)(centreY * WorldScene.UnitsPerMetre),
+            (int)(ground * WorldScene.UnitsPerMetre));
+
+        Assert.True(TerrainLeafQuery.TryFindLeaf(terrain, point, out TerrainLeaf leaf));
+
+        Assert.Equal(~TerrainLeafQuery.LeafCornerMask + 1, 2 * leaf.Cursor.Extent);
+        Assert.Equal(32768, 2 * leaf.Cursor.Extent);
+
+        // The point sits within one leaf of the origin the query reports.
+        Assert.InRange(point.X, leaf.Origin.X - (2 * leaf.Cursor.Extent), leaf.Origin.X + (2 * leaf.Cursor.Extent));
+        Assert.InRange(point.Y, leaf.Origin.Y - (2 * leaf.Cursor.Extent), leaf.Origin.Y + (2 * leaf.Cursor.Extent));
+    }
+
     private static (double X, double Y, double Z) Medians(WorldScene scene)
     {
         double[] xs = new double[scene.Placements.Count];
