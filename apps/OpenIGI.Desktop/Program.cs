@@ -10,6 +10,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Game.Menus;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
@@ -163,6 +164,10 @@ using (window)
     // contents: every model's attachments name an entry here. Loading it is a startup step, like the
     // mission scan, because a level's own scripts never mention it.
     MagicObjectRegistry magic = new(logger);
+
+    // Without these the level's own HumanPlayer task is never built, and the spawn the mission
+    // declares cannot be found - the tree loads perfectly well without it and simply has no player.
+    PlayerTaskTypes.RegisterAll(loop.Types);
     magic.Register(loop.Natives);
 
     try
@@ -251,7 +256,14 @@ using (window)
         if (playerTerrain is not null)
         {
             PlayerCamera candidate = new();
-            if (candidate.Place(playerTerrain, camera.Position, options.CameraYaw))
+
+            // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
+            // with a Position and a Gamma. Standing there is standing where the game starts you.
+            bool placed = PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn)
+                ? candidate.PlaceAt(playerTerrain, spawn)
+                : candidate.Place(playerTerrain, camera.Position, options.CameraYaw);
+
+            if (placed)
             {
                 player = candidate;
                 playerMode = options.StartWalking;

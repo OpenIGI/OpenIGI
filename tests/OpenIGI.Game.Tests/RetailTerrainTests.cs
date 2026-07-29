@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
@@ -794,6 +795,62 @@ public sealed class RetailTerrainTests
             $"only {near} of {compared} placements sat within ten metres of the ground under them");
     }
 
+    [RequiresGameDataFact]
+    public void EveryMissionDeclaresAPlayerSpawnAndItIsOnTheGround()
+    {
+        // The original does not compute a start: the level script places a HumanPlayer task. So the
+        // check is that every shipped mission has one, and that where it puts the player is actually
+        // standing on that level's terrain.
+        Harness harness = Harness.Create();
+
+        int missions = 0;
+        int withSpawn = 0;
+        int onGround = 0;
+        List<string> misses = [];
+
+        foreach (MissionDescriptor descriptor in harness.Registry.Missions.OrderBy(m => m.Id))
+        {
+            missions++;
+
+            (TerrainData terrain, LevelTask levelRoot) = harness.LoadMissionTree(descriptor.Id);
+            if (!PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn))
+            {
+                misses.Add($"{descriptor.Id}: no HumanPlayer task");
+                continue;
+            }
+
+            withSpawn++;
+
+            if (terrain is not { IsUsable: true })
+            {
+                continue;
+            }
+
+            // A HumanPlayer task's Position is in the game's own world units, unlike a WorldScene
+            // placement, which the scene builder has already divided into metres for the renderer.
+            double x = spawn.Position.X;
+            double y = spawn.Position.Y;
+            double z = spawn.Position.Z;
+
+            PlayerBody body = new() { Position = new Vector3d(x, y, z) };
+            if (body.PlaceOnGround(terrain))
+            {
+                onGround++;
+
+                // The declared spawn should be near the ground under it, not tens of metres out.
+                Assert.True(
+                    Math.Abs(body.Position.Z - z) < 20.0 * WorldScene.UnitsPerMetre,
+                    $"mission {descriptor.Id}: spawn is {(z - body.Position.Z) / WorldScene.UnitsPerMetre:0.#} m off the ground");
+            }
+        }
+
+        Assert.True(missions > 10, $"only {missions} missions were scanned");
+        Assert.True(
+            withSpawn == missions,
+            $"{missions - withSpawn} mission(s) declared no player start: {string.Join("; ", misses)}");
+        Assert.True(onGround > missions / 2, $"only {onGround} of {missions} spawns resolved to ground");
+    }
+
     private static (double X, double Y, double Z) Medians(WorldScene scene)
     {
         double[] xs = new double[scene.Placements.Count];
@@ -860,7 +917,20 @@ public sealed class RetailTerrainTests
             magic.Register(loop.Natives);
             magic.Load(resources, loop.Natives);
 
+            // Without these the level's HumanPlayer is never built and the tree simply has no player.
+            PlayerTaskTypes.RegisterAll(loop.Types);
+
             return new Harness(loop, fileSystem, resources, registry, magic, new TerrainLoader(resources, loop.Natives));
+        }
+
+        public (TerrainData Terrain, LevelTask Root) LoadMissionTree(int id)
+        {
+            LevelTask levelRoot = (LevelTask)Loop.Tasks.New(Loop.Tasks.Root, Loop.Types.Get(EngineTaskTypes.Level));
+            LevelLoader levelLoader = new(levelRoot, Loop.TaskCommands, Loop.Natives, Resources);
+            LoadedMission mission = new MissionLoader(Registry, FileSystem, Resources, levelLoader, null, Terrain)
+                .Load(id);
+
+            return (mission.Terrain!, levelRoot);
         }
 
         public (TerrainData Terrain, TerrainSurface Surface, WorldScene Scene) LoadMission(int id)

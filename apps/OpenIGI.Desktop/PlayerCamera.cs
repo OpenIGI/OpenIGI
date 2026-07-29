@@ -85,6 +85,25 @@ public sealed class PlayerCamera
         return _body.PlaceOnGround(terrain);
     }
 
+    /// <summary>Puts the player at a spawn the level declared.</summary>
+    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="spawn">The level's own <c>HumanPlayer</c> start.</param>
+    /// <returns><see langword="false"/> when there is no ground under it.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A spawn's position is already in the game's world units — unlike a scene placement, which the
+    /// scene builder has divided into metres for the renderer — so it goes to the body untouched.
+    /// </remarks>
+    public bool PlaceAt(TerrainData terrain, PlayerSpawnPoint spawn)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+
+        _body.Position = spawn.Position;
+        _body.Yaw = spawn.Gamma;
+        _body.Pitch = 0f;
+        return _body.PlaceOnGround(terrain);
+    }
+
     private static Vector3d ToMetres(Vector3d units) =>
         new(units.X / UnitsPerMetre, units.Y / UnitsPerMetre, units.Z / UnitsPerMetre);
 
