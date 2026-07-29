@@ -277,6 +277,28 @@ using (window)
                 logger.Warning("Player", $"Could not read the player's animations: {ex.Message}");
             }
 
+            // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
+            // is what says how high a jump goes and how far a step travels.
+            try
+            {
+                HumanPlayerConfig config = new();
+                config.Register(loop.Natives);
+                config.Load(resources, loop.Natives);
+
+                if (config.Parameters is { } tuning)
+                {
+                    candidate.UseParameters(tuning);
+                }
+                else
+                {
+                    logger.Warning("Player", "humanplayer.qvm published no parameters; using the retail defaults.");
+                }
+            }
+            catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
+            {
+                logger.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
+            }
+
             // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
             // with a Position and a Gamma. Standing there is standing where the game starts you.
             bool placed = PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn)

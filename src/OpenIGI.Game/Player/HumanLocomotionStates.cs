@@ -66,6 +66,75 @@ public static class HumanLocomotionStates
         return Table[state];
     }
 
+    /// <summary>The idle state.</summary>
+    public const int Idle = 0;
+
+    /// <summary>The falling state.</summary>
+    public const int Falling = 29;
+
+    /// <summary>How far above a standing movement state its crouched twin sits.</summary>
+    /// <remarks>Eight, exactly — 1 to 9, 4 to 12, 7 to 15, 8 to 16, and the diagonals alike.</remarks>
+    public const int CrouchedOffset = 8;
+
+    /// <summary>The state a set of movement flags puts a standing or crouched human into.</summary>
+    /// <param name="flags">The motion flags for this tick.</param>
+    /// <returns>The locomotion state, or <see cref="Idle"/> when nothing is held.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>There are eight directions, not four.</b> State 0's own per-tick only reaches the four
+    /// cardinals, because from a standstill you can only start in one; the diagonals are reached from
+    /// the movement states — state 1's per-tick (<c>0x408C80</c>) tests forward <i>and</i> right and
+    /// moves to state 2. Selecting straight from the flags reaches the same state in one step.
+    /// </para>
+    /// <para>
+    /// The layout was read off the animations rather than assumed: states 1 to 8 travel +Y, +X+Y,
+    /// −X+Y, −Y, +X−Y, −X−Y, +X and −X. And <b>crouching is exactly eight higher</b> — 9 to 16 travel
+    /// the same eight ways, more slowly.
+    /// </para>
+    /// </remarks>
+    public static int ForDirection(HumanMotionState flags)
+    {
+        if ((flags & HumanMotionState.OnGround) == 0)
+        {
+            return Falling;
+        }
+
+        if ((flags & HumanMotionState.Death46) != 0)
+        {
+            return 46;
+        }
+
+        if ((flags & HumanMotionState.Death47) != 0)
+        {
+            return 47;
+        }
+
+        bool forward = (flags & HumanMotionState.MoveForward) != 0;
+        bool backward = (flags & HumanMotionState.MoveBackward) != 0;
+        bool right = (flags & HumanMotionState.MoveRight) != 0;
+        bool left = (flags & HumanMotionState.MoveLeft) != 0;
+
+        int state = (forward, backward, right, left) switch
+        {
+            (true, _, true, false) => 2,
+            (true, _, false, true) => 3,
+            (true, _, _, _) => 1,
+            (_, true, true, false) => 5,
+            (_, true, false, true) => 6,
+            (_, true, _, _) => 4,
+            (_, _, true, false) => 7,
+            (_, _, false, true) => 8,
+            _ => Idle,
+        };
+
+        if (state == Idle)
+        {
+            return Idle;
+        }
+
+        return (flags & HumanMotionState.Crouched) != 0 ? state + CrouchedOffset : state;
+    }
+
     /// <summary>Reports whether a state drives itself instead of playing a clip from the set.</summary>
     /// <param name="state">The locomotion state id.</param>
     /// <returns><see langword="true"/> when the state's animation id is zero.</returns>

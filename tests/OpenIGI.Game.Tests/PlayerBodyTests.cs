@@ -248,11 +248,11 @@ public sealed class PlayerBodyTests
         player.Tick(jump, terrain, delta);
         Assert.False(player.IsGrounded);
 
-        // The horizontal velocity is the take-off speed, not the animation's - measured after the same
-        // tick's drag, which is why the expectation carries the 0.99.
+        // The horizontal velocity is the take-off speed, not the animation's. The airborne integrator
+        // has no damping, so it survives the tick unchanged.
         double takeOff = 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
         double speed = Math.Sqrt((player.Velocity.X * player.Velocity.X) + (player.Velocity.Y * player.Velocity.Y));
-        Assert.Equal(takeOff * HumanMotion.DragPerTick, speed, 1.0);
+        Assert.Equal(takeOff, speed, 1.0);
 
         // 17.5 km/h is 4.86 m/s, which is all but the run animation's own speed: a running jump keeps
         // the pace you were going.
@@ -295,10 +295,91 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
-    public void TheAnimationDoesNotAlsoMoveTheBodyWhileItIsAirborne()
+    public void GravityDoesNotBiteOnTheTickTheJumpLeavesTheGround()
     {
-        // On the ground the animation moves the body; in the air the velocity does. If both applied a
-        // jump would travel at twice its speed.
+        // The jump entry (0x40BA70) installs the airborne per-tick in the state slot and returns - it
+        // does not call it, unlike every transition inside 0x40BBD0, which sets the slot and invokes it
+        // in the same breath. So the launch tick is the take-off velocity clean.
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+
+        player.Tick(new PlayerCommand(0f, 0f, 0f, 0f, false, false, Jump: true), terrain, default);
+
+        Assert.False(player.IsGrounded);
+        Assert.Equal(player.JumpSpeed, player.Velocity.Z, 1e-3);
+
+        // And on the next tick it does.
+        player.Tick(default, terrain, default);
+        Assert.Equal(player.JumpSpeed - HumanMotion.GravityPerTick, player.Velocity.Z, 1e-3);
+    }
+
+    [RequiresGameDataFact]
+    public void HoldingADirectionThroughAJumpLeansItWithoutSteeringIt()
+    {
+        // Air control accumulates into the velocity rather than replacing it, so it is an acceleration:
+        // it bends the arc by something over a metre across a jump but cannot turn it round.
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        player.Yaw = 0f;
+
+        Vector3d start = player.Position;
+        player.Tick(new PlayerCommand(0f, 0f, 0f, 0f, false, false, Jump: true), terrain, default);
+
+        // Straight up, then lean forward for the whole flight.
+        PlayerCommand lean = new(1f, 0f, 0f, 0f, false, false, Jump: false);
+        int ticks = 0;
+        while (!player.IsGrounded && ticks < 300)
+        {
+            player.Tick(lean, terrain, default);
+            ticks++;
+        }
+
+        double travelled = (player.Position.Y - start.Y) / UnitsPerMetre;
+        Assert.InRange(travelled, 0.5, 4.0);
+
+        // The same jump with nothing held goes nowhere, which is what makes the above air control and
+        // not the take-off carry.
+        (TerrainData still, PlayerBody idle) = OnLevelOne();
+        idle.Yaw = 0f;
+        Vector3d from = idle.Position;
+        idle.Tick(new PlayerCommand(0f, 0f, 0f, 0f, false, false, Jump: true), still, default);
+
+        ticks = 0;
+        while (!idle.IsGrounded && ticks < 300)
+        {
+            idle.Tick(default, still, default);
+            ticks++;
+        }
+
+        Assert.Equal(from.Y, idle.Position.Y, 1e-6);
+    }
+
+    [RequiresGameDataFact]
+    public void AJumpTakesTheInheritedVelocityWithItAndThenConsumesIt()
+    {
+        // Human+1832, added on all three axes at take-off and zeroed by 0x4632D0. It is zero for a body
+        // standing on terrain, so this drives it by hand to show the term is carried rather than dropped.
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        player.Yaw = 0f;
+        player.InheritedVelocity = new Vector3f(0f, 500f, 200f);
+
+        player.Tick(new PlayerCommand(0f, 0f, 0f, 0f, false, false, Jump: true), terrain, default);
+
+        Assert.Equal(500f, player.Velocity.Y, 1e-3f);
+        Assert.Equal(player.JumpSpeed + 200.0, player.Velocity.Z, 1e-3);
+
+        // Consumed, not carried: the next jump does not get it again.
+        Assert.Equal(default, player.InheritedVelocity);
+    }
+
+    [RequiresGameDataFact]
+    public void TheAnimationAndTheVelocityBothMoveTheBodyAndAreAdded()
+    {
+        // Correction to an earlier reading. The two were implemented as either/or - animation on the
+        // ground, velocity in the air - on the reasoning that applying both would make a jump travel at
+        // twice its speed. The move-and-collide at 0x4614B0 opens by summing them:
+        //
+        //     v2 = velocity.x + rootDelta.x;   // +1636 and +1312
+        //
+        // so a jump does carry both, and the airborne animation's own travel is part of the arc.
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
         player.Yaw = 0f;
 
@@ -308,10 +389,12 @@ public sealed class PlayerBodyTests
         Vector3d before = player.Position;
         float velocityY = player.Velocity.Y;
 
-        // Feeding a large delta while airborne must not shift the body by it.
-        player.Tick(default, terrain, new Vector3f(0f, 5000f, 0f));
+        const float delta = 5000f;
+        player.Tick(default, terrain, new Vector3f(0f, delta, 0f));
 
-        Assert.Equal(before.Y + velocityY, player.Position.Y, 1.0);
+        // At yaw 0 the body faces +Y, so the whole scaled delta lands on Y beside the velocity.
+        double step = delta * HumanMotion.DefaultDeltaTranslationScale;
+        Assert.Equal(before.Y + velocityY + step, player.Position.Y, 1.0);
     }
 
     private static (TerrainData Terrain, PlayerBody Player) OnLevelOne()

@@ -3,51 +3,100 @@ using OpenIGI.Core.Numerics;
 namespace OpenIGI.Game.Player;
 
 /// <summary>
-/// How a human moves: gravity and drag while airborne, and root motion while animating.
+/// How a human moves: gravity and air control while airborne, and root motion while animating.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Both halves come out of the player's per-tick, <c>0x4109A0</c>, and the airborne integrator it
-/// calls, <c>0x40DBF0</c>. Between them they are the whole of how a body's position changes — there is
+/// calls, <c>0x408460</c>. Between them they are the whole of how a body's position changes — there is
 /// no walking-speed constant anywhere, because walking is not driven by one.
+/// </para>
+/// <para>
+/// And they are <b>added</b>, not chosen between: the move-and-collide at <c>0x4614B0</c> opens by
+/// summing the velocity at <c>+1636</c> with the root-motion delta at <c>+1312</c>. So a jump carries
+/// its take-off velocity <i>and</i> whatever the airborne animation covers.
 /// </para>
 /// </remarks>
 public static class HumanMotion
 {
     /// <summary>Gravity, in world units per tick squared.</summary>
     /// <remarks>
-    /// <c>44.600887</c>. In ordinary terms that is <b>exactly 9.8 m/s²</b>:
-    /// <c>44.600887 × 900 ÷ 4096 = 9.8000</c>, the 900 being ticks squared per second squared and the
-    /// 4096 units per metre.
+    /// <para>
+    /// <c>84.741692</c>, from the airborne integrator <c>0x408460</c> — about <b>18.6 m/s²</b>, which
+    /// is nearly twice Earth's. That is deliberate and it is what stops the jump feeling floaty: a
+    /// 1024-unit take-off reaches its apex in twelve ticks rather than twenty-three.
+    /// </para>
+    /// <para>
+    /// <b>Correction.</b> An earlier pass took <c>44.600887</c> for gravity because it sits in an
+    /// integrator that looks like the airborne one. It is not: <c>0x40DBF0</c> is the <b>wire slide</b>
+    /// state's per-tick — its entry plays <c>wire_slide_1</c> — and that constant, along with the 0.99
+    /// drag beside it, belongs to sliding down a wire. See <see cref="WireSlideGravityPerTick"/>.
+    /// </para>
     /// </remarks>
-    public const float GravityPerTick = 44.600887f;
+    public const float GravityPerTick = 84.741692f;
 
-    /// <summary>What each velocity component is multiplied by every tick.</summary>
+    /// <summary>The wire slide's own gravity, which is not the airborne one.</summary>
     /// <remarks>
-    /// <c>0.99000001</c>, applied to all three axes — and on the vertical it is applied <i>after</i>
-    /// gravity, not before. That ordering is what sets the terminal velocity.
+    /// <c>44.600887</c> — exactly 9.8 m/s². Kept named so the next reader does not mistake it for
+    /// gravity again, since it is the more ordinary-looking of the two.
     /// </remarks>
-    public const float DragPerTick = 0.99000001f;
+    public const float WireSlideGravityPerTick = 44.600887f;
 
-    /// <summary>The fastest a body ever falls, in world units per tick.</summary>
+    /// <summary>The wire slide's per-tick damping, applied to all three axes.</summary>
     /// <remarks>
-    /// The fixed point of <c>v ← (v − g) · d</c>, which is <c>−g·d / (1 − d)</c> — about 4415 units a
-    /// tick, or 32 m/s. A body reaches it asymptotically and never exceeds it.
+    /// <c>0.99000001</c>, and on the vertical it is applied <i>after</i> its gravity. <b>The airborne
+    /// integrator has no damping at all</b> — a falling body simply accelerates.
     /// </remarks>
-    public static float TerminalVelocity => -GravityPerTick * DragPerTick / (1f - DragPerTick);
+    public const float WireSlideDragPerTick = 0.99000001f;
 
     /// <summary>Advances an airborne velocity by one tick.</summary>
     /// <param name="velocity">The current velocity, in world units per tick.</param>
-    /// <returns>The velocity after gravity and drag.</returns>
+    /// <returns>The velocity after gravity.</returns>
     /// <remarks>
-    /// The order matters and is the original's: gravity is subtracted from the vertical component
-    /// <b>first</b>, and the drag is then applied to the result. Damping before subtracting would give
-    /// a different terminal velocity and a visibly different fall.
+    /// Gravity only: no damping, and no terminal velocity. A long fall keeps accelerating, which is
+    /// what <c>0x408460</c> does.
     /// </remarks>
-    public static Vector3f Integrate(Vector3f velocity) => new(
-        velocity.X * DragPerTick,
-        velocity.Y * DragPerTick,
-        (velocity.Z - GravityPerTick) * DragPerTick);
+    public static Vector3f Integrate(Vector3f velocity) =>
+        new(velocity.X, velocity.Y, velocity.Z - GravityPerTick);
+
+    /// <summary>Advances a wire slide's velocity by one tick.</summary>
+    /// <param name="velocity">The current velocity.</param>
+    /// <returns>The velocity after the slide's own gravity and damping.</returns>
+    /// <remarks>
+    /// <c>0x40DBF0</c>. The order matters: its gravity is subtracted from the vertical <b>first</b> and
+    /// the damping applied to the result, which is what gives the slide a terminal speed the ordinary
+    /// fall does not have.
+    /// </remarks>
+    public static Vector3f IntegrateWireSlide(Vector3f velocity) => new(
+        velocity.X * WireSlideDragPerTick,
+        velocity.Y * WireSlideDragPerTick,
+        (velocity.Z - WireSlideGravityPerTick) * WireSlideDragPerTick);
+
+    /// <summary>The air control one tick adds to an airborne velocity.</summary>
+    /// <param name="forward">Forward intent, −1, 0 or 1 — the movement slots, not an analogue axis.</param>
+    /// <param name="strafe">Sideways intent, likewise.</param>
+    /// <param name="basis">The body's facing.</param>
+    /// <param name="speed">
+    /// <see cref="HumanPlayerParameters.Speed3"/> — argument 3 of <c>humanplayer.qvm</c>, which is what
+    /// the integrator scales each axis by.
+    /// </param>
+    /// <returns>The velocity change to add.</returns>
+    /// <remarks>
+    /// <b>You can steer in mid-air after all</b>, a little: <c>0x408460</c> reads the same four
+    /// movement slots the ground states do and adds <paramref name="speed"/> along each held one, in
+    /// the body's own frame, every airborne tick. It accumulates rather than replacing, so it nudges a
+    /// jump rather than turning it.
+    /// </remarks>
+    public static Vector3f AirControl(float forward, float strafe, in Matrix3f basis, float speed)
+    {
+        float right = strafe * speed;
+        float ahead = forward * speed;
+
+        return new Vector3f(
+            (basis.M11 * right) + (basis.M12 * ahead),
+            (basis.M21 * right) + (basis.M22 * ahead),
+            (basis.M31 * right) + (basis.M32 * ahead));
+    }
 
     /// <summary>
     /// The factor an animation's delta translation is scaled by before it moves the body.

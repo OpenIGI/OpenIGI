@@ -30,8 +30,9 @@ public readonly record struct PlayerCommand(
 /// and settle against the ground.
 /// </para>
 /// <para>
-/// <b>What is faithful and what is not.</b> Gravity, the drag, the root-motion scale and rotation, the
-/// tick rate, the eye height and the ground query are all read from the game. What is <i>not</i> here
+/// <b>What is faithful and what is not.</b> Gravity, the air control, the root-motion scale and
+/// rotation, the tick rate, the eye height and the ground query are all read from the game — the
+/// tunables from <see cref="Parameters"/>, which is the script's own. What is <i>not</i> here
 /// is the object sweep — <c>0x4CDB20</c> is unread — so the body collides with terrain only and walks
 /// through placed models. The locomotion state machine (<c>player.md</c> §5) also is not driving the
 /// animation choice yet; the caller supplies the delta translation.
@@ -58,18 +59,47 @@ public sealed class PlayerBody
     /// </remarks>
     public const double CrouchEaseUnitsPerTick = 400.0;
 
-    /// <summary>The upward speed a jump starts with, in units per tick.</summary>
-    /// <remarks><see cref="HumanPlayerParameters.JumpVerticalSpeed"/>; 1024 in retail.</remarks>
-    public double JumpSpeed { get; init; } = 1024.0;
+    /// <summary>Gets or sets the tuning <c>humanplayer.qvm</c> publishes.</summary>
+    /// <remarks>
+    /// <para>
+    /// Every number below comes from here when it is set. The fallbacks are the retail values, so a body
+    /// with no parameters behaves like the shipped player rather than like nothing — but the fallbacks
+    /// are a convenience for tests, not the contract. <b>The game is meant to run off the script.</b>
+    /// </para>
+    /// </remarks>
+    public HumanPlayerParameters? Parameters { get; set; }
 
-    /// <summary>The horizontal speed a jump carries, in units per tick.</summary>
+    /// <summary>Gets the upward speed a jump starts with, in units per tick.</summary>
+    /// <remarks><see cref="HumanPlayerParameters.JumpVerticalSpeed"/>; 27 km/h, exactly 1024, in retail.</remarks>
+    public double JumpSpeed => Parameters?.JumpVerticalSpeed ?? 1024.0;
+
+    /// <summary>Gets how much air control one tick adds, in units per tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="HumanPlayerParameters.Speed3"/> — argument 3, 0.5 km/h, about 19 units a tick. The
+    /// airborne integrator adds this along each held movement axis every tick.
+    /// </para>
+    /// <para>
+    /// It accumulates into the velocity rather than replacing it, so it is an acceleration: a jump can be
+    /// leaned into over its two dozen ticks, by something over a metre, but it cannot be turned. This is
+    /// why the original lets you keep pressing keys mid-air without the jump becoming steerable.
+    /// </para>
+    /// </remarks>
+    public double AirControlSpeed => Parameters?.Speed3 ?? 0.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+
+    /// <summary>Gets the horizontal speed a jump carries, in units per tick.</summary>
     /// <remarks>
     /// <see cref="HumanPlayerParameters.JumpHorizontalSpeed"/> — 17.5 km/h, which is 663.7 units a
     /// tick, or 4.86 m/s. That is almost exactly the run speed the forward animation covers, so a
     /// running jump carries the pace you were already going.
     /// </remarks>
-    public double JumpHorizontalSpeed { get; init; } =
-        17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+    public double JumpHorizontalSpeed =>
+        Parameters?.JumpHorizontalSpeed ?? 17.5 * HumanPlayerParameters.UnitsPerTickPerKilometrePerHour;
+
+    /// <summary>Gets the factor the animation's delta translation is scaled by.</summary>
+    /// <remarks><see cref="HumanPlayerParameters.DeltaTranslationScale"/> — argument 0, 1.75 in retail.</remarks>
+    public float DeltaTranslationScale =>
+        Parameters?.DeltaTranslationScale ?? HumanMotion.DefaultDeltaTranslationScale;
 
     /// <summary>How far the pitch may travel from level, in radians.</summary>
     public const float PitchLimit = 1.5533431f;
@@ -85,6 +115,22 @@ public sealed class PlayerBody
 
     /// <summary>Gets the player's velocity, which only matters while airborne.</summary>
     public Vector3f Velocity { get; private set; }
+
+    /// <summary>Gets or sets the velocity a jump inherits from whatever the body was standing on.</summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Human+1832</c>. The jump entry adds it to the take-off velocity on all three axes, and
+    /// <c>0x4632D0</c> zeroes it in the same breath as it clears the on-ground bit — so it is consumed,
+    /// not carried. Nothing else in the airborne path reads it.
+    /// </para>
+    /// <para>
+    /// <b>It is zero for a player standing on terrain</b>, which is why the jump behaves the same with
+    /// and without it today. What fills it in is unresolved; a moving surface or an explosion's shove is
+    /// the shape of thing it must be for. It is exposed so that when the writer is found there is
+    /// somewhere for the value to go, rather than the term being quietly dropped.
+    /// </para>
+    /// </remarks>
+    public Vector3f InheritedVelocity { get; set; }
 
     /// <summary>Gets whether the player is standing on something.</summary>
     public bool IsGrounded { get; private set; }
@@ -119,19 +165,21 @@ public sealed class PlayerBody
 
         // Root motion: the animation's own delta, scaled and turned by the body's facing. There is no
         // speed constant - see HumanMotion.ApplyRootMotion.
-        Vector3f step = HumanMotion.ApplyRootMotion(rootDelta, FacingBasis(Yaw));
+        Matrix3f facing = FacingBasis(Yaw);
+        Vector3f step = HumanMotion.ApplyRootMotion(rootDelta, facing, DeltaTranslationScale);
 
-        // On the ground the animation moves the body; in the air the velocity does, and the two must
-        // not both apply or a jump would travel at twice its speed.
-        Vector3d next = IsGrounded
-            ? new Vector3d(Position.X + step.X, Position.Y + step.Y, Position.Z)
-            : Position;
+        // The move is velocity PLUS the animation's step, always - 0x4614B0 adds them rather than
+        // choosing between them. On the ground the velocity is zero and the step carries; in the air
+        // the falling animation covers no ground and the velocity carries.
+        Vector3d next = new(Position.X + step.X, Position.Y + step.Y, Position.Z);
+
+        bool tookOff = false;
 
         if (IsGrounded && command.Jump)
         {
             // A jump takes the direction you are ALREADY moving, normalised, at a fixed horizontal
-            // speed - it does not read the keys again. That is why you cannot steer in mid-air: you
-            // carry the momentum you had at take-off and nothing changes it until you land.
+            // speed - it does not read the keys again. So the arc is set by the step you were mid-way
+            // through, and the air control below can only lean it.
             float horizontalX = 0f;
             float horizontalY = 0f;
             float length = MathF.Sqrt((step.X * step.X) + (step.Y * step.Y));
@@ -141,13 +189,44 @@ public sealed class PlayerBody
                 horizontalY = step.Y / length * (float)JumpHorizontalSpeed;
             }
 
-            Velocity = new Vector3f(horizontalX, horizontalY, (float)JumpSpeed);
+            // The inherited velocity is added and then consumed - 0x4632D0 zeroes it in the same breath
+            // as it clears the on-ground bit.
+            Velocity = new Vector3f(
+                horizontalX + InheritedVelocity.X,
+                horizontalY + InheritedVelocity.Y,
+                (float)JumpSpeed + InheritedVelocity.Z);
+
+            InheritedVelocity = default;
             IsGrounded = false;
+            tookOff = true;
         }
 
+        // The airborne integrator does not run on the tick you leave the ground. The jump entry
+        // (0x40BA70) installs the airborne per-tick in the state slot and RETURNS - unlike every
+        // transition inside 0x40BBD0, which sets the slot and calls it straight away. So the launch is
+        // the take-off velocity applied clean and gravity does not bite until the tick after.
         if (!IsGrounded)
         {
-            Velocity = HumanMotion.Integrate(Velocity);
+            if (!tookOff)
+            {
+                // Gravity, then air control - the integrator adds the steering to the velocity rather
+                // than replacing it, so holding a direction through a jump bends the arc a little.
+                Velocity = HumanMotion.Integrate(Velocity);
+
+                if (AirControlSpeed != 0.0)
+                {
+                    Vector3f nudge = HumanMotion.AirControl(
+                        command.Forward, command.Strafe, facing, (float)AirControlSpeed);
+
+                    Velocity = new Vector3f(
+                        Velocity.X + nudge.X,
+                        Velocity.Y + nudge.Y,
+                        Velocity.Z + nudge.Z);
+                }
+            }
+
+            // The move itself happens on the take-off tick as much as on any other: the state function
+            // sets the velocity and the per-tick's move-and-collide runs afterwards regardless.
             next = new Vector3d(next.X + Velocity.X, next.Y + Velocity.Y, next.Z + Velocity.Z);
         }
 
@@ -185,9 +264,17 @@ public sealed class PlayerBody
 
     /// <summary>Turns this tick's intent into the locomotion state the original would be in.</summary>
     /// <remarks>
-    /// The order is state zero's own: airborne first, then the stance, then the four movement bits in
-    /// the order forward, backward, right, left. Diagonals therefore resolve to a single state — the
-    /// first bit that matches — exactly as the original resolves them.
+    /// <para>
+    /// Airborne first, then the stance, then the four movement bits, and
+    /// <see cref="HumanLocomotionStates.ForDirection"/> turns them into a state.
+    /// </para>
+    /// <para>
+    /// <b>Correction.</b> This used to take the first movement bit that matched, on the reading that
+    /// state zero's per-tick only reaches the four cardinals. It does — but only because from a
+    /// standstill you can start in one direction; the diagonals are reached a tick later, from the
+    /// movement states themselves. Resolving forward-and-right to state 1 meant holding W and D walked
+    /// straight ahead. It resolves to state 2.
+    /// </para>
     /// </remarks>
     private int SelectState(in PlayerCommand command)
     {
@@ -221,7 +308,7 @@ public sealed class PlayerBody
             flags |= HumanMotionState.MoveLeft;
         }
 
-        return HumanIdleTransitions.Next(flags, command.Jump);
+        return HumanLocomotionStates.ForDirection(flags);
     }
 
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>

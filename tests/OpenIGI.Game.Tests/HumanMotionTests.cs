@@ -10,72 +10,70 @@ namespace OpenIGI.Game.Tests;
 public sealed class HumanMotionTests
 {
     [Fact]
-    public void GravityIsExactlyNinePointEightMetresPerSecondSquared()
+    public void GravityIsNearlyTwiceEarthsWhichIsWhyTheJumpIsNotFloaty()
     {
-        // 44.600887 units per tick squared, at 30 ticks a second and 4096 units a metre.
-        const double ticksSquaredPerSecondSquared = 30.0 * 30.0;
-        const double unitsPerMetre = 4096.0;
+        // 84.741692 units per tick squared, at 30 ticks a second and 4096 units a metre.
+        double metresPerSecondSquared = HumanMotion.GravityPerTick * 900.0 / 4096.0;
 
-        double metresPerSecondSquared =
-            HumanMotion.GravityPerTick * ticksSquaredPerSecondSquared / unitsPerMetre;
-
-        Assert.Equal(9.8, metresPerSecondSquared, 1e-6);
+        Assert.Equal(18.62, metresPerSecondSquared, 0.01);
+        Assert.True(metresPerSecondSquared > 2.0 * 9.0, "the airborne gravity is close to twice Earth's");
     }
 
     [Fact]
-    public void GravityIsSubtractedBeforeTheDragNotAfter()
+    public void TheWireSlideHasItsOwnGravityAndIsTheOneThatLooksOrdinary()
     {
-        // The ordering is the whole difference between two visibly different falls, so it is worth a
-        // test of its own rather than trusting the expression.
-        Vector3f start = new(0f, 0f, 0f);
-        Vector3f after = HumanMotion.Integrate(start);
-
-        Assert.Equal(
-            (0f - HumanMotion.GravityPerTick) * HumanMotion.DragPerTick,
-            after.Z,
-            1e-4f);
-
-        // Damping first would give a different number.
-        Assert.NotEqual((0f * HumanMotion.DragPerTick) - HumanMotion.GravityPerTick, after.Z);
+        // The trap this pair exists to mark: 44.600887 is exactly 9.8 m/s² and sits in an integrator
+        // that looks airborne, but it belongs to the wire slide. Taking it for gravity makes a jump
+        // hang in the air for twice as long.
+        Assert.Equal(9.8, HumanMotion.WireSlideGravityPerTick * 900.0 / 4096.0, 1e-6);
+        Assert.NotEqual(HumanMotion.WireSlideGravityPerTick, HumanMotion.GravityPerTick);
     }
 
     [Fact]
-    public void HorizontalVelocityOnlyDecays()
+    public void AFallHasNoDampingAndKeepsAccelerating()
     {
-        Vector3f after = HumanMotion.Integrate(new Vector3f(100f, -50f, 0f));
+        // The airborne integrator applies gravity and nothing else - no drag, and so no terminal
+        // velocity. Each tick removes exactly one gravity's worth.
+        Vector3f velocity = new(100f, -50f, 0f);
+        Vector3f after = HumanMotion.Integrate(velocity);
 
-        Assert.Equal(100f * HumanMotion.DragPerTick, after.X, 1e-4f);
-        Assert.Equal(-50f * HumanMotion.DragPerTick, after.Y, 1e-4f);
-    }
+        Assert.Equal(100f, after.X);
+        Assert.Equal(-50f, after.Y);
+        Assert.Equal(-HumanMotion.GravityPerTick, after.Z, 1e-3f);
 
-    [Fact]
-    public void AFallConvergesOnTerminalVelocityAndNeverPassesIt()
-    {
-        Vector3f velocity = new(0f, 0f, 0f);
-        for (int tick = 0; tick < 4000; tick++)
+        for (int i = 0; i < 100; i++)
         {
-            velocity = HumanMotion.Integrate(velocity);
-            Assert.True(velocity.Z >= HumanMotion.TerminalVelocity - 1e-2f);
+            after = HumanMotion.Integrate(after);
         }
 
-        Assert.Equal(HumanMotion.TerminalVelocity, velocity.Z, 1e-2f);
-
-        // Which is about 32 metres a second - a plausible terminal velocity, not an artefact.
-        double metresPerSecond = -HumanMotion.TerminalVelocity * 30.0 / 4096.0;
-        Assert.InRange(metresPerSecond, 30.0, 34.0);
+        Assert.Equal(-HumanMotion.GravityPerTick * 101f, after.Z, 1e-1f);
     }
 
     [Fact]
-    public void AJumpRisesAndFallsBackInAPlausibleTime()
+    public void TheWireSlideDampsAndSoHasATerminalSpeed()
     {
-        // The retail jump velocity is 1024 units a tick. Integrating it should give an arc a person
-        // would recognise rather than a hop or a moon jump.
+        Vector3f velocity = default;
+        for (int i = 0; i < 4000; i++)
+        {
+            velocity = HumanMotion.IntegrateWireSlide(velocity);
+        }
+
+        double terminal = -HumanMotion.WireSlideGravityPerTick * HumanMotion.WireSlideDragPerTick
+            / (1f - HumanMotion.WireSlideDragPerTick);
+
+        Assert.Equal(terminal, velocity.Z, 1e-2);
+    }
+
+    [Fact]
+    public void AJumpRisesAndFallsInAboutThreeQuartersOfASecond()
+    {
+        // 1024 units a tick against this gravity: twelve ticks up, twelve down.
         const float jump = 1024f;
 
         Vector3f velocity = new(0f, 0f, jump);
         double height = 0.0;
-        int ticks = 0;
         double apex = 0.0;
+        int ticks = 0;
 
         while (ticks < 300)
         {
@@ -90,18 +88,35 @@ public sealed class HumanMotionTests
             }
         }
 
-        double apexMetres = apex / 4096.0;
+        // The discrete sum, not the continuous one: the body is moved by the current velocity and only
+        // then does gravity bite, so the rise is the arithmetic series and lands about 8% above the
+        // closed form. Thirteen ticks of it, the last of them the one that turns over.
+        int rising = (int)Math.Ceiling(jump / HumanMotion.GravityPerTick);
+        double expected = (rising * (double)jump) - (HumanMotion.GravityPerTick * rising * (rising - 1) / 2.0);
 
-        // Checked against the closed form rather than against a guess at what a jump should look like:
-        // without drag the apex is v squared over twice g, and the drag can only lower it.
-        double undamped = (double)jump * jump / (2.0 * HumanMotion.GravityPerTick) / 4096.0;
+        Assert.Equal(13, rising);
+        Assert.Equal(expected, apex, 1.0);
+        Assert.InRange(apex / 4096.0, 1.4, 1.8);
+        Assert.InRange(ticks / 30.0, 0.6, 0.95);
+    }
 
-        Assert.True(apexMetres < undamped, "the drag must lower the apex");
-        Assert.True(apexMetres > undamped * 0.85, "the drag should not halve it either");
+    [Fact]
+    public void AirControlAddsAlongTheAxesTheBodyFaces()
+    {
+        // You can steer a jump a little: the integrator adds the movement speed along each held axis
+        // every airborne tick, in the body's own frame.
+        Matrix3f facing = Matrix3f.Identity;
 
-        // For the record, since it is the number the game actually produces: 1024 units a tick is
-        // 7.5 m/s, and that reaches a shade over two and a half metres.
-        Assert.InRange(apexMetres, 2.4, 2.8);
+        Vector3f ahead = HumanMotion.AirControl(forward: 1f, strafe: 0f, facing, speed: 10f);
+        Assert.Equal(0f, ahead.X, 1e-4f);
+        Assert.Equal(10f, ahead.Y, 1e-4f);
+
+        Vector3f right = HumanMotion.AirControl(0f, 1f, facing, 10f);
+        Assert.Equal(10f, right.X, 1e-4f);
+        Assert.Equal(0f, right.Y, 1e-4f);
+
+        // Nothing held, nothing added.
+        Assert.Equal(default, HumanMotion.AirControl(0f, 0f, facing, 10f));
     }
 
     [Fact]

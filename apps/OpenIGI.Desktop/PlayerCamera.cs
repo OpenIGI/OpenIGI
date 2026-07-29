@@ -99,6 +99,20 @@ public sealed class PlayerCamera
         _animator = new HumanLocomotionAnimator(set);
     }
 
+    /// <summary>Gives the player the tuning <c>humanplayer.qvm</c> publishes.</summary>
+    /// <param name="parameters">The script's 43 values, converted into engine units.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="parameters"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The jump height, the jump's horizontal carry, the air control and the root-motion scale all come
+    /// from here. Without it the body falls back on the retail numbers, which is right for this game but
+    /// wrong in principle — a mod that retunes the player would be ignored.
+    /// </remarks>
+    public void UseParameters(HumanPlayerParameters parameters)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        _body.Parameters = parameters;
+    }
+
     /// <summary>Gets the locomotion state the player is in, for diagnostics.</summary>
     public int LocomotionState => _animator?.State ?? 0;
 
