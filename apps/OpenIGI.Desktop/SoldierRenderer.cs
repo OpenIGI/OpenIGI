@@ -186,6 +186,10 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="sight">The world cast used for line of sight, or <see langword="null"/> to see through walls.</param>
     /// <param name="scripts">Where the archetype behaviour script is read from, or <see langword="null"/> for none.</param>
     /// <param name="natives">The registry the behaviour script resolves its AI natives against.</param>
+    /// <param name="levelRoot">
+    /// The level's task tree, which the authored patrol paths are collected from. Without it a soldier has
+    /// no path to walk and stands where the level put it.
+    /// </param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
@@ -195,7 +199,8 @@ public sealed class SoldierRenderer : IDisposable
         GraphFile graph,
         WorldRayCast? sight = null,
         ResourceRegistry? scripts = null,
-        NativeRegistry? natives = null)
+        NativeRegistry? natives = null,
+        GameTask? levelRoot = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -211,34 +216,25 @@ public sealed class SoldierRenderer : IDisposable
         // 0x538870 -- not a chosen id.
         _walkAnimation = HumanLocomotionStates.For(1).AnimationId;
 
-        // The archetype behaviour script: guard.qsc is what decides what a guard does in the original, so
-        // running it is what makes a guard behave like one. Every soldier here is a guard until the AIType
-        // parameter is bound (ai.md 2.3 maps 29 types onto 9 scripts).
-        AiScriptHost? host = null;
-        QvmProgram? guard = null;
-        if (scripts is not null && natives is not null)
+        // The level's authored patrol paths, keyed by the PatrolPath task's own id -- what AIAction_Patrol's
+        // first argument names (ai.md 7.1).
+        AiPatrolPathRegistry? paths = levelRoot is null ? null : AiPatrolPathRegistry.Build(levelRoot);
+        if (paths is not null)
         {
-            try
-            {
-                host = new AiScriptHost(natives, _logger);
-                string path = AiScriptApi.ScriptPath(AiArchetype.Guard).Replace(".qsc", ".qvm", StringComparison.Ordinal);
-                guard = QvmProgram.Read(scripts.Load(path));
-                _logger.Information(LogCategory, $"Behaviour script '{path}' loaded for every soldier.");
-            }
-            catch (Exception ex) when (ex is IOException or QvmFormatException or InvalidOperationException)
-            {
-                _logger.Warning(LogCategory, $"The guard behaviour script could not be loaded: {ex.Message}");
-                host = null;
-                guard = null;
-            }
+            _logger.Information(LogCategory, $"{paths.Count} authored patrol path(s) in this level.");
         }
 
+        AiScriptHost? host = scripts is not null && natives is not null ? new AiScriptHost(natives, _logger) : null;
+        Dictionary<string, QvmProgram?> scriptCache = new(StringComparer.Ordinal);
+
         int index = 0;
+        int patrolling = 0;
         foreach (Group group in _groups)
         {
             foreach ((SoldierView view, Vector3d _) in group.Soldiers)
             {
                 AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index);
+                brain.SetPatrolPaths(paths);
                 if (sight is not null)
                 {
                     // 0x489B20: the target is seen when the cast is clear, OR when whatever blocked it sits at
@@ -256,9 +252,26 @@ public sealed class SoldierRenderer : IDisposable
                     });
                 }
 
-                if (host is not null && guard is not null)
+                // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
+                // otherwise the archetype its AIType selects (ai.md 7.5a and 2.3). The per-task script is
+                // what names the soldier's patrol path, so without it a guard has nothing to patrol.
+                HumanAiTask? mind = FindMind(view);
+                if (host is not null && scripts is not null)
                 {
-                    brain.SetScript(host, guard);
+                    QvmProgram? script = null;
+                    if (mind is not null && mind.Id != GameTask.NoId)
+                    {
+                        script = LoadScript(scripts, scriptCache, AiScriptApi.MissionScriptPath(mind.Id));
+                    }
+
+                    AiArchetype archetype = mind?.Archetype ?? AiArchetype.Guard;
+                    script ??= LoadScript(scripts, scriptCache, AiScriptApi.ScriptPath(archetype));
+
+                    if (script is not null)
+                    {
+                        brain.SetScript(host, script);
+                        patrolling++;
+                    }
                 }
 
                 _brains[view] = brain;
@@ -268,8 +281,46 @@ public sealed class SoldierRenderer : IDisposable
 
         _logger.Information(
             LogCategory,
-            $"{_brains.Count} soldier(s) patrolling the nav graph, walk animation {_walkAnimation}.");
+            $"{_brains.Count} soldier(s) with brains ({patrolling} scripted), walk animation {_walkAnimation}.");
         return _brains.Count;
+    }
+
+    /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
+    private static HumanAiTask? FindMind(SoldierView view)
+    {
+        foreach (GameTask child in view.Soldier.Children)
+        {
+            if (child is HumanAiTask mind)
+            {
+                return mind;
+            }
+        }
+
+        return null;
+    }
+
+    private QvmProgram? LoadScript(ResourceRegistry scripts, Dictionary<string, QvmProgram?> cache, string qscPath)
+    {
+        string path = qscPath.Replace(".qsc", ".qvm", StringComparison.Ordinal);
+        if (cache.TryGetValue(path, out QvmProgram? cached))
+        {
+            return cached;
+        }
+
+        QvmProgram? program = null;
+        try
+        {
+            program = QvmProgram.Read(scripts.Load(path));
+        }
+        catch (Exception ex) when (ex is IOException or QvmFormatException or InvalidOperationException)
+        {
+            // A level ships a per-task script only for the soldiers it wants to override, so a miss here is
+            // ordinary rather than an error.
+            _logger.Debug(LogCategory, $"No behaviour script at '{path}': {ex.Message}");
+        }
+
+        cache[path] = program;
+        return program;
     }
 
     private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
@@ -303,7 +354,16 @@ public sealed class SoldierRenderer : IDisposable
 
         _tick++;
 
-        // The AI runs first: it decides where the body is and what it is doing, then the rig follows.
+        // EVERY soldier's rig is advanced, not just each group's representative. Ticking only the
+        // representative left every other soldier's BoneObject frozen, so its RootMotion() was zero and the
+        // AI never moved it -- while the shared group mesh, posed from the representative, showed it walking
+        // on the spot. Exactly one soldier per group actually moved: that group's representative.
+        foreach ((SoldierView view, AiSoldier _) in _brains)
+        {
+            view.Tick();
+        }
+
+        // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (view.IsDead)
@@ -314,7 +374,18 @@ public sealed class SoldierRenderer : IDisposable
 
             double travel = Math.Abs(view.RootMotion().Y);
             brain.Tick(_tick, enemy, travel);
-            view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, _walkAnimation);
+
+            // A patrol ANIMATION command names a clip outright; otherwise the gait picks between the walk
+            // cycle and the soldier's own stand animation.
+            if (brain.RequestedAnimation >= 0)
+            {
+                view.SetMoving(true, brain.RequestedAnimation);
+            }
+            else
+            {
+                view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, _walkAnimation);
+            }
+
             view.PlaceAt(brain.Position, brain.Orientation);
         }
 
@@ -326,7 +397,11 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             SoldierView representative = group.Soldiers[0].View;
-            representative.Tick();
+            if (!_brains.ContainsKey(representative))
+            {
+                // Un-brained soldiers still need their own rig advanced.
+                representative.Tick();
+            }
 
             Vertex3D[] skinned = [.. group.Geometry.Vertices];
             try

@@ -73,6 +73,10 @@ public sealed class AiSoldier
     private AiScriptHost? _host;
     private OpenIGI.Scripting.Qvm.QvmProgram? _script;
 
+    // Where the current leg started, so the soldier's height can follow the graph along it.
+    private Vector3d _legOrigin;
+    private bool _created;
+
     /// <summary>Gives the soldier its archetype behaviour script, so the script decides what it does.</summary>
     /// <param name="host">The host holding the AI natives.</param>
     /// <param name="script">The compiled archetype script, for example <c>guard.qvm</c>.</param>
@@ -110,6 +114,7 @@ public sealed class AiSoldier
 
         _graph = graph;
         Position = position;
+        _legOrigin = position;
         Facing = facing;
         _random = new Random(seed);
 
@@ -144,8 +149,58 @@ public sealed class AiSoldier
     /// <summary>Gets its event queues.</summary>
     public AiEventQueues Events { get; }
 
-    /// <summary>Gets the patrol step state, whose gait flag says whether it is walking.</summary>
-    public AiPatrolState Patrol { get; } = new();
+    /// <summary>Gets the patrol currently being walked, or <see langword="null"/> when there is none.</summary>
+    public AiPatrolRoute? Route { get; private set; }
+
+    /// <summary>Gets a value indicating whether the soldier is walking rather than running.</summary>
+    /// <remarks>A patrol walks by default; only a <see cref="AiPatrolCommandKind.RunTo"/> clears this.</remarks>
+    public bool IsWalking => Route?.IsWalking ?? true;
+
+    /// <summary>Gets a value indicating whether the soldier is crouching.</summary>
+    public bool IsCrouching => Route?.IsCrouching ?? false;
+
+    /// <summary>Gets the animation the current patrol command asks for, or <c>-1</c>.</summary>
+    /// <remarks>
+    /// Set by <see cref="AiPatrolCommandKind.Animation"/>. The driver plays it and calls
+    /// <see cref="ReportAnimationFinished"/> when the clip ends, which is what the original's
+    /// <c>0x48EFE0</c> poll does for it.
+    /// </remarks>
+    public int RequestedAnimation { get; private set; } = -1;
+
+    private bool _animationFinished;
+    private AiPatrolPathRegistry? _paths;
+
+    /// <summary>Gives the soldier the level's patrol paths, so <c>AIAction_Patrol</c> can resolve an id.</summary>
+    /// <param name="paths">The registry, usually built from the level root.</param>
+    public void SetPatrolPaths(AiPatrolPathRegistry? paths) => _paths = paths;
+
+    /// <summary>Tells the soldier the animation it asked for has finished.</summary>
+    public void ReportAnimationFinished() => _animationFinished = true;
+
+    /// <summary>Starts walking an authored patrol path — what <c>AIAction_Patrol</c>'s first argument names.</summary>
+    /// <param name="pathId">The <c>PatrolPath</c> task's script id.</param>
+    /// <returns><see langword="true"/> when a path with that id exists and has a command to start on.</returns>
+    public bool BeginPatrol(int pathId)
+    {
+        AiPatrolPath? path = _paths?.Find(pathId);
+        if (path is null)
+        {
+            return false;
+        }
+
+        AiPatrolRoute? route = AiPatrolRoute.Start(path);
+        if (route is null)
+        {
+            return false;
+        }
+
+        Route = route;
+        RequestedAnimation = -1;
+        _animationFinished = false;
+        _route.Clear();
+        DestinationNode = -1;
+        return true;
+    }
 
     /// <summary>Gets the graph node it was last at.</summary>
     public int CurrentNode { get; private set; }
@@ -183,19 +238,18 @@ public sealed class AiSoldier
             switch (action.Name)
             {
                 case "AIAction_Patrol":
-                    // The first argument is a patrol PATH id, which is task data this port has not read.
-                    // Until it is, a patrol leg is a walk to a graph node, which is what the path's WalkTo
-                    // steps do in aggregate.
-                    Patrol.Begin(AiPatrolStepKind.WalkTo);
+                    // The first argument is a patrol PATH id: a PatrolPath task whose child tasks are the
+                    // commands (ai.md 7.1). Resolving it is the whole point of the registry.
+                    BeginPatrol(action.Argument(0));
                     break;
 
                 case "AIAction_RunToNode":
-                    Patrol.Begin(AiPatrolStepKind.RunTo);
+                    Route = null;
                     GoTo(action.Argument(0));
                     break;
 
                 case "AIAction_WalkToNode":
-                    Patrol.Begin(AiPatrolStepKind.WalkTo);
+                    Route = null;
                     GoTo(action.Argument(0));
                     break;
 
@@ -204,6 +258,8 @@ public sealed class AiSoldier
                 case "AIAction_FireAtTask":
                 case "AIAction_FireAtNode":
                     Activity = AiSoldierActivity.Engaging;
+                    Route = null;
+                    RequestedAnimation = -1;
                     _route.Clear();
                     DestinationNode = -1;
                     break;
@@ -242,6 +298,7 @@ public sealed class AiSoldier
         _route.Clear();
         _route.AddRange(route);
         DestinationNode = node;
+        _legOrigin = Position;
         return true;
     }
 
@@ -261,6 +318,18 @@ public sealed class AiSoldier
         if (Activity == AiSoldierActivity.Dead)
         {
             return;
+        }
+
+        // An AI's FIRST event is always its creation: before initialisation only type 0 passes admission, and
+        // the mask is not consulted at all (ai.md 3.3). Never posting it left every archetype script's
+        // CREATE branch unrun -- which is where guard.qsc sets its view length, alarm length, alpha and
+        // gamma. Guards were therefore seeing through the ENGINE DEFAULTS from 0x44F060 (+/-57.3 degrees
+        // vertical, +/-59.5 horizontal, 26 m) instead of the archetype's own 40 m / 50 m / 50 / 45.
+        if (!_created)
+        {
+            _created = true;
+            Events.Post(AiEventRecord.Simple(AiEvent.Create), owner: 0, worldTests: null);
+            RunScript();
         }
 
         bool alert = alarmOn;
@@ -306,21 +375,147 @@ public sealed class AiSoldier
 
         if (_playerSlot.IsVisible && Activity == AiSoldierActivity.Engaging)
         {
-            TurnTowards(enemy, AiPatrolState.LookAtToleranceRadians);
+            TurnTowards(enemy, AiPatrolRoute.LookAtToleranceRadians);
+            return;
+        }
+
+        // An authored path takes precedence over anything this class would choose for itself.
+        if (Route is not null)
+        {
+            RunPatrolCommand(tick, rootMotionThisTick);
             return;
         }
 
         if (_route.Count == 0)
         {
-            if (!ChooseNextLeg())
-            {
-                Activity = AiSoldierActivity.Idle;
-                return;
-            }
+            // A soldier with nothing to walk STANDS STILL. The original has no wander behaviour at all:
+            // where a guard goes is authored, as a PatrolPath its own MISSION:AI/<taskid>.qsc names
+            // (ai.md 7.5a). Choosing a random reachable node here instead sent guards through the level to
+            // places no patrol goes, and off raised positions into mid-air.
+            Activity = AiSoldierActivity.Idle;
+            return;
         }
 
         Activity = AiSoldierActivity.Patrolling;
         Advance(rootMotionThisTick);
+    }
+
+    /// <summary>
+    /// Runs one tick of the current patrol command — the human walker <c>0x48E920</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The order is the walker's: the crouch flag and the gait are applied first and unconditionally,
+    /// because both outlive the command that set them, and only then does the switch run. A command that
+    /// reports itself finished advances the cursor and clears the deadline; a kind the walker has no arm
+    /// for returns <em>without</em> advancing, which is how a
+    /// <see cref="AiPatrolCommandKind.SetSpeed"/> wedges a human patrol (§7.5) — reproduced rather than
+    /// smoothed over.
+    /// </para>
+    /// </remarks>
+    private void RunPatrolCommand(int tick, double rootMotionThisTick)
+    {
+        AiPatrolRoute route = Route!;
+        if (route.Current is not { } command)
+        {
+            Activity = AiSoldierActivity.Idle;
+            return;
+        }
+
+        bool finished = route.Begin(tick);
+
+        switch (command.Kind)
+        {
+            case AiPatrolCommandKind.Animation:
+                Activity = AiSoldierActivity.Idle;
+                RequestedAnimation = command.Operand;
+                finished = _animationFinished;
+                break;
+
+            case AiPatrolCommandKind.Delay:
+                Activity = AiSoldierActivity.Idle;
+                RequestedAnimation = -1;
+                break;
+
+            case AiPatrolCommandKind.WalkTo:
+            case AiPatrolCommandKind.RunTo:
+                RequestedAnimation = -1;
+                finished = StepTowardsNode(command.Operand, rootMotionThisTick);
+                break;
+
+            case AiPatrolCommandKind.LookAtNode:
+                Activity = AiSoldierActivity.Idle;
+                RequestedAnimation = -1;
+                finished = FaceNode(command.Operand);
+                break;
+
+            case AiPatrolCommandKind.Crouch:
+                // Already applied by Begin; it is the one kind that never waits.
+                break;
+
+            case AiPatrolCommandKind.Quit:
+                Activity = AiSoldierActivity.Idle;
+                RequestedAnimation = -1;
+                Route = null;
+                return;
+
+            default:
+                // No arm in the human walker: the cursor does not advance. SetSpeed is the only kind that
+                // reaches here, and the patrol stays on it.
+                Activity = AiSoldierActivity.Idle;
+                return;
+        }
+
+        if (finished)
+        {
+            _animationFinished = false;
+            route.Advance();
+        }
+    }
+
+    private bool StepTowardsNode(int node, double rootMotionThisTick)
+    {
+        if (DestinationNode != node || _route.Count == 0)
+        {
+            if (!GoTo(node))
+            {
+                // Nothing routable: treat the leg as done rather than stalling the whole programme.
+                return true;
+            }
+        }
+
+        if (_route.Count == 0)
+        {
+            return true;
+        }
+
+        Activity = AiSoldierActivity.Patrolling;
+        Advance(rootMotionThisTick);
+        return _route.Count == 0;
+    }
+
+    private bool FaceNode(int node)
+    {
+        GraphNode? target = _graph.NodeAt(node);
+        if (target is null)
+        {
+            return true;
+        }
+
+        TurnTowards(target.Position, AiPatrolRoute.LookAtToleranceRadians);
+        return IsFacing(target.Position, AiPatrolRoute.LookAtToleranceRadians);
+    }
+
+    private bool IsFacing(Vector3d target, float tolerance)
+    {
+        double dx = target.X - Position.X;
+        double dy = target.Y - Position.Y;
+        if ((dx * dx) + (dy * dy) < 1.0)
+        {
+            return true;
+        }
+
+        return Math.Abs(Wrap((float)Math.Atan2(-dx, dy) - Facing)) <= tolerance;
     }
 
     private void RunScript()
@@ -368,8 +563,7 @@ public sealed class AiSoldier
     {
         // One event type dispatches per tick and every queue is then emptied, so an event nothing acted on is
         // discarded rather than deferred (ai.md 3.5).
-        Events.Pump(Patrol.Walking ? AiEventQueues.UnboundedPriorityCap : AiEventQueues.UnboundedPriorityCap,
-            (_, _) => true);
+        Events.Pump(AiEventQueues.UnboundedPriorityCap, (_, _) => true);
     }
 
     private bool ChooseNextLeg()
@@ -406,9 +600,6 @@ public sealed class AiSoldier
             _route.Clear();
             _route.AddRange(route);
             DestinationNode = candidate.Id;
-
-            // A patrol walks by default; the original's RunTo step is what clears the gait flag.
-            Patrol.Begin(AiPatrolStepKind.WalkTo);
             return true;
         }
 
@@ -437,17 +628,57 @@ public sealed class AiSoldier
         {
             CurrentNode = next.Id;
             _route.RemoveAt(0);
+
+            // The next leg is measured from where the soldier actually is, not from the node it nominally
+            // reached -- arrival is a 0.3 m box, so those differ.
+            _legOrigin = Position;
             return;
         }
 
         // Forward is a literal 1.0 in the frame, so the distance covered is the clip's own root motion.
         if (frame.Forward > 0f && rootMotionThisTick > 0.0)
         {
-            Position = new Vector3d(
-                Position.X + (Math.Sin(-Facing) * rootMotionThisTick),
-                Position.Y + (Math.Cos(Facing) * rootMotionThisTick),
-                Position.Z);
+            double x = Position.X + (Math.Sin(-Facing) * rootMotionThisTick);
+            double y = Position.Y + (Math.Cos(Facing) * rootMotionThisTick);
+            Position = new Vector3d(x, y, HeightAlongLegTo(waypoint, x, y));
         }
+    }
+
+    /// <summary>
+    /// The height a soldier walking towards a waypoint should be at, taken from the nav graph.
+    /// </summary>
+    /// <param name="waypoint">The node being walked to.</param>
+    /// <param name="x">The soldier's new X.</param>
+    /// <param name="y">The soldier's new Y.</param>
+    /// <returns>The new Z, in engine units.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>A recorded divergence.</b> The original does not do this: the AI steers a <c>Human</c> through the
+    /// player's own input frame (§7 and <c>player.md</c> §2), so a soldier's height comes from the same
+    /// ground query and slope handling the player uses — <c>HumanGroundQuery</c>, already read in M8 but not
+    /// yet wired to soldiers. Until it is, keeping a soldier's own Z made it walk out of a raised position
+    /// into mid-air, because a leg leaving a watchtower node kept the tower's height all the way along it.
+    /// </para>
+    /// <para>
+    /// Interpolating along the leg is the honest stand-in, because a nav node's position is on the walkable
+    /// surface by construction, so the straight line between two of them tracks the ground the graph was
+    /// authored against. It is wrong wherever the ground between two nodes is not planar; the ground query
+    /// is the fix, and this is listed in <c>TODO.md</c> as such.
+    /// </para>
+    /// </remarks>
+    private double HeightAlongLegTo(Vector3d waypoint, double x, double y)
+    {
+        double legX = waypoint.X - _legOrigin.X;
+        double legY = waypoint.Y - _legOrigin.Y;
+        double lengthSquared = (legX * legX) + (legY * legY);
+        if (lengthSquared <= 1.0)
+        {
+            return waypoint.Z;
+        }
+
+        double travelled = (((x - _legOrigin.X) * legX) + ((y - _legOrigin.Y) * legY)) / lengthSquared;
+        travelled = Math.Clamp(travelled, 0.0, 1.0);
+        return _legOrigin.Z + ((waypoint.Z - _legOrigin.Z) * travelled);
     }
 
     private void TurnTowards(Vector3d target, float tolerance)
