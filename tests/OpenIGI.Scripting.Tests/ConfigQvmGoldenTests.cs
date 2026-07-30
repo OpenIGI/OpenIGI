@@ -22,7 +22,13 @@ public sealed class ConfigQvmGoldenTests
         Assert.Equal(QvmProgram.IgiVersion, program.Version);
         Assert.Equal(78, program.SymbolNames.Count);
         Assert.Equal(9, program.Strings.Count);
-        Assert.Equal(0x21B3, program.Code.Length);
+
+        // NOT pinned to an exact length. config.qvm is the one retail script the game REWRITES: it stores
+        // the player's settings as a program of assignments, so its code length is a function of those
+        // settings and moves when they change. It was 0x21B3 when this test was written and 0x21BE after a
+        // single instrumented run of the original changed the display mode. The symbol and string tables
+        // above are what actually pin the format; the length only has to be sane.
+        Assert.InRange(program.Code.Length, 0x2000, 0x2400);
         Assert.Equal("GOStart", program.SymbolNames[0]);
         Assert.Equal("GOContentControlPW", program.SymbolNames[1]);
         Assert.Equal(string.Empty, program.Strings[0]);

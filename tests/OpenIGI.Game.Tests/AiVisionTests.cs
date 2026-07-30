@@ -21,15 +21,21 @@ public sealed class AiVisionTests
         AiViewCone primary = AiViewCone.DefaultPrimary;
         AiViewCone secondary = AiViewCone.DefaultSecondary;
 
-        Assert.Equal(57.29, Degrees(primary.Alpha), 2);
-        Assert.Equal(59.55, Degrees(primary.Gamma), 2);
+        // Corrected: these were 57.29 / 59.55 and 57.29 / 62.98 / 12.5 m. 57.29 degrees is exactly one
+        // radian, which is the tell that the earlier pass had read something other than these fields. The
+        // constructor's raw dwords give 0x3FE921FB60000000 (pi/4 to the bit) and 0x3FEBECDE60000000 (50
+        // degrees) for the primary, and 0x3FF6571860000000 (80 degrees) with 0x40E4000000000000 (10 m) for
+        // the secondary -- and a live run of the original reads exactly these back out of every level 1
+        // guard's eye snapshot before its script overrides them.
+        Assert.Equal(45.0, Degrees(primary.Alpha), 2);
+        Assert.Equal(50.0, Degrees(primary.Gamma), 2);
         Assert.Equal(26.0, primary.Length / AiViewCone.UnitsPerMetre, 6);
         Assert.Equal(26.0, primary.AlarmLength / AiViewCone.UnitsPerMetre, 6);
 
-        Assert.Equal(57.29, Degrees(secondary.Alpha), 2);
-        Assert.Equal(62.98, Degrees(secondary.Gamma), 2);
-        Assert.Equal(12.5, secondary.Length / AiViewCone.UnitsPerMetre, 6);
-        Assert.Equal(12.5, secondary.AlarmLength / AiViewCone.UnitsPerMetre, 6);
+        Assert.Equal(45.0, Degrees(secondary.Alpha), 2);
+        Assert.Equal(80.0, Degrees(secondary.Gamma), 2);
+        Assert.Equal(10.0, secondary.Length / AiViewCone.UnitsPerMetre, 6);
+        Assert.Equal(10.0, secondary.AlarmLength / AiViewCone.UnitsPerMetre, 6);
 
         // Wider horizontally, identical vertically, and much shorter.
         Assert.True(secondary.Gamma > primary.Gamma);

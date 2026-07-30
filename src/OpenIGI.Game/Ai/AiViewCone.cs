@@ -47,24 +47,49 @@ public readonly record struct AiViewCone(double Alpha, double Gamma, double Leng
     public const float DegreesToRadians = 0.017453292f;
 
     /// <summary>
-    /// The primary cone <c>0x44F060</c> starts an AI with — about ±57.3° vertically, ±59.5° horizontally and
-    /// 26 m, with no extra reach when alerted.
+    /// The primary cone <c>0x44F060</c> starts an AI with — <b>±45° vertically, ±50° horizontally, 26 m</b>,
+    /// with no extra reach when alerted.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Correction.</b> These were previously recorded as ±57.29° and ±59.55°. 57.29° is exactly one
+    /// radian, which is the tell: the earlier pass had picked up values that were not these fields. The
+    /// constructor's own dwords say otherwise — <c>+160</c> is <c>0x3FE921FB60000000</c>, which is π/4 to
+    /// the bit, and <c>+168</c> is <c>0x3FEBECDE60000000</c> = 50.0°.
+    /// </para>
+    /// <para>
+    /// Confirmed twice over: the raw store in the constructor, and the live game, where the eye snapshot of
+    /// every level 1 guard reads back 45° / 50° before its script overrides them.
+    /// </para>
+    /// </remarks>
     public static AiViewCone DefaultPrimary => new(
-        BitConverter.Int64BitsToDouble(0x3FEFFF7B60000000L),
-        BitConverter.Int64BitsToDouble(0x3FF0A0DE60000000L),
+        BitConverter.Int64BitsToDouble(0x3FE921FB60000000L),
+        BitConverter.Int64BitsToDouble(0x3FEBECDE60000000L),
         BitConverter.Int64BitsToDouble(0x40FA000000000000L),
         BitConverter.Int64BitsToDouble(0x40FA000000000000L));
 
     /// <summary>
-    /// The secondary cone <c>0x44F060</c> starts an AI with — <b>wider</b> horizontally at about ±63° but only
-    /// 12.5 m. Peripheral vision, and <b>no shipped script ever changes it</b>.
+    /// The secondary cone <c>0x44F060</c> starts an AI with — <b>±45° vertically, ±80° horizontally, 10 m</b>.
+    /// Peripheral vision, and <b>no shipped script ever changes it</b>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Correction.</b> Previously recorded as ±63° at 12.5 m. The constructor stores <c>+200</c> as
+    /// <c>0x3FF6571860000000</c> = 1.396264 rad = <b>80.0°</b> and <c>+208</c> as
+    /// <c>0x40E4000000000000</c> = 40960 units = <b>10 m</b>.
+    /// </para>
+    /// <para>
+    /// This one matters more than it looks. No script touches the secondary cone — verified again over every
+    /// shipped <c>.qvm</c>, none of which contains a <c>SetSecondary</c> at all — so <em>every</em> AI in the
+    /// game peers through exactly this cone, and it is <b>considerably wider</b> than the ±63° previously
+    /// recorded. A guard notices someone beside it at a much greater angle than the old figure implied.
+    /// </para>
+    /// </remarks>
     public static AiViewCone DefaultSecondary => new(
-        BitConverter.Int64BitsToDouble(0x3FEFFF7B60000000L),
-        BitConverter.Int64BitsToDouble(0x3FF1969860000000L),
-        BitConverter.Int64BitsToDouble(0x40E9000000000000L),
-        BitConverter.Int64BitsToDouble(0x40E9000000000000L));
+        BitConverter.Int64BitsToDouble(0x3FE921FB60000000L),
+        BitConverter.Int64BitsToDouble(0x3FF6571860000000L),
+        BitConverter.Int64BitsToDouble(0x40E4000000000000L),
+        BitConverter.Int64BitsToDouble(0x40E4000000000000L));
 
     /// <summary>Gets the range that applies at a given alert state.</summary>
     /// <param name="alerted">Whether the AI's alert latch is set.</param>
