@@ -371,14 +371,18 @@ using (window)
                         int fall = HumanPlayerDeath.Choose(
                             hit.Zone, HumanHitZoneTable.Player, shotRandom.Next(2));
 
-                        player.View?.PlayWeaponAnimation(fall, loops: false);
-
+                        // NOT played here. Those ids index the player's BODY set, and the only rig the
+                        // first-person view has is the arms on skeleton 5 -- playing a body clip on it
+                        // is the same mistake that made guards throw themselves on the floor. A real
+                        // death needs the player's body rig drawn and the camera handed to it, and
+                        // neither exists yet. Reported so it is visible; not faked.
                         logger.Information(
                             "Weapon",
                             $"The player is DEAD after {guardHits} hit(s) from {guardRounds} round(s), "
-                                + $"struck in zone {hit.Zone}; falling with animation {fall} "
-                                + $"and one of {HumanPlayerDeath.SoundVariants} "
-                                + $"'{HumanPlayerDeath.SoundPrefix}' sounds.");
+                                + $"struck in zone {hit.Zone}. The fall is animation {fall} with one of "
+                                + $"{HumanPlayerDeath.SoundVariants} '{HumanPlayerDeath.SoundPrefix}' "
+                                + "sounds -- NOT PLAYED: the player has no body rig and the death "
+                                + "camera is not built.");
                     }
                 });
             }
