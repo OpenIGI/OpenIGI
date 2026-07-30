@@ -330,7 +330,17 @@ public sealed class AiSoldier
     /// </remarks>
     public bool GoTo(int node)
     {
-        if (_graph.RouteTable is null || _graph.NodeAt(node) is null || CurrentNode < 0)
+        if (_graph.RouteTable is null)
+        {
+            return false;
+        }
+
+        if (_graph.NodeAt(node) is null)
+        {
+            return false;
+        }
+
+        if (CurrentNode < 0)
         {
             return false;
         }
@@ -416,9 +426,11 @@ public sealed class AiSoldier
         {
             Events.Post(AiEventRecord.Simple(AiEvent.Combat), owner: 0, worldTests: null);
         }
-        else if (_route.Count == 0)
+        else if (_route.Count == 0 && Route is null)
         {
             // Idle is the fallback the original posts only when nothing is pending (ai.md 3.1).
+            // A running patrol IS a pending action — re-posting IDLE while one is active would make
+            // the script call AIAction_Patrol again, restarting the patrol from command 0 every tick.
             Events.Post(AiEventRecord.Simple(AiEvent.Idle), owner: 0, worldTests: null);
         }
 
@@ -531,7 +543,6 @@ public sealed class AiSoldier
         {
             if (!GoTo(node))
             {
-                // Nothing routable: treat the leg as done rather than stalling the whole programme.
                 return true;
             }
         }
