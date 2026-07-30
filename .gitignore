@@ -38,3 +38,6 @@ gamedata/
 *.mtp
 !tests/**/fixtures/**
 *.stackdump
+
+# a probe build output
+a probe of the running original
