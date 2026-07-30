@@ -58,6 +58,9 @@ public sealed class SoldierRenderer : IDisposable
     private int _deathsSoFar;
     private int _walkAnimation = -1;
     private int _tick;
+    private int _travelSamples;
+    private double _travelTotal;
+    private double _travelMax;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
@@ -336,6 +339,16 @@ public sealed class SoldierRenderer : IDisposable
         _logger.Information(
             LogCategory,
             $"AI: patrol paths in use: {string.Join(", ", paths.Keys.Order())}");
+
+        if (_travelSamples > 0)
+        {
+            double mean = _travelTotal / _travelSamples;
+            _logger.Information(
+                LogCategory,
+                $"AI: walk step over {_travelSamples} sample(s): mean {mean:F1} u/tick " +
+                $"({mean * 30.0 / WorldScene.UnitsPerMetre:F2} m/s), max {_travelMax:F1} u/tick. " +
+                $"Retail measures 160-185 u/tick (about 1.28 m/s).");
+        }
     }
 
     /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
@@ -426,6 +439,17 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             double travel = Math.Abs(view.RootMotion().Y);
+
+            // Retail ground truth, measured by hooking 0x48E920 in the original: a walking guard covers
+            // 160-185 units a tick, about 1.28 m/s, varying through the gait cycle. Recorded here so the
+            // port's own figure can be compared without another instrumented run.
+            if (brain.Activity == AiSoldierActivity.Patrolling && travel > 0.0)
+            {
+                _travelSamples++;
+                _travelTotal += travel;
+                _travelMax = Math.Max(_travelMax, travel);
+            }
+
             brain.Tick(_tick, enemy, travel);
 
             // A patrol ANIMATION command names a clip outright; otherwise the gait picks between the walk

@@ -805,7 +805,11 @@ using (window)
 
         // The soldiers' rigs advance on the tick, not on the render, so their animation runs at the
         // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
-        if (outcome is FrameOutcome.Render or FrameOutcome.Tick)
+        //
+        // Tick and Render are SEPARATE outcomes and one logic tick produces one of each, so accepting both
+        // here ran the AI and its rigs TWICE per tick: guards walked and animated at exactly double speed.
+        // Measured against the original, which covers 160-185 units a tick, this port was covering ~357.
+        if (outcome is FrameOutcome.Tick)
         {
             // The player's eye is what the guards' view cones are tested against.
             soldiers?.Tick(player?.Body.Eye ?? default);
