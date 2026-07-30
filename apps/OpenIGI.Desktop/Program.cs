@@ -8,6 +8,7 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Game.Menus;
@@ -171,6 +172,11 @@ using (window)
     // Without these the level's own HumanPlayer task is never built, and the spawn the mission
     // declares cannot be found - the tree loads perfectly well without it and simply has no player.
     PlayerTaskTypes.RegisterAll(loop.Types);
+
+    // Without these, HumanAI/PatrolPath/PatrolPathCommand load as untyped DeclaredTasks: the soldier's
+    // brain cannot be found, so no soldier gets its own MISSION:AI/<taskid> script, so nothing ever names a
+    // patrol path and every guard falls back to the archetype and stands still.
+    AiTaskTypes.RegisterAll(loop.Types);
     magic.Register(loop.Natives);
 
     try
@@ -943,6 +949,7 @@ using (window)
                 logger.Information("Desktop", $"Wrote {window.Width}x{window.Height} capture to {screenshotPath}.");
             }
 
+            soldiers?.LogAiSummary();
             running = false;
         }
     }

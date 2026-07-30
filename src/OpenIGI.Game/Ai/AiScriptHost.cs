@@ -90,7 +90,11 @@ public sealed class AiScriptHost
             QvmError error = interpreter.Run();
             if (error != QvmError.None)
             {
-                _logger.Warning("Ai", $"The archetype script returned {error} handling {handling}.");
+                // The identifier is the whole diagnostic for UnknownIdentifier: without it the message says
+                // only that something did not resolve, which is true of every possible cause.
+                _logger.Warning(
+                    "Ai",
+                    $"The archetype script returned {error} handling {handling}: {interpreter.ErrorMessage}");
             }
         }
         catch (EngineFatalException ex)

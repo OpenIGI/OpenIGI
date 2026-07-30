@@ -229,6 +229,7 @@ public sealed class SoldierRenderer : IDisposable
 
         int index = 0;
         int patrolling = 0;
+        int perTask = 0;
         foreach (Group group in _groups)
         {
             foreach ((SoldierView view, Vector3d _) in group.Soldiers)
@@ -262,6 +263,10 @@ public sealed class SoldierRenderer : IDisposable
                     if (mind is not null && mind.Id != GameTask.NoId)
                     {
                         script = LoadScript(scripts, scriptCache, AiScriptApi.MissionScriptPath(mind.Id));
+                        if (script is not null)
+                        {
+                            perTask++;
+                        }
                     }
 
                     AiArchetype archetype = mind?.Archetype ?? AiArchetype.Guard;
@@ -281,8 +286,56 @@ public sealed class SoldierRenderer : IDisposable
 
         _logger.Information(
             LogCategory,
-            $"{_brains.Count} soldier(s) with brains ({patrolling} scripted), walk animation {_walkAnimation}.");
+            $"{_brains.Count} soldier(s) with brains ({patrolling} scripted, {perTask} from their own " +
+            $"MISSION:AI script), walk animation {_walkAnimation}.");
         return _brains.Count;
+    }
+
+    /// <summary>Reports what every soldier's AI is actually doing, for diagnosing a level that looks wrong.</summary>
+    /// <remarks>
+    /// Written for the "why is nobody patrolling?" question, which needs to distinguish four different
+    /// failures that look identical on screen: no brain, no script, a script that never asked to patrol, and
+    /// a patrol that started but cannot move.
+    /// </remarks>
+    public void LogAiSummary()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        Dictionary<string, int> activities = [];
+        Dictionary<int, int> paths = [];
+        int withRoute = 0;
+        int moving = 0;
+
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            string key = brain.Activity.ToString();
+            activities[key] = activities.GetValueOrDefault(key) + 1;
+
+            if (brain.Route is { } route)
+            {
+                withRoute++;
+                paths[route.Path.Id] = paths.GetValueOrDefault(route.Path.Id) + 1;
+                if (route.Current is { } command && command.Kind.IsMovement())
+                {
+                    moving++;
+                }
+            }
+
+            _ = view;
+        }
+
+        _logger.Information(
+            LogCategory,
+            $"AI: {_brains.Count} brain(s); {withRoute} on a patrol path; {moving} on a movement command.");
+
+        foreach ((string activity, int count) in activities.OrderByDescending(p => p.Value))
+        {
+            _logger.Information(LogCategory, $"AI:   activity {activity}: {count}");
+        }
+
+        _logger.Information(
+            LogCategory,
+            $"AI: patrol paths in use: {string.Join(", ", paths.Keys.Order())}");
     }
 
     /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
