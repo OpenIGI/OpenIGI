@@ -419,6 +419,10 @@ using (window)
                 logger.Warning("Weapon", $"Could not read the weapon or ammunition tables: {ex.Message}");
             }
 
+            // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
+            // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
+            soldiers?.Arm(loaded, weaponRoster);
+
             // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
             // is what says how high a jump goes and how far a step travels.
             try

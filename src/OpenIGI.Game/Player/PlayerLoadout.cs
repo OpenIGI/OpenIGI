@@ -110,30 +110,61 @@ public sealed class PlayerLoadout
             return false;
         }
 
-        List<LoadoutWeapon> weapons = [];
         List<LoadoutAmmo> ammunition = [];
 
         foreach (GameTask child in player.Children)
         {
-            if (child is not DeclaredTask declared
-                || !declared.TryGetValue(IdParameter, out object? raw)
-                || raw is not string id)
-            {
-                continue;
-            }
-
-            if (id.StartsWith(WeaponIdPrefix, StringComparison.Ordinal))
-            {
-                weapons.Add(new LoadoutWeapon(declared.Type.Name, id, Integer(declared, SlotParameter)));
-            }
-            else if (id.StartsWith(AmmoIdPrefix, StringComparison.Ordinal))
+            if (child is DeclaredTask declared
+                && declared.TryGetValue(IdParameter, out object? raw)
+                && raw is string id
+                && id.StartsWith(AmmoIdPrefix, StringComparison.Ordinal))
             {
                 ammunition.Add(new LoadoutAmmo(id, Integer(declared, AmmoParameter)));
             }
         }
 
-        loadout = new PlayerLoadout([.. weapons], [.. ammunition]);
+        loadout = new PlayerLoadout([.. WeaponsOf(player)], [.. ammunition]);
         return true;
+    }
+
+    /// <summary>The <c>Gun*</c> tasks a human carries, in the order its own child list holds them.</summary>
+    /// <param name="owner">The human task — the player, or a <c>HumanSoldier</c>.</param>
+    /// <returns>The weapons, first-declared first.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="owner"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>A soldier is armed exactly the same way the player is</b>, and by the level author rather than
+    /// by its AI type. Level 1's guards carry
+    /// <c>Task_New(-1, "Gun", "", "WEAPON_ID_AK47", 0)</c> as a child of the <c>HumanSoldier</c>, beside
+    /// the <c>HumanAI</c>, and the AK in <c>AITYPE_PATROL_AK</c> is part of the
+    /// <c>settings.qsc</c> key rather than anything the engine resolves a model from.
+    /// </para>
+    /// <para>
+    /// <b>Order is the whole selection rule.</b> Everything that asks a human what it is holding takes
+    /// slot 0 of the list at <c>Human+1220</c> — the AI's combat per-tick (<c>0x48B9C0</c>,
+    /// <c>0x48D8E0</c>), the reload check (<c>0x48B980</c>) and the death state (<c>0x45C440</c>) all call
+    /// <c>sub_4F2060(human + 1220, 0)</c>. So the <b>first</b> gun child is the one in hand, and the
+    /// <c>Slot</c> parameter is not what picks it: level 1 arms guards with a rifle and a grenade both
+    /// declaring slot 0.
+    /// </para>
+    /// </remarks>
+    public static IReadOnlyList<LoadoutWeapon> WeaponsOf(GameTask owner)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+
+        List<LoadoutWeapon> weapons = [];
+        foreach (GameTask child in owner.Children)
+        {
+            if (child is DeclaredTask declared
+                && declared.TryGetValue(IdParameter, out object? raw)
+                && raw is string id
+                && id.StartsWith(WeaponIdPrefix, StringComparison.Ordinal))
+            {
+                weapons.Add(new LoadoutWeapon(declared.Type.Name, id, Integer(declared, SlotParameter)));
+            }
+        }
+
+        return weapons;
     }
 
     /// <summary>Whether the loadout carries a given weapon.</summary>

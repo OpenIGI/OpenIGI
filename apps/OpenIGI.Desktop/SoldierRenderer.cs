@@ -49,6 +49,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Group> _groups = [];
+    private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
 
     // A dead soldier cannot stay in a shared group: the group is skinned from ONE representative's pose, so
@@ -341,6 +342,116 @@ public sealed class SoldierRenderer : IDisposable
             string.Join(", ", graphUse.OrderBy(p => p.Key).Select(p => $"graph{p.Key}:{p.Value}")) +
             (unroutable > 0 ? $"; {unroutable} soldier(s) name a graph the level does not ship" : string.Empty));
         return _brains.Count;
+    }
+
+    /// <summary>Puts each soldier's own weapon model in its hand.</summary>
+    /// <param name="mission">The mission whose packs hold the weapon models.</param>
+    /// <param name="roster">The weapon table, which maps a <c>WEAPON_ID_*</c> to the model that draws it.</param>
+    /// <returns>How many soldiers ended up holding something.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// Three reads join up here. <b>What a soldier carries is authored</b>, as ordinary <c>Gun</c> child
+    /// tasks of the <c>HumanSoldier</c> carrying a <c>WEAPON_ID_*</c> — the same mechanism that arms the
+    /// player — and the <b>first</b> of them is the one in hand, because everything that asks a human what
+    /// it is holding takes slot 0 of the list at <c>Human+1220</c> (see
+    /// <see cref="PlayerLoadout.WeaponsOf"/>). <b>Which model</b> comes from that id's row of the weapon
+    /// table, whose <c>GunModel</c> field is what the world draws it with. And <b>where it hangs</b> is
+    /// <see cref="HumanAttachPoints.ThirdPersonWeapon"/>, bone 22, which <c>0x4600C0</c>'s third-person arm
+    /// reads out of the body's own palette at <c>+2928</c>/<c>+2940</c>.
+    /// </para>
+    /// <para>
+    /// <b>Correction to the milestone's own framing.</b> The weapon is <em>not</em> resolved from the
+    /// soldier's <c>AIType</c>. The AK in <c>AITYPE_PATROL_AK</c> is part of the <c>settings.qsc</c> key
+    /// <c>(AIType, Difficulty)</c>, and a level-1 guard whose type says AK routinely carries an MP5SD —
+    /// because its own child task says so. Nothing in the engine maps a type to a model.
+    /// </para>
+    /// </remarks>
+    public int Arm(LoadedMission mission, WeaponTypeRegistry roster)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ArgumentNullException.ThrowIfNull(roster);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        int armed = 0;
+        Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                IReadOnlyList<LoadoutWeapon> carried = PlayerLoadout.WeaponsOf(member.View.Soldier);
+                if (carried.Count == 0)
+                {
+                    continue;
+                }
+
+                // Slot 0 of the weapon list, which is the first child that named a weapon.
+                string weaponId = carried[0].WeaponId;
+                if (!roster.TryGetByScriptId(weaponId, out WeaponType weapon))
+                {
+                    _logger.Warning(LogCategory, $"'{weaponId}' is not in the weapon table.");
+                    continue;
+                }
+
+                if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
+                {
+                    held = BuildWeapon(mission, weapon.GunModel);
+                    cache[weapon.GunModel] = held;
+                }
+
+                if (held is null)
+                {
+                    continue;
+                }
+
+                member.Weapon = held;
+                armed++;
+            }
+        }
+
+        _logger.Information(
+            LogCategory,
+            $"{armed} of {Count} soldier(s) hold a weapon model, over {cache.Values.Count(w => w is not null)} " +
+            $"distinct model(s).");
+        return armed;
+    }
+
+    private HeldWeapon? BuildWeapon(LoadedMission mission, string modelName)
+    {
+        if (string.IsNullOrEmpty(modelName))
+        {
+            return null;
+        }
+
+        if (!mission.TryGetModel(modelName, out MefModel? model) || model is null)
+        {
+            _logger.Warning(LogCategory, $"Weapon model '{modelName}' is in no pack this mission opened.");
+            return null;
+        }
+
+        MeshGeometry? geometry = MefMeshBuilder.Build(model, (float)(1.0 / WorldScene.UnitsPerMetre));
+        if (geometry is null)
+        {
+            _logger.Warning(LogCategory, $"Weapon model '{modelName}' has nothing to draw.");
+            return null;
+        }
+
+        MeshHandle mesh;
+        try
+        {
+            mesh = _device.CreateMesh(geometry.Vertices, geometry.Indices);
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
+        {
+            _logger.Warning(LogCategory, $"Weapon model '{modelName}' did not upload: {ex.Message}");
+            return null;
+        }
+
+        (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
+        HeldWeapon held = new(geometry, mesh, instance, pack);
+        _weapons.Add(held);
+        return held;
     }
 
     /// <summary>Reports what every soldier's AI is actually doing, for diagnosing a level that looks wrong.</summary>
@@ -677,6 +788,8 @@ public sealed class SoldierRenderer : IDisposable
 
                 Matrix4f modelView = camera.CreateModelView(where, soldier.Orientation);
 
+                DrawWeapon(member, where, camera);
+
                 foreach (MeshSubset subset in group.Geometry.Subsets)
                 {
                     if (subset.IndexCount == 0)
@@ -703,6 +816,78 @@ public sealed class SoldierRenderer : IDisposable
                         BlendMode.Opaque);
                 }
             }
+        }
+    }
+
+    /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
+    /// <param name="member">The soldier.</param>
+    /// <param name="where">Where the body is drawn, in metres — the same place its skin goes.</param>
+    /// <param name="camera">The eye.</param>
+    /// <remarks>
+    /// <para>
+    /// The attachment handlers (<c>0x4600C0</c>, <c>player.md</c> §13) do exactly two things: they add the
+    /// object's own position to the bone's, and they <b>copy the bone's rotation whole</b>. There is no
+    /// per-weapon offset anywhere in the engine, so the model's own origin is where the hand grips it.
+    /// </para>
+    /// <para>
+    /// The pose is the unrotated one, for the same reason the body's skin uses it — the heading is a
+    /// rotation about the root, so it can be left in the model matrix and applied to bone and vertex
+    /// together. The composed rotation is <c>heading · bone</c>, and it is applied as <c>M·v</c>, which is
+    /// the convention <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/> and the bone palette both
+    /// use — <b>not</b> <see cref="Matrix3f.Transform(Vector3f)"/>'s row-vector one, which is its inverse.
+    /// </para>
+    /// </remarks>
+    private void DrawWeapon(Member member, Vector3d where, in Camera3D camera)
+    {
+        if (member.Weapon is not { } weapon)
+        {
+            return;
+        }
+
+        BonePose pose = member.View.UnrotatedPose();
+        if (HumanAttachPoints.ThirdPersonWeapon >= pose.BoneCount)
+        {
+            return;
+        }
+
+        Matrix3f heading = member.View.Orientation;
+        Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
+
+        // M . v, so the transpose of the row-vector Transform.
+        Vector3f turned = heading.Transposed().Transform(hand);
+        Vector3d origin = new(
+            where.X + (turned.X / WorldScene.UnitsPerMetre),
+            where.Y + (turned.Y / WorldScene.UnitsPerMetre),
+            where.Z + (turned.Z / WorldScene.UnitsPerMetre));
+
+        Matrix4f modelView = camera.CreateModelView(
+            origin,
+            heading * pose.Rotations[HumanAttachPoints.ThirdPersonWeapon]);
+
+        foreach (MeshSubset subset in weapon.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && weapon.Instance is { } instance
+                && weapon.Pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = GetTexture(texture);
+            }
+
+            _device.DrawMesh(
+                weapon.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                diffuse,
+                TextureHandle.None,
+                BlendMode.Opaque);
         }
     }
 
@@ -987,6 +1172,15 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        foreach (HeldWeapon weapon in _weapons)
+        {
+            if (weapon.Mesh.IsValid)
+            {
+                _device.DestroyMesh(weapon.Mesh);
+            }
+        }
+
+        _weapons.Clear();
         _groups.Clear();
         _health.Clear();
         Count = 0;
@@ -1067,5 +1261,27 @@ public sealed class SoldierRenderer : IDisposable
         public Vector3d Position { get; } = position;
 
         public MeshHandle Mesh { get; set; } = mesh;
+
+        /// <summary>What this soldier holds, or <see langword="null"/> when the level armed it with nothing.</summary>
+        public HeldWeapon? Weapon { get; set; }
+    }
+
+    /// <summary>
+    /// One weapon model, uploaded once and drawn by every soldier carrying that weapon.
+    /// </summary>
+    /// <remarks>
+    /// Unlike a body, a gun is a rigid model: it is not skinned and its pose never changes, so a single
+    /// mesh serves every soldier and only the transform differs. That transform is the hand bone's, which
+    /// is why the body mesh has to be posed but this one does not.
+    /// </remarks>
+    private sealed class HeldWeapon(MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
+    {
+        public MeshGeometry Geometry { get; } = geometry;
+
+        public MeshHandle Mesh { get; } = mesh;
+
+        public MtpInstance? Instance { get; } = instance;
+
+        public LoadedPack? Pack { get; } = pack;
     }
 }
