@@ -278,7 +278,7 @@ using (window)
                 logger.Information(
                     "Ai",
                     $"Nav graph: {best.Nodes.Count} node(s), {best.Links.Count} link(s) over {best.MaxNodes} slots.");
-                soldiers.Animate(best);
+                soldiers.Animate(best, solids.Caster());
             }
             else
             {

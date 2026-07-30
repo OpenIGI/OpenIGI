@@ -181,12 +181,13 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Gives every soldier an AI that patrols the level's nav graph and reacts to the player.</summary>
     /// <param name="graph">The graph to patrol. Nothing is attached when it holds fewer than two nodes.</param>
+    /// <param name="sight">The world cast used for line of sight, or <see langword="null"/> to see through walls.</param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
     /// across the four ticks the original spreads them over (<c>ai.md</c> §5.1).
     /// </remarks>
-    public int Animate(GraphFile graph)
+    public int Animate(GraphFile graph, WorldRayCast? sight = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -207,7 +208,25 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach ((SoldierView view, Vector3d _) in group.Soldiers)
             {
-                _brains[view] = new AiSoldier(graph, view.Position, GammaOf(view), index & 3, index);
+                AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index);
+                if (sight is not null)
+                {
+                    // 0x489B20: the target is seen when the cast is clear, OR when whatever blocked it sits at
+                    // or past 0.79 of the way there - so clipping a corner near the target does not hide it.
+                    brain.SetLineOfSight((from, to) =>
+                    {
+                        if (!sight(from, to, out WorldRayHit blocked))
+                        {
+                            return true;
+                        }
+
+                        double total = Length(from, to);
+                        return total <= 0.0
+                            || Length(from, blocked.Position) / total >= AiSoldier.SightObstructionTolerance;
+                    });
+                }
+
+                _brains[view] = brain;
                 index++;
             }
         }
@@ -219,6 +238,14 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
+
+    private static double Length(Vector3d a, Vector3d b)
+    {
+        double dx = a.X - b.X;
+        double dy = a.Y - b.Y;
+        double dz = a.Z - b.Z;
+        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+    }
 
     /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
     /// <remarks>

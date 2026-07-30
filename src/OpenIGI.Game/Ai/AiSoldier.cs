@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 
 namespace OpenIGI.Game.Ai;
@@ -38,9 +38,9 @@ public enum AiSoldierActivity
 /// <para>
 /// <b>What is faithful:</b> the cones and their alert-selected ranges, the detection phase gate and rate
 /// limits, the 0.3 m box arrival test, the route table being followed one step at a time with no A*, the
-/// walk-versus-run gait, and the idle fallback. <b>What is not:</b> the behaviour script, the 18 action
-/// bodies, the line-of-sight ray (so a guard sees through walls), and hearing. Those are listed in
-/// <c>TODO.md</c>.
+/// walk-versus-run gait, the idle fallback, and the line-of-sight rule including its 0.79 tolerance.
+/// <b>What is not:</b> the behaviour script, the 18 action bodies, authored patrol paths (this wanders the
+/// graph instead), and hearing. Those are listed in <c>TODO.md</c>.
 /// </para>
 /// </remarks>
 public sealed class AiSoldier
@@ -51,6 +51,25 @@ public sealed class AiSoldier
     private readonly AiMovementStep _steering = new();
     private readonly Random _random;
     private readonly List<int> _route = [];
+
+    /// <summary>
+    /// The fraction of the way to the target at which an obstruction still counts as seen through —
+    /// <c>0x489B20</c>'s literal <c>0.79</c>.
+    /// </summary>
+    /// <remarks>
+    /// The line-of-sight test returns visible when the cast is clear <b>or</b> the blocker sits at or past
+    /// this fraction of the distance. So a guard still sees you when the ray clips a corner close to you, and
+    /// only a blocker in the first 79% of the line actually hides you.
+    /// </remarks>
+    public const double SightObstructionTolerance = 0.79000002;
+
+    /// <summary>Tests whether the line between two world points is clear enough to see along.</summary>
+    /// <param name="from">The eye.</param>
+    /// <param name="to">The target.</param>
+    /// <returns><see langword="true"/> when the target can be seen.</returns>
+    public delegate bool LineOfSight(Vector3d from, Vector3d to);
+
+    private LineOfSight? _sight;
 
     /// <summary>Initializes a new instance of the <see cref="AiSoldier"/> class.</summary>
     /// <param name="graph">The nav graph this soldier walks.</param>
@@ -117,6 +136,10 @@ public sealed class AiSoldier
     /// <summary>Gets the orientation matrix a renderer should draw it with.</summary>
     public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing);
 
+    /// <summary>Gives the soldier an occlusion test, so it stops seeing through walls.</summary>
+    /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
+    public void SetLineOfSight(LineOfSight? sight) => _sight = sight;
+
     /// <summary>Marks the soldier dead; it stops thinking and stops moving.</summary>
     public void Kill() => Activity = AiSoldierActivity.Dead;
 
@@ -137,14 +160,14 @@ public sealed class AiSoldier
 
         bool alert = alarmOn;
 
-        // The detection cascade: the phase gate first, then the cone, then (where a ray would go) nothing --
-        // a guard currently sees through walls, which is the one honest gap in this path.
+        // The detection cascade in order: the phase gate, then the cone, then the line-of-sight cast behind
+        // it -- the expensive test is never paid for someone outside the cone (ai.md 5.1).
         if (_schedule.SweepsOn(tick))
         {
             _schedule.Sweep(
                 _playerSlot,
                 () => Vision.IsVisible(EyePosition(), Orientation, enemy, Alerted),
-                () => true,
+                () => _sight is null || _sight(EyePosition(), enemy),
                 Distance(Position, enemy));
         }
 
