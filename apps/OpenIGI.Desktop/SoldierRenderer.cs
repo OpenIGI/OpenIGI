@@ -3,7 +3,9 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.Ai;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
@@ -50,7 +52,10 @@ public sealed class SoldierRenderer : IDisposable
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
     private readonly List<Group> _dead = [];
+    private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
     private int _deathsSoFar;
+    private int _walkAnimation = -1;
+    private int _tick;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
@@ -174,6 +179,47 @@ public sealed class SoldierRenderer : IDisposable
             (groundZ / WorldScene.UnitsPerMetre) - group.LowestVertexZ);
     }
 
+    /// <summary>Gives every soldier an AI that patrols the level's nav graph and reacts to the player.</summary>
+    /// <param name="graph">The graph to patrol. Nothing is attached when it holds fewer than two nodes.</param>
+    /// <returns>How many soldiers got a brain.</returns>
+    /// <remarks>
+    /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
+    /// across the four ticks the original spreads them over (<c>ai.md</c> §5.1).
+    /// </remarks>
+    public int Animate(GraphFile graph)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _brains.Clear();
+        if (graph.RouteTable is null || graph.Nodes.Count < 2)
+        {
+            _logger.Warning(LogCategory, "The nav graph has no route table, so no soldier can patrol.");
+            return 0;
+        }
+
+        // The walk clip is the locomotion table's forward-travelling state (state 1 travels +Y), read from
+        // 0x538870 -- not a chosen id.
+        _walkAnimation = HumanLocomotionStates.For(1).AnimationId;
+
+        int index = 0;
+        foreach (Group group in _groups)
+        {
+            foreach ((SoldierView view, Vector3d _) in group.Soldiers)
+            {
+                _brains[view] = new AiSoldier(graph, view.Position, GammaOf(view), index & 3, index);
+                index++;
+            }
+        }
+
+        _logger.Information(
+            LogCategory,
+            $"{_brains.Count} soldier(s) patrolling the nav graph, walk animation {_walkAnimation}.");
+        return _brains.Count;
+    }
+
+    private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
+
     /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
     /// <remarks>
     /// <para>
@@ -189,9 +235,26 @@ public sealed class SoldierRenderer : IDisposable
     /// leaving the guards frozen for.
     /// </para>
     /// </remarks>
-    public void Tick()
+    public void Tick(Vector3d enemy = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        _tick++;
+
+        // The AI runs first: it decides where the body is and what it is doing, then the rig follows.
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (view.IsDead)
+            {
+                brain.Kill();
+                continue;
+            }
+
+            double travel = Math.Abs(view.RootMotion().Y);
+            brain.Tick(_tick, enemy, travel);
+            view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, _walkAnimation);
+            view.PlaceAt(brain.Position, brain.Orientation);
+        }
 
         foreach (Group group in Enumerable.Concat(_groups, _dead))
         {
@@ -260,7 +323,16 @@ public sealed class SoldierRenderer : IDisposable
                 // group's stand animation until per-soldier skinning lands. It stays upright rather than
                 // falling. Recorded in TODO.md.
 
-                Matrix4f modelView = camera.CreateModelView(metres, soldier.Orientation);
+                // A soldier with a brain is drawn where its AI put it; one without keeps the stood position
+                // the level authored, converted once at load.
+                Vector3d where = _brains.ContainsKey(soldier)
+                    ? new Vector3d(
+                        soldier.Position.X / WorldScene.UnitsPerMetre,
+                        soldier.Position.Y / WorldScene.UnitsPerMetre,
+                        metres.Z)
+                    : metres;
+
+                Matrix4f modelView = camera.CreateModelView(where, soldier.Orientation);
 
                 foreach (MeshSubset subset in group.Geometry.Subsets)
                 {

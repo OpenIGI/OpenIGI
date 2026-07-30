@@ -69,6 +69,7 @@ public sealed class SoldierView
 
         // 0x45F890's last line: 0x4B3BE0(human + 120, gamma), the plain Z rotation - which is
         // Z(gamma)*Y(0)*X(0) of the same composition 0x4B38E0 builds. The declared facing, no mirror.
+        Position = soldier.Position;
         Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, soldier.Gamma);
     }
 
@@ -88,11 +89,56 @@ public sealed class SoldierView
     /// </summary>
     public bool DeclaredStandAnimationFound { get; }
 
-    /// <summary>Gets the world position, in engine units — the task's declared <c>Position</c>.</summary>
-    public Vector3d Position => Soldier.Position;
+    /// <summary>Gets the world position, in engine units. The declared <c>Position</c> until an AI moves it.</summary>
+    public Vector3d Position { get; private set; }
 
-    /// <summary>Gets the world 3×3 — the original's <c>Human+120</c>, a pure Z rotation of <c>Gamma</c>.</summary>
-    public Matrix3f Orientation { get; }
+    /// <summary>Gets the world 3×3 — the original's <c>Human+120</c>, a pure Z rotation of the heading.</summary>
+    public Matrix3f Orientation { get; private set; }
+
+    /// <summary>Moves and turns the body, which is what the AI's steering does each tick.</summary>
+    /// <param name="position">The new world position, in engine units.</param>
+    /// <param name="orientation">The new world 3×3.</param>
+    public void PlaceAt(Vector3d position, Matrix3f orientation)
+    {
+        Position = position;
+        Orientation = orientation;
+        _pose = null;
+    }
+
+    /// <summary>Switches the rig to a walk cycle, or back to standing.</summary>
+    /// <param name="walking">Whether the soldier is moving.</param>
+    /// <param name="walkAnimation">The walk clip's id, from the locomotion table's forward state.</param>
+    /// <returns><see langword="true"/> when the requested clip resolved in this soldier's set.</returns>
+    public bool SetMoving(bool walking, int walkAnimation)
+    {
+        if (IsDead)
+        {
+            return false;
+        }
+
+        int wanted = walking ? walkAnimation : StandAnimation;
+        if (wanted == CurrentAnimation)
+        {
+            return true;
+        }
+
+        if (!_bones.Set.TryGet(wanted, out _))
+        {
+            return false;
+        }
+
+        CurrentAnimation = wanted;
+        _bones.Play(0, wanted, loops: true);
+        _pose = null;
+        return true;
+    }
+
+    /// <summary>How far the playing clip's own root-motion track moves the body, in engine units.</summary>
+    /// <remarks>
+    /// The engine moves a human by its clip's root motion and nothing else (M8), so this is the soldier's
+    /// speed — no constant is chosen anywhere.
+    /// </remarks>
+    public Vector3f RootMotion() => _bones.SampleRootMotion();
 
     /// <summary>Gets a value indicating whether this soldier has been killed.</summary>
     public bool IsDead { get; private set; }

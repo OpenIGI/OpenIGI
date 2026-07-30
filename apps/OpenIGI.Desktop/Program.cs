@@ -1,5 +1,6 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Formats.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
@@ -251,6 +252,43 @@ using (window)
             levelRoot,
             loaded.Terrain is { IsUsable: true } standing ? standing : null,
             solids.Caster());
+
+        // The level's nav graph. A level ships one file per Graph task, most of them stubs with a single
+        // node, so the one with the most nodes is its walkable graph (ai.md 1.1 -- the number in the name
+        // is a task id, not a rank). Give it to the soldiers so they patrol it.
+        try
+        {
+            string graphDirectory = Path.Combine(
+                gamePath, loaded.Descriptor.MissionDirectory, "graphs");
+            GraphFile? best = null;
+            if (Directory.Exists(graphDirectory))
+            {
+                foreach (string file in Directory.GetFiles(graphDirectory, "graph*.dat"))
+                {
+                    GraphFile candidate = GraphFile.Read(File.ReadAllBytes(file));
+                    if (best is null || candidate.Nodes.Count > best.Nodes.Count)
+                    {
+                        best = candidate;
+                    }
+                }
+            }
+
+            if (best is not null)
+            {
+                logger.Information(
+                    "Ai",
+                    $"Nav graph: {best.Nodes.Count} node(s), {best.Links.Count} link(s) over {best.MaxNodes} slots.");
+                soldiers.Animate(best);
+            }
+            else
+            {
+                logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or GraphFormatException)
+        {
+            logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
+        }
 
         // A level whose terrain files are not live data — level 14 is exactly that — draws its objects
         // over nothing rather than following offsets into whatever the geometry blob happens to hold.
@@ -763,7 +801,8 @@ using (window)
         // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
         if (outcome is FrameOutcome.Render or FrameOutcome.Tick)
         {
-            soldiers?.Tick();
+            // The player's eye is what the guards' view cones are tested against.
+            soldiers?.Tick(player?.Body.Eye ?? default);
         }
 
         if (outcome != FrameOutcome.Render)
