@@ -6,6 +6,11 @@ namespace OpenIGI.Game.Player;
 /// <param name="origin">Where the round starts, in world units.</param>
 /// <param name="end">Where it stops.</param>
 /// <param name="damageFactor">The weapon's <c>Damage Factor</c>, which the round carries.</param>
+/// <param name="category">
+/// The firing weapon's category. It decides how a body that this round kills falls: <c>0x45D3C0</c>
+/// records a shotgun kill as a <see cref="SoldierDeathMode.Thrown"/> and everything else as a
+/// <see cref="SoldierDeathMode.Crumple"/>.
+/// </param>
 /// <param name="hit">The nearest human struck, when one is.</param>
 /// <returns><see langword="false"/> when the round meets nobody.</returns>
 /// <remarks>
@@ -14,4 +19,9 @@ namespace OpenIGI.Game.Player;
 /// player from having to know how the world stores its soldiers. The implementation is expected to
 /// apply the damage — the caller only needs to know where the round stopped.
 /// </remarks>
-public delegate bool HumanShot(Vector3d origin, Vector3d end, float damageFactor, out HumanHit hit);
+public delegate bool HumanShot(
+    Vector3d origin,
+    Vector3d end,
+    float damageFactor,
+    OpenIGI.Game.Weapons.WeaponCategory category,
+    out HumanHit hit);

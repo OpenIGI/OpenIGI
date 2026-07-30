@@ -165,22 +165,53 @@ public sealed class SoldierView
     }
 
     /// <summary>
-    /// The two death animations the soldier class plays — the literal ids in its two death state-entry
-    /// functions, <c>0x45C5A0</c> and <c>0x45C650</c>.
+    /// The two literal death animations, from the soldier class's <b>two special</b> death states —
+    /// <c>0x45C5A0</c> plays 24 and <c>0x45C650</c> plays 25.
     /// </summary>
     /// <remarks>
-    /// Both entries are otherwise identical: they stop the soldier's sound, clear the crouch, turn world
-    /// collision on, play their id on the bone object at <c>Human+104</c> with a zero blend, play the same
-    /// id on the weapon rig, start one of <b>four</b> <c>ai_death_&lt;n&gt;</c> sounds and install the same
-    /// per-tick (<c>0x45C700</c>). <b>The id is not taken from the hit-zone table</b> — a row's trailing
-    /// fields are reaction ids, and reading one of them as the death animation was a guess this replaces.
-    /// Which of the two the original picks depends on the transition into the state, which is unread.
+    /// <para>
+    /// <b>These are not the ordinary death clips, and using them was the floating-corpse bug.</b> The
+    /// soldier class has <em>three</em> death states — entries 32, 33 and 34 of its 38-state machine — and
+    /// the third (<c>0x45C440</c>) is the general one, which works its id out from the killing weapon, the
+    /// zone struck and which way the round came. <see cref="SoldierDeath.Choose"/> is that function.
+    /// </para>
+    /// <para>
+    /// Measured over the retail sets: on skeleton 1, clip 24 starts from a crouch (root Z 2219 → 1020) and
+    /// clip 25 is a 15-tick twitch already on the floor (462 → 523), while the clips the general state
+    /// names — 22, 23, 28, 30, 71 — all run from the standing pelvis height of 3877 down to 524…772. So
+    /// playing 24 or 25 on a guard who was standing left the body at standing height with a lying pose,
+    /// which is exactly what a floating corpse looks like. Kept because the two literals are real; no
+    /// longer what kills a guard.
+    /// </para>
     /// </remarks>
-    public static IReadOnlyList<int> DeathAnimations { get; } = [24, 25];
+    public static IReadOnlyList<int> LiteralDeathAnimations { get; } = [24, 25];
+
+    /// <summary>
+    /// Gets where the playing clip's own root-motion track currently puts the skeleton root, in engine
+    /// units, in the body's model space — the original's <c>Human+1300</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The soldier update calls <c>sub_4D2FB0(human + 1300, human + 1312, human + 104)</c> every tick, so
+    /// <c>+1300</c> is this and <c>+1312</c> is the per-tick delta the mover consumes. <c>0x48A340</c> —
+    /// which the AI's eye, the wall sweep and the ground query all locate a bone with — adds <c>+1300</c>
+    /// to the bone's rotated position, so a bone's true offset from the body's origin includes it.
+    /// </para>
+    /// <para>
+    /// It matters because a skeleton's rest translation for bone 0 is <b>zero</b> in every retail set, so
+    /// the pose puts the pelvis at the object origin and the feet almost a metre below it. The root
+    /// track's Z is what bridges that: 3877 units (0.95 m) standing, and 524…772 once a death clip has
+    /// run. Only the Z is used here — the horizontal part is already carried by the body's own position,
+    /// which the mover advances by the same track's delta, and a Z-only heading rotation leaves Z alone
+    /// anyway.
+    /// </para>
+    /// </remarks>
+    public Vector3f RootSample => _bones.SampleRootMotion();
 
     /// <summary>Kills the soldier and starts its death animation.</summary>
     /// <param name="deathAnimation">
-    /// The animation id to play. Pass one of <see cref="DeathAnimations"/>; <c>-1</c> keeps the current clip.
+    /// The animation id to play — what <see cref="SoldierDeath.Choose"/> named. <c>-1</c> keeps the
+    /// current clip, which is what the original's own switch does when no arm names one.
     /// </param>
     /// <remarks>
     /// The soldier keeps being drawn and keeps ticking — a dead guard in the original falls and stays on the

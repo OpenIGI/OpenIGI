@@ -501,9 +501,14 @@ public sealed class PlayerCamera
         }
 
         float damageFactor = _weapons.InHand?.Weapon.DamageFactor ?? 0f;
+
+        // The category travels with the round because it decides how a body this round kills falls:
+        // 0x45D3C0 records a shotgun kill as a throw and everything else as a crumple, and the death
+        // state picks a different family of clips for each.
+        WeaponCategory category = _weapons.InHand?.Weapon.Category ?? WeaponCategory.Gun;
         foreach (GunProjectile shot in _weapons.Shots)
         {
-            _impacts.Add(Trace(shot, damageFactor));
+            _impacts.Add(Trace(shot, damageFactor, category));
         }
     }
 
@@ -511,7 +516,7 @@ public sealed class PlayerCamera
     // ricocheting; that needs the surface properties the collision index does not carry yet, so this
     // stops at the first thing hit. What IS retail is where the ray starts, which way it goes and how
     // long it is -- all three come out of the weapon record. Recorded in TODO.md.
-    private GunImpact Trace(GunProjectile shot, float damageFactor)
+    private GunImpact Trace(GunProjectile shot, float damageFactor, WeaponCategory category)
     {
         Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
         Vector3d end = shot.Origin + (direction * shot.RangeInUnits);
@@ -523,7 +528,7 @@ public sealed class PlayerCamera
         // one behind it does not, and the wall is marked.
         HumanHit human = default;
         bool struckHuman = Humans is { } humans
-            && humans(shot.Origin, end, damageFactor, out human)
+            && humans(shot.Origin, end, damageFactor, category, out human)
             && (!struckWall || human.Distance < hit.Distance);
 
         if (struckHuman)

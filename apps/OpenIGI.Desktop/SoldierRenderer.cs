@@ -11,6 +11,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -523,7 +524,12 @@ public sealed class SoldierRenderer : IDisposable
         {
             if (view.IsDead)
             {
+                // A corpse is still stepped. The death state's per-tick (0x45C700) adds the fall solver's
+                // corrective velocity, the soldier update moves the body by the death clip's own root
+                // motion, and the ground query catches it. Freezing the body here is what left it standing.
                 brain.Kill();
+                brain.TickDeadBody(view.RootMotion());
+                view.PlaceAt(brain.Position, view.Orientation);
                 continue;
             }
 
@@ -635,15 +641,27 @@ public sealed class SoldierRenderer : IDisposable
                 // vanishing was only ever the port having no death animation to play. Each soldier now
                 // carries its own skinned mesh, so a corpse is posed by its own death clip.
 
-                // A soldier with a brain is drawn where its AI put it. The Z uses the ground query
-                // when one is available; otherwise it keeps the stood position from Stand().
+                // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT
+                // HEIGHT. That is the original's Human+1300 (see SoldierView.RootSample): every retail
+                // skeleton's bone 0 rest translation is zero, so the pose puts the pelvis at the object
+                // origin and the feet a metre below it, and the root track's Z is what bridges the two.
+                //
+                // It replaces "rest the skin's lowest vertex on the ground", which was a recorded
+                // stand-in for exactly this and agrees with it to a couple of centimetres while a
+                // soldier is standing. The difference is a corpse: a death clip takes its root from
+                // 3877 units down to about 600, and the stand-in had no way to know.
+                //
+                // Only the Z is taken. The horizontal part of the root track is what MOVES the body -
+                // the mover consumes the same track's per-tick delta - so adding it again would run the
+                // model a stride ahead of its own feet every cycle. A heading is a rotation about Z, so
+                // dropping the horizontal part costs nothing in the vertical.
                 Vector3d where;
                 if (_brains.TryGetValue(soldier, out AiSoldier? soldierBrain) && soldierBrain.HasGroundQuery)
                 {
                     where = new Vector3d(
                         soldier.Position.X / WorldScene.UnitsPerMetre,
                         soldier.Position.Y / WorldScene.UnitsPerMetre,
-                        (soldier.Position.Z / WorldScene.UnitsPerMetre) - group.LowestVertexZ);
+                        (soldier.Position.Z + soldier.RootSample.Z) / WorldScene.UnitsPerMetre);
                 }
                 else if (_brains.ContainsKey(soldier))
                 {
@@ -692,6 +710,7 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="origin">Where the round starts, in world units.</param>
     /// <param name="end">Where it stops.</param>
     /// <param name="damageFactor">The weapon's <c>Damage Factor</c>.</param>
+    /// <param name="category">The firing weapon's category, which decides how a body it kills falls.</param>
     /// <param name="hit">The nearest soldier struck.</param>
     /// <returns><see langword="false"/> when the round meets nobody.</returns>
     /// <remarks>
@@ -700,7 +719,12 @@ public sealed class SoldierRenderer : IDisposable
     /// taking damage through a flag on the human, and this is the same effect with the state that
     /// exists.
     /// </remarks>
-    public bool TryShoot(Vector3d origin, Vector3d end, float damageFactor, out HumanHit hit)
+    public bool TryShoot(
+        Vector3d origin,
+        Vector3d end,
+        float damageFactor,
+        WeaponCategory category,
+        out HumanHit hit)
     {
         hit = default;
         HumanHealth? struck = null;
@@ -749,17 +773,67 @@ public sealed class SoldierRenderer : IDisposable
 
         struck.Apply(hit.Zone, damageFactor);
 
-        // On death, play one of the soldier class's two death animations - the literal ids 24 and 25 in its
-        // two death state-entry functions (0x45C5A0 and 0x45C650). Which of the two the original picks
-        // depends on the unread transition into the state, so this alternates, which at least varies the
-        // corpses the way the game does.
         if (struck.IsDead && struckView is not null)
         {
-            int which = _deathsSoFar++ % SoldierView.DeathAnimations.Count;
-            struckView.Kill(SoldierView.DeathAnimations[which]);
+            Die(struckView, hit, origin, end, category);
         }
 
         return true;
+    }
+
+    /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
+    /// <remarks>
+    /// <para>
+    /// Four things happen here and every one of them is read. The body <b>turns to the round</b>
+    /// (<c>0x45DAA0</c>); the death <b>animation is chosen</b> from the killing weapon's category, the zone
+    /// struck and which way the round came (<see cref="SoldierDeath.Choose"/>); the <b>fall solver</b>
+    /// fans its nine rays and returns the corrective velocity (<see cref="SoldierDeathFall"/>); and the
+    /// brain is told, so it steps the body every tick from then on instead of freezing it.
+    /// </para>
+    /// <para>
+    /// The soldier's own <c>AIFunction_SetDeathAnimation</c> override is not wired: no shipped script in
+    /// level 1 calls it, and the port has nowhere to keep <c>HumanAI+15056</c> yet. Recorded in
+    /// <c>TODO.md</c> rather than guessed at.
+    /// </para>
+    /// </remarks>
+    private void Die(SoldierView view, HumanHit hit, Vector3d origin, Vector3d end, WeaponCategory category)
+    {
+        Matrix3f orientation = view.Orientation;
+        Vector3f forward = new(orientation.M12, orientation.M22, orientation.M32);
+
+        Vector3d travel = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        float facing = GammaOf(view);
+        bool front = SoldierDeath.TurnToTheShot(travel, forward, ref facing);
+
+        // The engine's own rand(2). Alternating is not the same distribution, but the two retail head-row
+        // entries are equal and the two crumple clips are a pair, so what the flip has to do is vary them.
+        int flip = _deathsSoFar++ & 1;
+        int animation = SoldierDeath.Choose(
+            SoldierDeath.ModeFor(category),
+            hit.Zone,
+            HumanHitZoneTable.Soldier,
+            front,
+            flip);
+
+        Vector3d fall = default;
+        if (animation >= 0 && view.Bones.Set.TryGet(animation, out BoneAnimation clip) && _cast is { } cast)
+        {
+            fall = SoldierDeathFall.Solve(
+                clip,
+                view.Position,
+                facing,
+                (from, to) => cast(from, to, out WorldRayHit blocked)
+                    ? new SoldierDeathRay(true, blocked.Position, Length(from, blocked.Position))
+                    : default);
+        }
+
+        view.PlaceAt(view.Position, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
+        view.Kill(animation);
+
+        if (_brains.TryGetValue(view, out AiSoldier? brain))
+        {
+            brain.Kill(fall, facing);
+        }
     }
 
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>

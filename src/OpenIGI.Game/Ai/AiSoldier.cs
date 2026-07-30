@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Ai;
 
@@ -369,8 +370,71 @@ public sealed class AiSoldier
         return true;
     }
 
-    /// <summary>Marks the soldier dead; it stops thinking and stops moving.</summary>
-    public void Kill() => Activity = AiSoldierActivity.Dead;
+    /// <summary>Marks the soldier dead; it stops thinking, but the body keeps being stepped.</summary>
+    /// <param name="fallVelocity">
+    /// The death-fall solver's corrective velocity (<c>0x45D5B0</c>), in engine units per tick. The death
+    /// state's per-tick adds it to the position on every tick, which is what stops a body sliding into
+    /// whatever its death clip's root motion was about to travel through.
+    /// </param>
+    /// <param name="facing">The heading the death turn (<c>0x45DAA0</c>) left the body at.</param>
+    public void Kill(Vector3d fallVelocity = default, float? facing = null)
+    {
+        Activity = AiSoldierActivity.Dead;
+        DeathFallVelocity = fallVelocity;
+        Route = null;
+        _route.Clear();
+        DestinationNode = -1;
+        if (facing is { } heading)
+        {
+            Facing = Wrap(heading);
+        }
+    }
+
+    /// <summary>Gets the corrective velocity the death-fall solver returned, in engine units per tick.</summary>
+    public Vector3d DeathFallVelocity { get; private set; }
+
+    /// <summary>
+    /// Steps a dead body for one tick — the death state's per-tick (<c>0x45C700</c>) joined to the soldier
+    /// update's ordinary root-motion move and ground query (<c>0x45D080</c>).
+    /// </summary>
+    /// <param name="rootMotionDelta">
+    /// What the death clip's own root-motion track moved this tick, in the body's model space. The soldier
+    /// update rotates exactly this into world space and hands it to the movement integrator.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Three things move a corpse, and all three are here: the clip's root motion, the solver's corrective
+    /// velocity, and the ground query snapping the body onto whatever is under it. Nothing else does — the
+    /// solver's own output is purely horizontal (its vertical component is forced to zero before the
+    /// arithmetic starts), so a body <em>falls</em> because its death clip's root track goes down and the
+    /// ground catches it.
+    /// </para>
+    /// <para>
+    /// A soldier with no ground query keeps the Z its clip gives it, which is the same fallback the living
+    /// path takes.
+    /// </para>
+    /// </remarks>
+    public void TickDeadBody(Vector3f rootMotionDelta)
+    {
+        if (Activity != AiSoldierActivity.Dead)
+        {
+            return;
+        }
+
+        Vector3d local = new(rootMotionDelta.X, rootMotionDelta.Y, rootMotionDelta.Z);
+        Vector3d world = SoldierDeathFall.RotateAboutZ(local, Facing);
+
+        double x = Position.X + world.X + DeathFallVelocity.X;
+        double y = Position.Y + world.Y + DeathFallVelocity.Y;
+        double z = Position.Z + world.Z + DeathFallVelocity.Z;
+
+        if (_ground is not null && _ground(x, y, z + GroundProbeAboveUnits, out double groundZ))
+        {
+            z = groundZ;
+        }
+
+        Position = new Vector3d(x, y, z);
+    }
 
     /// <summary>Runs one 30 Hz tick.</summary>
     /// <param name="tick">The engine tick counter, which the detection phase gate keys off.</param>
