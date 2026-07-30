@@ -186,6 +186,58 @@ public sealed class RetailAiScriptTests
         }
     }
 
+    /// <summary>
+    /// <b>No shipped AI script ever configures the secondary view cone.</b> All four
+    /// <c>AIFunction_SetSecondary*</c> natives are registered and none is called anywhere, so every AI in the
+    /// game peers through the constructor's peripheral cone unchanged — about ±63° horizontally at 12.5 m,
+    /// with no extra reach when alerted.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void NoScriptTouchesTheSecondaryViewCone()
+    {
+        string[] secondary =
+        [
+            "AIFunction_SetSecondaryViewLength",
+            "AIFunction_SetSecondaryAlarmViewLength",
+            "AIFunction_SetSecondaryViewAlpha",
+            "AIFunction_SetSecondaryViewGamma",
+        ];
+
+        // Every one of them really is registered, so this is silence rather than a missing table entry.
+        foreach (string name in secondary)
+        {
+            Assert.True(AiScriptApi.TryGetNative(name, out _), name);
+        }
+
+        List<string> found = [];
+        int primaryCalls = 0;
+
+        foreach (string path in AiScripts())
+        {
+            QvmProgram program = QvmProgram.Read(File.ReadAllBytes(path));
+            foreach (string? symbol in program.SymbolNames)
+            {
+                if (symbol is null)
+                {
+                    continue;
+                }
+
+                if (Array.IndexOf(secondary, symbol) >= 0)
+                {
+                    found.Add($"{Name(path)}: {symbol}");
+                }
+                else if (symbol is "AIFunction_SetViewLength" or "AIFunction_SetViewAlpha"
+                         or "AIFunction_SetViewGamma" or "AIFunction_SetAlarmViewLength")
+                {
+                    primaryCalls++;
+                }
+            }
+        }
+
+        Assert.Empty(found);
+        Assert.True(primaryCalls > 0, "no script configures the primary cone either, which cannot be right");
+    }
+
     private static IEnumerable<string> AiScripts()
     {
         string root = GameData.RequireRoot();
