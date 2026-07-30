@@ -165,6 +165,11 @@ public sealed class AiSoldier
     /// <summary>Gets its view cones.</summary>
     public AiVision Vision { get; }
 
+    /// <summary>
+    /// Gets the eye snapshot the last sweep tested against — <c>HumanAI+14896</c>, rebuilt on every sweep.
+    /// </summary>
+    public AiEyeSnapshot Eye { get; private set; }
+
     /// <summary>Gets its event queues.</summary>
     public AiEventQueues Events { get; }
 
@@ -398,11 +403,18 @@ public sealed class AiSoldier
 
         // The detection cascade in order: the phase gate, then the cone, then the line-of-sight cast behind
         // it -- the expensive test is never paid for someone outside the cone (ai.md 5.1).
+        //
+        // The cone test is the EYE SNAPSHOT's (0x489960), not 0x4502F0's: probing the retail game showed
+        // 0x4502F0 is never called once in a whole mission, so modelling detection on it modelled the wrong
+        // function (ai.md 8). The snapshot is taken here, before the alert latch is recomputed below, which
+        // is where the original takes it -- hence the one-tick lag in which range applies.
         if (_schedule.SweepsOn(tick))
         {
+            Eye = Vision.Capture(EyePosition(), Orientation, Alerted);
+            AiEyeSnapshot snapshot = Eye;
             _schedule.Sweep(
                 _playerSlot,
-                () => Vision.IsVisible(EyePosition(), Orientation, enemy, Alerted),
+                () => snapshot.IsVisible(enemy),
                 () => _sight is null || _sight(EyePosition(), enemy),
                 Distance(Position, enemy));
         }

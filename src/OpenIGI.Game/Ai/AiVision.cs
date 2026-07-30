@@ -5,6 +5,14 @@ namespace OpenIGI.Game.Ai;
 /// <summary>An AI's pair of view cones, and the test that decides whether a point is inside either.</summary>
 /// <remarks>
 /// <para>
+/// <b>Read <see cref="Capture"/> before <see cref="IsVisible"/>.</b> Hooking the retail executable settled
+/// that <c>0x4502F0</c> — which <see cref="IsVisible"/> transcribes — is <b>never called by the detection
+/// sweep</b>. What the sweep runs is the cone test on the per-tick eye snapshot,
+/// <see cref="AiEyeSnapshot.IsVisible"/>. This type holds the <em>parameters</em> both share and takes the
+/// snapshot; <see cref="IsVisible"/> is kept because <c>0x4502F0</c> is a real function on the
+/// event-admission path, not because detection uses it. See <c>ai.md</c> §8.
+/// </para>
+/// <para>
 /// From <c>0x4502F0</c>. <b>Both cones are always tested and the results are OR'd</b> — which corrects
 /// <c>gameplay-systems.md</c> §5's "cone selection switches on the alert latch". The latch does not select a
 /// cone; it selects <em>each</em> cone's range. So an AI sees through a long narrow cone <em>or</em> a short
@@ -29,6 +37,40 @@ public sealed class AiVision
 
     /// <summary>Gets or sets the short wide cone. No shipped archetype touches it.</summary>
     public AiViewCone Secondary { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the secondary cone is tested at all — the eye snapshot's
+    /// gate byte at <c>+112</c>.
+    /// </summary>
+    /// <remarks>
+    /// The per-tick sets this to 1 unconditionally for a soldier, so it is on for every AI in the game. The
+    /// one live observation of it being 0 is a level-1 <c>SCamera</c>, whose secondary cone is all zeroes —
+    /// a security camera has a primary cone and no peripheral vision. Only the snapshot test
+    /// (<see cref="AiEyeSnapshot.IsVisible"/>) consults it; <c>0x4502F0</c> has no equivalent.
+    /// </remarks>
+    public bool SecondaryEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Takes the per-tick eye snapshot — <c>0x489750</c>'s copy into <c>HumanAI+14896</c>, whose cone test
+    /// is what the detection cascade actually runs.
+    /// </summary>
+    /// <param name="eye">The eye's world position, in engine units.</param>
+    /// <param name="orientation">The eye's orientation, columns X right / Y forward / Z up.</param>
+    /// <param name="alerted">
+    /// The alert latch, which picks each cone's length <b>once, here</b> rather than on every test.
+    /// </param>
+    /// <returns>The snapshot to test candidates against for the rest of the tick.</returns>
+    /// <remarks>
+    /// The snapshot is taken <b>before</b> the alert latch is recomputed, so the cones used on a tick are
+    /// the ones <em>last</em> tick's state selected — a one-tick lag that is in the original
+    /// (<c>ai.md</c> §3.1).
+    /// </remarks>
+    public AiEyeSnapshot Capture(Vector3d eye, Matrix3f orientation, bool alerted) => new(
+        eye,
+        orientation,
+        new AiSnapshotCone(Primary.Alpha, Primary.Gamma, Primary.RangeAt(alerted)),
+        new AiSnapshotCone(Secondary.Alpha, Secondary.Gamma, Secondary.RangeAt(alerted)),
+        SecondaryEnabled);
 
     /// <summary>Tests whether a world point is visible from an eye, ignoring occlusion.</summary>
     /// <param name="eye">The eye's world position.</param>
