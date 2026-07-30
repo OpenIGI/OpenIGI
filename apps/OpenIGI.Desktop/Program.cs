@@ -346,14 +346,28 @@ using (window)
                         return;
                     }
 
+                    if (playerHealth.IsDead)
+                    {
+                        // Already down. Nothing kills you twice, and without this the log filled with
+                        // hundreds of "DEAD" lines while the guards kept shooting the corpse.
+                        return;
+                    }
+
                     playerHealth.Apply(hit.Zone, weapon.DamageFactor);
                     guardHits++;
                     logger.Information(
                         "Weapon",
                         $"A guard's {weapon.ScriptId} hit the player in zone {hit.Zone} "
                             + $"({guardHits} of {guardRounds} round(s); "
-                            + $"{playerHealth.RemainingFraction:P0} left"
-                            + (playerHealth.IsDead ? ", DEAD" : string.Empty) + ").");
+                            + $"{playerHealth.RemainingFraction:P0} left).");
+
+                    if (playerHealth.IsDead)
+                    {
+                        logger.Information(
+                            "Weapon",
+                            $"The player is DEAD after {guardHits} hit(s) from {guardRounds} round(s). "
+                                + "Nothing happens yet: the player's own death state is not built.");
+                    }
                 });
             }
             else

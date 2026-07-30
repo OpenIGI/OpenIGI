@@ -307,6 +307,9 @@ public sealed class AiSoldier
     /// <summary>Gets which sub-state the combat behaviour is in.</summary>
     public AiCombatPhase CombatPhase => _combat?.Phase ?? AiCombatPhase.Ended;
 
+    /// <summary>Gets how many rounds are left in the current burst — <c>HumanAI+15956</c>.</summary>
+    public int RoundsLeftInBurst => _combat?.RoundsLeftInBurst ?? 0;
+
     /// <summary>Gets the hit probability the last burst set — <c>Human+1236</c>.</summary>
     /// <remarks>The weapon reads it with every round; the AI never decides a hit itself.</remarks>
     public float HitProbability { get; private set; } = 1f;

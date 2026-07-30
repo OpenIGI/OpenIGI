@@ -42,6 +42,9 @@ public sealed class AiScriptHost
 {
     private readonly NativeRegistry _natives;
     private readonly IIgiLogger _logger;
+
+    // Faults already reported, so a per-tick failure is logged once rather than for ever.
+    private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
     private readonly List<AiProducedAction> _produced = [];
     private readonly Dictionary<int, int> _scriptIntegers = [];
     private readonly Dictionary<int, float> _scriptReals = [];
@@ -99,9 +102,14 @@ public sealed class AiScriptHost
             QvmError error = interpreter.Run();
             if (error != QvmError.None)
             {
-                _logger.Warning(
-                    "Ai",
-                    $"The archetype script returned {error} handling {handling}: {interpreter.ErrorMessage}");
+                // Once per distinct fault. A script that names a task the level does not build faults on
+                // EVERY tick of every soldier, which buries everything else in the log -- level 1's two
+                // CutScene tasks are 58 warnings a second on their own.
+                string fault = $"The archetype script returned {error} handling {handling}: {interpreter.ErrorMessage}";
+                if (_reported.Add(fault))
+                {
+                    _logger.Warning("Ai", fault);
+                }
             }
         }
         catch (EngineFatalException ex)
