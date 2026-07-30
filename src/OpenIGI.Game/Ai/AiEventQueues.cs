@@ -1,0 +1,214 @@
+namespace OpenIGI.Game.Ai;
+
+/// <summary>
+/// The twenty-four per-event-type queues an AI accumulates into, the priority order it drains them in, and
+/// the per-type enable mask that gates them.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The layout is fixed by three tables being contiguous inside <c>HumanAI</c>, the same argument M8 used for
+/// the locomotion state table: the queues run <c>+1776</c>..<c>+2064</c> (24 × a 12-byte list head), the
+/// priority order <c>+2076</c>..<c>+2172</c> (24 ints), the per-type drained counts
+/// <c>+2172</c>..<c>+2268</c> (24 ints) with the order's length at <c>+2268</c>, and the enable mask
+/// <c>+2276</c>..<c>+2300</c> (24 bytes) ending exactly where the pending-action list begins. Every one of
+/// those spans is 24 wide, which is the event count.
+/// </para>
+/// <para>
+/// <b>Three rules together are the whole arbitration</b> (<c>0x44FD50</c>):
+/// </para>
+/// <list type="number">
+/// <item>
+/// The queues are visited in <b>priority order</b>, not type order — <c>AIFunction_SetEventPriority</c>
+/// rewrites that order.
+/// </item>
+/// <item>
+/// <b>At most one event type is dispatched per tick.</b> The first non-empty queue whose position in the
+/// order is below the cap runs the script; everything after it is skipped for dispatch.
+/// </item>
+/// <item>
+/// <b>Every queue is then drained regardless.</b> An event that was not dispatched is <em>discarded, not
+/// deferred</em> — so a guard that is busy simply never learns about the shot it heard this tick.
+/// </item>
+/// </list>
+/// <para>
+/// The cap defaults to 24 (anything may dispatch) and otherwise comes from the <b>head pending action's</b>
+/// priority at <c>+8</c>. So a running action states how interruptible it is by naming a position in the
+/// order, and only events ranked strictly above that position can cut in.
+/// </para>
+/// </remarks>
+public sealed class AiEventQueues
+{
+    /// <summary>How many event types there are, and the width of every table here.</summary>
+    public const int TypeCount = 24;
+
+    /// <summary>The cap used when no pending action names one — every position may dispatch.</summary>
+    public const int UnboundedPriorityCap = TypeCount;
+
+    private readonly List<AiEventRecord>[] _queues = new List<AiEventRecord>[TypeCount];
+    private readonly int[] _drained = new int[TypeCount];
+    private readonly bool[] _enabled = new bool[TypeCount];
+    private readonly List<AiEvent> _order = [];
+
+    /// <summary>Initializes a new instance of the <see cref="AiEventQueues"/> class.</summary>
+    /// <remarks>
+    /// Starts with the identity priority order and <b>every type disabled</b>, which is the constructor's
+    /// state: <c>0x44F060</c> zeroes the mask and a script turns on what it wants to hear.
+    /// </remarks>
+    public AiEventQueues()
+    {
+        for (int i = 0; i < TypeCount; i++)
+        {
+            _queues[i] = [];
+            _order.Add((AiEvent)i);
+        }
+    }
+
+    /// <summary>Gets a value indicating whether the AI has been through its first tick.</summary>
+    /// <remarks>
+    /// <c>HumanAI+15636</c>. Before it is set, <b>only <see cref="AiEvent.Create"/> is admitted</b> — the
+    /// enable mask is not consulted at all and any other type is dropped, which is what guarantees an AI's
+    /// first event is its creation.
+    /// </remarks>
+    public bool IsInitialised { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the AI is dead.</summary>
+    /// <remarks><c>HumanAI+15034</c>, the death latch. A dead AI admits nothing at all.</remarks>
+    public bool IsDead { get; set; }
+
+    /// <summary>Gets the priority order the queues are visited in.</summary>
+    public IReadOnlyList<AiEvent> PriorityOrder => _order;
+
+    /// <summary>Gets how many events of a type are queued.</summary>
+    /// <param name="type">The event type.</param>
+    /// <returns>The count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
+    public int PendingCount(AiEvent type) => _queues[Index(type)].Count;
+
+    /// <summary>Gets how many events of a type were drained by the last <see cref="Pump"/>.</summary>
+    /// <param name="type">The event type.</param>
+    /// <returns>The count, which the engine keeps at <c>+2172 + 4 × type</c>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
+    public int DrainedCount(AiEvent type) => _drained[Index(type)];
+
+    /// <summary>Turns an event type on or off for this AI.</summary>
+    /// <param name="type">The event type.</param>
+    /// <param name="enabled">Whether to admit it.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
+    public void SetEnabled(AiEvent type, bool enabled) => _enabled[Index(type)] = enabled;
+
+    /// <summary>Gets a value indicating whether an event type is admitted.</summary>
+    /// <param name="type">The event type.</param>
+    /// <returns>Whether it is enabled.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
+    public bool IsEnabled(AiEvent type) => _enabled[Index(type)];
+
+    /// <summary>Moves an event type to a position in the priority order.</summary>
+    /// <param name="type">The event type.</param>
+    /// <param name="position">Where to put it, 0 being the first to be considered.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The type or the position is out of range.</exception>
+    public void SetPriority(AiEvent type, int position)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(position);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(position, TypeCount);
+
+        AiEvent value = (AiEvent)Index(type);
+        _order.Remove(value);
+        _order.Insert(position, value);
+    }
+
+    /// <summary>Offers an event to the AI, applying the admission rules that do not need the world.</summary>
+    /// <param name="record">The event.</param>
+    /// <param name="owner">The receiving AI's own task id, so an AI does not hear its own events.</param>
+    /// <param name="worldTests">
+    /// Resolves the tests that need the world — view, range, side and friend-or-foe. Called at most once, and
+    /// only when <see cref="AiEventRecord.Filter"/> asks for something. Pass <see langword="null"/> to admit
+    /// anything that gets past the unconditional gates.
+    /// </param>
+    /// <returns><see langword="true"/> when the event was queued.</returns>
+    /// <remarks>
+    /// The unconditional gates, in <c>0x450110</c>'s order: a dead AI takes nothing; <b>an AI never receives
+    /// an event naming it as either the source or the subject</b>; before initialisation only
+    /// <see cref="AiEvent.Create"/> passes; after it, the type must be enabled.
+    /// </remarks>
+    public bool Post(AiEventRecord record, int owner, Func<AiEventFilter, bool>? worldTests)
+    {
+        if (IsDead)
+        {
+            return false;
+        }
+
+        // 0x450110's self-filter: the owner being either end of the event drops it.
+        if (owner != 0 && (owner == record.Subject || owner == record.Source))
+        {
+            return false;
+        }
+
+        if (!IsInitialised)
+        {
+            if (record.Type != AiEvent.Create)
+            {
+                return false;
+            }
+        }
+        else if (!_enabled[Index(record.Type)])
+        {
+            return false;
+        }
+
+        if (record.Filter != AiEventFilter.None && worldTests is not null && !worldTests(record.Filter))
+        {
+            return false;
+        }
+
+        _queues[(int)record.Type].Add(record);
+        return true;
+    }
+
+    /// <summary>Runs one tick of the pump: dispatch at most one type, then drain everything.</summary>
+    /// <param name="priorityCap">
+    /// How far down the priority order an event may still interrupt. <see cref="UnboundedPriorityCap"/> when
+    /// no action is pending, otherwise the head pending action's own priority.
+    /// </param>
+    /// <param name="dispatch">
+    /// Runs the AI script for an event type, returning whether it produced an action. A type that produces
+    /// nothing does <b>not</b> stop a later type from being tried.
+    /// </param>
+    /// <returns>The event type that was dispatched, or <see langword="null"/> when none was.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
+    public AiEvent? Pump(int priorityCap, Func<AiEvent, int, bool> dispatch)
+    {
+        ArgumentNullException.ThrowIfNull(dispatch);
+
+        AiEvent? dispatched = null;
+        bool handled = false;
+
+        for (int position = 0; position < _order.Count; position++)
+        {
+            AiEvent type = _order[position];
+            int slot = (int)type;
+
+            if (position < priorityCap && _queues[slot].Count != 0 && !handled)
+            {
+                handled = dispatch(type, position);
+                if (handled)
+                {
+                    dispatched = type;
+                }
+            }
+
+            // Drained whether or not it was dispatched — an undelivered event is lost, not deferred.
+            _drained[slot] = _queues[slot].Count;
+            _queues[slot].Clear();
+        }
+
+        return dispatched;
+    }
+
+    private static int Index(AiEvent type)
+    {
+        int index = (int)type;
+        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(type));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, TypeCount, nameof(type));
+        return index;
+    }
+}
