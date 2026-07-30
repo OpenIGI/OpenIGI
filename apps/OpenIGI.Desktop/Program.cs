@@ -885,8 +885,16 @@ using (window)
         // Measured against the original, which covers 160-185 units a tick, this port was covering ~357.
         if (outcome is FrameOutcome.Tick)
         {
-            // The player's eye is what the guards' view cones are tested against.
-            soldiers?.Tick(player?.Body.Eye ?? default);
+            // The player's eye is what the guards' view cones are tested against -- and in the
+            // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
+            // you leave walking mode, so feeding its eye meant every guard in the level was watching an
+            // immobile figure at the spawn point while you flew past them: they never saw you because
+            // there was nothing of you to see. A shell affordance, not engine behaviour.
+            Vector3d watched = playerMode && player is not null
+                ? player.Body.Eye
+                : camera?.Position ?? player?.Body.Eye ?? default;
+
+            soldiers?.Tick(watched);
         }
 
         if (outcome != FrameOutcome.Render)

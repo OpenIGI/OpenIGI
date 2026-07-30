@@ -64,6 +64,7 @@ public sealed class SoldierRenderer : IDisposable
     private TerrainData? _terrain;
     private WorldRayCast? _cast;
     private SoldierRound? _onRound;
+    private string _lastCombatReport = string.Empty;
     private int _deathsSoFar;
     private int _walkAnimation = -1;
     private int _tick;
@@ -533,6 +534,45 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>Logs how the level's fight is going, once per change.</summary>
+    /// <remarks>
+    /// One line, and only when the numbers move, so it is a running commentary rather than a per-tick
+    /// flood. It is what tells a "the guards do nothing" report apart into its three possible causes:
+    /// nobody sees the player, somebody sees him and never engages, or somebody engages and never
+    /// fires.
+    /// </remarks>
+    private void ReportCombat()
+    {
+        int seeing = 0;
+        int engaging = 0;
+        foreach (AiSoldier brain in _brains.Values)
+        {
+            if (brain.SeesEnemy)
+            {
+                seeing++;
+            }
+
+            if (brain.Activity == AiSoldierActivity.Engaging)
+            {
+                engaging++;
+            }
+        }
+
+        if (seeing == 0 && engaging == 0 && RoundsFired == 0)
+        {
+            return;
+        }
+
+        string report = $"{seeing} soldier(s) see the player, {engaging} engaging, {RoundsFired} round(s) fired.";
+        if (report == _lastCombatReport)
+        {
+            return;
+        }
+
+        _lastCombatReport = report;
+        _logger.Information(LogCategory, $"AI: {report}");
+    }
+
     /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
     /// <remarks>
     /// <para>
@@ -814,6 +854,7 @@ public sealed class SoldierRenderer : IDisposable
 
             brain.Tick(_tick, enemy, travel);
             FireIfAsked(view, brain, enemy);
+            ReportCombat();
 
             // A patrol ANIMATION command names a clip outright; otherwise the gait picks between the walk
             // cycle and the soldier's own stand animation.

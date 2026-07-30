@@ -364,17 +364,7 @@ public sealed class AiSoldier
                 case "AIAction_SetCombat":
                 case "AIAction_FireAtTask":
                 case "AIAction_FireAtNode":
-                    if (Activity != AiSoldierActivity.Engaging)
-                    {
-                        // 0x48D000 arms the behaviour once, when the action is taken -- not every tick.
-                        _combat?.Begin();
-                    }
-
-                    Activity = AiSoldierActivity.Engaging;
-                    Route = null;
-                    RequestedAnimation = -1;
-                    _route.Clear();
-                    DestinationNode = -1;
+                    EnterCombat();
                     break;
 
                 case "AIAction_Dead":
@@ -731,9 +721,7 @@ public sealed class AiSoldier
             // No script attached: the built-in fallback decides, which is what shipped before guard.qsc ran.
             if (_playerSlot.IsVisible)
             {
-                Activity = AiSoldierActivity.Engaging;
-                _route.Clear();
-                DestinationNode = -1;
+                EnterCombat();
             }
 
             Drain();
@@ -906,6 +894,29 @@ public sealed class AiSoldier
         double travelled = (((x - _legOrigin.X) * legX) + ((y - _legOrigin.Y) * legY)) / lengthSquared;
         travelled = Math.Clamp(travelled, 0.0, 1.0);
         return _legOrigin.Z + ((waypoint.Z - _legOrigin.Z) * travelled);
+    }
+
+    /// <summary>Takes the combat action, re-arming the behaviour every time.</summary>
+    /// <remarks>
+    /// <b>Every</b> path into combat comes through here, and that matters: once the machine ends — a
+    /// targeting timeout, or a target with no detection slot — its phase is
+    /// <see cref="AiCombatPhase.Ended"/> and every later tick returns "ended" at once. Re-arming only on
+    /// the scripted path left a soldier that engaged a second way permanently unable to fight, which
+    /// reads exactly as a guard that sees you and does nothing. <c>0x48D000</c> arms it when the action
+    /// is taken, which is what this is.
+    /// </remarks>
+    private void EnterCombat()
+    {
+        if (Activity != AiSoldierActivity.Engaging || CombatPhase == AiCombatPhase.Ended)
+        {
+            _combat?.Begin();
+        }
+
+        Activity = AiSoldierActivity.Engaging;
+        Route = null;
+        RequestedAnimation = -1;
+        _route.Clear();
+        DestinationNode = -1;
     }
 
     /// <summary>Runs one tick of the combat behaviour and applies what it asks for.</summary>
