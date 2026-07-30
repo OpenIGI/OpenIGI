@@ -38,24 +38,61 @@ public static class HumanSoldierStates
     /// </remarks>
     public const float BlendSeconds = 0f;
 
-    /// <summary>The state a fighting soldier's body is in while a burst is live.</summary>
+    /// <summary>The state a soldier fires from — <b>and the only state it can fire from</b>.</summary>
     /// <remarks>
-    /// <b>Measured, not read.</b> Over two guards and twenty-three sampled combat ticks in a live
-    /// mission, the body sat in state 6 on every tick where the burst counter was draining, in
-    /// <see cref="ReloadState"/> on every tick where it had reached zero, and in state 0 whenever the
-    /// target was not visible. What performs the transition is the soldier's own state machine reacting
-    /// to the input slots the AI writes (20 and 27), which the port does not run — so the correlation is
-    /// what is reproduced, and it is a correlation rather than a reading.
+    /// <para>
+    /// Measured first, then read. A live capture showed a fighting guard sitting here on every tick its
+    /// burst counter was draining; <c>0x45B060</c>, the state's per-tick, then said why. It is the only
+    /// one of the four combat states that touches the weapon, and what it does is
+    /// <c>if (*(float *)(human + 456) != 0) human[+1233] = 1</c> — <c>Human+456</c> is <b>input-frame
+    /// slot 6</b> (the newest frame lives at <c>+432</c>) and <c>Human+1233</c> is what the weapon tick
+    /// hands the gun. So the chain that starts with the AI writing <c>HumanAI+15500</c> ends here, and
+    /// a soldier holding the Fire slot up in any other state fires nothing at all.
+    /// </para>
+    /// <para>
+    /// <b>A firing soldier is crouched.</b> State 6 is the only one of the four that sets
+    /// <c>Human+829</c>. It is not the AI's kneel — that is state 19.
+    /// </para>
     /// </remarks>
     public const int FiringState = 6;
 
-    /// <summary>The state a soldier's body is in while it reloads.</summary>
-    /// <remarks>See <see cref="FiringState"/>: measured the same way, on the ticks where the burst
-    /// counter had reached zero.</remarks>
+    /// <summary>The state a soldier's body is in once its burst is spent.</summary>
+    /// <remarks>
+    /// <para>
+    /// The combat cycle is <c>0 → 12 → 10 → 6</c>, and <b>12 is the only way back to 0</b> — its
+    /// per-tick <c>0x45B820</c> leaves for state 0 and nothing else. So a guard between bursts is here,
+    /// not standing. The live capture agreed: state 12 on the tick the burst counter reached zero, and
+    /// state 0 only once the target was out of sight.
+    /// </para>
+    /// <para>
+    /// Reading a spent burst as standing put a tick of the idle clip between every two bursts, and
+    /// because bursts are back to back that was a visible flicker.
+    /// </para>
+    /// </remarks>
     public const int ReloadState = 12;
 
     /// <summary>The state a soldier stands in.</summary>
     public const int StandState = 0;
+
+    /// <summary>The state a soldier falls into when it is not on the ground.</summary>
+    /// <remarks>Every combat state's per-tick leaves for this the moment flag <c>0x4</c> clears.</remarks>
+    public const int AirborneState = 29;
+
+    /// <summary>The state a soldier flinches into.</summary>
+    /// <remarks>
+    /// Entered on flag <c>0x10000</c> — which is exactly the bit <c>0x45D3C0</c> raises when the running
+    /// damage accumulator passes the settings row's <c>Recoil threshold</c>. The damage handler and the
+    /// state machine meet on that bit.
+    /// </remarks>
+    public const int FlinchState = 30;
+
+    /// <summary>The state a soldier dies into.</summary>
+    /// <remarks>
+    /// Entered on flag <c>0x20000</c>, the other bit <c>0x45D3C0</c> raises, and its entry is
+    /// <c>0x45C440</c> — the general death chooser <see cref="SoldierDeath"/> already read from the
+    /// other direction.
+    /// </remarks>
+    public const int DeathState = 32;
 
     // {animation, mode} per state, transcribed from 0x53ED10 -- 38 pairs, 304 bytes.
     private static readonly (int Animation, int Mode)[] Table =

@@ -66,6 +66,30 @@ public sealed class HumanSoldierStateTests
             AiCombatChannels.StateOf(AiType.GuardAk, AiStanceChannel.Standing));
     }
 
+    /// <summary>
+    /// The flinch and death states are the two bits the damage handler raises, which is the pair of
+    /// readings meeting.
+    /// </summary>
+    /// <remarks>
+    /// <c>0x45D3C0</c> sets <c>0x10000</c> when the recoil accumulator passes the settings row's
+    /// threshold and <c>0x20000</c> on death; every combat state's per-tick leaves for 30 and 32 on
+    /// exactly those bits, and 32's entry is the death chooser <see cref="SoldierDeath"/> read
+    /// separately. Nothing here was written to make that come out.
+    /// </remarks>
+    [Fact]
+    public void TheFlinchAndDeathStatesAreWhereTheDamageHandlerSends()
+    {
+        Assert.Equal(30, HumanSoldierStates.FlinchState);
+        Assert.Equal(32, HumanSoldierStates.DeathState);
+
+        // Both name their own clip, which is what a state that chooses between several has to do.
+        Assert.True(HumanSoldierStates.IsSelfDriven(HumanSoldierStates.FlinchState));
+        Assert.True(HumanSoldierStates.IsSelfDriven(HumanSoldierStates.DeathState));
+
+        // And the airborne state is an ordinary table entry.
+        Assert.Equal(2, HumanSoldierStates.AnimationOf(HumanSoldierStates.AirborneState));
+    }
+
     /// <summary>A state outside the machine has no clip rather than an arbitrary one.</summary>
     [Fact]
     public void AStateOutsideTheMachineHasNoClip()

@@ -546,18 +546,27 @@ public sealed class SoldierRenderer : IDisposable
     /// </para>
     /// <para>
     /// The three states here were <b>measured in a live retail mission</b>: a guard's body sits in state
-    /// 6 while its burst counter drains, state 12 the moment that counter reaches zero, and state 0 when
-    /// its target is out of sight. Through the table those read as animations 56, 55 and 2. What
-    /// performs the transition is the soldier's own state machine reacting to the input slots the AI
-    /// writes, which the port does not run — so this reproduces the correlation and says so.
+    /// 6 while its burst counter drains, state 12 the moment that counter reaches zero, and state 0
+    /// <i>only</i> when its target is out of sight. Through the table those read as animations 56, 55
+    /// and 2. What performs the transition is the soldier's own state machine reacting to the input
+    /// slots the AI writes, which the port does not run — so this reproduces the correlation and says so.
     /// </para>
     /// </remarks>
-    private static int CombatState(AiSoldier brain) => brain.CombatPhase switch
+    private static int CombatState(AiSoldier brain)
     {
-        AiCombatPhase.Reload => HumanSoldierStates.ReloadState,
-        AiCombatPhase.Fire when brain.RoundsLeftInBurst > 0 => HumanSoldierStates.FiringState,
-        _ => AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Standing),
-    };
+        // Out of sight is the ONLY thing the capture ever showed drop a fighting guard back to standing.
+        if (!brain.SeesEnemy)
+        {
+            return AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Standing);
+        }
+
+        // A live burst is state 6; a spent one -- and a reload, which is a spent one that stays spent --
+        // is state 12. Reading "burst spent" as standing instead put a single tick of the stand clip
+        // between every two bursts, and back-to-back bursts made that a flicker.
+        return brain.RoundsLeftInBurst > 0
+            ? HumanSoldierStates.FiringState
+            : HumanSoldierStates.ReloadState;
+    }
 
     /// <summary>Logs how the level's fight is going, once per change.</summary>
     /// <remarks>
