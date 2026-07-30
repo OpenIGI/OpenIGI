@@ -198,6 +198,13 @@ using (window)
 
     bool reportedWorld = false;
     bool reportedShot = false;
+    int guardRounds = 0;
+    int guardHits = 0;
+
+    // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
+    // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11).
+    HumanHealth playerHealth = new(HumanHitZoneTable.Player);
+    Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
     WorldScene? scene = null;
     WorldRenderer? world = null;
@@ -312,6 +319,42 @@ using (window)
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
                 soldiers.Animate(
                     graphs, solids.Caster(), resources, loop.Natives, levelRoot, aiConfig, options.Difficulty);
+
+                // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
+                // where it becomes a cast. The AI's hit probability decides whether the round is on
+                // target -- the original hands that same figure to the gun with every shot (ai.md 11.6),
+                // so a miss is a round that went somewhere else rather than a round that never existed.
+                soldiers.SetRoundHandler((from, at, probability, weapon) =>
+                {
+                    guardRounds++;
+                    if (player is null || shotRandom.NextDouble() > probability)
+                    {
+                        return;
+                    }
+
+                    Vector3d to = new(
+                        from.X + ((at.X - from.X) * 4.0),
+                        from.Y + ((at.Y - from.Y) * 4.0),
+                        from.Z + ((at.Z - from.Z) * 4.0));
+
+                    Vector3d feet = player.Body.Position;
+                    Vector3f facing = new(
+                        -MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+
+                    if (!HumanHitTest.TryCast(from, to, feet, facing, pose: null, out HumanHit hit))
+                    {
+                        return;
+                    }
+
+                    playerHealth.Apply(hit.Zone, weapon.DamageFactor);
+                    guardHits++;
+                    logger.Information(
+                        "Weapon",
+                        $"A guard's {weapon.ScriptId} hit the player in zone {hit.Zone} "
+                            + $"({guardHits} of {guardRounds} round(s); "
+                            + $"{playerHealth.RemainingFraction:P0} left"
+                            + (playerHealth.IsDead ? ", DEAD" : string.Empty) + ").");
+                });
             }
             else
             {

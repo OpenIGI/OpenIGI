@@ -80,6 +80,9 @@ public sealed class AiSoldier
 
     private LineOfSight? _sight;
     private GroundQuery? _ground;
+    private AiGuardCombat? _combat;
+    private WeaponQuery? _weapon;
+    private AiType _type = AiType.GuardAk;
     private AiScriptHost? _host;
     private OpenIGI.Scripting.Qvm.QvmProgram? _script;
     private OpenIGI.Scripting.Qvm.QvmProgram? _archetypeScript;
@@ -267,6 +270,64 @@ public sealed class AiSoldier
     /// </remarks>
     public void SetGroundQuery(GroundQuery? query) => _ground = query;
 
+    /// <summary>Reports what the soldier's held weapon looks like this tick.</summary>
+    /// <returns>The clip, the weapon's own burst length and its category.</returns>
+    public delegate AiCombatWeaponState WeaponQuery();
+
+    /// <summary>Gives the soldier the combat behaviour its <c>AIType</c> selects.</summary>
+    /// <param name="type">The soldier's AI type, which picks the behaviour and the channel rows.</param>
+    /// <param name="parameters">Its settings row.</param>
+    /// <param name="weapon">Where the held weapon's state is read from each tick.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Without this a soldier that engages only turns to face its target, which is what the port did
+    /// before combat was read. <c>AIAction_Combat</c> dispatches by type (§11.1); only the guard arm is
+    /// built, so a patrol type gets the guard behaviour for now and is recorded in <c>TODO.md</c>.
+    /// </remarks>
+    public void SetCombat(AiType type, AiCombatParameters parameters, WeaponQuery weapon)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        ArgumentNullException.ThrowIfNull(weapon);
+
+        _type = type;
+        _weapon = weapon;
+        _combat = new AiGuardCombat(parameters, _random.NextDouble);
+        CombatParameters = parameters;
+    }
+
+    /// <summary>Gets the soldier's combat row, once one has been given.</summary>
+    public AiCombatParameters? CombatParameters { get; private set; }
+
+    /// <summary>Gets the soldier's AI type.</summary>
+    public AiType Type => _type;
+
+    /// <summary>Gets what the combat behaviour asked for on the last tick it ran.</summary>
+    public AiCombatCommand Combat { get; private set; }
+
+    /// <summary>Gets which sub-state the combat behaviour is in.</summary>
+    public AiCombatPhase CombatPhase => _combat?.Phase ?? AiCombatPhase.Ended;
+
+    /// <summary>Gets the hit probability the last burst set — <c>Human+1236</c>.</summary>
+    /// <remarks>The weapon reads it with every round; the AI never decides a hit itself.</remarks>
+    public float HitProbability { get; private set; } = 1f;
+
+    /// <summary>Gets the shared record of everybody fighting this soldier's target.</summary>
+    public AiCombatTarget? Target { get; private set; }
+
+    /// <summary>Puts the soldier on a shared target record — <c>sub_451080</c>.</summary>
+    /// <param name="target">The record, or <see langword="null"/> to leave the one it is on.</param>
+    public void SetTarget(AiCombatTarget? target)
+    {
+        if (ReferenceEquals(Target, target))
+        {
+            return;
+        }
+
+        Target?.Remove(this);
+        Target = target;
+        target?.Add(this);
+    }
+
     /// <summary>Applies whatever the archetype script asked for on the last dispatch.</summary>
     /// <param name="actions">The produced actions, in script order.</param>
     /// <remarks>
@@ -303,6 +364,12 @@ public sealed class AiSoldier
                 case "AIAction_SetCombat":
                 case "AIAction_FireAtTask":
                 case "AIAction_FireAtNode":
+                    if (Activity != AiSoldierActivity.Engaging)
+                    {
+                        // 0x48D000 arms the behaviour once, when the action is taken -- not every tick.
+                        _combat?.Begin();
+                    }
+
                     Activity = AiSoldierActivity.Engaging;
                     Route = null;
                     RequestedAnimation = -1;
@@ -513,9 +580,9 @@ public sealed class AiSoldier
         // ONE event type dispatches per tick, in priority order, and the script decides what to do about it.
         RunScript();
 
-        if (_playerSlot.IsVisible && Activity == AiSoldierActivity.Engaging)
+        if (Activity == AiSoldierActivity.Engaging)
         {
-            TurnTowards(enemy, AiPatrolRoute.LookAtToleranceRadians);
+            Fight(enemy);
             return;
         }
 
@@ -840,6 +907,78 @@ public sealed class AiSoldier
         travelled = Math.Clamp(travelled, 0.0, 1.0);
         return _legOrigin.Z + ((waypoint.Z - _legOrigin.Z) * travelled);
     }
+
+    /// <summary>Runs one tick of the combat behaviour and applies what it asks for.</summary>
+    /// <remarks>
+    /// <para>
+    /// The soldier turns with the same clamped steering everything else uses and reports back whether
+    /// the facing reached the two-degree tolerance, which is what the firing tick holds fire on.
+    /// </para>
+    /// <para>
+    /// Nothing here fires a round. The command carries the trigger and the host turns it into a shot
+    /// through the body's own weapon path, which is what the original does — see
+    /// the original.
+    /// </para>
+    /// </remarks>
+    private void Fight(Vector3d enemy)
+    {
+        if (_combat is null || _weapon is null)
+        {
+            // No combat row: the old behaviour, which is to stand and look at the target.
+            TurnTowards(enemy, AiPatrolRoute.LookAtToleranceRadians);
+            return;
+        }
+
+        Target?.Refresh(enemy);
+
+        AiCombatWeaponState weapon = _weapon();
+        AiCombatSense sense = new(
+            HasDetectionSlot: _playerSlot.IsRegistered || _playerSlot.IsVisible || _playerSlot.IsInCone,
+            InCone: _playerSlot.IsInCone,
+            Visible: _playerSlot.IsVisible,
+            TargetPosition: AimPointOf(enemy),
+            DistanceToTargetInUnits: Distance(Position, enemy),
+            LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
+            AmmoInClip: weapon.AmmoInClip,
+            Category: weapon.Category,
+            ClipSize: weapon.ClipSize,
+            BurstSize: weapon.BurstSize,
+            AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0);
+
+        // The port has no stance machine on a soldier yet, so it is always in its standing state --
+        // which is the state the guard behaviour waits for anyway.
+        AiCombatCommand command = _combat.Update(sense, standing: true, Vision.Primary.RangeAt(Alerted));
+        Combat = command;
+
+        if (command.StartedBurst is { } burst)
+        {
+            HitProbability = burst.HitProbability;
+        }
+
+        if (command.Aim is { } mode && Target is not null)
+        {
+            Target.Aim(this, mode);
+        }
+
+        if (command.TurnTo is { } point)
+        {
+            TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians);
+            _combat.ReportAimed(IsFacing(point, (float)AiGuardCombat.AimToleranceRadians));
+        }
+
+        if (command.Ended)
+        {
+            Activity = AiSoldierActivity.Idle;
+            SetTarget(null);
+        }
+    }
+
+    /// <summary>Where an AI aims at a human — its position, half a metre up.</summary>
+    /// <remarks>
+    /// <c>sub_451380</c> adds 2048 units standing and 1024 crouching. The port has no crouch state for a
+    /// target yet, so it always takes the standing figure.
+    /// </remarks>
+    private static Vector3d AimPointOf(Vector3d target) => new(target.X, target.Y, target.Z + 2048.0);
 
     private void TurnTowards(Vector3d target, float tolerance)
     {

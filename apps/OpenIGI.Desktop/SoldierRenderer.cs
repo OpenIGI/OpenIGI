@@ -63,6 +63,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
     private TerrainData? _terrain;
     private WorldRayCast? _cast;
+    private SoldierRound? _onRound;
     private int _deathsSoFar;
     private int _walkAnimation = -1;
     private int _tick;
@@ -243,7 +244,6 @@ public sealed class SoldierRenderer : IDisposable
         _brains.Clear();
         _combat.Clear();
         _health.Clear();
-        BindCombatRows(config, difficulty);
         if (graphs.Count == 0)
         {
             _logger.Warning(LogCategory, "The level ships no nav graph, so no soldier can patrol.");
@@ -347,6 +347,11 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        // AFTER the brains exist: BindCombatRows installs the behaviour on each, so running it before the
+        // loop would have found no brains to install it on and every guard would have gone on standing
+        // there looking at the player.
+        BindCombatRows(config, difficulty);
+
         _logger.Information(
             LogCategory,
             $"{_brains.Count} soldier(s) with brains ({patrolling} scripted, {perTask} from their own " +
@@ -421,6 +426,8 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 member.Weapon = held;
+                member.WeaponType = weapon;
+                member.AmmoInClip = weapon.RoundsPerClip;
                 armed++;
             }
         }
@@ -526,6 +533,74 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
+    /// <remarks>
+    /// <para>
+    /// The AI never fires: it holds slot 6 down and the weapon decides when a round comes out, which is
+    /// the split the original has between <c>0x48D8E0</c> and the human's weapon tick <c>0x462E50</c>.
+    /// The clip is what the AI watches to count its burst, so it has to drain here and nowhere else.
+    /// </para>
+    /// <para>
+    /// The reload takes the weapon's own <c>Reload Time</c>; both of the AI's two reload routes reach
+    /// the same place, so they are not told apart here.
+    /// </para>
+    /// </remarks>
+    private void FireIfAsked(SoldierView view, AiSoldier brain, Vector3d enemy)
+    {
+        Member? member = FindMember(view);
+        if (member?.WeaponType is not { } weapon)
+        {
+            return;
+        }
+
+        if (member.FireCooldown > 0)
+        {
+            member.FireCooldown--;
+        }
+
+        if (member.ReloadTicks > 0 && --member.ReloadTicks == 0)
+        {
+            member.AmmoInClip = weapon.RoundsPerClip;
+        }
+
+        AiCombatCommand command = brain.Combat;
+
+        if ((command.PressReload || command.ReloadWeaponDirectly)
+            && member.ReloadTicks == 0
+            && member.AmmoInClip < weapon.RoundsPerClip)
+        {
+            member.ReloadTicks = Math.Max(1, (int)(weapon.ReloadTimeSeconds * 30f));
+            return;
+        }
+
+        if (!command.PullTrigger || member.FireCooldown > 0 || member.AmmoInClip <= 0 || member.ReloadTicks > 0)
+        {
+            return;
+        }
+
+        member.AmmoInClip--;
+        member.FireCooldown = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
+        RoundsFired++;
+
+        _onRound?.Invoke(brain.EyePosition(), enemy, brain.HitProbability, weapon);
+    }
+
+    private Member? FindMember(SoldierView view)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (ReferenceEquals(member.View, view))
+                {
+                    return member;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Gives every soldier the combat row its own <c>AIType</c> names.</summary>
     /// <remarks>
     /// A soldier with no <c>HumanAI</c>, or one naming a type the engine does not register, is left off
@@ -549,8 +624,19 @@ public sealed class SoldierRenderer : IDisposable
                     continue;
                 }
 
-                _combat[member.View] = config.Parameters(type, difficulty);
+                AiCombatParameters row = config.Parameters(type, difficulty);
+                _combat[member.View] = row;
                 bound++;
+
+                if (_brains.TryGetValue(member.View, out AiSoldier? brain))
+                {
+                    Member held = member;
+                    brain.SetCombat(type, row, () => new AiCombatWeaponState(
+                        held.AmmoInClip,
+                        held.WeaponType?.RoundsPerClip ?? 0,
+                        held.WeaponType?.MaximumRoundsPerBurst ?? 0,
+                        held.WeaponType?.Category ?? WeaponCategory.Knife));
+                }
             }
         }
 
@@ -648,6 +734,27 @@ public sealed class SoldierRenderer : IDisposable
         return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
     }
 
+    /// <summary>A round a soldier has just fired.</summary>
+    /// <param name="origin">Where it leaves, in world units — the soldier's eye.</param>
+    /// <param name="aim">Where it is aimed, in world units.</param>
+    /// <param name="hitProbability">
+    /// The chance the AI gave it of being on target — <c>Human+1236</c>, which the weapon reads with
+    /// every round.
+    /// </param>
+    /// <param name="weapon">What fired it.</param>
+    public delegate void SoldierRound(Vector3d origin, Vector3d aim, float hitProbability, WeaponType weapon);
+
+    /// <summary>Sets where a soldier's rounds go.</summary>
+    /// <param name="handler">The handler, or <see langword="null"/> to let rounds vanish.</param>
+    /// <remarks>
+    /// The soldier raises the trigger; this is where the round becomes a cast. Keeping the two apart is
+    /// the original's own split — the AI writes an input slot and the body's weapon path does the rest.
+    /// </remarks>
+    public void SetRoundHandler(SoldierRound? handler) => _onRound = handler;
+
+    /// <summary>Gets how many rounds the level's soldiers have fired.</summary>
+    public int RoundsFired { get; private set; }
+
     /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
     /// <remarks>
     /// <para>
@@ -663,6 +770,7 @@ public sealed class SoldierRenderer : IDisposable
     /// leaving the guards frozen for.
     /// </para>
     /// </remarks>
+    /// <param name="enemy">The enemy's eye position, which the view cones are tested against.</param>
     public void Tick(Vector3d enemy = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -705,6 +813,7 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             brain.Tick(_tick, enemy, travel);
+            FireIfAsked(view, brain, enemy);
 
             // A patrol ANIMATION command names a clip outright; otherwise the gait picks between the walk
             // cycle and the soldier's own stand animation.
@@ -1316,6 +1425,18 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>What this soldier holds, or <see langword="null"/> when the level armed it with nothing.</summary>
         public HeldWeapon? Weapon { get; set; }
+
+        /// <summary>The weapon's table row, which the AI reads its clip size and burst length from.</summary>
+        public WeaponType? WeaponType { get; set; }
+
+        /// <summary>How many rounds are in the clip. The AI watches this change to count its burst.</summary>
+        public int AmmoInClip { get; set; }
+
+        /// <summary>Ticks left before the weapon's cadence lets another round out.</summary>
+        public int FireCooldown { get; set; }
+
+        /// <summary>Ticks left of a reload.</summary>
+        public int ReloadTicks { get; set; }
     }
 
     /// <summary>
