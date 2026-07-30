@@ -11,12 +11,17 @@ namespace OpenIGI.Game.Player;
 /// </param>
 /// <param name="LocalForward">The reversed travel direction along the human's facing.</param>
 /// <param name="LocalSide">The same direction's sideways component.</param>
+/// <param name="Bone">
+/// The bone the round went through, or <c>-1</c> when the human was not posed and no bone could be
+/// named. It is what the zone was read from, so it is worth carrying.
+/// </param>
 public readonly record struct HumanHit(
     Vector3d Position,
     double Distance,
     int Zone,
     float LocalForward,
-    float LocalSide);
+    float LocalSide,
+    int Bone = -1);
 
 /// <summary>
 /// Casts a round at a human and works out which zone it struck.
@@ -30,12 +35,18 @@ public readonly record struct HumanHit(
 /// human collision.
 /// </para>
 /// <para>
-/// <b>Divergence, and a bounded one.</b> The original casts at the human's <i>mesh</i> and takes the
-/// zone from the <b>sub-object</b> the ray named (<see cref="HumanDamage.ZoneOfSubObject"/>), which is
-/// what gives it the twelve limb zones. Which sub-object of a skinned human mesh is which limb has not
-/// been read, so this tests the collision cylinder instead and lets the original's own refinement and
-/// proximity rules do the rest. The consequence is exact: <b>head shots and front/rear body shots score
-/// correctly, and a limb hit scores as a body hit</b> rather than at its own multiplier.
+/// <b>The zone comes from a bone.</b> <c>sub_489C60</c> reads an index off the hit record and maps it
+/// through <see cref="HumanDamage.ZoneOfBone"/>, and that index is a <b>bone index</b> — the bone the
+/// skinned vertex under the ray's triangle names. This resolves it by finding the <b>bone segment
+/// closest to the round's line</b> in the posed skeleton the soldier is already drawn with, which
+/// agrees with the original wherever the nearest bone is the one whose skin the round went through.
+/// </para>
+/// <para>
+/// <b>Divergence, and a bounded one.</b> The gate is still
+/// <see cref="HumanSeparation"/>'s upright collision cylinder rather than the mesh, so whether a round
+/// hits at all is decided by a capsule and only <i>where</i> it hit is decided by the rig. A human
+/// given no pose falls back to <see cref="HumanDamage.DefaultZone"/>, which is what the port did
+/// everywhere before this.
 /// </para>
 /// </remarks>
 public static class HumanHitTest
@@ -101,7 +112,10 @@ public static class HumanHitTest
         // components the refinement compares are measured in the human's own frame.
         float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
 
-        int zone = HumanDamage.RefineByDirection(HumanDamage.DefaultZone, localForward, localSide);
+        // The bone the round went through decides the zone; without a pose there is no bone to name and
+        // the trunk default stands, which is what the original does for an index past its table too.
+        int bone = pose is { } rig ? NearestBone(origin, direction, position, rig) : -1;
+        int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
 
         if (pose is { } posed && HumanDamage.ProximityBoneIndex < posed.BoneCount)
         {
@@ -115,8 +129,8 @@ public static class HumanHitTest
             // took several rounds to the head. Closest approach is the faithful quantity: it is what
             // "the round passed through the head" means, and it agrees with the mesh cast wherever the
             // mesh cast is the one that would have hit.
-            Vector3f bone = posed.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d boneWorld = new(position.X + bone.X, position.Y + bone.Y, position.Z + bone.Z);
+            Vector3f head = posed.Positions[HumanDamage.ProximityBoneIndex];
+            Vector3d boneWorld = new(position.X + head.X, position.Y + head.Y, position.Z + head.Z);
             double distance = DistanceToSegment(origin, direction, boneWorld);
 
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
@@ -125,8 +139,105 @@ public static class HumanHitTest
             }
         }
 
-        hit = new HumanHit(contact, t * length, zone, localForward, localSide);
+        hit = new HumanHit(contact, t * length, zone, localForward, localSide, bone);
         return true;
+    }
+
+    /// <summary>Finds the bone whose segment passes closest to a round's line.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="direction">Its travel, origin to end.</param>
+    /// <param name="position">The human's own position, which the pose is relative to.</param>
+    /// <param name="pose">The posed skeleton.</param>
+    /// <returns>The bone index, or <c>-1</c> when the skeleton has no bones to consider.</returns>
+    /// <remarks>
+    /// <para>
+    /// A bone's flesh lies between <b>itself and its children</b>, not between itself and its parent:
+    /// the skin over a thigh is weighted to the thigh bone at the hip, not to the knee below it. So each
+    /// bone is measured as the set of segments running out to its children, and a leaf is measured as a
+    /// point.
+    /// </para>
+    /// <para>
+    /// The <b>weapon chain</b> is skipped as a candidate — bones 20 to 22 run out in front of the chest
+    /// and carry no skin, so a round cannot go through them and letting one win would score a chest hit
+    /// as a limb. Its root is still reachable as a <i>child</i> segment of the spine, which is where the
+    /// six models that bind anything to it put their vertices.
+    /// </para>
+    /// </remarks>
+    public static int NearestBone(Vector3d origin, Vector3d direction, Vector3d position, BonePose pose)
+    {
+        ArgumentNullException.ThrowIfNull(pose);
+
+        int best = -1;
+        double bestDistance = double.PositiveInfinity;
+
+        for (int bone = 0; bone < pose.BoneCount; bone++)
+        {
+            if (HumanDamage.BodyPartOfBone(bone) < 0)
+            {
+                continue;
+            }
+
+            Vector3d a = World(position, pose.Positions[bone]);
+            double distance = double.PositiveInfinity;
+            bool leaf = true;
+
+            for (int child = bone + 1; child < pose.BoneCount; child++)
+            {
+                if (child >= pose.Parents.Count || pose.Parents[child] != bone)
+                {
+                    continue;
+                }
+
+                leaf = false;
+                double toChild = SegmentToSegment(origin, direction, a, World(position, pose.Positions[child]));
+                if (toChild < distance)
+                {
+                    distance = toChild;
+                }
+            }
+
+            if (leaf)
+            {
+                distance = DistanceToSegment(origin, direction, a);
+            }
+
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = bone;
+            }
+        }
+
+        return best;
+    }
+
+    private static Vector3d World(Vector3d position, Vector3f local) =>
+        new(position.X + local.X, position.Y + local.Y, position.Z + local.Z);
+
+    // The shortest distance between the round's segment and a bone's, both clamped to their own extent.
+    // Sampling the bone is enough for the accuracy this needs and avoids the degenerate cases a closed
+    // form has to special-case when the two segments are parallel or one of them has zero length.
+    private static double SegmentToSegment(Vector3d origin, Vector3d direction, Vector3d a, Vector3d b)
+    {
+        const int Samples = 8;
+
+        double best = double.PositiveInfinity;
+        for (int i = 0; i <= Samples; i++)
+        {
+            double s = (double)i / Samples;
+            Vector3d point = new(
+                a.X + ((b.X - a.X) * s),
+                a.Y + ((b.Y - a.Y) * s),
+                a.Z + ((b.Z - a.Z) * s));
+
+            double distance = DistanceToSegment(origin, direction, point);
+            if (distance < best)
+            {
+                best = distance;
+            }
+        }
+
+        return best;
     }
 
     // The shortest distance from a point to the segment origin..origin+direction, clamped to the segment

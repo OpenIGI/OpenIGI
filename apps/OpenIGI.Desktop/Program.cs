@@ -177,12 +177,18 @@ using (window)
     // brain cannot be found, so no soldier gets its own MISSION:AI/<taskid> script, so nothing ever names a
     // patrol path and every guard falls back to the archetype and stands still.
     AiTaskTypes.RegisterAll(loop.Types);
+
+    // Every soldier's combat numbers - 29 AI types x 3 difficulties out of common/ai/settings.qsc.
+    // Loaded before any level, as sub_406DF0 is: the table has to exist before a HumanAI is configured.
+    HumanAiConfigRegistry.RegisterTypes(loop.Types);
+    HumanAiConfigRegistry aiConfig = new(logger);
     magic.Register(loop.Natives);
 
     try
     {
         missions.Scan(fileSystem, resources, loop.Natives);
         magic.Load(resources, loop.Natives);
+        aiConfig.Load(resources, loop.Natives, loop.Tasks);
         configHost.Missions = missions;
     }
     catch (EngineFatalException ex)
@@ -304,7 +310,8 @@ using (window)
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
-                soldiers.Animate(graphs, solids.Caster(), resources, loop.Natives, levelRoot);
+                soldiers.Animate(
+                    graphs, solids.Caster(), resources, loop.Natives, levelRoot, aiConfig, options.Difficulty);
             }
             else
             {

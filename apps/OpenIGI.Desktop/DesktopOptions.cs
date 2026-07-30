@@ -1,3 +1,4 @@
+using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 
 namespace OpenIGI.Desktop;
@@ -57,6 +58,7 @@ public readonly record struct DesktopOptions(
         ArgumentNullException.ThrowIfNull(args);
 
         string? gamePath = Environment.GetEnvironmentVariable(GamePathVariable);
+        AiDifficulty difficulty = AiDifficulty.Normal;
 
         // Null until a mode flag is seen, so -size can imply windowed without overriding an explicit
         // -borderless that came before or after it.
@@ -125,6 +127,18 @@ public readonly record struct DesktopOptions(
                 {
                     throw new ArgumentException($"-mission expects a mission id, got '{value}'.", nameof(args));
                 }
+            }
+            else if (arg.Equals("difficulty", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "difficulty");
+                difficulty = value.ToLowerInvariant() switch
+                {
+                    "easy" or "gd_1" or "1" => AiDifficulty.Easy,
+                    "normal" or "gd_2" or "2" => AiDifficulty.Normal,
+                    "hard" or "gd_3" or "3" => AiDifficulty.Hard,
+                    _ => throw new ArgumentException(
+                        $"-difficulty expects easy, normal or hard, got '{value}'.", nameof(args)),
+                };
             }
             else if (arg.Equals("uiscale", StringComparison.OrdinalIgnoreCase))
             {
@@ -253,11 +267,19 @@ public readonly record struct DesktopOptions(
             uiScale)
         {
             CameraPosition = cameraPosition,
+            Difficulty = difficulty,
         };
     }
 
     /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
     public (double X, double Y, double Z)? CameraPosition { get; init; }
+
+    /// <summary>Gets the game difficulty every soldier reads its combat row at.</summary>
+    /// <remarks>
+    /// The original takes it from the active player profile; this shell has no profiles yet, so it is a
+    /// command-line option defaulting to <see cref="AiDifficulty.Normal"/> — the script's <c>GD_2</c>.
+    /// </remarks>
+    public AiDifficulty Difficulty { get; init; }
 
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
@@ -287,6 +309,8 @@ public readonly record struct DesktopOptions(
           -screen <id>     Open on this menu screen instead of the one the script names.
                            mainmenu.qvm has 900 and 904-916.
           -campos X,Y,Z    Open the fly-through camera at this world position in metres.
+          -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
+                           every soldier reads its combat numbers from. Default normal.
         """;
 
     private static float ParseNumber(string value, string option, string[] args) =>

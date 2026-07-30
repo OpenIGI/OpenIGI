@@ -52,6 +52,11 @@ public sealed class SoldierRenderer : IDisposable
     private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
 
+    // Each soldier's combat row, resolved from its own AIType at the difficulty in force. It is what
+    // gives a guard its maximum health -- sub_406F70 writes the row's "Damage scale" over Human+600,
+    // so a guard is worth 0.3 of a person on easy and 0.8 on hard, not the constructor's 1.0.
+    private readonly Dictionary<SoldierView, AiCombatParameters> _combat = [];
+
     // A dead soldier cannot stay in a shared group: the group is skinned from ONE representative's pose, so
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
@@ -213,6 +218,11 @@ public sealed class SoldierRenderer : IDisposable
     /// The level's task tree, which the authored patrol paths are collected from. Without it a soldier has
     /// no path to walk and stands where the level put it.
     /// </param>
+    /// <param name="config">
+    /// The combat table out of <c>common/ai/settings.qsc</c>, or <see langword="null"/> to leave every
+    /// soldier on the constructor's defaults.
+    /// </param>
+    /// <param name="difficulty">Which of the table's three columns to read.</param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
@@ -223,12 +233,17 @@ public sealed class SoldierRenderer : IDisposable
         WorldRayCast? sight = null,
         ResourceRegistry? scripts = null,
         NativeRegistry? natives = null,
-        GameTask? levelRoot = null)
+        GameTask? levelRoot = null,
+        HumanAiConfigRegistry? config = null,
+        AiDifficulty difficulty = AiDifficulty.Normal)
     {
         ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _brains.Clear();
+        _combat.Clear();
+        _health.Clear();
+        BindCombatRows(config, difficulty);
         if (graphs.Count == 0)
         {
             _logger.Warning(LogCategory, "The level ships no nav graph, so no soldier can patrol.");
@@ -509,6 +524,39 @@ public sealed class SoldierRenderer : IDisposable
                 $"({mean * 30.0 / WorldScene.UnitsPerMetre:F2} m/s), max {_travelMax:F1} u/tick. " +
                 $"Retail measures 160-185 u/tick (about 1.28 m/s).");
         }
+    }
+
+    /// <summary>Gives every soldier the combat row its own <c>AIType</c> names.</summary>
+    /// <remarks>
+    /// A soldier with no <c>HumanAI</c>, or one naming a type the engine does not register, is left off
+    /// the table: the original never configures such a body either, so its maximum health stays the 1.0
+    /// its constructor set.
+    /// </remarks>
+    private void BindCombatRows(HumanAiConfigRegistry? config, AiDifficulty difficulty)
+    {
+        if (config is null)
+        {
+            return;
+        }
+
+        int bound = 0;
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (FindMind(member.View)?.ResolvedType is not { } type)
+                {
+                    continue;
+                }
+
+                _combat[member.View] = config.Parameters(type, difficulty);
+                bound++;
+            }
+        }
+
+        _logger.Information(
+            LogCategory,
+            $"AI: {bound} soldier(s) configured at {HumanAiConfigRegistry.NameOf(difficulty)} ({difficulty}).");
     }
 
     /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
@@ -922,7 +970,11 @@ public sealed class SoldierRenderer : IDisposable
                 SoldierView soldier = member.View;
                 if (!_health.TryGetValue(soldier, out HumanHealth? health))
                 {
-                    health = new HumanHealth(HumanHitZoneTable.Soldier);
+                    float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
+                        ? row.MaximumHealth
+                        : HumanHitZoneTable.MaximumHealth;
+
+                    health = new HumanHealth(HumanHitZoneTable.Soldier, maximum);
                     _health[soldier] = health;
                 }
 

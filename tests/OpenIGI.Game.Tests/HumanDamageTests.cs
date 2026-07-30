@@ -66,12 +66,12 @@ public sealed class HumanDamageTests
     }
 
     [Fact]
-    public void TheSubObjectTableCoversThirtyEntriesAndSeventeenZones()
+    public void TheBodyPartTableCoversThirtyEntriesAndSeventeenZones()
     {
         HashSet<int> zones = [];
-        for (int i = 0; i < HumanDamage.MappedSubObjectCount; i++)
+        for (int i = 0; i < HumanDamage.MappedBodyPartCount; i++)
         {
-            zones.Add(HumanDamage.ZoneOfSubObject(i));
+            zones.Add(HumanDamage.ZoneOfBodyPart(i));
         }
 
         // Fourteen zones are reachable from the table; 13, 14 and 15 only ever come from refining 12.
@@ -100,12 +100,12 @@ public sealed class HumanDamageTests
     [Fact]
     public void AnythingPastTheTableTakesTheDefaultZone()
     {
-        Assert.Equal(HumanDamage.DefaultZone, HumanDamage.ZoneOfSubObject(30));
-        Assert.Equal(HumanDamage.DefaultZone, HumanDamage.ZoneOfSubObject(1000));
+        Assert.Equal(HumanDamage.DefaultZone, HumanDamage.ZoneOfBodyPart(30));
+        Assert.Equal(HumanDamage.DefaultZone, HumanDamage.ZoneOfBodyPart(1000));
 
         // The original's bound is a plain "< 30" with no lower check, so a negative index would read
         // behind the table. This returns the default rather than reproducing that.
-        Assert.Equal(HumanDamage.DefaultZone, HumanDamage.ZoneOfSubObject(-1));
+        Assert.Equal(HumanDamage.DefaultZone, HumanDamage.ZoneOfBodyPart(-1));
     }
 
     [Fact]
@@ -180,7 +180,7 @@ public sealed class HumanDamageTests
         int[] result = new int[count];
         for (int i = 0; i < count; i++)
         {
-            result[i] = HumanDamage.ZoneOfSubObject(start + i);
+            result[i] = HumanDamage.ZoneOfBodyPart(start + i);
         }
 
         return result;

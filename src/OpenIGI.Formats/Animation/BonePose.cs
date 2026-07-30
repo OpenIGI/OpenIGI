@@ -16,11 +16,13 @@ public sealed class BonePose
 {
     private readonly Matrix3f[] _rotations;
     private readonly Vector3f[] _positions;
+    private readonly int[] _parents;
 
-    private BonePose(Matrix3f[] rotations, Vector3f[] positions)
+    private BonePose(Matrix3f[] rotations, Vector3f[] positions, int[] parents)
     {
         _rotations = rotations;
         _positions = positions;
+        _parents = parents;
     }
 
     /// <summary>Gets each bone's world rotation.</summary>
@@ -28,6 +30,13 @@ public sealed class BonePose
 
     /// <summary>Gets each bone's world position, in engine units.</summary>
     public IReadOnlyList<Vector3f> Positions => _positions;
+
+    /// <summary>Gets each bone's parent, or <see cref="BoneSkeleton.NoParent"/> for the root.</summary>
+    /// <remarks>
+    /// Carried through from the skeleton so a consumer can treat the pose as a set of <b>segments</b>
+    /// rather than a cloud of points — which is what anything measuring a distance to a limb needs.
+    /// </remarks>
+    public IReadOnlyList<int> Parents => _parents;
 
     /// <summary>Gets the number of bones.</summary>
     public int BoneCount => _rotations.Length;
@@ -91,7 +100,7 @@ public sealed class BonePose
             rotations[bone] = parentRotation * ToMatrix(localRotations[bone]);
         }
 
-        return new BonePose(rotations, positions);
+        return new BonePose(rotations, positions, [.. skeleton.Parents]);
     }
 
     /// <summary>Converts an orientation to the 3×3 the palette stores.</summary>

@@ -24,25 +24,35 @@ public sealed class HumanHealth
     /// <see cref="HumanHitZoneTable.Soldier"/>. They are byte-for-byte identical in the retail data,
     /// but which one applies is a property of the human, so it is asked for rather than assumed.
     /// </param>
+    /// <param name="maximumHealth">
+    /// How much damage kills. Defaults to <see cref="HumanHitZoneTable.MaximumHealth"/>, which is what
+    /// <c>0x489C30</c> gives every class — but a soldier with a brain has it <b>overwritten</b> by its
+    /// settings row's "Damage scale" when <c>sub_406F70</c> configures the AI, so a guard is worth 0.3
+    /// on easy and 0.8 on hard.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="zones"/> is <see langword="null"/>.</exception>
-    public HumanHealth(IReadOnlyList<HumanHitZone> zones)
+    public HumanHealth(IReadOnlyList<HumanHitZone> zones, float maximumHealth = HumanHitZoneTable.MaximumHealth)
     {
         ArgumentNullException.ThrowIfNull(zones);
         Zones = zones;
+        MaximumHealth = maximumHealth;
     }
 
     /// <summary>Gets the table this human's zones are read from.</summary>
     public IReadOnlyList<HumanHitZone> Zones { get; }
 
+    /// <summary>Gets how much damage kills this human — <c>Human+600</c>.</summary>
+    public float MaximumHealth { get; }
+
     /// <summary>Gets how much damage has been taken, out of a whole person.</summary>
     public float Damage { get; private set; }
 
     /// <summary>Gets whether this human is dead.</summary>
-    public bool IsDead => HumanDamage.IsDead(Damage, HumanHitZoneTable.MaximumHealth);
+    public bool IsDead => HumanDamage.IsDead(Damage, MaximumHealth);
 
     /// <summary>Gets how much of the human is left, from one down to zero.</summary>
     public float RemainingFraction =>
-        HumanDamage.RemainingFraction(Damage, HumanHitZoneTable.MaximumHealth);
+        HumanDamage.RemainingFraction(Damage, MaximumHealth);
 
     /// <summary>Gets how many hits have landed, for diagnostics.</summary>
     public int Hits { get; private set; }

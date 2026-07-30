@@ -57,42 +57,91 @@ public static class HumanDamage
     /// <remarks><c>614.4</c> world units — 15 centimetres.</remarks>
     public const float HeadProximityUnits = 614.4f;
 
-    /// <summary>The bone the proximity test measures from.</summary>
+    /// <summary>The bone the proximity test measures from — the head.</summary>
+    /// <remarks>
+    /// The original names it as bone 4 of model <c>000_01_1</c>, and <see cref="ZoneOfBone"/> puts bone
+    /// 4 at the head of the four-bone chain that maps to <see cref="NeckZone"/>. The two readings agree.
+    /// </remarks>
     public const int ProximityBoneIndex = 4;
 
-    /// <summary>How many sub-objects the mapping table covers.</summary>
-    public const int MappedSubObjectCount = 30;
+    /// <summary>The zone the head-and-neck chain maps to before the proximity test refines it.</summary>
+    /// <remarks>Carries the same lethal multiplier as <see cref="ProximityZone"/> on a soldier's table.</remarks>
+    public const int NeckZone = 16;
+
+    /// <summary>How many body parts the mapping table covers.</summary>
+    public const int MappedBodyPartCount = 30;
+
+    /// <summary>The first bone of the three-bone weapon chain, which is not a body part.</summary>
+    /// <remarks>
+    /// Bones 20, 21 and 22 hang off spine bone 1 and run more than a metre <i>forward</i> of the chest;
+    /// bone 22 is where a held weapon attaches (<see cref="HumanAttachPoints.ThirdPersonWeapon"/>). No
+    /// skinned human body references any of the three, so they carry no geometry to be shot.
+    /// </remarks>
+    public const int WeaponChainFirstBone = 20;
+
+    /// <summary>How many bones the weapon chain has.</summary>
+    public const int WeaponChainBoneCount = 3;
 
     /// <summary>
-    /// Which zone each of a human's sub-objects belongs to, as the table at <c>0x5412A4</c> holds it.
+    /// Which zone each of a human's body parts belongs to, as the table at <c>0x5412A4</c> holds it.
     /// </summary>
     /// <remarks>
-    /// The structure is four limb chains of three zones each — <c>{11, 10, 9}</c>, <c>{5, 4, 3}</c>,
-    /// <c>{8, 7, 6}</c> and <c>{2, 1, 0}</c> — plus the torso default 12 and a further region 16.
+    /// <para>
+    /// Group sizes <b>4, 4, 6, 6, 5, 5</b>, which is exactly how the 33-bone human rig divides into
+    /// pelvis-and-spine, neck-and-head, two arms and two legs <i>once the three-bone weapon chain is
+    /// taken out</i> — and 33 − 3 = 30, the table's own length and the bound the original tests.
+    /// </para>
+    /// <para>
     /// Zones 13, 14 and 15 appear nowhere here because they are only ever reached by refining 12.
+    /// </para>
     /// </remarks>
-    private static readonly int[] ZoneBySubObject =
+    private static readonly int[] ZoneByBodyPart =
     [
         12, 12, 12, 12, 16, 16, 16, 16, 11, 10,
         9, 9, 9, 9, 5, 4, 3, 3, 3, 3,
         8, 7, 6, 6, 6, 2, 1, 0, 0, 0,
     ];
 
-    /// <summary>Maps a struck sub-object to its hit zone.</summary>
-    /// <param name="subObjectIndex">The index the ray reported.</param>
+    /// <summary>Maps a struck body part to its hit zone.</summary>
+    /// <param name="bodyPart">The part index the hit record named.</param>
     /// <returns>The zone, which is <see cref="DefaultZone"/> for anything past the table.</returns>
     /// <remarks>
     /// The bound is a plain <c>&lt; 30</c> with no lower check, matching the original — a negative index
     /// would read behind the table there, so this returns the default instead rather than reproducing
     /// an out-of-bounds read.
     /// </remarks>
-    public static int ZoneOfSubObject(int subObjectIndex) =>
-        subObjectIndex >= 0 && subObjectIndex < MappedSubObjectCount
-            ? ZoneBySubObject[subObjectIndex]
+    public static int ZoneOfBodyPart(int bodyPart) =>
+        bodyPart >= 0 && bodyPart < MappedBodyPartCount
+            ? ZoneByBodyPart[bodyPart]
             : DefaultZone;
 
+    /// <summary>Turns a rig bone index into the body-part index the zone table is keyed by.</summary>
+    /// <param name="bone">The bone, in the 33-bone human rig's own numbering.</param>
+    /// <returns>The body part, or <c>-1</c> for a bone of the weapon chain.</returns>
+    /// <remarks>
+    /// Bones below the weapon chain keep their number and bones above it drop by three. This is the
+    /// compaction §26 argues for: it is what makes the two legs symmetric, and no other reading of the
+    /// table is coherent.
+    /// </remarks>
+    public static int BodyPartOfBone(int bone)
+    {
+        if (bone < WeaponChainFirstBone)
+        {
+            return bone;
+        }
+
+        return bone < WeaponChainFirstBone + WeaponChainBoneCount
+            ? -1
+            : bone - WeaponChainBoneCount;
+    }
+
+    /// <summary>Maps a struck rig bone straight to its hit zone.</summary>
+    /// <param name="bone">The bone, in the 33-bone human rig's own numbering.</param>
+    /// <returns>The zone.</returns>
+    public static int ZoneOfBone(int bone) => ZoneOfBodyPart(BodyPartOfBone(bone));
+
     /// <summary>Refines a default-zone hit by which way the round came in.</summary>
-    /// <param name="zone">The zone from <see cref="ZoneOfSubObject"/>.</param>
+    /// <param name="zone">The zone from <see cref="ZoneOfBone"/>.</param>
     /// <param name="localForward">
     /// The reversed travel direction's component along the human's facing, in its own frame.
     /// </param>
