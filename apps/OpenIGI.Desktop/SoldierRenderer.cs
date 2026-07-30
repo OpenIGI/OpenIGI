@@ -545,15 +545,17 @@ public sealed class SoldierRenderer : IDisposable
     /// themselves on the ground, got up and did it again for ever.
     /// </para>
     /// <para>
-    /// What the original layers on top is an <b>upper-body weapon action</b> through the machine at
-    /// <c>Human+3416</c>/<c>+3420</c> (<c>weapons.md</c> §7), which the port has read for the player and
-    /// not joined to a soldier — so a fighting guard here stands in its own stand clip and does not yet
-    /// shoulder its weapon. Recorded in <c>TODO.md</c>; not guessed at again.
+    /// The three states here were <b>measured in a live retail mission</b>: a guard's body sits in state
+    /// 6 while its burst counter drains, state 12 the moment that counter reaches zero, and state 0 when
+    /// its target is out of sight. Through the table those read as animations 56, 55 and 2. What
+    /// performs the transition is the soldier's own state machine reacting to the input slots the AI
+    /// writes, which the port does not run — so this reproduces the correlation and says so.
     /// </para>
     /// </remarks>
     private static int CombatState(AiSoldier brain) => brain.CombatPhase switch
     {
-        // Every stance a guard has is in AiCombatChannels; the behaviour only ever asks for standing.
+        AiCombatPhase.Reload => HumanSoldierStates.ReloadState,
+        AiCombatPhase.Fire when brain.RoundsLeftInBurst > 0 => HumanSoldierStates.FiringState,
         _ => AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Standing),
     };
 

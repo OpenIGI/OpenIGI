@@ -29,9 +29,33 @@ public static class HumanSoldierStates
     /// <summary>The animation id that means "this state names its own clip".</summary>
     public const int SelfDriven = 0;
 
-    /// <summary>The blend time every state entry passes, in seconds.</summary>
-    /// <remarks>The literal third argument of <c>0x489E70</c>, shared by all thirty-eight.</remarks>
-    public const float BlendSeconds = 0.15f;
+    /// <summary>The blend time a soldier's state entry passes, in seconds.</summary>
+    /// <remarks>
+    /// <b>Zero, measured.</b> Forty-four state lookups against this table in a live retail mission all
+    /// passed <c>0.000</c>; the player's table <c>0x538870</c> is looked up with <c>0.200</c> and
+    /// sometimes <c>0.000</c>. <c>player.md</c> §16 records <c>0.15f</c> for the player, read statically
+    /// — whatever that literal is, it is not what reaches this argument, and a soldier blends nothing.
+    /// </remarks>
+    public const float BlendSeconds = 0f;
+
+    /// <summary>The state a fighting soldier's body is in while a burst is live.</summary>
+    /// <remarks>
+    /// <b>Measured, not read.</b> Over two guards and twenty-three sampled combat ticks in a live
+    /// mission, the body sat in state 6 on every tick where the burst counter was draining, in
+    /// <see cref="ReloadState"/> on every tick where it had reached zero, and in state 0 whenever the
+    /// target was not visible. What performs the transition is the soldier's own state machine reacting
+    /// to the input slots the AI writes (20 and 27), which the port does not run — so the correlation is
+    /// what is reproduced, and it is a correlation rather than a reading.
+    /// </remarks>
+    public const int FiringState = 6;
+
+    /// <summary>The state a soldier's body is in while it reloads.</summary>
+    /// <remarks>See <see cref="FiringState"/>: measured the same way, on the ticks where the burst
+    /// counter had reached zero.</remarks>
+    public const int ReloadState = 12;
+
+    /// <summary>The state a soldier stands in.</summary>
+    public const int StandState = 0;
 
     // {animation, mode} per state, transcribed from 0x53ED10 -- 38 pairs, 304 bytes.
     private static readonly (int Animation, int Mode)[] Table =
