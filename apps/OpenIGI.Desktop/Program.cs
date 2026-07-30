@@ -259,32 +259,45 @@ using (window)
             loaded.Terrain is { IsUsable: true } standing ? standing : null,
             solids.Caster());
 
-        // The level's nav graph. A level ships one file per Graph task, most of them stubs with a single
-        // node, so the one with the most nodes is its walkable graph (ai.md 1.1 -- the number in the name
-        // is a task id, not a rank). Give it to the soldiers so they patrol it.
+        // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
+        // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
+        //
+        // Level 1 ships eleven of them. Picking a single graph -- the one with the most nodes -- and giving
+        // it to every soldier routed each one over node ids belonging to a graph that was not its own,
+        // which is why guards walked to places no patrol goes and off the edge of the level.
         try
         {
             string graphDirectory = Path.Combine(
                 gamePath, loaded.Descriptor.MissionDirectory, "graphs");
-            GraphFile? best = null;
+            Dictionary<int, GraphFile> graphs = [];
             if (Directory.Exists(graphDirectory))
             {
                 foreach (string file in Directory.GetFiles(graphDirectory, "graph*.dat"))
                 {
-                    GraphFile candidate = GraphFile.Read(File.ReadAllBytes(file));
-                    if (best is null || candidate.Nodes.Count > best.Nodes.Count)
+                    string stem = Path.GetFileNameWithoutExtension(file);
+                    if (!int.TryParse(stem.AsSpan("graph".Length), out int graphId))
                     {
-                        best = candidate;
+                        continue;
+                    }
+
+                    try
+                    {
+                        graphs[graphId] = GraphFile.Read(File.ReadAllBytes(file));
+                    }
+                    catch (GraphFormatException ex)
+                    {
+                        logger.Warning("Ai", $"Nav graph '{stem}' did not parse: {ex.Message}");
                     }
                 }
             }
 
-            if (best is not null)
+            if (graphs.Count > 0)
             {
                 logger.Information(
                     "Ai",
-                    $"Nav graph: {best.Nodes.Count} node(s), {best.Links.Count} link(s) over {best.MaxNodes} slots.");
-                soldiers.Animate(best, solids.Caster(), resources, loop.Natives, levelRoot);
+                    $"Nav graphs: {graphs.Count} — " +
+                    string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+                soldiers.Animate(graphs, solids.Caster(), resources, loop.Natives, levelRoot);
             }
             else
             {

@@ -53,7 +53,6 @@ public sealed class SoldierRenderer : IDisposable
     // A dead soldier cannot stay in a shared group: the group is skinned from ONE representative's pose, so
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
-    private readonly List<Group> _dead = [];
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
     private int _deathsSoFar;
     private int _walkAnimation = -1;
@@ -127,7 +126,18 @@ public sealed class SoldierRenderer : IDisposable
                 _groups.Add(group);
             }
 
-            group.Soldiers.Add((view, Stand(soldier, group, terrain, cast)));
+            // Its own mesh, so it can hold its own pose (see Member).
+            MeshHandle own;
+            try
+            {
+                own = _device.CreateMesh(group.Geometry.Vertices, group.Geometry.Indices);
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            group.Soldiers.Add(new Member(view, Stand(soldier, group, terrain, cast), own));
             Count++;
         }
 
@@ -185,7 +195,11 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     /// <summary>Gives every soldier an AI that patrols the level's nav graph and reacts to the player.</summary>
-    /// <param name="graph">The graph to patrol. Nothing is attached when it holds fewer than two nodes.</param>
+    /// <param name="graphs">
+    /// The level's nav graphs, keyed by the id of the <c>AIGraph</c> task that loads each. A soldier is
+    /// bound to the one its own <c>HumanAI</c>'s <c>Graph ID</c> names; one that names a graph the level
+    /// does not ship gets no brain rather than being routed over somebody else's node ids.
+    /// </param>
     /// <param name="sight">The world cast used for line of sight, or <see langword="null"/> to see through walls.</param>
     /// <param name="scripts">Where the archetype behaviour script is read from, or <see langword="null"/> for none.</param>
     /// <param name="natives">The registry the behaviour script resolves its AI natives against.</param>
@@ -199,19 +213,19 @@ public sealed class SoldierRenderer : IDisposable
     /// across the four ticks the original spreads them over (<c>ai.md</c> §5.1).
     /// </remarks>
     public int Animate(
-        GraphFile graph,
+        IReadOnlyDictionary<int, GraphFile> graphs,
         WorldRayCast? sight = null,
         ResourceRegistry? scripts = null,
         NativeRegistry? natives = null,
         GameTask? levelRoot = null)
     {
-        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _brains.Clear();
-        if (graph.RouteTable is null || graph.Nodes.Count < 2)
+        if (graphs.Count == 0)
         {
-            _logger.Warning(LogCategory, "The nav graph has no route table, so no soldier can patrol.");
+            _logger.Warning(LogCategory, "The level ships no nav graph, so no soldier can patrol.");
             return 0;
         }
 
@@ -233,12 +247,31 @@ public sealed class SoldierRenderer : IDisposable
         int index = 0;
         int patrolling = 0;
         int perTask = 0;
+        int unroutable = 0;
+        Dictionary<int, int> graphUse = [];
         foreach (Group group in _groups)
         {
-            foreach ((SoldierView view, Vector3d _) in group.Soldiers)
+            foreach (Member member in group.Soldiers)
             {
+                SoldierView view = member.View;
+
+                // Each soldier walks the graph ITS OWN HumanAI names, not the level's biggest one.
+                HumanAiTask? brainTask = FindMind(view);
+                int graphId = brainTask?.GraphId ?? 0;
+                if (!graphs.TryGetValue(graphId, out GraphFile? graph) || graph.RouteTable is null)
+                {
+                    if (brainTask is not null)
+                    {
+                        unroutable++;
+                    }
+
+                    index++;
+                    continue;
+                }
+
                 AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index);
                 brain.SetPatrolPaths(paths);
+                graphUse[graphId] = graphUse.GetValueOrDefault(graphId) + 1;
                 if (sight is not null)
                 {
                     // 0x489B20: the target is seen when the cast is clear, OR when whatever blocked it sits at
@@ -259,7 +292,7 @@ public sealed class SoldierRenderer : IDisposable
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
                 // otherwise the archetype its AIType selects (ai.md 7.5a and 2.3). The per-task script is
                 // what names the soldier's patrol path, so without it a guard has nothing to patrol.
-                HumanAiTask? mind = FindMind(view);
+                HumanAiTask? mind = brainTask;
                 if (host is not null && scripts is not null)
                 {
                     QvmProgram? script = null;
@@ -291,6 +324,11 @@ public sealed class SoldierRenderer : IDisposable
             LogCategory,
             $"{_brains.Count} soldier(s) with brains ({patrolling} scripted, {perTask} from their own " +
             $"MISSION:AI script), walk animation {_walkAnimation}.");
+        _logger.Information(
+            LogCategory,
+            $"Soldiers per nav graph: " +
+            string.Join(", ", graphUse.OrderBy(p => p.Key).Select(p => $"graph{p.Key}:{p.Value}")) +
+            (unroutable > 0 ? $"; {unroutable} soldier(s) name a graph the level does not ship" : string.Empty));
         return _brains.Count;
     }
 
@@ -466,46 +504,56 @@ public sealed class SoldierRenderer : IDisposable
             view.PlaceAt(brain.Position, brain.Orientation);
         }
 
-        foreach (Group group in Enumerable.Concat(_groups, _dead))
+        // Each soldier is skinned from ITS OWN rig, which is what the original does (0x49F700 is called
+        // through a stack descriptor about once per soldier per frame). Sharing one skinned mesh per group
+        // made every soldier wear the first one's pose, so once guards diverged onto real patrol paths
+        // nothing appeared to animate at all.
+        foreach (Group group in _groups)
         {
-            if (group.Soldiers.Count == 0 || group.Model is null)
+            if (group.Model is null)
             {
                 continue;
             }
 
-            SoldierView representative = group.Soldiers[0].View;
-            if (!_brains.ContainsKey(representative))
+            foreach (Member member in group.Soldiers)
             {
-                // Un-brained soldiers still need their own rig advanced.
-                representative.Tick();
-            }
+                if (!_brains.ContainsKey(member.View))
+                {
+                    // Un-brained soldiers still need their own rig advanced.
+                    member.View.Tick();
+                }
 
-            Vertex3D[] skinned = [.. group.Geometry.Vertices];
-            try
-            {
-                MefSkinner.Skin(
-                    group.Model,
-                    representative.UnrotatedPose(),
-                    (float)(1.0 / WorldScene.UnitsPerMetre),
-                    skinned);
-            }
-            catch (ArgumentException)
-            {
-                continue;
-            }
+                Vertex3D[] skinned = [.. group.Geometry.Vertices];
+                try
+                {
+                    MefSkinner.Skin(
+                        group.Model,
+                        member.View.UnrotatedPose(),
+                        (float)(1.0 / WorldScene.UnitsPerMetre),
+                        skinned);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
 
-            MeshHandle replacement;
-            try
-            {
-                replacement = _device.CreateMesh(skinned, group.Geometry.Indices);
-            }
-            catch (InvalidOperationException)
-            {
-                continue;
-            }
+                MeshHandle replacement;
+                try
+                {
+                    replacement = _device.CreateMesh(skinned, group.Geometry.Indices);
+                }
+                catch (InvalidOperationException)
+                {
+                    continue;
+                }
 
-            _device.DestroyMesh(group.Mesh);
-            group.Mesh = replacement;
+                if (member.Mesh.IsValid)
+                {
+                    _device.DestroyMesh(member.Mesh);
+                }
+
+                member.Mesh = replacement;
+            }
         }
     }
 
@@ -525,20 +573,23 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        foreach (Group group in Enumerable.Concat(_groups, _dead))
+        foreach (Group group in _groups)
         {
-            foreach ((SoldierView soldier, Vector3d metres) in group.Soldiers)
+            foreach (Member member in group.Soldiers)
             {
+                SoldierView soldier = member.View;
+                Vector3d metres = member.Position;
+
                 // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
-                // vanishing was only ever the port having no death animation to play. SoldierView.Kill
-                // starts the id the hit-zone table names and the clip holds its last frame.
-                //
-                // KNOWN GAP: the group shares one skinned mesh, so a dead soldier is still posed by the
-                // group's stand animation until per-soldier skinning lands. It stays upright rather than
-                // falling. Recorded in TODO.md.
+                // vanishing was only ever the port having no death animation to play. Each soldier now
+                // carries its own skinned mesh, so a corpse is posed by its own death clip.
 
                 // A soldier with a brain is drawn where its AI put it; one without keeps the stood position
                 // the level authored, converted once at load.
+                //
+                // The height still comes from the authored stand position rather than from the AI: the
+                // original runs the player's own ground query for a soldier, which this port has not wired
+                // up, so following the AI's Z would drop guards through the terrain. Recorded in TODO.md.
                 Vector3d where = _brains.ContainsKey(soldier)
                     ? new Vector3d(
                         soldier.Position.X / WorldScene.UnitsPerMetre,
@@ -565,7 +616,7 @@ public sealed class SoldierRenderer : IDisposable
                     }
 
                     _device.DrawMesh(
-                        group.Mesh,
+                        member.Mesh,
                         subset.IndexOffset,
                         subset.IndexCount,
                         modelView,
@@ -597,8 +648,9 @@ public sealed class SoldierRenderer : IDisposable
 
         foreach (Group group in _groups)
         {
-            foreach ((SoldierView soldier, Vector3d _) in group.Soldiers)
+            foreach (Member member in group.Soldiers)
             {
+                SoldierView soldier = member.View;
                 if (!_health.TryGetValue(soldier, out HumanHealth? health))
                 {
                     health = new HumanHealth(HumanHitZoneTable.Soldier);
@@ -645,54 +697,9 @@ public sealed class SoldierRenderer : IDisposable
         {
             int which = _deathsSoFar++ % SoldierView.DeathAnimations.Count;
             struckView.Kill(SoldierView.DeathAnimations[which]);
-            Detach(struckView);
         }
 
         return true;
-    }
-
-    /// <summary>Moves a soldier out of its shared group into one of its own, so it can pose independently.</summary>
-    /// <remarks>
-    /// Its own mesh is uploaded from its own rig, which is what makes a death animation visible. Without this
-    /// a killed guard stays standing in the group's idle pose — which reads exactly like the shot never
-    /// registered, and is worse than the old behaviour of vanishing.
-    /// </remarks>
-    private void Detach(SoldierView view)
-    {
-        foreach (Group group in _groups)
-        {
-            int index = group.Soldiers.FindIndex(s => ReferenceEquals(s.View, view));
-            if (index < 0)
-            {
-                continue;
-            }
-
-            (SoldierView View, Vector3d Position) entry = group.Soldiers[index];
-            group.Soldiers.RemoveAt(index);
-
-            if (group.Model is null)
-            {
-                return;
-            }
-
-            MeshHandle mesh;
-            try
-            {
-                mesh = _device.CreateMesh(group.Geometry.Vertices, group.Geometry.Indices);
-            }
-            catch (InvalidOperationException)
-            {
-                return;
-            }
-
-            Group solo = new(group.Geometry, mesh, group.Instance, group.Pack, group.LowestVertexZ)
-            {
-                Model = group.Model,
-            };
-            solo.Soldiers.Add(entry);
-            _dead.Add(solo);
-            return;
-        }
     }
 
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>
@@ -829,16 +836,24 @@ public sealed class SoldierRenderer : IDisposable
 
     private void Release()
     {
-        foreach (Group group in Enumerable.Concat(_groups, _dead))
+        foreach (Group group in _groups)
         {
             if (group.Mesh.IsValid)
             {
                 _device.DestroyMesh(group.Mesh);
             }
+
+            // Each soldier owns a mesh of its own now, and every one of them has to go back.
+            foreach (Member member in group.Soldiers)
+            {
+                if (member.Mesh.IsValid)
+                {
+                    _device.DestroyMesh(member.Mesh);
+                }
+            }
         }
 
         _groups.Clear();
-        _dead.Clear();
         _health.Clear();
         Count = 0;
     }
@@ -887,9 +902,36 @@ public sealed class SoldierRenderer : IDisposable
 
         public float LowestVertexZ { get; } = lowestVertexZ;
 
-        public List<(SoldierView View, Vector3d Position)> Soldiers { get; } = [];
+        public List<Member> Soldiers { get; } = [];
 
         /// <summary>The model every soldier in the group draws, kept so the group can be re-skinned each tick.</summary>
         public MefModel? Model { get; set; }
+    }
+
+    /// <summary>
+    /// One soldier drawn from the group's geometry, with <b>its own skinned mesh</b>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The group used to share a single skinned mesh, posed from its first member. That was only ever
+    /// defensible while every soldier in a group ran the same clip from the same start; once they were given
+    /// real patrol paths they diverged, and the whole group rendered whichever pose the representative
+    /// happened to be in. With most guards standing and a few walking, that read as <b>no soldier
+    /// animating at all</b>.
+    /// </para>
+    /// <para>
+    /// Hooking the original's skinner (<c>0x49F700</c>) settles what it does: it is called through a
+    /// stack-allocated descriptor about once per soldier per frame, so the original skins <b>every soldier
+    /// separately, every frame</b>. This does the same. It costs one mesh upload per soldier per tick
+    /// instead of one per group, which is the price of each soldier having its own pose.
+    /// </para>
+    /// </remarks>
+    private sealed class Member(SoldierView view, Vector3d position, MeshHandle mesh)
+    {
+        public SoldierView View { get; } = view;
+
+        public Vector3d Position { get; } = position;
+
+        public MeshHandle Mesh { get; set; } = mesh;
     }
 }
