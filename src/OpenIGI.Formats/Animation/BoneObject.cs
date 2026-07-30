@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Formats.Animation;
 
@@ -151,6 +151,10 @@ public sealed class BoneObject
     /// </para>
     /// </remarks>
     public Vector3f SampleRootMotion() => _own[0]?.SampleRoot() ?? default;
+
+    /// <summary>How far the root clip moved the body on the last tick — the step that actually moves it.</summary>
+    /// <returns>The per-tick root-motion delta, in engine units.</returns>
+    public Vector3f RootMotionDelta() => _own[0]?.RootDelta ?? default;
 
     /// <summary>Advances every distinct clip on the object by one tick.</summary>
     /// <remarks>

@@ -138,7 +138,7 @@ public sealed class SoldierView
     /// The engine moves a human by its clip's root motion and nothing else (M8), so this is the soldier's
     /// speed — no constant is chosen anywhere.
     /// </remarks>
-    public Vector3f RootMotion() => _bones.SampleRootMotion();
+    public Vector3f RootMotion() => _bones.RootMotionDelta();
 
     /// <summary>Gets a value indicating whether this soldier has been killed.</summary>
     public bool IsDead { get; private set; }

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Formats.Animation;
 
@@ -79,6 +79,16 @@ public sealed class BoneClip
     /// <summary>Gets whether the last <see cref="Tick"/> crossed the end of the clip.</summary>
     public bool EndedThisTick { get; private set; }
 
+    /// <summary>How far the clip's root-motion track moved the body on the last <see cref="Tick"/>.</summary>
+    /// <remarks>
+    /// The engine's clip instance holds the sampled root at <c>+16</c> and this delta at <c>+28</c>
+    /// (<c>animation.md</c> §5). <b>The delta is what moves a human</b>; the sampled value is an absolute
+    /// position along the track.
+    /// </remarks>
+    public Vector3f RootDelta { get; private set; }
+
+    private Vector3f _lastGoodDelta;
+
     /// <summary>Advances the clock by one tick.</summary>
     /// <remarks>
     /// <para>Transcribed from <c>0x4D4B60</c>:</para>
@@ -99,8 +109,11 @@ public sealed class BoneClip
     public void Tick()
     {
         float duration = _animation.Duration;
+        Vector3f before = SampleRoot();
+
         Time += Rate;
         EndedThisTick = false;
+        bool wrapped = false;
 
         if (Time >= duration || (Backwards && Time <= 0f))
         {
@@ -109,11 +122,31 @@ public sealed class BoneClip
             if (Loops)
             {
                 Time -= duration;
+                wrapped = true;
             }
             else
             {
                 Time = Backwards ? 0f : duration;
             }
+        }
+
+        // The engine keeps BOTH the sampled root (+16) and the per-tick delta (+28) on a clip instance, and
+        // it is the DELTA that moves the body -- the sampled value is an absolute position along the clip's
+        // own root track. Treating the absolute value as a step makes a walk cycle play on the spot, because
+        // a walk's root starts at nearly zero.
+        Vector3f after = SampleRoot();
+        RootDelta = new Vector3f(after.X - before.X, after.Y - before.Y, after.Z - before.Z);
+
+        if (wrapped)
+        {
+            // Across a loop seam the sampled root jumps back to the start, which would read as a large step
+            // backwards. The distance actually covered over the seam is the tail of the clip plus the head,
+            // so the honest per-tick value is the step the clip was making before it wrapped.
+            RootDelta = _lastGoodDelta;
+        }
+        else
+        {
+            _lastGoodDelta = RootDelta;
         }
     }
 
