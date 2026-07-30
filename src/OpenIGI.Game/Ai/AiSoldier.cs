@@ -310,6 +310,20 @@ public sealed class AiSoldier
     /// <summary>Gets how many rounds are left in the current burst — <c>HumanAI+15956</c>.</summary>
     public int RoundsLeftInBurst => _combat?.RoundsLeftInBurst ?? 0;
 
+    /// <summary>Gets the input channels this tick asked the body for, resolved to their frame slots.</summary>
+    /// <remarks>
+    /// The original writes these through <c>sub_48EF70(ai, channel, value)</c>, which resolves the slot
+    /// out of <c>off_54151C[aiType][channel]</c>. The port has no forty-slot input frame on a soldier
+    /// yet, so it records the same writes instead — which is what lets a run of the port be compared
+    /// line for line against the probe's <c>[combat] channel</c> lines from the retail game.
+    /// </remarks>
+    public IReadOnlyList<AiChannelWrite> ChannelWrites => _channelWrites;
+
+    private readonly List<AiChannelWrite> _channelWrites = [];
+
+    private void WriteChannel(AiCombatChannel channel, float value) =>
+        _channelWrites.Add(new AiChannelWrite(channel, AiCombatChannels.SlotOf(_type, channel), value));
+
     /// <summary>Gets the hit probability the last burst set — <c>Human+1236</c>.</summary>
     /// <remarks>The weapon reads it with every round; the AI never decides a hit itself.</remarks>
     public float HitProbability { get; private set; } = 1f;
@@ -963,6 +977,18 @@ public sealed class AiSoldier
         // which is the state the guard behaviour waits for anyway.
         AiCombatCommand command = _combat.Update(sense, standing: true, Vision.Primary.RangeAt(Alerted));
         Combat = command;
+
+        // The same writes 0x48EF70 makes, recorded rather than applied -- see ChannelWrites.
+        _channelWrites.Clear();
+        if (command.FirePose)
+        {
+            WriteChannel(AiCombatChannel.Fire, 1f);
+        }
+
+        if (command.PressReload || command.ReloadWeaponDirectly)
+        {
+            WriteChannel(AiCombatChannel.Stand, 1f);
+        }
 
         if (command.StartedBurst is { } burst)
         {

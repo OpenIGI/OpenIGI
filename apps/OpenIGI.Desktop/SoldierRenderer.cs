@@ -65,6 +65,7 @@ public sealed class SoldierRenderer : IDisposable
     private WorldRayCast? _cast;
     private SoldierRound? _onRound;
     private string _lastCombatReport = string.Empty;
+    private readonly HashSet<string> _reportedChannels = new(StringComparer.Ordinal);
     private int _deathsSoFar;
     private int _walkAnimation = -1;
     private int _tick;
@@ -534,47 +535,27 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
-    /// <summary>Which clip a fighting soldier plays — the held weapon's own, out of the weapon table.</summary>
+    /// <summary>Which locomotion state a fighting soldier is in.</summary>
     /// <remarks>
     /// <para>
-    /// Every id here is a <see cref="WeaponType"/> field, so an AK's fighting soldier plays the AK's
-    /// clips and a shotgun's plays the shotgun's. Nothing is chosen: reloading plays
-    /// <c>Reload Animation</c>, a live burst plays <c>Fire Animation 1</c>, and a soldier that has
-    /// engaged but is not yet shooting plays the weapon's <c>Stand Animation</c>, which is the aiming
-    /// pose.
+    /// The body's clip comes from the <b>soldier's own state-to-animation table</b> and nowhere else.
+    /// An earlier pass played the weapon table's <c>Stand</c>, <c>Fire</c> and <c>Reload Animation</c>
+    /// ids on a soldier's rig, which was a guess and a wrong one: those ids index the <i>player's</i>
+    /// animation set, and the same number in a soldier's set is a different clip entirely. Guards threw
+    /// themselves on the ground, got up and did it again for ever.
     /// </para>
     /// <para>
-    /// A soldier's set is its own skeleton's, so an id the set does not carry is refused by
-    /// <see cref="SoldierView.SetMoving"/> and the caller falls back to the body's stand clip. That is
-    /// why this returns an id rather than playing it.
-    /// </para>
-    /// <para>
-    /// <b>This is a reconstruction.</b> The original drives the body through the weapon-action state
-    /// machine at <c>Human+3416</c>/<c>+3420</c> (<c>weapons.md</c> §7), which the port has read for the
-    /// player and not yet joined to a soldier — so a soldier here picks its clip directly instead of
-    /// requesting an action and letting the machine dispatch. Recorded in <c>TODO.md</c>.
+    /// What the original layers on top is an <b>upper-body weapon action</b> through the machine at
+    /// <c>Human+3416</c>/<c>+3420</c> (<c>weapons.md</c> §7), which the port has read for the player and
+    /// not joined to a soldier — so a fighting guard here stands in its own stand clip and does not yet
+    /// shoulder its weapon. Recorded in <c>TODO.md</c>; not guessed at again.
     /// </para>
     /// </remarks>
-    private int CombatAnimation(SoldierView view, AiSoldier brain)
+    private static int CombatState(AiSoldier brain) => brain.CombatPhase switch
     {
-        if (FindMember(view)?.WeaponType is not { } weapon)
-        {
-            return -1;
-        }
-
-        AiCombatCommand command = brain.Combat;
-        if (command.PressReload || command.ReloadWeaponDirectly || brain.CombatPhase == AiCombatPhase.Reload)
-        {
-            return weapon.ReloadAnimation;
-        }
-
-        if (command.FirePose && brain.RoundsLeftInBurst > 0)
-        {
-            return weapon.FireAnimation1;
-        }
-
-        return weapon.StandAnimation;
-    }
+        // Every stance a guard has is in AiCombatChannels; the behaviour only ever asks for standing.
+        _ => AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Standing),
+    };
 
     /// <summary>Logs how the level's fight is going, once per change.</summary>
     /// <remarks>
@@ -613,6 +594,27 @@ public sealed class SoldierRenderer : IDisposable
 
         _lastCombatReport = report;
         _logger.Information(LogCategory, $"AI: {report}");
+    }
+
+    /// <summary>Logs each input channel a fight asks for, once per type and channel.</summary>
+    /// <remarks>
+    /// Deliberately the same shape as the probe's <c>[combat] channel</c> line from the retail game, so
+    /// a run of the port and a capture of the original can be put side by side. The slot is resolved
+    /// through the port's transcription of <c>off_54151C</c>; if it disagrees with the probe's, the
+    /// transcription is wrong.
+    /// </remarks>
+    private void ReportChannels(AiSoldier brain)
+    {
+        foreach (AiChannelWrite write in brain.ChannelWrites)
+        {
+            string line = $"[combat] channel type={(int)brain.Type} channel={(int)write.Channel} "
+                + $"-> slot {write.Slot} value={write.Value:0.00}";
+
+            if (_reportedChannels.Add(line))
+            {
+                _logger.Information(LogCategory, line);
+            }
+        }
     }
 
     /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
@@ -897,6 +899,7 @@ public sealed class SoldierRenderer : IDisposable
             brain.Tick(_tick, enemy, travel);
             FireIfAsked(view, brain, enemy);
             ReportCombat();
+            ReportChannels(brain);
 
             // A patrol ANIMATION command names a clip outright; a soldier in a fight plays its WEAPON's
             // own clips; otherwise the gait picks between the walk cycle and the soldier's stand
@@ -906,7 +909,7 @@ public sealed class SoldierRenderer : IDisposable
                 view.SetMoving(true, brain.RequestedAnimation);
             }
             else if (brain.Activity != AiSoldierActivity.Engaging
-                || !view.SetMoving(true, CombatAnimation(view, brain)))
+                || !view.SetMoving(true, HumanSoldierStates.AnimationOf(CombatState(brain))))
             {
                 view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, _walkAnimation);
             }

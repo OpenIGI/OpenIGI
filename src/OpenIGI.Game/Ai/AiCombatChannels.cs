@@ -194,3 +194,16 @@ public static class AiCombatChannels
         return RowOfType[index];
     }
 }
+
+/// <summary>One write an AI made to its body's input frame.</summary>
+/// <param name="Channel">The logical channel the behaviour asked for.</param>
+/// <param name="Slot">
+/// The input-frame slot it resolved to for this AI's type, or <see cref="AiCombatChannels.None"/> when
+/// the type has no such channel.
+/// </param>
+/// <param name="Value">What was written. Not always a flag — channel 3 carries an animation id.</param>
+/// <remarks>
+/// The record the port keeps in place of the original's <c>sub_48EF70</c> write, so a port run and a
+/// probe capture of the retail game can be compared line for line.
+/// </remarks>
+public readonly record struct AiChannelWrite(AiCombatChannel Channel, int Slot, float Value);
