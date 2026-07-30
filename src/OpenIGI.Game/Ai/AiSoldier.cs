@@ -70,6 +70,32 @@ public sealed class AiSoldier
     public delegate bool LineOfSight(Vector3d from, Vector3d to);
 
     private LineOfSight? _sight;
+    private AiScriptHost? _host;
+    private OpenIGI.Scripting.Qvm.QvmProgram? _script;
+
+    /// <summary>Gives the soldier its archetype behaviour script, so the script decides what it does.</summary>
+    /// <param name="host">The host holding the AI natives.</param>
+    /// <param name="script">The compiled archetype script, for example <c>guard.qvm</c>.</param>
+    /// <remarks>
+    /// With a script attached the port stops choosing between patrolling and engaging: the script's own
+    /// <c>if (AIFunction_GetCurrentEventType() == …)</c> chain is dispatched per event and whatever
+    /// <c>AIAction_*</c> calls it makes are applied. Without one the built-in fallback runs.
+    /// </remarks>
+    public void SetScript(AiScriptHost host, OpenIGI.Scripting.Qvm.QvmProgram script)
+    {
+        _host = host;
+        _script = script;
+    }
+
+    /// <summary>Gets a value indicating whether a behaviour script is driving this soldier.</summary>
+    public bool HasScript => _host is not null && _script is not null;
+
+    /// <summary>Gets the distance to whatever the last dispatched event was about, in engine units.</summary>
+    /// <remarks>What <c>AIFunction_GetEventDistance</c> hands the archetype script.</remarks>
+    public double LastEventDistance { get; private set; }
+
+    /// <summary>Gets the actions the archetype script last asked for.</summary>
+    public IReadOnlyList<AiProducedAction> LastActions { get; private set; } = [];
 
     /// <summary>Initializes a new instance of the <see cref="AiSoldier"/> class.</summary>
     /// <param name="graph">The nav graph this soldier walks.</param>
@@ -140,6 +166,85 @@ public sealed class AiSoldier
     /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
     public void SetLineOfSight(LineOfSight? sight) => _sight = sight;
 
+    /// <summary>Applies whatever the archetype script asked for on the last dispatch.</summary>
+    /// <param name="actions">The produced actions, in script order.</param>
+    /// <remarks>
+    /// The original hands one produced action to <c>0x450E70</c> and several to <c>0x450F10</c>, and in both
+    /// cases the action's own start function runs. Only the movement and combat actions have anything to do
+    /// here yet; the rest are recorded so a caller can see what the script wanted.
+    /// </remarks>
+    public void ApplyActions(IReadOnlyList<AiProducedAction> actions)
+    {
+        ArgumentNullException.ThrowIfNull(actions);
+        LastActions = actions;
+
+        foreach (AiProducedAction action in actions)
+        {
+            switch (action.Name)
+            {
+                case "AIAction_Patrol":
+                    // The first argument is a patrol PATH id, which is task data this port has not read.
+                    // Until it is, a patrol leg is a walk to a graph node, which is what the path's WalkTo
+                    // steps do in aggregate.
+                    Patrol.Begin(AiPatrolStepKind.WalkTo);
+                    break;
+
+                case "AIAction_RunToNode":
+                    Patrol.Begin(AiPatrolStepKind.RunTo);
+                    GoTo(action.Argument(0));
+                    break;
+
+                case "AIAction_WalkToNode":
+                    Patrol.Begin(AiPatrolStepKind.WalkTo);
+                    GoTo(action.Argument(0));
+                    break;
+
+                case "AIAction_Combat":
+                case "AIAction_SetCombat":
+                case "AIAction_FireAtTask":
+                case "AIAction_FireAtNode":
+                    Activity = AiSoldierActivity.Engaging;
+                    _route.Clear();
+                    DestinationNode = -1;
+                    break;
+
+                case "AIAction_Dead":
+                    Kill();
+                    break;
+
+                case "AIAction_Idle":
+                    Activity = AiSoldierActivity.Idle;
+                    _route.Clear();
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Heads for a graph node, following the route table.</summary>
+    /// <param name="node">The destination node id.</param>
+    /// <returns><see langword="true"/> when a route exists.</returns>
+    public bool GoTo(int node)
+    {
+        if (_graph.RouteTable is null || _graph.NodeAt(node) is null || CurrentNode < 0)
+        {
+            return false;
+        }
+
+        IReadOnlyList<int> route = _graph.RouteTable.EnumerateRoute(CurrentNode, node);
+        if (route.Count == 0)
+        {
+            return false;
+        }
+
+        _route.Clear();
+        _route.AddRange(route);
+        DestinationNode = node;
+        return true;
+    }
+
     /// <summary>Marks the soldier dead; it stops thinking and stops moving.</summary>
     public void Kill() => Activity = AiSoldierActivity.Dead;
 
@@ -174,6 +279,7 @@ public sealed class AiSoldier
         if (_playerSlot.IsVisible)
         {
             alert = true;
+            LastEventDistance = _playerSlot.Distance;
             Events.Post(AiEventRecord.Simple(AiEvent.EnemyDetection), owner: 0, worldTests: null);
         }
 
@@ -187,33 +293,62 @@ public sealed class AiSoldier
 
         if (_playerSlot.IsVisible)
         {
-            // Engaging: stop and turn to face the enemy. The original runs AIAction_Combat here; turning to
-            // the target is what its look-at step does, to a 3 degree tolerance.
-            Activity = AiSoldierActivity.Engaging;
-            _route.Clear();
-            DestinationNode = -1;
-            TurnTowards(enemy, AiPatrolState.LookAtToleranceRadians);
             Events.Post(AiEventRecord.Simple(AiEvent.Combat), owner: 0, worldTests: null);
-            Drain();
+        }
+        else if (_route.Count == 0)
+        {
+            // Idle is the fallback the original posts only when nothing is pending (ai.md 3.1).
+            Events.Post(AiEventRecord.Simple(AiEvent.Idle), owner: 0, worldTests: null);
+        }
+
+        // ONE event type dispatches per tick, in priority order, and the script decides what to do about it.
+        RunScript();
+
+        if (_playerSlot.IsVisible && Activity == AiSoldierActivity.Engaging)
+        {
+            TurnTowards(enemy, AiPatrolState.LookAtToleranceRadians);
             return;
         }
 
-        // Nothing to fight: patrol. An empty route means the last leg finished, so pick another node and let
-        // the route table say how to get there -- one step at a time, exactly as 0x4518E0 does.
         if (_route.Count == 0)
         {
-            Events.Post(AiEventRecord.Simple(AiEvent.Idle), owner: 0, worldTests: null);
             if (!ChooseNextLeg())
             {
                 Activity = AiSoldierActivity.Idle;
-                Drain();
                 return;
             }
         }
 
         Activity = AiSoldierActivity.Patrolling;
         Advance(rootMotionThisTick);
-        Drain();
+    }
+
+    private void RunScript()
+    {
+        if (_host is null || _script is null)
+        {
+            // No script attached: the built-in fallback decides, which is what shipped before guard.qsc ran.
+            if (_playerSlot.IsVisible)
+            {
+                Activity = AiSoldierActivity.Engaging;
+                _route.Clear();
+                DestinationNode = -1;
+            }
+
+            Drain();
+            return;
+        }
+
+        Events.Pump(AiEventQueues.UnboundedPriorityCap, (type, slot) =>
+        {
+            bool handled = _host.Run(_script, this, type, slot);
+            if (handled)
+            {
+                ApplyActions(_host.Produced);
+            }
+
+            return handled;
+        });
     }
 
     /// <summary>The eye the cones are measured from — the body position raised to eye height.</summary>

@@ -4,6 +4,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Formats.Textures;
@@ -182,12 +184,18 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Gives every soldier an AI that patrols the level's nav graph and reacts to the player.</summary>
     /// <param name="graph">The graph to patrol. Nothing is attached when it holds fewer than two nodes.</param>
     /// <param name="sight">The world cast used for line of sight, or <see langword="null"/> to see through walls.</param>
+    /// <param name="scripts">Where the archetype behaviour script is read from, or <see langword="null"/> for none.</param>
+    /// <param name="natives">The registry the behaviour script resolves its AI natives against.</param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
     /// across the four ticks the original spreads them over (<c>ai.md</c> §5.1).
     /// </remarks>
-    public int Animate(GraphFile graph, WorldRayCast? sight = null)
+    public int Animate(
+        GraphFile graph,
+        WorldRayCast? sight = null,
+        ResourceRegistry? scripts = null,
+        NativeRegistry? natives = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -202,6 +210,28 @@ public sealed class SoldierRenderer : IDisposable
         // The walk clip is the locomotion table's forward-travelling state (state 1 travels +Y), read from
         // 0x538870 -- not a chosen id.
         _walkAnimation = HumanLocomotionStates.For(1).AnimationId;
+
+        // The archetype behaviour script: guard.qsc is what decides what a guard does in the original, so
+        // running it is what makes a guard behave like one. Every soldier here is a guard until the AIType
+        // parameter is bound (ai.md 2.3 maps 29 types onto 9 scripts).
+        AiScriptHost? host = null;
+        QvmProgram? guard = null;
+        if (scripts is not null && natives is not null)
+        {
+            try
+            {
+                host = new AiScriptHost(natives, _logger);
+                string path = AiScriptApi.ScriptPath(AiArchetype.Guard).Replace(".qsc", ".qvm", StringComparison.Ordinal);
+                guard = QvmProgram.Read(scripts.Load(path));
+                _logger.Information(LogCategory, $"Behaviour script '{path}' loaded for every soldier.");
+            }
+            catch (Exception ex) when (ex is IOException or QvmFormatException or InvalidOperationException)
+            {
+                _logger.Warning(LogCategory, $"The guard behaviour script could not be loaded: {ex.Message}");
+                host = null;
+                guard = null;
+            }
+        }
 
         int index = 0;
         foreach (Group group in _groups)
@@ -224,6 +254,11 @@ public sealed class SoldierRenderer : IDisposable
                         return total <= 0.0
                             || Length(from, blocked.Position) / total >= AiSoldier.SightObstructionTolerance;
                     });
+                }
+
+                if (host is not null && guard is not null)
+                {
+                    brain.SetScript(host, guard);
                 }
 
                 _brains[view] = brain;
