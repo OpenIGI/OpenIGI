@@ -48,6 +48,8 @@ public sealed class AiScriptHost
     private AiSoldier? _current;
     private AiEvent _currentEvent;
     private int _slot;
+    private QvmProgram? _archetypeScript;
+    private QvmProgram? _runningScript;
     private uint _random = 0x1234_5678;
 
     /// <summary>Initializes a new instance of the <see cref="AiScriptHost"/> class.</summary>
@@ -68,30 +70,35 @@ public sealed class AiScriptHost
     /// <summary>Gets the event the running script is handling.</summary>
     public AiEvent CurrentEvent => _currentEvent;
 
-    /// <summary>Runs an archetype script for one soldier handling one event.</summary>
-    /// <param name="script">The compiled archetype script.</param>
+    /// <summary>Runs a script for one soldier handling one event.</summary>
+    /// <param name="script">The compiled script — typically the per-task override.</param>
     /// <param name="soldier">The soldier the natives act on.</param>
     /// <param name="handling">The event being dispatched.</param>
     /// <param name="slot">The event's position in the priority order.</param>
+    /// <param name="archetype">
+    /// The archetype script (e.g. <c>guard.qvm</c>), or <see langword="null"/> when this IS the archetype.
+    /// When <c>AIFunction_DefaultHandler</c> is called, this script runs for the current event — which is
+    /// how the original delegates from a per-task script to the shared archetype.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> when the script produced at least one action — the original's "handled", which
     /// is what stops a lower-priority event getting a turn this tick.
     /// </returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public bool Run(QvmProgram script, AiSoldier soldier, AiEvent handling, int slot)
+    public bool Run(QvmProgram script, AiSoldier soldier, AiEvent handling, int slot, QvmProgram? archetype = null)
     {
         ArgumentNullException.ThrowIfNull(script);
         ArgumentNullException.ThrowIfNull(soldier);
 
         Bind(soldier, handling, slot);
+        _archetypeScript = archetype;
+        _runningScript = script;
         try
         {
             QvmInterpreter interpreter = new(script, _natives);
             QvmError error = interpreter.Run();
             if (error != QvmError.None)
             {
-                // The identifier is the whole diagnostic for UnknownIdentifier: without it the message says
-                // only that something did not resolve, which is true of every possible cause.
                 _logger.Warning(
                     "Ai",
                     $"The archetype script returned {error} handling {handling}: {interpreter.ErrorMessage}");
@@ -101,6 +108,11 @@ public sealed class AiScriptHost
         {
             _logger.Warning("Ai", $"The archetype script faulted handling {handling}: {ex.Message}");
             return false;
+        }
+        finally
+        {
+            _archetypeScript = null;
+            _runningScript = null;
         }
 
         return _produced.Count > 0;
@@ -168,8 +180,27 @@ public sealed class AiScriptHost
                 return QvmValue.FromInt32((int)_currentEvent);
 
             case "AIFunction_DefaultHandler":
-                // The original re-runs the archetype script for the AI's type. Here the script IS the
-                // archetype's, so the default handler is where a chain falls through with nothing to do.
+                if (_archetypeScript is not null && _archetypeScript != _runningScript && ai is not null)
+                {
+                    QvmProgram archScript = _archetypeScript;
+                    QvmProgram? prevRunning = _runningScript;
+                    _archetypeScript = null;
+                    _runningScript = archScript;
+                    try
+                    {
+                        QvmInterpreter inner = new(archScript, _natives);
+                        inner.Run();
+                    }
+                    catch (EngineFatalException)
+                    {
+                    }
+                    finally
+                    {
+                        _archetypeScript = archScript;
+                        _runningScript = prevRunning;
+                    }
+                }
+
                 return QvmValue.Zero;
 
             case "AIFunction_GetRandomValue":

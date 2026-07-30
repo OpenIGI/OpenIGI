@@ -69,30 +69,49 @@ public sealed class AiSoldier
     /// <returns><see langword="true"/> when the target can be seen.</returns>
     public delegate bool LineOfSight(Vector3d from, Vector3d to);
 
+    /// <summary>Finds the ground height at a world position.</summary>
+    /// <param name="x">World X, in engine units.</param>
+    /// <param name="y">World Y, in engine units.</param>
+    /// <param name="z">The Z to search downwards from, in engine units.</param>
+    /// <param name="groundZ">Receives the ground height when found.</param>
+    /// <returns><see langword="true"/> when a surface was found.</returns>
+    public delegate bool GroundQuery(double x, double y, double z, out double groundZ);
+
     private LineOfSight? _sight;
+    private GroundQuery? _ground;
     private AiScriptHost? _host;
     private OpenIGI.Scripting.Qvm.QvmProgram? _script;
+    private OpenIGI.Scripting.Qvm.QvmProgram? _archetypeScript;
 
     // Where the current leg started, so the soldier's height can follow the graph along it.
     private Vector3d _legOrigin;
     private bool _created;
 
-    /// <summary>Gives the soldier its archetype behaviour script, so the script decides what it does.</summary>
+    /// <summary>Gives the soldier its behaviour scripts, so the script decides what it does.</summary>
     /// <param name="host">The host holding the AI natives.</param>
-    /// <param name="script">The compiled archetype script, for example <c>guard.qvm</c>.</param>
+    /// <param name="script">The compiled script — per-task override if one exists, else the archetype.</param>
+    /// <param name="archetype">
+    /// The archetype script (e.g. <c>guard.qvm</c>), or <see langword="null"/> when <paramref name="script"/>
+    /// IS the archetype. When the running script calls <c>AIFunction_DefaultHandler</c>, this is what runs.
+    /// </param>
     /// <remarks>
     /// With a script attached the port stops choosing between patrolling and engaging: the script's own
     /// <c>if (AIFunction_GetCurrentEventType() == …)</c> chain is dispatched per event and whatever
     /// <c>AIAction_*</c> calls it makes are applied. Without one the built-in fallback runs.
     /// </remarks>
-    public void SetScript(AiScriptHost host, OpenIGI.Scripting.Qvm.QvmProgram script)
+    public void SetScript(AiScriptHost host, OpenIGI.Scripting.Qvm.QvmProgram script,
+        OpenIGI.Scripting.Qvm.QvmProgram? archetype = null)
     {
         _host = host;
         _script = script;
+        _archetypeScript = archetype;
     }
 
     /// <summary>Gets a value indicating whether a behaviour script is driving this soldier.</summary>
     public bool HasScript => _host is not null && _script is not null;
+
+    /// <summary>Gets a value indicating whether a ground query is wired up.</summary>
+    public bool HasGroundQuery => _ground is not null;
 
     /// <summary>Gets the distance to whatever the last dispatched event was about, in engine units.</summary>
     /// <remarks>What <c>AIFunction_GetEventDistance</c> hands the archetype script.</remarks>
@@ -221,6 +240,27 @@ public sealed class AiSoldier
     /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
     public void SetLineOfSight(LineOfSight? sight) => _sight = sight;
 
+    /// <summary>
+    /// Gives the soldier a ground query, so it walks on the terrain instead of interpolating between graph nodes.
+    /// </summary>
+    /// <param name="query">
+    /// The query, or <see langword="null"/> to fall back to linear interpolation along the leg.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// In the original the AI steers the soldier through the player's own input frame (<c>0x451540</c>),
+    /// which makes the <c>Human</c> task run the same movement integrator as the player (<c>0x4614B0</c>),
+    /// including its ground query (<c>0x462390</c>). So a soldier's height comes from the terrain (or
+    /// whatever placed object it stands on), not from the graph.
+    /// </para>
+    /// <para>
+    /// Probing the retail game confirms soldiers run the integrator with <c>wallEnable=0 objEnable=1
+    /// humanEnable=0</c>: object collision and ground query but <b>no wall sweep</b>. The nav graph
+    /// itself keeps soldiers on walkable paths; wall collision is not needed.
+    /// </para>
+    /// </remarks>
+    public void SetGroundQuery(GroundQuery? query) => _ground = query;
+
     /// <summary>Applies whatever the archetype script asked for on the last dispatch.</summary>
     /// <param name="actions">The produced actions, in script order.</param>
     /// <remarks>
@@ -281,12 +321,27 @@ public sealed class AiSoldier
 
     /// <summary>Heads for a graph node, following the route table.</summary>
     /// <param name="node">The destination node id.</param>
-    /// <returns><see langword="true"/> when a route exists.</returns>
+    /// <returns><see langword="true"/> when a route exists or the soldier is already there.</returns>
+    /// <remarks>
+    /// When the soldier is already at the destination (<c>CurrentNode == node</c>), the route is empty and
+    /// the call succeeds — the caller should advance to its next command rather than stalling. The original
+    /// handles this in <c>0x4518E0</c> where <c>from == to</c> creates a waypoint at the current position
+    /// and returns.
+    /// </remarks>
     public bool GoTo(int node)
     {
         if (_graph.RouteTable is null || _graph.NodeAt(node) is null || CurrentNode < 0)
         {
             return false;
+        }
+
+        _route.Clear();
+        DestinationNode = node;
+        _legOrigin = Position;
+
+        if (CurrentNode == node)
+        {
+            return true;
         }
 
         IReadOnlyList<int> route = _graph.RouteTable.EnumerateRoute(CurrentNode, node);
@@ -295,10 +350,7 @@ public sealed class AiSoldier
             return false;
         }
 
-        _route.Clear();
         _route.AddRange(route);
-        DestinationNode = node;
-        _legOrigin = Position;
         return true;
     }
 
@@ -536,7 +588,7 @@ public sealed class AiSoldier
 
         Events.Pump(AiEventQueues.UnboundedPriorityCap, (type, slot) =>
         {
-            bool handled = _host.Run(_script, this, type, slot);
+            bool handled = _host.Run(_script, this, type, slot, _archetypeScript);
             if (handled)
             {
                 ApplyActions(_host.Produced);
@@ -558,6 +610,12 @@ public sealed class AiSoldier
 
     /// <summary>The eye height used until the head bone is queried — the separation cylinder's half-height.</summary>
     public const double HumanSeparationEyeHeight = 1.8 * 4096.0;
+
+    /// <summary>How far above the soldier's feet the ground probe starts — 0.5 m.</summary>
+    private const double GroundProbeAboveUnits = 2048.0;
+
+    /// <summary>How far below the soldier's feet the ground probe reaches — 2 m (the sliding step-down budget).</summary>
+    private const double GroundProbeBelowUnits = 8192.0;
 
     private void Drain()
     {
@@ -640,8 +698,23 @@ public sealed class AiSoldier
         {
             double x = Position.X + (Math.Sin(-Facing) * rootMotionThisTick);
             double y = Position.Y + (Math.Cos(Facing) * rootMotionThisTick);
-            Position = new Vector3d(x, y, HeightAlongLegTo(waypoint, x, y));
+            Position = new Vector3d(x, y, QueryGroundHeight(x, y, waypoint));
         }
+    }
+
+    /// <summary>Finds the ground height at a position, using the terrain query when available.</summary>
+    /// <param name="x">World X, in engine units.</param>
+    /// <param name="y">World Y, in engine units.</param>
+    /// <param name="waypoint">The node being walked to, used as a fallback when no terrain is available.</param>
+    /// <returns>The Z to stand at, in engine units.</returns>
+    private double QueryGroundHeight(double x, double y, Vector3d waypoint)
+    {
+        if (_ground is not null && _ground(x, y, Position.Z + GroundProbeAboveUnits, out double groundZ))
+        {
+            return groundZ;
+        }
+
+        return HeightAlongLegTo(waypoint, x, y);
     }
 
     /// <summary>

@@ -282,7 +282,14 @@ using (window)
 
                     try
                     {
-                        graphs[graphId] = GraphFile.Read(File.ReadAllBytes(file));
+                        GraphFile graph = GraphFile.Read(File.ReadAllBytes(file));
+
+                        // The graph file stores node positions in the graph's own frame. The world
+                        // position is node + graphTask.Position — what 0x4F9770 adds every time.
+                        Vector3d graphPos = FindTaskPosition(levelRoot, graphId);
+                        graph.ApplyWorldOffset(graphPos);
+
+                        graphs[graphId] = graph;
                     }
                     catch (GraphFormatException ex)
                     {
@@ -1052,6 +1059,43 @@ static GameConfig LoadConfiguration(VirtualFileSystem fileSystem, IIgiLogger log
 
     logger.Information("Config", "No configuration found; starting from the defaults.");
     return GameConfig.CreateDefault();
+}
+
+static Vector3d FindTaskPosition(GameTask root, int taskId)
+{
+    return FindPosition(root, taskId);
+
+    static Vector3d FindPosition(GameTask task, int id)
+    {
+        if (task.Id == id)
+        {
+            if (task is DeclaredTask declared)
+            {
+                if (declared.TryGetValue("Graph position", out object? graphPos) && graphPos is Vector3d gp)
+                {
+                    return gp;
+                }
+
+                if (declared.TryGetValue("Position", out object? pos) && pos is Vector3d p)
+                {
+                    return p;
+                }
+            }
+
+            return default;
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            Vector3d found = FindPosition(child, id);
+            if (found != default)
+            {
+                return found;
+            }
+        }
+
+        return default;
+    }
 }
 
 static void SaveConfiguration(string gamePath, GameConfig configuration, IIgiLogger logger)

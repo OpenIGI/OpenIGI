@@ -61,7 +61,12 @@ public sealed class GraphNode
     public int Id { get; }
 
     /// <summary>Gets the node's world position, in engine units.</summary>
-    public Vector3d Position { get; }
+    /// <remarks>
+    /// The file stores positions in the graph's own frame. <see cref="GraphFile.ApplyWorldOffset"/>
+    /// transforms them into world space by adding the graph task's declared position — which is what
+    /// <c>0x4F9770</c> does every time a caller asks for a node's position.
+    /// </remarks>
+    public Vector3d Position { get; internal set; }
 
     /// <summary>Gets the node's <c>vNodeGamma</c>.</summary>
     /// <remarks>

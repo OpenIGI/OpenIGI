@@ -127,6 +127,32 @@ public sealed class GraphFile
     /// </remarks>
     public IReadOnlyList<int> DiscardedNodeIds { get; }
 
+    /// <summary>
+    /// Transforms every node's position from the graph's own frame into world space by adding an offset.
+    /// </summary>
+    /// <param name="graphPosition">The graph task's declared <c>Position</c>, in engine units.</param>
+    /// <remarks>
+    /// <para>
+    /// A graph file stores node positions relative to the <c>AIGraph</c> task that loaded it.
+    /// <c>0x4F9770</c> adds the graph's own position (<c>+32/+40/+48</c> of the owning task) every time a
+    /// caller asks for a node's world position. Calling this once at load time has the same effect.
+    /// </para>
+    /// <para>
+    /// The original also supports a rotation when <c>graph+100</c> is set, but no shipped graph uses it
+    /// (all have identity orientation). If rotation matters later, this is where it goes.
+    /// </para>
+    /// </remarks>
+    public void ApplyWorldOffset(Vector3d graphPosition)
+    {
+        foreach (GraphNode node in Nodes)
+        {
+            node.Position = new Vector3d(
+                node.Position.X + graphPosition.X,
+                node.Position.Y + graphPosition.Y,
+                node.Position.Z + graphPosition.Z);
+        }
+    }
+
     /// <summary>Gets how many bytes the walk consumed.</summary>
     public int BytesConsumed { get; }
 

@@ -54,6 +54,8 @@ public sealed class SoldierRenderer : IDisposable
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
+    private TerrainData? _terrain;
+    private WorldRayCast? _cast;
     private int _deathsSoFar;
     private int _walkAnimation = -1;
     private int _tick;
@@ -94,6 +96,8 @@ public sealed class SoldierRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         Release();
+        _terrain = terrain;
+        _cast = cast;
 
         Dictionary<(string Model, int Skeleton, int Stand), Group> groups = [];
         foreach (HumanSoldierTask soldier in Walk(levelRoot))
@@ -271,6 +275,7 @@ public sealed class SoldierRenderer : IDisposable
 
                 AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index);
                 brain.SetPatrolPaths(paths);
+                brain.SetGroundQuery(MakeGroundQuery());
                 graphUse[graphId] = graphUse.GetValueOrDefault(graphId) + 1;
                 if (sight is not null)
                 {
@@ -292,25 +297,30 @@ public sealed class SoldierRenderer : IDisposable
                 // Which script this soldier runs: its own MISSION:AI/<taskid>.qvm when the level ships one,
                 // otherwise the archetype its AIType selects (ai.md 7.5a and 2.3). The per-task script is
                 // what names the soldier's patrol path, so without it a guard has nothing to patrol.
+                // When a per-task script exists, the archetype is passed separately so DefaultHandler can
+                // delegate to it — the mechanism the original uses at 0x44E060.
                 HumanAiTask? mind = brainTask;
                 if (host is not null && scripts is not null)
                 {
-                    QvmProgram? script = null;
+                    QvmProgram? perTaskScript = null;
                     if (mind is not null && mind.Id != GameTask.NoId)
                     {
-                        script = LoadScript(scripts, scriptCache, AiScriptApi.MissionScriptPath(mind.Id));
-                        if (script is not null)
+                        perTaskScript = LoadScript(scripts, scriptCache, AiScriptApi.MissionScriptPath(mind.Id));
+                        if (perTaskScript is not null)
                         {
                             perTask++;
                         }
                     }
 
                     AiArchetype archetype = mind?.Archetype ?? AiArchetype.Guard;
-                    script ??= LoadScript(scripts, scriptCache, AiScriptApi.ScriptPath(archetype));
+                    QvmProgram? archetypeScript = LoadScript(scripts, scriptCache, AiScriptApi.ScriptPath(archetype));
 
-                    if (script is not null)
+                    QvmProgram? primary = perTaskScript ?? archetypeScript;
+                    QvmProgram? fallback = perTaskScript is not null ? archetypeScript : null;
+
+                    if (primary is not null)
                     {
-                        brain.SetScript(host, script);
+                        brain.SetScript(host, primary, fallback);
                         patrolling++;
                     }
                 }
@@ -425,6 +435,47 @@ public sealed class SoldierRenderer : IDisposable
 
         cache[path] = program;
         return program;
+    }
+
+    private AiSoldier.GroundQuery? MakeGroundQuery()
+    {
+        TerrainData? terrain = _terrain;
+        WorldRayCast? cast = _cast;
+        if (terrain is null && cast is null)
+        {
+            return null;
+        }
+
+        return (double x, double y, double z, out double groundZ) =>
+        {
+            groundZ = double.MinValue;
+            bool found = false;
+
+            if (cast is not null
+                && cast(
+                    new Vector3d(x, y, z),
+                    new Vector3d(x, y, z - ProbeBelowInUnits - ProbeAboveInUnits),
+                    out WorldRayHit hit))
+            {
+                groundZ = hit.Position.Z;
+                found = true;
+            }
+
+            if (terrain is not null
+                && TerrainHeightQuery.TryGetGround(terrain, x, y, z, out TerrainGround ground)
+                && ground.Height >= z - ProbeBelowInUnits - ProbeAboveInUnits
+                && ground.Height <= z)
+            {
+                if (ground.Height > groundZ)
+                {
+                    groundZ = ground.Height;
+                }
+
+                found = true;
+            }
+
+            return found;
+        };
     }
 
     private static float GammaOf(SoldierView view) => view.Soldier.Gamma;
@@ -584,18 +635,27 @@ public sealed class SoldierRenderer : IDisposable
                 // vanishing was only ever the port having no death animation to play. Each soldier now
                 // carries its own skinned mesh, so a corpse is posed by its own death clip.
 
-                // A soldier with a brain is drawn where its AI put it; one without keeps the stood position
-                // the level authored, converted once at load.
-                //
-                // The height still comes from the authored stand position rather than from the AI: the
-                // original runs the player's own ground query for a soldier, which this port has not wired
-                // up, so following the AI's Z would drop guards through the terrain. Recorded in TODO.md.
-                Vector3d where = _brains.ContainsKey(soldier)
-                    ? new Vector3d(
+                // A soldier with a brain is drawn where its AI put it. The Z uses the ground query
+                // when one is available; otherwise it keeps the stood position from Stand().
+                Vector3d where;
+                if (_brains.TryGetValue(soldier, out AiSoldier? soldierBrain) && soldierBrain.HasGroundQuery)
+                {
+                    where = new Vector3d(
                         soldier.Position.X / WorldScene.UnitsPerMetre,
                         soldier.Position.Y / WorldScene.UnitsPerMetre,
-                        metres.Z)
-                    : metres;
+                        (soldier.Position.Z / WorldScene.UnitsPerMetre) - group.LowestVertexZ);
+                }
+                else if (_brains.ContainsKey(soldier))
+                {
+                    where = new Vector3d(
+                        soldier.Position.X / WorldScene.UnitsPerMetre,
+                        soldier.Position.Y / WorldScene.UnitsPerMetre,
+                        metres.Z);
+                }
+                else
+                {
+                    where = metres;
+                }
 
                 Matrix4f modelView = camera.CreateModelView(where, soldier.Orientation);
 
