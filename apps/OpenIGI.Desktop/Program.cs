@@ -204,6 +204,7 @@ using (window)
     // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
     // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11).
     HumanHealth playerHealth = new(HumanHitZoneTable.Player);
+    bool playerDead = false;
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
     WorldScene? scene = null;
@@ -363,10 +364,21 @@ using (window)
 
                     if (playerHealth.IsDead)
                     {
+                        // Locomotion state 47 (0x40E560): the clip comes from the LAST ZONE STRUCK's row
+                        // in the player's own hit-zone table, one of its two reactions by rand(2). The
+                        // player stops taking input from here on -- it is a state, not a message.
+                        playerDead = true;
+                        int fall = HumanPlayerDeath.Choose(
+                            hit.Zone, HumanHitZoneTable.Player, shotRandom.Next(2));
+
+                        player.View?.PlayWeaponAnimation(fall, loops: false);
+
                         logger.Information(
                             "Weapon",
-                            $"The player is DEAD after {guardHits} hit(s) from {guardRounds} round(s). "
-                                + "Nothing happens yet: the player's own death state is not built.");
+                            $"The player is DEAD after {guardHits} hit(s) from {guardRounds} round(s), "
+                                + $"struck in zone {hit.Zone}; falling with animation {fall} "
+                                + $"and one of {HumanPlayerDeath.SoundVariants} "
+                                + $"'{HumanPlayerDeath.SoundPrefix}' sounds.");
                     }
                 });
             }
@@ -857,7 +869,13 @@ using (window)
         if (outcome is FrameOutcome.Tick
             && playerMode && player is not null && playerTerrain is not null)
         {
-            player.Tick(window.Input, playerTerrain);
+            // A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the
+            // body stops being stepped rather than being stepped with no input. Without this a corpse
+            // walks around.
+            if (!playerDead)
+            {
+                player.Tick(window.Input, playerTerrain);
+            }
 
             // The first round of a mission, reported once — the same one-shot diagnostic the world
             // draw uses. It is what says the whole chain arrived: the trigger reached the state
