@@ -759,6 +759,13 @@ using (window)
             }
         }
 
+        // The soldiers' rigs advance on the tick, not on the render, so their animation runs at the
+        // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
+        if (outcome is FrameOutcome.Render or FrameOutcome.Tick)
+        {
+            soldiers?.Tick();
+        }
+
         if (outcome != FrameOutcome.Render)
         {
             continue;

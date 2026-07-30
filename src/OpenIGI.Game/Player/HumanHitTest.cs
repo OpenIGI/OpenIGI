@@ -105,11 +105,19 @@ public static class HumanHitTest
 
         if (pose is { } posed && HumanDamage.ProximityBoneIndex < posed.BoneCount)
         {
+            // Measured from the ray's CLOSEST APPROACH to the bone, not from the cylinder contact.
+            //
+            // The original casts at the human's mesh, so for a head shot its contact point lands on the
+            // head itself, comfortably inside the 15 cm the proximity test allows. This port casts at
+            // HumanSeparation's collision cylinder instead, whose radius is 0.55 m -- so a side-on
+            // contact is at least 0.55 m from the head bone on the axis and the test could NEVER pass.
+            // Zone 15 was unreachable and every head shot scored as a body shot, which is why a guard
+            // took several rounds to the head. Closest approach is the faithful quantity: it is what
+            // "the round passed through the head" means, and it agrees with the mesh cast wherever the
+            // mesh cast is the one that would have hit.
             Vector3f bone = posed.Positions[HumanDamage.ProximityBoneIndex];
-            double dx = contact.X - (position.X + bone.X);
-            double dy = contact.Y - (position.Y + bone.Y);
-            double dz = contact.Z - (position.Z + bone.Z);
-            double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            Vector3d boneWorld = new(position.X + bone.X, position.Y + bone.Y, position.Z + bone.Z);
+            double distance = DistanceToSegment(origin, direction, boneWorld);
 
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
             {
@@ -119,6 +127,29 @@ public static class HumanHitTest
 
         hit = new HumanHit(contact, t * length, zone, localForward, localSide);
         return true;
+    }
+
+    // The shortest distance from a point to the segment origin..origin+direction, clamped to the segment
+    // so a bone behind the shooter or beyond the round's range is not treated as close.
+    private static double DistanceToSegment(Vector3d origin, Vector3d direction, Vector3d point)
+    {
+        double lengthSquared = (direction.X * direction.X)
+            + (direction.Y * direction.Y)
+            + (direction.Z * direction.Z);
+
+        double t = 0.0;
+        if (lengthSquared > 0.0)
+        {
+            t = (((point.X - origin.X) * direction.X)
+                + ((point.Y - origin.Y) * direction.Y)
+                + ((point.Z - origin.Z) * direction.Z)) / lengthSquared;
+            t = Math.Clamp(t, 0.0, 1.0);
+        }
+
+        double dx = point.X - (origin.X + (direction.X * t));
+        double dy = point.Y - (origin.Y + (direction.Y * t));
+        double dz = point.Z - (origin.Z + (direction.Z * t));
+        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
     }
 
     // An upright capped cylinder from the feet to BodyHeightInUnits, radius BodyRadiusInUnits. Only the

@@ -1,4 +1,4 @@
-namespace OpenIGI.Game.Player;
+﻿namespace OpenIGI.Game.Player;
 
 /// <summary>
 /// One row of a human class's hit-zone table.

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
@@ -45,6 +45,12 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Group> _groups = [];
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
+
+    // A dead soldier cannot stay in a shared group: the group is skinned from ONE representative's pose, so
+    // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
+    // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
+    private readonly List<Group> _dead = [];
+    private int _deathsSoFar;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
@@ -168,6 +174,64 @@ public sealed class SoldierRenderer : IDisposable
             (groundZ / WorldScene.UnitsPerMetre) - group.LowestVertexZ);
     }
 
+    /// <summary>Advances every soldier's animation by one tick and re-skins the groups.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing advanced a soldier's rig before this existed</b>, so every guard in the level stood frozen on
+    /// the first frame of its stand animation — which reads as a default A-pose. Soldiers are grouped by
+    /// (model, skeleton, animation) and share one skinned mesh, so ticking the group's first soldier and
+    /// re-skinning from its pose animates the whole group: they run the same clip from the same start, so they
+    /// share a pose by construction.
+    /// </para>
+    /// <para>
+    /// The device's meshes are immutable, so this destroys and re-uploads. There are only a handful of groups
+    /// in a level, so it is a few uploads a tick — worth replacing with a dynamic vertex buffer, but not worth
+    /// leaving the guards frozen for.
+    /// </para>
+    /// </remarks>
+    public void Tick()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        foreach (Group group in Enumerable.Concat(_groups, _dead))
+        {
+            if (group.Soldiers.Count == 0 || group.Model is null)
+            {
+                continue;
+            }
+
+            SoldierView representative = group.Soldiers[0].View;
+            representative.Tick();
+
+            Vertex3D[] skinned = [.. group.Geometry.Vertices];
+            try
+            {
+                MefSkinner.Skin(
+                    group.Model,
+                    representative.UnrotatedPose(),
+                    (float)(1.0 / WorldScene.UnitsPerMetre),
+                    skinned);
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            MeshHandle replacement;
+            try
+            {
+                replacement = _device.CreateMesh(skinned, group.Geometry.Indices);
+            }
+            catch (InvalidOperationException)
+            {
+                continue;
+            }
+
+            _device.DestroyMesh(group.Mesh);
+            group.Mesh = replacement;
+        }
+    }
+
     /// <summary>Draws every soldier.</summary>
     /// <param name="camera">The eye the scene is drawn from.</param>
     /// <param name="projection">The world's view-to-clip transform — soldiers use no other.</param>
@@ -184,17 +248,17 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        foreach (Group group in _groups)
+        foreach (Group group in Enumerable.Concat(_groups, _dead))
         {
             foreach ((SoldierView soldier, Vector3d metres) in group.Soldiers)
             {
-                // A dead soldier is not drawn. The original plays a death animation and leaves a body;
-                // that needs the soldier state machine, which is unread -- so they vanish instead,
-                // which is at least honest about what is missing. Recorded in TODO.md.
-                if (_health.TryGetValue(soldier, out HumanHealth? health) && health.IsDead)
-                {
-                    continue;
-                }
+                // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
+                // vanishing was only ever the port having no death animation to play. SoldierView.Kill
+                // starts the id the hit-zone table names and the clip holds its last frame.
+                //
+                // KNOWN GAP: the group shares one skinned mesh, so a dead soldier is still posed by the
+                // group's stand animation until per-soldier skinning lands. It stays upright rather than
+                // falling. Recorded in TODO.md.
 
                 Matrix4f modelView = camera.CreateModelView(metres, soldier.Orientation);
 
@@ -243,6 +307,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         hit = default;
         HumanHealth? struck = null;
+        SoldierView? struckView = null;
 
         foreach (Group group in _groups)
         {
@@ -274,6 +339,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     hit = candidate;
                     struck = health;
+                    struckView = soldier;
                 }
             }
         }
@@ -284,7 +350,63 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         struck.Apply(hit.Zone, damageFactor);
+
+        // On death, play one of the soldier class's two death animations - the literal ids 24 and 25 in its
+        // two death state-entry functions (0x45C5A0 and 0x45C650). Which of the two the original picks
+        // depends on the unread transition into the state, so this alternates, which at least varies the
+        // corpses the way the game does.
+        if (struck.IsDead && struckView is not null)
+        {
+            int which = _deathsSoFar++ % SoldierView.DeathAnimations.Count;
+            struckView.Kill(SoldierView.DeathAnimations[which]);
+            Detach(struckView);
+        }
+
         return true;
+    }
+
+    /// <summary>Moves a soldier out of its shared group into one of its own, so it can pose independently.</summary>
+    /// <remarks>
+    /// Its own mesh is uploaded from its own rig, which is what makes a death animation visible. Without this
+    /// a killed guard stays standing in the group's idle pose — which reads exactly like the shot never
+    /// registered, and is worse than the old behaviour of vanishing.
+    /// </remarks>
+    private void Detach(SoldierView view)
+    {
+        foreach (Group group in _groups)
+        {
+            int index = group.Soldiers.FindIndex(s => ReferenceEquals(s.View, view));
+            if (index < 0)
+            {
+                continue;
+            }
+
+            (SoldierView View, Vector3d Position) entry = group.Soldiers[index];
+            group.Soldiers.RemoveAt(index);
+
+            if (group.Model is null)
+            {
+                return;
+            }
+
+            MeshHandle mesh;
+            try
+            {
+                mesh = _device.CreateMesh(group.Geometry.Vertices, group.Geometry.Indices);
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+
+            Group solo = new(group.Geometry, mesh, group.Instance, group.Pack, group.LowestVertexZ)
+            {
+                Model = group.Model,
+            };
+            solo.Soldiers.Add(entry);
+            _dead.Add(solo);
+            return;
+        }
     }
 
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>
@@ -384,7 +506,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        return new Group(geometry, mesh, instance, pack, lowest);
+        return new Group(geometry, mesh, instance, pack, lowest) { Model = model };
     }
 
     private static IEnumerable<HumanSoldierTask> Walk(GameTask task)
@@ -421,7 +543,7 @@ public sealed class SoldierRenderer : IDisposable
 
     private void Release()
     {
-        foreach (Group group in _groups)
+        foreach (Group group in Enumerable.Concat(_groups, _dead))
         {
             if (group.Mesh.IsValid)
             {
@@ -430,6 +552,8 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _groups.Clear();
+        _dead.Clear();
+        _health.Clear();
         Count = 0;
     }
 
@@ -469,7 +593,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         public MeshGeometry Geometry { get; } = geometry;
 
-        public MeshHandle Mesh { get; } = mesh;
+        public MeshHandle Mesh { get; set; } = mesh;
 
         public MtpInstance? Instance { get; } = instance;
 
@@ -478,5 +602,8 @@ public sealed class SoldierRenderer : IDisposable
         public float LowestVertexZ { get; } = lowestVertexZ;
 
         public List<(SoldierView View, Vector3d Position)> Soldiers { get; } = [];
+
+        /// <summary>The model every soldier in the group draws, kept so the group can be re-skinned each tick.</summary>
+        public MefModel? Model { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 
 namespace OpenIGI.Game.Player;
@@ -58,7 +58,14 @@ public sealed class SoldierView
         int declared = soldier.StandAnimation;
         DeclaredStandAnimationFound = declared >= 0 && set.TryGet(declared, out _);
         StandAnimation = declared >= 0 && DeclaredStandAnimationFound ? declared : FallbackStandAnimation;
-        _bones.Play(0, StandAnimation, loops: false);
+        CurrentAnimation = StandAnimation;
+
+        // The stand animation LOOPS. 0x456E50 passes flags 0, whose bit 0 is the loop bit -- but a stand
+        // clip that runs out and holds its last frame leaves a soldier frozen, which is not what the game
+        // does. The idle-animation countdown in HumanAI's per-tick (ai.md 3.1) re-triggers it, so the
+        // observable behaviour is a continuously standing guard either way; looping here is the same
+        // result without needing the AI attached.
+        _bones.Play(0, StandAnimation, loops: true);
 
         // 0x45F890's last line: 0x4B3BE0(human + 120, gamma), the plain Z rotation - which is
         // Z(gamma)*Y(0)*X(0) of the same composition 0x4B38E0 builds. The declared facing, no mirror.
@@ -86,6 +93,69 @@ public sealed class SoldierView
 
     /// <summary>Gets the world 3×3 — the original's <c>Human+120</c>, a pure Z rotation of <c>Gamma</c>.</summary>
     public Matrix3f Orientation { get; }
+
+    /// <summary>Gets a value indicating whether this soldier has been killed.</summary>
+    public bool IsDead { get; private set; }
+
+    /// <summary>Gets the animation currently playing on bone 0.</summary>
+    public int CurrentAnimation { get; private set; }
+
+    /// <summary>Advances the rig by one tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Nothing called this before, and the pose was cached with <c>??=</c></b> — so every soldier in the
+    /// game stood frozen on the first frame its stand animation resolved to, which reads as a default A-pose.
+    /// The clip has to be advanced and the cached pose dropped, exactly as the player's rig is.
+    /// </para>
+    /// <para>
+    /// A non-looping clip that has run out holds its last frame, which is what a death animation wants and
+    /// what <see cref="BoneClip"/> already does.
+    /// </para>
+    /// </remarks>
+    public void Tick()
+    {
+        _bones.Tick();
+        _pose = null;
+    }
+
+    /// <summary>
+    /// The two death animations the soldier class plays — the literal ids in its two death state-entry
+    /// functions, <c>0x45C5A0</c> and <c>0x45C650</c>.
+    /// </summary>
+    /// <remarks>
+    /// Both entries are otherwise identical: they stop the soldier's sound, clear the crouch, turn world
+    /// collision on, play their id on the bone object at <c>Human+104</c> with a zero blend, play the same
+    /// id on the weapon rig, start one of <b>four</b> <c>ai_death_&lt;n&gt;</c> sounds and install the same
+    /// per-tick (<c>0x45C700</c>). <b>The id is not taken from the hit-zone table</b> — a row's trailing
+    /// fields are reaction ids, and reading one of them as the death animation was a guess this replaces.
+    /// Which of the two the original picks depends on the transition into the state, which is unread.
+    /// </remarks>
+    public static IReadOnlyList<int> DeathAnimations { get; } = [24, 25];
+
+    /// <summary>Kills the soldier and starts its death animation.</summary>
+    /// <param name="deathAnimation">
+    /// The animation id to play. Pass one of <see cref="DeathAnimations"/>; <c>-1</c> keeps the current clip.
+    /// </param>
+    /// <remarks>
+    /// The soldier keeps being drawn and keeps ticking — a dead guard in the original falls and stays on the
+    /// ground. Vanishing was the port having nothing to play; the clip holds its last frame once it runs out,
+    /// so the body settles and stays.
+    /// </remarks>
+    public void Kill(int deathAnimation)
+    {
+        if (IsDead)
+        {
+            return;
+        }
+
+        IsDead = true;
+        if (deathAnimation >= 0 && _bones.Set.TryGet(deathAnimation, out _))
+        {
+            CurrentAnimation = deathAnimation;
+            _bones.Play(0, deathAnimation, loops: false);
+            _pose = null;
+        }
+    }
 
     /// <summary>Gets the current pose, in the object's own space with the facing baked in.</summary>
     /// <returns>The posed rig.</returns>
