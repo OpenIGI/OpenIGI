@@ -84,6 +84,8 @@ public sealed class SoldierRenderer : IDisposable
     private Group? _playerBodyGroup;
     private Member? _playerBodyMember;
     private bool _playerBodyActive;
+    private float _playerBodyFacing;
+    private AiSoldier.GroundQuery? _playerBodyGround;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
@@ -1226,6 +1228,7 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyView = view;
         _playerBodyGroup = group;
         _playerBodyMember = new Member(view, default, own);
+        _playerBodyGround = MakeGroundQuery();
         _playerBodyActive = false;
         _logger.Information(LogCategory, $"Loaded the player's third-person body '{model}' on skeleton {set.Skeleton.Id}.");
         return true;
@@ -1245,6 +1248,7 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
+        _playerBodyFacing = gamma;
         _playerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
         _playerBodyView.Kill(deathAnimation);
         _playerBodyActive = true;
@@ -1267,6 +1271,27 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _playerBodyView.Tick();
+
+        // The knock-back. A dying body is thrown -- the fall clip's own root-motion track carries it back
+        // and down, and the retail mover consumes exactly that (0x4109A0 samples the body clip's root delta
+        // through sub_4D2FB0 and moves the human by it, until 0x40E620 sees the body grounded and stops it).
+        // Advancing the clip WITHOUT moving the body left it crumpling on the spot instead of being thrown,
+        // which is the missing "knocked to the ground" feel. This is the corpse move a soldier already gets
+        // (AiSoldier.TickDeadBody): the horizontal root motion, rotated by the facing, plus a ground snap.
+        Vector3f rootMotion = _playerBodyView.RootMotion();
+        Vector3d world = SoldierDeathFall.RotateAboutZ(
+            new Vector3d(rootMotion.X, rootMotion.Y, rootMotion.Z), _playerBodyFacing);
+
+        double px = _playerBodyView.Position.X + world.X;
+        double py = _playerBodyView.Position.Y + world.Y;
+        double pz = _playerBodyView.Position.Z + world.Z;
+        if (_playerBodyGround is { } ground
+            && ground(px, py, pz + ProbeAboveInUnits, out double groundZ))
+        {
+            pz = groundZ;
+        }
+
+        _playerBodyView.PlaceAt(new Vector3d(px, py, pz), _playerBodyView.Orientation);
 
         Vertex3D[] skinned = [.. _playerBodyGroup.Geometry.Vertices];
         try
