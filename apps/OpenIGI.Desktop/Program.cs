@@ -184,6 +184,15 @@ using (window)
     // Task_DeclareParameters("CutScene", ...) declaration so the registry's verification passes.
     loop.Types.Register<OpenIGI.Game.World.CutSceneTask>(OpenIGI.Game.World.CutSceneTask.TypeName);
 
+    // A level parks its intro and outro cut-scene actors inside ConditionalContainer tasks gated on
+    // cut-scene / mission-progress state that is false during play. Without the type registered the port
+    // built each as a plain container and rendered its children, so those actors -- including a second
+    // David Jones on the player's own model, the outro "Jones drive truck" -- stood in the level at
+    // mission start where the original never registers them. Registering the type lets the gate below
+    // evaluate each container's condition and hide the subtrees the original leaves unregistered.
+    loop.Types.Register<OpenIGI.Game.World.ConditionalContainerTask>(
+        OpenIGI.Game.World.ConditionalContainerTask.TypeName);
+
     // Every soldier's combat numbers - 29 AI types x 3 difficulties out of common/ai/settings.qsc.
     // Loaded before any level, as sub_406DF0 is: the table has to exist before a HumanAI is configured.
     HumanAiConfigRegistry.RegisterTypes(loop.Types);
@@ -268,6 +277,12 @@ using (window)
         TerrainLoader terrainLoader = new(resources, loop.Natives, logger);
         MissionLoader missionLoader = new(missions, fileSystem, resources, levelLoader, logger, terrainLoader);
         LoadedMission loaded = missionLoader.Load(id);
+
+        // Evaluate the level's ConditionalContainer conditions against the initial playable state, so the
+        // scene, spawn and soldier walks below skip the subtrees the original leaves unregistered (the
+        // intro/outro cut-scene props and actors). Runs after the tree is built and its variables exported,
+        // and before anything walks it.
+        new ConditionalContainerGate(loop.Variables, logger).Prepare(levelRoot);
 
         scene = WorldScene.Build(loaded, levelRoot, magic, logger);
         world = new WorldRenderer(device, resources, logger);
@@ -396,15 +411,31 @@ using (window)
                         // pinned to full and left to fade -- the last thing the player sees is red.
                         damageFlash.Hit();
 
+                        // Which way the body is thrown. The fall clip carries the body along its own
+                        // backward axis, so the facing decides where "backward" points -- and it has to
+                        // point AWAY FROM THE SHOOTER, so a hit in the stomach throws you onto your back.
+                        // The soldier death does exactly this (SoldierDeath.TurnToTheShot, 0x45DAA0):
+                        // it faces the body at the incoming round. Retail's player death instead falls
+                        // along the look direction (0x40E560 does not turn), which only reads right when
+                        // you were looking straight at the shooter -- so we take the soldier's shot-facing,
+                        // which is right however you were facing. The heading whose backward axis (the
+                        // clip's -Y, rotated) points from the shooter to the body is atan2(dx, -dy).
+                        double throwX = player.Body.Position.X - from.X;
+                        double throwY = player.Body.Position.Y - from.Y;
+                        double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
+                        float throwFacing = throwLength > 1e-6
+                            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
+                            : player.Body.Yaw;
+
                         // Locomotion state 47 (0x40E560) plays the fall clip on the body rig; here that is
                         // the player's third-person body, posed with the clip the last zone struck chose.
                         // The camera hands itself to the death view and pulls back off the eye, so the fall
                         // is seen from the outside -- the original's death sequence.
-                        soldiers?.KillPlayerBody(fall, player.Body.Position, player.Body.Yaw);
+                        soldiers?.KillPlayerBody(fall, player.Body.Position, throwFacing);
                         WorldRayCast deathCaster = solids.Caster();
                         deathCamera.Begin(
                             player.Body.Position,
-                            player.Body.Yaw,
+                            throwFacing,
                             (Vector3d f, Vector3d t, out Vector3d h) =>
                             {
                                 bool blocked = deathCaster(f, t, out WorldRayHit wall);

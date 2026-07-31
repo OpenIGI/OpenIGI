@@ -1252,6 +1252,16 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
         _playerBodyView.Kill(deathAnimation);
         _playerBodyActive = true;
+
+        // The fall clip has to resolve in the player's set, or Kill silently keeps the idle and the body
+        // never falls; reported once so a wrong id is visible rather than a body that just stands there.
+        if (_playerBodyView.CurrentAnimation != deathAnimation)
+        {
+            _logger.Warning(
+                LogCategory,
+                $"The player's death clip {deathAnimation} is not in its set; the body keeps clip "
+                    + $"{_playerBodyView.CurrentAnimation} and will not fall.");
+        }
     }
 
     /// <summary>Advances the player body's death clip by one tick and re-skins it, once it is active.</summary>
@@ -1731,6 +1741,16 @@ public sealed class SoldierRenderer : IDisposable
     {
         foreach (GameTask child in task.Children)
         {
+            // A soldier inside a ConditionalContainer that is not running is not registered into the world
+            // -- the original creates the task but never fires its DynCubeObj register event until the
+            // scene runs. Level 1's intro and outro cut-scenes park several Jones-model soldiers this way
+            // (the "Jones drive truck" outro actor among them); without this the port drew them standing in
+            // the base at mission start. See ConditionalContainerGate.
+            if (ConditionalContainerGate.IsDormant(child))
+            {
+                continue;
+            }
+
             if (child is HumanSoldierTask soldier)
             {
                 yield return soldier;
