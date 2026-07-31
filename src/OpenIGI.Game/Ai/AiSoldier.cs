@@ -81,6 +81,7 @@ public sealed class AiSoldier
     private LineOfSight? _sight;
     private GroundQuery? _ground;
     private AiGuardCombat? _combat;
+    private AiPatrolCombat? _patrol;
     private WeaponQuery? _weapon;
     private AiType _type = AiType.GuardAk;
     private AiScriptHost? _host;
@@ -280,9 +281,16 @@ public sealed class AiSoldier
     /// <param name="weapon">Where the held weapon's state is read from each tick.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
+    /// <para>
     /// Without this a soldier that engages only turns to face its target, which is what the port did
-    /// before combat was read. <c>AIAction_Combat</c> dispatches by type (§11.1); only the guard arm is
-    /// built, so a patrol type gets the guard behaviour for now and is recorded in <c>TODO.md</c>.
+    /// before combat was read.
+    /// </para>
+    /// <para>
+    /// <c>AIAction_Combat</c> dispatches by type (§11.1) and this now follows it: a <c>GUARD_*</c> type,
+    /// the sniper and Priboi stand and fight, and every <c>PATROL_*</c> type — <b>most soldiers in the
+    /// game</b> — gets the move-and-fight arm instead. The RPG, gunner and named-character arms are
+    /// still unread and fall back to standing and fighting, which is recorded in <c>TODO.md</c>.
+    /// </para>
     /// </remarks>
     public void SetCombat(AiType type, AiCombatParameters parameters, WeaponQuery weapon)
     {
@@ -291,9 +299,27 @@ public sealed class AiSoldier
 
         _type = type;
         _weapon = weapon;
+        Arm = AiCombatArms.For(type);
+
+        // The patrol arm's own fire and reload sub-actions ARE the guard arm's - the original installs
+        // 0x48D8B0 and 0x48DB10 from both - so the shared machinery is kept and only the DECISION
+        // differs, which is the split ai.md 13.10 asks for.
         _combat = new AiGuardCombat(parameters, _random.NextDouble);
+        _patrol = Arm == AiCombatArm.Patrol
+            ? new AiPatrolCombat(parameters, _random.NextDouble)
+            : null;
+
         CombatParameters = parameters;
     }
+
+    /// <summary>Gets which combat arm this soldier's type selects.</summary>
+    public AiCombatArm Arm { get; private set; } = AiCombatArm.None;
+
+    /// <summary>Gets the patrol arm's state, when the soldier has one.</summary>
+    public AiPatrolCombat? Patrol => _patrol;
+
+    /// <summary>Gets what the patrol arm chose on the last tick it ran.</summary>
+    public AiPatrolAction PatrolAction { get; private set; } = AiPatrolAction.LookForTarget;
 
     /// <summary>Gets the soldier's combat row, once one has been given.</summary>
     public AiCombatParameters? CombatParameters { get; private set; }
@@ -959,6 +985,12 @@ public sealed class AiSoldier
 
         Target?.Refresh(enemy);
 
+        if (_patrol is not null)
+        {
+            FightAsPatrol(enemy);
+            return;
+        }
+
         AiCombatWeaponState weapon = _weapon();
         AiCombatSense sense = new(
             HasDetectionSlot: _playerSlot.IsRegistered || _playerSlot.IsVisible || _playerSlot.IsInCone,
@@ -1011,6 +1043,224 @@ public sealed class AiSoldier
             Activity = AiSoldierActivity.Idle;
             SetTarget(null);
         }
+    }
+
+    /// <summary>Runs the move-and-fight arm for one tick — <c>0x48ABA0</c>.</summary>
+    /// <param name="enemy">Where the target is.</param>
+    /// <remarks>
+    /// <para>
+    /// The chooser decides (<see cref="AiPatrolCombat.Choose"/>) and this turns the decision into
+    /// movement, turns and channel writes. Fire and reload are handed to the shared sub-actions, which
+    /// is what the original does — it installs the same <c>0x48D8B0</c> and <c>0x48DB10</c> from both
+    /// arms.
+    /// </para>
+    /// <para>
+    /// <b>Divergences, recorded rather than hidden.</b> A grenade is never thrown, because
+    /// <c>HumanAI+15869</c> is zeroed by the constructor and <b>what writes it is unread</b> (§13.1).
+    /// The line-of-fire test inside <c>FindFreePosition</c> is not supplied, so a soldier may advance to
+    /// a node it cannot actually shoot from. And "standing on its own node" is a radius test where the
+    /// original uses <c>sub_4F9A40</c>'s oriented box with the node's own heading (§13.5).
+    /// </para>
+    /// </remarks>
+    private void FightAsPatrol(Vector3d enemy)
+    {
+        AiCombatWeaponState weapon = _weapon!();
+        double distance = Distance(Position, enemy);
+        bool visible = _playerSlot.IsVisible;
+
+        // Only the branch that needs a search runs one, as the original's call sites do.
+        int? toward = null;
+        int? away = null;
+        if (visible && distance > (CombatParameters?.TrackingDistanceInUnits ?? double.MaxValue))
+        {
+            toward = FindFreePosition(enemy, towardTarget: true);
+        }
+        else if (!visible)
+        {
+            away = FindFreePosition(enemy, towardTarget: false);
+        }
+
+        AiPatrolSense sense = new(
+            HasDetectionSlot: _playerSlot.IsRegistered || _playerSlot.IsVisible || _playerSlot.IsInCone,
+            Visible: visible,
+            DistanceToTargetInUnits: distance,
+            CurrentNodeId: CurrentNode,
+            StandingOnOwnNode: IsStandingOnNode(CurrentNode),
+            AmmoInClip: weapon.AmmoInClip,
+            HasGrenade: false,
+            AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0,
+            FreePositionTowardTarget: toward,
+            FreePositionAwayFromTarget: away);
+
+        AiPatrolAction action = _patrol!.Choose(sense);
+        PatrolAction = action;
+        _channelWrites.Clear();
+        Combat = default;
+
+        switch (action)
+        {
+            case AiPatrolAction.End:
+                Activity = AiSoldierActivity.Idle;
+                SetTarget(null);
+                return;
+
+            case AiPatrolAction.CloseCombat:
+                // Channel 9 is close combat -- a correction to 11.2, which had it as a dead branch.
+                WriteChannel(AiCombatChannel.CloseCombat, 1f);
+                TurnTowards(AimPointOf(enemy), (float)AiGuardCombat.AimToleranceRadians);
+                return;
+
+            case AiPatrolAction.LookForTarget:
+                // One tick, one turn, straight back to the stance behaviour.
+                Target?.Aim(this, AiAimMode.Crowded);
+                TurnTowards(AimPointOf(enemy), (float)AiGuardCombat.AimToleranceRadians);
+                return;
+
+            case AiPatrolAction.RePosition:
+                GoTo(CurrentNode);
+                return;
+
+            case AiPatrolAction.Follow:
+                FollowTarget(enemy);
+                return;
+
+            case AiPatrolAction.Fire:
+            case AiPatrolAction.Reload:
+            case AiPatrolAction.ThrowGrenade:
+            default:
+                RunSharedSubAction(enemy, weapon);
+                return;
+        }
+    }
+
+    /// <summary>Advances on, or hunts for, the target — <c>0x48C860</c>, <c>"Combat - Follow"</c>.</summary>
+    /// <param name="enemy">Where the target is.</param>
+    /// <remarks>
+    /// <b>A patrol fires while it is running at you</b>, with no burst set up and no aim solve — one
+    /// round per tick straight into the trigger slot, whenever the target is inside a <b>16.3°</b> cone
+    /// about its forward axis (<c>dot &gt; 0.96</c>). §13.7.
+    /// </remarks>
+    private void FollowTarget(Vector3d enemy)
+    {
+        int destination = _patrol!.DestinationNodeId;
+        if (destination < 0)
+        {
+            return;
+        }
+
+        WriteChannel(AiCombatChannel.Stand, 1f);
+
+        if (CurrentNode == destination)
+        {
+            _patrol.ArrivedAtDestination();
+            Target?.Aim(this, AiAimMode.None);
+            return;
+        }
+
+        GoTo(destination);
+
+        if (!_playerSlot.IsVisible)
+        {
+            Target?.Aim(this, AiAimMode.None);
+            return;
+        }
+
+        if (IsFacing(AimPointOf(enemy), FollowFireConeRadians))
+        {
+            if ((Target?.Count(AiAimMode.Aiming) ?? 0) >= AiCombatTarget.MaximumAimers)
+            {
+                Target?.Aim(this, AiAimMode.Crowded);
+                return;
+            }
+
+            Combat = new AiCombatCommand { PullTrigger = true, FirePose = true };
+            Target?.Aim(this, AiAimMode.Aiming);
+            return;
+        }
+
+        Target?.Aim(this, AiAimMode.None);
+    }
+
+    /// <summary>The fire and reload sub-actions the two arms share.</summary>
+    /// <param name="enemy">Where the target is.</param>
+    /// <param name="weapon">The held weapon's state this tick.</param>
+    private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon)
+    {
+        AiCombatSense sense = new(
+            HasDetectionSlot: true,
+            InCone: _playerSlot.IsInCone,
+            Visible: _playerSlot.IsVisible,
+            TargetPosition: AimPointOf(enemy),
+            DistanceToTargetInUnits: Distance(Position, enemy),
+            LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
+            AmmoInClip: weapon.AmmoInClip,
+            Category: weapon.Category,
+            ClipSize: weapon.ClipSize,
+            BurstSize: weapon.BurstSize,
+            AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0);
+
+        AiCombatCommand command = _combat!.Update(sense, standing: true, Vision.Primary.RangeAt(Alerted));
+        Combat = command;
+
+        if (command.FirePose)
+        {
+            WriteChannel(AiCombatChannel.Fire, 1f);
+        }
+
+        if (command.PressReload || command.ReloadWeaponDirectly)
+        {
+            WriteChannel(AiCombatChannel.Stand, 1f);
+        }
+
+        if (command.StartedBurst is { } burst)
+        {
+            HitProbability = burst.HitProbability;
+        }
+
+        if (command.Aim is { } mode && Target is not null)
+        {
+            Target.Aim(this, mode);
+        }
+
+        if (command.TurnTo is { } point)
+        {
+            TurnTowards(point, (float)AiGuardCombat.AimToleranceRadians);
+            _combat.ReportAimed(IsFacing(point, (float)AiGuardCombat.AimToleranceRadians));
+        }
+    }
+
+    /// <summary>The cone a following patrol will fire through — 16.3°, i.e. <c>acos 0.96</c>.</summary>
+    private const float FollowFireConeRadians = 0.2837941f;
+
+    /// <summary>Asks <see cref="AiFreePosition"/> where to stand.</summary>
+    /// <param name="enemy">Where the target is.</param>
+    /// <param name="towardTarget">Whether to apply the direction test.</param>
+    /// <returns>A node id, or <see langword="null"/>.</returns>
+    private int? FindFreePosition(Vector3d enemy, bool towardTarget)
+    {
+        int targetNode = NearestNode(enemy);
+        return targetNode < 0
+            ? null
+            : AiFreePosition.Find(_graph, CurrentNode, targetNode, towardTarget);
+    }
+
+    /// <summary>Whether the soldier is standing inside a node.</summary>
+    /// <param name="nodeId">The node to test.</param>
+    /// <returns><see langword="true"/> when it is.</returns>
+    /// <remarks>
+    /// <b>Divergence.</b> The original's test is <c>sub_4F9A40</c>, an oriented box using the node's own
+    /// <c>vNodeGamma</c> heading with a deviance of 0.3 (§13.5). This is a radius test, which differs at
+    /// the corners of a rotated node.
+    /// </remarks>
+    private bool IsStandingOnNode(int nodeId)
+    {
+        if (_graph.NodeAt(nodeId) is not { } node)
+        {
+            return false;
+        }
+
+        double reach = (node.Radius + 0.3) * GraphNode.MetreInUnits;
+        return Distance(Position, node.Position) <= reach;
     }
 
     /// <summary>Where an AI aims at a human — its position, half a metre up.</summary>
