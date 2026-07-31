@@ -211,6 +211,11 @@ using (window)
     // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11).
     HumanHealth playerHealth = new(HumanHitZoneTable.Player);
     bool playerDead = false;
+
+    // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
+    // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
+    // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
+    HumanDamageFlash damageFlash = new();
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
     WorldScene? scene = null;
@@ -362,6 +367,11 @@ using (window)
 
                     playerHealth.Apply(hit.Zone, weapon.DamageFactor);
                     guardHits++;
+
+                    // The screen goes red. A full wash per hit, so a burst holds it solid and it fades
+                    // over a second and a half once the fire stops -- the retail decay (sub_411300).
+                    damageFlash.Hit();
+
                     logger.Information(
                         "Weapon",
                         $"A guard's {weapon.ScriptId} hit the player in zone {hit.Zone} "
@@ -377,11 +387,16 @@ using (window)
                         int fall = HumanPlayerDeath.Choose(
                             hit.Zone, HumanHitZoneTable.Player, shotRandom.Next(2));
 
-                        // NOT played here. Those ids index the player's BODY set, and the only rig the
-                        // first-person view has is the arms on skeleton 5 -- playing a body clip on it
-                        // is the same mistake that made guards throw themselves on the floor. A real
-                        // death needs the player's body rig drawn and the camera handed to it, and
-                        // neither exists yet. Reported so it is visible; not faked.
+                        // Hold the screen red. The wash decays a forty-fifth a tick, so on death it is
+                        // pinned to full and left to fade -- the last thing the player sees is red.
+                        damageFlash.Hit();
+
+                        // The body clip (animation {fall}) and the death sound are NOT played here. Those
+                        // ids index the player's BODY set, and the only rig the first-person view has is
+                        // the arms on skeleton 5 -- playing a body clip on it is the same mistake that
+                        // made guards throw themselves on the floor. Seeing Jones fall needs the player's
+                        // third-person body rig drawn and the death camera handed to it, and neither
+                        // exists yet. Reported so it is visible; not faked.
                         logger.Information(
                             "Weapon",
                             $"The player is DEAD after {guardHits} hit(s) from {guardRounds} round(s), "
@@ -927,6 +942,10 @@ using (window)
         // Measured against the original, which covers 160-185 units a tick, this port was covering ~357.
         if (outcome is FrameOutcome.Tick)
         {
+            // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
+            // fixed tick, for the same determinism reason the bodies are.
+            damageFlash.Tick();
+
             // The player's eye is what the guards' view cones are tested against -- and in the
             // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
             // you leave walking mode, so feeding its eye meant every guard in the level was watching an
@@ -1047,6 +1066,28 @@ using (window)
                         UiScale.Resolve(options.UiScale, window.Width, window.Height));
                     batch.End();
                 }
+            }
+
+            // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
+            // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
+            // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
+            // when the arms and the HUD are gone but the last thing the screen showed is still red.
+            if (damageFlash.IsActive)
+            {
+                float flashWidth = window.Width;
+                float flashHeight = window.Height;
+                static Bgra32 Red(float alpha) =>
+                    new(0, 0, 255, (byte)Math.Clamp((int)(alpha * 255f), 0, 255));
+
+                device.Set2DProjection(window.Width, window.Height);
+                batch.Begin();
+                batch.DrawQuad(
+                    OpenIGI.Rendering.TextureHandle.None,
+                    new OpenIGI.Rendering.Vertex2D(0f, 0f, 0f, 0f, Red(damageFlash.TopLeft)),
+                    new OpenIGI.Rendering.Vertex2D(flashWidth, 0f, 1f, 0f, Red(damageFlash.TopRight)),
+                    new OpenIGI.Rendering.Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(damageFlash.BottomRight)),
+                    new OpenIGI.Rendering.Vertex2D(0f, flashHeight, 0f, 1f, Red(damageFlash.BottomLeft)));
+                batch.End();
             }
 
             if (!reportedWorld)
