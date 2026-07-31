@@ -1117,7 +1117,7 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.RePosition:
-                GoTo(CurrentNode);
+                HeadFor(CurrentNode);
                 return;
 
             case AiPatrolAction.Follow:
@@ -1157,7 +1157,7 @@ public sealed class AiSoldier
             return;
         }
 
-        GoTo(destination);
+        HeadFor(destination);
 
         if (!_playerSlot.IsVisible)
         {
@@ -1231,6 +1231,22 @@ public sealed class AiSoldier
 
     /// <summary>The cone a following patrol will fire through — 16.3°, i.e. <c>acos 0.96</c>.</summary>
     private const float FollowFireConeRadians = 0.2837941f;
+
+    /// <summary>Sets a destination, but only when it is a new one.</summary>
+    /// <param name="node">Where to head.</param>
+    /// <remarks>
+    /// <see cref="GoTo"/> clears the route and re-anchors the leg origin every time it is called, so a
+    /// combat behaviour that asks for the same destination on every tick would restart the leg forever
+    /// and the soldier would never actually travel. The original sets the destination once
+    /// (<c>HumanAI+15848</c>) and the movement stepper walks the queue; this keeps that shape.
+    /// </remarks>
+    private void HeadFor(int node)
+    {
+        if (DestinationNode != node)
+        {
+            GoTo(node);
+        }
+    }
 
     /// <summary>Asks <see cref="AiFreePosition"/> where to stand.</summary>
     /// <param name="enemy">Where the target is.</param>
