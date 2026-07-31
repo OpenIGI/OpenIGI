@@ -764,7 +764,7 @@ public sealed class AiSoldier
 
         if (Activity == AiSoldierActivity.Engaging)
         {
-            Fight(enemy);
+            Fight(enemy, rootMotionThisTick);
             return;
         }
 
@@ -1123,7 +1123,7 @@ public sealed class AiSoldier
     /// the original.
     /// </para>
     /// </remarks>
-    private void Fight(Vector3d enemy)
+    private void Fight(Vector3d enemy, double rootMotionThisTick)
     {
         if (_combat is null || _weapon is null)
         {
@@ -1136,7 +1136,7 @@ public sealed class AiSoldier
 
         if (_patrol is not null)
         {
-            FightAsPatrol(enemy);
+            FightAsPatrol(enemy, rootMotionThisTick);
             return;
         }
 
@@ -1196,6 +1196,7 @@ public sealed class AiSoldier
 
     /// <summary>Runs the move-and-fight arm for one tick — <c>0x48ABA0</c>.</summary>
     /// <param name="enemy">Where the target is.</param>
+    /// <param name="rootMotionThisTick">The run clip's own root motion this tick, for the walk to a destination.</param>
     /// <remarks>
     /// <para>
     /// The chooser decides (<see cref="AiPatrolCombat.Choose"/>) and this turns the decision into
@@ -1211,7 +1212,7 @@ public sealed class AiSoldier
     /// original uses <c>sub_4F9A40</c>'s oriented box with the node's own heading (§13.5).
     /// </para>
     /// </remarks>
-    private void FightAsPatrol(Vector3d enemy)
+    private void FightAsPatrol(Vector3d enemy, double rootMotionThisTick)
     {
         AiCombatWeaponState weapon = _weapon!();
         double distance = Distance(Position, enemy);
@@ -1260,17 +1261,31 @@ public sealed class AiSoldier
                 return;
 
             case AiPatrolAction.LookForTarget:
-                // One tick, one turn, straight back to the stance behaviour.
                 Target?.Aim(this, AiAimMode.Crowded);
-                TurnTowards(AimPointOf(enemy), (float)AiGuardCombat.AimToleranceRadians);
+
+                // The original walks to its destination EVERY tick and the action is only the upper body,
+                // so a soldier hunting a target it has lost keeps moving to the search node while it
+                // watches. Reproduced by continuing the walk whenever a combat route is set (the search's
+                // one-in-sixteen Follow ticks set it); with no route it is the crowded-out case and only
+                // turns to watch.
+                if (_route.Count > 0)
+                {
+                    AdvanceInCombat(rootMotionThisTick);
+                }
+                else
+                {
+                    TurnTowards(AimPointOf(enemy), (float)AiGuardCombat.AimToleranceRadians);
+                }
+
                 return;
 
             case AiPatrolAction.RePosition:
                 HeadFor(CurrentNode);
+                AdvanceInCombat(rootMotionThisTick);
                 return;
 
             case AiPatrolAction.Follow:
-                FollowTarget(enemy);
+                FollowTarget(enemy, rootMotionThisTick);
                 return;
 
             case AiPatrolAction.Fire:
@@ -1284,12 +1299,13 @@ public sealed class AiSoldier
 
     /// <summary>Advances on, or hunts for, the target — <c>0x48C860</c>, <c>"Combat - Follow"</c>.</summary>
     /// <param name="enemy">Where the target is.</param>
+    /// <param name="rootMotionThisTick">The run clip's own root motion this tick, for the walk to a destination.</param>
     /// <remarks>
     /// <b>A patrol fires while it is running at you</b>, with no burst set up and no aim solve — one
     /// round per tick straight into the trigger slot, whenever the target is inside a <b>16.3°</b> cone
     /// about its forward axis (<c>dot &gt; 0.96</c>). §13.7.
     /// </remarks>
-    private void FollowTarget(Vector3d enemy)
+    private void FollowTarget(Vector3d enemy, double rootMotionThisTick)
     {
         int destination = _patrol!.DestinationNodeId;
         if (destination < 0)
@@ -1307,6 +1323,7 @@ public sealed class AiSoldier
         }
 
         HeadFor(destination);
+        AdvanceInCombat(rootMotionThisTick);
 
         if (!_playerSlot.IsVisible)
         {
@@ -1394,6 +1411,24 @@ public sealed class AiSoldier
         if (DestinationNode != node)
         {
             GoTo(node);
+        }
+    }
+
+    /// <summary>Steps the soldier along its combat route, the same walk the patrol path uses.</summary>
+    /// <param name="rootMotionThisTick">The run clip's own root motion this tick, in engine units.</param>
+    /// <remarks>
+    /// The move-and-fight arm sets a Follow/RePosition destination but the original then <em>walks</em> to
+    /// it — the AI steers its <c>Human</c> through the input frame and the body's mover carries it. Without
+    /// this the port set a destination it never travelled, which is exactly "guards engage but don't chase".
+    /// The distance covered is the run clip's own root motion (M8), so no speed is invented; the clip only
+    /// carries motion when the renderer is playing a walk/run on a moving combat action, which is what makes
+    /// a firing guard stay put and a following one close in.
+    /// </remarks>
+    private void AdvanceInCombat(double rootMotionThisTick)
+    {
+        if (_route.Count > 0)
+        {
+            Advance(rootMotionThisTick);
         }
     }
 

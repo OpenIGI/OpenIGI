@@ -568,6 +568,13 @@ public sealed class SoldierRenderer : IDisposable
             : HumanSoldierStates.ReloadState;
     }
 
+    /// <summary>The two move-and-fight actions that walk the soldier, so the walk clip should play.</summary>
+    /// <param name="action">What the patrol combat arm chose this tick.</param>
+    /// <returns><see langword="true"/> for <see cref="AiPatrolAction.Follow"/> and
+    /// <see cref="AiPatrolAction.RePosition"/> — the ones that travel to a destination.</returns>
+    private static bool IsMovingCombatAction(AiPatrolAction action) =>
+        action is AiPatrolAction.Follow or AiPatrolAction.RePosition;
+
     /// <summary>Logs how the level's fight is going, once per change.</summary>
     /// <remarks>
     /// One line, and only when the numbers move, so it is a running commentary rather than a per-tick
@@ -943,6 +950,13 @@ public sealed class SoldierRenderer : IDisposable
             if (brain.RequestedAnimation >= 0)
             {
                 view.SetMoving(true, brain.RequestedAnimation);
+            }
+            else if (brain.Activity == AiSoldierActivity.Engaging && IsMovingCombatAction(brain.PatrolAction))
+            {
+                // A following or repositioning patrol RUNS to its destination, and the run clip's own root
+                // motion is what carries it (AiSoldier.AdvanceInCombat reads it). Playing the fire pose here
+                // instead would leave a chasing guard firing on the spot -- which is what it did.
+                view.SetMoving(true, _walkAnimation);
             }
             else if (brain.Activity != AiSoldierActivity.Engaging
                 || !view.SetMoving(true, HumanSoldierStates.AnimationOf(CombatState(brain))))
