@@ -75,6 +75,16 @@ public sealed class SoldierRenderer : IDisposable
     private double _travelMax;
     private bool _disposed;
 
+    // The player's own third-person body -- Jones, the rig the first-person view never shows. It is NOT a
+    // guard: it has no AI, is not in _groups, and the soldier tick and draw loops never touch it. It loads
+    // with the level (LoadPlayerBody), stands invisibly until the player dies, then poses the death clip
+    // (KillPlayerBody) and is drawn (DrawPlayerBody) once the death camera has pulled back off the eye.
+    // Reuses the same BuildGroup / re-skin / draw machinery a soldier's body does. See HumanPlayerBody.
+    private SoldierView? _playerBodyView;
+    private Group? _playerBodyGroup;
+    private Member? _playerBodyMember;
+    private bool _playerBodyActive;
+
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">Where texture bytes are read from.</param>
@@ -1145,6 +1155,223 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>Gets a value indicating whether the player's third-person body is posed and drawing.</summary>
+    /// <remarks>Set once the player has died and <see cref="KillPlayerBody"/> has run; the death camera reads it.</remarks>
+    public bool IsPlayerBodyActive => _playerBodyActive;
+
+    /// <summary>
+    /// Loads the player's third-person body — the model the level's <c>HumanPlayer</c> declares, on
+    /// skeleton 0's set, standing in clip 2 — so the death camera has a body to reveal.
+    /// </summary>
+    /// <param name="mission">The mission whose packs hold the model.</param>
+    /// <param name="model">The player's model, from the <c>HumanPlayer</c> task's <c>Model</c> parameter.</param>
+    /// <param name="set">Skeleton 0's animation set (<c>000.iff</c>), the same one the player walks on.</param>
+    /// <param name="position">Where the level places the player, in engine units.</param>
+    /// <param name="gamma">The heading the player starts facing.</param>
+    /// <returns><see langword="false"/> when the model does not resolve or does not upload.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The body is built from a synthetic <see cref="HumanSoldierTask"/> because that is all
+    /// <see cref="SoldierView"/> needs — skeleton, stand clip, position and heading — and the player's
+    /// constructor (<c>0x410370</c>) builds exactly that on <c>Human+104</c> (see <see cref="HumanPlayerBody"/>).
+    /// It is kept out of <c>_groups</c> so nothing else draws or ticks it; only the death path does.
+    /// </remarks>
+    public bool LoadPlayerBody(
+        LoadedMission mission, string model, BoneAnimationSet set, Vector3d position, float gamma)
+    {
+        ArgumentNullException.ThrowIfNull(mission);
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(set);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        ReleasePlayerBody();
+
+        HumanSoldierTask task = new()
+        {
+            Model = model,
+            BoneHierarchy = set.Skeleton.Id,
+            StandAnimation = HumanPlayerBody.StandAnimation,
+            Position = position,
+            Gamma = gamma,
+        };
+
+        SoldierView view;
+        try
+        {
+            view = new SoldierView(task, set);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.Warning(LogCategory, $"The player body could not be posed on skeleton {set.Skeleton.Id}: {ex.Message}");
+            return false;
+        }
+
+        Group? group = BuildGroup(mission, model, view);
+        if (group is null)
+        {
+            return false;
+        }
+
+        MeshHandle own;
+        try
+        {
+            own = _device.CreateMesh(group.Geometry.Vertices, group.Geometry.Indices);
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
+        {
+            _logger.Warning(LogCategory, $"The player body '{model}' did not upload: {ex.Message}");
+            return false;
+        }
+
+        _playerBodyView = view;
+        _playerBodyGroup = group;
+        _playerBodyMember = new Member(view, default, own);
+        _playerBodyActive = false;
+        _logger.Information(LogCategory, $"Loaded the player's third-person body '{model}' on skeleton {set.Skeleton.Id}.");
+        return true;
+    }
+
+    /// <summary>
+    /// Poses the player's body with its death fall and starts drawing it — the player has died.
+    /// </summary>
+    /// <param name="deathAnimation">The fall clip the death state chose, from the player's hit-zone row.</param>
+    /// <param name="feet">Where the body falls, in engine units — the player's own position.</param>
+    /// <param name="gamma">Which way the body faces as it goes down.</param>
+    /// <remarks>Does nothing when no body was loaded; the death still happens, just without a body to show.</remarks>
+    public void KillPlayerBody(int deathAnimation, Vector3d feet, float gamma)
+    {
+        if (_playerBodyView is null)
+        {
+            return;
+        }
+
+        _playerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
+        _playerBodyView.Kill(deathAnimation);
+        _playerBodyActive = true;
+    }
+
+    /// <summary>Advances the player body's death clip by one tick and re-skins it, once it is active.</summary>
+    /// <remarks>
+    /// The same per-tick re-skin a corpse gets: the clip advances, holding its last frame when it runs out,
+    /// and the body's own mesh is rebuilt from the new pose so the fall plays through.
+    /// </remarks>
+    public void TickPlayerBody()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_playerBodyActive
+            || _playerBodyView is null
+            || _playerBodyMember is null
+            || _playerBodyGroup?.Model is not { } model)
+        {
+            return;
+        }
+
+        _playerBodyView.Tick();
+
+        Vertex3D[] skinned = [.. _playerBodyGroup.Geometry.Vertices];
+        try
+        {
+            MefSkinner.Skin(
+                model, _playerBodyView.UnrotatedPose(), (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
+        }
+        catch (ArgumentException)
+        {
+            return;
+        }
+
+        MeshHandle replacement;
+        try
+        {
+            replacement = _device.CreateMesh(skinned, _playerBodyGroup.Geometry.Indices);
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        if (_playerBodyMember.Mesh.IsValid)
+        {
+            _device.DestroyMesh(_playerBodyMember.Mesh);
+        }
+
+        _playerBodyMember.Mesh = replacement;
+    }
+
+    /// <summary>Draws the player's third-person body, when it is active — what the death camera looks at.</summary>
+    /// <param name="camera">The eye, which by now is the death camera pulled back off the body.</param>
+    /// <param name="projection">The projection to draw with.</param>
+    /// <remarks>
+    /// Drawn on its own, not in the soldier loop, and only when active — so it never appears in front of
+    /// the first-person view during normal play. The body sits at its own position lifted by the death
+    /// clip's root height, exactly as a fallen soldier is (see <see cref="Draw"/>).
+    /// </remarks>
+    public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_playerBodyActive
+            || _playerBodyView is not { } view
+            || _playerBodyMember is not { } member
+            || _playerBodyGroup is not { } group)
+        {
+            return;
+        }
+
+        _device.SetProjection(projection);
+        _device.SetCullMode(CullMode.None);
+        _device.SetDepthState(DepthState.TestAndWrite);
+
+        Vector3d where = new(
+            view.Position.X / WorldScene.UnitsPerMetre,
+            view.Position.Y / WorldScene.UnitsPerMetre,
+            (view.Position.Z + view.RootSample.Z) / WorldScene.UnitsPerMetre);
+
+        Matrix4f modelView = camera.CreateModelView(where, view.Orientation);
+
+        foreach (MeshSubset subset in group.Geometry.Subsets)
+        {
+            if (subset.IndexCount == 0)
+            {
+                continue;
+            }
+
+            TextureHandle diffuse = TextureHandle.None;
+            if (subset.HasMaterial
+                && group.Instance is { } instance
+                && group.Pack is { } pack
+                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            {
+                diffuse = GetTexture(texture);
+            }
+
+            _device.DrawMesh(
+                member.Mesh,
+                subset.IndexOffset,
+                subset.IndexCount,
+                modelView,
+                diffuse,
+                TextureHandle.None,
+                BlendMode.Opaque);
+        }
+    }
+
+    private void ReleasePlayerBody()
+    {
+        if (_playerBodyGroup is { } group && group.Mesh.IsValid)
+        {
+            _device.DestroyMesh(group.Mesh);
+        }
+
+        if (_playerBodyMember is { } member && member.Mesh.IsValid)
+        {
+            _device.DestroyMesh(member.Mesh);
+        }
+
+        _playerBodyView = null;
+        _playerBodyGroup = null;
+        _playerBodyMember = null;
+        _playerBodyActive = false;
+    }
+
     /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
     /// <param name="member">The soldier.</param>
     /// <param name="where">Where the body is drawn, in metres — the same place its skin goes.</param>
@@ -1537,6 +1764,7 @@ public sealed class SoldierRenderer : IDisposable
         _weapons.Clear();
         _groups.Clear();
         _health.Clear();
+        ReleasePlayerBody();
         Count = 0;
     }
 

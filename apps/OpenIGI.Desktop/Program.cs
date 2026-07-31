@@ -216,6 +216,11 @@ using (window)
     // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
     // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
     HumanDamageFlash damageFlash = new();
+
+    // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye
+    // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
+    // own third-person rig, which SoldierRenderer loads and poses with the death fall.
+    DeathCamera deathCamera = new();
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
     WorldScene? scene = null;
@@ -391,19 +396,29 @@ using (window)
                         // pinned to full and left to fade -- the last thing the player sees is red.
                         damageFlash.Hit();
 
-                        // The body clip (animation {fall}) and the death sound are NOT played here. Those
-                        // ids index the player's BODY set, and the only rig the first-person view has is
-                        // the arms on skeleton 5 -- playing a body clip on it is the same mistake that
-                        // made guards throw themselves on the floor. Seeing Jones fall needs the player's
-                        // third-person body rig drawn and the death camera handed to it, and neither
-                        // exists yet. Reported so it is visible; not faked.
+                        // Locomotion state 47 (0x40E560) plays the fall clip on the body rig; here that is
+                        // the player's third-person body, posed with the clip the last zone struck chose.
+                        // The camera hands itself to the death view and pulls back off the eye, so the fall
+                        // is seen from the outside -- the original's death sequence.
+                        soldiers?.KillPlayerBody(fall, player.Body.Position, player.Body.Yaw);
+                        deathCamera.Begin(
+                            player.Body.Position,
+                            player.Body.Yaw,
+                            (Vector3d f, Vector3d t, out Vector3d h) =>
+                            {
+                                bool blocked = solids.Caster()(f, t, out WorldRayHit wall);
+                                h = blocked ? wall.Position : default;
+                                return blocked;
+                            });
+
+                        // The death SOUND is still not played -- there is no audio subsystem yet, so the
+                        // three 'player_death_' variants have nothing to play through. Reported, not faked.
                         logger.Information(
                             "Weapon",
                             $"The player is DEAD after {guardHits} hit(s) from {guardRounds} round(s), "
-                                + $"struck in zone {hit.Zone}. The fall is animation {fall} with one of "
-                                + $"{HumanPlayerDeath.SoundVariants} '{HumanPlayerDeath.SoundPrefix}' "
-                                + "sounds -- NOT PLAYED: the player has no body rig and the death "
-                                + "camera is not built.");
+                                + $"struck in zone {hit.Zone}. Falling with animation {fall}; the death "
+                                + $"camera has pulled back. One of {HumanPlayerDeath.SoundVariants} "
+                                + $"'{HumanPlayerDeath.SoundPrefix}' sounds is NOT PLAYED (no audio yet).");
                     }
                 });
             }
@@ -452,9 +467,20 @@ using (window)
         player = null;
         playerMode = false;
 
+        // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
+        // carry over.
+        playerHealth = new(HumanHitZoneTable.Player);
+        playerDead = false;
+        damageFlash = new();
+        deathCamera.Reset();
+
         if (playerTerrain is not null)
         {
             PlayerCamera candidate = new();
+
+            // 000.iff, kept so the player's third-person body can be built from the same set it walks on
+            // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set).
+            OpenIGI.Formats.Animation.BoneAnimationSet? playerBodySet = null;
 
             // Walking is the animation's own root motion, so without a set the player can stand and
             // fall but not walk. 000.iff is the set the player's skeleton indexes.
@@ -463,8 +489,8 @@ using (window)
                 string animations = Path.Combine(gamePath, "common", "anims", "000.iff");
                 if (File.Exists(animations))
                 {
-                    candidate.UseAnimations(
-                        OpenIGI.Formats.Animation.BoneAnimationSet.Read(File.ReadAllBytes(animations)));
+                    playerBodySet = OpenIGI.Formats.Animation.BoneAnimationSet.Read(File.ReadAllBytes(animations));
+                    candidate.UseAnimations(playerBodySet);
                 }
                 else
                 {
@@ -636,6 +662,17 @@ using (window)
             if (placed)
             {
                 player = candidate;
+
+                // The player's own third-person body -- the rig the death camera reveals. Built from the
+                // model the level's HumanPlayer declares, on skeleton 0's set (000.iff), the same one the
+                // player walks on. It stays invisible until the player dies. Without the spawn's model or
+                // the set there is simply no body to show, and death falls back to the frozen view.
+                if (soldiers is { } bodies
+                    && playerBodySet is { } bodySet
+                    && !string.IsNullOrEmpty(spawn.Model))
+                {
+                    bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma);
+                }
 
                 // Walking is what starting a mission means. The free camera is the debugging tool, so
                 // it is the thing you switch to rather than the thing you start in.
@@ -956,6 +993,10 @@ using (window)
                 : camera?.Position ?? player?.Body.Eye ?? default;
 
             soldiers?.Tick(watched);
+
+            // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
+            // it does nothing until the player has died and the body was posed.
+            soldiers?.TickPlayerBody();
         }
 
         if (outcome != FrameOutcome.Render)
@@ -980,7 +1021,12 @@ using (window)
             // The sky is behind everything and writes no depth, so it goes first; then terrain, which
             // is opaque and covers most of the screen, so drawing it before the objects gives the
             // depth test the most to reject.
-            Camera3D eye = playerMode && player is not null ? player.Camera : camera.Camera;
+            //
+            // A dead player watches from the death camera -- pulled back off the eye to a third-person
+            // shot of the body -- rather than from the frozen first-person view.
+            Camera3D eye = playerDead && deathCamera.IsActive
+                ? deathCamera.Camera
+                : playerMode && player is not null ? player.Camera : camera.Camera;
 
             sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
             terrain?.Draw(eye, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
@@ -990,6 +1036,10 @@ using (window)
             // never swaps in the view-model block for them (player.md section 15.3).
             soldiers?.Draw(eye, projection);
 
+            // The player's own body, once it has fallen -- drawn only under the death camera, so it never
+            // appears in front of the first-person view during normal play.
+            soldiers?.DrawPlayerBody(eye, projection);
+
             // The marks rounds have left, over the world and under the first-person rig.
             if (marks is not null && player is not null)
             {
@@ -998,8 +1048,10 @@ using (window)
 
             // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
             // then ask the human where the weapon is and draw that. Only in player mode, because the
-            // original draws it out of the human's own render and the free camera is not a human.
-            if (playerMode && player is { View: { } rig })
+            // original draws it out of the human's own render and the free camera is not a human -- and
+            // NOT once the player is dead, when the death camera is watching the body from the outside
+            // and a pair of arms hanging in front of it would be exactly wrong.
+            if (playerMode && !(playerDead && deathCamera.IsActive) && player is { View: { } rig })
             {
                 // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                 // than the frame.
