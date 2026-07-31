@@ -1216,12 +1216,31 @@ public sealed class SoldierRenderer : IDisposable
             return false;
         }
 
-        struck.Apply(hit.Zone, damageFactor);
+        // The soldier's brain carries two flags the damage handler 0x45D3C0 reads: invulnerability skips
+        // the whole damage block (the round still MEETS the body, it just does nothing), and instant-death
+        // being disabled makes a head/neck hit take the plain damage factor rather than the ×100 lethal
+        // multiplier. Both default off, so an ordinary guard is unaffected.
+        AiSoldier? brain = struckView is not null && _brains.TryGetValue(struckView, out AiSoldier? b) ? b : null;
 
-        if (struck.IsDead && struckView is not null)
+        bool invulnerable = brain?.IsInvulnerable ?? false;
+        if (!invulnerable)
         {
-            Die(struckView, hit, origin, end, category);
+            struck.Apply(hit.Zone, damageFactor, brain?.IsInstantDeathDisabled ?? false);
+
+            if (struck.IsDead && struckView is not null)
+            {
+                Die(struckView, hit, origin, end, category);
+            }
         }
+
+        // Deliberately the same shape as the probe's [dmg] line from the retail game (probes.cpp
+        // OnDamageHandler), so a run of the port and a capture of the original diff directly. The port
+        // resolves the zone from the pose (HumanHitTest.NearestBone) where the engine reads a part index
+        // the bullet physics recorded, so a zone that disagrees for the same shot is the one to chase.
+        _logger.Information(LogCategory,
+            $"[dmg] port zone={hit.Zone} bone={hit.Bone} dmgFactor={damageFactor:0.000} "
+            + $"invuln={(invulnerable ? 1 : 0)} instDeathDisabled={(brain?.IsInstantDeathDisabled ?? false ? 1 : 0)} "
+            + $"accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
 
         return true;
     }

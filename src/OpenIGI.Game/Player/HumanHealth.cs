@@ -60,19 +60,29 @@ public sealed class HumanHealth
     /// <summary>Applies one round.</summary>
     /// <param name="zone">The zone struck, from <see cref="HumanHitTest"/>.</param>
     /// <param name="damageFactor">The weapon's <c>Damage Factor</c>, which the round carries.</param>
+    /// <param name="instantDeathDisabled">
+    /// Whether the head/neck one-shot is disabled on this human — <c>HumanAI+15037</c>, set by
+    /// <c>AIFunction_SetInstantDeath(FALSE)</c>. When set, a hit on the head (<see cref="HumanDamage.ProximityZone"/>)
+    /// or neck (<see cref="HumanDamage.NeckZone"/>) takes the weapon's plain damage factor instead of the
+    /// zone's lethal multiplier — the branch <c>0x45D3C0</c> takes on <c>v13</c>. Defaults to
+    /// <see langword="false"/>, so by default those zones keep their ×100 multiplier and one-shot.
+    /// </param>
     /// <returns>The damage this hit added.</returns>
     /// <remarks>
     /// A hit on a zone the table does not cover adds nothing rather than throwing — the original indexes
     /// its table without a bound check, and reproducing that read is not worth it.
     /// </remarks>
-    public float Apply(int zone, float damageFactor)
+    public float Apply(int zone, float damageFactor, bool instantDeathDisabled = false)
     {
         if (zone < 0 || zone >= Zones.Count)
         {
             return 0f;
         }
 
-        float dealt = HumanDamage.DamageOfHit(Zones[zone].Multiplier, damageFactor);
+        bool headOrNeck = zone is HumanDamage.ProximityZone or HumanDamage.NeckZone;
+        float dealt = instantDeathDisabled && headOrNeck
+            ? damageFactor
+            : HumanDamage.DamageOfHit(Zones[zone].Multiplier, damageFactor);
         Damage += dealt;
         Hits++;
         return dealt;

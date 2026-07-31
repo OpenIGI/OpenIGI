@@ -58,6 +58,33 @@ public sealed class SoldierLethalityTests
     }
 
     /// <summary>
+    /// A head shot one-shots by default, but <c>AIFunction_SetInstantDeath(FALSE)</c> — the
+    /// <c>isInstantDeathDisabled</c> flag at <c>HumanAI+15037</c> — takes it off the ×100 multiplier so the
+    /// hit does only the weapon's plain damage factor. This is the branch <c>0x45D3C0</c> takes on its
+    /// <c>v13</c>.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void DisablingInstantDeathTakesAHeadShotOffItsLethalMultiplier()
+    {
+        WeaponType ak = Weapon("WEAPON_ID_AK47");
+
+        // Default: a head shot (zone 15) one-shots even the toughest guard, because zone 15 carries ×100.
+        var normal = new HumanHealth(HumanHitZoneTable.Soldier, HardGuardHealth);
+        normal.Apply(HumanDamage.ProximityZone, ak.DamageFactor);
+        Assert.True(normal.IsDead, "a head shot one-shots by default");
+
+        // Disabled: the same head shot, and a neck shot, deal only the weapon's damage factor.
+        foreach (int zone in new[] { HumanDamage.ProximityZone, HumanDamage.NeckZone })
+        {
+            var survivor = new HumanHealth(HumanHitZoneTable.Soldier, HardGuardHealth);
+            float dealt = survivor.Apply(zone, ak.DamageFactor, instantDeathDisabled: true);
+
+            Assert.Equal(ak.DamageFactor, dealt, 5);
+            Assert.False(survivor.IsDead, "with instant death disabled the head/neck no longer one-shots");
+        }
+    }
+
+    /// <summary>
     /// A leg is worth less than the trunk, so it must take strictly more rounds. If the game shows
     /// otherwise, the zone is resolving to the trunk and the pose is the thing to look at.
     /// </summary>
