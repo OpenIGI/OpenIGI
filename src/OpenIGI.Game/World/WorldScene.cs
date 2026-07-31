@@ -730,6 +730,14 @@ public sealed class WorldScene
     {
         foreach (GameTask child in root.Children)
         {
+            // A ConditionalContainer whose condition is false is not registered into the world, so its
+            // subtree draws nothing — the intro/outro cut-scene props and actors level 1 hides. See
+            // ConditionalContainerGate.
+            if (ConditionalContainerGate.IsDormant(child))
+            {
+                continue;
+            }
+
             yield return child;
             foreach (GameTask nested in Walk(child))
             {

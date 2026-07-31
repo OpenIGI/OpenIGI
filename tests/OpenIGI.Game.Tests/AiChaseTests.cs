@@ -66,6 +66,48 @@ public sealed class AiChaseTests
             $"the soldier lost sight but barely moved ({Distance(soldier.Position, start) / Metre:0.0} m) — it hunted on the spot");
     }
 
+    /// <summary>
+    /// A soldier engaging an enemy that then <b>dies</b> leaves combat and stops pulling the trigger — the
+    /// detection scan (<c>0x489750</c>) unregisters a dead human, so the guard loses it rather than emptying
+    /// its magazine into the corpse. This is the "guards keep shooting me after I die" fix.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ASoldierLeavesCombatWhenTheEnemyDies()
+    {
+        GraphFile graph = Graph();
+        Vector3d position = graph.Nodes[0].Position;
+        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            Parameters(trackingMetres: 15f),
+            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+
+        // Five metres in front, in the cone: it is seen, and the soldier engages.
+        Vector3d seen = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        bool engaged = false;
+        for (int tick = 1; tick <= 60 && !engaged; tick++)
+        {
+            soldier.Tick(tick, seen, rootMotionThisTick: 178.0);
+            engaged |= soldier.Activity == AiSoldierActivity.Engaging;
+        }
+
+        Assert.True(engaged, "the soldier never engaged the enemy it could see");
+
+        // The enemy dies where it stood. A single tick with the enemy no longer alive must take the
+        // soldier out of combat -- the unregister is immediate -- and clear its trigger.
+        soldier.Tick(61, seen, rootMotionThisTick: 178.0, enemyAlive: false);
+
+        Assert.NotEqual(AiSoldierActivity.Engaging, soldier.Activity);
+        Assert.False(soldier.Combat.PullTrigger, "the soldier kept pulling the trigger on the corpse");
+
+        // And it stays out -- feeding the dead enemy every tick never re-engages it.
+        for (int tick = 62; tick <= 90; tick++)
+        {
+            soldier.Tick(tick, seen, rootMotionThisTick: 178.0, enemyAlive: false);
+            Assert.NotEqual(AiSoldierActivity.Engaging, soldier.Activity);
+        }
+    }
+
     private static AiCombatParameters Parameters(float trackingMetres) =>
         new(new HumanAiConfigItemTask
         {

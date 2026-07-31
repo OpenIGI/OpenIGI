@@ -1032,7 +1032,9 @@ using (window)
                 ? player.Body.Eye
                 : camera?.Position ?? player?.Body.Eye ?? default;
 
-            soldiers?.Tick(watched);
+            // A dead player is no longer a target: the guards lose it and stop firing at the corpse, the
+            // way the retail detection scan (0x489750) unregisters a human that has died.
+            soldiers?.Tick(watched, enemyAlive: !playerDead);
 
             // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
             // it does nothing until the player has died and the body was posed.

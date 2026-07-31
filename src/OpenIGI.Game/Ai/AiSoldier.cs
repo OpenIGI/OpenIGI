@@ -734,7 +734,12 @@ public sealed class AiSoldier
     /// The engine moves a human by its clip's root motion and nothing else, so this is the only speed source.
     /// </param>
     /// <param name="alarmOn">Whether an alarm the soldier watches is sounding.</param>
-    public void Tick(int tick, Vector3d enemy, double rootMotionThisTick, bool alarmOn = false)
+    /// <param name="enemyAlive">
+    /// Whether the enemy is still a valid target. A dead enemy is not: the detection scan (<c>0x489750</c>)
+    /// unregisters a human that reports itself invalid, so the soldier loses it and leaves combat instead
+    /// of firing at the corpse. <see langword="false"/> reproduces that.
+    /// </param>
+    public void Tick(int tick, Vector3d enemy, double rootMotionThisTick, bool alarmOn = false, bool enemyAlive = true)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -765,7 +770,17 @@ public sealed class AiSoldier
         // 0x4502F0 is never called once in a whole mission, so modelling detection on it modelled the wrong
         // function (ai.md 8). The snapshot is taken here, before the alert latch is recomputed below, which
         // is where the original takes it -- hence the one-tick lag in which range applies.
-        if (_schedule.SweepsOn(tick))
+        // A dead enemy is not a target. The detection scan (0x489750) asks each human to describe itself
+        // and UNREGISTERS one that reports itself invalid -- a corpse -- so the AI loses it. Reproduce the
+        // unregister: the slot goes not-visible and the sweep is skipped, so no detection event fires and
+        // the guard stops seeing a threat where the body fell.
+        if (!enemyAlive)
+        {
+            _playerSlot.IsVisible = false;
+            _playerSlot.IsInCone = false;
+            _playerSlot.Unregister();
+        }
+        else if (_schedule.SweepsOn(tick))
         {
             Eye = Vision.Capture(EyePosition(), Orientation, Alerted);
             AiEyeSnapshot snapshot = Eye;
@@ -805,6 +820,20 @@ public sealed class AiSoldier
 
         // ONE event type dispatches per tick, in priority order, and the script decides what to do about it.
         RunScript();
+
+        // The target is dead: leave combat outright rather than keep firing at where it fell. The script
+        // drops out on its own once the Combat events stop, but a guard already engaging would empty its
+        // magazine into the corpse for the ticks that takes -- the unregister (0x4894E0) is immediate, so
+        // this is too.
+        if (!enemyAlive && Activity == AiSoldierActivity.Engaging)
+        {
+            Combat = new AiCombatCommand();
+            _combatMachine.Reset();
+            _movingInCombat = false;
+            Activity = Route is not null || _route.Count > 0
+                ? AiSoldierActivity.Patrolling
+                : AiSoldierActivity.Idle;
+        }
 
         if (Activity == AiSoldierActivity.Engaging)
         {

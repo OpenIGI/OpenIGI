@@ -55,6 +55,13 @@ public static class PlayerSpawn
     {
         foreach (GameTask child in task.Children)
         {
+            // Skip a cut-scene container the level is not running: the player sits under the gameplay
+            // container (1495), whose condition is true, so this only prunes intro/outro subtrees.
+            if (World.ConditionalContainerGate.IsDormant(child))
+            {
+                continue;
+            }
+
             if (child is HumanPlayerTask player)
             {
                 return player;

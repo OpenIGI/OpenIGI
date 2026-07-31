@@ -923,7 +923,12 @@ public sealed class SoldierRenderer : IDisposable
     /// </para>
     /// </remarks>
     /// <param name="enemy">The enemy's eye position, which the view cones are tested against.</param>
-    public void Tick(Vector3d enemy = default)
+    /// <param name="enemyAlive">
+    /// Whether the enemy is still a target. A dead player is not: the detection scan (<c>0x489750</c>)
+    /// unregisters a human that reports itself invalid, so the guards lose it and stop firing at the
+    /// corpse — passing <see langword="false"/> reproduces that.
+    /// </param>
+    public void Tick(Vector3d enemy = default, bool enemyAlive = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -965,7 +970,7 @@ public sealed class SoldierRenderer : IDisposable
             }
 
             Vector3d before = brain.Position;
-            brain.Tick(_tick, enemy, travel);
+            brain.Tick(_tick, enemy, travel, enemyAlive: enemyAlive);
             SeparateFromOtherSoldiers(brain, before);
             FireIfAsked(view, brain, enemy);
             ReportCombat();
