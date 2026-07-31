@@ -346,6 +346,49 @@ public sealed class AiSoldier
         return ((forwardX * dx) + (forwardY * dy)) < 0.0;
     }
 
+    /// <summary>Delivers a gunshot the soldier might hear — posts <see cref="AiEvent.Gunshot"/> if it is in earshot.</summary>
+    /// <param name="shotPosition">Where the shot was fired, in engine units.</param>
+    /// <param name="silenced">Whether the weapon is silenced, which cuts the audible range to a thirtieth.</param>
+    /// <returns><see langword="true"/> when the shot was within earshot and an event was queued.</returns>
+    /// <remarks>
+    /// <para>
+    /// The ranges are the two constants the AI module registers: <see cref="AiScriptApi.GunshotRange"/> (30 m)
+    /// and <see cref="AiScriptApi.SilencedGunshotRange"/> (1 m) — a silenced weapon is worth carrying because
+    /// it is heard a thirtieth as far. The event carries the shot's position, so a script can ask
+    /// <c>AIFunction_GetEventDistance</c>, and it is pumped on the soldier's next tick like any other event —
+    /// so a guard already busy with a higher-priority event this tick never learns of the shot, which is the
+    /// original's discard-not-defer rule (<c>ai.md</c> §3.5).
+    /// </para>
+    /// <para>
+    /// <b>Recorded as a delivery, not a reaction.</b> What a guard <em>does</em> about a heard shot is its
+    /// archetype script's <c>AIEVENT_GUNSHOT</c> branch; this only puts the event where the script can see
+    /// it. The exact retail posting site (a radius round the shooter versus points along the bullet's path,
+    /// as I.G.I. 2 does) is not yet read, so the port posts from the shot position — flagged in
+    /// <c>TODO.md</c> to verify against the probe.
+    /// </para>
+    /// </remarks>
+    public bool HearGunshot(Vector3d shotPosition, bool silenced)
+    {
+        if (Activity == AiSoldierActivity.Dead)
+        {
+            return false;
+        }
+
+        double range = silenced ? AiScriptApi.SilencedGunshotRange : AiScriptApi.GunshotRange;
+        double distance = Distance(Position, shotPosition);
+        if (distance > range)
+        {
+            return false;
+        }
+
+        LastEventDistance = distance;
+        Events.Post(
+            new AiEventRecord(AiEvent.Gunshot, -1, AiEventFilter.None, (float)range, shotPosition, 0, 0),
+            owner: 0,
+            worldTests: null);
+        return true;
+    }
+
     /// <summary>Gets the orientation matrix a renderer should draw it with.</summary>
     public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing);
 

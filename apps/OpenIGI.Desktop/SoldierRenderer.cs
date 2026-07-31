@@ -678,6 +678,31 @@ public sealed class SoldierRenderer : IDisposable
         RoundsFired++;
 
         _onRound?.Invoke(brain.EyePosition(), enemy, brain.HitProbability, weapon);
+
+        // Every other soldier near the shot hears it -- the same AIEVENT_GUNSHOT a player's shot raises.
+        NotifyGunshot(brain.EyePosition(), silenced: false, except: view);
+    }
+
+    /// <summary>Delivers a gunshot to every soldier in earshot — the hearing side of <see cref="AiEvent.Gunshot"/>.</summary>
+    /// <param name="origin">Where the shot was fired, in world units.</param>
+    /// <param name="silenced">Whether the weapon is silenced (cuts the range to a thirtieth).</param>
+    /// <param name="except">A soldier not to notify — the shooter, which does not hear its own shot as news.</param>
+    /// <remarks>
+    /// The range gate (30 m, or 1 m silenced) is applied per soldier in <see cref="AiSoldier.HearGunshot"/>.
+    /// The event is queued and pumped on the soldier's next tick; what it does about it is its archetype
+    /// script's business.
+    /// </remarks>
+    public void NotifyGunshot(Vector3d origin, bool silenced, SoldierView? except = null)
+    {
+        foreach (AiSoldier brain in _brains.Values)
+        {
+            if (except is not null && _brains.TryGetValue(except, out AiSoldier? shooter) && ReferenceEquals(shooter, brain))
+            {
+                continue;
+            }
+
+            brain.HearGunshot(origin, silenced);
+        }
     }
 
     private Member? FindMember(SoldierView view)
@@ -1168,6 +1193,11 @@ public sealed class SoldierRenderer : IDisposable
         out HumanHit hit)
     {
         hit = default;
+
+        // Every soldier in earshot hears the shot, whether or not it hits anyone -- this is the fix for
+        // "they hear nothing when I shoot". The range gate lives in AiSoldier.HearGunshot.
+        NotifyGunshot(origin, silenced: false);
+
         HumanHealth? struck = null;
         SoldierView? struckView = null;
 
