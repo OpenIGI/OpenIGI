@@ -243,6 +243,109 @@ public sealed class AiSoldier
     /// <summary>Gets a value indicating whether it can currently see its enemy.</summary>
     public bool SeesEnemy => _playerSlot.IsVisible;
 
+    // --- State the behaviour script configures through the AI natives (HumanAI ctor 0x44F060). ---
+    // Every default here is the literal the constructor writes; nothing is assumed.
+
+    /// <summary>Gets or sets whether the soldier takes no damage at all — <c>HumanAI+15036</c>.</summary>
+    /// <remarks>
+    /// <c>AIFunction_SetInvulnerability</c> (<c>0x44E150</c>) stores its argument here unchanged, and the
+    /// damage handler (<c>0x45D3C0</c>) skips the whole damage block when it is set. Defaults to
+    /// <see langword="false"/>.
+    /// </remarks>
+    public bool IsInvulnerable { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the head/neck one-shot is <b>disabled</b> — <c>HumanAI+15037</c>,
+    /// <c>isInstantDeathDisabled</c>.
+    /// </summary>
+    /// <remarks>
+    /// The polarity is inverted at the source: <c>AIFunction_SetInstantDeath</c> (<c>0x44E1B0</c>) stores
+    /// <c>arg == 0</c>, so <c>SetInstantDeath(FALSE)</c> sets this true. When set, a head or neck hit takes
+    /// the weapon's plain damage factor instead of the ×100 lethal multiplier (<c>0x45D3C0</c>). Defaults
+    /// to <see langword="false"/>, so by default a head shot is a one-shot kill.
+    /// </remarks>
+    public bool IsInstantDeathDisabled { get; set; }
+
+    /// <summary>Gets or sets the id of the <c>AlarmTrigger</c> task this soldier watches — <c>HumanAI+15040</c>.</summary>
+    /// <remarks><c>-1</c> until <c>AIFunction_SetAlarmTriggerID</c> (<c>0x44E270</c>) names one.</remarks>
+    public int AlarmTriggerId { get; set; } = -1;
+
+    /// <summary>Gets or sets the id of the <c>AlarmControl</c> task this soldier obeys — <c>HumanAI+15044</c>.</summary>
+    /// <remarks><c>-1</c> until <c>AIFunction_SetAlarmControlID</c> (<c>0x44E2D0</c>) names one.</remarks>
+    public int AlarmControlId { get; set; } = -1;
+
+    /// <summary>Gets or sets the id of the stationary-gun task this soldier mans — <c>HumanAI+15048</c>.</summary>
+    /// <remarks><c>-1</c> until <c>AIFunction_SetGunnerID</c> (<c>0x44E390</c>) names one.</remarks>
+    public int GunnerId { get; set; } = -1;
+
+    /// <summary>Gets or sets when the soldier may raise the alarm — <c>HumanAI+15052</c>.</summary>
+    /// <remarks>
+    /// One of <see cref="AiAlarmAccess"/> (before or after combat), stored as its integer by
+    /// <c>AIFunction_SetAlarmAccess</c> (<c>0x44E330</c>). Defaults to <c>0</c>
+    /// (<see cref="AiAlarmAccess.BeforeCombat"/>).
+    /// </remarks>
+    public int AlarmAccess { get; set; }
+
+    /// <summary>Gets or sets the death animation the script forces — <c>HumanAI+15056</c>.</summary>
+    /// <remarks>
+    /// <c>-1</c> (no override) until <c>AIFunction_SetDeathAnimation</c> (<c>0x44E210</c>) sets one; the
+    /// death chooser (<c>0x45C440</c>) prefers it over its shotgun/head/random selection.
+    /// </remarks>
+    public int DeathAnimationOverride { get; set; } = -1;
+
+    // Which event types the running script has declared a priority for, and how many so far, so
+    // AIFunction_SetEventPriority can rebuild the dispatch order in call order (0x44E0C0).
+    private readonly HashSet<AiEvent> _prioritised = [];
+    private int _priorityDeclared;
+
+    // The current enemy position, captured each tick, so AIFunction_IsEventBehind can answer against it.
+    private Vector3d _enemyPosition;
+    private bool _enemyKnown;
+
+    /// <summary>Declares an event type's dispatch priority — <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>).</summary>
+    /// <param name="type">The event type the script wants considered.</param>
+    /// <remarks>
+    /// The original enables the type and <b>appends</b> it to the priority order the first time it is named,
+    /// building the whole order in call order. The port keeps every type enabled (it posts only a handful),
+    /// so this rewrites the <em>order</em>: the first declared type goes to the front, the next behind it,
+    /// and so on — which is what decides, when two events are pending on one tick, the one the script sees.
+    /// </remarks>
+    public void DeclareEventPriority(AiEvent type)
+    {
+        if (!_prioritised.Add(type))
+        {
+            return;
+        }
+
+        Events.SetPriority(type, Math.Min(_priorityDeclared, AiEventQueues.TypeCount - 1));
+        _priorityDeclared++;
+    }
+
+    /// <summary>Whether the enemy is behind the soldier — <c>AIFunction_IsEventBehind</c> (<c>0x44E860</c>).</summary>
+    /// <returns><see langword="true"/> when the enemy is behind the facing plane.</returns>
+    /// <remarks>
+    /// <para>
+    /// The test is <c>forward · (subject − self) &lt; 0</c>, forward being the facing's <c>+Y</c> axis. The
+    /// original walks the current event queue and answers for the events it holds; the port has one subject
+    /// of interest, the enemy captured this tick, and answers against it — a recorded narrowing. With no
+    /// enemy known yet the answer is <see langword="false"/> (treated as in front), matching the original's
+    /// empty-queue return.
+    /// </para>
+    /// </remarks>
+    public bool IsEnemyBehind()
+    {
+        if (!_enemyKnown)
+        {
+            return false;
+        }
+
+        double dx = _enemyPosition.X - Position.X;
+        double dy = _enemyPosition.Y - Position.Y;
+        double forwardX = -Math.Sin(Facing);
+        double forwardY = Math.Cos(Facing);
+        return ((forwardX * dx) + (forwardY * dy)) < 0.0;
+    }
+
     /// <summary>Gets the orientation matrix a renderer should draw it with.</summary>
     public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing);
 
@@ -550,6 +653,9 @@ public sealed class AiSoldier
         {
             return;
         }
+
+        _enemyPosition = enemy;
+        _enemyKnown = true;
 
         // An AI's FIRST event is always its creation: before initialisation only type 0 passes admission, and
         // the mask is not consulted at all (ai.md 3.3). Never posting it left every archetype script's

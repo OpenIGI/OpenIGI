@@ -263,22 +263,107 @@ public sealed class AiScriptHost
             case "AIFunction_GetEventDistance" when ai is not null:
                 return QvmValue.FromSingle((float)ai.LastEventDistance);
 
-            case "AIFunction_IsEventBehind":
-                return QvmValue.FromInt32(0);
+            case "AIFunction_IsEventBehind" when ai is not null:
+                return QvmValue.FromInt32(ai.IsEnemyBehind() ? 1 : 0);
 
             case "AIFunction_GetAlarmControlStatus" when ai is not null:
+                // 0x44E4F0 returns the referenced AlarmControl task's on-state; until the alarm chain is
+                // wired to soldiers the alert latch is the honest stand-in (recorded for the Phase B pass).
                 return QvmValue.FromInt32(ai.Alerted ? 1 : 0);
 
             case "AIFunction_GetAlarmTriggerDistance":
                 // 0x44E9B0 returns -1.0 for every failure mode, and no trigger is configured here.
                 return QvmValue.FromSingle(-1.0f);
 
+            // --- Damage flags (0x45D3C0 consumes both). Stored here, read by the damage path. ---
+            case "AIFunction_SetInvulnerability" when ai is not null:
+                ai.IsInvulnerable = call.GetInt32(0) != 0;
+                return QvmValue.Zero;
+
+            case "AIFunction_SetInstantDeath" when ai is not null:
+                // 0x44E1B0 stores !arg: SetInstantDeath(FALSE) DISABLES the head/neck one-shot.
+                ai.IsInstantDeathDisabled = call.GetInt32(0) == 0;
+                return QvmValue.Zero;
+
+            // --- Event-pump arbitration order (0x44E0C0). ---
+            case "AIFunction_SetEventPriority" when ai is not null:
+                ai.DeclareEventPriority((AiEvent)call.GetInt32(0));
+                return QvmValue.Zero;
+
+            // --- Alarm / gunner ids and death animation: plain stores and reads (0x44E2xx..0x44E5xx). ---
+            case "AIFunction_SetAlarmTriggerID" when ai is not null:
+                ai.AlarmTriggerId = call.GetInt32(0);
+                return QvmValue.Zero;
+
+            case "AIFunction_SetAlarmControlID" when ai is not null:
+                ai.AlarmControlId = call.GetInt32(0);
+                return QvmValue.Zero;
+
+            case "AIFunction_SetGunnerID" when ai is not null:
+                ai.GunnerId = call.GetInt32(0);
+                return QvmValue.Zero;
+
+            case "AIFunction_SetAlarmAccess" when ai is not null:
+                ai.AlarmAccess = call.GetInt32(0);
+                return QvmValue.Zero;
+
+            case "AIFunction_SetDeathAnimation" when ai is not null:
+                ai.DeathAnimationOverride = call.GetInt32(0);
+                return QvmValue.Zero;
+
+            case "AIFunction_GetAlarmTriggerID" when ai is not null:
+                return QvmValue.FromInt32(ai.AlarmTriggerId);
+
+            case "AIFunction_GetAlarmControlID" when ai is not null:
+                return QvmValue.FromInt32(ai.AlarmControlId);
+
+            case "AIFunction_GetGunnerID" when ai is not null:
+                return QvmValue.FromInt32(ai.GunnerId);
+
+            case "AIFunction_GetAlarmAccess" when ai is not null:
+                return QvmValue.FromInt32(ai.AlarmAccess);
+
+            // --- Called, but the state they need is not modelled yet: return the original's failure/idle
+            //     value and say so, rather than falling through the blanket default silently. ---
+            case "AIFunction_GetGunnerStatus":
+                // 0x44E5E0 returns 0 with no stationary gun; the port never assigns one.
+                return QvmValue.FromInt32(0);
+
+            case "AIFunction_GetAnimationToPlay":
+                // 0x44ECB0 returns -1 with no animation entries, and AddAnimationEntry is called by no
+                // shipped script, so an AI never has any (idle-animation variety, deferred).
+                return QvmValue.FromInt32(-1);
+
+            case "AIFunction_RemoveAlarmActions":
+                // 0x44DBC0 removes queued alarm ACTIONS from the pending-action list. The port drives a
+                // soldier from its Activity/Route directly and queues no alarm actions, so there is nothing
+                // to remove — an honest no-op until the pending-action list is run for soldiers (Phase B).
+                return QvmValue.Zero;
+
+            case "AIFunction_SendResponse":
+                // 0x44EE40 posts AIEVENT_ALERT_RESPONSE back to the current event's SOURCE task. The port
+                // does not route events between soldiers yet, so there is no source to answer — a no-op
+                // until inter-soldier hearing/alarm events are wired (Phase B).
+                return QvmValue.Zero;
+
             default:
-                // Everything else is a setter or getter whose state nothing in this path reads yet. The
-                // return kind still has to be right, because the VM types a call by its symbol's tag.
+                // Anything reaching here is a native no shipped script was measured to call. Surface it once
+                // rather than returning a silent zero, and keep the return kind right (the VM types a call by
+                // its symbol's tag).
+                NoteUnmodelled(native.Name);
                 return native.Return == AiNativeReturn.Real
                     ? QvmValue.FromSingle(0f)
                     : QvmValue.FromInt32(native.Name.EndsWith("ID", StringComparison.Ordinal) ? -1 : 0);
+        }
+    }
+
+    // A native a script called that the port does not model yet — logged once so it is visible rather than
+    // a silent zero. Reuses the fault set so it is one line per distinct native for the whole session.
+    private void NoteUnmodelled(string name)
+    {
+        if (_reported.Add("native:" + name))
+        {
+            _logger.Warning("Ai", $"AI native {name} is called by a script but not modelled; returning its idle value.");
         }
     }
 
