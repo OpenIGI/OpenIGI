@@ -552,39 +552,6 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
-    /// <summary>Which locomotion state a fighting soldier is in.</summary>
-    /// <remarks>
-    /// <para>
-    /// The body's clip comes from the <b>soldier's own state-to-animation table</b> and nowhere else.
-    /// An earlier pass played the weapon table's <c>Stand</c>, <c>Fire</c> and <c>Reload Animation</c>
-    /// ids on a soldier's rig, which was a guess and a wrong one: those ids index the <i>player's</i>
-    /// animation set, and the same number in a soldier's set is a different clip entirely. Guards threw
-    /// themselves on the ground, got up and did it again for ever.
-    /// </para>
-    /// <para>
-    /// The three states here were <b>measured in a live retail mission</b>: a guard's body sits in state
-    /// 6 while its burst counter drains, state 12 the moment that counter reaches zero, and state 0
-    /// <i>only</i> when its target is out of sight. Through the table those read as animations 56, 55
-    /// and 2. What performs the transition is the soldier's own state machine reacting to the input
-    /// slots the AI writes, which the port does not run — so this reproduces the correlation and says so.
-    /// </para>
-    /// </remarks>
-    private static int CombatState(AiSoldier brain)
-    {
-        // Out of sight is the ONLY thing the capture ever showed drop a fighting guard back to standing.
-        if (!brain.SeesEnemy)
-        {
-            return AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Standing);
-        }
-
-        // A live burst is state 6; a spent one -- and a reload, which is a spent one that stays spent --
-        // is state 12. Reading "burst spent" as standing instead put a single tick of the stand clip
-        // between every two bursts, and back-to-back bursts made that a flicker.
-        return brain.RoundsLeftInBurst > 0
-            ? HumanSoldierStates.FiringState
-            : HumanSoldierStates.ReloadState;
-    }
-
     /// <summary>Logs how the level's fight is going, once per change.</summary>
     /// <remarks>
     /// One line, and only when the numbers move, so it is a running commentary rather than a per-tick
@@ -1010,8 +977,20 @@ public sealed class SoldierRenderer : IDisposable
                     view.SetMoving(true, _walkAnimation);
                 }
             }
-            else if (brain.Activity != AiSoldierActivity.Engaging
-                || !view.SetMoving(true, HumanSoldierStates.AnimationOf(CombatState(brain))))
+            else if (brain.Activity == AiSoldierActivity.Engaging)
+            {
+                // Stationary combat: run the real off_53EC10 machine instead of inferring the state each
+                // tick. It is fed the clip-finished signal (BoneClip.EndedThisTick = the machine's 0x1 bit)
+                // so every state holds until its clip completes -- the hold the old per-tick inference could
+                // not do, which is why the firing animation looped.
+                bool animationDone = view.Bones.SourceOf(0)?.EndedThisTick ?? false;
+                int anim = HumanSoldierStates.AnimationOf(brain.TickCombatState(animationDone));
+                if (anim < 0 || !view.SetMoving(true, anim))
+                {
+                    view.SetMoving(false, _walkAnimation);
+                }
+            }
+            else
             {
                 view.SetMoving(brain.Activity == AiSoldierActivity.Patrolling, _walkAnimation);
             }

@@ -498,6 +498,28 @@ public sealed class AiSoldier
     /// <summary>Gets what the combat behaviour asked for on the last tick it ran.</summary>
     public AiCombatCommand Combat { get; private set; }
 
+    private readonly AiCombatStateMachine _combatMachine = new();
+
+    /// <summary>Gets the soldier's combat locomotion state — the real machine, not the old inference.</summary>
+    public int CombatState => _combatMachine.State;
+
+    /// <summary>Runs one tick of the combat locomotion machine and returns the state to animate.</summary>
+    /// <param name="animationDone">Whether the state's clip finished a cycle this tick — the machine's <c>0x1</c> bit.</param>
+    /// <returns>The locomotion state, whose clip the renderer plays.</returns>
+    /// <remarks>
+    /// The fire pose and the trigger come from the combat command the arm produced this tick; the machine
+    /// holds each state until its clip ends, which is what the old per-tick inference could not do and why
+    /// the firing animation looped. See <see cref="AiCombatStateMachine"/>.
+    /// </remarks>
+    public int TickCombatState(bool animationDone) =>
+        _combatMachine.Tick(new AiCombatStateMachine.Signals(
+            OnGround: true,
+            Flinch: false,
+            Dead: Activity == AiSoldierActivity.Dead,
+            FirePose: Combat.FirePose,
+            FireHeld: Combat.PullTrigger,
+            AnimationDone: animationDone));
+
     /// <summary>Gets which sub-state the combat behaviour is in.</summary>
     public AiCombatPhase CombatPhase => _combat?.Phase ?? AiCombatPhase.Ended;
 
@@ -1124,6 +1146,7 @@ public sealed class AiSoldier
         if (Activity != AiSoldierActivity.Engaging || CombatPhase == AiCombatPhase.Ended)
         {
             _combat?.Begin();
+            _combatMachine.Reset();
         }
 
         Activity = AiSoldierActivity.Engaging;
