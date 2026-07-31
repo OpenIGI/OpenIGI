@@ -568,13 +568,6 @@ public sealed class SoldierRenderer : IDisposable
             : HumanSoldierStates.ReloadState;
     }
 
-    /// <summary>The two move-and-fight actions that walk the soldier, so the walk clip should play.</summary>
-    /// <param name="action">What the patrol combat arm chose this tick.</param>
-    /// <returns><see langword="true"/> for <see cref="AiPatrolAction.Follow"/> and
-    /// <see cref="AiPatrolAction.RePosition"/> — the ones that travel to a destination.</returns>
-    private static bool IsMovingCombatAction(AiPatrolAction action) =>
-        action is AiPatrolAction.Follow or AiPatrolAction.RePosition;
-
     /// <summary>Logs how the level's fight is going, once per change.</summary>
     /// <remarks>
     /// One line, and only when the numbers move, so it is a running commentary rather than a per-tick
@@ -586,6 +579,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         int seeing = 0;
         int engaging = 0;
+        int chasing = 0;
         foreach (AiSoldier brain in _brains.Values)
         {
             if (brain.SeesEnemy)
@@ -597,6 +591,11 @@ public sealed class SoldierRenderer : IDisposable
             {
                 engaging++;
             }
+
+            if (brain.IsMovingInCombat)
+            {
+                chasing++;
+            }
         }
 
         if (seeing == 0 && engaging == 0 && RoundsFired == 0)
@@ -604,7 +603,8 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        string report = $"{seeing} soldier(s) see the player, {engaging} engaging, {RoundsFired} round(s) fired.";
+        string report =
+            $"{seeing} soldier(s) see the player, {engaging} engaging, {chasing} chasing, {RoundsFired} round(s) fired.";
         if (report == _lastCombatReport)
         {
             return;
@@ -742,6 +742,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         int bound = 0;
+        var arms = new Dictionary<AiCombatArm, int>();
         foreach (Group group in _groups)
         {
             foreach (Member member in group.Soldiers)
@@ -763,13 +764,17 @@ public sealed class SoldierRenderer : IDisposable
                         held.WeaponType?.RoundsPerClip ?? 0,
                         held.WeaponType?.MaximumRoundsPerBurst ?? 0,
                         held.WeaponType?.Category ?? WeaponCategory.Knife));
+                    arms[brain.Arm] = arms.GetValueOrDefault(brain.Arm) + 1;
                 }
             }
         }
 
+        // The arm decides whether a soldier can chase at all: only the patrol (move-and-fight) arm hunts and
+        // advances; the guard arm stands its ground. Logged so a "they don't chase" report can be told apart.
+        string split = string.Join(", ", arms.OrderBy(a => a.Key).Select(a => $"{a.Key}:{a.Value}"));
         _logger.Information(
             LogCategory,
-            $"AI: {bound} soldier(s) configured at {HumanAiConfigRegistry.NameOf(difficulty)} ({difficulty}).");
+            $"AI: {bound} soldier(s) configured at {HumanAiConfigRegistry.NameOf(difficulty)} ({difficulty}); arms {split}.");
     }
 
     /// <summary>The <c>HumanAI</c> child a soldier's body carries, if the level gave it one.</summary>
@@ -951,11 +956,12 @@ public sealed class SoldierRenderer : IDisposable
             {
                 view.SetMoving(true, brain.RequestedAnimation);
             }
-            else if (brain.Activity == AiSoldierActivity.Engaging && IsMovingCombatAction(brain.PatrolAction))
+            else if (brain.Activity == AiSoldierActivity.Engaging && brain.IsMovingInCombat)
             {
-                // A following or repositioning patrol RUNS to its destination, and the run clip's own root
-                // motion is what carries it (AiSoldier.AdvanceInCombat reads it). Playing the fire pose here
-                // instead would leave a chasing guard firing on the spot -- which is what it did.
+                // The soldier is walking a combat route this tick -- advancing, repositioning or hunting a
+                // lost target while it watches. The run clip's own root motion is what carries it
+                // (AiSoldier.AdvanceInCombat reads it), so it MUST play here; the fire pose has no motion,
+                // which is why a hunting guard stood still even though its logic was chasing.
                 view.SetMoving(true, _walkAnimation);
             }
             else if (brain.Activity != AiSoldierActivity.Engaging

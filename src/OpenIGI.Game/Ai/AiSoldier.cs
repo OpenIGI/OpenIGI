@@ -467,6 +467,18 @@ public sealed class AiSoldier
     /// <summary>Gets what the patrol arm chose on the last tick it ran.</summary>
     public AiPatrolAction PatrolAction { get; private set; } = AiPatrolAction.LookForTarget;
 
+    private bool _movingInCombat;
+
+    /// <summary>Gets a value indicating whether the soldier is walking a combat route this tick.</summary>
+    /// <remarks>
+    /// True whenever the move-and-fight arm stepped the soldier — advancing on a target, repositioning, or
+    /// hunting a lost one while it watches. The renderer plays the WALK clip for it, because the walk clip's
+    /// own root motion is what the next tick's <see cref="AdvanceInCombat"/> moves by; playing the fire pose
+    /// instead (as the raw action would, since a hunting soldier's action is <c>LookForTarget</c> most
+    /// ticks) leaves the clip with no motion and the chase never travels.
+    /// </remarks>
+    public bool IsMovingInCombat => _movingInCombat;
+
     /// <summary>Gets the soldier's combat row, once one has been given.</summary>
     public AiCombatParameters? CombatParameters { get; private set; }
 
@@ -1125,6 +1137,9 @@ public sealed class AiSoldier
     /// </remarks>
     private void Fight(Vector3d enemy, double rootMotionThisTick)
     {
+        // Recomputed every combat tick: AdvanceInCombat sets it when it actually steps.
+        _movingInCombat = false;
+
         if (_combat is null || _weapon is null)
         {
             // No combat row: the old behaviour, which is to stand and look at the target.
@@ -1428,6 +1443,8 @@ public sealed class AiSoldier
     {
         if (_route.Count > 0)
         {
+            // Tell the renderer to play the walk clip this tick so next tick has root motion to move by.
+            _movingInCombat = true;
             Advance(rootMotionThisTick);
         }
     }

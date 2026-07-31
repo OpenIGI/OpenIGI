@@ -47,14 +47,20 @@ public sealed class AiChaseTests
         Vector3d gone = new(position.X + (25 * Metre), position.Y - (25 * Metre), position.Z);
         Vector3d start = soldier.Position;
         bool hunted = false;
+        bool walkedInCombat = false;
 
         for (int tick = 61; tick <= 600; tick++)
         {
             soldier.Tick(tick, gone, rootMotionThisTick: 178.0);
             hunted |= soldier.PatrolAction is AiPatrolAction.Follow or AiPatrolAction.RePosition;
+
+            // The flag the renderer reads to play the WALK clip (so root motion exists in-game). Without it,
+            // a hunting soldier plays the fire pose and never actually travels, however sound the logic is.
+            walkedInCombat |= soldier.IsMovingInCombat;
         }
 
         Assert.True(hunted, "the patrol soldier lost sight of the enemy but never chose to hunt (Follow/RePosition)");
+        Assert.True(walkedInCombat, "the soldier hunted but never set IsMovingInCombat, so the game would play the fire pose and never move");
         Assert.True(
             Distance(soldier.Position, start) > 5 * Metre,
             $"the soldier lost sight but barely moved ({Distance(soldier.Position, start) / Metre:0.0} m) — it hunted on the spot");
