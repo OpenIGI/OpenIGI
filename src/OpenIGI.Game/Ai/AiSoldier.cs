@@ -167,6 +167,16 @@ public sealed class AiSoldier
     /// <summary>Gets what it is doing.</summary>
     public AiSoldierActivity Activity { get; private set; } = AiSoldierActivity.Idle;
 
+    /// <summary>Holds the soldier at the position the human-vs-human separation resolved to — <c>0x462BA0</c>.</summary>
+    /// <param name="resolved">
+    /// The end position after separation. The original refuses a move that would bring the body within
+    /// <see cref="Player.HumanSeparation.RadiusInUnits"/> horizontally and
+    /// <see cref="Player.HumanSeparation.HeightInUnits"/> vertically of another soldier <em>and</em> closer
+    /// than where it started, so <paramref name="resolved"/> is the start when the move was refused — which
+    /// is what stops two soldiers walking through each other.
+    /// </param>
+    public void SeparateTo(Vector3d resolved) => Position = resolved;
+
     /// <summary>Gets its view cones.</summary>
     public AiVision Vision { get; }
 

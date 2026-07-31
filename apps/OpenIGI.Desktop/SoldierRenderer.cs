@@ -728,6 +728,30 @@ public sealed class SoldierRenderer : IDisposable
         return null;
     }
 
+    /// <summary>Refuses a soldier's move that would walk it into another soldier — <c>0x462BA0</c>.</summary>
+    /// <remarks>
+    /// The original runs this inside the movement integrator against the whole human registry; the port
+    /// applies it to each soldier as it is stepped, against every other living soldier's current position.
+    /// It <b>refuses</b> a closing move rather than pushing out, exactly as the original does — so two bodies
+    /// can jam but neither passes through the other, which is what "two soldiers collided" was missing.
+    /// </remarks>
+    private void SeparateFromOtherSoldiers(AiSoldier brain, Vector3d before)
+    {
+        Vector3d resolved = HumanSeparation.Resolve(before, brain.Position, OtherLivingSoldiers(brain));
+        brain.SeparateTo(resolved);
+    }
+
+    private IEnumerable<Vector3d> OtherLivingSoldiers(AiSoldier self)
+    {
+        foreach ((_, AiSoldier other) in _brains)
+        {
+            if (!ReferenceEquals(other, self) && other.Activity != AiSoldierActivity.Dead)
+            {
+                yield return other.Position;
+            }
+        }
+    }
+
     /// <summary>Gives every soldier the combat row its own <c>AIType</c> names.</summary>
     /// <remarks>
     /// A soldier with no <c>HumanAI</c>, or one naming a type the engine does not register, is left off
@@ -944,7 +968,9 @@ public sealed class SoldierRenderer : IDisposable
                 _travelMax = Math.Max(_travelMax, travel);
             }
 
+            Vector3d before = brain.Position;
             brain.Tick(_tick, enemy, travel);
+            SeparateFromOtherSoldiers(brain, before);
             FireIfAsked(view, brain, enemy);
             ReportCombat();
             ReportChannels(brain);
