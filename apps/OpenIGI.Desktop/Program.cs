@@ -178,6 +178,11 @@ using (window)
     // patrol path and every guard falls back to the archetype and stands still.
     AiTaskTypes.RegisterAll(loop.Types);
 
+    // A level's CutScene tasks export isRun/isFinished/nTick, which the mission AI scripts read in their
+    // idle branch. Without the type registered the symbols never bind and guard.qsc faults every idle tick
+    // on CutScene_1200.nTick, cutting its patrol handling short.
+    loop.Types.Register<OpenIGI.Game.World.CutSceneTask>(OpenIGI.Game.World.CutSceneTask.TypeName);
+
     // Every soldier's combat numbers - 29 AI types x 3 difficulties out of common/ai/settings.qsc.
     // Loaded before any level, as sub_406DF0 is: the table has to exist before a HumanAI is configured.
     HumanAiConfigRegistry.RegisterTypes(loop.Types);
