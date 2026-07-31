@@ -321,6 +321,29 @@ public sealed class AiGuardCombatTests
         Assert.Equal(AiCombatPhase.Stand, combat.Phase);
     }
 
+    /// <summary>The first burst of an engagement is deliberately half as accurate.</summary>
+    /// <remarks>
+    /// <c>sub_48B9C0</c>'s second argument halves the hit probability and the caller clears the
+    /// argument-block byte straight after, so it fires exactly once per engagement. The guard arm keeps
+    /// the byte at <c>argBlock+40</c> and the patrol arm at <c>argBlock+32</c>, which is why two notes
+    /// named different offsets and both were right — see the original.
+    /// </remarks>
+    [Fact]
+    public void TheFirstBurstOfAnEngagementIsHalfAsAccurate()
+    {
+        AiGuardCombat combat = Guard();
+        combat.Begin();
+        Assert.True(combat.FirstFirePending);
+
+        AiCombatCommand first = combat.Update(Sense(), standing: true, primaryViewLengthInUnits: 0.0);
+
+        Assert.NotNull(first.StartedBurst);
+        Assert.False(combat.FirstFirePending);
+
+        // The row's minimum-range probability is 1.0, so a halved first burst reads 0.5.
+        Assert.Equal(0.5f, first.StartedBurst!.Value.HitProbability, 5);
+    }
+
     private static AiCombatCommand RunOneReload(AiGuardCombat combat)
     {
         combat.Update(Sense() with { AmmoInClip = 0 }, standing: true, ViewLength);

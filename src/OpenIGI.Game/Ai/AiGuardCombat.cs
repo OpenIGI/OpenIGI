@@ -110,6 +110,7 @@ public sealed class AiGuardCombat
     private int _ammoLastTick;
     private int _shotDelayTicks;
     private bool _reloadThroughInput;
+    private bool _firstFire;
     private Vector3d _trackedAim;
     private Vector3d _targetThisTick;
 
@@ -160,7 +161,19 @@ public sealed class AiGuardCombat
         _roundsLeft = 0;
         _shotDelayTicks = 0;
         BurstsFired = 0;
+        _firstFire = true;
     }
+
+    /// <summary>Gets whether the next burst is the first of this engagement, and so half as accurate.</summary>
+    /// <remarks>
+    /// The engagement's argument block carries a byte that <c>sub_48B9C0</c> takes as its second
+    /// argument and the caller then <b>clears</b>, so it fires exactly once per engagement. The two arms
+    /// keep it in different places — the guard arm at <c>argBlock+40</c> (<c>0x48D080</c>) and the patrol
+    /// arm at <c>argBlock+32</c> (<c>0x48BC00</c>), which is I.G.I. 2's <c>isFirstFire</c>. That is why
+    /// <c>ai.md</c> §11.5 and §12.1 named different offsets and <b>both were right</b>; see
+    /// <c>igi2-crosscheck.md</c> §8 item 1.
+    /// </remarks>
+    public bool FirstFirePending => _firstFire;
 
     /// <summary>Runs one tick.</summary>
     /// <param name="sense">What the body looks like this tick.</param>
@@ -237,6 +250,8 @@ public sealed class AiGuardCombat
             return new AiCombatCommand { Aim = AiAimMode.Crowded };
         }
 
+        // The first burst of an engagement is deliberately made half as accurate, and the flag is
+        // consumed here exactly as the original clears its argument-block byte after the call.
         AiCombatBurst burst = AiCombatBurst.Begin(
             _parameters,
             sense.Category,
@@ -244,7 +259,10 @@ public sealed class AiGuardCombat
             sense.BurstSize,
             sense.DistanceToTargetInUnits,
             primaryViewLengthInUnits,
-            _random());
+            _random(),
+            halveAccuracy: _firstFire);
+
+        _firstFire = false;
 
         _roundsLeft = burst.Rounds;
         _ammoLastTick = sense.AmmoInClip;
