@@ -1,37 +1,96 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// A level's cut-scene task — the original's <c>CutScene</c>, reduced to the three script variables other
-/// tasks read off it.
+/// A level's cut-scene task — the original's <c>CutScene</c>, carrying the parameters level data declares
+/// for it and exporting the three script variables other tasks read off it.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The port does not play cut-scenes, but a level's AI scripts still read a cut-scene's state: level 1's
 /// <c>MISSION:AI/&lt;id&gt;.qsc</c> reads <c>CutScene_1200.nTick</c> in its idle branch, and with no
-/// <c>CutScene</c> task registered the symbol did not resolve — <c>guard.qsc</c> faulted with
-/// <c>UnknownIdentifier: CutScene_1200.nTick</c> on <em>every</em> idle tick, cutting the script's idle and
-/// patrol handling short. Registering the type so the variables export stops that.
+/// <c>CutScene</c> type registered the symbol did not resolve — the archetype script faulted with
+/// <c>UnknownIdentifier: CutScene_1200.nTick</c> on every idle tick, cutting its idle and patrol handling
+/// short. Registering the type so the variables export stops that.
 /// </para>
 /// <para>
-/// <b>The three variables are the ones the original's symbol registrar binds</b> (<c>0x4F4FB0</c>):
-/// <c>isRun</c> (a byte at <c>+96</c>), <c>isFinished</c> (a byte at <c>+97</c>) and <c>nTick</c> (an int at
-/// <c>+100</c>). Their names and widths are read; what a running cut-scene sets them to over time is the
-/// cut-scene <em>runtime</em>, which is not built.
+/// <b>The fourteen parameters are the ones level 1's <c>objects.qvm</c> declares</b>
+/// (<c>Task_DeclareParameters("CutScene", …)</c>), in that order — the registry verifies a class against
+/// the declaration, so they have to be present and match by type. They are captured but not acted on: the
+/// cut-scene <em>runtime</em> (camera interpolation, viewport fades) is not built. The exported variables
+/// are the ones the original's symbol registrar binds (<c>0x4F4FB0</c>): <c>isRun</c> (a byte at
+/// <c>+96</c>), <c>isFinished</c> (a byte at <c>+97</c>) and <c>nTick</c> (an int at <c>+100</c>).
 /// </para>
 /// <para>
-/// <b>Stub values, recorded as such.</b> With no cut-scene playing, the task presents the scene as already
-/// finished — <c>isRun = 0</c>, <c>isFinished = 1</c>, <c>nTick = 0</c> — so a script that gates normal
+/// <b>Stub state, recorded as such.</b> With no cut-scene playing the task presents the scene as already
+/// finished — <c>isRun = 0</c>, <c>isFinished = 1</c>, <c>nTick = 0</c> — so a script gating normal
 /// behaviour on the intro being over lets guards proceed rather than wait for a scene the port never runs.
-/// Whether the mission script actually reads <c>nTick</c> as a timeline it advances against is not yet
-/// established (flagged in <c>TODO.md</c>); the immediate goal is that the read resolves.
+/// Whether the mission script reads <c>nTick</c> as a timeline it advances against is flagged in
+/// <c>TODO.md</c>; the immediate goal is that the read resolves.
 /// </para>
 /// </remarks>
-public sealed class CutSceneTask : GameTask
+public partial class CutSceneTask : GameTask
 {
     /// <summary>The script name the level data instantiates this type under.</summary>
     public const string TypeName = "CutScene";
+
+    /// <summary>Where the cut-scene camera is anchored — <c>Position</c>.</summary>
+    [ScriptParam(ScriptParamType.ObjectPos, "Position")]
+    public Vector3d Position { get; set; }
+
+    /// <summary>The camera's orientation — <c>Orientation</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32x9, "Orientation")]
+    public Vector3f Orientation { get; set; }
+
+    /// <summary>The expression that drives it while running — <c>Run</c>.</summary>
+    [ScriptParam(ScriptParamType.VarString, "Run")]
+    public string Run { get; set; } = string.Empty;
+
+    /// <summary>The expression that resets it — <c>Reset</c>.</summary>
+    [ScriptParam(ScriptParamType.VarString, "Reset")]
+    public string Reset { get; set; } = string.Empty;
+
+    /// <summary>The per-tick time step — <c>Time delta (seconds)</c>.</summary>
+    [ScriptParam(ScriptParamType.VarString, "Time delta (seconds)")]
+    public string TimeDelta { get; set; } = string.Empty;
+
+    /// <summary>When it starts — <c>Start time (seconds)</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32, "Start time (seconds)")]
+    public float StartTime { get; set; }
+
+    /// <summary>Whether it runs from the outset — <c>Initial run</c>.</summary>
+    [ScriptParam(ScriptParamType.Bool8, "Initial run")]
+    public bool InitialRun { get; set; }
+
+    /// <summary>How fast time passes for it — <c>Time scale</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32, "Time scale")]
+    public float TimeScale { get; set; }
+
+    /// <summary>The letterbox factor — <c>Viewport height factor</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32, "Viewport height factor")]
+    public float ViewportHeightFactor { get; set; }
+
+    /// <summary>How long the letterbox fades in — <c>Viewport height factor fade in time</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32, "Viewport height factor fade in time")]
+    public float ViewportFadeIn { get; set; }
+
+    /// <summary>How long the letterbox fades out — <c>Viewport height factor fade out time</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32, "Viewport height factor fade out time")]
+    public float ViewportFadeOut { get; set; }
+
+    /// <summary>The time of day it forces — <c>Time of day</c>.</summary>
+    [ScriptParam(ScriptParamType.Real32, "Time of day")]
+    public float TimeOfDay { get; set; }
+
+    /// <summary>The expression evaluated when it starts — <c>Start expression</c>.</summary>
+    [ScriptParam(ScriptParamType.VarString, "Start expression")]
+    public string StartExpression { get; set; } = string.Empty;
+
+    /// <summary>The expression evaluated when it stops — <c>Stop expression</c>.</summary>
+    [ScriptParam(ScriptParamType.VarString, "Stop expression")]
+    public string StopExpression { get; set; } = string.Empty;
 
     /// <summary>Gets or sets whether the cut-scene is currently running — <c>CutScene+96</c>, <c>isRun</c>.</summary>
     public bool IsRun { get; set; }
