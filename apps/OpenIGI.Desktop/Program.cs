@@ -401,12 +401,13 @@ using (window)
                         // The camera hands itself to the death view and pulls back off the eye, so the fall
                         // is seen from the outside -- the original's death sequence.
                         soldiers?.KillPlayerBody(fall, player.Body.Position, player.Body.Yaw);
+                        WorldRayCast deathCaster = solids.Caster();
                         deathCamera.Begin(
                             player.Body.Position,
                             player.Body.Yaw,
                             (Vector3d f, Vector3d t, out Vector3d h) =>
                             {
-                                bool blocked = solids.Caster()(f, t, out WorldRayHit wall);
+                                bool blocked = deathCaster(f, t, out WorldRayHit wall);
                                 h = blocked ? wall.Position : default;
                                 return blocked;
                             });

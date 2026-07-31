@@ -50,4 +50,44 @@ public static class HumanPlayerBody
     /// <summary>The death camera's horizontal field of view, in radians — <c>tan⁻¹(1)·2 = 90°</c>.</summary>
     /// <remarks><c>DeathCameraInit</c> sets the half-tangent to <c>tan(45°) = 1</c>, the same as the game view.</remarks>
     public const float DeathCameraFieldOfView = 1.5707964f;
+
+    /// <summary>How far the death camera is pulled in from what it aims for, in engine units — half a metre.</summary>
+    /// <remarks>
+    /// <c>FindStartPosition</c> stores <c>maxDistance − 2048</c> as the camera distance, so the eye always
+    /// sits half a metre short of the ideal or of whatever wall it found — never flush against geometry.
+    /// </remarks>
+    public const double DeathCameraPullInInUnits = 2048.0;
+
+    /// <summary>The elevation angles the death camera tries, in radians, <b>in preference order</b>.</summary>
+    /// <remarks>
+    /// <para>
+    /// The eight floats of <c>HumanCamera_avAlphaGuesses</c>, read from I.G.I. 2's data (this camera is the
+    /// shared engine's; I.G.I. 1's own binary does not carry the table, so its death camera is a different,
+    /// simpler mechanism — <c>human+1264</c> mode 5 — whose vantage logic is not yet traced). The search
+    /// takes the <b>first</b> angle whose ray clears the world, so the order is the preference: a little
+    /// above the body first (~33°, ~11°, level), then higher (~56°, ~78°), then below (~−22°, −44°, −67°).
+    /// </para>
+    /// </remarks>
+    public static ReadOnlySpan<float> DeathCameraElevationGuesses =>
+    [
+        0.5825035f,   // 0x3F151EF6 — ~33.4 degrees, the first choice
+        0.19418449f,  // 0x3E46D3F2 — ~11.1
+        0f,           // level with the body
+        0.9708392f,   // 0x3F7888EF — ~55.6
+        1.3591747f,   // 0x3FADF974 — ~77.9
+        -0.38836897f, // 0xBEC6D3F2 — ~-22.2
+        -0.7767379f,  // 0xBF46D3F2 — ~-44.5
+        -1.1650069f,  // 0xBF951EF6 — ~-66.7
+    ];
+
+    /// <summary>Where the death camera's azimuth sweep starts, in radians — <c>−π/2</c>.</summary>
+    /// <remarks><c>FindStartPosition</c> starts <c>vGamma</c> here and steps it, relative to the body's frame.</remarks>
+    public const float DeathCameraAzimuthStart = -1.5707964f;
+
+    /// <summary>How much the azimuth sweep steps each try, in radians — <c>π/4</c>.</summary>
+    public const float DeathCameraAzimuthStep = 0.78539819f;
+
+    /// <summary>How many azimuths the death camera tries per elevation — eight, a full turn less one step.</summary>
+    /// <remarks>The <c>a1 != 0 ? 1 : 8</c> count; the death camera passes <c>0</c>, so it sweeps all eight.</remarks>
+    public const int DeathCameraAzimuthCount = 8;
 }
