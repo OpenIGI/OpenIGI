@@ -68,6 +68,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly HashSet<string> _reportedChannels = new(StringComparer.Ordinal);
     private int _deathsSoFar;
     private int _walkAnimation = -1;
+    private int _runAnimation = -1;
     private int _tick;
     private int _travelSamples;
     private double _travelTotal;
@@ -256,6 +257,11 @@ public sealed class SoldierRenderer : IDisposable
         // 0x538870 -- not a chosen id.
         _walkAnimation = HumanLocomotionStates.For(1).AnimationId;
 
+        // The run clip is the soldier's own RunState (0x53ED10), measured off "Combat - Follow": a chasing
+        // guard runs in state 17 = animation 48 at ~4.4 m/s, not the 1.28 m/s walk. Its own root motion is
+        // what makes the chase move at run speed instead of strolling.
+        _runAnimation = HumanSoldierStates.AnimationOf(HumanSoldierStates.RunState);
+
         // The level's authored patrol paths, keyed by the PatrolPath task's own id -- what AIAction_Patrol's
         // first argument names (ai.md 7.1).
         AiPatrolPathRegistry? paths = levelRoot is null ? null : AiPatrolPathRegistry.Build(levelRoot);
@@ -354,10 +360,21 @@ public sealed class SoldierRenderer : IDisposable
         // there looking at the player.
         BindCombatRows(config, difficulty);
 
+        int hasRun = 0, total = 0;
+        foreach (SoldierView v in _groups.SelectMany(g => g.Soldiers).Select(m => m.View))
+        {
+            total++;
+            if (v.Bones.Set.TryGet(_runAnimation, out _))
+            {
+                hasRun++;
+            }
+        }
+
         _logger.Information(
             LogCategory,
             $"{_brains.Count} soldier(s) with brains ({patrolling} scripted, {perTask} from their own " +
-            $"MISSION:AI script), walk animation {_walkAnimation}.");
+            $"MISSION:AI script), walk animation {_walkAnimation}, run animation {_runAnimation} " +
+            $"(in {hasRun} of {total} soldier set(s); the rest fall back to the walk when chasing).");
         _logger.Information(
             LogCategory,
             $"Soldiers per nav graph: " +
@@ -984,11 +1001,14 @@ public sealed class SoldierRenderer : IDisposable
             }
             else if (brain.Activity == AiSoldierActivity.Engaging && brain.IsMovingInCombat)
             {
-                // The soldier is walking a combat route this tick -- advancing, repositioning or hunting a
-                // lost target while it watches. The run clip's own root motion is what carries it
-                // (AiSoldier.AdvanceInCombat reads it), so it MUST play here; the fire pose has no motion,
-                // which is why a hunting guard stood still even though its logic was chasing.
-                view.SetMoving(true, _walkAnimation);
+                // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
+                // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
+                // = anim 48 at ~4.4 m/s), and the run clip's own root motion is what carries it at that speed
+                // (AiSoldier.AdvanceInCombat reads it). Fall back to the walk if the set has no run clip.
+                if (_runAnimation < 0 || !view.SetMoving(true, _runAnimation))
+                {
+                    view.SetMoving(true, _walkAnimation);
+                }
             }
             else if (brain.Activity != AiSoldierActivity.Engaging
                 || !view.SetMoving(true, HumanSoldierStates.AnimationOf(CombatState(brain))))

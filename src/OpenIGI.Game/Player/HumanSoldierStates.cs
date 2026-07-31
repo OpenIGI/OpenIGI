@@ -74,6 +74,22 @@ public static class HumanSoldierStates
     /// <summary>The state a soldier stands in.</summary>
     public const int StandState = 0;
 
+    /// <summary>The state a soldier <b>runs</b> in — what the move-and-fight arm's Follow puts it in.</summary>
+    /// <remarks>
+    /// <para>
+    /// Measured by hooking <c>"Combat - Follow"</c> (<c>0x48C860</c>) in the running game: a chasing guard
+    /// sits in locomotion state 17 (its diagonal twin is 18), at <b>4.0–5.0 m/s</b> — about three and a half
+    /// times the 1.28 m/s patrol walk. Through the table (<c>0x53ED10</c>) that reads as <b>animation 48</b>
+    /// (state 18 is 52), whose own root motion carries the run; the walk it was drawn with instead is why a
+    /// chasing guard looked like it was strolling.
+    /// </para>
+    /// <para>
+    /// <b>Which of 17/18 is straight-ahead versus diagonal is not yet pinned</b> — both were seen at the same
+    /// speed — so 17 is taken as the forward run and the distinction is recorded as open.
+    /// </para>
+    /// </remarks>
+    public const int RunState = 17;
+
     /// <summary>The state a soldier falls into when it is not on the ground.</summary>
     /// <remarks>Every combat state's per-tick leaves for this the moment flag <c>0x4</c> clears.</remarks>
     public const int AirborneState = 29;
