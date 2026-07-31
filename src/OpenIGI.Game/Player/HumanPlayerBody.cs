@@ -90,4 +90,25 @@ public static class HumanPlayerBody
     /// <summary>How many azimuths the death camera tries per elevation — eight, a full turn less one step.</summary>
     /// <remarks>The <c>a1 != 0 ? 1 : 8</c> count; the death camera passes <c>0</c>, so it sweeps all eight.</remarks>
     public const int DeathCameraAzimuthCount = 8;
+
+    /// <summary>The distance the death camera rests at, in engine units — <c>2.5 m</c>, <c>DeathCameraInit</c>'s <c>+292</c>.</summary>
+    /// <remarks>
+    /// The orbit eases the distance back out to this whenever the way is clear; the search's ideal ray is
+    /// this plus the half-metre pull-in, so a clear vantage lands exactly here.
+    /// </remarks>
+    public const double DeathCameraRestingDistanceInUnits =
+        DeathCameraDistanceInUnits - DeathCameraPullInInUnits;
+
+    /// <summary>The most the orbit turns in one frame, in radians — <c>6°</c>, the clamp in <c>0x4d5220</c>.</summary>
+    public const float DeathCameraOrbitStepLimit = 0.10471976f;
+
+    /// <summary>The lowest the orbit's elevation may fall, in radians — <c>−71.2°</c> (<c>0x4d5220</c>).</summary>
+    public const float DeathCameraElevationMin = -1.2426745f;
+
+    /// <summary>The highest the orbit's elevation may rise, in radians — <c>89.0°</c> (<c>0x4d5220</c>).</summary>
+    public const float DeathCameraElevationMax = 1.5533431f;
+
+    /// <summary>How fast the orbit eases its distance back toward the resting one, in units a frame.</summary>
+    /// <remarks>The <c>136.53334</c> step <c>0x4d5220</c> adds (or subtracts) when the way is clear.</remarks>
+    public const double DeathCameraDistanceEaseInUnits = 136.53334;
 }

@@ -5,22 +5,26 @@ using OpenIGI.Rendering;
 namespace OpenIGI.Desktop;
 
 /// <summary>
-/// The camera the game hands control to when the player dies — it detaches from the eye and pulls back to
-/// a third-person view of the body, the original's <c>HumanCamera</c> death mode.
+/// The camera the game hands control to when the player dies — it detaches from the eye, pulls back to a
+/// third-person view of the body, and lets the mouse orbit around it: the original's <c>HumanCamera</c>
+/// death mode.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>HumanCamera_DeathCameraInit</c> (<c>0x4d51d0</c>) sets a pull-back distance and a ninety-degree
-/// field of view, then <c>FindStartPosition</c> (<c>0x4d36a0</c>) casts a fan of elevation and azimuth
-/// guesses out to <c>+292 + 2048 = 12288</c> units — three metres — and takes the first that clears the
-/// world, so the body is framed against open space rather than the inside of a wall.
+/// On death <c>DeathCameraInit</c> (<c>0x4d51d0</c>) and <c>FindStartPosition</c> (<c>0x4d36a0</c>) choose
+/// a starting vantage that frames the body against open space — that search is <see cref="DeathCameraVantage"/>.
+/// Then every frame <c>DeathCameraControlInput</c> (<c>0x4d53d0</c>) feeds the mouse to
+/// <c>UpdateAlphaAndGammaWithCollisions</c> (<c>0x4d5220</c>): the look turns the camera's azimuth freely
+/// and its elevation between <c>−71°</c> and <c>+89°</c> — at most six degrees a frame — while the
+/// distance eases back out to the resting two and a half metres whenever the way is clear and pulls in
+/// when a wall gets between the camera and the body.
 /// </para>
 /// <para>
-/// The search itself is <see cref="DeathCameraVantage"/>, in the game layer where it can be tested; this
-/// wraps it into a <see cref="Camera3D"/>: it aims a metre above the body's feet — the chest — runs the
-/// search from there, sits the eye where the search says, and looks back at the pivot. The world is
-/// already drawn at the ninety-degree horizontal field of view <c>DeathCameraInit</c> also sets
-/// (<see cref="HumanPlayerBody.DeathCameraFieldOfView"/>), so only the eye changes.
+/// So the orbit is stateful — an azimuth, an elevation and a distance around a fixed pivot (the body's
+/// chest) — which is what this holds. The world is already drawn at the ninety-degree horizontal field of
+/// view <c>DeathCameraInit</c> also sets (<see cref="HumanPlayerBody.DeathCameraFieldOfView"/>), so only
+/// the eye changes. Read from I.G.I. 2's named camera; see <see cref="DeathCameraVantage"/> for why this
+/// is a documented lift from the sequel rather than I.G.I. 1's own (different) death mode.
 /// </para>
 /// </remarks>
 public sealed class DeathCamera
@@ -31,7 +35,17 @@ public sealed class DeathCamera
     // Where on the body the camera aims: a metre above the feet, roughly the chest.
     private const double ChestAboveFeetInUnits = UnitsPerMetre;
 
+    // Radians of orbit per pixel of mouse motion -- the player's own look sensitivity, so the death
+    // camera turns at the same rate the view did a moment before. The per-frame six-degree clamp is the
+    // original's; this only sets how much a given mouse motion asks for before that clamp.
+    private const float OrbitSensitivity = 0.0035f;
+
     private Camera3D _camera = Camera3D.Default;
+    private Vector3d _pivot;
+    private double _alpha;      // elevation, radians
+    private double _gamma;      // azimuth, radians
+    private double _distance;   // engine units
+    private DeathCameraVantage.Blocked? _walls;
 
     /// <summary>Gets a value indicating whether the death camera has taken over.</summary>
     public bool IsActive { get; private set; }
@@ -45,24 +59,76 @@ public sealed class DeathCamera
     /// <param name="walls">A world ray test to keep the camera out of geometry, or <see langword="null"/>.</param>
     public void Begin(Vector3d bodyFeetUnits, float gamma, DeathCameraVantage.Blocked? walls = null)
     {
-        Vector3d pivot = new(
+        _pivot = new Vector3d(
             bodyFeetUnits.X, bodyFeetUnits.Y, bodyFeetUnits.Z + ChestAboveFeetInUnits);
+        _walls = walls;
 
-        DeathCameraVantage.Vantage vantage = DeathCameraVantage.Find(pivot, gamma, walls);
+        DeathCameraVantage.Vantage vantage = DeathCameraVantage.Find(_pivot, gamma, walls);
 
-        Vector3d eye = new(
-            pivot.X + (vantage.Direction.X * vantage.DistanceInUnits),
-            pivot.Y + (vantage.Direction.Y * vantage.DistanceInUnits),
-            pivot.Z + (vantage.Direction.Z * vantage.DistanceInUnits));
+        // Recover the elevation and azimuth the chosen direction stands for, so the orbit can carry on
+        // from it: direction = (sin(az)cos(el), -cos(az)cos(el), sin(el)).
+        _alpha = Math.Asin(Math.Clamp(vantage.Direction.Z, -1.0, 1.0));
+        _gamma = Math.Atan2(vantage.Direction.X, -vantage.Direction.Y);
+        _distance = vantage.DistanceInUnits;
 
-        Vector3d look = new(pivot.X - eye.X, pivot.Y - eye.Y, pivot.Z - eye.Z);
-        double lookLength = Math.Sqrt((look.X * look.X) + (look.Y * look.Y) + (look.Z * look.Z));
-        float yaw = (float)Math.Atan2(look.X, look.Y);
-        float pitch = lookLength > 0.0 ? (float)Math.Asin(look.Z / lookLength) : 0f;
-
-        Vector3d eyeMetres = new(eye.X / UnitsPerMetre, eye.Y / UnitsPerMetre, eye.Z / UnitsPerMetre);
-        _camera = new Camera3D(eyeMetres, Camera3D.LookRotation(yaw, pitch));
+        BuildCamera();
         IsActive = true;
+    }
+
+    /// <summary>Orbits the camera around the body from a frame's mouse motion.</summary>
+    /// <param name="mouseDeltaX">The horizontal mouse motion this frame, in pixels.</param>
+    /// <param name="mouseDeltaY">The vertical mouse motion this frame, in pixels.</param>
+    /// <remarks>
+    /// <c>UpdateAlphaAndGammaWithCollisions</c>: the turn is clamped to six degrees a frame, the elevation
+    /// held between its limits, the azimuth free, and the distance eased back toward the resting one when
+    /// the way is clear or pulled in short of a wall when it is not.
+    /// </remarks>
+    public void Control(float mouseDeltaX, float mouseDeltaY)
+    {
+        if (!IsActive)
+        {
+            return;
+        }
+
+        float limit = HumanPlayerBody.DeathCameraOrbitStepLimit;
+        double deltaGamma = Math.Clamp(mouseDeltaX * OrbitSensitivity, -limit, limit);
+        double deltaAlpha = Math.Clamp(mouseDeltaY * OrbitSensitivity, -limit, limit);
+
+        // Mouse up (a negative vertical delta) raises the camera, as the original's `alpha -= delta` does.
+        _alpha = Math.Clamp(
+            _alpha - deltaAlpha,
+            HumanPlayerBody.DeathCameraElevationMin,
+            HumanPlayerBody.DeathCameraElevationMax);
+        _gamma += deltaGamma;
+
+        // Collision: the distance eases back out to the resting one when the ray to the ideal is clear,
+        // and snaps in short of whatever blocks it when it is not.
+        Vector3d direction = DirectionOf(_alpha, _gamma);
+        double resting = HumanPlayerBody.DeathCameraRestingDistanceInUnits;
+        double ideal = HumanPlayerBody.DeathCameraDistanceInUnits;
+        double ease = HumanPlayerBody.DeathCameraDistanceEaseInUnits;
+        double pullIn = HumanPlayerBody.DeathCameraPullInInUnits;
+
+        Vector3d far = new(
+            _pivot.X + (direction.X * ideal),
+            _pivot.Y + (direction.Y * ideal),
+            _pivot.Z + (direction.Z * ideal));
+
+        if (_walls is { } walls && walls(_pivot, far, out Vector3d hit))
+        {
+            double maxDistance = Math.Max(0.0, Distance(_pivot, hit) - pullIn);
+            _distance = Math.Min(_distance, maxDistance);
+        }
+        else if (_distance < resting)
+        {
+            _distance = Math.Min(resting, _distance + ease);
+        }
+        else if (_distance > resting)
+        {
+            _distance = Math.Max(resting, _distance - ease);
+        }
+
+        BuildCamera();
     }
 
     /// <summary>Hands the view back — what starting a fresh mission does.</summary>
@@ -70,5 +136,37 @@ public sealed class DeathCamera
     {
         IsActive = false;
         _camera = Camera3D.Default;
+        _walls = null;
+    }
+
+    private static Vector3d DirectionOf(double alpha, double gamma)
+    {
+        double ce = Math.Cos(alpha);
+        return new Vector3d(Math.Sin(gamma) * ce, -Math.Cos(gamma) * ce, Math.Sin(alpha));
+    }
+
+    private void BuildCamera()
+    {
+        Vector3d direction = DirectionOf(_alpha, _gamma);
+        Vector3d eye = new(
+            _pivot.X + (direction.X * _distance),
+            _pivot.Y + (direction.Y * _distance),
+            _pivot.Z + (direction.Z * _distance));
+
+        Vector3d look = new(_pivot.X - eye.X, _pivot.Y - eye.Y, _pivot.Z - eye.Z);
+        double lookLength = Math.Sqrt((look.X * look.X) + (look.Y * look.Y) + (look.Z * look.Z));
+        float yaw = (float)Math.Atan2(look.X, look.Y);
+        float pitch = lookLength > 0.0 ? (float)Math.Asin(look.Z / lookLength) : 0f;
+
+        Vector3d eyeMetres = new(eye.X / UnitsPerMetre, eye.Y / UnitsPerMetre, eye.Z / UnitsPerMetre);
+        _camera = new Camera3D(eyeMetres, Camera3D.LookRotation(yaw, pitch));
+    }
+
+    private static double Distance(Vector3d a, Vector3d b)
+    {
+        double dx = a.X - b.X;
+        double dy = a.Y - b.Y;
+        double dz = a.Z - b.Z;
+        return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
     }
 }

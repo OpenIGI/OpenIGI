@@ -897,7 +897,15 @@ using (window)
             float rawY = window.Input.Mouse.DeltaY;
             bool right = window.Input.Mouse.IsDown(OpenIGI.Input.MouseButton.Right);
 
-            if (playerMode && player is not null)
+            if (playerDead && deathCamera.IsActive)
+            {
+                // Dead: the mouse orbits the death camera around the body rather than turning a head that
+                // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
+                // so the orbit keeps turning however far the mouse is moved.
+                deathCamera.Control(rawX, rawY);
+                window.CursorLocked = true;
+            }
+            else if (playerMode && player is not null)
             {
                 // Looking is per frame so the view is as smooth as the display allows; the body itself
                 // moves on the fixed tick below, so it steps identically whatever the frame rate.
