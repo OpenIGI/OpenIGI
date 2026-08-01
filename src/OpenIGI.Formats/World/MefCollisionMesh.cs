@@ -68,16 +68,29 @@ public sealed class MefCollisionMesh
     /// <summary>Bytes per sphere.</summary>
     public const int SphereStride = 24;
 
+    /// <summary>The <c>iPortal</c> value that means "not a portal" — <c>0xFFFF</c>, i.e. −1.</summary>
+    /// <remarks>
+    /// A material row's <c>iPortal</c> (the <c>u16</c> at offset 4, IGI2 <c>MultiMesh_Material_t.iPortal</c>)
+    /// indexes a portal when it is anything other than this. A portal face is a doorway or window opening:
+    /// non-solid, so a body walks through it. See <see cref="IsPortal"/>.
+    /// </remarks>
+    public const int NotAPortal = 0xFFFF;
+
+    private readonly bool[] _materialIsPortal;
+
     private MefCollisionMesh(
         MefCollisionFace[] faces,
         Vector3f[] vertices,
+        int[] vertexBones,
         MefCollisionSphere[] spheres,
-        int materialCount)
+        bool[] materialIsPortal)
     {
         Faces = faces;
         Vertices = vertices;
+        VertexBones = vertexBones;
         Spheres = spheres;
-        Materials = materialCount;
+        Materials = materialIsPortal.Length;
+        _materialIsPortal = materialIsPortal;
     }
 
     /// <summary>Gets the collision triangles.</summary>
@@ -86,12 +99,33 @@ public sealed class MefCollisionMesh
     /// <summary>Gets the collision vertices, in the model's own space.</summary>
     public IReadOnlyList<Vector3f> Vertices { get; }
 
+    /// <summary>Gets the bone each collision vertex is rigidly bound to — the vertex's fourth field.</summary>
+    /// <remarks>
+    /// The <c>XTVC</c> vertex is a <c>float3</c> position and one <c>u32</c> after it. For a static object
+    /// that trailing word is zero; for a <b>skinned human</b> it is the rig bone the vertex follows, so the
+    /// collision mesh deforms with the pose and a round can be scored to the exact bone it passed through
+    /// (IGI2 <c>MultiMesh_Vertex_t</c>'s bone field; the whole point of <c>BoneDynCubeObj_TraceLinesHandler</c>).
+    /// Verified against the retail human models: the values are the 33-bone rig's own numbering.
+    /// </remarks>
+    public IReadOnlyList<int> VertexBones { get; }
+
     /// <summary>Gets the sphere tree over the faces.</summary>
     public IReadOnlyList<MefCollisionSphere> Spheres { get; }
 
     /// <summary>Gets how many material rows the mesh carries.</summary>
-    /// <remarks>The rows' 12 bytes are not yet decoded, so only the count is exposed.</remarks>
     public int Materials { get; }
+
+    /// <summary>Whether a face of the given material is a non-solid portal (a doorway or window opening).</summary>
+    /// <param name="material">The face's material index — <see cref="MefCollisionFace.Material"/>.</param>
+    /// <returns><see langword="true"/> when the material's <c>iPortal</c> marks it a portal.</returns>
+    /// <remarks>
+    /// This is what lets a body walk through a doorway: the opening is closed by a portal polygon in the
+    /// collision mesh (for the room/visibility system), and the original's collision skips it. Colliding
+    /// with it instead walls off the door — the bug this exists to prevent. An out-of-range index is
+    /// treated as solid, the safe default.
+    /// </remarks>
+    public bool IsPortal(int material) =>
+        (uint)material < (uint)_materialIsPortal.Length && _materialIsPortal[material];
 
     /// <summary>Whether the sphere count is the binary tree's over the faces.</summary>
     /// <remarks><c>2 × faces − 1</c>, which holds for every shipped mesh.</remarks>
@@ -133,9 +167,20 @@ public sealed class MefCollisionMesh
         ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, faceCount, FaceStride);
         ReadOnlySpan<byte> vertexBytes = Payload(container, MefTags.CollisionVertices, vertexCount, VertexStride);
         ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, sphereCount, SphereStride);
-        _ = Payload(container, MefTags.CollisionMaterials, materialCount, MaterialStride);
+        ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, materialCount, MaterialStride);
+
+        // The material rows' one field the collision needs: iPortal (u16 at offset 4). A doorway or
+        // window opening is closed by a portal polygon whose material carries a portal index here; the
+        // original walks through it, so a portal material is non-solid. 0xFFFF means "not a portal".
+        bool[] materialIsPortal = new bool[materialCount];
+        for (int i = 0; i < materialCount; i++)
+        {
+            int portal = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * MaterialStride) + 4, 2));
+            materialIsPortal[i] = portal != NotAPortal;
+        }
 
         Vector3f[] vertices = new Vector3f[vertexCount];
+        int[] vertexBones = new int[vertexCount];
         for (int i = 0; i < vertexCount; i++)
         {
             ReadOnlySpan<byte> row = vertexBytes.Slice(i * VertexStride, VertexStride);
@@ -143,6 +188,9 @@ public sealed class MefCollisionMesh
                 BinaryPrimitives.ReadSingleLittleEndian(row),
                 BinaryPrimitives.ReadSingleLittleEndian(row[4..]),
                 BinaryPrimitives.ReadSingleLittleEndian(row[8..]));
+
+            // The trailing word: the rig bone a skinned vertex follows (zero on static geometry).
+            vertexBones[i] = BinaryPrimitives.ReadInt32LittleEndian(row[12..]);
         }
 
         MefCollisionFace[] faces = new MefCollisionFace[faceCount];
@@ -170,7 +218,7 @@ public sealed class MefCollisionMesh
                 BinaryPrimitives.ReadInt32LittleEndian(row[20..]));
         }
 
-        mesh = new MefCollisionMesh(faces, vertices, spheres, materialCount);
+        mesh = new MefCollisionMesh(faces, vertices, vertexBones, spheres, materialIsPortal);
         return true;
     }
 

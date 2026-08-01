@@ -157,6 +157,22 @@ public sealed class PlayerBody
     /// </remarks>
     public Vector3f SlopeSlide { get; private set; }
 
+    /// <summary>The horizontal shove one connecting round gives the player, in units per tick.</summary>
+    /// <remarks>
+    /// <c>189.62962</c> — exactly <b>5 km/h</b> on the 37.9259 units-per-tick-per-km/h grid. The
+    /// player's hit handler (<c>0x412440</c>) normalises the round's travel direction and adds
+    /// <c>x·189.62962</c> and <c>y·189.62962</c> into <c>Human+1648</c>/<c>+1652</c> — the same
+    /// damped accumulator the slope slide runs on, so the shove decays by 0.9 a tick on its own.
+    /// </remarks>
+    public const float HitShoveUnitsPerTick = 189.62962f;
+
+    /// <summary>Shoves the body horizontally — the per-hit knock of the player's hit handler.</summary>
+    /// <param name="x">The X to add to the slide accumulator, in units per tick.</param>
+    /// <param name="y">The Y to add.</param>
+    /// <remarks>See <see cref="HitShoveUnitsPerTick"/>. Z is never written — the original adds only X and Y.</remarks>
+    public void AddHitShove(float x, float y) =>
+        SlopeSlide = new Vector3f(SlopeSlide.X + x, SlopeSlide.Y + y, SlopeSlide.Z);
+
     /// <summary>Gets the normal of the ground under the feet, or <see langword="null"/> when airborne.</summary>
     public Vector3f? GroundNormal { get; private set; }
 
@@ -390,15 +406,52 @@ public sealed class PlayerBody
 
     /// <summary>Puts the body on the ground, or leaves it falling.</summary>
     /// <remarks>
+    /// <para>
     /// The step-down budget is the human's own: nothing while airborne, and
     /// <see cref="HumanGroundQuery.GroundedStepDownInUnits"/> while walking, which is what lets a body
     /// follow a slope down without leaving the surface at every bump.
+    /// </para>
+    /// <para>
+    /// <b>Terrain and objects, in one query.</b> The original's downward ground cast (<c>0x4CBE40</c>)
+    /// sweeps the placed models (<c>0x4CDB20</c>) <i>and</i> the terrain octree (<c>0x4CB050</c>) in the
+    /// same call, and keeps whichever surface sits nearest the probe — terrain overwrites an object hit
+    /// only when it is the closer of the two (<c>collision.md</c> §8). For a downward probe that is
+    /// simply the higher of the two surfaces. Without the object half a body walks <i>through</i> a
+    /// crate, a ramp or a building floor and stands on the terrain beneath it, which is the collision
+    /// bug this restores.
+    /// </para>
     /// </remarks>
     private void Settle(ref Vector3d position, TerrainData terrain)
     {
-        double from = position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
+        double from = position.Z + HumanGroundQuery.ProbeOrigin(IsCrouched);
 
-        if (!TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
+        bool found = false;
+        double height = double.NegativeInfinity;
+        Vector3f normal = default;
+
+        if (TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
+        {
+            found = true;
+            height = ground.Height;
+            normal = new Vector3f((float)ground.NormalX, (float)ground.NormalY, (float)ground.NormalZ);
+        }
+
+        // The object half of the cast: a downward ray at the placed models. Its nearest hit is the
+        // highest surface below the probe, so a top, a ramp or a floor above the terrain wins here.
+        if (Walls is not null)
+        {
+            Vector3d probeTop = new(position.X, position.Y, from);
+            Vector3d probeFloor = new(position.X, position.Y, from - TerrainHeightQuery.SearchDepthUnits);
+
+            if (Walls(probeTop, probeFloor, out WorldRayHit hit) && (!found || hit.Position.Z > height))
+            {
+                found = true;
+                height = hit.Position.Z;
+                normal = hit.Normal;
+            }
+        }
+
+        if (!found)
         {
             IsGrounded = false;
             GroundNormal = null;
@@ -409,12 +462,12 @@ public sealed class PlayerBody
             ? HumanGroundQuery.GroundedStepDownInUnits
             : HumanGroundQuery.AirborneStepDownInUnits;
 
-        if (position.Z <= ground.Height + stepDown)
+        if (position.Z <= height + stepDown)
         {
-            position = new Vector3d(position.X, position.Y, ground.Height);
+            position = new Vector3d(position.X, position.Y, height);
             Velocity = new Vector3f(Velocity.X, Velocity.Y, 0f);
             IsGrounded = true;
-            GroundNormal = new Vector3f((float)ground.NormalX, (float)ground.NormalY, (float)ground.NormalZ);
+            GroundNormal = normal;
             return;
         }
 
@@ -443,19 +496,45 @@ public sealed class PlayerBody
         double from = Position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
         double floor = from - PlacementSearchUnits;
 
-        while (from > floor)
+        bool found = false;
+        double height = double.NegativeInfinity;
+
+        // Terrain: walk down in whole probe lengths and take the first — the highest — ground found.
+        double probe = from;
+        while (probe > floor)
         {
-            if (TerrainHeightQuery.TryGetGround(terrain, Position.X, Position.Y, from, out TerrainGround ground))
+            if (TerrainHeightQuery.TryGetGround(terrain, Position.X, Position.Y, probe, out TerrainGround ground))
             {
-                Position = new Vector3d(Position.X, Position.Y, ground.Height);
-                Velocity = default;
-                IsGrounded = true;
-                return true;
+                height = ground.Height;
+                found = true;
+                break;
             }
 
-            from -= TerrainHeightQuery.SearchDepthUnits;
+            probe -= TerrainHeightQuery.SearchDepthUnits;
         }
 
-        return false;
+        // Objects: one downward cast finds the highest floor or platform below the spawn, so a body a
+        // level authors on a building floor lands on it rather than dropping through to the terrain
+        // beneath — the same object half the runtime ground query gained in Settle.
+        if (Walls is not null
+            && Walls(
+                new Vector3d(Position.X, Position.Y, from),
+                new Vector3d(Position.X, Position.Y, floor),
+                out WorldRayHit hit)
+            && (!found || hit.Position.Z > height))
+        {
+            height = hit.Position.Z;
+            found = true;
+        }
+
+        if (!found)
+        {
+            return false;
+        }
+
+        Position = new Vector3d(Position.X, Position.Y, height);
+        Velocity = default;
+        IsGrounded = true;
+        return true;
     }
 }

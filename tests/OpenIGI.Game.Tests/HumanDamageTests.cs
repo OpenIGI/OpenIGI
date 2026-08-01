@@ -175,6 +175,59 @@ public sealed class HumanDamageTests
         Assert.False(HumanDamage.TakesProximityZone(0f, localForward: -0.001f));
     }
 
+    /// <summary>
+    /// The player's difficulty damage scale — <c>0x412440</c>, HumanPlayer's own hit handler.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Damage dealt to the <b>player</b> is scaled ×0.75 on GD_1 (Easy), ×1.0 on GD_2 (Normal) and
+    /// ×1.25 on GD_3 (Hard) — the branch even warns <c>"Difficulty level not defined %d"</c> for any
+    /// other value. Soldiers take unscaled damage (<c>0x45D3C0</c> has no such branch).
+    /// </para>
+    /// <para>
+    /// The player's maximum health is <c>humanplayer.qvm</c> argument 7 = <b>3.0</b>, written over
+    /// <c>Human+600</c> by the constructor (<c>0x410370</c> at <c>0x4104E1</c>) — worth three
+    /// soldiers. Both numbers were read live off the retail game: <c>[phit] max=3.000</c>, each
+    /// 0.30-factor AK hit adding <c>0.30 × zoneMult × 1.25</c> on Hard, death at exactly 3.0 after
+    /// nine mixed-zone hits. Pure torso that is 14 hits on Easy, <b>11</b> on Normal, 8 on Hard —
+    /// eleven, not ten, because the arithmetic is retail's own <see langword="float"/>: ten
+    /// accumulations of 0.3f reach 2.9999998, a hair <i>under</i> the 3.0 threshold, so the tenth
+    /// hit leaves the player alive on a sliver. (0.375 and 0.225 land exactly, so Hard and Easy have
+    /// no such off-by-one.)
+    /// </para>
+    /// </remarks>
+    [Theory]
+    [InlineData(0, 0.75f, 14)]
+    [InlineData(1, 1.00f, 11)]
+    [InlineData(2, 1.25f, 8)]
+    public void ThePlayerTakesDifficultyScaledDamage(int difficulty, float expectedScale, int akTorsoHitsToKill)
+    {
+        Assert.Equal(expectedScale, HumanHealth.DifficultyDamageScale(difficulty));
+
+        HumanHealth player = new(HumanHitZoneTable.Player, maximumHealth: 3f)
+        {
+            DamageScale = HumanHealth.DifficultyDamageScale(difficulty),
+        };
+
+        int hits = 0;
+        while (!player.IsDead)
+        {
+            player.Apply(zone: 12, damageFactor: 0.30f);
+            hits++;
+        }
+
+        Assert.Equal(akTorsoHitsToKill, hits);
+    }
+
+    /// <summary>A soldier's damage is never difficulty-scaled — the scale is the player's alone.</summary>
+    [Fact]
+    public void ASoldierTakesUnscaledDamage()
+    {
+        HumanHealth soldier = new(HumanHitZoneTable.Soldier, maximumHealth: 0.8f);
+        soldier.Apply(zone: 12, damageFactor: 0.30f);
+        Assert.Equal(0.30f, soldier.Damage, precision: 5);
+    }
+
     private static int[] Zones(int start, int count)
     {
         int[] result = new int[count];

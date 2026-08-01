@@ -31,7 +31,29 @@ public sealed class ObjectCollisionIndex
 {
     private readonly Entry[] _entries;
 
+    // Placements whose collision is switched OFF -- an open door. The original's door pushes its
+    // moving transform down to its collision child every tick; the port does not move collision
+    // meshes, so a door that is not fully closed stops colliding instead (a recorded stand-in: rounds,
+    // sight and walkers pass an open doorway, but a half-open door does not block at its half-open
+    // angle).
+    private readonly HashSet<string> _passable = new(StringComparer.Ordinal);
+
     private ObjectCollisionIndex(Entry[] entries) => _entries = entries;
+
+    /// <summary>Switches a placing task's collision off or back on — an opening or closing door.</summary>
+    /// <param name="taskName">The placing task's <see cref="OpenIGI.Engine.Tasks.GameTask.Name"/>.</param>
+    /// <param name="passable">Whether rays should now pass through it.</param>
+    public void SetPassable(string taskName, bool passable)
+    {
+        if (passable)
+        {
+            _passable.Add(taskName);
+        }
+        else
+        {
+            _passable.Remove(taskName);
+        }
+    }
 
     /// <summary>Gets how many placed objects carry collision geometry.</summary>
     public int Count => _entries.Length;
@@ -84,7 +106,11 @@ public sealed class ObjectCollisionIndex
                 placement.Position.Y * WorldScene.UnitsPerMetre,
                 placement.Position.Z * WorldScene.UnitsPerMetre);
 
-            entries.Add(Entry.Create(mesh, origin, placement.Orientation));
+            string label = string.IsNullOrEmpty(placement.TaskName)
+                ? placement.Instance.Name
+                : $"{placement.Instance.Name} [{placement.TaskName}]";
+
+            entries.Add(Entry.Create(mesh, origin, placement.Orientation, label, placement.TaskName));
         }
 
         return new ObjectCollisionIndex([.. entries]);
@@ -112,6 +138,11 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
+            if (entry.TaskName.Length > 0 && _passable.Contains(entry.TaskName))
+            {
+                continue;
+            }
+
             // The root sphere encloses every vertex - checked against all 254 of level 1's meshes - so
             // a ray that misses it cannot touch a triangle.
             if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
@@ -166,6 +197,49 @@ public sealed class ObjectCollisionIndex
     /// <returns>The delegate the sweep takes.</returns>
     public WorldRayCast Caster() => TryCast;
 
+    /// <summary>Casts a ray and names the object it meets — a diagnostic for "what am I walking into".</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="label">Receives the struck object's instance name (and placing task).</param>
+    /// <param name="hit">Receives the nearest contact.</param>
+    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
+    /// <remarks>
+    /// Unlike <see cref="TryCast"/> this reports <i>which</i> placement was hit, so a blocked doorway can
+    /// be traced back to the exact model and task that walled it off. It walks the same flat list.
+    /// </remarks>
+    public bool TryIdentify(Vector3d origin, Vector3d end, out string label, out WorldRayHit hit)
+    {
+        hit = default;
+        label = string.Empty;
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return false;
+        }
+
+        double nearest = double.MaxValue;
+        bool found = false;
+
+        foreach (Entry entry in _entries)
+        {
+            if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
+            {
+                continue;
+            }
+
+            if (entry.TryCast(origin, direction, ref nearest, out WorldRayHit candidate))
+            {
+                hit = candidate;
+                label = entry.Label;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
     private static bool MeetsSphere(Vector3d origin, Vector3d direction, Vector3d centre, double radius)
     {
         double ox = origin.X - centre.X;
@@ -199,12 +273,15 @@ public sealed class ObjectCollisionIndex
     {
         private readonly Vector3d[] _vertices;
 
-        private Entry(MefCollisionMesh mesh, Vector3d[] vertices, Vector3d centre, double radius)
+        private Entry(
+            MefCollisionMesh mesh, Vector3d[] vertices, Vector3d centre, double radius, string label, string taskName)
         {
             Mesh = mesh;
             _vertices = vertices;
             Centre = centre;
             Radius = radius;
+            Label = label;
+            TaskName = taskName;
         }
 
         public MefCollisionMesh Mesh { get; }
@@ -213,7 +290,12 @@ public sealed class ObjectCollisionIndex
 
         public double Radius { get; }
 
-        public static Entry Create(MefCollisionMesh mesh, Vector3d origin, Matrix3f orientation)
+        public string Label { get; }
+
+        public string TaskName { get; }
+
+        public static Entry Create(
+            MefCollisionMesh mesh, Vector3d origin, Matrix3f orientation, string label, string taskName)
         {
             // Local-to-world is the COLUMN-vector product M·v — the renderer's `uModelView * v`, and
             // the convention the original itself uses for a placement's Real32x9 (it reads elements
@@ -253,7 +335,7 @@ public sealed class ObjectCollisionIndex
                 }
             }
 
-            return new Entry(mesh, vertices, centre, radius);
+            return new Entry(mesh, vertices, centre, radius, label, taskName);
         }
 
         public bool TryCast(Vector3d origin, Vector3d direction, ref double nearest, out WorldRayHit hit)
@@ -263,6 +345,13 @@ public sealed class ObjectCollisionIndex
 
             foreach (MefCollisionFace face in Mesh.Faces)
             {
+                // A portal face is a doorway or window opening, not a wall. The original walks through it;
+                // colliding with it walls off the door. See MefCollisionMesh.IsPortal.
+                if (Mesh.IsPortal(face.Material))
+                {
+                    continue;
+                }
+
                 Vector3d a = _vertices[face.I0];
                 Vector3d b = _vertices[face.I1];
                 Vector3d c = _vertices[face.I2];

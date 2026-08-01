@@ -108,6 +108,13 @@ public static class TerrainSurfaceTest
             zs[i] = vertex.Z * leaf.UnitScale;
         }
 
+        // A mirrored leaf (orientation bit 2) reflects the vertices' X, which reverses every triangle's
+        // winding — so the raw cross product comes out pointing DOWN. The original corrects this at the
+        // end of 0x4CA010 by scaling the whole normal by v105 = -1 when that bit is set. Without it a
+        // mirrored leaf reports a downward normal, SlopeDegrees reads it as past vertical, and the human
+        // is given a maximum downhill slope-slide on ground that is perfectly walkable.
+        double mirrorSign = (leaf.Cursor.Orientation & TerrainOrientation.Mirror) != 0 ? -1.0 : 1.0;
+
         double best = downward ? NoHitSentinel : -NoHitSentinel;
         bool found = false;
 
@@ -147,7 +154,7 @@ public static class TerrainSurfaceTest
             found = true;
 
             (double nx, double ny, double nz) = Normal(xs, ys, zs, i0, i1, i2);
-            hit = new TerrainSurfaceHit(height, nx, ny, nz, t);
+            hit = new TerrainSurfaceHit(height, nx * mirrorSign, ny * mirrorSign, nz * mirrorSign, t);
         }
 
         return found;

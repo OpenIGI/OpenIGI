@@ -664,6 +664,51 @@ public sealed class RetailTerrainTests
     }
 
     [RequiresGameDataFact]
+    public void EveryGroundNormalAcrossLevelOneFacesUp()
+    {
+        // The mirrored-leaf regression, level-wide. A wide grid reaches the leaves the flat centre never
+        // touches — including the mirrored ones (orientation bit 2) whose winding is reversed. Every
+        // ground normal a heightmap can produce faces up; a single downward one is the v105 sign
+        // correction (0x4CA010) gone missing, which the slope-slide turns into an unwalkable hillside.
+        Harness harness = Harness.Create();
+        (TerrainData terrain, _, WorldScene scene) = harness.LoadMission(1);
+
+        (double centreX, double centreY, double ground) = Medians(scene);
+
+        int hits = 0;
+
+        // ±150 m of the centre at 5 m spacing — 3721 columns, wide enough to cross many leaves.
+        for (int dx = -30; dx <= 30; dx++)
+        {
+            for (int dy = -30; dy <= 30; dy++)
+            {
+                double x = (centreX + (dx * 5.0)) * WorldScene.UnitsPerMetre;
+                double y = (centreY + (dy * 5.0)) * WorldScene.UnitsPerMetre;
+
+                // The ground query only reaches four metres, so a whole column is scanned in probe-length
+                // steps from well above to well below the centre's height — the same descent a placement
+                // uses to land on a raised leaf.
+                double top = (ground + 200.0) * WorldScene.UnitsPerMetre;
+                double floor = (ground - 200.0) * WorldScene.UnitsPerMetre;
+
+                for (double probe = top; probe > floor; probe -= TerrainHeightQuery.SearchDepthUnits)
+                {
+                    if (!TerrainHeightQuery.TryGetGround(terrain, x, y, probe, out TerrainGround hit))
+                    {
+                        continue;
+                    }
+
+                    hits++;
+                    Assert.True(hit.NormalZ > 0.0, $"ground normal faces down (z={hit.NormalZ}) at ({x}, {y})");
+                    break;
+                }
+            }
+        }
+
+        Assert.True(hits > 500, $"only {hits} of 3721 columns found ground");
+    }
+
+    [RequiresGameDataFact]
     public void TheGroundQueryFindsRealTerrainUnderLevelOne()
     {
         // The whole chain end to end - descend, reach the leaf, interpolate the triangle - which is the
@@ -703,6 +748,12 @@ public sealed class RetailTerrainTests
                 double length = Math.Sqrt(
                     (hit.NormalX * hit.NormalX) + (hit.NormalY * hit.NormalY) + (hit.NormalZ * hit.NormalZ));
                 Assert.Equal(1.0, length, 1e-9);
+
+                // Terrain is a heightmap with no overhangs, so every ground normal faces up. A mirrored
+                // leaf reverses triangle winding; without the 0x4CA010 v105 sign correction its normal
+                // points DOWN, which SlopeDegrees reads as past-vertical and the slope-slide then throws
+                // the player off perfectly walkable ground.
+                Assert.True(hit.NormalZ > 0.0, $"ground normal faces down (z={hit.NormalZ}) at ({x}, {y})");
             }
         }
 

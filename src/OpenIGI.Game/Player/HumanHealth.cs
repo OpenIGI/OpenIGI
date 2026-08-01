@@ -44,6 +44,29 @@ public sealed class HumanHealth
     /// <summary>Gets how much damage kills this human — <c>Human+600</c>.</summary>
     public float MaximumHealth { get; }
 
+    /// <summary>
+    /// Gets the scale every hit on this human is multiplied by — the <b>player's difficulty scale</b>.
+    /// </summary>
+    /// <remarks>
+    /// The player's own hit handler (<c>0x412440</c>, HumanPlayer's override of the hit message — not
+    /// the base <c>0x45F930</c> and not the soldiers' <c>0x45D3C0</c>) multiplies
+    /// <c>zoneMultiplier × damageFactor</c> by the active profile's difficulty: <b>×0.75 on GD_1
+    /// (Easy), ×1.0 on GD_2 (Normal), ×1.25 on GD_3 (Hard)</b> — the branch even logs
+    /// <c>"Difficulty level not defined %d"</c> for anything else. Soldiers take unscaled damage, so
+    /// this defaults to 1 and is set only on the player's instance.
+    /// </remarks>
+    public float DamageScale { get; init; } = 1f;
+
+    /// <summary>The player's difficulty damage scale — <c>0x412440</c>'s three-way branch.</summary>
+    /// <param name="difficulty">The active profile's difficulty, 0..2.</param>
+    /// <returns>×0.75, ×1.0 or ×1.25.</returns>
+    public static float DifficultyDamageScale(int difficulty) => difficulty switch
+    {
+        0 => 0.75f,
+        2 => 1.25f,
+        _ => 1f,
+    };
+
     /// <summary>Gets how much damage has been taken, out of a whole person.</summary>
     public float Damage { get; private set; }
 
@@ -83,6 +106,7 @@ public sealed class HumanHealth
         float dealt = instantDeathDisabled && headOrNeck
             ? damageFactor
             : HumanDamage.DamageOfHit(Zones[zone].Multiplier, damageFactor);
+        dealt *= DamageScale;
         Damage += dealt;
         Hits++;
         return dealt;

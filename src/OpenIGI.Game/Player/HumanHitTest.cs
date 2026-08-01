@@ -1,5 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Formats.World;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Player;
 
@@ -72,6 +74,11 @@ public static class HumanHitTest
     /// </param>
     /// <param name="pose">The human's posed skeleton, for the head proximity test.</param>
     /// <param name="hit">The contact, when there is one.</param>
+    /// <param name="rootHeight">
+    /// How far the pose's root (the pelvis) sits above the feet, in world units — the same lift the
+    /// renderer draws the body with (<c>SoldierView.RootSample</c>'s Z). Zero when the pose is already
+    /// rooted at the feet, as the tests build it.
+    /// </param>
     /// <returns><see langword="false"/> when the round misses.</returns>
     /// <remarks>
     /// The cylinder is upright and unrotated, as the separation test's is — a human that leans does not
@@ -83,9 +90,17 @@ public static class HumanHitTest
         Vector3d position,
         Vector3f facing,
         BonePose? pose,
-        out HumanHit hit)
+        out HumanHit hit,
+        double rootHeight = 0.0)
     {
         hit = default;
+
+        // The pose is rooted at the skeleton's ROOT (the pelvis), with the feet about a metre below it —
+        // the same pose the renderer draws with its origin lifted to feet + root height. So the bones live
+        // that root height above the feet; placing them at the bare feet drops the whole hit skeleton,
+        // head zone and all, a pelvis-height too low and every zone reads wrong. The collision cylinder
+        // still runs from the feet (position), only the bones are lifted onto the root.
+        Vector3d boneOrigin = new(position.X, position.Y, position.Z + rootHeight);
 
         Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         if (!TryCylinder(origin, direction, position, out double t))
@@ -114,7 +129,7 @@ public static class HumanHitTest
 
         // The bone the round went through decides the zone; without a pose there is no bone to name and
         // the trunk default stands, which is what the original does for an index past its table too.
-        int bone = pose is { } rig ? NearestBone(origin, direction, position, rig) : -1;
+        int bone = pose is { } rig ? NearestBone(origin, direction, boneOrigin, rig) : -1;
         int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(bone), localForward, localSide);
 
         if (pose is { } posed && HumanDamage.ProximityBoneIndex < posed.BoneCount)
@@ -130,7 +145,7 @@ public static class HumanHitTest
             // "the round passed through the head" means, and it agrees with the mesh cast wherever the
             // mesh cast is the one that would have hit.
             Vector3f head = posed.Positions[HumanDamage.ProximityBoneIndex];
-            Vector3d boneWorld = new(position.X + head.X, position.Y + head.Y, position.Z + head.Z);
+            Vector3d boneWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
             double distance = DistanceToSegment(origin, direction, boneWorld);
 
             if (HumanDamage.TakesProximityZone((float)distance, localForward))
@@ -140,6 +155,120 @@ public static class HumanHitTest
         }
 
         hit = new HumanHit(contact, t * length, zone, localForward, localSide, bone);
+        return true;
+    }
+
+    /// <summary>Casts a round at a human's <b>skinned collision mesh</b> and scores it — the faithful path.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="feet">The human's feet, in world units.</param>
+    /// <param name="facing">The human's forward direction in world space, for the trunk refinement.</param>
+    /// <param name="mesh">The human model's collision mesh, whose vertices carry a rig bone each.</param>
+    /// <param name="pose">The posed rig, already turned to the human's facing (<c>SoldierView.Pose()</c>).</param>
+    /// <param name="rootHeight">The pose root's height above the feet — <c>SoldierView.RootSample</c>'s Z.</param>
+    /// <param name="hit">The contact, when there is one.</param>
+    /// <returns><see langword="false"/> when the round misses the body.</returns>
+    /// <remarks>
+    /// The original (<c>BoneDynCubeObj_TraceLinesHandler</c>) skins every collision vertex by its one bone
+    /// into the current pose, ray-triangle-traces the round against the deformed mesh, and takes the
+    /// <b>bone of the struck triangle</b> as the hit part; <c>sub_489C60</c> maps that bone to a zone,
+    /// refines the trunk by direction, and promotes a front hit within 15 cm of bone 4 to the
+    /// lethal head zone. This reproduces all of it, so a round scores at the exact limb it passed
+    /// through rather than at the nearest bone to a fat cylinder.
+    /// </remarks>
+    public static bool TryCastMesh(
+        Vector3d origin,
+        Vector3d end,
+        Vector3d feet,
+        Vector3f facing,
+        MefCollisionMesh mesh,
+        BonePose pose,
+        double rootHeight,
+        out HumanHit hit)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(pose);
+        hit = default;
+
+        int count = mesh.Vertices.Count;
+        if (count == 0 || mesh.Faces.Count == 0)
+        {
+            return false;
+        }
+
+        // Skin the collision vertices into the pose, placed at the pelvis — feet lifted by the root height,
+        // the same origin the renderer draws the body from. The pose is already turned to the facing.
+        Vector3d boneOrigin = new(feet.X, feet.Y, feet.Z + rootHeight);
+        Vector3d[] world = new Vector3d[count];
+        for (int i = 0; i < count; i++)
+        {
+            int bone = mesh.VertexBones[i];
+            if ((uint)bone >= (uint)pose.BoneCount)
+            {
+                bone = 0;
+            }
+
+            Vector3f local = mesh.Vertices[i];
+            Matrix3f r = pose.Rotations[bone];
+            Vector3f t = pose.Positions[bone];
+            world[i] = new Vector3d(
+                boneOrigin.X + (r.M11 * local.X) + (r.M12 * local.Y) + (r.M13 * local.Z) + t.X,
+                boneOrigin.Y + (r.M21 * local.X) + (r.M22 * local.Y) + (r.M23 * local.Z) + t.Y,
+                boneOrigin.Z + (r.M31 * local.X) + (r.M32 * local.Y) + (r.M33 * local.Z) + t.Z);
+        }
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double nearest = double.PositiveInfinity;
+        int hitBone = -1;
+        Vector3d contact = default;
+
+        foreach (MefCollisionFace face in mesh.Faces)
+        {
+            if (!RayTriangle.Intersect(origin, direction, world[face.I0], world[face.I1], world[face.I2], out double t)
+                || t >= nearest)
+            {
+                continue;
+            }
+
+            nearest = t;
+
+            // The struck triangle's bone: its first vertex's, unless the other two name a different one
+            // together — the original's rule when a face spans a joint (0x5655A0's v233 read).
+            int b0 = mesh.VertexBones[face.I0];
+            int b1 = mesh.VertexBones[face.I1];
+            hitBone = b1 != b0 && b1 == mesh.VertexBones[face.I2] ? b1 : b0;
+            contact = new Vector3d(
+                origin.X + (direction.X * t), origin.Y + (direction.Y * t), origin.Z + (direction.Z * t));
+        }
+
+        if (hitBone < 0)
+        {
+            return false;
+        }
+
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+
+        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
+        Vector3f forward = Normalise(facing);
+        float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
+        float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
+
+        int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
+
+        // The head promotion, on the actual posed bone 4 — a front hit within 15 cm of it is lethal.
+        if (HumanDamage.ProximityBoneIndex < pose.BoneCount)
+        {
+            Vector3f head = pose.Positions[HumanDamage.ProximityBoneIndex];
+            Vector3d headWorld = new(boneOrigin.X + head.X, boneOrigin.Y + head.Y, boneOrigin.Z + head.Z);
+            double distance = DistanceToSegment(origin, direction, headWorld);
+            if (HumanDamage.TakesProximityZone((float)distance, localForward))
+            {
+                zone = HumanDamage.ProximityZone;
+            }
+        }
+
+        hit = new HumanHit(contact, nearest * length, zone, localForward, localSide, hitBone);
         return true;
     }
 

@@ -137,6 +137,25 @@ using (window)
     MenuRenderer? renderer = null;
     bool running = true;
 
+    // The developer console: the CVar registry, settings.cfg and the on-screen view. Brought up before
+    // anything reads a setting, so the saved file and the command line's +statements are already in
+    // effect by the time the renderer and the game are built. Everything logged from here on is
+    // mirrored into its scrollback, so opening it shows the log rather than an empty panel.
+    using DesktopConsole console = new(device, logger);
+    console.QuitRequested += (_, _) => running = false;
+    console.Start(fileSystem, options.StartupCommands);
+    logger = console.WrapLogger(logger);
+
+    // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
+    // the console and the flag can never report different things.
+    if (!options.VSync)
+    {
+        RenderCVars.VSync.Value = false;
+    }
+
+    device.VSyncEnabled = RenderCVars.VSync.Value;
+    RenderCVars.VSync.Changed += (_, _) => device.VSyncEnabled = RenderCVars.VSync.Value;
+
     DesktopMenuHost menuHost = new(
         window.Input,
         batch,
@@ -182,7 +201,7 @@ using (window)
     // idle branch. Without the type registered the symbols never bind and guard.qsc faults every idle tick
     // on CutScene_1200.nTick, cutting its patrol handling short. Its fourteen parameters match the level's
     // Task_DeclareParameters("CutScene", ...) declaration so the registry's verification passes.
-    loop.Types.Register<OpenIGI.Game.World.CutSceneTask>(OpenIGI.Game.World.CutSceneTask.TypeName);
+    loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
 
     // A level parks its intro and outro cut-scene actors inside ConditionalContainer tasks gated on
     // cut-scene / mission-progress state that is false during play. Without the type registered the port
@@ -190,8 +209,8 @@ using (window)
     // David Jones on the player's own model, the outro "Jones drive truck" -- stood in the level at
     // mission start where the original never registers them. Registering the type lets the gate below
     // evaluate each container's condition and hide the subtrees the original leaves unregistered.
-    loop.Types.Register<OpenIGI.Game.World.ConditionalContainerTask>(
-        OpenIGI.Game.World.ConditionalContainerTask.TypeName);
+    loop.Types.Register<ConditionalContainerTask>(
+        ConditionalContainerTask.TypeName);
 
     // Every soldier's combat numbers - 29 AI types x 3 difficulties out of common/ai/settings.qsc.
     // Loaded before any level, as sub_406DF0 is: the table has to exist before a HumanAI is configured.
@@ -217,8 +236,21 @@ using (window)
     int guardHits = 0;
 
     // The player's own damage. Its zone table is the player's, whose head is worth 1.0 rather than the
-    // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11).
-    HumanHealth playerHealth = new(HumanHitZoneTable.Player);
+    // soldiers' 100 -- humanplayer.qvm overrides the executable's default (weapons.md 11). The player's
+    // own hit handler (0x412440) additionally scales every hit by the profile difficulty: x0.75 easy,
+    // x1.0 normal, x1.25 hard -- a scale that applies to the PLAYER only, never to a soldier.
+    int playerDifficulty = (int)(options.Difficulty
+        ?? (AiDifficulty)Math.Clamp(configuration.Active?.Difficulty ?? 1, 0, 2));
+
+    // The player's maximum health is humanplayer.qvm's ARGUMENT 7 = 3.0, written over Human+600 by the
+    // constructor (0x410370 at 0x4104E1) AFTER 0x489C30 set the universal 1.0 -- the player is worth
+    // three soldiers. Measured live off the retail game: [phit] max=3.000, dead at exactly 3.0
+    // accumulated. The value is refreshed from the parsed script when the mission loads.
+    float playerMaximumHealth = 3f;
+    HumanHealth playerHealth = new(HumanHitZoneTable.Player, playerMaximumHealth)
+    {
+        DamageScale = HumanHealth.DifficultyDamageScale(playerDifficulty),
+    };
     bool playerDead = false;
 
     // The red wash the screen takes on a hit -- four corner alphas that decay a forty-fifth a tick
@@ -230,6 +262,9 @@ using (window)
     // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
     // own third-person rig, which SoldierRenderer loads and poses with the death fall.
     DeathCamera deathCamera = new();
+    InteractionCamera interactionCamera = new();
+    bool climbActive = false;
+    bool climbSlideArmed = false;
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
     WorldScene? scene = null;
@@ -248,7 +283,16 @@ using (window)
     ViewModelRenderer? arms = null;
     SoldierRenderer? soldiers = null;
     TerrainData? playerTerrain = null;
+
+    // The material table, shared with the guard-round handler so an AI round's impact can leave the
+    // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).
+    GameMaterialRegistry? worldMaterials = null;
     bool playerMode = false;
+
+    // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The
+    // collision index is kept here so the overlay can name the object under the crosshair.
+    ObjectCollisionIndex? worldSolids = null;
+    bool showDebug = false;
 
     // The camera's projection, in one place: the terrain traversal needs the same field of view the
     // projection matrix is built from, or it would cull against a frustum the picture does not have.
@@ -256,8 +300,8 @@ using (window)
     //
     // The field of view is the original's, not a chosen one. HumanView's constructor (0x4643A0) sets
     // its half-tangent to tan(45 degrees) = 1.0, the camera copies it to HumanCamera+96 and submits it
-    // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own 115/sqrt(tanX)
-    // view distance independently confirms. So the horizontal field of view is 90 degrees and the
+    // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
+    // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
     // vertical one follows from the window's aspect, rather than the other way round.
     const float farPlane = 4000f;
     static float VerticalFieldOfView(float aspectRatio) =>
@@ -291,6 +335,7 @@ using (window)
         // soldiers' ground probe - a guard's declared Position is only where it starts, and without
         // the settle the retail integrator performs, floor-authored spawns bury the body to the waist.
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        worldSolids = solids;
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
@@ -349,8 +394,53 @@ using (window)
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+                // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
+                // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
+                // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
+                // leaving every guard on GD_2/Normal whatever the profile said. -difficulty still overrides,
+                // for testing a difficulty without editing a profile.
+                AiDifficulty effectiveDifficulty = options.Difficulty
+                    ?? (AiDifficulty)Math.Clamp(
+                        configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
+                        (int)AiDifficulty.Easy,
+                        (int)AiDifficulty.Hard);
+                logger.Information(
+                    "Ai",
+                    $"Difficulty {HumanAiConfigRegistry.NameOf(effectiveDifficulty)} ({effectiveDifficulty}) "
+                        + (options.Difficulty is null
+                            ? $"from profile '{configuration.Active?.Name ?? "(none)"}'."
+                            : "from -difficulty override."));
+                // The sight and bullet rays test placed objects AND the terrain, as the original's
+                // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
+                // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
+                // hills. Nearest contact wins.
+                WorldRayCast objectCast = solids.Caster();
+                WorldRayCast levelCast = (Vector3d a, Vector3d b, out WorldRayHit blockedAt) =>
+                {
+                    bool hitObject = objectCast(a, b, out WorldRayHit onObject);
+                    if (playerTerrain is { } ground
+                        && TerrainSightBlock.TryBlock(ground, a, b, out WorldRayHit onGround)
+                        && (!hitObject || onGround.Distance < onObject.Distance))
+                    {
+                        blockedAt = onGround;
+                        return true;
+                    }
+
+                    blockedAt = onObject;
+                    return hitObject;
+                };
+                // The level's doors, before the brains: a walker asks the registry for the nearest door
+                // on a door hop, and an open door is switched out of the collision index so the
+                // doorway is walkable. Both have to exist before Animate hands each brain its query.
+                DoorRegistry levelDoors = DoorRegistry.Build(levelRoot);
+                soldiers.SetDoors(levelDoors, solids);
+                if (levelDoors.Doors.Count > 0)
+                {
+                    logger.Information("World", $"{levelDoors.Doors.Count} door(s) the AI can open.");
+                }
+
                 soldiers.Animate(
-                    graphs, solids.Caster(), resources, loop.Natives, levelRoot, aiConfig, options.Difficulty);
+                    graphs, levelCast, resources, loop.Natives, levelRoot, aiConfig, effectiveDifficulty);
 
                 // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
                 // where it becomes a cast. The AI's hit probability decides whether the round is on
@@ -359,22 +449,73 @@ using (window)
                 soldiers.SetRoundHandler((from, at, probability, weapon) =>
                 {
                     guardRounds++;
-                    if (player is null || shotRandom.NextDouble() > probability)
+                    if (player is null)
                     {
                         return;
                     }
 
+                    // The ray runs where the GUN points -- the tracked aim (or a patrol's own facing) --
+                    // extended past the target, exactly as the retail round is a cast from the muzzle to
+                    // the end of its remaining range (GunShot per-tick 0x47B750). A moving player walks
+                    // out of the lagging aim and the round geometrically misses; that is retail's miss.
                     Vector3d to = new(
                         from.X + ((at.X - from.X) * 4.0),
                         from.Y + ((at.Y - from.Y) * 4.0),
                         from.Z + ((at.Z - from.Z) * 4.0));
 
                     Vector3d feet = player.Body.Position;
-                    Vector3f facing = new(
-                        -MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
 
-                    if (!HumanHitTest.TryCast(from, to, feet, facing, pose: null, out HumanHit hit))
+                    // Resolve the guard's round against the player's OWN skinned body (limb hits do less,
+                    // and the hitbox is the real body, not a fat cylinder). Only if the body is not loaded
+                    // does it fall back to the cylinder-and-trunk stand-in.
+                    HumanHit hit = default;
+                    bool met = soldiers is not null
+                        && soldiers.TryHitPlayerBody(from, to, feet, player.Body.Yaw, out hit);
+                    if (!met)
                     {
+                        Vector3f facing = new(-MathF.Sin(player.Body.Yaw), MathF.Cos(player.Body.Yaw), 0f);
+                        met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
+                    }
+
+                    // Where the world stops this ray, over its whole length -- one cast serves cover,
+                    // fly-pasts and outright misses alike, and EVERY round that meets a surface leaves
+                    // the same mark a player's round does. In retail a miss is visible: the round lands
+                    // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
+                    // are why the guards seemed to hit with every bullet.
+                    bool worldBlocked = levelCast(from, to, out WorldRayHit worldHit);
+                    void MarkTheImpact()
+                    {
+                        if (worldBlocked && worldMaterials is { } table)
+                        {
+                            player.Marks.TryAdd(worldHit, table);
+                        }
+                    }
+
+                    if (!met)
+                    {
+                        // Geometric miss -- aim lag against a moving target, or a running patrol's
+                        // spray. The round flies on and lands where the world says.
+                        MarkTheImpact();
+                        return;
+                    }
+
+                    // The world is in the way: the retail cast meets the nearest surface first, so a wall
+                    // or a crate between the muzzle and the body simply takes the round (0x47B750 -- the
+                    // round penetrates or stops per the surface, but it does not reach the player). The
+                    // small margin keeps the player's own contact from re-testing the surface it stands on.
+                    if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
+                    {
+                        MarkTheImpact();
+                        return;
+                    }
+
+                    // Only now the probability gate: retail rolls `random > probability -> no hit` inside
+                    // the cast's evaluate when the trace actually MEETS a human (the context carries
+                    // Human+1236, loaded at spawn by sub_474360). A failed roll is a round that flew past
+                    // -- through to whatever stands behind the player, where it marks.
+                    if (shotRandom.NextDouble() > probability)
+                    {
+                        MarkTheImpact();
                         return;
                     }
 
@@ -392,9 +533,27 @@ using (window)
                     // over a second and a half once the fire stops -- the retail decay (sub_411300).
                     damageFlash.Hit();
 
+                    // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
+                    // handler (0x412440) normalises the round's direction and adds x/y x 189.62962
+                    // into the slide accumulator, whose 0.9-a-tick damping then bleeds it off. This is
+                    // what makes sustained fire stagger the player in retail.
+                    if (!playerHealth.IsDead)
+                    {
+                        double shoveX = to.X - from.X;
+                        double shoveY = to.Y - from.Y;
+                        double shoveZ = to.Z - from.Z;
+                        double length = Math.Sqrt((shoveX * shoveX) + (shoveY * shoveY) + (shoveZ * shoveZ));
+                        if (length > 1e-6)
+                        {
+                            player.Body.AddHitShove(
+                                (float)(shoveX / length * PlayerBody.HitShoveUnitsPerTick),
+                                (float)(shoveY / length * PlayerBody.HitShoveUnitsPerTick));
+                        }
+                    }
+
                     logger.Information(
                         "Weapon",
-                        $"A guard's {weapon.ScriptId} hit the player in zone {hit.Zone} "
+                        $"A guard's {weapon.ScriptId} hit the player in the {HumanDamage.ZoneName(hit.Zone)} "
                             + $"({guardHits} of {guardRounds} round(s); "
                             + $"{playerHealth.RemainingFraction:P0} left).");
 
@@ -478,7 +637,7 @@ using (window)
         sky = new SkyRenderer(device, fileSystem, levelRoot, farPlane, logger);
         if (sky.HasSky)
         {
-            scheduler.ClearColour = new OpenIGI.Core.Graphics.Bgra32(
+            scheduler.ClearColour = new Bgra32(
                 (byte)Math.Clamp((int)(sky.FogColour.Z * 255f), 0, 255),
                 (byte)Math.Clamp((int)(sky.FogColour.Y * 255f), 0, 255),
                 (byte)Math.Clamp((int)(sky.FogColour.X * 255f), 0, 255),
@@ -501,7 +660,10 @@ using (window)
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
-        playerHealth = new(HumanHitZoneTable.Player);
+        playerHealth = new(HumanHitZoneTable.Player, playerMaximumHealth)
+        {
+            DamageScale = HumanHealth.DifficultyDamageScale(playerDifficulty),
+        };
         playerDead = false;
         damageFlash = new();
         deathCamera.Reset();
@@ -542,6 +704,14 @@ using (window)
                 "Player",
                 $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
 
+            // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
+            // W/S up and down, E held to slide).
+            if (scene is not null)
+            {
+                candidate.UseLadders(scene.Ladders);
+                logger.Information("Player", $"{scene.Ladders.Count} ladder(s) to climb.");
+            }
+
             // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
             // symbols that get their values as the two tables are read, so the rosters have to load
             // before humanplayer.qvm runs -- otherwise every id in its weapon cycle is a placeholder
@@ -571,6 +741,7 @@ using (window)
 
                 int materialCount = materialTable.Load(resources, loop.Natives);
                 candidate.UseMaterials(materialTable);
+                worldMaterials = materialTable;
                 logger.Information("Material", $"Read {materialCount} game material(s).");
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
@@ -601,6 +772,14 @@ using (window)
                 if (config.Parameters is { } tuning)
                 {
                     candidate.UseParameters(tuning);
+
+                    // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
+                    // 3.0 in retail, and the single number that sets the player's time-to-kill.
+                    playerMaximumHealth = tuning.MaximumHealth;
+                    playerHealth = new(HumanHitZoneTable.Player, playerMaximumHealth)
+                    {
+                        DamageScale = HumanHealth.DifficultyDamageScale(playerDifficulty),
+                    };
                 }
                 else
                 {
@@ -887,16 +1066,31 @@ using (window)
     logger.Information("Desktop", $"{platform.Name} up on {device.Capabilities.Renderer}.");
 
     int lastCameraMilliseconds = loop.TimeSource.Milliseconds;
+    int lastConsoleMilliseconds = loop.TimeSource.Milliseconds;
 
     while (running && loop.IsRunning && !window.IsClosing)
     {
         window.PumpEvents();
+
+        // The console reads the frame's input first. If it is open it then marks the frame captured,
+        // and every other reader below -- the debug keys, the cameras, the player, the menu -- sees an
+        // idle keyboard and mouse. That is why none of them had to learn the console exists.
+        int consoleNow = loop.TimeSource.Milliseconds;
+        console.Update(window.Input, Math.Clamp((consoleNow - lastConsoleMilliseconds) / 1000f, 0f, 0.25f));
+        lastConsoleMilliseconds = consoleNow;
 
         // The camera is advanced on every pass of the loop, not only on the passes that render. The
         // pump clears the mouse's motion accumulator, and the loop pumps several times per rendered
         // frame — so consuming it only on a render threw most of the mouse movement away and made the
         // view lurch. It also runs on real elapsed time: a fixed step tied flying speed to the frame
         // rate, which is not what a person moving a mouse expects.
+        // F12 toggles the debug overlay: the player's position and angle, and a crosshair readout of
+        // whatever is under it — an object (with its task), a soldier, or nothing.
+        if (window.Input.Keyboard.WasPressed(OpenIGI.Input.KeyCode.F12))
+        {
+            showDebug = !showDebug;
+        }
+
         // F1 swaps between flying and walking. The player takes the camera's position when it is
         // switched on, so the swap happens where you were looking.
         if (window.Input.Keyboard.WasPressed(OpenIGI.Input.KeyCode.F1) && player is not null && camera is not null)
@@ -934,6 +1128,14 @@ using (window)
                 // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                 // so the orbit keeps turning however far the mouse is moved.
                 deathCamera.Control(rawX, rawY);
+                window.CursorLocked = true;
+            }
+            else if (player is { IsOnLadder: true })
+            {
+                // On a ladder the mouse orbits the third-person interaction camera around the climbing
+                // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
+                // you can look around while you climb rather than being locked behind the character.
+                interactionCamera.Control(rawX, rawY);
                 window.CursorLocked = true;
             }
             else if (playerMode && player is not null)
@@ -1034,11 +1236,92 @@ using (window)
 
             // A dead player is no longer a target: the guards lose it and stop firing at the corpse, the
             // way the retail detection scan (0x489750) unregisters a human that has died.
-            soldiers?.Tick(watched, enemyAlive: !playerDead);
+            //
+            // The eye is what vision watches; the FEET are what combat aims at (sub_451380 raises the
+            // target task's position 0.5 m, 0.25 m crouched) -- in the fly-through there is no body, so
+            // the camera stands in for both.
+            Vector3d watchedFeet = playerMode && player is not null
+                ? player.Body.Position
+                : watched;
+            soldiers?.Tick(
+                watched,
+                enemyAlive: !playerDead,
+                enemyFeet: watchedFeet,
+                enemyCrouching: playerMode && player is not null && player.IsCrouched);
 
             // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
             // it does nothing until the player has died and the body was posed.
             soldiers?.TickPlayerBody();
+
+            // On a ladder the same third-person body climbs (locomotion state 37, animation 168): it is
+            // placed on the rungs and its climb clip advances while up or down is held, so the player sees
+            // their character climb rather than a first-person slide. Hidden again on leaving the ladder.
+            if (player is not null && player.IsOnLadder)
+            {
+                // Rung-by-rung climbing (state 37). Input is taken only at a rung boundary, so a rung once
+                // begun plays to completion (you cannot cancel mid-step); holding up or down begins the next
+                // rung the instant the last one's clip ends -- one rung per clip cycle, alternating hands.
+                OpenIGI.Input.KeyboardState climbKeys = window.Input.Keyboard;
+                bool climbUp = climbKeys.IsDown(OpenIGI.Input.KeyCode.W);
+                bool climbDown = climbKeys.IsDown(OpenIGI.Input.KeyCode.S);
+                bool climbUse = climbKeys.IsDown(OpenIGI.Input.KeyCode.E);
+
+                // On mounting: start the climb clip as one continuous loop and arm the slide only after the
+                // mount key (also E) is released, so mounting does not immediately slide.
+                if (!climbActive)
+                {
+                    climbActive = true;
+                    climbSlideArmed = false;
+                    soldiers?.StartPlayerClimbLoop(PlayerCamera.LadderClimbAnimation);
+                }
+
+                if (!climbUse)
+                {
+                    climbSlideArmed = true;
+                }
+
+                bool climbSlide = climbUse && climbSlideArmed;
+
+                // Input is taken only at a rung boundary; a rung once begun runs to the clip's next wrap.
+                if (player.LadderAtBoundary)
+                {
+                    player.DecideLadderStep(climbUp, climbDown, climbSlide);
+                }
+
+                if (player.IsOnLadder && !player.LadderAtBoundary && soldiers is not null)
+                {
+                    // Mid-rung: move the body by the climb clip's OWN root motion -- the same way a walking
+                    // guard is moved -- so it sways and climbs exactly as the retail game does (read from the
+                    // Ladder_ClimbTick probe). The rung commits when the clip completes a cycle.
+                    soldiers.AdvancePlayerClimbStep(player.LadderFacing, out Vector3d rootDelta, out _);
+                    if (player.MoveLadder(rootDelta))
+                    {
+                        player.CompleteLadderStep();
+                    }
+                }
+
+                // The third-person camera takes over on mounting and follows the body up the rungs; the
+                // body is placed at this tick's feet (the clip advance above set the pose).
+                if (player.IsOnLadder)
+                {
+                    soldiers?.PlacePlayerBodyClimbing(player.LadderFeet, player.LadderFacing);
+                    if (!interactionCamera.IsActive)
+                    {
+                        interactionCamera.Begin(player.LadderFeet, player.LadderFacing);
+                    }
+                    else
+                    {
+                        interactionCamera.Follow(player.LadderFeet);
+                    }
+                }
+            }
+
+            if ((player is null || !player.IsOnLadder) && (climbActive || interactionCamera.IsActive))
+            {
+                soldiers?.HidePlayerBodyClimbing();
+                interactionCamera.Reset();
+                climbActive = false;
+            }
         }
 
         if (outcome != FrameOutcome.Render)
@@ -1066,9 +1349,13 @@ using (window)
             //
             // A dead player watches from the death camera -- pulled back off the eye to a third-person
             // shot of the body -- rather than from the frozen first-person view.
+            // On a ladder the eye pulls back to a third-person interaction view (camera mode 3), so you
+            // see your character on the rungs rather than the back of your hands.
             Camera3D eye = playerDead && deathCamera.IsActive
                 ? deathCamera.Camera
-                : playerMode && player is not null ? player.Camera : camera.Camera;
+                : player is { IsOnLadder: true } && interactionCamera.IsActive
+                    ? interactionCamera.Camera
+                    : playerMode && player is not null ? player.Camera : camera.Camera;
 
             sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
             terrain?.Draw(eye, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
@@ -1093,7 +1380,7 @@ using (window)
             // original draws it out of the human's own render and the free camera is not a human -- and
             // NOT once the player is dead, when the death camera is watching the body from the outside
             // and a pair of arms hanging in front of it would be exactly wrong.
-            if (playerMode && !(playerDead && deathCamera.IsActive) && player is { View: { } rig })
+            if (playerMode && !(playerDead && deathCamera.IsActive) && player is { IsOnLadder: false, View: { } rig })
             {
                 // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                 // than the frame.
@@ -1160,6 +1447,20 @@ using (window)
                         UiScale.Resolve(options.UiScale, window.Width, window.Height));
                     batch.End();
                 }
+
+                // The interaction prompt, when something is in reach — the original's "use" hint.
+                if (hud is { IsReady: true } && player.ShowInteractPrompt)
+                {
+                    device.Set2DProjection(window.Width, window.Height);
+                    batch.Begin();
+                    hud.DrawPrompt(
+                        batch,
+                        player.InteractPromptText,
+                        window.Width,
+                        window.Height,
+                        UiScale.Resolve(options.UiScale, window.Width, window.Height));
+                    batch.End();
+                }
             }
 
             // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
@@ -1176,11 +1477,125 @@ using (window)
                 device.Set2DProjection(window.Width, window.Height);
                 batch.Begin();
                 batch.DrawQuad(
-                    OpenIGI.Rendering.TextureHandle.None,
-                    new OpenIGI.Rendering.Vertex2D(0f, 0f, 0f, 0f, Red(damageFlash.TopLeft)),
-                    new OpenIGI.Rendering.Vertex2D(flashWidth, 0f, 1f, 0f, Red(damageFlash.TopRight)),
-                    new OpenIGI.Rendering.Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(damageFlash.BottomRight)),
-                    new OpenIGI.Rendering.Vertex2D(0f, flashHeight, 0f, 1f, Red(damageFlash.BottomLeft)));
+                    TextureHandle.None,
+                    new Vertex2D(0f, 0f, 0f, 0f, Red(damageFlash.TopLeft)),
+                    new Vertex2D(flashWidth, 0f, 1f, 0f, Red(damageFlash.TopRight)),
+                    new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(damageFlash.BottomRight)),
+                    new Vertex2D(0f, flashHeight, 0f, 1f, Red(damageFlash.BottomLeft)));
+                batch.End();
+            }
+
+            // The F12 debug overlay and crosshair. Works in both the walking player and the free (flying)
+            // camera: the state lines come from whichever is active, the crosshair readout and the reticle
+            // are cast from the eye that is actually drawing.
+            if (showDebug && hud is { IsReady: true })
+            {
+                static string I(FormattableString s) => FormattableString.Invariant(s);
+
+                Vector3d originU = new(
+                    eye.Position.X * WorldScene.UnitsPerMetre,
+                    eye.Position.Y * WorldScene.UnitsPerMetre,
+                    eye.Position.Z * WorldScene.UnitsPerMetre);
+                Matrix3f orient = eye.Orientation;
+                Vector3d fwd = new(orient.M31, orient.M32, orient.M33);
+                const double reachU = 300.0 * WorldScene.UnitsPerMetre;
+                Vector3d endU = new(
+                    originU.X + (fwd.X * reachU), originU.Y + (fwd.Y * reachU), originU.Z + (fwd.Z * reachU));
+
+                string target = "target: (nothing / terrain / sky)";
+                string? detect = null;
+                double bestT = double.MaxValue;
+                if (worldSolids is not null
+                    && worldSolids.TryIdentify(originU, endU, out string objLabel, out WorldRayHit objHit))
+                {
+                    bestT = objHit.Distance;
+                    target = I($"target: OBJECT {objLabel} @ {objHit.Distance / WorldScene.UnitsPerMetre:F1}m ({objHit.Position.X:F0}, {objHit.Position.Y:F0}, {objHit.Position.Z:F0}) mat={objHit.Material}");
+                }
+
+                if (soldiers is not null
+                    && soldiers.TryPick(originU, fwd, reachU, out string botName, out double botT, out Vector3d feetU, out int botZone)
+                    && botT < bestT)
+                {
+                    // The floor the game's collision puts under this soldier's feet — so a sunk guard shows
+                    // its feet Z below the floor Z, and a correct one shows them level.
+                    string floor = "?";
+                    if (worldSolids is not null)
+                    {
+                        Vector3d fTop = new(feetU.X, feetU.Y, feetU.Z + 2048.0);
+                        Vector3d fBot = new(feetU.X, feetU.Y, feetU.Z - (10.0 * WorldScene.UnitsPerMetre));
+                        if (worldSolids.TryIdentify(fTop, fBot, out string floorLbl, out WorldRayHit floorHit))
+                        {
+                            floor = I($"{floorHit.Position.Z:F0} ({floorLbl} mat{floorHit.Material}) Δ={(feetU.Z - floorHit.Position.Z) / WorldScene.UnitsPerMetre:F2}m");
+                        }
+                    }
+
+                    target = I($"target: SOLDIER {botName} zone={HumanDamage.ZoneName(botZone)} feetZ={feetU.Z:F0} floorZ={floor}");
+                }
+
+                // Whatever soldier the crosshair is on, ask its brain which detection gate is (not) passing
+                // against the point the guards actually test -- the player's own eye in engine units, the same
+                // point soldiers.Tick is fed.
+                Vector3d watchedEye = playerMode && player is not null
+                    ? player.Body.Eye
+                    : camera.Position;
+                if (soldiers is not null
+                    && soldiers.TryDetectionInfo(originU, fwd, reachU, watchedEye, out string detectInfo))
+                {
+                    detect = detectInfo;
+                }
+
+                List<string> lines;
+                if (playerMode && player is not null)
+                {
+                    Vector3d pu = player.PositionUnits;
+                    Vector3d pm = player.Position;
+                    lines =
+                    [
+                        "mode: WALK",
+                        I($"pos units ({pu.X:F0}, {pu.Y:F0}, {pu.Z:F0})"),
+                        I($"pos m     ({pm.X:F2}, {pm.Y:F2}, {pm.Z:F2})"),
+                        I($"yaw {player.Yaw * 180f / MathF.PI:F1}  pitch {player.Pitch * 180f / MathF.PI:F1}"),
+                        I($"grounded {player.IsGrounded}  crouch {player.IsCrouched}  wall {player.TouchedWall}"),
+                        target,
+                    ];
+                }
+                else
+                {
+                    Vector3d cm = camera.Position;
+                    lines =
+                    [
+                        "mode: FREE CAM",
+                        I($"pos units ({cm.X * WorldScene.UnitsPerMetre:F0}, {cm.Y * WorldScene.UnitsPerMetre:F0}, {cm.Z * WorldScene.UnitsPerMetre:F0})"),
+                        I($"pos m     ({cm.X:F2}, {cm.Y:F2}, {cm.Z:F2})"),
+                        I($"yaw {camera.Yaw * 180f / MathF.PI:F1}  pitch {camera.Pitch * 180f / MathF.PI:F1}"),
+                        target,
+                    ];
+                }
+
+                if (detect is not null)
+                {
+                    lines.Add(detect);
+                }
+
+                device.Set2DProjection(window.Width, window.Height);
+                batch.Begin();
+                hud.DrawDebug(batch, lines, UiScale.Resolve(options.UiScale, window.Width, window.Height));
+
+                // A centre reticle so the target readout can be aimed — the crosshair the free camera lacks.
+                float cx = window.Width * 0.5f;
+                float cy = window.Height * 0.5f;
+                const float len = 9f;
+                const float th = 1f;
+                static Bgra32 White() => new(255, 255, 255, 220);
+                void Bar(float x0, float y0, float x1, float y1) => batch.DrawQuad(
+                    TextureHandle.None,
+                    new Vertex2D(x0, y0, 0f, 0f, White()),
+                    new Vertex2D(x1, y0, 1f, 0f, White()),
+                    new Vertex2D(x1, y1, 1f, 1f, White()),
+                    new Vertex2D(x0, y1, 0f, 1f, White()));
+                Bar(cx - len, cy - th, cx + len, cy + th);
+                Bar(cx - th, cy - len, cx + th, cy + len);
+
                 batch.End();
             }
 
@@ -1202,6 +1617,15 @@ using (window)
             }
         }
 
+        // The console goes over everything, including the menus, so it is the last thing drawn.
+        if (console.IsOpen)
+        {
+            device.Set2DProjection(window.Width, window.Height);
+            batch.Begin();
+            console.Draw(batch, window.Width, window.Height, UiScale.Resolve(options.UiScale, window.Width, window.Height));
+            batch.End();
+        }
+
         if (options.ExitAfterFrames > 0 && loop.Clock.FrameCount >= options.ExitAfterFrames)
         {
             if (options.ScreenshotPath is { } screenshotPath)
@@ -1218,6 +1642,7 @@ using (window)
     }
 
     SaveConfiguration(gamePath, configuration, logger);
+    console.SaveSettings();
     sky?.Dispose();
     terrain?.Dispose();
     world?.Dispose();

@@ -11,12 +11,26 @@ namespace OpenIGI.Game.Ai;
 /// The dispatch position the action was created at — the original's <c>dword_5BDA64</c>, which becomes the
 /// action's <c>+8</c> and so the interrupt cap while it runs (<c>ai.md</c> §3.5).
 /// </param>
-public readonly record struct AiProducedAction(string Name, IReadOnlyList<int> Arguments, int Slot)
+/// <param name="Reals">
+/// The same arguments as the reals the script actually passed — durations and weights lose their
+/// fractions in <paramref name="Arguments"/>' integer truncation.
+/// </param>
+public readonly record struct AiProducedAction(
+    string Name,
+    IReadOnlyList<int> Arguments,
+    int Slot,
+    IReadOnlyList<float>? Reals = null)
 {
     /// <summary>Gets an argument, or zero when the script passed fewer than that.</summary>
     /// <param name="index">The argument index.</param>
     /// <returns>The value.</returns>
     public int Argument(int index) => index >= 0 && index < Arguments.Count ? Arguments[index] : 0;
+
+    /// <summary>An argument as the real number the script passed — durations and weights.</summary>
+    /// <param name="index">The zero-based argument position.</param>
+    /// <returns>The value, falling back on the integer argument when no real was captured.</returns>
+    public float Real(int index) =>
+        Reals is not null && index >= 0 && index < Reals.Count ? Reals[index] : Argument(index);
 }
 
 /// <summary>
@@ -172,12 +186,14 @@ public sealed class AiScriptHost
         if (native.IsAction)
         {
             int[] arguments = new int[call.ArgumentCount];
+            float[] reals = new float[call.ArgumentCount];
             for (int i = 0; i < arguments.Length; i++)
             {
                 arguments[i] = call.GetInt32(i);
+                reals[i] = call.GetSingle(i);
             }
 
-            _produced.Add(new AiProducedAction(native.Name, arguments, _slot));
+            _produced.Add(new AiProducedAction(native.Name, arguments, _slot, reals));
             return QvmValue.Zero;
         }
 
@@ -329,10 +345,26 @@ public sealed class AiScriptHost
                 // 0x44E5E0 returns 0 with no stationary gun; the port never assigns one.
                 return QvmValue.FromInt32(0);
 
+            case "AIFunction_SetAnimationInterval" when ai is not null:
+                // 0x44EAF0: ai+15192 = min x 30 ticks, +15196 = random x 30, and the next-play deadline
+                // +15200 is armed at min + rand(random). No shipped script calls it, but a mission's
+                // per-task script could -- so it is real, not recorded.
+                ai.SetAnimationInterval(call.GetSingle(0), call.GetSingle(1));
+                return QvmValue.Zero;
+
+            case "AIFunction_AddAnimationEntry" when ai is not null:
+                // 0x44EBB0: {animId at ai+15112+16i, weight (double) at +15120+16i}, capped at FIVE with
+                // "Maximum number of animation entries (#%d) reached".
+                ai.AddAnimationEntry(call.GetInt32(0), call.GetSingle(1));
+                return QvmValue.Zero;
+
             case "AIFunction_GetAnimationToPlay":
-                // 0x44ECB0 returns -1 with no animation entries, and AddAnimationEntry is called by no
-                // shipped script, so an AI never has any (idle-animation variety, deferred).
-                return QvmValue.FromInt32(-1);
+                // 0x44ECB0: no entries -> "No animation entries defined", -1. Weights summing under 0.01
+                // -> a uniformly random entry. Otherwise a weighted pick: r = rand01 x total, walk the
+                // entries subtracting until the remainder crosses zero; walking off the end takes the
+                // last. (No shipped script ADDS entries, so retail always answers -1 -- but the pick is
+                // implemented as read, for the mission scripts that could.)
+                return QvmValue.FromInt32(ai?.PickAnimationToPlay() ?? -1);
 
             case "AIFunction_RemoveAlarmActions":
                 // 0x44DBC0 removes queued alarm ACTIONS from the pending-action list. The port drives a

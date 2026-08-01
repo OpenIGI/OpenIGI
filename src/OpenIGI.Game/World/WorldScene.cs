@@ -151,12 +151,14 @@ public sealed class WorldScene
     private WorldScene(
         LoadedMission mission,
         IReadOnlyList<WorldPlacement> placements,
+        IReadOnlyList<LadderPlacement> ladders,
         int unresolved,
         int unplaced,
         int attached)
     {
         Mission = mission;
         Placements = placements;
+        Ladders = ladders;
         UnresolvedCount = unresolved;
         UnplacedCount = unplaced;
         AttachedCount = attached;
@@ -167,6 +169,14 @@ public sealed class WorldScene
 
     /// <summary>Gets everything to draw, in the order the level script placed it.</summary>
     public IReadOnlyList<WorldPlacement> Placements { get; }
+
+    /// <summary>Gets the ladders the level places, for the player and AI to climb.</summary>
+    /// <remarks>
+    /// Collected from the <c>TASKTYPE_LADDER</c> magic objects a building attaches, with their foot and
+    /// head taken from the ladder model's magic vertices 2 and 3. See
+    /// the original.
+    /// </remarks>
+    public IReadOnlyList<LadderPlacement> Ladders { get; }
 
     /// <summary>Gets how many placing tasks named a model no pack holds.</summary>
     public int UnresolvedCount { get; }
@@ -228,6 +238,7 @@ public sealed class WorldScene
         }
 
         List<WorldPlacement> placements = [];
+        List<LadderPlacement> ladders = [];
         int unresolved = 0;
         int unplaced = 0;
         int attached = 0;
@@ -286,13 +297,13 @@ public sealed class WorldScene
                 // shells and none of their contents.
                 if (bake.Root is not null)
                 {
-                    attached += AddAttached(bake.Root, position, orientation, bake.Set ?? string.Empty, task.Name, byName, placements);
+                    attached += AddAttached(bake.Root, position, orientation, bake.Set ?? string.Empty, task.Name, byName, magic, placements, ladders);
                 }
                 else if (magic is not null
                     && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
                     && loose is not null)
                 {
-                    attached += AddAttached(loose, position, orientation, string.Empty, task.Name, byName, placements);
+                    attached += AddAttached(loose, position, orientation, string.Empty, task.Name, byName, magic, placements, ladders);
                 }
             }
         }
@@ -311,6 +322,7 @@ public sealed class WorldScene
         return new WorldScene(
             mission,
             new ReadOnlyCollection<WorldPlacement>(placements),
+            new ReadOnlyCollection<LadderPlacement>(ladders),
             unresolved,
             unplaced,
             attached);
@@ -642,7 +654,9 @@ public sealed class WorldScene
         string set,
         string taskName,
         Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
-        List<WorldPlacement> placements)
+        MagicObjectRegistry? magic,
+        List<WorldPlacement> placements,
+        List<LadderPlacement> ladders)
     {
         int added = 0;
         foreach (WorldObject child in node.Children)
@@ -657,6 +671,10 @@ public sealed class WorldScene
                 position.Y + (offset.Y / UnitsPerMetre),
                 position.Z + (offset.Z / UnitsPerMetre));
             Matrix3f childOrientation = orientation * child.Orientation;
+
+            // A ladder is a TASKTYPE_LADDER magic object whose model carries the climb line as its magic
+            // vertices 2 (foot) and 3 (head). Collected here, where its world transform is known.
+            TryCollectLadder(child, childPosition, childOrientation, magic, ladders);
 
             // A child draws only if its model is also a pack instance, because the textures a sub-mesh
             // uses are named by the instance, not by the model. Its subtree is walked either way: the
@@ -675,10 +693,57 @@ public sealed class WorldScene
                 added++;
             }
 
-            added += AddAttached(child, childPosition, childOrientation, set, taskName, byName, placements);
+            added += AddAttached(child, childPosition, childOrientation, set, taskName, byName, magic, placements, ladders);
         }
 
         return added;
+    }
+
+    /// <summary>The magic-object task type a ladder is spawned with.</summary>
+    private const string LadderTaskType = "TASKTYPE_LADDER";
+
+    /// <summary>Records a ladder when a node is one — its climb line from magic vertices 2 and 3.</summary>
+    private static void TryCollectLadder(
+        WorldObject child,
+        Vector3d positionMetres,
+        Matrix3f orientation,
+        MagicObjectRegistry? magic,
+        List<LadderPlacement> ladders)
+    {
+        if (magic is null
+            || !magic.TryGet(child.Name, out MagicObjectDefinition definition)
+            || !string.Equals(magic.TaskTypeName(definition.TaskType), LadderTaskType, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        MefModel model = child.Models.Highest;
+        if (!model.TryGetMagicVertex(2, out Vector3f foot) || !model.TryGetMagicVertex(3, out Vector3f head))
+        {
+            return;
+        }
+
+        Vector3d origin = new(
+            positionMetres.X * UnitsPerMetre,
+            positionMetres.Y * UnitsPerMetre,
+            positionMetres.Z * UnitsPerMetre);
+
+        ladders.Add(new LadderPlacement(
+            ToWorldUnits(origin, orientation, foot), ToWorldUnits(origin, orientation, head), orientation));
+    }
+
+    /// <summary>Places a model-space magic vertex in the world, in engine units.</summary>
+    /// <remarks>
+    /// <b>Verified against the running game</b> (a probe: the ladder mount computed to the byte from
+    /// this): the magic vertex is rotated as <c>v · M</c> (<see cref="Matrix3f.Transform(Vector3f)"/>), NOT
+    /// the transpose. Using the transpose negated the vertex's X and Y (Z survives on an axis-aligned
+    /// ladder), which stood the climbing body ~6 cm off the rungs. Unlike an attachment offset, a magic
+    /// vertex takes the plain product.
+    /// </remarks>
+    private static Vector3d ToWorldUnits(Vector3d originUnits, Matrix3f orientation, Vector3f local)
+    {
+        Vector3f rotated = orientation.Transform(local);
+        return new Vector3d(originUnits.X + rotated.X, originUnits.Y + rotated.Y, originUnits.Z + rotated.Z);
     }
 
     /// <summary>Walks a task and everything under it, the task itself first.</summary>

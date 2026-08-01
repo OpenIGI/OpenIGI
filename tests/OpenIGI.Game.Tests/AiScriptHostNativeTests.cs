@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Scripting.Qvm;
@@ -156,6 +157,51 @@ public sealed class AiScriptHostNativeTests
             Assert.True(unmodelled.Length == 0, $"{archetype}.qvm calls an unmodelled native: {string.Join("; ", unmodelled)}");
         }
     }
+
+    /// <summary>
+    /// A soldier whose script answers events with <c>AIAction_LookAtEvent</c> turns to face a gunshot
+    /// it heard — the "guard notices your shot" reaction.
+    /// </summary>
+    /// <remarks>
+    /// The behaviour is <c>0x44D870</c> → <c>0x48E0A0</c>: copy the current event's position, turn to
+    /// it with the instant combat turn, hold for the duration. The port used to drop the action on the
+    /// floor — a shot fired next to a guard produced no reaction at all.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void AGuardTurnsTowardAGunshotItHeard()
+    {
+        (AiScriptHost host, _) = Host();
+        AiSoldier soldier = Soldier();
+        soldier.SetScript(host, CallNative("AIAction_LookAtEvent", LookAtEventArgs));
+
+        // A shot to the soldier's east, well inside the 30 m hearing range.
+        Vector3d shot = new(
+            soldier.Position.X + (10 * 4096.0),
+            soldier.Position.Y,
+            soldier.Position.Z);
+        float wanted = MathF.Atan2((float)-(shot.X - soldier.Position.X), 0f);
+
+        // Far away and never seen: the only stimulus is the sound.
+        Vector3d enemyEye = new(soldier.Position.X, soldier.Position.Y + (500 * 4096.0), soldier.Position.Z);
+
+        soldier.Tick(1, enemyEye, rootMotionThisTick: 0.0);   // CREATE dispatches
+        Assert.True(soldier.HearGunshot(shot, silenced: false));
+
+        for (int tick = 2; tick < 40; tick++)
+        {
+            soldier.Tick(tick, enemyEye, rootMotionThisTick: 0.0);
+        }
+
+        float error = MathF.Abs(soldier.Facing - wanted);
+        while (error > MathF.PI)
+        {
+            error = MathF.Abs(error - MathF.Tau);
+        }
+
+        Assert.True(error <= 0.0349f, $"facing {soldier.Facing:F3}, wanted {wanted:F3} toward the shot");
+    }
+
+    private static readonly int[] LookAtEventArgs = [2, 0];
 
     private static (AiScriptHost Host, Recorder Log) Host()
     {

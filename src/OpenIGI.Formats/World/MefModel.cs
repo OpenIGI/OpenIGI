@@ -225,9 +225,48 @@ public sealed class MefModel
         return false;
     }
 
+    /// <summary>Gets how many magic vertices the model carries in its <c>XTVM</c>/<c>MVTX</c> chunk.</summary>
+    /// <remarks>Empty in most models (377 of 415 level-1 ones); non-zero on ladders, doors and mounts.</remarks>
+    public int MagicVertexCount =>
+        TryGetRawChunk(MefTags.LegacyVertices, out ReadOnlyMemory<byte> payload) ? payload.Length / MagicVertexStride : 0;
+
+    /// <summary>Gets a model-space magic vertex — a point in the <c>XTVM</c>/<c>MVTX</c> chunk (<c>MESH+136</c>).</summary>
+    /// <param name="index">The magic-vertex index; a ladder's foot is 2 and its head is 3.</param>
+    /// <param name="vertex">Receives the point, in model units.</param>
+    /// <returns><see langword="false"/> when the model has no magic vertex at that index.</returns>
+    /// <remarks>
+    /// The original indexes these by number through <c>GetMagicVertex</c> (<c>sub_4D0A50</c>): each is a
+    /// 16-byte record of three floats and a pad, in the model's own units. The caller scales and rotates
+    /// them by the object and adds its position.
+    /// </remarks>
+    public bool TryGetMagicVertex(int index, out Vector3f vertex)
+    {
+        vertex = default;
+        if (index < 0 || !TryGetRawChunk(MefTags.LegacyVertices, out ReadOnlyMemory<byte> payload))
+        {
+            return false;
+        }
+
+        ReadOnlySpan<byte> span = payload.Span;
+        int offset = index * MagicVertexStride;
+        if (offset + 12 > span.Length)
+        {
+            return false;
+        }
+
+        vertex = new Vector3f(
+            BinaryPrimitives.ReadSingleLittleEndian(span[offset..]),
+            BinaryPrimitives.ReadSingleLittleEndian(span[(offset + 4)..]),
+            BinaryPrimitives.ReadSingleLittleEndian(span[(offset + 8)..]));
+        return true;
+    }
+
     /// <inheritdoc/>
     public override string ToString() =>
         $"MEF {Format} model: {_vertices.Length} vertices, {TriangleCount} triangles, {DrawRecords.Count} records";
+
+    /// <summary>The size in bytes of one magic-vertex record: three floats and a four-byte pad.</summary>
+    private const int MagicVertexStride = 16;
 
     private static ReadOnlyMemory<byte> RequireChunk(IlffContainer container, FourCc tag) =>
         container.TryFindChunk(tag, out IlffChunk chunk)

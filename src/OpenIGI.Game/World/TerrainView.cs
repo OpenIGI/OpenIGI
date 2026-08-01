@@ -39,9 +39,26 @@ public readonly record struct TerrainView(
     /// <summary>The lowest view distance the original will use.</summary>
     public const int MinimumViewDistance = 70;
 
+    /// <summary>The view-distance base for the <b>low</b> terrain-detail setting.</summary>
+    public const int LowViewDistance = 96;
+
+    /// <summary>The view-distance base for the <b>medium</b> terrain-detail setting.</summary>
+    public const int MediumViewDistance = 129;
+
+    /// <summary>The view-distance base for the <b>high</b> terrain-detail setting — the retail default.</summary>
+    public const int HighViewDistance = 163;
+
     /// <summary>The view distance the original starts from, before the field of view widens it.</summary>
-    /// <remarks>A constant in the image, at <c>0x54844C</c>.</remarks>
-    public const int DefaultViewDistance = 115;
+    /// <remarks>
+    /// <b>The graphics detail setting chooses this</b>, not the <c>0x54844C</c> initializer. At startup
+    /// <c>sub_406390</c> writes the base from the terrain-detail flags: <see cref="LowViewDistance"/>
+    /// (96) when the low bit is set, <see cref="MediumViewDistance"/> (129) for medium, and otherwise
+    /// <see cref="HighViewDistance"/> (163) — the default with neither bit set, which is what the retail
+    /// game runs at. The <c>115</c> read straight out of the image is only the pre-<c>sub_406390</c>
+    /// initializer and is never the value the descent uses; hard-coding it drew terrain coarser than even
+    /// the medium setting, so near ground resolved detail too close and popped as the camera moved.
+    /// </remarks>
+    public const int DefaultViewDistance = HighViewDistance;
 
     /// <summary>The value <see cref="FloorZ"/> takes when a level publishes no water plane.</summary>
     public const long DefaultFloorZ = -0x20000000;

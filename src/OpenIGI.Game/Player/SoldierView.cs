@@ -133,6 +133,53 @@ public sealed class SoldierView
         return true;
     }
 
+    /// <summary>Starts the ladder climb clip as one continuous loop, for the rung-by-rung climb.</summary>
+    /// <param name="animation">The climb clip id (state 37's binding, animation 168).</param>
+    /// <returns><see langword="true"/> when the clip resolved in this set.</returns>
+    /// <remarks>
+    /// The clip is <b>looped and never restarted</b> per rung — a rung is one loop of it. Restarting a
+    /// single clip each rung snapped the pose from its end frame back to its start frame; the original
+    /// instead chains per-rung <c>walk_ladder_N</c> clips, and a seamless loop is the same result without
+    /// them. The host advances it only while a rung is in progress and holds the pose at a boundary.
+    /// </remarks>
+    public bool StartClimbLoop(int animation)
+    {
+        if (IsDead || !_bones.Set.TryGet(animation, out _))
+        {
+            return false;
+        }
+
+        CurrentAnimation = animation;
+        _bones.Play(0, animation, loops: true);
+        _pose = null;
+        return true;
+    }
+
+    /// <summary>Gets how far through the clip on bone 0 the rig is, 0 at the start of the rung and 1 at its end.</summary>
+    /// <remarks>Counts up whichever way the clip plays, so a backward (down) rung still runs 0 → 1.</remarks>
+    public float ClipProgress
+    {
+        get
+        {
+            if (_bones.SourceOf(0) is not { } clip)
+            {
+                return 1f;
+            }
+
+            float duration = clip.Animation.Duration;
+            if (duration <= 0f)
+            {
+                return 1f;
+            }
+
+            float forward = Math.Clamp(clip.Time / duration, 0f, 1f);
+            return clip.Backwards ? 1f - forward : forward;
+        }
+    }
+
+    /// <summary>Gets whether the clip on bone 0 finished on the last <see cref="Tick"/> — the rung completed.</summary>
+    public bool ClipEndedThisTick => _bones.SourceOf(0)?.EndedThisTick ?? false;
+
     /// <summary>How far the playing clip's own root-motion track moves the body, in engine units.</summary>
     /// <remarks>
     /// The engine moves a human by its clip's root motion and nothing else (M8), so this is the soldier's

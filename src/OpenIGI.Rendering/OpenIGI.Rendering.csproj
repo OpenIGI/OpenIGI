@@ -4,4 +4,10 @@
     <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Emits the [CVarContainer] registrations. Build-time only: nothing of it ships. -->
+    <ProjectReference Include="..\OpenIGI.Generators\OpenIGI.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
 </Project>

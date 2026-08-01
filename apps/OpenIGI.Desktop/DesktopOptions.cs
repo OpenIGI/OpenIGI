@@ -58,7 +58,10 @@ public readonly record struct DesktopOptions(
         ArgumentNullException.ThrowIfNull(args);
 
         string? gamePath = Environment.GetEnvironmentVariable(GamePathVariable);
-        AiDifficulty difficulty = AiDifficulty.Normal;
+
+        // Null until -difficulty is seen: the faithful source is the active player profile (the original's
+        // sub_406F70 reads sub_406220()'s first field), so the flag is only a test override, not a default.
+        AiDifficulty? difficulty = null;
 
         // Null until a mode flag is seen, so -size can imply windowed without overriding an explicit
         // -borderless that came before or after it.
@@ -72,7 +75,7 @@ public readonly record struct DesktopOptions(
         string? screenshot = null;
         (double X, double Y, double Z)? cameraPosition = null;
         int exitAfterFrames = 0;
-        int uiScale = OpenIGI.Core.Graphics.UiScale.Automatic;
+        int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
         bool startFlying = false;
         float cameraYaw = 0f;
@@ -82,8 +85,29 @@ public readonly record struct DesktopOptions(
         int startScreen = 0;
         int startMission = 0;
 
+        List<string> startupCommands = [];
+
         for (int i = 0; i < args.Length; i++)
         {
+            // `+name value...` is a console statement to run once the console exists, the convention
+            // every game with a console uses. Its arguments run to the next `+` or `-`, so
+            // `+gfx_preset ultra +r_fog_quality 4 -window` reads as two statements and a flag.
+            if (args[i].StartsWith('+'))
+            {
+                List<string> statement = [args[i][1..]];
+                while (i + 1 < args.Length && !args[i + 1].StartsWith('+') && !args[i + 1].StartsWith('-'))
+                {
+                    statement.Add(args[++i]);
+                }
+
+                if (statement[0].Length > 0)
+                {
+                    startupCommands.Add(string.Join(' ', statement));
+                }
+
+                continue;
+            }
+
             string arg = args[i].TrimStart('-', '/');
 
             if (arg.Equals("window", StringComparison.OrdinalIgnoreCase))
@@ -268,18 +292,29 @@ public readonly record struct DesktopOptions(
         {
             CameraPosition = cameraPosition,
             Difficulty = difficulty,
+            StartupCommands = startupCommands,
         };
     }
 
     /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
     public (double X, double Y, double Z)? CameraPosition { get; init; }
 
-    /// <summary>Gets the game difficulty every soldier reads its combat row at.</summary>
+    /// <summary>
+    /// Gets the difficulty override from <c>-difficulty</c>, or <see langword="null"/> to use the active
+    /// player profile's — which is what the original does (<c>sub_406F70</c> reads <c>sub_406220()</c>'s
+    /// first field). The flag exists only to force a difficulty for testing without editing a profile.
+    /// </summary>
+    public AiDifficulty? Difficulty { get; init; }
+
+    /// <summary>
+    /// Gets the console statements given as <c>+name value</c> arguments, in the order they appeared.
+    /// </summary>
     /// <remarks>
-    /// The original takes it from the active player profile; this shell has no profiles yet, so it is a
-    /// command-line option defaulting to <see cref="AiDifficulty.Normal"/> — the script's <c>GD_2</c>.
+    /// Run after <c>settings.cfg</c> has loaded, so a command line always wins over a saved setting
+    /// without overwriting it — closing the game saves whatever the command line put in place, which
+    /// is the behaviour every console game has.
     /// </remarks>
-    public AiDifficulty Difficulty { get; init; }
+    public IReadOnlyList<string> StartupCommands { get; init; } = [];
 
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
@@ -311,6 +346,11 @@ public readonly record struct DesktopOptions(
           -campos X,Y,Z    Open the fly-through camera at this world position in metres.
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
+          +<command>       Run a console statement at start-up, after settings.cfg has loaded.
+                           Arguments run to the next + or -, so
+                             +gfx_preset ultra +r_scale 0.8
+                           is two statements. Press ` in game for the console, and
+                           'cvarlist' or 'find <text>' to see what there is.
         """;
 
     private static float ParseNumber(string value, string option, string[] args) =>

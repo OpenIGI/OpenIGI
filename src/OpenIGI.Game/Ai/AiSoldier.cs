@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Ai;
 
@@ -46,7 +47,7 @@ public enum AiSoldierActivity
 /// </remarks>
 public sealed class AiSoldier
 {
-    private readonly GraphFile _graph;
+    private readonly GraphFile? _graph;
     private readonly AiDetectionSchedule _schedule;
     private readonly AiDetectionSlot _playerSlot = new();
     private readonly AiMovementStep _steering = new();
@@ -131,11 +132,13 @@ public sealed class AiSoldier
     /// <param name="facing">Its starting heading, in radians about Z.</param>
     /// <param name="phase">Which of the four detection phases it sweeps on — staggering the level's guards.</param>
     /// <param name="seed">The wander seed, so a level is reproducible tick for tick.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="graph"/> is <see langword="null"/>.</exception>
-    public AiSoldier(GraphFile graph, Vector3d position, float facing, int phase, int seed)
+    /// <remarks>
+    /// <paramref name="graph"/> may be <see langword="null"/>: a soldier whose level ships no graph for
+    /// its <c>HumanAI</c> still detects and fights — nothing in the stand-and-fight arm needs a node.
+    /// Only patrolling and the combat repositioning searches are graph work, and they no-op without one.
+    /// </remarks>
+    public AiSoldier(GraphFile? graph, Vector3d position, float facing, int phase, int seed)
     {
-        ArgumentNullException.ThrowIfNull(graph);
-
         _graph = graph;
         Position = position;
         _legOrigin = position;
@@ -311,6 +314,101 @@ public sealed class AiSoldier
     // The current enemy position, captured each tick, so AIFunction_IsEventBehind can answer against it.
     private Vector3d _enemyPosition;
     private bool _enemyKnown;
+    private Vector3d _enemyFeet;
+    private bool _enemyCrouching;
+
+    // Where combat BELIEVES the target is -- the shared record's position, which sub_48A920 refreshes
+    // from the detection slot only while the target is actually seen. Aiming, turning, hunting and the
+    // accuracy distance all read this; only the vision tests themselves see the true position. Feeding
+    // the true position into combat made guards omniscient: they tracked and shot at the player's real
+    // location through walls the moment anything set them fighting.
+    private Vector3d _lastSeenFeet;
+
+    // Whether the vision subsystem has ever actually detected the target -- retail's slot at
+    // ai+15844, which 0x48D080 tests and ENDS the action over when it is null ("a guard that has
+    // never been detected at all ends the action"). The port's slot object exists from construction,
+    // so its IsRegistered said "detected" for a player nobody had ever seen.
+    private bool _everDetected;
+
+    // The position of the event the script is being dispatched for -- what sub_44D850 copies out of
+    // the queue head (record +16) for AIAction_LookAtEvent / AIAction_MoveToEvent.
+    private Vector3d? _currentEventPosition;
+
+    // AIAction_LookAtEvent (0x44D870 -> 0x48E080 -> 0x48E0A0): turn to the event's position with the
+    // instant combat turn to 2 degrees and HOLD until `duration` seconds after the behaviour's first
+    // tick; complete only when both aimed and expired. Owns the tick while it runs, as a pending
+    // action does.
+    private Vector3d? _lookAtPoint;
+    private int _lookAtDurationTicks;
+    private int _lookAtDeadline;
+
+    // AIAction_Activate (0x44D420 -> 0x48E620 / 0x48E7D0 / 0x48E870): claim the target task on the
+    // level's activation list, walk to the graph node nearest it, press it on arrival (retail writes
+    // the use through input channel 4 and the body's interaction machinery does the rest -- the port
+    // invokes the activation callback directly, a recorded stand-in), and release the claim when the
+    // action ends or the soldier dies.
+    private AiActivationClaims? _claims;
+    private ActivateTask? _activate;
+    private int _activateTaskId = -1;
+    private int _activateClaimA = -1;
+    private int _activateClaimB = -1;
+
+    /// <summary>Finds a level task for the activate behaviour.</summary>
+    /// <param name="taskId">The task the script named.</param>
+    /// <param name="position">Its world position.</param>
+    /// <returns><see langword="false"/> when the level has no such task.</returns>
+    public delegate bool TaskLocator(int taskId, out Vector3d position);
+
+    /// <summary>Presses a level task — the end of the activate walk.</summary>
+    /// <param name="taskId">The task to activate.</param>
+    public delegate void TaskActivator(int taskId);
+
+    private TaskLocator? _locateTask;
+    private TaskActivator? _activateTask;
+
+    /// <summary>Finds the door nearest a position — the walker's broadcast query.</summary>
+    /// <param name="near">The current node's position, which the search is anchored at.</param>
+    /// <returns>The nearest door, or <see langword="null"/> when the level has none.</returns>
+    /// <remarks>
+    /// <c>sub_451540</c> broadcasts message <c>sub_450CA0</c> over the task registry with the current
+    /// node's position; every <c>Door</c> answers through <c>sub_446470</c>, which keeps the nearest —
+    /// the best-distance sentinel starts at −1, so the first answer always wins and <b>there is no
+    /// radius cap</b>. The search runs once per door hop (<c>ai+15946</c>) and the handle is dropped
+    /// when the waypoint is reached.
+    /// </remarks>
+    public delegate DoorState? DoorQuery(Vector3d near);
+
+    private DoorQuery? _doors;
+    private DoorState? _doorAtHop;
+    private bool _doorSearched;
+
+    /// <summary>Gives the walker its door lookup.</summary>
+    /// <param name="doors">The query, or <see langword="null"/> for a level without doors.</param>
+    public void SetDoorQuery(DoorQuery? doors) => _doors = doors;
+
+    /// <summary>Wires the activate behaviour to the level — the claims list and the task lookups.</summary>
+    /// <param name="claims">The level-wide activation claims.</param>
+    /// <param name="locate">Resolves a task id to its position.</param>
+    /// <param name="activate">Presses the task.</param>
+    public void SetActivateSupport(AiActivationClaims claims, TaskLocator locate, TaskActivator activate)
+    {
+        _claims = claims;
+        _locateTask = locate;
+        _activateTask = activate;
+    }
+
+    private readonly record struct ActivateTask(int TaskId, bool Run);
+
+    // The idle-animation table -- AIFunction_{SetAnimationInterval, AddAnimationEntry,
+    // GetAnimationToPlay} (0x44EAF0 / 0x44EBB0 / 0x44ECB0). ai+15112 (ids, stride 16), +15120
+    // (weights, double), +15204 (count, cap 5), +15192/+15196 interval min/random in ticks, +15200
+    // the next-play deadline.
+    private readonly List<(int Id, double Weight)> _animationEntries = [];
+    private int _animationMinTicks;
+    private int _animationRandomTicks;
+    private int _nextAnimationTick = -1;
+    private bool _scriptedAnimation;
+    private int _lastTick;
 
     /// <summary>Declares an event type's dispatch priority — <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>).</summary>
     /// <param name="type">The event type the script wants considered.</param>
@@ -392,8 +490,55 @@ public sealed class AiSoldier
         }
 
         LastEventDistance = distance;
+
+        // Hearing refreshes an ENGAGED guard's belief with the target's true position: sub_48A920's
+        // else-branch runs sub_451380 over the shared record (+272) whenever the tick drained hearing
+        // or alert events even though the slot is not visible -- and sub_451380 copies the target
+        // task's REAL position. Shooting from cover tells the squad where you are, exactly as retail's
+        // guards then turn their fire onto the crate.
+        if (Activity == AiSoldierActivity.Engaging && _enemyKnown)
+        {
+            _lastSeenFeet = _enemyFeet;
+            Target?.Refresh(_lastSeenFeet);
+        }
+
         Events.Post(
             new AiEventRecord(AiEvent.Gunshot, -1, AiEventFilter.None, (float)range, shotPosition, 0, 0),
+            owner: 0,
+            worldTests: null);
+        return true;
+    }
+
+    /// <summary>The alert ping's reach — 28160 units, 6.875 m (<c>sub_48AB10</c>'s radius, float bits <c>1189085184</c>).</summary>
+    public const double AlertPingRadiusInUnits = 28160.0;
+
+    /// <summary>How often an engaged guard pings — every 20 ticks (<c>sub_48A920</c>'s <c>% 20</c> counter).</summary>
+    public const int AlertPingPeriodTicks = 20;
+
+    /// <summary>Receives a fighting neighbour's alert ping — <c>AIEVENT_ALERT</c> out of <c>sub_48AB10</c>.</summary>
+    /// <param name="alerterPosition">The alerting guard's own position — the record's position field.</param>
+    /// <returns><see langword="false"/> when out of the ping's reach or dead.</returns>
+    /// <remarks>
+    /// The record: type 5 (<c>ALERT</c>), filter mask 38, radius 6.875 m, source = the alerting guard,
+    /// subject = the target it is fighting. The distance gate is applied here, the way
+    /// <see cref="HearGunshot"/> applies its own.
+    /// </remarks>
+    public bool ReceiveAlert(Vector3d alerterPosition)
+    {
+        if (Activity == AiSoldierActivity.Dead)
+        {
+            return false;
+        }
+
+        double distance = Distance(Position, alerterPosition);
+        if (distance > AlertPingRadiusInUnits)
+        {
+            return false;
+        }
+
+        LastEventDistance = distance;
+        Events.Post(
+            new AiEventRecord(AiEvent.Alert, -1, AiEventFilter.None, (float)AlertPingRadiusInUnits, alerterPosition, 0, 0),
             owner: 0,
             worldTests: null);
         return true;
@@ -405,6 +550,25 @@ public sealed class AiSoldier
     /// <summary>Gives the soldier an occlusion test, so it stops seeing through walls.</summary>
     /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
     public void SetLineOfSight(LineOfSight? sight) => _sight = sight;
+
+    /// <summary>
+    /// Reports every detection gate as it stands this instant for a target eye — for the debug overlay, so a
+    /// guard that will not detect the player can be asked <em>which</em> gate is failing.
+    /// </summary>
+    /// <param name="enemyEye">The target eye in engine units, the same point <see cref="Tick"/> is fed.</param>
+    /// <returns>The distance in units, and the cone / line-of-sight / alert / currently-visible flags.</returns>
+    /// <remarks>
+    /// This recomputes the cone against a fresh eye snapshot and runs the stored occlusion test directly, so
+    /// it reflects the geometry now rather than whatever the rate-limited sweep last stored. The last flag is
+    /// the sweep's own latched answer.
+    /// </remarks>
+    public (double DistanceUnits, bool InCone, bool LineOfSightClear, bool Alerted, bool IsCurrentlyVisible) ProbeDetection(Vector3d enemyEye)
+    {
+        AiEyeSnapshot snapshot = Vision.Capture(EyePosition(), Orientation, Alerted);
+        bool inCone = snapshot.IsVisible(enemyEye);
+        bool clear = _sight is null || _sight(EyePosition(), enemyEye);
+        return (Distance(Position, enemyEye), inCone, clear, Alerted, _playerSlot.IsVisible);
+    }
 
     /// <summary>
     /// Gives the soldier a ground query, so it walks on the terrain instead of interpolating between graph nodes.
@@ -609,6 +773,50 @@ public sealed class AiSoldier
                     _route.Clear();
                     break;
 
+                case "AIAction_Activate":
+                    // 0x44D420: arg 0 = the task to press, arg 1 = the gait (run when set). The start
+                    // (0x48E620) claims the task -- and, when it is this AI's own alarm trigger, the
+                    // alarm control too -- or SKIPS the action outright when somebody already has.
+                    BeginActivate(action.Argument(0), run: action.Argument(1) != 0);
+                    break;
+
+                case "AIAction_LookAtEvent":
+                    // 0x44D870: copy the event's position, arg 0 = the hold in SECONDS (a real), then
+                    // the behaviour turns to it (0x48E0A0, instant turn to 2 degrees) and holds until
+                    // aimed AND expired. This is a guard "noticing" a shot it heard.
+                    if (_currentEventPosition is { } noticed)
+                    {
+                        _lookAtPoint = noticed;
+                        _lookAtDurationTicks = (int)(action.Real(0) * 30.0f);
+                        _lookAtDeadline = -1;
+                    }
+
+                    break;
+
+                case "AIAction_MoveToEvent":
+                    // 0x44D7D0 -> 0x48DFE0: the nearest-node query (sub_5096F0) against the EVENT's
+                    // position, then walk there -- a guard investigating the noise.
+                    if (_currentEventPosition is { } toInvestigate)
+                    {
+                        int nearest = NearestNode(toInvestigate);
+                        if (nearest >= 0)
+                        {
+                            Route = null;
+                            GoTo(nearest);
+                            Activity = AiSoldierActivity.Patrolling;
+                        }
+                    }
+
+                    break;
+
+                case "AIAction_PlayAnimation":
+                    // The scripted one-shot clip: the id the script chose (usually what
+                    // GetAnimationToPlay returned). Cleared when the renderer reports the clip done.
+                    RequestedAnimation = action.Argument(0);
+                    _animationFinished = false;
+                    _scriptedAnimation = true;
+                    break;
+
                 default:
                     break;
             }
@@ -626,7 +834,7 @@ public sealed class AiSoldier
     /// </remarks>
     public bool GoTo(int node)
     {
-        if (_graph.RouteTable is null)
+        if (_graph?.RouteTable is null)
         {
             return false;
         }
@@ -674,6 +882,18 @@ public sealed class AiSoldier
         Route = null;
         _route.Clear();
         DestinationNode = -1;
+
+        // Death leaves the shared target record. The original's combat action ends when its owner dies
+        // and the end function (0x48D7D0) runs sub_4512A0, which swap-removes this attacker and frees
+        // the record when it was the last. Without the release a dead guard kept holding its AIMING
+        // slot, and once four had died mid-fight Count(Aiming) stayed >= 4 for ever -- every guard that
+        // engaged afterwards was pushed to Crowded and stood there, seeing the player and doing
+        // nothing, until the level was restarted.
+        SetTarget(null);
+
+        // And death frees the alarm panel: 0x44F410's cleanup releases the claim handles at
+        // ai+15024/+15028, so a guard shot on its way to the alarm leaves it for the next one.
+        ReleaseActivateClaims();
         if (facing is { } heading)
         {
             Facing = Wrap(heading);
@@ -739,15 +959,52 @@ public sealed class AiSoldier
     /// unregisters a human that reports itself invalid, so the soldier loses it and leaves combat instead
     /// of firing at the corpse. <see langword="false"/> reproduces that.
     /// </param>
-    public void Tick(int tick, Vector3d enemy, double rootMotionThisTick, bool alarmOn = false, bool enemyAlive = true)
+    /// <param name="enemyFeet">
+    /// The enemy task's position — its feet, which is what combat aims at (<c>sub_451380</c> raises it
+    /// 0.5 m, 0.25 m crouched). Defaults to <paramref name="enemy"/> when the caller has no body.
+    /// </param>
+    /// <param name="enemyCrouching">Whether the enemy is crouching, which halves the aim raise.</param>
+    public void Tick(
+        int tick,
+        Vector3d enemy,
+        double rootMotionThisTick,
+        bool alarmOn = false,
+        bool enemyAlive = true,
+        Vector3d? enemyFeet = null,
+        bool enemyCrouching = false)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
             return;
         }
 
+        _lastTick = tick;
+
+        // A scripted one-shot clip releases the animation slot the moment the renderer says it ended,
+        // so the soldier goes back to whatever its activity plays.
+        if (_scriptedAnimation && _animationFinished)
+        {
+            RequestedAnimation = -1;
+            _scriptedAnimation = false;
+            _animationFinished = false;
+        }
+
+        // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.
+        if (_nextAnimationTick >= 0 && tick >= _nextAnimationTick)
+        {
+            Events.Post(AiEventRecord.Simple(AiEvent.Animation), owner: 0, worldTests: null);
+            _nextAnimationTick = tick + _animationMinTicks
+                + (_animationRandomTicks > 0 ? _random.Next(_animationRandomTicks) : 0);
+        }
+
         _enemyPosition = enemy;
         _enemyKnown = true;
+
+        // Vision tests the enemy's EYE (what the cones and the sight ray are cast at), but combat aims at
+        // the enemy's POSITION — its feet — because sub_451380 copies the target TASK's position and adds
+        // 0.5 m standing / 0.25 m crouched. Feeding the eye into the aim put the point above the head.
+        _enemyFeet = enemyFeet ?? enemy;
+        _enemyCrouching = enemyCrouching;
 
         // An AI's FIRST event is always its creation: before initialisation only type 0 passes admission, and
         // the mask is not consulted at all (ai.md 3.3). Never posting it left every archetype script's
@@ -779,6 +1036,7 @@ public sealed class AiSoldier
             _playerSlot.IsVisible = false;
             _playerSlot.IsInCone = false;
             _playerSlot.Unregister();
+            _everDetected = false;
         }
         else if (_schedule.SweepsOn(tick))
         {
@@ -795,6 +1053,8 @@ public sealed class AiSoldier
         {
             alert = true;
             LastEventDistance = _playerSlot.Distance;
+            _lastSeenFeet = _enemyFeet;
+            _everDetected = true;
             Events.Post(AiEventRecord.Simple(AiEvent.EnemyDetection), owner: 0, worldTests: null);
         }
 
@@ -810,16 +1070,38 @@ public sealed class AiSoldier
         {
             Events.Post(AiEventRecord.Simple(AiEvent.Combat), owner: 0, worldTests: null);
         }
-        else if (_route.Count == 0 && Route is null)
+        else if (_route.Count == 0 && Route is null && _lookAtPoint is null && _activate is null
+            && !Events.HasAnyPending)
         {
+            // A running LookAtEvent is a pending ACTION too, and the pending-action list being empty is
+            // the idle post's whole condition -- without this the next Idle dispatch re-ran the script
+            // and re-aimed the look at the Idle record's zero position.
             // Idle is the fallback the original posts only when nothing is pending (ai.md 3.1).
             // A running patrol IS a pending action — re-posting IDLE while one is active would make
             // the script call AIAction_Patrol again, restarting the patrol from command 0 every tick.
+            // And a pending EVENT suppresses it too: with Idle posted unconditionally, a standing
+            // guard's Idle dispatched first every tick and the gunshot it heard was drained unheard.
             Events.Post(AiEventRecord.Simple(AiEvent.Idle), owner: 0, worldTests: null);
         }
 
         // ONE event type dispatches per tick, in priority order, and the script decides what to do about it.
         RunScript();
+
+        // AIEVENT_COMBAT INSTALLS THE COMBAT ACTION, whatever the script's branch looks like: every
+        // archetype answers COMBAT with AIFunction_DefaultHandler, and 0x44E060 hands the event to the
+        // engine, which is what reaches AIAction_Combat (0x44D160) and installs the per-type arm.
+        //
+        // The port used to install it only when a script PRODUCED AIAction_Combat, which the archetype
+        // scripts never do -- so only the scriptless fallback below ever armed the behaviour. Once the
+        // machine ended (a targeting timeout, or a target it had no slot for), nothing re-armed it and
+        // the soldier stayed Engaging with a dead machine: seeing the player, holding its gun, and
+        // never firing again for the rest of the level. Re-installing here is what the original's
+        // action install does on the next COMBAT event.
+        if (enemyAlive && _playerSlot.IsVisible
+            && (Activity != AiSoldierActivity.Engaging || CombatPhase == AiCombatPhase.Ended))
+        {
+            EnterCombat();
+        }
 
         // The target is dead: leave combat outright rather than keep firing at where it fell. The script
         // drops out on its own once the Combat events stop, but a guard already engaging would empty its
@@ -837,7 +1119,48 @@ public sealed class AiSoldier
 
         if (Activity == AiSoldierActivity.Engaging)
         {
-            Fight(enemy, rootMotionThisTick);
+            Fight(_lastSeenFeet, rootMotionThisTick);
+            return;
+        }
+
+        // A pending LookAtEvent owns the tick until it completes: the behaviour (0x48E0A0) sets its
+        // deadline on its FIRST tick, turns to the event with the instant combat turn, and completes
+        // only once it is both aimed inside 2 degrees and past the deadline. Combat pre-empts it (the
+        // return above); the patrol resumes when it is done.
+        if (_lookAtPoint is { } watched)
+        {
+            if (_lookAtDeadline < 0)
+            {
+                _lookAtDeadline = tick + _lookAtDurationTicks;
+            }
+
+            TurnTowards(watched, (float)AiGuardCombat.AimToleranceRadians);
+            if (IsFacing(watched, (float)AiGuardCombat.AimToleranceRadians) && tick > _lookAtDeadline)
+            {
+                _lookAtPoint = null;
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        // A pending Activate owns the tick the same way: walk the route to the panel's node, press on
+        // arrival, release the claims. Retail's per-tick (0x48E7D0) picks the gait from the action's
+        // run flag and presses through input channel 4 -- the port walks its ordinary route and
+        // invokes the activation directly; both are recorded stand-ins.
+        if (_activate is { } pressing)
+        {
+            if (_route.Count > 0)
+            {
+                Activity = AiSoldierActivity.Patrolling;
+                Advance(rootMotionThisTick);
+                return;
+            }
+
+            _activateTask?.Invoke(pressing.TaskId);
+            ReleaseActivateClaims();
+            Activity = AiSoldierActivity.Idle;
             return;
         }
 
@@ -957,7 +1280,7 @@ public sealed class AiSoldier
 
     private bool FaceNode(int node)
     {
-        GraphNode? target = _graph.NodeAt(node);
+        GraphNode? target = _graph?.NodeAt(node);
         if (target is null)
         {
             return true;
@@ -995,14 +1318,138 @@ public sealed class AiSoldier
 
         Events.Pump(AiEventQueues.UnboundedPriorityCap, (type, slot) =>
         {
+            // What sub_44D850 reads mid-dispatch: the current event's own position, off the queue head.
+            _currentEventPosition = Events.HeadOf(type)?.Position;
+
             bool handled = _host.Run(_script, this, type, slot, _archetypeScript);
             if (handled)
             {
                 ApplyActions(_host.Produced);
             }
 
+            _currentEventPosition = null;
             return handled;
         });
+    }
+
+    private void BeginActivate(int taskId, bool run)
+    {
+        if (_claims is null || _locateTask is null)
+        {
+            return;
+        }
+
+        // Already claimed by somebody -- or, for this AI's own alarm trigger, the CONTROL claimed --
+        // means the action never starts (0x48E620's early exits).
+        if (_claims.Contains(taskId))
+        {
+            return;
+        }
+
+        bool isMyAlarmTrigger = taskId == AlarmTriggerId && AlarmTriggerId != -1;
+        if (!_locateTask(taskId, out Vector3d position))
+        {
+            // "Level QTask ID #%d not defined (AI Activate)" -- the original warns and gives up.
+            return;
+        }
+
+        int node = NearestNode(position);
+        if (node < 0)
+        {
+            return;
+        }
+
+        _claims.Claim(taskId);
+        _activateClaimA = taskId;
+        if (isMyAlarmTrigger && AlarmControlId != -1)
+        {
+            _claims.Claim(AlarmControlId);
+            _activateClaimB = AlarmControlId;
+        }
+
+        Route = null;
+        GoTo(node);
+        _activate = new ActivateTask(taskId, run);
+        _activateTaskId = taskId;
+        Activity = AiSoldierActivity.Patrolling;
+    }
+
+    private void ReleaseActivateClaims()
+    {
+        if (_activateClaimA != -1)
+        {
+            _claims?.Release(_activateClaimA);
+            _activateClaimA = -1;
+        }
+
+        if (_activateClaimB != -1)
+        {
+            _claims?.Release(_activateClaimB);
+            _activateClaimB = -1;
+        }
+
+        _activate = null;
+        _activateTaskId = -1;
+    }
+
+    /// <summary>Arms the idle-animation cadence — <c>AIFunction_SetAnimationInterval</c> (<c>0x44EAF0</c>).</summary>
+    /// <param name="minimumSeconds">The floor of the gap between idle animations.</param>
+    /// <param name="randomSeconds">The random span on top of it.</param>
+    public void SetAnimationInterval(float minimumSeconds, float randomSeconds)
+    {
+        _animationMinTicks = (int)(minimumSeconds * 30.0);
+        _animationRandomTicks = (int)(randomSeconds * 30.0);
+        _nextAnimationTick = _lastTick + _animationMinTicks
+            + (_animationRandomTicks > 0 ? _random.Next(_animationRandomTicks) : 0);
+    }
+
+    /// <summary>Adds an idle animation — <c>AIFunction_AddAnimationEntry</c> (<c>0x44EBB0</c>), capped at five.</summary>
+    /// <param name="animationId">The clip to add.</param>
+    /// <param name="weight">Its share of the weighted pick.</param>
+    public void AddAnimationEntry(int animationId, double weight)
+    {
+        if (_animationEntries.Count < 5)
+        {
+            _animationEntries.Add((animationId, weight));
+        }
+    }
+
+    /// <summary>Picks an idle animation — <c>AIFunction_GetAnimationToPlay</c> (<c>0x44ECB0</c>).</summary>
+    /// <returns>An entry's id, or −1 with no entries.</returns>
+    /// <remarks>
+    /// Weights summing under 0.01 take a uniformly random entry; otherwise the walk subtracts weights
+    /// from <c>rand01 × total</c> until the remainder crosses zero, and walking off the end takes the
+    /// last entry — exactly the original's arithmetic, edge for edge.
+    /// </remarks>
+    public int PickAnimationToPlay()
+    {
+        if (_animationEntries.Count == 0)
+        {
+            return -1;
+        }
+
+        double total = 0.0;
+        foreach ((_, double weight) in _animationEntries)
+        {
+            total += weight;
+        }
+
+        if (total < 0.01)
+        {
+            return _animationEntries[_random.Next(_animationEntries.Count)].Id;
+        }
+
+        double remaining = _random.NextDouble() * total;
+        foreach ((int id, double weight) in _animationEntries)
+        {
+            remaining -= weight;
+            if (remaining <= 0.0)
+            {
+                return id;
+            }
+        }
+
+        return _animationEntries[^1].Id;
     }
 
     /// <summary>The eye the cones are measured from — the body position raised to eye height.</summary>
@@ -1033,7 +1480,7 @@ public sealed class AiSoldier
 
     private bool ChooseNextLeg()
     {
-        if (_graph.RouteTable is null || _graph.Nodes.Count < 2)
+        if (_graph?.RouteTable is null || _graph.Nodes.Count < 2)
         {
             return false;
         }
@@ -1073,7 +1520,7 @@ public sealed class AiSoldier
 
     private void Advance(double rootMotionThisTick)
     {
-        GraphNode? next = _graph.NodeAt(_route[0]);
+        GraphNode? next = _graph?.NodeAt(_route[0]);
         if (next is null)
         {
             _route.RemoveAt(0);
@@ -1081,6 +1528,46 @@ public sealed class AiSoldier
         }
 
         Vector3d waypoint = next.Position;
+
+        // A DOOR hop: the planner (sub_4518E0) flags a queue item when BOTH ends of the hop carry the
+        // door criteria bit, and the walker (sub_451540) then finds the nearest door once per hop and
+        // acts on its state: 1 (closed) and 3 (closing) -> OPEN IT YOURSELF (the same sub_447DA0 the
+        // player's use calls) and hold; 2 (in motion) -> "Waiting for door to open", hold; 0 (open) ->
+        // walk through. Holding turns to the waypoint at the 2-degree door tolerance.
+        if (_doors is not null
+            && _graph?.NodeAt(CurrentNode) is { } from
+            && (from.Criteria & GraphNodeCriteria.Door) != 0
+            && (next.Criteria & GraphNodeCriteria.Door) != 0)
+        {
+            if (!_doorSearched)
+            {
+                _doorAtHop = _doors(from.Position);
+                _doorSearched = true;
+            }
+
+            if (_doorAtHop is { } door)
+            {
+                int state = door.UseState;
+                if (state is 1 or 3)
+                {
+                    door.CommandOpen();
+                    TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance);
+                    return;
+                }
+
+                if (state == 2)
+                {
+                    // "Waiting for door to open"
+                    TurnTowards(waypoint, AiMovementStep.DoorFacingTolerance);
+                    return;
+                }
+            }
+        }
+        else
+        {
+            _doorAtHop = null;
+            _doorSearched = false;
+        }
 
         // Turn towards the waypoint as fast as the move-to-node clamp allows -- pi, which is "as fast as you
         // like" (ai.md 7).
@@ -1095,8 +1582,12 @@ public sealed class AiSoldier
             _route.RemoveAt(0);
 
             // The next leg is measured from where the soldier actually is, not from the node it nominally
-            // reached -- arrival is a 0.3 m box, so those differ.
+            // reached -- arrival is a 0.3 m box, so those differ. Reaching the waypoint also drops the
+            // door handle (ai+15946/+15948 cleared in the arrival branch), so the next door hop
+            // searches afresh.
             _legOrigin = Position;
+            _doorAtHop = null;
+            _doorSearched = false;
             return;
         }
 
@@ -1197,10 +1688,21 @@ public sealed class AiSoldier
     /// the original.
     /// </para>
     /// </remarks>
-    private void Fight(Vector3d enemy, double rootMotionThisTick)
+    private void Fight(Vector3d lastSeenFeet, double rootMotionThisTick)
     {
         // Recomputed every combat tick: AdvanceInCombat sets it when it actually steps.
         _movingInCombat = false;
+
+        // The shared record's position is refreshed only WHILE THE TARGET IS SEEN (sub_48A920 reads it
+        // off the detection slot), and everything combat does -- turning, aiming, hunting, the accuracy
+        // distance -- reads the record (+272), not the target's true position. So a guard fights the
+        // place the squad last SAW the player; one that never saw it itself borrows the squad's record.
+        if (_playerSlot.IsVisible)
+        {
+            Target?.Refresh(lastSeenFeet);
+        }
+
+        Vector3d enemy = Target is { HasBeenSeen: true } shared ? shared.Position : lastSeenFeet;
 
         if (_combat is null || _weapon is null)
         {
@@ -1208,8 +1710,6 @@ public sealed class AiSoldier
             TurnTowards(enemy, AiPatrolRoute.LookAtToleranceRadians);
             return;
         }
-
-        Target?.Refresh(enemy);
 
         if (_patrol is not null)
         {
@@ -1219,10 +1719,10 @@ public sealed class AiSoldier
 
         AiCombatWeaponState weapon = _weapon();
         AiCombatSense sense = new(
-            HasDetectionSlot: _playerSlot.IsRegistered || _playerSlot.IsVisible || _playerSlot.IsInCone,
+            HasDetectionSlot: _everDetected,
             InCone: _playerSlot.IsInCone,
             Visible: _playerSlot.IsVisible,
-            TargetPosition: AimPointOf(enemy),
+            TargetPosition: AimPointOf(enemy, _enemyCrouching),
             DistanceToTargetInUnits: Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
@@ -1233,7 +1733,12 @@ public sealed class AiSoldier
 
         // The port has no stance machine on a soldier yet, so it is always in its standing state --
         // which is the state the guard behaviour waits for anyway.
-        AiCombatCommand command = _combat.Update(sense, standing: true, Vision.Primary.RangeAt(Alerted));
+        //
+        // The accuracy lerp scales over the PLAIN primary view length: 0x48B9C0 reads [HumanAI+176],
+        // the third double of the primary block {alpha, gamma, length, alarmLength} -- not the
+        // alarm-extended range. Passing the alerted range stretched the ramp and made every alerted
+        // guard more accurate at range than retail's.
+        AiCombatCommand command = _combat.Update(sense, standing: true, Vision.Primary.Length);
         Combat = command;
 
         // The same writes 0x48EF70 makes, recorded rather than applied -- see ChannelWrites.
@@ -1307,12 +1812,25 @@ public sealed class AiSoldier
             away = FindFreePosition(enemy, towardTarget: false);
         }
 
+        // "On its own node" gates the whole chooser: rule (a) walks back before anything else fires.
+        // Retail's RePosition (0x48C760) walks the BODY onto the node and completes; the port walks the
+        // route table, so two cases produce a walk that can never finish and left the soldier
+        // repositioning for ever -- seeing the player, engaging, and never firing a shot:
+        //  - no graph (CurrentNode is -1): there is nowhere to walk back to at all;
+        //  - the route back to its own node is EMPTY (the table says it is already there) while the
+        //    body stands outside the node's radius test.
+        // Both mean "no walk exists that gets you more on your node than you are", which is what
+        // standing on it is FOR -- so both count as standing on it.
+        bool standingOnOwnNode = CurrentNode < 0
+            || IsStandingOnNode(CurrentNode)
+            || (_route.Count == 0 && DestinationNode == CurrentNode);
+
         AiPatrolSense sense = new(
-            HasDetectionSlot: _playerSlot.IsRegistered || _playerSlot.IsVisible || _playerSlot.IsInCone,
+            HasDetectionSlot: _everDetected,
             Visible: visible,
             DistanceToTargetInUnits: distance,
             CurrentNodeId: CurrentNode,
-            StandingOnOwnNode: IsStandingOnNode(CurrentNode),
+            StandingOnOwnNode: standingOnOwnNode,
             AmmoInClip: weapon.AmmoInClip,
             HasGrenade: false,
             AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0,
@@ -1334,7 +1852,7 @@ public sealed class AiSoldier
             case AiPatrolAction.CloseCombat:
                 // Channel 9 is close combat -- a correction to 11.2, which had it as a dead branch.
                 WriteChannel(AiCombatChannel.CloseCombat, 1f);
-                TurnTowards(AimPointOf(enemy), (float)AiGuardCombat.AimToleranceRadians);
+                TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
                 return;
 
             case AiPatrolAction.LookForTarget:
@@ -1351,7 +1869,7 @@ public sealed class AiSoldier
                 }
                 else
                 {
-                    TurnTowards(AimPointOf(enemy), (float)AiGuardCombat.AimToleranceRadians);
+                    TurnTowards(AimPointOf(enemy, _enemyCrouching), (float)AiGuardCombat.AimToleranceRadians);
                 }
 
                 return;
@@ -1408,7 +1926,7 @@ public sealed class AiSoldier
             return;
         }
 
-        if (IsFacing(AimPointOf(enemy), FollowFireConeRadians))
+        if (IsFacing(AimPointOf(enemy, _enemyCrouching), FollowFireConeRadians))
         {
             if ((Target?.Count(AiAimMode.Aiming) ?? 0) >= AiCombatTarget.MaximumAimers)
             {
@@ -1430,10 +1948,10 @@ public sealed class AiSoldier
     private void RunSharedSubAction(Vector3d enemy, AiCombatWeaponState weapon)
     {
         AiCombatSense sense = new(
-            HasDetectionSlot: true,
+            HasDetectionSlot: _everDetected,
             InCone: _playerSlot.IsInCone,
             Visible: _playerSlot.IsVisible,
-            TargetPosition: AimPointOf(enemy),
+            TargetPosition: AimPointOf(enemy, _enemyCrouching),
             DistanceToTargetInUnits: Distance(Position, enemy),
             LocomotionState: AiCombatChannels.StateOf(_type, AiStanceChannel.Standing),
             AmmoInClip: weapon.AmmoInClip,
@@ -1442,8 +1960,18 @@ public sealed class AiSoldier
             BurstSize: weapon.BurstSize,
             AimersOnTarget: Target?.Count(AiAimMode.Aiming) ?? 0);
 
-        AiCombatCommand command = _combat!.Update(sense, standing: true, Vision.Primary.RangeAt(Alerted));
+        AiCombatCommand command = _combat!.Update(sense, standing: true, Vision.Primary.Length);
         Combat = command;
+
+        // The shared fire sub-action ending ends the whole engagement, exactly as it does in the guard
+        // arm -- the patrol arm used to DISCARD this, so a patrol whose machine ended kept "fighting"
+        // with a dead behaviour and never fired again.
+        if (command.Ended)
+        {
+            Activity = AiSoldierActivity.Idle;
+            SetTarget(null);
+            return;
+        }
 
         if (command.FirePose)
         {
@@ -1518,7 +2046,7 @@ public sealed class AiSoldier
     private int? FindFreePosition(Vector3d enemy, bool towardTarget)
     {
         int targetNode = NearestNode(enemy);
-        return targetNode < 0
+        return targetNode < 0 || _graph is null
             ? null
             : AiFreePosition.Find(_graph, CurrentNode, targetNode, towardTarget);
     }
@@ -1533,7 +2061,7 @@ public sealed class AiSoldier
     /// </remarks>
     private bool IsStandingOnNode(int nodeId)
     {
-        if (_graph.NodeAt(nodeId) is not { } node)
+        if (_graph?.NodeAt(nodeId) is not { } node)
         {
             return false;
         }
@@ -1542,12 +2070,16 @@ public sealed class AiSoldier
         return Distance(Position, node.Position) <= reach;
     }
 
-    /// <summary>Where an AI aims at a human — its position, half a metre up.</summary>
+    /// <summary>Where an AI aims at a human — its position (feet), half a metre up.</summary>
+    /// <param name="target">The target task's position — its feet, not its eye.</param>
+    /// <param name="crouching">Whether the target is crouching, which halves the raise.</param>
     /// <remarks>
-    /// <c>sub_451380</c> adds 2048 units standing and 1024 crouching. The port has no crouch state for a
-    /// target yet, so it always takes the standing figure.
+    /// <c>sub_451380</c> copies the target task's own position out of the shared record and adds
+    /// <b>2048 units (0.5 m) standing, 1024 (0.25 m) crouching</b> to Z — verified in the decompile:
+    /// <c>a1[2] += crouch ? 1024.0 : 2048.0</c>.
     /// </remarks>
-    private static Vector3d AimPointOf(Vector3d target) => new(target.X, target.Y, target.Z + 2048.0);
+    public static Vector3d AimPointOf(Vector3d target, bool crouching = false) =>
+        new(target.X, target.Y, target.Z + (crouching ? 1024.0 : 2048.0));
 
     private void TurnTowards(Vector3d target, float tolerance)
     {
@@ -1571,7 +2103,8 @@ public sealed class AiSoldier
     }
 
     private int NearestNode(Vector3d from) =>
-        GraphNearestNode.Find(_graph, from, out GraphNode? best, out _) == GraphNearestNodeResult.None
+        _graph is null
+        || GraphNearestNode.Find(_graph, from, out GraphNode? best, out _) == GraphNearestNodeResult.None
             ? -1
             : best!.Id;
 

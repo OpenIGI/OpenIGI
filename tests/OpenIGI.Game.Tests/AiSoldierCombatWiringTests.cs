@@ -1,6 +1,9 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.World;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -97,6 +100,78 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(firedAgain, $"the soldier re-engaged and never fired again (phase {soldier.CombatPhase})");
     }
 
+    /// <summary>
+    /// A <b>scripted</b> soldier re-arms its combat behaviour when it sees the target again — the case
+    /// the scriptless fallback hid.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>AIEVENT_COMBAT</c> is what installs the combat action: every archetype answers it with
+    /// <c>AIFunction_DefaultHandler</c>, and <c>0x44E060</c> hands the event back to the engine, which
+    /// reaches <c>AIAction_Combat</c> (<c>0x44D160</c>). The port used to install the arm only when a
+    /// script <i>produced</i> the action — which no archetype does — so only soldiers with <b>no</b>
+    /// script ever armed it, and every real, scripted guard whose machine had ended stood there
+    /// "Engaging" and never fired again.
+    /// </para>
+    /// <para>
+    /// The script here is the archetype's own shape: answer everything with the default handler, so it
+    /// produces no action at all.
+    /// </para>
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void AScriptedSoldierReArmsCombatWhenItSeesTheTargetAgain()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+
+        // The archetype's answer to every event: the default handler, producing nothing.
+        NativeRegistry natives = new();
+        AiScriptHost host = new(natives);
+        soldier.SetScript(host, DefaultHandlerScript());
+
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        Vector3d gone = new(position.X, position.Y + (5000 * Metre), position.Z);
+
+        for (int tick = 1; tick <= 200; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            Spend(soldier);
+        }
+
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+
+        // Lose it long enough for the targeting timeout to end the behaviour.
+        for (int tick = 201; tick <= 1400; tick++)
+        {
+            soldier.Tick(tick, gone, rootMotionThisTick: 0.0);
+            Spend(soldier);
+        }
+
+        // And walk back into view: the arm must be re-installed and the trigger pulled again.
+        bool firedAgain = false;
+        for (int tick = 1401; tick <= 1700; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            Spend(soldier);
+            firedAgain |= soldier.Combat.PullTrigger;
+        }
+
+        Assert.True(
+            firedAgain,
+            $"the scripted soldier saw the target again and never fired (activity {soldier.Activity}, "
+                + $"phase {soldier.CombatPhase})");
+    }
+
+    // A script shaped like every shipped archetype's: one call to the default handler, no action.
+    // The host registers every AI native itself, so nothing is registered here.
+    private static QvmProgram DefaultHandlerScript()
+    {
+        QvmWriter writer = new();
+        writer.PushSymbol("AIFunction_DefaultHandler");
+        writer.Code.Call([]);
+        writer.Code.Emit(QvmOpcode.Brk);
+        return QvmProgram.Read(writer.Build());
+    }
+
     /// <summary>A soldier given no combat row falls back to standing and facing, as it did before.</summary>
     [RequiresGameDataFact]
     public void ASoldierWithNoCombatRowStillTurnsToFaceTheEnemy()
@@ -115,6 +190,331 @@ public sealed class AiSoldierCombatWiringTests
 
         Assert.NotEqual(before, soldier.Facing);
         Assert.False(soldier.Combat.PullTrigger);
+    }
+
+    /// <summary>
+    /// Combat aims at the enemy's FEET raised half a metre — <c>sub_451380</c> — not at the eye it was
+    /// seen with.
+    /// </summary>
+    /// <remarks>
+    /// The aim point is the target task's own position plus <b>2048 units</b> (0.5 m), or <b>1024</b>
+    /// (0.25 m) crouched — read straight out of <c>IGI.exe</c>'s <c>sub_451380</c>:
+    /// <c>a1[2] += crouch ? 1024.0 : 2048.0</c>, where the crouch is the <i>target's</i> flag
+    /// (<c>Human+829</c>). Feeding the eye instead put the point half a metre <i>above the head</i>, and
+    /// every resolved round arrived at head height.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void CombatAimsAtTheFeetRaisedHalfAMetre()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+
+        Vector3d feet = new(position.X, position.Y + (5 * Metre), position.Z);
+        Vector3d eye = new(feet.X, feet.Y, feet.Z + (1.62 * Metre));
+
+        Vector3d? aim = null;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, eye, rootMotionThisTick: 0.0, enemyFeet: feet);
+            Spend(soldier);
+            if (soldier.Combat.PullTrigger && soldier.Combat.TurnTo is { } point)
+            {
+                aim = point;
+                break;
+            }
+        }
+
+        Assert.NotNull(aim);
+        Assert.Equal(feet.Z + 2048.0, aim.Value.Z, precision: 3);
+    }
+
+    /// <summary>A crouching target halves the raise — 1024 units, 0.25 m.</summary>
+    [RequiresGameDataFact]
+    public void ACrouchingTargetIsAimedAtAQuarterMetre()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+
+        Vector3d feet = new(position.X, position.Y + (5 * Metre), position.Z);
+        Vector3d eye = new(feet.X, feet.Y, feet.Z + (0.9 * Metre));
+
+        Vector3d? aim = null;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, eye, rootMotionThisTick: 0.0, enemyFeet: feet, enemyCrouching: true);
+            Spend(soldier);
+            if (soldier.Combat.PullTrigger && soldier.Combat.TurnTo is { } point)
+            {
+                aim = point;
+                break;
+            }
+        }
+
+        Assert.NotNull(aim);
+        Assert.Equal(feet.Z + 1024.0, aim.Value.Z, precision: 3);
+    }
+
+    /// <summary>
+    /// A soldier whose level ships no nav graph still sees, engages and fires — it just cannot patrol.
+    /// </summary>
+    /// <remarks>
+    /// Nothing in the detection cascade or the stand-and-fight arm (<c>0x48D000</c>…) touches a node.
+    /// Leaving such a soldier brainless made an inert prop — "a guard standing there playing no
+    /// animation and never reacting" — where the retail one would have shot back from where it stood.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void ASoldierWithoutAGraphStillFights()
+    {
+        Vector3d position = new(1000 * Metre, 1000 * Metre, 0);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_GUARD_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                MinimumClipFraction = 0.8f,
+                RandomClipFraction = 0.2f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.6f,
+            }),
+            () => new AiCombatWeaponState(_clip, 30, 30, WeaponCategory.Gun));
+
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+
+        bool fired = false;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            Spend(soldier);
+            fired |= soldier.Combat.PullTrigger;
+        }
+
+        Assert.True(fired, $"the graphless soldier never fired (activity {soldier.Activity}, phase {soldier.CombatPhase})");
+        Assert.False(soldier.BeginPatrol(1), "a graphless soldier cannot patrol");
+    }
+
+    /// <summary>
+    /// A patrol-arm soldier with no node to walk back to still fires instead of repositioning for ever.
+    /// </summary>
+    /// <remarks>
+    /// The chooser's rule (a) walks a soldier back onto its claimed node before anything else. With no
+    /// graph — or with an empty route back — that walk can never finish, and the soldier stood there
+    /// engaging and never firing ("a guard sees me, stands there and does nothing"). Retail's
+    /// RePosition (<c>0x48C760</c>) walks the body onto the node and terminates, so a walk that cannot
+    /// progress counts as arrived.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void APatrolWithNowhereToRepositionStillFires()
+    {
+        Vector3d position = new(1000 * Metre, 1000 * Metre, 0);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_PATROL_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                MinimumClipFraction = 0.2f,
+                RandomClipFraction = 0.3f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.8f,
+            }),
+            () => new AiCombatWeaponState(_clip, 30, 30, WeaponCategory.Gun));
+
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+
+        bool fired = false;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            Spend(soldier);
+            fired |= soldier.Combat.PullTrigger;
+        }
+
+        Assert.True(
+            fired,
+            $"the patrol never fired (activity {soldier.Activity}, action {soldier.PatrolAction})");
+    }
+
+    /// <summary>
+    /// <c>AIAction_Activate</c>: the guard claims the alarm, walks to it, presses it, and releases the
+    /// claims — <c>0x48E620</c> / <c>0x48E7D0</c> / <c>0x48E870</c>.
+    /// </summary>
+    /// <remarks>
+    /// The target being the guard's own alarm trigger claims the alarm CONTROL too, so no second guard
+    /// starts the same run; and a task already claimed makes the action never start at all.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void AGuardRunsToItsAlarmPressesItAndReleasesTheClaims()
+    {
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat")));
+        Vector3d start = graph.Nodes[0].Position;
+        Vector3d panel = graph.Nodes[1].Position;
+
+        AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: 1);
+        soldier.AlarmTriggerId = 500;
+        soldier.AlarmControlId = 600;
+
+        AiActivationClaims claims = new();
+        int pressed = -1;
+        soldier.SetActivateSupport(
+            claims,
+            (int id, out Vector3d position) =>
+            {
+                position = panel;
+                return id == 500;
+            },
+            id => pressed = id);
+
+        soldier.ApplyActions([new AiProducedAction("AIAction_Activate", [500, 1, 0], 0)]);
+
+        Assert.True(claims.Contains(500), "the trigger was not claimed at start");
+        Assert.True(claims.Contains(600), "the control was not claimed alongside the trigger");
+
+        Vector3d farEnemy = new(start.X, start.Y + (1000 * Metre), start.Z);
+        for (int tick = 1; tick <= 5000 && pressed == -1; tick++)
+        {
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+        }
+
+        Assert.Equal(500, pressed);
+        Assert.False(claims.Contains(500), "the trigger claim was not released");
+        Assert.False(claims.Contains(600), "the control claim was not released");
+
+        // A second guard told to press an ALREADY-CLAIMED panel never starts the walk.
+        claims.Claim(500);
+        AiSoldier second = new(graph, start, facing: 0f, phase: 1, seed: 2);
+        second.SetActivateSupport(claims, (int id, out Vector3d p) => { p = panel; return true; }, _ => pressed = -2);
+        second.ApplyActions([new AiProducedAction("AIAction_Activate", [500, 1, 0], 0)]);
+        for (int tick = 1; tick <= 2000; tick++)
+        {
+            second.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+        }
+
+        Assert.NotEqual(-2, pressed);
+    }
+
+    /// <summary>
+    /// A walker whose hop is a <b>door hop</b> stops, opens the door itself, waits for it, and only
+    /// then walks through — <c>sub_451540</c>'s door branch.
+    /// </summary>
+    /// <remarks>
+    /// The planner flags a queue item when <b>both</b> ends of the hop carry
+    /// <see cref="GraphNodeCriteria.Door"/>; the walker then finds the nearest door once per hop and
+    /// branches on its use state (<c>sub_447D70</c>): 1 or 3 → toggle it open, 2 → "Waiting for door to
+    /// open", 0 → proceed. Level 1's own graph supplies the door nodes.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void AWalkerOpensADoorOnItsPathAndWaitsForIt()
+    {
+        GraphFile graph = Graph();
+
+        // A hop whose two ends both carry the DOOR bit AND are a single route-table step apart --
+        // the only kind the planner flags.
+        (int From, int To)? hop = null;
+        foreach (GraphNode node in graph.Nodes)
+        {
+            if ((node.Criteria & GraphNodeCriteria.Door) == 0)
+            {
+                continue;
+            }
+
+            foreach (GraphNode other in graph.Nodes)
+            {
+                if (other.Id == node.Id || (other.Criteria & GraphNodeCriteria.Door) == 0)
+                {
+                    continue;
+                }
+
+                if (graph.RouteTable?.EnumerateRoute(node.Id, other.Id) is { Count: 1 })
+                {
+                    hop = (node.Id, other.Id);
+                    break;
+                }
+            }
+
+            if (hop is not null)
+            {
+                break;
+            }
+        }
+
+        Assert.NotNull(hop);
+
+        GraphNode start = graph.NodeAt(hop.Value.From)!;
+        AiSoldier soldier = new(graph, start.Position, facing: 0f, phase: 0, seed: 1);
+
+        DoorState door = new(maxAngleDegrees: 90f, openTimeSeconds: 1f);
+        soldier.SetDoorQuery(_ => door);
+
+        Assert.True(soldier.GoTo(hop.Value.To));
+
+        Vector3d farEnemy = new(
+            start.Position.X + (5000 * Metre), start.Position.Y, start.Position.Z);
+        Vector3d before = soldier.Position;
+
+        // First tick: the closed door is opened rather than walked into, and the soldier has not moved.
+        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
+        door.Tick();
+
+        Assert.Equal(2, door.UseState);
+        Assert.Equal(before, soldier.Position);
+
+        // It holds while the door swings.
+        for (int tick = 2; tick <= 30; tick++)
+        {
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+            door.Tick();
+            Assert.Equal(before, soldier.Position);
+        }
+
+        // Once the door is open the walk resumes.
+        Assert.True(door.IsFullyOpen);
+        for (int tick = 31; tick <= 41; tick++)
+        {
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+            door.Tick();
+        }
+
+        Assert.NotEqual(before, soldier.Position);
+    }
+
+    /// <summary>A dead soldier releases its slot on the shared target record — <c>sub_4512A0</c>.</summary>
+    /// <remarks>
+    /// The original's combat action ends when its owner dies and the end function (<c>0x48D7D0</c>)
+    /// swap-removes the attacker. Without the release, four dead guards kept holding
+    /// <see cref="AiAimMode.Aiming"/> and every guard that engaged afterwards was pushed to
+    /// <see cref="AiAimMode.Crowded"/> for the rest of the level — it saw the player, entered combat,
+    /// and stood there doing nothing.
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void ADeadSoldierFreesItsAimSlot()
+    {
+        AiCombatTarget record = new(new object());
+
+        AiSoldier[] squad = new AiSoldier[4];
+        for (int i = 0; i < squad.Length; i++)
+        {
+            squad[i] = new AiSoldier(graph: null, new Vector3d(i * Metre, 0, 0), 0f, phase: 0, seed: i);
+            squad[i].SetTarget(record);
+            record.Aim(squad[i], AiAimMode.Aiming);
+        }
+
+        Assert.Equal(AiCombatTarget.MaximumAimers, record.Count(AiAimMode.Aiming));
+
+        foreach (AiSoldier dead in squad)
+        {
+            dead.Kill();
+        }
+
+        Assert.Equal(0, record.Count(AiAimMode.Aiming));
+        Assert.False(record.IsLive);
     }
 
     // What the desktop's firing path does: a round out of the clip, and the clip back when it reloads.

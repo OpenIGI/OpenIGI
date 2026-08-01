@@ -24,6 +24,17 @@ public sealed class MouseState
 
     private readonly bool[] _current = new bool[ButtonCount];
     private readonly bool[] _previous = new bool[ButtonCount];
+    private float _deltaX;
+    private float _deltaY;
+    private float _wheelDelta;
+
+    /// <summary>Gets or sets a value indicating whether the shell has taken this frame's mouse input.</summary>
+    /// <remarks>
+    /// While set, buttons and motion read as idle but the underlying state is left intact — see
+    /// <c>InputState.Captured</c>. The pointer position is still reported, because a shell that has
+    /// taken the mouse is the very thing that needs to know where it is.
+    /// </remarks>
+    public bool Captured { get; set; }
 
     /// <summary>Gets the pointer's horizontal position in client pixels.</summary>
     public float X { get; private set; }
@@ -32,17 +43,18 @@ public sealed class MouseState
     public float Y { get; private set; }
 
     /// <summary>Gets the horizontal motion accumulated so far this frame.</summary>
-    public float DeltaX { get; private set; }
+    public float DeltaX { get => Captured ? 0.0f : _deltaX; private set => _deltaX = value; }
 
     /// <summary>Gets the vertical motion accumulated so far this frame.</summary>
-    public float DeltaY { get; private set; }
+    public float DeltaY { get => Captured ? 0.0f : _deltaY; private set => _deltaY = value; }
 
     /// <summary>Gets the wheel movement accumulated so far this frame, in notches.</summary>
-    public float WheelDelta { get; private set; }
+    public float WheelDelta { get => Captured ? 0.0f : _wheelDelta; private set => _wheelDelta = value; }
 
     /// <summary>Takes the button shadow and clears the motion accumulators for a new frame.</summary>
     public void BeginFrame()
     {
+        Captured = false;
         _current.AsSpan().CopyTo(_previous);
         DeltaX = 0.0f;
         DeltaY = 0.0f;
@@ -86,17 +98,17 @@ public sealed class MouseState
     /// <summary>Determines whether a button is down this frame.</summary>
     /// <param name="button">The button.</param>
     /// <returns><see langword="true"/> when the button is down.</returns>
-    public bool IsDown(MouseButton button) => _current[(int)button];
+    public bool IsDown(MouseButton button) => !Captured && _current[(int)button];
 
     /// <summary>Determines whether a button went down between the previous frame and this one.</summary>
     /// <param name="button">The button.</param>
     /// <returns><see langword="true"/> on the frame the button is first down.</returns>
-    public bool WasPressed(MouseButton button) => _current[(int)button] && !_previous[(int)button];
+    public bool WasPressed(MouseButton button) => !Captured && _current[(int)button] && !_previous[(int)button];
 
     /// <summary>Determines whether a button went up between the previous frame and this one.</summary>
     /// <param name="button">The button.</param>
     /// <returns><see langword="true"/> on the frame the button is first up again.</returns>
-    public bool WasReleased(MouseButton button) => !_current[(int)button] && _previous[(int)button];
+    public bool WasReleased(MouseButton button) => !Captured && !_current[(int)button] && _previous[(int)button];
 
     /// <summary>Clears buttons, motion and the shadow. Position is left alone.</summary>
     public void Reset()

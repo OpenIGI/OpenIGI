@@ -73,7 +73,7 @@ public sealed class HumanPlayerParameters
         Distance4 = (float)(_raw[4] * UnitsPerMetre);
         Distance5 = (float)(_raw[5] * UnitsPerMetre);
         Duration6Ticks = IgiMath.TruncToInt32(_raw[6] * TicksPerSecond);
-        Value7 = _raw[7];
+        MaximumHealth = _raw[7];
         Value8 = _raw[8];
 
         _firstTable = new float[TableRowCount];
@@ -116,8 +116,22 @@ public sealed class HumanPlayerParameters
     /// </remarks>
     public int Duration6Ticks { get; }
 
-    /// <summary>Gets argument 7, copied into <c>HumanPlayer+3336</c> by the constructor (retail 3).</summary>
-    public float Value7 { get; }
+    /// <summary>Gets argument 7 — the player's <b>maximum health</b>, <c>Human+600</c> (retail <b>3.0</b>).</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Correction to the M8 reading</b>, which had this landing at <c>+3336</c>. The constructor
+    /// (<c>0x410370</c>) first runs <c>sub_489C30</c> (which sets max health to the universal 1.0) and
+    /// then <b>overwrites <c>Human+600</c></b> with this argument:
+    /// <c>mov edx, flt_56E204; mov [ebp+258h], edx</c> at <c>0x4104C6</c>/<c>0x4104E1</c> —
+    /// <c>0x258</c> is 600. So <b>the player is worth three soldiers</b>.
+    /// </para>
+    /// <para>
+    /// Confirmed live: a probe on the player's hit handler (<c>0x412440</c>) read
+    /// <c>max=3.000</c> off the running retail game, dying at nine 0.30-factor AK hits on Hard —
+    /// the accumulator reaching exactly 3.0.
+    /// </para>
+    /// </remarks>
+    public float MaximumHealth { get; }
 
     /// <summary>Gets argument 8, read by <c>0x412F80</c> (retail 0.5).</summary>
     public float Value8 { get; }

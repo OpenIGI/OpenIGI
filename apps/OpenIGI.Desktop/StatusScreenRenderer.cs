@@ -259,6 +259,93 @@ public sealed class StatusScreenRenderer : IDisposable
         _ => "stationary.spr",
     };
 
+    /// <summary>Draws a centred interaction prompt in the lower third of the screen.</summary>
+    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
+    /// <param name="text">The prompt, e.g. "Press E to climb".</param>
+    /// <param name="screenWidth">The framebuffer width, in pixels.</param>
+    /// <param name="screenHeight">The framebuffer height, in pixels.</param>
+    /// <param name="scale">The UI scale.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="batch"/> is <see langword="null"/>.</exception>
+    public void DrawPrompt(SpriteBatch batch, string text, int screenWidth, int screenHeight, float scale = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (Font() is not { } font || string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        (float width, _) = font.Measure(text, scale, scale);
+        float x = (screenWidth - width) * 0.5f;
+        float y = screenHeight * 0.72f;
+        font.Draw(batch, text, x, y, BitmapTextRenderer.NeutralColor, scale, scale);
+    }
+
+    /// <summary>Draws a stack of debug lines down the top-left corner, readable over any background.</summary>
+    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
+    /// <param name="lines">The lines, top to bottom.</param>
+    /// <param name="scale">The UI scale.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The text keeps its contrast against bright or busy scenery two ways, both cheaper and steadier
+    /// than sampling the framebuffer to pick a colour: a dark translucent panel sits behind the whole
+    /// block, and every line is drawn once in black, offset by a pixel, before the light text goes on top.
+    /// </remarks>
+    public void DrawDebug(SpriteBatch batch, IReadOnlyList<string> lines, float scale = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(lines);
+        if (Font() is not { } font)
+        {
+            return;
+        }
+
+        float x = 8f * scale;
+        float y = 8f * scale;
+        float step = font.LineHeight * scale;
+
+        // The backing panel, sized to the widest line — drawn first so it sits behind the text (the batch
+        // keeps submission order).
+        float widest = 0f;
+        foreach (string line in lines)
+        {
+            if (string.IsNullOrEmpty(line))
+            {
+                continue;
+            }
+
+            (float w, _) = font.Measure(line, scale, scale);
+            widest = Math.Max(widest, w);
+        }
+
+        if (widest > 0f)
+        {
+            float pad = 4f * scale;
+            float left = x - pad;
+            float top = y - pad;
+            float right = x + widest + pad;
+            float bottom = y + (step * lines.Count) + pad;
+            Bgra32 panel = new(0, 0, 0, 160);
+            batch.DrawQuad(
+                TextureHandle.None,
+                new Vertex2D(left, top, 0f, 0f, panel),
+                new Vertex2D(right, top, 1f, 0f, panel),
+                new Vertex2D(right, bottom, 1f, 1f, panel),
+                new Vertex2D(left, bottom, 0f, 1f, panel));
+        }
+
+        Bgra32 shadow = new(0, 0, 0, 220);
+        foreach (string line in lines)
+        {
+            if (!string.IsNullOrEmpty(line))
+            {
+                font.Draw(batch, line, x + scale, y + scale, shadow, scale, scale);
+                font.Draw(batch, line, x, y, BitmapTextRenderer.NeutralColor, scale, scale);
+            }
+
+            y += step;
+        }
+    }
+
     private float LineHeight() => Font()?.LineHeight ?? 0f;
 
     private float DrawRightAligned(SpriteBatch batch, string text, float rightEdge, float y, float scale = 1f)

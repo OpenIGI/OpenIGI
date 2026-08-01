@@ -55,16 +55,26 @@ public sealed class PlayerCamera
     /// </remarks>
     public const double UnitsPerMetre = 4096.0;
 
+    /// <summary>How far past the head the get-off step places the player, onto the ledge, in world units.</summary>
+    public const double GetOffReachUnits = 2048.0;
+
     private readonly PlayerBody _body = new();
     private readonly PlayerInputState _input = new();
     private readonly IgiRandom _random = new();
     private readonly List<GunImpact> _impacts = [];
+    private readonly HumanLadderClimb _climb = new();
     private HumanLocomotionAnimator? _animator;
+    private ObjectCollisionIndex? _walls;
+    private string _lastBlockLabel = string.Empty;
     private HumanView? _view;
     private PlayerWeapons? _weapons;
     private WeaponType? _drawnWeapon;
     private GameMaterialRegistry? _materials;
     private bool _wasCapturing;
+    private IReadOnlyList<LadderPlacement> _ladders = [];
+    private LadderPlacement? _nearLadder;
+    private LadderPlacement? _mountedLadder;
+    private bool _nearLadderAtTop;
 
     /// <summary>Gets the body being driven.</summary>
     public PlayerBody Body => _body;
@@ -274,6 +284,27 @@ public sealed class PlayerCamera
     /// <summary>Gets where the player is standing, in metres, for diagnostics.</summary>
     public Vector3d Position => ToMetres(_body.Position);
 
+    /// <summary>Gets where the player is standing, in the game's world units, for the debug overlay.</summary>
+    public Vector3d PositionUnits => _body.Position;
+
+    /// <summary>Gets the eye position, in world units.</summary>
+    public Vector3d EyeUnits => _body.Eye;
+
+    /// <summary>Gets which way the body faces, in radians.</summary>
+    public float Yaw => _body.Yaw;
+
+    /// <summary>Gets how far up or down the view looks, in radians.</summary>
+    public float Pitch => _body.Pitch;
+
+    /// <summary>Gets whether the player is standing on something.</summary>
+    public bool IsGrounded => _body.IsGrounded;
+
+    /// <summary>Gets whether the player is crouched.</summary>
+    public bool IsCrouched => _body.IsCrouched;
+
+    /// <summary>Gets whether the last tick's move was stopped by a wall.</summary>
+    public bool TouchedWall => _body.TouchedWall;
+
     /// <summary>Puts the player on the ground under a point.</summary>
     /// <param name="terrain">The level's terrain.</param>
     /// <param name="at">Where to try standing, in the renderer's metres.</param>
@@ -312,6 +343,7 @@ public sealed class PlayerCamera
     public void UseWalls(ObjectCollisionIndex walls)
     {
         ArgumentNullException.ThrowIfNull(walls);
+        _walls = walls;
         _body.Walls = walls.Caster();
     }
 
@@ -331,6 +363,36 @@ public sealed class PlayerCamera
 
     /// <summary>Gets the locomotion state the player is in, for diagnostics.</summary>
     public int LocomotionState => _animator?.State ?? 0;
+
+    /// <summary>Makes the level's ladders climbable.</summary>
+    /// <param name="ladders">The ladders the scene collected, in world units.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="ladders"/> is <see langword="null"/>.</exception>
+    public void UseLadders(IReadOnlyList<LadderPlacement> ladders)
+    {
+        ArgumentNullException.ThrowIfNull(ladders);
+        _ladders = ladders;
+    }
+
+    /// <summary>Gets whether the player is on a ladder.</summary>
+    public bool IsOnLadder => _climb.IsOnLadder;
+
+    /// <summary>Gets where the climbing body's feet are, in engine units.</summary>
+    public Vector3d LadderFeet => _body.Position;
+
+    /// <summary>Gets the yaw the climbing body faces — into the ladder, in radians.</summary>
+    public float LadderFacing => _climb.Facing;
+
+    /// <summary>Gets whether the climb is at a rung boundary, ready to take up/down input.</summary>
+    public bool LadderAtBoundary => _climb.AtBoundary;
+
+    /// <summary>Gets the climb animation — state 37's binding, animation 168 in the player's set.</summary>
+    public static int LadderClimbAnimation => HumanLocomotionStates.For(37).AnimationId;
+
+    /// <summary>Gets whether a ladder is in reach and the use prompt should be shown.</summary>
+    public bool ShowInteractPrompt => _nearLadder is not null && !_climb.IsOnLadder;
+
+    /// <summary>Gets the prompt to show when something is in reach.</summary>
+    public string InteractPromptText => _nearLadder is not null ? "Press E to climb" : string.Empty;
 
     /// <summary>Puts the player at a spawn the level declared.</summary>
     /// <param name="terrain">The level's terrain.</param>
@@ -417,7 +479,26 @@ public sealed class PlayerCamera
 
         _input.Accept(SampleFrame(input));
 
+        // On a ladder the ordinary walk, gravity and collision do not run. The rung-by-rung climb (state
+        // 37) is driven by the host once per tick through DecideLadderStep / AdvanceLadderPhase, because
+        // it is coupled to the third-person body's animation; nothing to do here.
+        if (_climb.IsOnLadder)
+        {
+            return;
+        }
+
+        // Which ladder, if any, is in reach — for the prompt and for mounting.
+        UpdateNearLadder();
+
         KeyboardState keys = input.Keyboard;
+
+        // The use key mounts the ladder in reach. Taken on the rising edge so holding it does not remount
+        // the instant the climb ends.
+        if (_nearLadder is not null && _input.IsRisingEdge(PlayerInputSlot.Activate))
+        {
+            MountLadder();
+            return;
+        }
 
         // The action names are the game's own, from the binding table at 0x536558: MoveUp and
         // MoveDown are forward and back - named for the screen, as the era's binding dialogs were.
@@ -446,6 +527,10 @@ public sealed class PlayerCamera
             _body.TickAnimated(command, terrain, _animator);
         }
 
+        // Diagnostic: name whatever the wall sweep stopped the body against, so a doorway you cannot walk
+        // through can be traced to the exact model and task blocking it. Only while trying to move.
+        LogWallBlockIfAny(forward, strafe);
+
         _view?.Tick();
 
         // Where 0x464BD0 steps it: after the state machines have read it and before the rig is placed.
@@ -456,6 +541,180 @@ public sealed class PlayerCamera
 
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
         ResolveFire();
+    }
+
+    /// <summary>The heights the doorway diagnostic probes forward at, in world units above the feet.</summary>
+    /// <remarks>Ankle, waist, chest and head — enough to catch a threshold, a lintel or a mid wall.</remarks>
+    private static readonly double[] BlockProbeHeights = [409.6, 1638.4, 4096.0, 7372.8];
+
+    /// <summary>How far ahead the diagnostic probes for the blocking object, in world units (about 1.5 m).</summary>
+    private const double BlockProbeReachUnits = 6144.0;
+
+    /// <summary>
+    /// Names the object the wall sweep stopped the body against, when the body is pressed into one while
+    /// trying to move — the "what am I walking into" log for the doorway-collision hunt.
+    /// </summary>
+    /// <remarks>
+    /// It fires only on a fresh contact (the blocking object changed) so a held-forward push logs once,
+    /// not every tick. The line names the model instance, the placing task, and where the ray met it, and
+    /// is appended to <c>doorblock.log</c> beside the executable as well as written to the console.
+    /// </remarks>
+    private void LogWallBlockIfAny(float forward, float strafe)
+    {
+        if (_walls is null || !_body.TouchedWall || (forward == 0f && strafe == 0f))
+        {
+            _lastBlockLabel = string.Empty;
+            return;
+        }
+
+        // Forward is the body's own facing, (sin, cos) — the way the walk carries it (PlayerBody.FacingBasis).
+        double fx = Math.Sin(_body.Yaw);
+        double fy = Math.Cos(_body.Yaw);
+
+        string label = string.Empty;
+        WorldRayHit nearest = default;
+        double best = double.MaxValue;
+        double bestHeight = 0.0;
+
+        foreach (double height in BlockProbeHeights)
+        {
+            Vector3d origin = new(_body.Position.X, _body.Position.Y, _body.Position.Z + height);
+            Vector3d end = new(origin.X + (fx * BlockProbeReachUnits), origin.Y + (fy * BlockProbeReachUnits), origin.Z);
+
+            if (_walls.TryIdentify(origin, end, out string hitLabel, out WorldRayHit hit) && hit.Distance < best)
+            {
+                best = hit.Distance;
+                label = hitLabel;
+                nearest = hit;
+                bestHeight = height;
+            }
+        }
+
+        if (label.Length == 0 || label == _lastBlockLabel)
+        {
+            return;
+        }
+
+        _lastBlockLabel = label;
+
+        double probeMetres = bestHeight / UnitsPerMetre;
+        double aheadMetres = best / UnitsPerMetre;
+        string line = FormattableString.Invariant(
+            $"BLOCKED by {label} at ({nearest.Position.X:F0}, {nearest.Position.Y:F0}, {nearest.Position.Z:F0}) — probe {probeMetres:F2}m, {aheadMetres:F2}m ahead; player ({_body.Position.X:F0}, {_body.Position.Y:F0}, {_body.Position.Z:F0}) yaw {_body.Yaw:F2}");
+
+        Console.WriteLine(line);
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(AppContext.BaseDirectory, "doorblock.log"), line + Environment.NewLine);
+        }
+        catch (IOException)
+        {
+            // A diagnostic must never take the game down; a locked or unwritable log is simply skipped.
+        }
+    }
+
+    // The nearest ladder that is close enough, faced and within height to mount.
+    private void UpdateNearLadder()
+    {
+        _nearLadder = null;
+        _nearLadderAtTop = false;
+        double best = double.MaxValue;
+
+        foreach (LadderPlacement ladder in _ladders)
+        {
+            if (!ladder.CanActivate(_body.Position, _body.Yaw, out bool atTop))
+            {
+                continue;
+            }
+
+            double dx = ladder.Bottom.X - _body.Position.X;
+            double dy = ladder.Bottom.Y - _body.Position.Y;
+            double distance = (dx * dx) + (dy * dy);
+            if (distance < best)
+            {
+                best = distance;
+                _nearLadder = ladder;
+                _nearLadderAtTop = atTop;
+            }
+        }
+    }
+
+    // Puts the player on the ladder in reach: face it and snap onto it.
+    private void MountLadder()
+    {
+        LadderPlacement ladder = _nearLadder!;
+
+        // Face the LADDER'S OWN heading, not the approach direction. Verified against the running game
+        // (Ladder_ClimbTick fwd=): the body's gamma is fixed by the ladder's orientation
+        // (LadderPlacement.Facing = atan2(M21, M11)), so it always faces the wall square-on however you
+        // walked up to it -- the approach-based angle drifted a few degrees and swung the stand-off with it.
+        float facing = ladder.Facing;
+
+        _climb.Mount(ladder.ClimbLine, facing, _nearLadderAtTop);
+        _mountedLadder = ladder;
+        _body.Yaw = facing;
+        _body.Position = _climb.Position;
+        _nearLadder = null;
+        PoseChanged = true;
+        SyncView();
+    }
+
+    /// <summary>Decides the next rung at a boundary — begins a rung, hands off, or holds (state 37).</summary>
+    /// <param name="up">Whether up (W) is held.</param>
+    /// <param name="down">Whether down (S) is held.</param>
+    /// <param name="slide">Whether slide (use) is held.</param>
+    /// <returns>The decision; a stepping result means the host should start the rung's clip.</returns>
+    /// <remarks>Only acts at a rung boundary; a rung in progress cannot be cancelled (<c>sub_40D6B0</c>).</remarks>
+    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide)
+    {
+        LadderStepResult result = _climb.Decide(up, down, slide);
+        switch (result)
+        {
+            case LadderStepResult.ReachedTop when _mountedLadder is { } topped:
+                // Step off the head onto the ledge, forward along the body's own facing (-sin, cos).
+                double fx = -Math.Sin(_body.Yaw);
+                double fy = Math.Cos(_body.Yaw);
+                _body.Position = new Vector3d(
+                    topped.Top.X + (fx * GetOffReachUnits),
+                    topped.Top.Y + (fy * GetOffReachUnits),
+                    topped.Top.Z);
+                _mountedLadder = null;
+                break;
+
+            case LadderStepResult.Sliding:
+            case LadderStepResult.Dismounted:
+                if (_mountedLadder is { } footed)
+                {
+                    _body.Position = footed.Bottom;
+                }
+
+                _mountedLadder = null;
+                break;
+
+            default:
+                _body.Position = _climb.Position;
+                break;
+        }
+
+        return result;
+    }
+
+    /// <summary>Moves the climbing body by the climb clip's root-motion delta for this tick.</summary>
+    /// <param name="rootDelta">The clip's root motion, rotated into the facing frame, in world units.</param>
+    /// <returns><see langword="true"/> when this move completed a rung.</returns>
+    public bool MoveLadder(Vector3d rootDelta)
+    {
+        bool rungDone = _climb.Move(rootDelta);
+        _body.Position = _climb.Position;
+        return rungDone;
+    }
+
+    /// <summary>Commits the rung whose clip has just completed, returning the climb to a boundary.</summary>
+    public void CompleteLadderStep()
+    {
+        _climb.CompleteStep();
+        _body.Position = _climb.Position;
     }
 
     private void TickWeapons()

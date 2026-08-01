@@ -72,6 +72,13 @@ public sealed class AiCombatTarget
     /// <summary>Gets the target's position as the last attacker to look refreshed it — record <c>+272</c>.</summary>
     public Vector3d Position { get; private set; }
 
+    /// <summary>Gets whether any attacker has refreshed the position yet.</summary>
+    /// <remarks>
+    /// Before the first refresh the record's position is nothing but zeroes; an attacker that has never
+    /// seen the target itself falls back on its own last sighting rather than aiming at the origin.
+    /// </remarks>
+    public bool HasBeenSeen { get; private set; }
+
     /// <summary>Gets how many attackers have been removed with the flag set — record <c>+300</c>.</summary>
     public int FlaggedRemovals { get; private set; }
 
@@ -152,7 +159,11 @@ public sealed class AiCombatTarget
 
     /// <summary>Refreshes the shared position — what <c>sub_48A920</c> does every tick.</summary>
     /// <param name="position">Where the target is.</param>
-    public void Refresh(Vector3d position) => Position = position;
+    public void Refresh(Vector3d position)
+    {
+        Position = position;
+        HasBeenSeen = true;
+    }
 
     /// <summary>Removes an attacker — <c>sub_4512A0</c>.</summary>
     /// <param name="attacker">The attacker leaving.</param>

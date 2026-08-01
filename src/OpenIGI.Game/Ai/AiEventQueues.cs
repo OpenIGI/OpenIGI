@@ -84,6 +84,41 @@ public sealed class AiEventQueues
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="type"/> is not a registered event.</exception>
     public int PendingCount(AiEvent type) => _queues[Index(type)].Count;
 
+    /// <summary>Gets whether any queue holds a pending event.</summary>
+    /// <remarks>
+    /// The idle fallback consults this: <c>AIEVENT_IDLE</c> is posted <b>only when nothing is
+    /// pending</b> (ai.md §3.1) — posting it unconditionally let a standing guard's Idle dispatch
+    /// starve the gunshot it had just heard, since one type dispatches per tick and the rest are
+    /// drained unheard.
+    /// </remarks>
+    public bool HasAnyPending
+    {
+        get
+        {
+            foreach (List<AiEventRecord> queue in _queues)
+            {
+                if (queue.Count > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>Gets a type's head record, or <see langword="null"/> when its queue is empty.</summary>
+    /// <param name="type">The event type.</param>
+    /// <remarks>
+    /// What the action natives read mid-dispatch: <c>sub_44D850</c> copies the current event's position
+    /// (record <c>+16</c>) out of the queue head for <c>LookAtEvent</c>/<c>MoveToEvent</c>.
+    /// </remarks>
+    public AiEventRecord? HeadOf(AiEvent type)
+    {
+        List<AiEventRecord> queue = _queues[Index(type)];
+        return queue.Count > 0 ? queue[0] : null;
+    }
+
     /// <summary>Gets how many events of a type were drained by the last <see cref="Pump"/>.</summary>
     /// <param name="type">The event type.</param>
     /// <returns>The count, which the engine keeps at <c>+2172 + 4 × type</c>.</returns>

@@ -194,6 +194,37 @@ public static class HumanDamage
     public static bool TakesProximityZone(float distanceFromBoneUnits, float localForward) =>
         localForward >= 0f && distanceFromBoneUnits < HeadProximityUnits;
 
+    /// <summary>A readable name for a hit zone — for the debug overlay and the damage log.</summary>
+    /// <param name="zone">The zone from <see cref="ZoneOfBone"/> and <see cref="RefineByDirection"/>.</param>
+    /// <returns>The body part the zone stands for.</returns>
+    /// <remarks>
+    /// The names follow the bone→zone grouping §26 measured: the trunk (12, with 13/14 its front and rear),
+    /// the head (15, the lethal proximity zone) and neck (16), and each limb's three segments running
+    /// root-to-extremity down the 1.0/0.75/0.5 multipliers. Left and right follow the rig's own bone order
+    /// (the first arm and leg, bones 8–13 and 23–27, are the left); a swap would only mislabel a side.
+    /// </remarks>
+    public static string ZoneName(int zone) => zone switch
+    {
+        0 => "right foot",
+        1 => "right shin",
+        2 => "right thigh",
+        3 => "right hand",
+        4 => "right forearm",
+        5 => "right upper arm",
+        6 => "left foot",
+        7 => "left shin",
+        8 => "left thigh",
+        9 => "left hand",
+        10 => "left forearm",
+        11 => "left upper arm",
+        12 => "torso",
+        13 => "torso (front)",
+        14 => "torso (rear)",
+        15 => "HEAD",
+        16 => "neck",
+        _ => $"zone {zone}",
+    };
+
     /// <summary>The damage one hit does.</summary>
     /// <param name="zoneMultiplier">The struck zone's multiplier, from the human's own table.</param>
     /// <param name="damageFactor">The weapon's <c>Damage Factor</c>, carried by the round.</param>

@@ -72,6 +72,7 @@ public sealed class KeyboardState
     /// <summary>Takes the frame shadow and clears every key, as the original does when the device cannot be read.</summary>
     public void Release()
     {
+        Captured = false;
         _current.AsSpan().CopyTo(_previous);
         _current.AsSpan().Clear();
         _presses.Clear();
@@ -97,8 +98,16 @@ public sealed class KeyboardState
         }
     }
 
+    /// <summary>Gets or sets a value indicating whether the shell has taken this frame's keyboard input.</summary>
+    /// <remarks>
+    /// While set, every read reports nothing but the underlying state is left intact — see
+    /// <c>InputState.Captured</c>. The capturing code sets this once it has read what it needs, so the
+    /// developer console can type without the player also walking.
+    /// </remarks>
+    public bool Captured { get; set; }
+
     /// <summary>Gets the number of presses waiting to be read.</summary>
-    public int PendingPressCount => _presses.Count;
+    public int PendingPressCount => Captured ? 0 : _presses.Count;
 
     /// <summary>Takes the oldest press that has not been read yet.</summary>
     /// <param name="key">Receives the key.</param>
@@ -118,7 +127,7 @@ public sealed class KeyboardState
     /// </remarks>
     public bool TryDequeuePress(out KeyCode key)
     {
-        if (_presses.Count == 0)
+        if (Captured || _presses.Count == 0)
         {
             key = default;
             return false;
@@ -148,7 +157,7 @@ public sealed class KeyboardState
     /// <returns><see langword="false"/> when nothing is waiting.</returns>
     public bool TryDequeueCharacter(out char character)
     {
-        if (_characters.Count == 0)
+        if (Captured || _characters.Count == 0)
         {
             character = default;
             return false;
@@ -171,29 +180,33 @@ public sealed class KeyboardState
     /// The event-driven counterpart to <see cref="Update"/>: call once per frame before the host
     /// dispatches that frame's key events through <see cref="SetKey"/>.
     /// </remarks>
-    public void BeginFrame() => _current.AsSpan().CopyTo(_previous);
+    public void BeginFrame()
+    {
+        Captured = false;
+        _current.AsSpan().CopyTo(_previous);
+    }
 
     /// <summary>Determines whether a key is down this frame.</summary>
     /// <param name="key">The key.</param>
     /// <returns><see langword="true"/> when the key is down.</returns>
-    public bool IsDown(KeyCode key) => (_current[(byte)key] & DownValue) != 0;
+    public bool IsDown(KeyCode key) => !Captured && (_current[(byte)key] & DownValue) != 0;
 
     /// <summary>Determines whether a key is up this frame.</summary>
     /// <param name="key">The key.</param>
     /// <returns><see langword="true"/> when the key is up.</returns>
-    public bool IsUp(KeyCode key) => (_current[(byte)key] & DownValue) == 0;
+    public bool IsUp(KeyCode key) => Captured || (_current[(byte)key] & DownValue) == 0;
 
     /// <summary>Determines whether a key went down between the previous frame and this one.</summary>
     /// <param name="key">The key.</param>
     /// <returns><see langword="true"/> on the frame the key is first down.</returns>
     public bool WasPressed(KeyCode key) =>
-        (_current[(byte)key] & DownValue) != 0 && (_previous[(byte)key] & DownValue) == 0;
+        !Captured && (_current[(byte)key] & DownValue) != 0 && (_previous[(byte)key] & DownValue) == 0;
 
     /// <summary>Determines whether a key went up between the previous frame and this one.</summary>
     /// <param name="key">The key.</param>
     /// <returns><see langword="true"/> on the frame the key is first up again.</returns>
     public bool WasReleased(KeyCode key) =>
-        (_current[(byte)key] & DownValue) == 0 && (_previous[(byte)key] & DownValue) != 0;
+        !Captured && (_current[(byte)key] & DownValue) == 0 && (_previous[(byte)key] & DownValue) != 0;
 
     /// <summary>Clears both the current state and the shadow.</summary>
     public void Reset()

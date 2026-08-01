@@ -43,7 +43,7 @@ public sealed class RetailHumanPlayerConfigTests
         // 0.25 s * 30 = 7.5, stored with fistp — so 7 ticks, not 8. A rounding implementation fails here.
         Assert.Equal(7, parameters.Duration6Ticks);
 
-        Assert.Equal(3f, parameters.Value7);
+        Assert.Equal(3f, parameters.MaximumHealth);
         Assert.Equal(0.5f, parameters.Value8);
     }
 

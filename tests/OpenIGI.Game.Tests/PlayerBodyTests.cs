@@ -132,6 +132,40 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
+    public void APlayerStandsOnAPlacedObjectAboveTheTerrain()
+    {
+        // The object half of the ground query (IGI2 Human_GroundCollision's World_GetNextZSpecificMesh,
+        // IGI1 sub_4CBE40 -> sub_4CDB20): a downward probe that meets a placed surface above the terrain
+        // stands the body on it. Before this, a crate top, a ramp or a building floor was ignored and the
+        // body sank to the terrain beneath.
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        double terrainZ = player.Position.Z;
+        double platformZ = terrainZ + 500.0;
+
+        // A synthetic platform: any downward probe through the body's column meets a flat, upward-facing
+        // surface 500 units above the terrain.
+        player.Walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            hit = default;
+            if (origin.Z < platformZ || end.Z > platformZ)
+            {
+                return false;
+            }
+
+            hit = new WorldRayHit(
+                new Vector3d(origin.X, origin.Y, platformZ),
+                new Vector3f(0f, 0f, 1f),
+                origin.Z - platformZ);
+            return true;
+        };
+
+        player.Tick(default, terrain, default);
+
+        Assert.True(player.IsGrounded, "a body over a placed floor should stand on it, not fall through");
+        Assert.Equal(platformZ, player.Position.Z, 1e-6);
+    }
+
+    [RequiresGameDataFact]
     public void APlayerJumpsAndComesBackDown()
     {
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
