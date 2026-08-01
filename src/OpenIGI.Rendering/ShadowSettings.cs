@@ -12,6 +12,17 @@ namespace OpenIGI.Rendering;
 /// detail; one is logarithmic, which is right for the near cascade and leaves the far one starved.
 /// </param>
 /// <param name="DepthBias">Constant depth offset applied when testing, in light-space depth units.</param>
+/// <param name="ContactReach">
+/// How far, in metres, a screen-space ray is marched towards the sun to catch contact a shadow map
+/// cannot resolve. Zero disables it.
+/// </param>
+/// <param name="ContactThickness">
+/// How thick an occluder found by that ray is assumed to be. Beyond this the ray is looking past a
+/// surface's edge at something unrelated, and treating that as an occluder draws long false shadows.
+/// </param>
+/// <param name="FilterRadius">
+/// The shadow filter's radius in texels. Above 1.5 a wider kernel is used.
+/// </param>
 /// <param name="NormalBias">
 /// How far a sample is pushed along its surface normal before being tested, in metres. This is what
 /// removes the striping a constant bias alone cannot: the error a shadow map makes grows with the
@@ -23,7 +34,10 @@ public readonly record struct ShadowSettings(
     float Distance = 220f,
     float SplitBlend = 0.75f,
     float DepthBias = 0.0015f,
-    float NormalBias = 0.06f)
+    float NormalBias = 0.06f,
+    float ContactReach = 0.35f,
+    float ContactThickness = 0.5f,
+    float FilterRadius = 1f)
 {
     /// <summary>The most cascades any backend has to support.</summary>
     public const int MaxCascades = 4;

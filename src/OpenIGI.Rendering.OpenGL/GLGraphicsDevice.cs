@@ -109,6 +109,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _lightingViewToWorld = -1;
     private int _lightingShadowBias = -1;
     private int _lightingShadowTexel = -1;
+    private int _lightingShadowDetail = -1;
 
     private GLSceneTarget? _sceneTarget;
     private GLFullScreenPass? _fullScreen;
@@ -926,6 +927,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetVector2(_lightingShadowBias, _shadowSettings.DepthBias, _shadowSettings.NormalBias);
         _lightingProgram.SetFloat(
             _lightingShadowTexel, _shadowSettings.Resolution > 0 ? 1f / _shadowSettings.Resolution : 0f);
+        _lightingProgram.SetVector3(
+            _lightingShadowDetail,
+            _shadowSettings.ContactReach,
+            _shadowSettings.ContactThickness,
+            _shadowSettings.FilterRadius);
 
         for (int i = 0; i < _cascadeCount; i++)
         {
@@ -1241,6 +1247,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingViewToWorld = _lightingProgram.LocationOf("uViewToWorld");
         _lightingShadowBias = _lightingProgram.LocationOf("uShadowBias");
         _lightingShadowTexel = _lightingProgram.LocationOf("uShadowTexel");
+        _lightingShadowDetail = _lightingProgram.LocationOf("uShadowDetail");
         _lightingProgram.SetInt("uDepth", 4);
         _lightingProgram.SetInt("uShadowMap", 5);
 

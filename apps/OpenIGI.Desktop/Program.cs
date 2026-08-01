@@ -1463,6 +1463,10 @@ using (window)
                     RenderCVars.ShadowCascades.Value,
                     RenderCVars.Shadows.Value,
                     RenderCVars.ShadowDistance.Value)
+                {
+                    ContactReach = RenderCVars.ContactShadows.Value,
+                    FilterRadius = RenderCVars.ShadowSoftness.Value,
+                }
                 : ShadowSettings.Off;
 
             int cascadeCount = ShadowCascades.Fit(

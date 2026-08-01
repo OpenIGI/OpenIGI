@@ -215,6 +215,39 @@ public static class RenderCVars
         high: "220",
         ultra: "320");
 
+    /// <summary>How far a screen-space contact ray reaches, in metres. Zero disables it.</summary>
+    /// <remarks>
+    /// A shadow map has one texel per several centimetres at best, so it cannot resolve a weapon
+    /// against the body carrying it or a crate against the floor it stands on. Contact is where its
+    /// resolution runs out and where the eye looks first.
+    /// </remarks>
+    public static readonly NumericCVar<float> ContactShadows = Presets.Define(
+        CVar.Float(
+            "r_contact_shadows",
+            0.35f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "Reach in metres of the screen-space contact shadow ray; 0 turns it off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0.35",
+        ultra: "0.5");
+
+    /// <summary>The shadow filter's radius in texels.</summary>
+    public static readonly NumericCVar<float> ShadowSoftness = Presets.Define(
+        CVar.Float(
+            "r_shadow_softness",
+            1f,
+            1f,
+            4f,
+            CVarOptions.Archive,
+            "Shadow filter radius in texels. Above 1.5 a wider, slower kernel is used."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1.5",
+        ultra: "2.5");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }
