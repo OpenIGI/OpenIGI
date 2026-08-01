@@ -1409,7 +1409,15 @@ using (window)
             }
 
             sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
-            terrain?.Draw(eye, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
+            terrain?.Draw(
+                eye,
+                projection,
+                verticalFieldOfView,
+                aspectRatio,
+
+                // -viewdist still wins when it is given, so an existing diagnostic command line keeps
+                // meaning what it did; otherwise the setting decides.
+                options.TerrainViewDistance > 0 ? options.TerrainViewDistance : RenderCVars.TerrainDetail.Value);
             world.Draw(scene, eye, projection);
 
             // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700

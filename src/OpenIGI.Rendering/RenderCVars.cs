@@ -97,6 +97,38 @@ public static class RenderCVars
         high: "4",
         ultra: "8");
 
+    /// <summary>How far the terrain keeps subdividing before it settles for a coarser mesh.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not an optimisation that can be switched off. The terrain <em>is</em> an octree, so there is no
+    /// underlying full-detail mesh to stop simplifying — this is the depth the descent runs to, and
+    /// removing the limit would mean subdividing a cube 262 km on a side.
+    /// </para>
+    /// <para>
+    /// Retail runs 96, 129 or 163 for low, medium and high, and 163 is the shipped default
+    /// (<c>sub_406390</c>). The remaster's tiers go well past it, which is what actually removes the
+    /// popping as ground resolves ahead of the player.
+    /// </para>
+    /// <para>
+    /// <b>Zero means "as retail derives it"</b>, and is not the same as writing 163: the renderer
+    /// takes 163 as a <em>base</em> and divides it by the square root of the horizontal half-angle
+    /// tangent, so at anything but a 4:3 window the two differ. Vanilla therefore asks for zero, not
+    /// for a number that only looks like the default.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> TerrainDetail = Presets.Define(
+        CVar.Int(
+            "r_terrain_detail",
+            0,
+            0,
+            600,
+            CVarOptions.Archive,
+            "How far terrain keeps subdividing; 0 derives it as retail does. Higher resolves ground further out."),
+        vanilla: "0",
+        enhanced: "220",
+        high: "320",
+        ultra: "450");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }
