@@ -229,6 +229,35 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetMaterialOverride(in SurfaceMaterial material);
 
+    /// <summary>Sets the sun's shadow map for this frame.</summary>
+    /// <param name="settings">How the shadows are drawn, or <see cref="ShadowSettings.Off"/> for none.</param>
+    /// <param name="cascades">The fitted cascades, from <see cref="ShadowCascades.Fit"/>.</param>
+    /// <param name="unprojection">
+    /// What the lighting pass needs to rebuild a view-space position from the depth buffer: the
+    /// projection.s x and y scales, then its near and far planes.
+    /// </param>
+    /// <param name="viewToWorld">
+    /// The rotation taking a view-space direction back into <em>camera-relative</em> world space,
+    /// which is the frame the cascades are fitted in.
+    /// </param>
+    void SetShadows(
+        in ShadowSettings settings,
+        ReadOnlySpan<ShadowCascade> cascades,
+        in DepthUnprojection unprojection,
+        Matrix3f viewToWorld);
+
+    /// <summary>Starts rendering depth into one cascade.</summary>
+    /// <param name="cascade">The zero-based cascade index.</param>
+    /// <returns><see langword="false"/> when there is no shadow map to render into.</returns>
+    /// <remarks>
+    /// Draws between this and <see cref="EndShadowCascade"/> write depth only; their textures are read
+    /// solely for the cut-out test. Called outside a scene capture, before the frame is drawn.
+    /// </remarks>
+    bool BeginShadowCascade(int cascade);
+
+    /// <summary>Ends the current cascade.</summary>
+    void EndShadowCascade();
+
     /// <summary>Sets the light the scene is lit by for this frame.</summary>
     /// <param name="lighting">The lighting model, sun and ambient.</param>
     void SetLighting(in SceneLighting lighting);

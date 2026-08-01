@@ -163,6 +163,58 @@ public static class RenderCVars
         high: "baked",
         ultra: "baked");
 
+    /// <summary>The side length in texels of each shadow cascade, or 0 for no shadows.</summary>
+    /// <remarks>
+    /// The cost is per cascade and quadratic: four cascades at 4096 is 268 MB of depth, which is more
+    /// video memory than the entire rest of this game uses. Ultra buys its quality with a fourth
+    /// cascade rather than with a larger one — more cascades put the texels where the player is
+    /// looking, while a larger map spends them evenly over ground they cannot make out.
+    /// </remarks>
+    public static readonly NumericCVar<int> Shadows = Presets.Define(
+        CVar.Int(
+            "r_shadows",
+            2048,
+            0,
+            4096,
+            CVarOptions.Archive,
+            "Sun shadow map resolution per cascade; 0 turns shadows off. Cost is per cascade and quadratic."),
+        vanilla: "0",
+        enhanced: "1024",
+        high: "2048",
+        ultra: "2048");
+
+    /// <summary>How many cascades the shadow distance is split across.</summary>
+    public static readonly NumericCVar<int> ShadowCascades = Presets.Define(
+        CVar.Int(
+            "r_shadow_cascades",
+            3,
+            1,
+            4,
+            CVarOptions.Archive,
+            "How many shadow cascades the view distance is split across."),
+        vanilla: "1",
+        enhanced: "2",
+        high: "3",
+        ultra: "4");
+
+    /// <summary>How far from the camera, in metres, shadows are drawn.</summary>
+    /// <remarks>
+    /// Further is not better past a point: the same texels get spread over more world, so distant
+    /// shadows arrive at the cost of the ones under the player's feet.
+    /// </remarks>
+    public static readonly NumericCVar<float> ShadowDistance = Presets.Define(
+        CVar.Float(
+            "r_shadow_distance",
+            220f,
+            20f,
+            1000f,
+            CVarOptions.Archive,
+            "How far from the camera sun shadows are drawn, in metres."),
+        vanilla: "220",
+        enhanced: "150",
+        high: "220",
+        ultra: "320");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

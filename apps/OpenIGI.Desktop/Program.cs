@@ -280,6 +280,7 @@ using (window)
     WorldRenderer? world = null;
     TerrainRenderer? terrain = null;
     SkyRenderer? sky = null;
+    ShadowCasterPass? shadowPass = null;
 
     // The level's own sun, read from its Dirlight task -- section 12.
     // Null until a level is loaded, and for a level that declares none.
@@ -648,6 +649,7 @@ using (window)
         // clears to, so the horizon meets sky-coloured backing rather than black.
         sky?.Dispose();
         sky = new SkyRenderer(device, fileSystem, levelRoot, farPlane, logger);
+        shadowPass = new ShadowCasterPass(device);
 
         if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
         {
@@ -1114,6 +1116,9 @@ using (window)
         AffectsTerrain: true,
         AffectsObjects: true);
 
+    // Reused every frame rather than reallocated; the fit writes into it in place.
+    ShadowCascade[] cascadeStorage = new ShadowCascade[ShadowSettings.MaxCascades];
+
     int lastCameraMilliseconds = loop.TimeSource.Milliseconds;
     int lastConsoleMilliseconds = loop.TimeSource.Milliseconds;
 
@@ -1441,18 +1446,55 @@ using (window)
                 // build that had no offscreen path at all.
                 HighDynamicRange: RenderCVars.ToneMap.Value != ToneMapOperator.None);
 
+            // The sun arrives in world space and the G-buffer's normals are in view space, so it is
+            // rotated by the camera here. Transposed() is not decoration: the rows of the orientation
+            // ARE the view axes, and Transform() applies the engine's row-vector convention which dots
+            // the columns -- the inverse rotation. Getting it wrong lights the world from a direction
+            // that swings as the player turns.
+            DirectionalLightSettings light = sun ?? defaultSun;
+            Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
+
+            bool wantsShadows = RenderCVars.OffscreenScene.Value
+                && RenderCVars.Deferred.Value
+                && RenderCVars.Shadows.Value > 0;
+
+            ShadowSettings shadowSettings = wantsShadows
+                ? new ShadowSettings(
+                    RenderCVars.ShadowCascades.Value,
+                    RenderCVars.Shadows.Value,
+                    RenderCVars.ShadowDistance.Value)
+                : ShadowSettings.Off;
+
+            int cascadeCount = ShadowCascades.Fit(
+                eye,
+                light.Direction,
+                shadowSettings,
+                verticalFieldOfView,
+                aspectRatio,
+                0.1f,
+                cascadeStorage);
+
+            device.SetShadows(
+                shadowSettings,
+                cascadeStorage.AsSpan(0, cascadeCount),
+                DepthUnprojection.From(projection, 0.1f, farPlane),
+
+                // View space back into camera-relative world space, which is the frame the cascades
+                // are fitted in. The same transpose, for the same reason.
+                eye.Orientation.Transposed());
+
+            // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
+            // beginning a capture first would leave the shell holding two render targets at once.
+            if (cascadeCount > 0 && shadowPass is not null)
+            {
+                shadowPass.Render(cascadeStorage, cascadeCount, eye, scene, world, soldiers);
+            }
+
             bool captured = RenderCVars.OffscreenScene.Value && device.BeginSceneCapture(sceneTarget);
             if (captured)
             {
                 // The scheduler cleared the back buffer; the target it did not know about needs it too.
                 device.Clear(scheduler.ClearColour);
-                // The sun arrives in world space and the G-buffer's normals are in view space, so it
-                // is rotated by the camera here. Transposed() is not decoration: the rows of the
-                // orientation ARE the view axes, and Transform() applies the engine's row-vector
-                // convention which dots the columns -- the inverse rotation. Getting it wrong lights
-                // the world from a direction that swings as the player turns.
-                DirectionalLightSettings light = sun ?? defaultSun;
-                Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
 
                 device.SetLighting(new SceneLighting(
                     RenderCVars.Lighting.Value,

@@ -91,6 +91,25 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private SurfaceMaterial _material = SurfaceMaterial.Default;
     private SceneLighting _lighting = SceneLighting.Baked;
 
+    private GLShadowMap? _shadowMap;
+    private GLShaderProgram? _shadowProgram;
+    private MeshUniforms _shadowUniforms;
+    private ShadowSettings _shadowSettings = ShadowSettings.Off;
+    private readonly Matrix4f[] _cascadeMatrices = new Matrix4f[ShadowSettings.MaxCascades];
+    private readonly Matrix4f[] _cascadeProjections = new Matrix4f[ShadowSettings.MaxCascades];
+    private readonly float[] _cascadeSplits = new float[ShadowSettings.MaxCascades];
+    private int _cascadeCount;
+    private int _activeShadowCascade = -1;
+    private DepthUnprojection _unprojection;
+    private Matrix3f _viewToWorld = Matrix3f.Identity;
+    private int _lightingCascadeCount = -1;
+    private int _lightingCascadeSplits = -1;
+    private int _lightingCascadeMatrix = -1;
+    private int _lightingUnproject = -1;
+    private int _lightingViewToWorld = -1;
+    private int _lightingShadowBias = -1;
+    private int _lightingShadowTexel = -1;
+
     private GLSceneTarget? _sceneTarget;
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
@@ -683,6 +702,83 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
 
     /// <inheritdoc/>
+    public void SetShadows(
+        in ShadowSettings settings,
+        ReadOnlySpan<ShadowCascade> cascades,
+        in DepthUnprojection unprojection,
+        Matrix3f viewToWorld)
+    {
+        ThrowIfDisposed();
+
+        _shadowSettings = settings;
+        _unprojection = unprojection;
+        _viewToWorld = viewToWorld;
+        _cascadeCount = 0;
+
+        if (!settings.Enabled || cascades.Length == 0 || _shadowMap is null)
+        {
+            return;
+        }
+
+        if (!_shadowMap.Configure(settings.Resolution, settings.EffectiveCascades))
+        {
+            return;
+        }
+
+        _cascadeCount = Math.Min(cascades.Length, settings.EffectiveCascades);
+
+        for (int i = 0; i < _cascadeCount; i++)
+        {
+            // Camera-relative world into the cascade clip space, in one matrix: the light rotation and
+            // then its box. The rotation carries no translation because the cascades are fitted in a
+            // frame whose origin IS the camera.
+            _cascadeProjections[i] = cascades[i].Projection;
+            _cascadeMatrices[i] = cascades[i].Projection * Matrix4f.CreateRigid(cascades[i].LightRotation, default);
+            _cascadeSplits[i] = cascades[i].SplitDistance;
+        }
+    }
+
+    /// <inheritdoc/>
+    public bool BeginShadowCascade(int cascade)
+    {
+        ThrowIfDisposed();
+
+        if (_shadowMap is not { IsReady: true } map || cascade < 0 || cascade >= _cascadeCount)
+        {
+            return false;
+        }
+
+        map.BindCascade(cascade);
+        _activeShadowCascade = cascade;
+        CurrentPass = ScenePass.Shadow;
+
+        // Depth only, and front faces culled. Casting from the far side of a solid object puts the
+        // depth it writes inside the object rather than on the lit surface, which is the cheapest way
+        // to stop a bias from having to cover the whole thickness of a wall.
+        SetDepthState(DepthState.TestAndWrite);
+        SetCullMode(CullMode.Clockwise);
+        SetProjection(_cascadeProjections[cascade]);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void EndShadowCascade()
+    {
+        ThrowIfDisposed();
+
+        if (_activeShadowCascade < 0)
+        {
+            return;
+        }
+
+        _activeShadowCascade = -1;
+        CurrentPass = ScenePass.None;
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        SetCullMode(CullMode.CounterClockwise);
+        SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+    }
+
+    /// <inheritdoc/>
     public void BeginPass(ScenePass pass)
     {
         ThrowIfDisposed();
@@ -821,6 +917,30 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetVector3(
             _lightingAmbient, _lighting.AmbientColour.X, _lighting.AmbientColour.Y, _lighting.AmbientColour.Z);
 
+        _lightingProgram.SetInt(_lightingCascadeCount, _cascadeCount);
+        _lightingProgram.SetVector4(
+            _lightingCascadeSplits, _cascadeSplits[0], _cascadeSplits[1], _cascadeSplits[2], _cascadeSplits[3]);
+        _lightingProgram.SetVector4(
+            _lightingUnproject, _unprojection.XScale, _unprojection.YScale, _unprojection.Near, _unprojection.Far);
+        _lightingProgram.SetMatrix3(_lightingViewToWorld, _viewToWorld);
+        _lightingProgram.SetVector2(_lightingShadowBias, _shadowSettings.DepthBias, _shadowSettings.NormalBias);
+        _lightingProgram.SetFloat(
+            _lightingShadowTexel, _shadowSettings.Resolution > 0 ? 1f / _shadowSettings.Resolution : 0f);
+
+        for (int i = 0; i < _cascadeCount; i++)
+        {
+            _lightingProgram.SetMatrix4(_lightingCascadeMatrix, i, _cascadeMatrices[i]);
+        }
+
+        BindTexture(4, target.DepthTexture);
+
+        if (_shadowMap is { IsReady: true } shadows)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0 + 5);
+            _gl.BindTexture(TextureTarget.Texture2DArray, shadows.Texture);
+            _activeTextureUnit = 5;
+        }
+
         BindTexture(0, target.AlbedoTexture);
         BindTexture(1, target.NormalTexture);
         BindTexture(2, target.BakedLightTexture);
@@ -874,11 +994,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         // Which program shades this draw is decided by the pass, not by the caller: a renderer asks
         // for a mesh with a texture and a lightmap and never learns there are two ways to draw it.
-        bool deferred = CurrentPass == ScenePass.Geometry
+        bool shadow = CurrentPass == ScenePass.Shadow;
+        bool deferred = !shadow
+            && CurrentPass == ScenePass.Geometry
             && _sceneTarget is { IsReady: true } gbuffer
             && gbuffer.Description.Deferred;
-        GLShaderProgram program = deferred ? _gbufferProgram! : _meshProgram!;
-        MeshUniforms uniforms = deferred ? _gbufferUniforms : _meshUniforms;
+
+        GLShaderProgram program = shadow ? _shadowProgram! : deferred ? _gbufferProgram! : _meshProgram!;
+        MeshUniforms uniforms = shadow ? _shadowUniforms : deferred ? _gbufferUniforms : _meshUniforms;
 
         if (!ReferenceEquals(program, _lastMeshProgram))
         {
@@ -892,7 +1015,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         UseProgram(program);
 
-        if (_sentMaterial != _material)
+        if (!shadow && _sentMaterial != _material)
         {
             _sentMaterial = _material;
 
@@ -1004,6 +1127,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _disposed = true;
 
         _sceneTarget?.Dispose();
+        _shadowMap?.Dispose();
+        _shadowProgram?.Dispose();
         _gbufferProgram?.Dispose();
         _lightingProgram?.Dispose();
         _fullScreen?.Dispose();
@@ -1109,6 +1234,26 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt("uBakedLight", 2);
         _lightingProgram.SetInt("uMaterial", 3);
 
+        _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
+        _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
+        _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");
+        _lightingUnproject = _lightingProgram.LocationOf("uUnproject");
+        _lightingViewToWorld = _lightingProgram.LocationOf("uViewToWorld");
+        _lightingShadowBias = _lightingProgram.LocationOf("uShadowBias");
+        _lightingShadowTexel = _lightingProgram.LocationOf("uShadowTexel");
+        _lightingProgram.SetInt("uDepth", 4);
+        _lightingProgram.SetInt("uShadowMap", 5);
+
+        _shadowProgram = GLShaderProgram.Create(_gl, ShadowDepthShaders.Vertex, ShadowDepthShaders.Fragment);
+        _shadowUniforms = new MeshUniforms(
+            _shadowProgram.LocationOf("uModelView"),
+            _shadowProgram.LocationOf("uProjection"),
+            _shadowProgram.LocationOf("uDetailFade"),
+            _shadowProgram.LocationOf("uAlphaTest"));
+        UseProgram(_shadowProgram);
+        _shadowProgram.SetInt("uDiffuse", 0);
+
+        _shadowMap = new GLShadowMap(_gl, _logger);
         _fullScreen = new GLFullScreenPass(_gl);
         _sceneTarget = new GLSceneTarget(_gl, _logger);
 
