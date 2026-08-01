@@ -195,6 +195,59 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Stops the terrain fade; subsequent <see cref="DrawMesh"/> calls draw unmodified.</summary>
     void ClearDetailFade();
 
+    /// <summary>Gets the part of the frame draws currently belong to.</summary>
+    /// <remarks><see cref="ScenePass.None"/> outside a scene capture, which is the original's own path.</remarks>
+    ScenePass CurrentPass { get; }
+
+    /// <summary>Starts rendering the scene into an offscreen target instead of the back buffer.</summary>
+    /// <param name="description">The target to render into.</param>
+    /// <returns>
+    /// <see langword="true"/> when the capture began. <see langword="false"/> means the backend cannot
+    /// offer one — the caller then draws exactly as the original does, which is a supported outcome
+    /// rather than an error.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// This is the one addition the whole remaster track rests on. The original throws each frame away
+    /// as it presents it; shadows, ambient occlusion, reflections, volumetric fog and temporal
+    /// anti-aliasing all need the frame and its depth to still be there afterwards.
+    /// </para>
+    /// <para>
+    /// Pair with <see cref="EndSceneCapture"/> and then <see cref="ResolveScene"/>. Two-dimensional
+    /// drawing — the HUD, the menus, the console — belongs <em>after</em> the resolve, on the back
+    /// buffer, so that it is never tone mapped.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">A capture is already in progress.</exception>
+    bool BeginSceneCapture(in SceneTargetDescription description);
+
+    /// <summary>Declares which part of the frame the following draws belong to.</summary>
+    /// <param name="pass">The part of the frame.</param>
+    /// <remarks>
+    /// The renderers themselves never call this; the shell does, around the groups of draws it already
+    /// makes. That is what lets the backend shade an opaque surface into a G-buffer and a translucent
+    /// one directly, without any renderer in the game learning that there are two ways to be drawn.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">No capture is in progress, or a pass is already open.</exception>
+    void BeginPass(ScenePass pass);
+
+    /// <summary>Ends the current pass.</summary>
+    /// <exception cref="GraphicsDeviceException">No pass is open.</exception>
+    void EndPass();
+
+    /// <summary>Stops rendering into the offscreen target.</summary>
+    /// <exception cref="GraphicsDeviceException">No capture is in progress, or a pass is still open.</exception>
+    void EndSceneCapture();
+
+    /// <summary>Brings the captured scene to the back buffer.</summary>
+    /// <param name="post">What to do to it on the way.</param>
+    /// <remarks>
+    /// With <see cref="PostProcessSettings.Identity"/> and a non-HDR target this is a straight copy,
+    /// which is what keeps the vanilla preset identical to the build that had no offscreen path.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">Nothing has been captured this frame.</exception>
+    void ResolveScene(in PostProcessSettings post);
+
     /// <summary>Draws part of a mesh.</summary>
     /// <param name="mesh">The mesh to draw.</param>
     /// <param name="indexOffset">The first index to draw.</param>

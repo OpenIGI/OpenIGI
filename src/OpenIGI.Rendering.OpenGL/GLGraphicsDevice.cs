@@ -74,6 +74,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _projectionWidth;
     private int _projectionHeight;
     private BlendMode _blend = BlendMode.Opaque;
+    private GLSceneTarget? _sceneTarget;
+    private GLFullScreenPass? _fullScreen;
+    private GLShaderProgram? _resolveProgram;
+    private int _resolveExposure = -1;
+    private int _resolveToneMap = -1;
+    private int _resolveDecodeInput = -1;
+    private bool _captureActive;
+
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="GLGraphicsDevice"/> class.</summary>
@@ -93,6 +101,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _logger = logger ?? NullLogger.Instance;
         CurrentMode = mode;
 
+        Features = GLFeatureLevel.Detect(gl);
         Capabilities = ReadCapabilities();
         CreatePipeline();
         SetMode(mode);
@@ -103,6 +112,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public GraphicsCapabilities Capabilities { get; }
+
+    /// <summary>Gets what the context that was actually created can do.</summary>
+    internal GLFeatureLevel Features { get; }
 
     /// <inheritdoc/>
     public DisplayMode CurrentMode { get; private set; }
@@ -150,6 +162,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     public void Restore()
     {
         ThrowIfDisposed();
+
+        // Dithering is on by default in GL and is a relic: it perturbs the low bit of an 8-bit target
+        // to hide banding. Turned off for predictable output, not as a fix -- it was measured against
+        // the scattered one-bit differences between the direct and offscreen paths and changed none of
+        // them, so those come from somewhere else (see docs/remaster/reference/README.md).
+        _gl.Disable(EnableCap.Dither);
 
         _gl.Disable(EnableCap.DepthTest);
         _gl.Disable(EnableCap.CullFace);
@@ -619,6 +637,129 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public ScenePass CurrentPass { get; private set; } = ScenePass.None;
+
+    /// <inheritdoc/>
+    public bool BeginSceneCapture(in SceneTargetDescription description)
+    {
+        ThrowIfDisposed();
+
+        if (_captureActive)
+        {
+            throw new GraphicsDeviceException("A scene capture is already in progress.");
+        }
+
+        if (_sceneTarget is null || !_sceneTarget.Configure(description))
+        {
+            return false;
+        }
+
+        _captureActive = true;
+        _sceneTarget.BindForGeometry();
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void BeginPass(ScenePass pass)
+    {
+        ThrowIfDisposed();
+
+        if (!_captureActive)
+        {
+            throw new GraphicsDeviceException($"Cannot begin the {pass} pass outside a scene capture.");
+        }
+
+        if (CurrentPass != ScenePass.None)
+        {
+            throw new GraphicsDeviceException($"The {CurrentPass} pass is still open.");
+        }
+
+        CurrentPass = pass;
+        _sceneTarget!.BindForGeometry();
+    }
+
+    /// <inheritdoc/>
+    public void EndPass()
+    {
+        ThrowIfDisposed();
+
+        if (CurrentPass == ScenePass.None)
+        {
+            throw new GraphicsDeviceException("No pass is open.");
+        }
+
+        // Multisampled rasterisation is resolved as the geometry pass closes rather than at the end of
+        // the capture: everything after it -- fog, reflections, the translucent pass -- reads the depth
+        // texture, and a multisampled depth buffer is not something a shader can sample.
+        if (CurrentPass == ScenePass.Geometry)
+        {
+            _sceneTarget!.ResolveMultisample();
+            _sceneTarget.BindForGeometry();
+        }
+
+        CurrentPass = ScenePass.None;
+    }
+
+    /// <inheritdoc/>
+    public void EndSceneCapture()
+    {
+        ThrowIfDisposed();
+
+        if (!_captureActive)
+        {
+            throw new GraphicsDeviceException("No scene capture is in progress.");
+        }
+
+        if (CurrentPass != ScenePass.None)
+        {
+            throw new GraphicsDeviceException($"The {CurrentPass} pass is still open.");
+        }
+
+        _sceneTarget!.ResolveMultisample();
+        _captureActive = false;
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+    }
+
+    /// <inheritdoc/>
+    public void ResolveScene(in PostProcessSettings post)
+    {
+        ThrowIfDisposed();
+
+        if (_captureActive)
+        {
+            throw new GraphicsDeviceException("The scene capture has not been ended.");
+        }
+
+        if (_sceneTarget is not { IsReady: true } target || _resolveProgram is null || _fullScreen is null)
+        {
+            throw new GraphicsDeviceException("Nothing has been captured this frame.");
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+
+        UseProgram(_resolveProgram);
+        _resolveProgram.SetFloat(_resolveExposure, post.Exposure);
+        _resolveProgram.SetInt(_resolveToneMap, (int)post.ToneMap);
+        _resolveProgram.SetInt(_resolveDecodeInput, post.SceneIsDisplayEncoded ? 1 : 0);
+
+        BindTexture(0, target.FrontColorTexture);
+        _fullScreen.Draw();
+
+        // Re-apply the depth state for real rather than just recording it. Writing the shadow alone was
+        // a lie: the full-screen pass restores whatever depth state the last 3D draw left, so the next
+        // frame's SetDepthState(Disabled) saw "already disabled" and did nothing, the sky dome was then
+        // drawn WITH depth testing and writing, and every piece of geometry beyond the dome's radius --
+        // the horizon, the far buildings, the top of the water tower -- failed the test and showed sky.
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(true);
+        _depthState = DepthState.Disabled;
+
+        _currentVertexArray = 0;
+    }
+
+    /// <inheritdoc/>
     public unsafe void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
@@ -737,6 +878,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _disposed = true;
 
+        _sceneTarget?.Dispose();
+        _fullScreen?.Dispose();
+        _resolveProgram?.Dispose();
+
         foreach (GLMesh mesh in _meshes.Values)
         {
             _gl.DeleteVertexArray(mesh.VertexArray);
@@ -803,6 +948,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         UseProgram(_meshProgram);
         _meshProgram.SetInt("uDiffuse", 0);
         _meshProgram.SetInt("uLightmap", 1);
+
+        _resolveProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, PostProcessShaders.Fragment);
+        _resolveExposure = _resolveProgram.LocationOf("uExposure");
+        _resolveToneMap = _resolveProgram.LocationOf("uToneMap");
+        _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
+        UseProgram(_resolveProgram);
+        _resolveProgram.SetInt("uScene", 0);
+
+        _fullScreen = new GLFullScreenPass(_gl);
+        _sceneTarget = new GLSceneTarget(_gl, _logger);
 
         _vertexArray = _gl.GenVertexArray();
         _vertexBuffer = _gl.GenBuffer();
@@ -947,11 +1102,25 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         string renderer = _gl.GetStringS(StringName.Renderer) ?? "unknown";
         string version = _gl.GetStringS(StringName.Version) ?? "unknown";
 
+        int samples = 1;
+        if (Features.AtLeast(3, 3))
+        {
+            _gl.GetInteger((GetPName)GLEnum.MaxSamples, out samples);
+        }
+
         return new GraphicsCapabilities(
             Math.Clamp(units, 1, MaxTextureUnits),
             Math.Max(maxSize, 64),
             SupportsNonPowerOfTwoTextures: true,
-            $"OpenGL {version} — {renderer} ({vendor})");
+            $"OpenGL {version} — {renderer} ({vendor})")
+        {
+            // Every context this backend will accept can render offscreen; 3.0 is where framebuffer
+            // objects became core, and the floor here is 3.3.
+            SupportsSceneCapture = true,
+            SupportsFloatRenderTargets = true,
+            SupportsCompute = Features.SupportsCompute,
+            MaxSampleCount = Math.Clamp(samples, 1, 16),
+        };
     }
 
     private GLTexture Resolve(TextureHandle handle, string parameterName)

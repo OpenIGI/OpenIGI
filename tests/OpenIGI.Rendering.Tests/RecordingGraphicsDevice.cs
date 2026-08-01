@@ -34,7 +34,108 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public int SwapCount { get; private set; }
 
-    public GraphicsCapabilities Capabilities { get; } = new(2, 4096, true, "recording");
+    public GraphicsCapabilities Capabilities { get; } = new(2, 4096, true, "recording")
+    {
+        SupportsSceneCapture = true,
+        SupportsFloatRenderTargets = true,
+        MaxSampleCount = 4,
+    };
+
+    /// <summary>The scene targets that were asked for, in order.</summary>
+    public List<SceneTargetDescription> SceneCaptures { get; } = [];
+
+    /// <summary>The passes that were opened, in order.</summary>
+    public List<ScenePass> Passes { get; } = [];
+
+    /// <summary>The settings each resolve was asked for, in order.</summary>
+    public List<PostProcessSettings> Resolves { get; } = [];
+
+    /// <summary>Whether a scene capture is open right now.</summary>
+    public bool IsCapturing { get; private set; }
+
+    /// <inheritdoc/>
+    public ScenePass CurrentPass { get; private set; } = ScenePass.None;
+
+    /// <summary>Set to make <see cref="BeginSceneCapture"/> refuse, as a backend without targets would.</summary>
+    public bool RefuseSceneCapture { get; set; }
+
+    /// <inheritdoc/>
+    public bool BeginSceneCapture(in SceneTargetDescription description)
+    {
+        if (IsCapturing)
+        {
+            throw new GraphicsDeviceException("A scene capture is already in progress.");
+        }
+
+        if (RefuseSceneCapture)
+        {
+            return false;
+        }
+
+        SceneCaptures.Add(description);
+        IsCapturing = true;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void BeginPass(ScenePass pass)
+    {
+        if (!IsCapturing)
+        {
+            throw new GraphicsDeviceException($"Cannot begin the {pass} pass outside a scene capture.");
+        }
+
+        if (CurrentPass != ScenePass.None)
+        {
+            throw new GraphicsDeviceException($"The {CurrentPass} pass is still open.");
+        }
+
+        CurrentPass = pass;
+        Passes.Add(pass);
+    }
+
+    /// <inheritdoc/>
+    public void EndPass()
+    {
+        if (CurrentPass == ScenePass.None)
+        {
+            throw new GraphicsDeviceException("No pass is open.");
+        }
+
+        CurrentPass = ScenePass.None;
+    }
+
+    /// <inheritdoc/>
+    public void EndSceneCapture()
+    {
+        if (!IsCapturing)
+        {
+            throw new GraphicsDeviceException("No scene capture is in progress.");
+        }
+
+        if (CurrentPass != ScenePass.None)
+        {
+            throw new GraphicsDeviceException($"The {CurrentPass} pass is still open.");
+        }
+
+        IsCapturing = false;
+    }
+
+    /// <inheritdoc/>
+    public void ResolveScene(in PostProcessSettings post)
+    {
+        if (IsCapturing)
+        {
+            throw new GraphicsDeviceException("The scene capture has not been ended.");
+        }
+
+        if (SceneCaptures.Count == 0)
+        {
+            throw new GraphicsDeviceException("Nothing has been captured this frame.");
+        }
+
+        Resolves.Add(post);
+    }
 
     public DisplayMode CurrentMode { get; private set; } = DisplayMode.Default;
 

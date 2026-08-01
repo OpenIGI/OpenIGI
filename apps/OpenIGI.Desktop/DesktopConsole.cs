@@ -76,16 +76,31 @@ public sealed class DesktopConsole : IDisposable
     /// </summary>
     /// <param name="fileSystem">Where the console's font is read from.</param>
     /// <param name="startupCommands">The <c>+</c> statements from the command line.</param>
+    /// <param name="useSavedSettings">
+    /// Whether <c>settings.cfg</c> is read and written. A capture run passes <see langword="false"/> —
+    /// see <see cref="IsolatedFromSavedSettings"/>.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="fileSystem"/> is <see langword="null"/>.</exception>
-    public void Start(VirtualFileSystem fileSystem, IReadOnlyList<string>? startupCommands = null)
+    public void Start(
+        VirtualFileSystem fileSystem,
+        IReadOnlyList<string>? startupCommands = null,
+        bool useSavedSettings = true)
     {
         ArgumentNullException.ThrowIfNull(fileSystem);
+
+        IsolatedFromSavedSettings = !useSavedSettings;
 
         // Static field initialisers only run when something touches the declaring class, so the
         // generated registrations are what make the registry complete before settings are read.
         Rendering.Generated.CVarRegistrations.RegisterAll();
 
-        if (SettingsFile.Load(System, _settingsPath))
+        if (IsolatedFromSavedSettings)
+        {
+            _logger.Information(
+                LogCategory,
+                "Capture mode: starting from defaults; settings.cfg is neither read nor written.");
+        }
+        else if (SettingsFile.Load(System, _settingsPath))
         {
             _logger.Information(LogCategory, $"Loaded settings from {_settingsPath}.");
         }
@@ -134,10 +149,33 @@ public sealed class DesktopConsole : IDisposable
     public void Draw(SpriteBatch batch, int screenWidth, int screenHeight, float scale = 1f) =>
         _renderer.Draw(batch, Model, screenWidth, screenHeight, scale, Input.CaretVisible);
 
-    /// <summary>Writes the settings file.</summary>
+    /// <summary>
+    /// Gets a value indicating whether this console is running without the saved settings file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A capture run must start from the defaults and apply only its command line. Otherwise a setting
+    /// a player once changed silently decides what the reference set looks like — which is not
+    /// hypothetical: an <c>r_scale 0.85</c> left over from an unrelated experiment quietly rendered
+    /// every offscreen capture at 85% and upscaled it, and the resampling showed up as a 74%
+    /// whole-frame difference that looked like a renderer bug.
+    /// </para>
+    /// <para>
+    /// It must not <em>write</em> either, for the same reason in the other direction: a capture's
+    /// <c>+</c> flags would otherwise be saved into the player's own settings on the way out.
+    /// </para>
+    /// </remarks>
+    public bool IsolatedFromSavedSettings { get; private set; }
+
+    /// <summary>Writes the settings file, unless this console is isolated from it.</summary>
     /// <returns><see langword="true"/> when it was written.</returns>
     public bool SaveSettings()
     {
+        if (IsolatedFromSavedSettings)
+        {
+            return false;
+        }
+
         bool saved = SettingsFile.Save(System, _settingsPath);
         if (!saved)
         {

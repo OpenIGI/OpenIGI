@@ -90,28 +90,60 @@ public sealed class SilkGameWindow : IGameWindow
                 ? new VideoMode(display.Size, display.RefreshRate)
                 : WindowOptions.Default.VideoMode,
             VSync = settings.VSync,
-            API = new GraphicsAPI(
-                ContextAPI.OpenGL,
-                ContextProfile.Core,
-                ContextFlags.ForwardCompatible,
-                new APIVersion(3, 3)),
             IsVisible = false,
             ShouldSwapAutomatically = false,
         };
 
         Display = display;
 
-        try
+        // Desktop asks for the newest context it can get and falls back down the list. 4.6 brings
+        // compute shaders, shader storage buffers and image load/store, which is what lets the
+        // remaster track's fog, ambient occlusion and probe lighting run as compute rather than as
+        // fragment passes over a fullscreen quad. 3.3 is the floor and is what the web and mobile
+        // backends will target; the game runs on it, only with the cheaper implementations of those
+        // effects. Nothing below 3.3 is supported at all.
+        APIVersion[] wanted =
+        [
+            new APIVersion(4, 6),
+            new APIVersion(4, 3),
+            new APIVersion(3, 3),
+        ];
+
+        Exception? lastFailure = null;
+
+        foreach (APIVersion version in wanted)
         {
-            _window = Window.Create(options);
-            _window.Initialize();
+            WindowOptions attempt = options with
+            {
+                API = new GraphicsAPI(
+                    ContextAPI.OpenGL,
+                    ContextProfile.Core,
+                    ContextFlags.ForwardCompatible,
+                    version),
+            };
+
+            try
+            {
+                _window = Window.Create(attempt);
+                _window.Initialize();
+                GLVersion = version;
+                lastFailure = null;
+                break;
+            }
+            catch (Exception ex)
+            {
+                lastFailure = ex;
+                _window = null!;
+            }
         }
-        catch (Exception ex)
+
+        if (_window is null || lastFailure is not null)
         {
-            throw new PlatformException(
-                $"Could not create a {display.Size.X}x{display.Size.Y} OpenGL 3.3 window. "
-                + "A driver supporting OpenGL 3.3 core is required.",
-                ex);
+            string message =
+                $"Could not create a {display.Size.X}x{display.Size.Y} OpenGL window. "
+                + "A driver supporting OpenGL 3.3 core or newer is required.";
+
+            throw lastFailure is null ? new PlatformException(message) : new PlatformException(message, lastFailure);
         }
 
         if (_window.GLContext is null)
@@ -135,6 +167,14 @@ public sealed class SilkGameWindow : IGameWindow
 
     /// <summary>Gets the OpenGL context this window owns, for building a graphics device against.</summary>
     public IGLContext GLContext => _window.GLContext!;
+
+    /// <summary>Gets the context version that was actually created.</summary>
+    /// <remarks>
+    /// The highest of 4.6, 4.3 and 3.3 the driver would give. The backend branches on this rather than
+    /// on a driver string: 4.3 is where compute shaders and image load/store arrive, and 3.3 is the
+    /// floor the web and mobile backends share.
+    /// </remarks>
+    public APIVersion GLVersion { get; private set; } = new APIVersion(3, 3);
 
     /// <inheritdoc/>
     public string Title

@@ -144,7 +144,7 @@ using (window)
     // mirrored into its scrollback, so opening it shows the log rather than an empty panel.
     using DesktopConsole console = new(device, logger);
     console.QuitRequested += (_, _) => running = false;
-    console.Start(fileSystem, options.StartupCommands);
+    console.Start(fileSystem, options.StartupCommands, useSavedSettings: !options.Lockstep);
     logger = console.WrapLogger(logger);
 
     // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
@@ -1386,6 +1386,28 @@ using (window)
                     ? interactionCamera.Camera
                     : playerMode && player is not null ? player.Camera : camera.Camera;
 
+            // The modern path renders the scene offscreen so that it still exists, with its depth, once
+            // it has been drawn -- which is what every effect from stage R3 on needs. With r_hdr off,
+            // or on a backend that cannot offer a target, nothing here happens and the frame is drawn
+            // straight to the back buffer exactly as the original draws it.
+            SceneTargetDescription sceneTarget = new(
+                Math.Max(1, (int)(window.Width * RenderCVars.RenderScale.Value)),
+                Math.Max(1, (int)(window.Height * RenderCVars.RenderScale.Value)),
+                RenderCVars.OffscreenScene.Value ? Math.Max(1, RenderCVars.MultiSampling.Value) : 1,
+
+                // An 8-bit target under the vanilla preset: with no tone map and unit exposure the whole
+                // offscreen detour is then a copy, which is what keeps that preset identical to the
+                // build that had no offscreen path at all.
+                HighDynamicRange: RenderCVars.ToneMap.Value != ToneMapOperator.None);
+
+            bool captured = RenderCVars.OffscreenScene.Value && device.BeginSceneCapture(sceneTarget);
+            if (captured)
+            {
+                // The scheduler cleared the back buffer; the target it did not know about needs it too.
+                device.Clear(scheduler.ClearColour);
+                device.BeginPass(ScenePass.Geometry);
+            }
+
             sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
             terrain?.Draw(eye, projection, verticalFieldOfView, aspectRatio, options.TerrainViewDistance);
             world.Draw(scene, eye, projection);
@@ -1402,6 +1424,15 @@ using (window)
             if (marks is not null && player is not null)
             {
                 marks.Draw(player.Marks, eye, projection);
+            }
+
+            // The view model and anything translucent belong to the forward pass: it is drawn with its
+            // own narrower projection, so its depth must not end up in the buffer the fog and the
+            // reflections read.
+            if (captured)
+            {
+                device.EndPass();
+                device.BeginPass(ScenePass.Forward);
             }
 
             // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
@@ -1490,6 +1521,20 @@ using (window)
                         UiScale.Resolve(options.UiScale, window.Width, window.Height));
                     batch.End();
                 }
+            }
+
+            // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
+            // the menus and the console are authored in display colours and must never be tone mapped.
+            // Unconditional, and outside the player-mode block on purpose -- a free-camera frame draws
+            // no view model, and leaving the capture open would strand it until the next frame threw.
+            if (captured)
+            {
+                device.EndPass();
+                device.EndSceneCapture();
+                device.ResolveScene(new PostProcessSettings(
+                    RenderCVars.ToneMap.Value,
+                    RenderCVars.Exposure.Value));
+                captured = false;
             }
 
             // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose

@@ -1,0 +1,340 @@
+using OpenIGI.Core.Diagnostics;
+using Silk.NET.OpenGL;
+
+namespace OpenIGI.Rendering.OpenGL;
+
+/// <summary>
+/// The offscreen framebuffer the scene is rendered into.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The first framebuffer object in the project. Colour is an <c>RGBA16F</c> texture when high dynamic
+/// range is asked for and <c>RGBA8</c> otherwise, and depth is a <em>texture</em> rather than a
+/// renderbuffer — which is the whole point, because every effect from here on reads depth back.
+/// </para>
+/// <para>
+/// Colour is a ping-pong pair. A post-process cannot read and write one texture at once, so a pass
+/// reads the front and writes the back and the two swap; the depth attachment is shared, so geometry
+/// drawn after a full-screen pass still depth-tests against the scene it was drawn over.
+/// </para>
+/// <para>
+/// Multisampling, when asked for, rasterises into a separate multisampled framebuffer that is
+/// resolved into the front colour texture and the depth texture with <c>glBlitFramebuffer</c> before
+/// anything samples them: a shader cannot usefully read a multisampled depth buffer, and every effect
+/// the remaster track adds needs to.
+/// </para>
+/// </remarks>
+internal sealed class GLSceneTarget : IDisposable
+{
+    private const string LogCategory = "SceneTarget";
+
+    private readonly GL _gl;
+    private readonly IIgiLogger _logger;
+
+    private readonly uint[] _colorTextures = [0, 0];
+    private readonly uint[] _colorFramebuffers = [0, 0];
+    private uint _depthTexture;
+    private uint _msaaFramebuffer;
+    private uint _msaaColor;
+    private uint _msaaDepth;
+    private int _front;
+    private bool _disposed;
+
+    /// <summary>Initialises a new instance of the <see cref="GLSceneTarget"/> class.</summary>
+    /// <param name="gl">The GL binding.</param>
+    /// <param name="logger">Where to report a target that could not be created.</param>
+    public GLSceneTarget(GL gl, IIgiLogger logger)
+    {
+        _gl = gl;
+        _logger = logger;
+    }
+
+    /// <summary>Gets the description the target was last built for.</summary>
+    public SceneTargetDescription Description { get; private set; }
+
+    /// <summary>Gets a value indicating whether the target exists and can be rendered into.</summary>
+    public bool IsReady { get; private set; }
+
+    /// <summary>Gets the texture holding the scene as most recently written.</summary>
+    public uint FrontColorTexture => _colorTextures[_front];
+
+    /// <summary>Gets the scene's depth, readable by a shader.</summary>
+    public uint DepthTexture => _depthTexture;
+
+    /// <summary>Gets the framebuffer geometry should be rasterised into.</summary>
+    /// <remarks>The multisampled one when multisampling is on, otherwise the front colour target.</remarks>
+    public uint GeometryFramebuffer => Description.IsMultisampled ? _msaaFramebuffer : _colorFramebuffers[_front];
+
+    /// <summary>Builds or rebuilds the target for a description.</summary>
+    /// <param name="description">The target to build.</param>
+    /// <returns><see langword="true"/> when the target is ready to render into.</returns>
+    /// <remarks>A description matching the current one is a no-op, so this is safe to call every frame.</remarks>
+    public bool Configure(in SceneTargetDescription description)
+    {
+        if (!description.IsValid)
+        {
+            return false;
+        }
+
+        if (IsReady && Description == description)
+        {
+            return true;
+        }
+
+        Release();
+        Description = description;
+
+        InternalFormat colorFormat = description.HighDynamicRange ? InternalFormat.Rgba16f : InternalFormat.Rgba8;
+
+        for (int i = 0; i < 2; i++)
+        {
+            _colorTextures[i] = CreateTexture(colorFormat, PixelFormat.Rgba, PixelType.Float, description);
+        }
+
+        _depthTexture = CreateTexture(
+            InternalFormat.DepthComponent32f,
+            PixelFormat.DepthComponent,
+            PixelType.Float,
+            description);
+
+        for (int i = 0; i < 2; i++)
+        {
+            _colorFramebuffers[i] = _gl.GenFramebuffer();
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _colorFramebuffers[i]);
+            _gl.FramebufferTexture2D(
+                FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                TextureTarget.Texture2D,
+                _colorTextures[i],
+                0);
+            _gl.FramebufferTexture2D(
+                FramebufferTarget.Framebuffer,
+                FramebufferAttachment.DepthAttachment,
+                TextureTarget.Texture2D,
+                _depthTexture,
+                0);
+
+            if (!IsComplete($"colour target {i}"))
+            {
+                Release();
+                return false;
+            }
+        }
+
+        if (description.IsMultisampled && !CreateMultisampleTargets(colorFormat, description))
+        {
+            // Falling back to a single-sampled target is far better than refusing to render: the
+            // picture is the same picture, just with harder edges.
+            _logger.Warning(LogCategory, $"{description.SampleCount}x multisampling is unavailable; continuing without it.");
+            Description = description with { SampleCount = 1 };
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        IsReady = true;
+        return true;
+    }
+
+    /// <summary>Makes the geometry framebuffer current and sets the viewport to the whole target.</summary>
+    public void BindForGeometry()
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, GeometryFramebuffer);
+        _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+    }
+
+    /// <summary>
+    /// Resolves multisampled rasterisation into the sampleable colour and depth textures.
+    /// </summary>
+    /// <remarks>
+    /// A no-op when multisampling is off. Depth is blitted as well as colour, because the effects that
+    /// follow read depth and a multisampled depth buffer is not something a shader can sample.
+    /// </remarks>
+    public void ResolveMultisample()
+    {
+        if (!Description.IsMultisampled)
+        {
+            return;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _msaaFramebuffer);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _colorFramebuffers[_front]);
+        _gl.BlitFramebuffer(
+            0, 0, Description.Width, Description.Height,
+            0, 0, Description.Width, Description.Height,
+            ClearBufferMask.ColorBufferBit,
+            BlitFramebufferFilter.Nearest);
+        _gl.BlitFramebuffer(
+            0, 0, Description.Width, Description.Height,
+            0, 0, Description.Width, Description.Height,
+            ClearBufferMask.DepthBufferBit,
+            BlitFramebufferFilter.Nearest);
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+    }
+
+    /// <summary>Makes the back colour buffer current so a full-screen pass can write into it.</summary>
+    /// <remarks>The front buffer stays readable as the pass's input; <see cref="Swap"/> exchanges them.</remarks>
+    public void BindForPostProcess()
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _colorFramebuffers[1 - _front]);
+        _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+    }
+
+    /// <summary>Makes what was just written the scene.</summary>
+    public void Swap() => _front = 1 - _front;
+
+    /// <summary>Clears the target's colour and depth.</summary>
+    /// <param name="r">The red component in linear light.</param>
+    /// <param name="g">The green component in linear light.</param>
+    /// <param name="b">The blue component in linear light.</param>
+    public void Clear(float r, float g, float b)
+    {
+        BindForGeometry();
+
+        // The depth mask has to be on for glClear to touch depth at all, and a translucent pass may
+        // have left it off -- the same trap the direct path documents on Clear.
+        _gl.DepthMask(true);
+        _gl.ClearColor(r, g, b, 1.0f);
+        _gl.ClearDepth(1.0);
+        _gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Release();
+    }
+
+    private bool CreateMultisampleTargets(InternalFormat colorFormat, in SceneTargetDescription description)
+    {
+        uint samples = (uint)description.SampleCount;
+
+        _msaaColor = _gl.GenRenderbuffer();
+        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msaaColor);
+        _gl.RenderbufferStorageMultisample(
+            RenderbufferTarget.Renderbuffer, samples, colorFormat, (uint)description.Width, (uint)description.Height);
+
+        _msaaDepth = _gl.GenRenderbuffer();
+        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _msaaDepth);
+        _gl.RenderbufferStorageMultisample(
+            RenderbufferTarget.Renderbuffer,
+            samples,
+            InternalFormat.DepthComponent32f,
+            (uint)description.Width,
+            (uint)description.Height);
+
+        _msaaFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _msaaFramebuffer);
+        _gl.FramebufferRenderbuffer(
+            FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0, RenderbufferTarget.Renderbuffer, _msaaColor);
+        _gl.FramebufferRenderbuffer(
+            FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, RenderbufferTarget.Renderbuffer, _msaaDepth);
+
+        if (IsComplete("multisample target"))
+        {
+            return true;
+        }
+
+        ReleaseMultisample();
+        return false;
+    }
+
+    private uint CreateTexture(
+        InternalFormat internalFormat,
+        PixelFormat format,
+        PixelType type,
+        in SceneTargetDescription description)
+    {
+        uint name = _gl.GenTexture();
+        _gl.BindTexture(TextureTarget.Texture2D, name);
+
+        unsafe
+        {
+            _gl.TexImage2D(
+                TextureTarget.Texture2D,
+                0,
+                (int)internalFormat,
+                (uint)description.Width,
+                (uint)description.Height,
+                0,
+                format,
+                type,
+                null);
+        }
+
+        // Linear sampling and clamping, because every consumer is a full-screen pass reading a
+        // neighbourhood: a wrapped sample would pull the opposite edge of the screen into a blur.
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        return name;
+    }
+
+    private bool IsComplete(string what)
+    {
+        GLEnum status = _gl.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
+        if (status == GLEnum.FramebufferComplete)
+        {
+            return true;
+        }
+
+        _logger.Warning(LogCategory, $"The {what} is incomplete ({status}).");
+        return false;
+    }
+
+    private void Release()
+    {
+        IsReady = false;
+        _front = 0;
+
+        for (int i = 0; i < 2; i++)
+        {
+            if (_colorFramebuffers[i] != 0)
+            {
+                _gl.DeleteFramebuffer(_colorFramebuffers[i]);
+                _colorFramebuffers[i] = 0;
+            }
+
+            if (_colorTextures[i] != 0)
+            {
+                _gl.DeleteTexture(_colorTextures[i]);
+                _colorTextures[i] = 0;
+            }
+        }
+
+        if (_depthTexture != 0)
+        {
+            _gl.DeleteTexture(_depthTexture);
+            _depthTexture = 0;
+        }
+
+        ReleaseMultisample();
+    }
+
+    private void ReleaseMultisample()
+    {
+        if (_msaaFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_msaaFramebuffer);
+            _msaaFramebuffer = 0;
+        }
+
+        if (_msaaColor != 0)
+        {
+            _gl.DeleteRenderbuffer(_msaaColor);
+            _msaaColor = 0;
+        }
+
+        if (_msaaDepth != 0)
+        {
+            _gl.DeleteRenderbuffer(_msaaDepth);
+            _msaaDepth = 0;
+        }
+    }
+}
