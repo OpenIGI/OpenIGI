@@ -144,11 +144,15 @@ public sealed class SkyRenderer : IDisposable
     /// <summary>Gets a value indicating whether the level declared a sky at all.</summary>
     public bool HasSky => _dome.IsValid;
 
-    private float FogAmount { get; }
+    /// <summary>Gets the level's authored fog amount, from its <c>FlatSky</c> task.</summary>
+    /// <remarks>Public so the volumetric fog can be seeded from what the level actually asked for.</remarks>
+    public float FogAmount { get; }
 
-    private float PlaneHeight { get; }
+    /// <summary>Gets the level's authored sky-plane height in metres.</summary>
+    public float PlaneHeight { get; }
 
-    private float Distance { get; }
+    /// <summary>Gets the distance in metres over which the level's authored fog reaches full strength.</summary>
+    public float Distance { get; }
 
     /// <summary>Draws the sky behind everything: the dome, then each cloud layer.</summary>
     /// <param name="camera">The camera, positioned in metres.</param>

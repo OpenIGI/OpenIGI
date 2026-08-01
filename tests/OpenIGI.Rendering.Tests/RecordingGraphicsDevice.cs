@@ -98,6 +98,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>Set to make BeginShadowCascade refuse, as a backend with no shadow map would.</summary>
     public bool RefuseShadows { get; set; }
 
+    /// <summary>The fog settings each frame was given, in order.</summary>
+    public List<VolumetricFogSettings> Fogs { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight) => Fogs.Add(fog);
+
     /// <inheritdoc/>
     public void SetShadows(
         in ShadowSettings settings,

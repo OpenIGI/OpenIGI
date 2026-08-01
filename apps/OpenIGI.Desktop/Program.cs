@@ -1487,6 +1487,27 @@ using (window)
                 // are fitted in. The same transpose, for the same reason.
                 eye.Orientation.Transposed());
 
+            // The medium. Density comes from the level's own FlatSky "Fog Amount" unless overridden:
+            // a level that asked for thick fog gets thick fog, so the missions keep their own moods
+            // instead of all being handed one number. The colours come from the sun, so a fog bank is
+            // lit by the same light as the ground under it.
+            float authoredDensity = sky is { HasSky: true }
+                ? 0.004f + (Math.Clamp(sky.FogAmount, 0f, 1f) * 0.03f)
+                : 0.014f;
+
+            device.SetVolumetricFog(
+                RenderCVars.FogQuality.Value > 0 && RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                    ? new VolumetricFogSettings(
+                        RenderCVars.FogDensity.Value > 0f ? RenderCVars.FogDensity.Value : authoredDensity,
+                        RenderCVars.FogHeightFalloff.Value,
+                        BaseHeight: sky is { HasSky: true } ? sky.PlaneHeight : 0f,
+                        Albedo: default,
+                        RenderCVars.FogAnisotropy.Value,
+                        RenderCVars.FogDistance.Value,
+                        RenderCVars.FogQuality.Value)
+                    : VolumetricFogSettings.Off,
+                (float)eye.Position.Z);
+
             // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
             // beginning a capture first would leave the shell holding two render targets at once.
             if (cascadeCount > 0 && shadowPass is not null)

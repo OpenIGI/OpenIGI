@@ -248,6 +248,63 @@ public static class RenderCVars
         high: "1.5",
         ultra: "2.5");
 
+    /// <summary>How many samples each fog ray takes, or 0 for no volumetric fog.</summary>
+    /// <remarks>The single biggest cost in the pass, and the quality dial.</remarks>
+    public static readonly NumericCVar<int> FogQuality = Presets.Define(
+        CVar.Int(
+            "r_fog_quality",
+            32,
+            0,
+            128,
+            CVarOptions.Archive,
+            "Samples per volumetric fog ray; 0 turns the fog off."),
+        vanilla: "0",
+        enhanced: "16",
+        high: "32",
+        ultra: "64");
+
+    /// <summary>Extinction per metre at the fog's base height, or 0 to take the level's own.</summary>
+    public static readonly NumericCVar<float> FogDensity = CVar.Float(
+        "r_fog_density",
+        0f,
+        0f,
+        0.2f,
+        CVarOptions.Archive,
+        "Fog extinction per metre at its base height; 0 derives it from the level's own FlatSky data.");
+
+    /// <summary>The height in metres over which fog density falls to a third.</summary>
+    /// <remarks>What makes fog pool in valleys rather than hang as a flat sheet.</remarks>
+    public static readonly NumericCVar<float> FogHeightFalloff = CVar.Float(
+        "r_fog_height",
+        24f,
+        1f,
+        400f,
+        CVarOptions.Archive,
+        "Height in metres over which fog thins out. Lower pools it harder into valleys.");
+
+    /// <summary>How strongly the fog scatters forward.</summary>
+    public static readonly NumericCVar<float> FogAnisotropy = CVar.Float(
+        "r_fog_anisotropy",
+        0.7f,
+        -0.95f,
+        0.95f,
+        CVarOptions.Archive,
+        "Forward scattering, -0.95 to 0.95. Positive makes fog glow towards the sun.");
+
+    /// <summary>How far, in metres, the fog is marched before the cheaper haze takes over.</summary>
+    public static readonly NumericCVar<float> FogDistance = Presets.Define(
+        CVar.Float(
+            "r_fog_distance",
+            500f,
+            50f,
+            2000f,
+            CVarOptions.Archive,
+            "How far volumetric fog is marched, in metres."),
+        vanilla: "500",
+        enhanced: "350",
+        high: "500",
+        ultra: "800");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

@@ -229,6 +229,19 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetMaterialOverride(in SurfaceMaterial material);
 
+    /// <summary>Sets the participating medium the scene is seen through.</summary>
+    /// <param name="fog">The medium, or <see cref="VolumetricFogSettings.Off"/> for none.</param>
+    /// <param name="cameraHeight">
+    /// The camera's world height in metres. The march works in camera-relative world space, so the
+    /// medium's world base height has to be rebased against this; passing it explicitly is clearer
+    /// than having the shell pre-subtract it and hand over a number that is no longer a world height.
+    /// </param>
+    /// <remarks>
+    /// Applied after lighting and before the forward pass, so translucent surfaces and the view model
+    /// sit in front of the fog rather than being fogged twice.
+    /// </remarks>
+    void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight);
+
     /// <summary>Sets the sun's shadow map for this frame.</summary>
     /// <param name="settings">How the shadows are drawn, or <see cref="ShadowSettings.Off"/> for none.</param>
     /// <param name="cascades">The fitted cascades, from <see cref="ShadowCascades.Fit"/>.</param>

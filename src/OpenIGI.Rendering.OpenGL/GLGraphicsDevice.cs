@@ -91,6 +91,23 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private SurfaceMaterial _material = SurfaceMaterial.Default;
     private SceneLighting _lighting = SceneLighting.Baked;
 
+    private GLShaderProgram? _fogProgram;
+    private VolumetricFogSettings _fog = VolumetricFogSettings.Off;
+    private float _cameraHeight;
+    private int _fogFrame;
+    private int _fogSunDirection = -1;
+    private int _fogSunColour = -1;
+    private int _fogAmbient = -1;
+    private int _fogCascadeCount = -1;
+    private int _fogCascadeSplits = -1;
+    private int _fogCascadeMatrix = -1;
+    private int _fogUnproject = -1;
+    private int _fogViewToWorld = -1;
+    private int _fogMedium = -1;
+    private int _fogMarch = -1;
+    private int _fogAlbedo = -1;
+    private int _fogJitter = -1;
+
     private GLShadowMap? _shadowMap;
     private GLShaderProgram? _shadowProgram;
     private MeshUniforms _shadowUniforms;
@@ -703,6 +720,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
 
     /// <inheritdoc/>
+    public void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight)
+    {
+        _fog = fog;
+        _cameraHeight = cameraHeight;
+    }
+
+    /// <inheritdoc/>
     public void SetShadows(
         in ShadowSettings settings,
         ReadOnlySpan<ShadowCascade> cascades,
@@ -829,6 +853,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             if (_sceneTarget.Description.Deferred)
             {
                 RunDeferredLighting(_sceneTarget);
+                RunVolumetricFog(_sceneTarget);
             }
             else
             {
@@ -955,6 +980,80 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _fullScreen!.Draw();
 
         // The pass left the bindings and the depth shadow in a state the next draw must not inherit.
+        _currentVertexArray = 0;
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(true);
+        _depthState = DepthState.Disabled;
+    }
+
+    /// <summary>Marches the participating medium over the lit scene.</summary>
+    /// <param name="target">The scene target holding the lit frame and its depth.</param>
+    /// <remarks>
+    /// Reads the front colour buffer and writes the back, then swaps. A full-screen pass cannot read
+    /// and write one texture at once, which is what the ping-pong pair exists for.
+    /// </remarks>
+    private void RunVolumetricFog(GLSceneTarget target)
+    {
+        if (!_fog.Enabled || _fogProgram is null || _fullScreen is null)
+        {
+            return;
+        }
+
+        target.BindForPostProcess();
+        UseProgram(_fogProgram);
+
+        _fogProgram.SetVector3(
+            _fogSunDirection, _lighting.SunDirection.X, _lighting.SunDirection.Y, _lighting.SunDirection.Z);
+        _fogProgram.SetVector3(
+            _fogSunColour, _lighting.SunColour.X, _lighting.SunColour.Y, _lighting.SunColour.Z);
+        _fogProgram.SetVector3(
+            _fogAmbient, _lighting.AmbientColour.X, _lighting.AmbientColour.Y, _lighting.AmbientColour.Z);
+        _fogProgram.SetInt(_fogCascadeCount, _cascadeCount);
+        _fogProgram.SetVector4(
+            _fogCascadeSplits, _cascadeSplits[0], _cascadeSplits[1], _cascadeSplits[2], _cascadeSplits[3]);
+        _fogProgram.SetVector4(
+            _fogUnproject, _unprojection.XScale, _unprojection.YScale, _unprojection.Near, _unprojection.Far);
+        _fogProgram.SetMatrix3(_fogViewToWorld, _viewToWorld);
+
+        for (int i = 0; i < _cascadeCount; i++)
+        {
+            _fogProgram.SetMatrix4(_fogCascadeMatrix, i, _cascadeMatrices[i]);
+        }
+
+        _fogProgram.SetVector4(
+            _fogMedium,
+            _fog.Density,
+            _fog.HeightFalloff > 0f ? 1f / _fog.HeightFalloff : 0f,
+
+            // The base height arrives in world terms and the march works camera-relative, so it is
+            // rebased here rather than in the shader, where it would be recomputed per sample.
+            _fog.BaseHeight - _cameraHeight,
+            Math.Clamp(_fog.Anisotropy, -0.95f, 0.95f));
+
+        _fogProgram.SetVector4(
+            _fogMarch, _fog.Distance, _fog.Steps, _fog.SunIntensity, _fog.AmbientIntensity);
+
+        Vector3f albedo = _fog.ScatteringAlbedo;
+        _fogProgram.SetVector3(_fogAlbedo, albedo.X, albedo.Y, albedo.Z);
+
+        // Varied per frame so the dither pattern moves; with temporal filtering in stage R5 this is
+        // what turns the remaining noise into detail rather than into a static grain.
+        _fogFrame = (_fogFrame + 1) & 63;
+        _fogProgram.SetFloat(_fogJitter, _fogFrame * 0.61803399f);
+
+        BindTexture(0, target.FrontColorTexture);
+        BindTexture(4, target.DepthTexture);
+
+        if (_shadowMap is { IsReady: true } shadows)
+        {
+            _gl.ActiveTexture(TextureUnit.Texture0 + 5);
+            _gl.BindTexture(TextureTarget.Texture2DArray, shadows.Texture);
+            _activeTextureUnit = 5;
+        }
+
+        _fullScreen.Draw();
+        target.Swap();
+
         _currentVertexArray = 0;
         _gl.Disable(EnableCap.DepthTest);
         _gl.DepthMask(true);
@@ -1133,6 +1232,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _disposed = true;
 
         _sceneTarget?.Dispose();
+        _fogProgram?.Dispose();
         _shadowMap?.Dispose();
         _shadowProgram?.Dispose();
         _gbufferProgram?.Dispose();
@@ -1259,6 +1359,24 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _shadowProgram.LocationOf("uAlphaTest"));
         UseProgram(_shadowProgram);
         _shadowProgram.SetInt("uDiffuse", 0);
+
+        _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
+        _fogSunDirection = _fogProgram.LocationOf("uSunDirection");
+        _fogSunColour = _fogProgram.LocationOf("uSunColour");
+        _fogAmbient = _fogProgram.LocationOf("uAmbientColour");
+        _fogCascadeCount = _fogProgram.LocationOf("uCascadeCount");
+        _fogCascadeSplits = _fogProgram.LocationOf("uCascadeSplits");
+        _fogCascadeMatrix = _fogProgram.LocationOf("uCascadeMatrix");
+        _fogUnproject = _fogProgram.LocationOf("uUnproject");
+        _fogViewToWorld = _fogProgram.LocationOf("uViewToWorld");
+        _fogMedium = _fogProgram.LocationOf("uMedium");
+        _fogMarch = _fogProgram.LocationOf("uMarch");
+        _fogAlbedo = _fogProgram.LocationOf("uAlbedo");
+        _fogJitter = _fogProgram.LocationOf("uFrameJitter");
+        UseProgram(_fogProgram);
+        _fogProgram.SetInt("uScene", 0);
+        _fogProgram.SetInt("uDepth", 4);
+        _fogProgram.SetInt("uShadowMap", 5);
 
         _shadowMap = new GLShadowMap(_gl, _logger);
         _fullScreen = new GLFullScreenPass(_gl);
