@@ -79,6 +79,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private GLShaderProgram? _lastMeshProgram;
     private MeshUniforms _gbufferUniforms;
     private int _gbufferMaterial = -1;
+    private int _meshMaterial = -1;
+    private int _meshKeyColour = -1;
+    private int _meshAmbient = -1;
     private int _gbufferDecodeAlbedo = -1;
     private int _lightingModelLocation = -1;
     private int _lightingSunDirection = -1;
@@ -889,11 +892,35 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         UseProgram(program);
 
-        if (deferred && _sentMaterial != _material)
+        if (_sentMaterial != _material)
         {
             _sentMaterial = _material;
-            program.SetVector4(
-                _gbufferMaterial, _material.Roughness, _material.Metallic, _material.Emissive, 0f);
+
+            if (deferred)
+            {
+                program.SetVector4(
+                    _gbufferMaterial, _material.Roughness, _material.Metallic, _material.Emissive, 0f);
+            }
+            else
+            {
+                // The fourth component is the switch. It is only ever set for the forward pass of a
+                // modern frame, so the original's path uploads a zero here and its picture is
+                // untouched to the bit.
+                bool lit = CurrentPass == ScenePass.Forward
+                    && _sceneTarget is { IsReady: true } lightingTarget
+                    && lightingTarget.Description.Deferred;
+
+                program.SetVector4(
+                    _meshMaterial,
+                    _material.Roughness,
+                    _material.Metallic,
+                    _material.Emissive,
+                    lit ? 1f : 0f);
+                program.SetVector3(
+                    _meshKeyColour, _lighting.SunColour.X, _lighting.SunColour.Y, _lighting.SunColour.Z);
+                program.SetVector3(
+                    _meshAmbient, _lighting.AmbientColour.X, _lighting.AmbientColour.Y, _lighting.AmbientColour.Z);
+            }
         }
 
         // Every uniform below used to be re-uploaded on every sub-mesh. The projection is fixed for the
@@ -1039,6 +1066,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _meshProgram.LocationOf("uProjection"),
             _meshProgram.LocationOf("uDetailFade"),
             _meshProgram.LocationOf("uAlphaTest"));
+        _meshMaterial = _meshProgram.LocationOf("uMaterial");
+        _meshKeyColour = _meshProgram.LocationOf("uKeyColour");
+        _meshAmbient = _meshProgram.LocationOf("uAmbientColour");
 
         // Which unit each sampler reads is fixed by the pipeline and never varies by draw, so it is set
         // now rather than four times per sub-mesh. A uniform belongs to its program, so both survive the

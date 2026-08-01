@@ -1515,7 +1515,20 @@ using (window)
 
                 if (player.HeldWeapon is { } attachment && heldWeapon is { IsReady: true })
                 {
+                    // The weapon in hand is the one object on screen at all times, so it is the one
+                    // worth giving a material to first. Steel: fully metallic, and smooth enough for
+                    // the blade to catch a highlight as it moves.
+                    if (captured)
+                    {
+                        device.SetMaterialOverride(new SurfaceMaterial(Roughness: 0.28f, Metallic: 1f));
+                    }
+
                     heldWeapon.Draw(attachment, eye, viewModelProjection);
+
+                    if (captured)
+                    {
+                        device.SetMaterialOverride(SurfaceMaterial.Default);
+                    }
                 }
 
                 // The HUD goes over everything, in 2D. StatusScreen's render sends one message to the
