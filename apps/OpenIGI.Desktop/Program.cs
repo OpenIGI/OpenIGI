@@ -1394,6 +1394,7 @@ using (window)
                 Math.Max(1, (int)(window.Width * RenderCVars.RenderScale.Value)),
                 Math.Max(1, (int)(window.Height * RenderCVars.RenderScale.Value)),
                 RenderCVars.OffscreenScene.Value ? Math.Max(1, RenderCVars.MultiSampling.Value) : 1,
+                Deferred: RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value,
 
                 // An 8-bit target under the vanilla preset: with no tone map and unit exposure the whole
                 // offscreen detour is then a copy, which is what keeps that preset identical to the
@@ -1405,10 +1406,29 @@ using (window)
             {
                 // The scheduler cleared the back buffer; the target it did not know about needs it too.
                 device.Clear(scheduler.ClearColour);
+                device.SetLighting(new SceneLighting(
+                    RenderCVars.Lighting.Value,
+
+                    // A placeholder sun until stage R3 reads the level's own Dirlight tasks: high and
+                    // behind the camera, so that turning the model on shows something rather than
+                    // nothing. It is view-space by contract, which is why it needs no camera rotation.
+                    new Vector3f(0.35f, 0.35f, -0.87f),
+                    new Vector3f(1.0f, 0.96f, 0.88f),
+                    new Vector3f(0.28f, 0.30f, 0.34f)));
                 device.BeginPass(ScenePass.Geometry);
+
+                // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
+                // model would multiply the dome by an ambient term and the horizon would go dark. It
+                // is not lit; it IS light.
+                device.SetMaterialOverride(new SurfaceMaterial(Emissive: 1f));
             }
 
             sky?.Draw(eye, projection, loop.TimeSource.Milliseconds / 1000f);
+
+            if (captured)
+            {
+                device.SetMaterialOverride(SurfaceMaterial.Default);
+            }
             terrain?.Draw(
                 eye,
                 projection,

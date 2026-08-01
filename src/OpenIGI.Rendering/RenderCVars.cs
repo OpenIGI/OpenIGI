@@ -129,6 +129,40 @@ public static class RenderCVars
         high: "320",
         ultra: "450");
 
+    /// <summary>Whether surfaces are recorded into a G-buffer and lit afterwards.</summary>
+    /// <remarks>
+    /// Required by everything from stage R3 on. Kept separate from <see cref="OffscreenScene"/> so the
+    /// offscreen pipeline can be exercised on its own — which is what the round-trip check in
+    /// <c>docs/remaster/reference/README.md</c> does.
+    /// </remarks>
+    public static readonly BoolCVar Deferred = Presets.Define(
+        CVar.Bool(
+            "r_deferred",
+            true,
+            CVarOptions.Archive,
+            "Record surfaces into a G-buffer and light them afterwards. Needed for shadows, AO and reflections."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Where surfaces take their light from.</summary>
+    /// <remarks>
+    /// Stays on <c>baked</c> for every preset until the sun of stage R3 and the probe irradiance of R7
+    /// exist. Promoting it before then would trade hand-authored lighting for a flat ambient term,
+    /// which is not an improvement in anybody's judgement.
+    /// </remarks>
+    public static readonly EnumCVar<LightingModel> Lighting = Presets.Define(
+        CVar.Choice(
+            "r_lighting",
+            LightingModel.Baked,
+            CVarOptions.Archive,
+            "Light source: baked reproduces the original, hybrid adds the sun, dynamic ignores the bakes."),
+        vanilla: "baked",
+        enhanced: "baked",
+        high: "baked",
+        ultra: "baked");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

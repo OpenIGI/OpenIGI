@@ -22,6 +22,11 @@ namespace OpenIGI.Rendering;
 /// down before anything reads the target, because a post-process cannot sample a multisampled depth
 /// buffer usefully.
 /// </param>
+/// <param name="Deferred">
+/// Whether surfaces are recorded into a G-buffer and lit afterwards, rather than shaded as they are
+/// drawn. Required by everything from stage R3 on, because a shadow, an occlusion term or a
+/// reflection needs the surface's normal and roughness to still be there once the frame is complete.
+/// </param>
 /// <param name="HighDynamicRange">
 /// Whether colour is stored with range beyond <c>[0, 1]</c>. When <see langword="false"/> the target
 /// is an ordinary 8-bit buffer and the round trip is lossless, which is what the vanilla path uses so
@@ -31,10 +36,18 @@ public readonly record struct SceneTargetDescription(
     int Width,
     int Height,
     int SampleCount = 1,
+    bool Deferred = false,
     bool HighDynamicRange = true)
 {
     /// <summary>Gets a value indicating whether the description asks for multisampling.</summary>
-    public bool IsMultisampled => SampleCount > 1;
+    /// <remarks>
+    /// <b>Never true while <see cref="Deferred"/> is</b>. Multisampling a G-buffer means multisampling
+    /// every one of its targets and resolving each — and resolving a <em>normal</em> by averaging it is
+    /// not meaningful, because the average of two unit vectors is not a direction either surface has.
+    /// Deferred renderers anti-alias temporally instead, which is what stage R5 brings; until then the
+    /// render scale is the dial.
+    /// </remarks>
+    public bool IsMultisampled => SampleCount > 1 && !Deferred;
 
     /// <summary>Gets a value indicating whether the description names a usable target size.</summary>
     public bool IsValid => Width > 0 && Height > 0 && SampleCount >= 1;

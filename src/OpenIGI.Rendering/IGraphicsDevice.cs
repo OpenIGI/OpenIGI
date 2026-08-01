@@ -221,6 +221,18 @@ public interface IGraphicsDevice : IDisposable
     /// <exception cref="GraphicsDeviceException">A capture is already in progress.</exception>
     bool BeginSceneCapture(in SceneTargetDescription description);
 
+    /// <summary>Sets how the following draws respond to light.</summary>
+    /// <param name="material">The surface properties, from the port's own material table.</param>
+    /// <remarks>
+    /// Only the deferred path reads this; on the original's path nothing does. It is device state
+    /// rather than a draw argument because a material spans a run of sub-meshes.
+    /// </remarks>
+    void SetMaterialOverride(in SurfaceMaterial material);
+
+    /// <summary>Sets the light the scene is lit by for this frame.</summary>
+    /// <param name="lighting">The lighting model, sun and ambient.</param>
+    void SetLighting(in SceneLighting lighting);
+
     /// <summary>Declares which part of the frame the following draws belong to.</summary>
     /// <param name="pass">The part of the frame.</param>
     /// <remarks>

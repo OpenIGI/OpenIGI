@@ -74,6 +74,20 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _projectionWidth;
     private int _projectionHeight;
     private BlendMode _blend = BlendMode.Opaque;
+    private GLShaderProgram? _gbufferProgram;
+    private GLShaderProgram? _lightingProgram;
+    private GLShaderProgram? _lastMeshProgram;
+    private MeshUniforms _gbufferUniforms;
+    private int _gbufferMaterial = -1;
+    private int _gbufferDecodeAlbedo = -1;
+    private int _lightingModelLocation = -1;
+    private int _lightingSunDirection = -1;
+    private int _lightingSunColour = -1;
+    private int _lightingAmbient = -1;
+    private SurfaceMaterial? _sentMaterial;
+    private SurfaceMaterial _material = SurfaceMaterial.Default;
+    private SceneLighting _lighting = SceneLighting.Baked;
+
     private GLSceneTarget? _sceneTarget;
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
@@ -660,6 +674,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
+
+    /// <inheritdoc/>
+    public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
+
+    /// <inheritdoc/>
     public void BeginPass(ScenePass pass)
     {
         ThrowIfDisposed();
@@ -675,7 +695,18 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         }
 
         CurrentPass = pass;
-        _sceneTarget!.BindForGeometry();
+
+        // The forward pass draws over the lit scene, not into the G-buffer: it is for the surfaces a
+        // G-buffer cannot hold -- anything translucent -- and for the view model, which is drawn with
+        // its own narrower projection and whose depth must not reach the effects that read depth.
+        if (pass == ScenePass.Forward && _sceneTarget!.Description.Deferred)
+        {
+            _sceneTarget.BindForColour();
+        }
+        else
+        {
+            _sceneTarget!.BindForGeometry();
+        }
     }
 
     /// <inheritdoc/>
@@ -694,7 +725,15 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         if (CurrentPass == ScenePass.Geometry)
         {
             _sceneTarget!.ResolveMultisample();
-            _sceneTarget.BindForGeometry();
+
+            if (_sceneTarget.Description.Deferred)
+            {
+                RunDeferredLighting(_sceneTarget);
+            }
+            else
+            {
+                _sceneTarget.BindForGeometry();
+            }
         }
 
         CurrentPass = ScenePass.None;
@@ -759,6 +798,40 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _currentVertexArray = 0;
     }
 
+    /// <summary>Lights the G-buffer into the scene's colour buffer.</summary>
+    /// <param name="target">The scene target holding the G-buffer.</param>
+    /// <remarks>
+    /// One full-screen pass. Under <see cref="LightingModel.Baked"/> it computes <c>albedo × baked</c>,
+    /// which is the same product the original's forward shader writes — so the deferred path
+    /// reproduces the forward one rather than approximating it.
+    /// </remarks>
+    private void RunDeferredLighting(GLSceneTarget target)
+    {
+        target.BindForColour();
+
+        UseProgram(_lightingProgram!);
+        _lightingProgram!.SetInt(_lightingModelLocation, (int)_lighting.Model);
+        _lightingProgram.SetVector3(
+            _lightingSunDirection, _lighting.SunDirection.X, _lighting.SunDirection.Y, _lighting.SunDirection.Z);
+        _lightingProgram.SetVector3(
+            _lightingSunColour, _lighting.SunColour.X, _lighting.SunColour.Y, _lighting.SunColour.Z);
+        _lightingProgram.SetVector3(
+            _lightingAmbient, _lighting.AmbientColour.X, _lighting.AmbientColour.Y, _lighting.AmbientColour.Z);
+
+        BindTexture(0, target.AlbedoTexture);
+        BindTexture(1, target.NormalTexture);
+        BindTexture(2, target.BakedLightTexture);
+        BindTexture(3, target.MaterialTexture);
+
+        _fullScreen!.Draw();
+
+        // The pass left the bindings and the depth shadow in a state the next draw must not inherit.
+        _currentVertexArray = 0;
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(true);
+        _depthState = DepthState.Disabled;
+    }
+
     /// <inheritdoc/>
     public unsafe void DrawMesh(
         MeshHandle mesh,
@@ -796,7 +869,32 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             return;
         }
 
-        UseProgram(_meshProgram);
+        // Which program shades this draw is decided by the pass, not by the caller: a renderer asks
+        // for a mesh with a texture and a lightmap and never learns there are two ways to draw it.
+        bool deferred = CurrentPass == ScenePass.Geometry
+            && _sceneTarget is { IsReady: true } gbuffer
+            && gbuffer.Description.Deferred;
+        GLShaderProgram program = deferred ? _gbufferProgram! : _meshProgram!;
+        MeshUniforms uniforms = deferred ? _gbufferUniforms : _meshUniforms;
+
+        if (!ReferenceEquals(program, _lastMeshProgram))
+        {
+            // A shadowed uniform belongs to the program that received it, so switching programs
+            // invalidates every one of them. Leaving the cache primed here would draw the whole frame
+            // with whatever matrices the other program happened to be holding.
+            _lastMeshProgram = program;
+            _meshUniformsPrimed = false;
+            _sentMaterial = null;
+        }
+
+        UseProgram(program);
+
+        if (deferred && _sentMaterial != _material)
+        {
+            _sentMaterial = _material;
+            program.SetVector4(
+                _gbufferMaterial, _material.Roughness, _material.Metallic, _material.Emissive, 0f);
+        }
 
         // Every uniform below used to be re-uploaded on every sub-mesh. The projection is fixed for the
         // whole pass, the fade and the alpha test change a handful of times, and consecutive sub-meshes
@@ -813,35 +911,35 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _sentProjection = _projection;
             _sentDetailFade = _detailFade;
             _sentAlphaTest = alphaTest;
-            _meshProgram.SetMatrix4(_meshUniforms.ModelView, modelView);
-            _meshProgram.SetMatrix4(_meshUniforms.Projection, _projection);
-            _meshProgram.SetVector4(
-                _meshUniforms.DetailFade,
+            program.SetMatrix4(uniforms.ModelView, modelView);
+            program.SetMatrix4(uniforms.Projection, _projection);
+            program.SetVector4(
+                uniforms.DetailFade,
                 _detailFade.Scale,
                 _detailFade.Offset,
                 _detailFade.Slope,
                 _detailFade.Enabled);
-            _meshProgram.SetFloat(_meshUniforms.AlphaTest, alphaTest);
+            program.SetFloat(uniforms.AlphaTest, alphaTest);
         }
         else
         {
             if (_sentModelView != modelView)
             {
                 _sentModelView = modelView;
-                _meshProgram.SetMatrix4(_meshUniforms.ModelView, modelView);
+                program.SetMatrix4(uniforms.ModelView, modelView);
             }
 
             if (_sentProjection != _projection)
             {
                 _sentProjection = _projection;
-                _meshProgram.SetMatrix4(_meshUniforms.Projection, _projection);
+                program.SetMatrix4(uniforms.Projection, _projection);
             }
 
             if (_sentDetailFade != _detailFade)
             {
                 _sentDetailFade = _detailFade;
-                _meshProgram.SetVector4(
-                    _meshUniforms.DetailFade,
+                program.SetVector4(
+                    uniforms.DetailFade,
                     _detailFade.Scale,
                     _detailFade.Offset,
                     _detailFade.Slope,
@@ -851,7 +949,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             if (_sentAlphaTest != alphaTest)
             {
                 _sentAlphaTest = alphaTest;
-                _meshProgram.SetFloat(_meshUniforms.AlphaTest, alphaTest);
+                program.SetFloat(uniforms.AlphaTest, alphaTest);
             }
         }
 
@@ -879,6 +977,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _disposed = true;
 
         _sceneTarget?.Dispose();
+        _gbufferProgram?.Dispose();
+        _lightingProgram?.Dispose();
         _fullScreen?.Dispose();
         _resolveProgram?.Dispose();
 
@@ -955,6 +1055,29 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
+
+        _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment);
+        _gbufferUniforms = new MeshUniforms(
+            _gbufferProgram.LocationOf("uModelView"),
+            _gbufferProgram.LocationOf("uProjection"),
+            _gbufferProgram.LocationOf("uDetailFade"),
+            _gbufferProgram.LocationOf("uAlphaTest"));
+        _gbufferMaterial = _gbufferProgram.LocationOf("uMaterial");
+        _gbufferDecodeAlbedo = _gbufferProgram.LocationOf("uDecodeAlbedo");
+        UseProgram(_gbufferProgram);
+        _gbufferProgram.SetInt("uDiffuse", 0);
+        _gbufferProgram.SetInt("uLightmap", 1);
+
+        _lightingProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, DeferredLightingShaders.Fragment);
+        _lightingModelLocation = _lightingProgram.LocationOf("uLightingModel");
+        _lightingSunDirection = _lightingProgram.LocationOf("uSunDirection");
+        _lightingSunColour = _lightingProgram.LocationOf("uSunColour");
+        _lightingAmbient = _lightingProgram.LocationOf("uAmbientColour");
+        UseProgram(_lightingProgram);
+        _lightingProgram.SetInt("uAlbedo", 0);
+        _lightingProgram.SetInt("uNormal", 1);
+        _lightingProgram.SetInt("uBakedLight", 2);
+        _lightingProgram.SetInt("uMaterial", 3);
 
         _fullScreen = new GLFullScreenPass(_gl);
         _sceneTarget = new GLSceneTarget(_gl, _logger);

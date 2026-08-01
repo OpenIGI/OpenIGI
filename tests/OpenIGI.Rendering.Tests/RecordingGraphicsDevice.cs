@@ -77,6 +77,18 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         return true;
     }
 
+    /// <summary>The material each draw was made under, most recent last.</summary>
+    public List<SurfaceMaterial> Materials { get; } = [];
+
+    /// <summary>The lighting each frame was set to, in order.</summary>
+    public List<SceneLighting> Lightings { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetMaterialOverride(in SurfaceMaterial material) => Materials.Add(material);
+
+    /// <inheritdoc/>
+    public void SetLighting(in SceneLighting lighting) => Lightings.Add(lighting);
+
     /// <inheritdoc/>
     public void BeginPass(ScenePass pass)
     {

@@ -84,6 +84,17 @@ internal sealed class GLShaderProgram : IDisposable
     /// <param name="y">The second component.</param>
     public void SetVector2(string name, float x, float y) => _gl.Uniform2(GetLocation(name), x, y);
 
+    /// <summary>Sets a <c>vec3</c> uniform.</summary>
+    /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
+    /// <param name="x">The first component.</param>
+    /// <param name="y">The second component.</param>
+    /// <param name="z">The third component.</param>
+    /// <remarks>
+    /// The size has to match the declaration: <c>glUniform4f</c> against a <c>vec3</c> is an invalid
+    /// operation and silently leaves the uniform at zero, which shows up as a scene lit by nothing.
+    /// </remarks>
+    public void SetVector3(int location, float x, float y, float z) => _gl.Uniform3(location, x, y, z);
+
     /// <summary>Sets a <c>vec4</c> uniform.</summary>
     /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
     /// <param name="x">The first component.</param>

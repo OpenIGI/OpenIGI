@@ -33,6 +33,8 @@ internal sealed class GLSceneTarget : IDisposable
 
     private readonly uint[] _colorTextures = [0, 0];
     private readonly uint[] _colorFramebuffers = [0, 0];
+    private readonly uint[] _gbufferTextures = [0, 0, 0, 0];
+    private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
     private uint _msaaColor;
@@ -61,9 +63,27 @@ internal sealed class GLSceneTarget : IDisposable
     /// <summary>Gets the scene's depth, readable by a shader.</summary>
     public uint DepthTexture => _depthTexture;
 
+    /// <summary>Gets the albedo target, or zero when the target is not deferred.</summary>
+    public uint AlbedoTexture => _gbufferTextures[0];
+
+    /// <summary>Gets the view-space normal target, or zero when the target is not deferred.</summary>
+    public uint NormalTexture => _gbufferTextures[1];
+
+    /// <summary>Gets the baked-irradiance target, or zero when the target is not deferred.</summary>
+    public uint BakedLightTexture => _gbufferTextures[2];
+
+    /// <summary>Gets the roughness/metallic/emissive target, or zero when the target is not deferred.</summary>
+    public uint MaterialTexture => _gbufferTextures[3];
+
     /// <summary>Gets the framebuffer geometry should be rasterised into.</summary>
-    /// <remarks>The multisampled one when multisampling is on, otherwise the front colour target.</remarks>
-    public uint GeometryFramebuffer => Description.IsMultisampled ? _msaaFramebuffer : _colorFramebuffers[_front];
+    /// <remarks>
+    /// The G-buffer when the target is deferred, the multisampled framebuffer when multisampling is
+    /// on, and otherwise the front colour target.
+    /// </remarks>
+    public uint GeometryFramebuffer =>
+        Description.Deferred ? _gbufferFramebuffer
+        : Description.IsMultisampled ? _msaaFramebuffer
+        : _colorFramebuffers[_front];
 
     /// <summary>Builds or rebuilds the target for a description.</summary>
     /// <param name="description">The target to build.</param>
@@ -121,6 +141,12 @@ internal sealed class GLSceneTarget : IDisposable
             }
         }
 
+        if (description.Deferred && !CreateGBuffer(description))
+        {
+            Release();
+            return false;
+        }
+
         if (description.IsMultisampled && !CreateMultisampleTargets(colorFormat, description))
         {
             // Falling back to a single-sampled target is far better than refusing to render: the
@@ -170,6 +196,17 @@ internal sealed class GLSceneTarget : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
+    /// <summary>Makes the front colour buffer current, for the lighting pass and the forward draws.</summary>
+    /// <remarks>
+    /// Its depth attachment is the one the G-buffer wrote, so a forward draw over the lit scene still
+    /// depth-tests against the geometry that was recorded before it.
+    /// </remarks>
+    public void BindForColour()
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _colorFramebuffers[_front]);
+        _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+    }
+
     /// <summary>Makes the back colour buffer current so a full-screen pass can write into it.</summary>
     /// <remarks>The front buffer stays readable as the pass's input; <see cref="Swap"/> exchanges them.</remarks>
     public void BindForPostProcess()
@@ -207,6 +244,69 @@ internal sealed class GLSceneTarget : IDisposable
 
         _disposed = true;
         Release();
+    }
+
+    /// <summary>Builds the three G-buffer targets and the framebuffer that writes all of them at once.</summary>
+    /// <param name="description">The target being built.</param>
+    /// <returns><see langword="true"/> when the G-buffer is complete.</returns>
+    /// <remarks>
+    /// The formats are chosen for what each channel has to survive. Albedo is ordinary 8-bit colour.
+    /// The normal gets <c>RGB10_A2</c>: ten bits a channel is what stops a slowly-curving surface from
+    /// banding once a specular highlight runs across it, and the two-bit alpha is plenty for a
+    /// metallic value that is physically almost always nought or one. Baked irradiance is 8-bit
+    /// because that is the precision the original's lightmaps have in the first place.
+    /// </remarks>
+    private bool CreateGBuffer(in SceneTargetDescription description)
+    {
+        // The normal target is 16-bit float rather than RGB10_A2: it has to carry a usable alpha for
+        // blending, and RGB10_A2's two-bit alpha gives four coverage levels, which is visible banding
+        // on every blended edge.
+        InternalFormat[] formats =
+        [
+            InternalFormat.Rgba8,
+            InternalFormat.Rgba16f,
+            InternalFormat.Rgba8,
+            InternalFormat.Rgba8,
+        ];
+
+        for (int i = 0; i < _gbufferTextures.Length; i++)
+        {
+            _gbufferTextures[i] = CreateTexture(formats[i], PixelFormat.Rgba, PixelType.Float, description);
+        }
+
+        _gbufferFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _gbufferFramebuffer);
+
+        for (int i = 0; i < _gbufferTextures.Length; i++)
+        {
+            _gl.FramebufferTexture2D(
+                FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0 + i,
+                TextureTarget.Texture2D,
+                _gbufferTextures[i],
+                0);
+        }
+
+        // Depth is shared with the colour targets, which is what lets the lighting pass write into a
+        // colour buffer that still depth-tests correctly for the forward draws after it.
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D,
+            _depthTexture,
+            0);
+
+        // Without this only attachment 0 is written, and the normal and baked targets stay empty.
+        Span<GLEnum> buffers =
+        [
+            GLEnum.ColorAttachment0,
+            GLEnum.ColorAttachment1,
+            GLEnum.ColorAttachment2,
+            GLEnum.ColorAttachment3,
+        ];
+
+        _gl.DrawBuffers(buffers);
+        return IsComplete("G-buffer");
     }
 
     private bool CreateMultisampleTargets(InternalFormat colorFormat, in SceneTargetDescription description)
@@ -312,6 +412,21 @@ internal sealed class GLSceneTarget : IDisposable
         {
             _gl.DeleteTexture(_depthTexture);
             _depthTexture = 0;
+        }
+
+        for (int i = 0; i < _gbufferTextures.Length; i++)
+        {
+            if (_gbufferTextures[i] != 0)
+            {
+                _gl.DeleteTexture(_gbufferTextures[i]);
+                _gbufferTextures[i] = 0;
+            }
+        }
+
+        if (_gbufferFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_gbufferFramebuffer);
+            _gbufferFramebuffer = 0;
         }
 
         ReleaseMultisample();
