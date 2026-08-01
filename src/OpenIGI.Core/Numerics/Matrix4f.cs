@@ -253,6 +253,70 @@ public readonly struct Matrix4f : IEquatable<Matrix4f>, IFormattable
             0f, 0f, 1f, 0f);
     }
 
+    /// <summary>Builds an orthographic projection centred on the view-space origin.</summary>
+    /// <param name="width">The box width.</param>
+    /// <param name="height">The box height.</param>
+    /// <param name="near">The near plane distance. May be negative.</param>
+    /// <param name="far">The far plane distance.</param>
+    /// <returns>The projection.</returns>
+    public static Matrix4f CreateOrthographic(float width, float height, float near, float far)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
+        return CreateOrthographic(-width * 0.5f, width * 0.5f, -height * 0.5f, height * 0.5f, near, far);
+    }
+
+    /// <summary>
+    /// Builds an orthographic projection, for rendering a scene from a directional light.
+    /// </summary>
+    /// <param name="left">The left edge of the box, in view space.</param>
+    /// <param name="right">The right edge of the box.</param>
+    /// <param name="bottom">The bottom edge of the box.</param>
+    /// <param name="top">The top edge of the box.</param>
+    /// <param name="near">The near plane distance. May be negative: a light's box has no eye in it.</param>
+    /// <param name="far">The far plane distance.</param>
+    /// <returns>The projection.</returns>
+    /// <remarks>
+    /// <para>
+    /// Same conventions as <see cref="CreatePerspective"/> — left-handed view space with <c>+Z</c> into
+    /// the screen, and depth mapped to OpenGL's <c>[-1, 1]</c>.
+    /// </para>
+    /// <para>
+    /// Unlike a perspective projection this one accepts a <paramref name="near"/> that is zero or
+    /// negative, and needs to: the box a shadow cascade is fitted into is centred on the geometry it
+    /// covers, and half of that geometry is behind the point the light's frame is built at. Refusing a
+    /// negative near here would mean pushing every cascade artificially far back and spending its depth
+    /// precision on empty space.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">The box is empty in some axis.</exception>
+    public static Matrix4f CreateOrthographic(
+        float left,
+        float right,
+        float bottom,
+        float top,
+        float near,
+        float far)
+    {
+        if (right == left || top == bottom || far == near)
+        {
+            throw new ArgumentException(
+                $"An orthographic box must have extent on every axis, got x[{left}, {right}] y[{bottom}, {top}] z[{near}, {far}].",
+                nameof(right));
+        }
+
+        float rl = right - left;
+        float tb = top - bottom;
+        float fn = far - near;
+
+        return new Matrix4f(
+            2f / rl, 0f, 0f, -(right + left) / rl,
+            0f, 2f / tb, 0f, -(top + bottom) / tb,
+            0f, 0f, 2f / fn, -(far + near) / fn,
+            0f, 0f, 0f, 1f);
+    }
+
     /// <summary>Transforms a point, dividing by the resulting <c>w</c>.</summary>
     /// <param name="value">The point to transform.</param>
     /// <returns>The transformed point in normalized device coordinates.</returns>
