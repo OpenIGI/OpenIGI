@@ -16,6 +16,7 @@ namespace OpenIGI.Desktop;
 /// <param name="StartScreen">Open on this menu screen id instead of the one the script names, or zero.</param>
 /// <param name="StartMission">Load this mission at boot instead of opening the menus, or zero.</param>
 /// <param name="LogCamera">Whether to print the fly-through camera's input and orientation every frame.</param>
+/// <param name="Lockstep">Whether the simulation is driven by a synthetic clock so a run is reproducible.</param>
 /// <param name="StartFlying">Whether to open in the free camera instead of standing on the ground.</param>
 /// <param name="CameraYaw">The yaw in radians the fly-through camera opens on.</param>
 /// <param name="CameraPitch">The pitch in radians the fly-through camera opens on.</param>
@@ -39,6 +40,7 @@ public readonly record struct DesktopOptions(
     int StartScreen,
     int StartMission,
     bool LogCamera,
+    bool Lockstep,
     bool StartFlying,
     float CameraYaw,
     float CameraPitch,
@@ -77,6 +79,7 @@ public readonly record struct DesktopOptions(
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
+        bool lockstep = false;
         bool startFlying = false;
         float cameraYaw = 0f;
         float cameraPitch = -0.12f;
@@ -234,6 +237,10 @@ public readonly record struct DesktopOptions(
             {
                 logCamera = true;
             }
+            else if (arg.Equals("lockstep", StringComparison.OrdinalIgnoreCase))
+            {
+                lockstep = true;
+            }
             else if (arg.Equals("freecam", StringComparison.OrdinalIgnoreCase))
             {
                 startFlying = true;
@@ -283,6 +290,7 @@ public readonly record struct DesktopOptions(
             startScreen,
             startMission,
             logCamera,
+            lockstep,
             startFlying,
             cameraYaw,
             cameraPitch,
@@ -338,6 +346,10 @@ public readonly record struct DesktopOptions(
           -novsync         Do not wait for the vertical blank.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
+          -lockstep        Drive the simulation from a synthetic clock, one tick per loop pass,
+                           instead of the wall clock. A run then depends only on its arguments,
+                           which is what makes a capture reproducible. Capture only -- it uncaps
+                           the simulation rate and is not how the game is meant to be played.
           -uiscale <n>     Magnify the 640x480-authored menus and HUD by a whole number.
                            0 (the default) picks one from the window size; 1 is the original's
                            own size, which on a modern display is very small.

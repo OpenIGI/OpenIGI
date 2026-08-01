@@ -41,3 +41,7 @@ gamedata/
 
 # a probe build output
 a probe of the running original
+
+# Scratch space for the remaster track's reference captures (tools/capture-reference.sh).
+.capture-tmp/
+.capture-compare/

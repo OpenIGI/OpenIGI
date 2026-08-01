@@ -7,6 +7,7 @@ using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
@@ -173,7 +174,15 @@ using (window)
     // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk
     // updates and renders the menu rather than this loop doing either by hand.
     DesktopRenderScheduler scheduler = new(device);
-    GameLoop loop = new(host: menuHost, renderer: scheduler, logger: logger);
+
+    // -lockstep replaces the wall clock with a synthetic one advanced a fixed amount per loop pass,
+    // so how long a frame took to draw stops deciding how many ticks it covered. Without it a capture
+    // is not reproducible -- two identical command lines land on different tick counts and so on
+    // different soldier and animation states, which measured at 9% of pixels differing. Everything
+    // else in the simulation is already deterministic (IgiRandom is seeded, not time-seeded), so this
+    // is the whole of what a reference capture needs.
+    ManualTimeSource? lockstepClock = options.Lockstep ? new ManualTimeSource() : null;
+    GameLoop loop = new(time: lockstepClock, host: menuHost, renderer: scheduler, logger: logger);
 
     // The mission table is built the way the original builds it: walk LOCAL:missions and run every
     // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
@@ -1068,9 +1077,29 @@ using (window)
     int lastCameraMilliseconds = loop.TimeSource.Milliseconds;
     int lastConsoleMilliseconds = loop.TimeSource.Milliseconds;
 
+    // A capture run is a background process as far as the person at the keyboard is concerned: it must
+    // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
+    bool captureMode = options.Lockstep;
+
     while (running && loop.IsRunning && !window.IsClosing)
     {
         window.PumpEvents();
+
+        // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
+        // an accumulated step so the schedule cannot drift. Per loop pass would be wrong: the loop
+        // pumps many times per frame, so the clock would jump a whole tick each pump and the catch-up
+        // cap would fire every pass -- measured at 200 ticks for 20 frames, a world running ten times
+        // too fast. Deterministic either way, but a capture should show the moment it claims to.
+        if (lockstepClock is not null)
+        {
+            lockstepClock.Milliseconds = (int)(((loop.Clock.FrameCount + 1L) * 1000L) / GameClock.DefaultTickRate);
+
+            // A capture must not be able to see the mouse. The window grabs the cursor in player mode,
+            // so moving the mouse in another application changed what got captured -- which is exactly
+            // how the first reference set came out non-reproducible for a reason that had nothing to
+            // do with the clock.
+            window.Input.Captured = true;
+        }
 
         // The console reads the frame's input first. If it is open it then marks the frame captured,
         // and every other reader below -- the debug keys, the cameras, the player, the menu -- sees an
@@ -1128,7 +1157,7 @@ using (window)
                 // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                 // so the orbit keeps turning however far the mouse is moved.
                 deathCamera.Control(rawX, rawY);
-                window.CursorLocked = true;
+                window.CursorLocked = !captureMode;
             }
             else if (player is { IsOnLadder: true })
             {
@@ -1136,14 +1165,14 @@ using (window)
                 // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
                 // you can look around while you climb rather than being locked behind the character.
                 interactionCamera.Control(rawX, rawY);
-                window.CursorLocked = true;
+                window.CursorLocked = !captureMode;
             }
             else if (playerMode && player is not null)
             {
                 // Looking is per frame so the view is as smooth as the display allows; the body itself
                 // moves on the fixed tick below, so it steps identically whatever the frame rate.
                 player.Look(window.Input, elapsed);
-                window.CursorLocked = player.IsCapturingMouse;
+                window.CursorLocked = !captureMode && player.IsCapturingMouse;
             }
             else
             {
@@ -1151,7 +1180,7 @@ using (window)
 
                 // The cursor is locked away while a mouse button is held, the way a scene editor's is,
                 // so the view keeps turning however far the mouse is dragged. It comes back on release.
-                window.CursorLocked = camera.IsCapturingMouse;
+                window.CursorLocked = !captureMode && camera.IsCapturingMouse;
             }
 
             if (options.LogCamera && (right || rawX != 0f || rawY != 0f))
