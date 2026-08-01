@@ -280,6 +280,10 @@ using (window)
     WorldRenderer? world = null;
     TerrainRenderer? terrain = null;
     SkyRenderer? sky = null;
+
+    // The level's own sun, read from its Dirlight task -- section 12.
+    // Null until a level is loaded, and for a level that declares none.
+    DirectionalLightSettings? sun = null;
     FreeCamera? camera = null;
 
     // The walking player. F1 swaps between it and the free camera: the camera is how a level is
@@ -644,6 +648,28 @@ using (window)
         // clears to, so the horizon meets sky-coloured backing rather than black.
         sky?.Dispose();
         sky = new SkyRenderer(device, fileSystem, levelRoot, farPlane, logger);
+
+        if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
+        {
+            sun = readSun;
+            logger.Information(
+                "Light",
+                FormattableString.Invariant(
+                    $"Sun at {MathF.Asin(Math.Clamp(readSun.Direction.Z, -1f, 1f)) * 180f / MathF.PI:F1} degrees ")
+                + FormattableString.Invariant(
+                    $"elevation, time {readSun.TimeOfDay:F0}, colour ({readSun.Colour.X:F2}, {readSun.Colour.Y:F2}, {readSun.Colour.Z:F2}), ")
+                + FormattableString.Invariant(
+                    $"ambient ({readSun.Ambient.X:F2}, {readSun.Ambient.Y:F2}, {readSun.Ambient.Z:F2})."));
+
+            if (readSun.IsBelowHorizon)
+            {
+                logger.Warning("Light", "This level's authored sun is below the horizon; see rendering.md section 12.");
+            }
+        }
+        else
+        {
+            logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
+        }
         if (sky.HasSky)
         {
             scheduler.ClearColour = new Bgra32(
@@ -1074,6 +1100,20 @@ using (window)
     window.Show();
     logger.Information("Desktop", $"{platform.Name} up on {device.Capabilities.Renderer}.");
 
+    // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
+    // probe showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail
+    // level pairs.
+    DirectionalLightSettings defaultSun = new(
+        DirectionalLightSettings.DirectionFrom(0.5236f, -4.92183f),
+        new Vector3f(1.0f, 0.96f, 0.88f),
+        new Vector3f(0.27f, 0.29f, 0.33f),
+        Beta: 0.5236f,
+        Gamma: -4.92183f,
+        TimeOfDay: 12f,
+        Intensity: 18f,
+        AffectsTerrain: true,
+        AffectsObjects: true);
+
     int lastCameraMilliseconds = loop.TimeSource.Milliseconds;
     int lastConsoleMilliseconds = loop.TimeSource.Milliseconds;
 
@@ -1406,15 +1446,19 @@ using (window)
             {
                 // The scheduler cleared the back buffer; the target it did not know about needs it too.
                 device.Clear(scheduler.ClearColour);
+                // The sun arrives in world space and the G-buffer's normals are in view space, so it
+                // is rotated by the camera here. Transposed() is not decoration: the rows of the
+                // orientation ARE the view axes, and Transform() applies the engine's row-vector
+                // convention which dots the columns -- the inverse rotation. Getting it wrong lights
+                // the world from a direction that swings as the player turns.
+                DirectionalLightSettings light = sun ?? defaultSun;
+                Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
+
                 device.SetLighting(new SceneLighting(
                     RenderCVars.Lighting.Value,
-
-                    // A placeholder sun until stage R3 reads the level's own Dirlight tasks: high and
-                    // behind the camera, so that turning the model on shows something rather than
-                    // nothing. It is view-space by contract, which is why it needs no camera rotation.
-                    new Vector3f(0.35f, 0.35f, -0.87f),
-                    new Vector3f(1.0f, 0.96f, 0.88f),
-                    new Vector3f(0.28f, 0.30f, 0.34f)));
+                    viewSunDirection,
+                    light.Colour,
+                    light.Ambient));
                 device.BeginPass(ScenePass.Geometry);
 
                 // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
