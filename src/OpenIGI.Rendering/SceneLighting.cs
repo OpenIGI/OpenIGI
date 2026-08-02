@@ -24,11 +24,23 @@ namespace OpenIGI.Rendering;
 /// A flat stand-in for bounced light, used only by <see cref="LightingModel.Dynamic"/> until the probe
 /// volume of stage R7 replaces it with something directional.
 /// </param>
+/// <param name="Scale">
+/// Scales the whole dynamically-computed irradiance, and is ignored under
+/// <see cref="LightingModel.Baked"/>, which has to reproduce the original exactly.
+/// <para>
+/// It exists because this game's diffuse textures are not albedo. They were painted to be multiplied
+/// by a lightmap that averages well below one, so they already carry lighting; treating them as albedo
+/// and lighting them at unit irradiance counts that painted-in brightness a second time. The error is
+/// proportional to how bright the texture already was, which is why it shows up first on sand and snow
+/// and hardly at all on concrete.
+/// </para>
+/// </param>
 public readonly record struct SceneLighting(
     LightingModel Model,
     Vector3f SunDirection,
     Vector3f SunColour,
-    Vector3f AmbientColour)
+    Vector3f AmbientColour,
+    float Scale = 1f)
 {
     /// <summary>
     /// Gets the lighting that reproduces the original: the bakes and nothing else.

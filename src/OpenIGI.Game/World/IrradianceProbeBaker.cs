@@ -202,6 +202,10 @@ public static class IrradianceProbeBaker
         float distanceSum = 0f;
         float distanceSquaredSum = 0f;
 
+        // Zero for a level whose sun is below the horizon, which skips the shadow rays entirely rather
+        // than tracing towards nowhere.
+        float sunlit = sunDirection.LengthSquared > 1e-6f ? SunlitBounce : 0f;
+
         foreach (Vector3f direction in directions)
         {
             Vector3d end = new(
@@ -216,10 +220,34 @@ public static class IrradianceProbeBaker
             {
                 distance = (float)(hit.Distance / WorldScene.UnitsPerMetre);
 
-                // A blocked direction is not black. It is a surface, and that surface is lit by the sky
-                // it can see and bounces a share of it onwards -- which is the single bounce this
-                // volume carries, and the reason an interior with no window is dim rather than void.
+                // A blocked direction is not black. It is a surface, and that surface is lit by what it
+                // can see and bounces a share of it onwards -- which is the single bounce this volume
+                // carries, and the reason an interior with no window is dim rather than void.
                 float exposure = 1f - (distance / MaxTraceMetres);
+
+                // And a surface standing in the sun bounces far more than one in shadow, which is
+                // where sunlight enters the INDIRECT term. It has to enter here rather than as a lobe
+                // pointed at the sun: the lighting pass adds the direct, shadow-mapped sun itself, so
+                // a probe carrying the sun as well counts it twice -- which is what made sunlit ground
+                // blow out.
+                if (sunlit > 0f)
+                {
+                    Vector3d hitPoint = new(
+                        hit.Position.X + (hit.Normal.X * SunBiasInUnits),
+                        hit.Position.Y + (hit.Normal.Y * SunBiasInUnits),
+                        hit.Position.Z + (hit.Normal.Z * SunBiasInUnits));
+
+                    Vector3d towardsSun = new(
+                        hitPoint.X + (sunDirection.X * reach),
+                        hitPoint.Y + (sunDirection.Y * reach),
+                        hitPoint.Z + (sunDirection.Z * reach));
+
+                    if (!cast(hitPoint, towardsSun, out _))
+                    {
+                        exposure *= sunlit;
+                    }
+                }
+
                 arriving = new Vector3f(
                     groundAlbedo.X * exposure,
                     groundAlbedo.Y * exposure,
@@ -240,23 +268,6 @@ public static class IrradianceProbeBaker
             Project(coefficients, direction, arriving);
         }
 
-        // The sun gets one ray of its own rather than being folded into the sphere above. Sixty-four
-        // directions cannot reliably contain one that points at it, and a probe that misses the sun by
-        // a few degrees is a probe in shadow -- which would salt every sunlit room with dark patches.
-        // A level with no sun above the horizon skips it entirely rather than tracing towards nowhere.
-        if (sunDirection.LengthSquared > 1e-6f)
-        {
-            Vector3d sunEnd = new(
-                origin.X + (sunDirection.X * reach),
-                origin.Y + (sunDirection.Y * reach),
-                origin.Z + (sunDirection.Z * reach));
-
-            if (!cast(origin, sunEnd, out _))
-            {
-                Project(coefficients, sunDirection, new Vector3f(SunWeight, SunWeight, SunWeight));
-            }
-        }
-
         float scale = 4f * MathF.PI / directions.Length;
 
         for (int i = 0; i < coefficients.Length; i++)
@@ -271,12 +282,22 @@ public static class IrradianceProbeBaker
             distanceSquaredSum / directions.Length);
     }
 
-    /// <summary>How much a clear line to the sun contributes, relative to one sky direction.</summary>
+    /// <summary>How much more a sunlit surface bounces than a sky-lit one.</summary>
     /// <remarks>
-    /// The sun is one ray standing in for a source that is small but very bright, so it carries the
-    /// weight of the many sky directions it would occupy if the sphere were dense enough to resolve it.
+    /// The sun is far brighter than the sky it shares the hemisphere with, so a wall in sunlight is a
+    /// far stronger secondary source than the same wall in shade. This is the only route by which
+    /// sunlight reaches the indirect term, and it has to be the only one: the lighting pass adds the
+    /// direct sun itself, shadow-mapped, so a probe that also carried a lobe pointed at the sun would
+    /// count it twice.
     /// </remarks>
-    private const float SunWeight = 12f;
+    private const float SunlitBounce = 3.5f;
+
+    /// <summary>How far off a surface a shadow ray starts, in engine units.</summary>
+    /// <remarks>
+    /// Without it every shadow ray begins exactly on the surface it is testing and immediately hits
+    /// it, so nothing is ever found to be in sunlight.
+    /// </remarks>
+    private const double SunBiasInUnits = 64.0;
 
     /// <summary>Adds one direction's arriving light into the first-order harmonics.</summary>
     /// <remarks>

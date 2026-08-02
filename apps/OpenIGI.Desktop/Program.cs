@@ -1671,7 +1671,8 @@ using (window)
                     RenderCVars.Lighting.Value,
                     viewSunDirection,
                     light.Colour,
-                    light.Ambient));
+                    light.Ambient,
+                    RenderCVars.LightScale.Value));
                 device.BeginPass(ScenePass.Geometry);
 
                 // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

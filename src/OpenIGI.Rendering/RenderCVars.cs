@@ -330,6 +330,22 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How strongly surfaces bounce their colour onto each other.");
 
+    /// <summary>Scales the whole dynamically-computed irradiance.</summary>
+    /// <remarks>
+    /// Not a taste control, a calibration. I.G.I.'s diffuse textures are not albedo: they were painted
+    /// to be multiplied by a lightmap averaging well below one, so they already carry lighting.
+    /// Lighting them at unit irradiance counts that painted-in brightness twice, and it lands hardest
+    /// on the brightest textures -- which is why the sand and the snow blew out while the concrete
+    /// looked right. The default is measured against the artists' own bakes rather than chosen.
+    /// </remarks>
+    public static readonly NumericCVar<float> LightScale = CVar.Float(
+        "r_light_scale",
+        0.7f,
+        0.1f,
+        2f,
+        CVarOptions.Archive,
+        "Scales dynamic lighting to match what the level's textures were painted for.");
+
     /// <summary>How much of the blurred bright pass is mixed back in, or 0 for no bloom.</summary>
     public static readonly NumericCVar<float> Bloom = Presets.Define(
         CVar.Float(

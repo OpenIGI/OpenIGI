@@ -81,6 +81,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _lightingProbeViewToWorld = -1;
     private int _lightingProbeCamera = -1;
     private int _lightingShowProbes = -1;
+    private int _lightingScale = -1;
     private DebugView _debugView;
     private ReflectionSettings _reflections;
     private GLShaderProgram? _reflectionProgram;
@@ -1644,6 +1645,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt(_lightingProbesEnabled, probes ? 1 : 0);
         _lightingProgram.SetInt(_lightingShowProbes, _debugView == DebugView.Probes ? 1 : 0);
 
+        // Never scales the baked model: that path has to reproduce the original exactly, and the
+        // original multiplies the texture by the lightmap and stops.
+        _lightingProgram.SetFloat(
+            _lightingScale, _lighting.Model == LightingModel.Baked ? 1f : MathF.Max(_lighting.Scale, 0f));
+
         if (probes)
         {
             BindProbeTexture(8, _probeTextures[0]);
@@ -2173,6 +2179,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProbeViewToWorld = _lightingProgram.LocationOf("uProbeViewToWorld");
         _lightingProbeCamera = _lightingProgram.LocationOf("uProbeCamera");
         _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
+        _lightingScale = _lightingProgram.LocationOf("uLightScale");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");
