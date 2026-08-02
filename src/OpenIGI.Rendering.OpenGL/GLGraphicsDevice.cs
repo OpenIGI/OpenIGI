@@ -134,6 +134,24 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private readonly float[] _cascadeSplits = new float[ShadowSettings.MaxCascades];
     private int _cascadeCount;
     private int _activeShadowCascade = -1;
+    private TemporalAaSettings _temporal;
+    private Matrix4f _temporalProjection = Matrix4f.Identity;
+    private Vector3f _temporalCamera;
+    private Matrix3f _temporalViewToWorldValue = Matrix3f.Identity;
+    private Matrix4f _previousViewProjection = Matrix4f.Identity;
+    private Vector3f _previousCamera;
+    private bool _hasPreviousFrame;
+    private bool _temporalResolved;
+
+    private GLShaderProgram? _temporalProgram;
+    private int _temporalUnproject = -1;
+    private int _temporalViewToWorld = -1;
+    private int _temporalPrevViewProjection = -1;
+    private int _temporalCameraDelta = -1;
+    private int _temporalTexelSize = -1;
+    private int _temporalFeedback = -1;
+    private int _temporalSharpening = -1;
+
     private DepthUnprojection _unprojection;
     private Matrix3f _viewToWorld = Matrix3f.Identity;
     private int _lightingCascadeCount = -1;
@@ -752,6 +770,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         }
 
         _captureActive = true;
+        _temporalResolved = false;
         _sceneTarget.BindForGeometry();
         return true;
     }
@@ -800,6 +819,21 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         {
             _fogVolumes[i] = volumes[i];
         }
+    }
+
+    /// <inheritdoc/>
+    public void SetTemporalAntiAliasing(
+        in TemporalAaSettings settings,
+        in Matrix4f projection,
+        Vector3f cameraPosition,
+        Matrix3f viewToWorld)
+    {
+        ThrowIfDisposed();
+
+        _temporal = settings;
+        _temporalProjection = projection;
+        _temporalCamera = cameraPosition;
+        _temporalViewToWorldValue = viewToWorld;
     }
 
     /// <inheritdoc/>
@@ -901,6 +935,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // its own narrower projection and whose depth must not reach the effects that read depth.
         if (pass == ScenePass.Forward && _sceneTarget!.Description.Deferred)
         {
+            // The accumulation closes here, before anything forward is drawn. The view model is the
+            // reason: it is locked to the camera and writes no depth, so a depth-based reprojection
+            // places it wherever the world behind it was and blends it with ten frames of its own sway.
+            // Resolving first puts it in front of the accumulated image instead of inside it.
+            ResolveTemporal(_sceneTarget);
             _sceneTarget.BindForColour();
         }
         else
@@ -976,6 +1015,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             throw new GraphicsDeviceException("Nothing has been captured this frame.");
         }
 
+        // A frame with no forward pass -- the free camera draws no view model -- has not resolved yet.
+        ResolveTemporal(target);
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
 
@@ -998,6 +1040,94 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _depthState = DepthState.Disabled;
 
         _currentVertexArray = 0;
+    }
+
+    /// <summary>Blends this frame into the accumulated ones.</summary>
+    /// <param name="target">The scene target holding the frame, its depth, and the history.</param>
+    /// <remarks>
+    /// Runs once per frame, at the first of the forward pass opening or the frame resolving, and is a
+    /// no-op thereafter. The accumulated image is copied back over the scene colour, so everything after
+    /// this point draws onto it and reads it exactly as it would have without any accumulation at all.
+    /// </remarks>
+    private void ResolveTemporal(GLSceneTarget target)
+    {
+        if (_temporalResolved)
+        {
+            return;
+        }
+
+        _temporalResolved = true;
+
+        if (!_temporal.Accumulates || _temporalProgram is null || _fullScreen is null)
+        {
+            // Still worth remembering where the camera was: a frame with the accumulation off is not a
+            // discontinuity, and forgetting would make every toggle of the setting cost a full
+            // convergence.
+            RememberFrame();
+            return;
+        }
+
+        if (!target.BindForTemporalResolve())
+        {
+            RememberFrame();
+            return;
+        }
+
+        // The first frame after a rebuild has nothing behind it, and the second has a previous camera
+        // but no accumulated picture. Both resolve to the current frame alone, which is exactly what a
+        // feedback of one does -- so the pass runs either way and the history is seeded rather than
+        // special-cased.
+        bool hasHistory = target.HasHistory && _hasPreviousFrame;
+        float feedback = hasHistory ? Math.Clamp(_temporal.Feedback, 0f, 1f) : 1f;
+
+        UseProgram(_temporalProgram);
+        _temporalProgram.SetVector4(
+            _temporalUnproject, _unprojection.XScale, _unprojection.YScale, _unprojection.Near, _unprojection.Far);
+        _temporalProgram.SetMatrix3(_temporalViewToWorld, _temporalViewToWorldValue);
+        _temporalProgram.SetMatrix4(_temporalPrevViewProjection, _previousViewProjection);
+        _temporalProgram.SetVector3(
+            _temporalCameraDelta,
+            _temporalCamera.X - _previousCamera.X,
+            _temporalCamera.Y - _previousCamera.Y,
+            _temporalCamera.Z - _previousCamera.Z);
+        _temporalProgram.SetVector2(
+            _temporalTexelSize, 1f / target.Description.Width, 1f / target.Description.Height);
+        _temporalProgram.SetFloat(_temporalFeedback, feedback);
+        // Scaled by the feedback, and this is not a fudge. The sharpening is applied to the history and
+        // the result becomes the next frame's history, so it compounds: at a feedback of 0.1 a pixel is
+        // sharpened some ten times before it is replaced, and a gain of 0.25 asks for two and a half
+        // times the contrast the setting names. Measured, an unscaled 0.25 put 38% MORE high-frequency
+        // energy into the frame than having no anti-aliasing at all -- it was not sharpening the image,
+        // it was ringing it. Scaling by the share of the pixel that is replaced each frame makes the
+        // number mean the same thing at every feedback.
+        _temporalProgram.SetFloat(
+            _temporalSharpening, hasHistory ? Math.Clamp(_temporal.MotionSharpening, 0f, 1f) * feedback : 0f);
+
+        BindTexture(0, target.FrontColorTexture);
+        BindTexture(1, target.HistoryTexture);
+        BindTexture(4, target.DepthTexture);
+
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
+        _fullScreen.Draw();
+
+        target.CopyTemporalResultToScene();
+        target.AdvanceHistory();
+        RememberFrame();
+    }
+
+    /// <summary>Keeps this frame's camera so the next one can reproject into it.</summary>
+    private void RememberFrame()
+    {
+        // The world-to-view rotation is the transpose of the one handed in, because a rotation's
+        // inverse is its transpose -- and it is folded into the projection here, once, rather than in
+        // the shader once per pixel.
+        _previousViewProjection =
+            _temporalProjection * Matrix4f.CreateRigid(_temporalViewToWorldValue.Transposed(), default);
+        _previousCamera = _temporalCamera;
+        _hasPreviousFrame = true;
     }
 
     /// <summary>Lights the G-buffer into the scene's colour buffer.</summary>
@@ -1463,6 +1593,19 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _shadowProgram.LocationOf("uAlphaTest"));
         UseProgram(_shadowProgram);
         _shadowProgram.SetInt("uDiffuse", 0);
+
+        _temporalProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, TemporalAaShaders.Fragment);
+        _temporalUnproject = _temporalProgram.LocationOf("uUnproject");
+        _temporalViewToWorld = _temporalProgram.LocationOf("uViewToWorld");
+        _temporalPrevViewProjection = _temporalProgram.LocationOf("uPrevViewProjection");
+        _temporalCameraDelta = _temporalProgram.LocationOf("uCameraDelta");
+        _temporalTexelSize = _temporalProgram.LocationOf("uTexelSize");
+        _temporalFeedback = _temporalProgram.LocationOf("uFeedback");
+        _temporalSharpening = _temporalProgram.LocationOf("uSharpening");
+        UseProgram(_temporalProgram);
+        _temporalProgram.SetInt("uCurrent", 0);
+        _temporalProgram.SetInt("uHistory", 1);
+        _temporalProgram.SetInt("uDepth", 4);
 
         _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
         _fogSunDirection = _fogProgram.LocationOf("uSunDirection");

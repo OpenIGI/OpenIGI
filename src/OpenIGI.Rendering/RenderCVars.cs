@@ -267,6 +267,34 @@ public static class RenderCVars
         high: "1.5",
         ultra: "2.5");
 
+    /// <summary>How much of the resolved pixel is this frame, or 1 for no accumulation.</summary>
+    /// <remarks>
+    /// The lower it is the more samples a pixel holds and the cleaner it converges, but the longer it
+    /// takes to notice that the surface under it has changed. It is also what pays for the noise in
+    /// every stochastic pass after this one, so it is a preset dial rather than a fixed constant.
+    /// </remarks>
+    public static readonly NumericCVar<float> TemporalFeedback = Presets.Define(
+        CVar.Float(
+            "r_taa",
+            1f,
+            0.02f,
+            1f,
+            CVarOptions.Archive,
+            "Temporal anti-aliasing: share of the pixel taken from this frame. 1 turns it off."),
+        vanilla: "1",
+        enhanced: "0.15",
+        high: "0.1",
+        ultra: "0.07");
+
+    /// <summary>How much of the history's resampling blur is subtracted back out.</summary>
+    public static readonly NumericCVar<float> TemporalSharpening = CVar.Float(
+        "r_taa_sharpen",
+        0.25f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "How much of the temporal history's resampling blur is sharpened back out.");
+
     /// <summary>How many samples each fog ray takes, or 0 for no volumetric fog.</summary>
     /// <remarks>The single biggest cost in the pass, and the quality dial.</remarks>
     public static readonly NumericCVar<int> FogQuality = Presets.Define(

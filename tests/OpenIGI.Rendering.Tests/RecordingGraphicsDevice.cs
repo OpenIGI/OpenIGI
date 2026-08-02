@@ -92,6 +92,16 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The shadow settings each frame was given, in order.</summary>
     public List<ShadowSettings> Shadows { get; } = [];
 
+    /// <summary>The temporal settings each frame was given, in order.</summary>
+    public List<TemporalAaSettings> Temporal { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetTemporalAntiAliasing(
+        in TemporalAaSettings settings,
+        in Matrix4f projection,
+        Vector3f cameraPosition,
+        Matrix3f viewToWorld) => Temporal.Add(settings);
+
     /// <summary>The cascade indices that were rendered, in order.</summary>
     public List<int> ShadowCascadesRendered { get; } = [];
 

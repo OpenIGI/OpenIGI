@@ -279,6 +279,7 @@ using (window)
     DeathCamera deathCamera = new();
     InteractionCamera interactionCamera = new();
     bool climbActive = false;
+    int temporalFrame = 0;
     bool climbSlideArmed = false;
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
@@ -1419,11 +1420,35 @@ using (window)
             // is 0.1 m. (Scripts can move it through the SetNearClippingPlane native, 0x497D00.) At
             // 0.2 the plane reached twice as far as retail's and cut into any wall the sweep lets the
             // body stand 2.5 mm from.
-            Matrix4f projection = Matrix4f.CreatePerspective(
+            Matrix4f unjitteredProjection = Matrix4f.CreatePerspective(
                 verticalFieldOfView,
                 aspectRatio,
                 near: 0.1f,
                 far: farPlane);
+
+            // Temporal accumulation works by sampling a different point inside each pixel every frame
+            // and averaging what comes back, so the jitter is not a refinement of the technique -- it
+            // is the technique. Without it every frame samples the same pixel centre and the history
+            // is an average of identical samples, which is a blur and nothing else.
+            //
+            // It is a translation in clip space, which is exactly a sub-pixel shift of the whole
+            // frustum: clip.xy += offset * clip.w, applied uniformly at every depth. Moving the camera
+            // instead would shift the near plane more than the far one and reproject wrongly.
+            bool wantsTemporal = RenderCVars.TemporalFeedback.Value < 1f
+                && RenderCVars.OffscreenScene.Value
+                && RenderCVars.Deferred.Value;
+
+            Matrix4f projection = unjitteredProjection;
+
+            if (wantsTemporal)
+            {
+                (float jitterX, float jitterY) = TemporalJitter.At(temporalFrame);
+                projection = Matrix4f.CreateTranslation(
+                    jitterX * 2f / window.Width,
+                    jitterY * 2f / window.Height,
+                    0f) * unjitteredProjection;
+                temporalFrame++;
+            }
 
             // The sky is behind everything and writes no depth, so it goes first; then terrain, which
             // is opaque and covers most of the screen, so drawing it before the objects gives the
@@ -1489,7 +1514,7 @@ using (window)
             device.SetShadows(
                 shadowSettings,
                 cascadeStorage.AsSpan(0, cascadeCount),
-                DepthUnprojection.From(projection, 0.1f, farPlane),
+                DepthUnprojection.From(unjitteredProjection, 0.1f, farPlane),
 
                 // View space back into camera-relative world space, which is the frame the cascades
                 // are fitted in. The same transpose, for the same reason.
@@ -1526,6 +1551,17 @@ using (window)
                     medium = medium with { Density = RenderCVars.FogDensity.Value };
                 }
             }
+
+            // Reprojection compares two frames, and the jitter is precisely what differs between them,
+            // so the matrix handed over is the one without it.
+            device.SetTemporalAntiAliasing(
+                new TemporalAaSettings(
+                    wantsTemporal,
+                    RenderCVars.TemporalFeedback.Value,
+                    MotionSharpening: RenderCVars.TemporalSharpening.Value),
+                unjitteredProjection,
+                new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
+                eye.Orientation.Transposed());
 
             device.SetVolumetricFog(
                 medium,

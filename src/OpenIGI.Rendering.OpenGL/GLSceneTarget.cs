@@ -34,6 +34,10 @@ internal sealed class GLSceneTarget : IDisposable
     private readonly uint[] _colorTextures = [0, 0];
     private readonly uint[] _colorFramebuffers = [0, 0];
     private readonly uint[] _gbufferTextures = [0, 0, 0, 0];
+    private readonly uint[] _historyTextures = [0, 0];
+    private readonly uint[] _historyFramebuffers = [0, 0];
+    private int _historyWrite;
+    private bool _historyValid;
     private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
@@ -62,6 +66,25 @@ internal sealed class GLSceneTarget : IDisposable
 
     /// <summary>Gets the scene's depth, readable by a shader.</summary>
     public uint DepthTexture => _depthTexture;
+
+    /// <summary>Gets the accumulated frames the temporal resolve reads.</summary>
+    /// <remarks>
+    /// A pair rather than one texture: the resolve reads the frames accumulated so far and writes the
+    /// new accumulation, and no pass may read and write one texture at once. Alternating between two
+    /// means the result is ready to be sampled where it stands, with no copy back.
+    /// </remarks>
+    public uint HistoryTexture => _historyTextures[1 - _historyWrite];
+
+    /// <summary>Gets the texture the temporal resolve last wrote, which is then the scene.</summary>
+    public uint ResolvedHistoryTexture => _historyTextures[_historyWrite];
+
+    /// <summary>Gets a value indicating whether the history holds a frame worth blending.</summary>
+    /// <remarks>
+    /// False for the first frame after the target is built, when the history is uninitialised memory
+    /// rather than a picture. The alternative — clearing it to black — would fade the first frames up
+    /// from nothing, which reads as a fault rather than as anti-aliasing.
+    /// </remarks>
+    public bool HasHistory => _historyValid;
 
     /// <summary>Gets the albedo target, or zero when the target is not deferred.</summary>
     public uint AlbedoTexture => _gbufferTextures[0];
@@ -147,6 +170,13 @@ internal sealed class GLSceneTarget : IDisposable
             return false;
         }
 
+        if (!CreateHistory(colorFormat, description))
+        {
+            // No history means no accumulation, and the rest of the frame is unaffected -- so this is
+            // a feature that quietly does not happen rather than a target that failed to build.
+            _logger.Warning(LogCategory, "The temporal history could not be created; accumulation is off.");
+        }
+
         if (description.IsMultisampled && !CreateMultisampleTargets(colorFormat, description))
         {
             // Falling back to a single-sampled target is far better than refusing to render: the
@@ -218,6 +248,57 @@ internal sealed class GLSceneTarget : IDisposable
     /// <summary>Makes what was just written the scene.</summary>
     public void Swap() => _front = 1 - _front;
 
+    /// <summary>Makes the history buffer being written current, for the temporal resolve.</summary>
+    /// <returns><see langword="true"/> when there is a history to write into.</returns>
+    public bool BindForTemporalResolve()
+    {
+        if (_historyFramebuffers[_historyWrite] == 0)
+        {
+            return false;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _historyFramebuffers[_historyWrite]);
+        _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+        return true;
+    }
+
+    /// <summary>Copies what the temporal resolve wrote back over the scene, and makes it the front.</summary>
+    /// <remarks>
+    /// So that the forward pass draws onto the accumulated image without drawing <em>into</em> the
+    /// history. Anything composited after the resolve — the view model above all — must not become part
+    /// of what the next frame blends against, or it accumulates against itself.
+    /// </remarks>
+    public void CopyTemporalResultToScene()
+    {
+        if (_historyFramebuffers[_historyWrite] == 0)
+        {
+            return;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _historyFramebuffers[_historyWrite]);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _colorFramebuffers[1 - _front]);
+        _gl.BlitFramebuffer(
+            0, 0, Description.Width, Description.Height,
+            0, 0, Description.Width, Description.Height,
+            ClearBufferMask.ColorBufferBit,
+            BlitFramebufferFilter.Nearest);
+        Swap();
+    }
+
+    /// <summary>Makes what the temporal resolve just wrote the history the next frame reads.</summary>
+    public void AdvanceHistory()
+    {
+        _historyWrite = 1 - _historyWrite;
+        _historyValid = true;
+    }
+
+    /// <summary>Forgets the accumulated frames, so the next one starts over.</summary>
+    /// <remarks>
+    /// For a cut, a teleport, or a resolution change — anything after which the previous frame is not a
+    /// slightly different view of this one but a different picture entirely.
+    /// </remarks>
+    public void DiscardHistory() => _historyValid = false;
+
     /// <summary>Clears the target's colour and depth.</summary>
     /// <param name="r">The red component in linear light.</param>
     /// <param name="g">The green component in linear light.</param>
@@ -245,6 +326,40 @@ internal sealed class GLSceneTarget : IDisposable
         _disposed = true;
         Release();
     }
+
+    /// <summary>Creates the pair of accumulation buffers the temporal resolve alternates between.</summary>
+    /// <param name="colorFormat">The scene's colour format, which the history has to match.</param>
+    /// <param name="description">The target being built.</param>
+    /// <returns><see langword="true"/> when both buffers exist.</returns>
+    private bool CreateHistory(InternalFormat colorFormat, in SceneTargetDescription description)
+    {
+        _historyWrite = 0;
+        _historyValid = false;
+
+        for (int i = 0; i < 2; i++)
+        {
+            _historyTextures[i] = CreateTexture(colorFormat, PixelFormat.Rgba, PixelType.Float, description);
+            _historyFramebuffers[i] = _gl.GenFramebuffer();
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _historyFramebuffers[i]);
+
+            // Colour only. The resolve is a full-screen pass over a finished frame, so there is nothing
+            // for it to depth-test against and sharing the scene's depth would only risk writing it.
+            _gl.FramebufferTexture2D(
+                FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                TextureTarget.Texture2D,
+                _historyTextures[i],
+                0);
+
+            if (!IsComplete($"history {i}"))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
 
     /// <summary>Builds the three G-buffer targets and the framebuffer that writes all of them at once.</summary>
     /// <param name="description">The target being built.</param>
@@ -407,6 +522,24 @@ internal sealed class GLSceneTarget : IDisposable
                 _colorTextures[i] = 0;
             }
         }
+
+        for (int i = 0; i < 2; i++)
+        {
+            if (_historyFramebuffers[i] != 0)
+            {
+                _gl.DeleteFramebuffer(_historyFramebuffers[i]);
+                _historyFramebuffers[i] = 0;
+            }
+
+            if (_historyTextures[i] != 0)
+            {
+                _gl.DeleteTexture(_historyTextures[i]);
+                _historyTextures[i] = 0;
+            }
+        }
+
+        _historyWrite = 0;
+        _historyValid = false;
 
         if (_depthTexture != 0)
         {

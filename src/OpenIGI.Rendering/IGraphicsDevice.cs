@@ -267,6 +267,37 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Sets how this frame accumulates into the ones before it.</summary>
+    /// <param name="settings">
+    /// The accumulation, or <see cref="TemporalAaSettings.Off"/> for none. Its jitter is the offset the
+    /// caller has <em>already</em> applied to the projection it draws with; it is reported here so the
+    /// backend can account for it, not so the backend can apply it.
+    /// </param>
+    /// <param name="projection">
+    /// The scene's projection <em>without</em> the jitter. Reprojection has to compare two frames in one
+    /// frame of reference, and the jitter is precisely what differs between them; the unjittered matrix
+    /// is that shared reference. This is passed rather than read from
+    /// <see cref="SetProjection"/> because the view model draws with a projection of its own, and by the
+    /// time the frame resolves that is the one the device last saw.
+    /// </param>
+    /// <param name="cameraPosition">
+    /// The camera's world position in metres, used to work out how far it has travelled since the
+    /// previous frame.
+    /// </param>
+    /// <param name="viewToWorld">
+    /// The rotation taking a view-space direction back into camera-relative world space.
+    /// </param>
+    /// <remarks>
+    /// The backend keeps the previous frame's values itself, so a caller supplies only what is true
+    /// now. A frame in which this is not called is a frame with no history, which is the correct
+    /// behaviour on a camera cut.
+    /// </remarks>
+    void SetTemporalAntiAliasing(
+        in TemporalAaSettings settings,
+        in Matrix4f projection,
+        Vector3f cameraPosition,
+        Matrix3f viewToWorld);
+
     /// <summary>Sets the sun's shadow map for this frame.</summary>
     /// <param name="settings">How the shadows are drawn, or <see cref="ShadowSettings.Off"/> for none.</param>
     /// <param name="cascades">The fitted cascades, from <see cref="ShadowCascades.Fit"/>.</param>
