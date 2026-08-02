@@ -322,6 +322,10 @@ using (window)
     SurfaceCacheLighting? cardLighting = null;
     SurfaceCacheLookup? cardLookup = null;
     bool cardLightingDumped = false;
+
+    // How many times the bounce has been re-lit this mission. Zero converges in one shot; each relight
+    // after that accumulates over frames. Reset when a mission loads.
+    int cardBounceFrame = 0;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
@@ -916,6 +920,9 @@ using (window)
         {
             cardLighting?.Dispose();
             cardLighting = SurfaceCacheLighting.Create(device, surfaces, placedCards, logger);
+
+            // A fresh pass has no history to accumulate onto, so the next bounce converges in one shot.
+            cardBounceFrame = 0;
 
             if (cardLighting is not null)
             {
@@ -2222,9 +2229,14 @@ using (window)
                     // The bounce, once the direct term it gathers from is in place. Only when no probe
                     // is running: a probe writes a diagnostic into the direct atlas rather than light,
                     // and gathering from that would report on the diagnostic.
+                    //
+                    // The frame index converges the first relight in one shot and accumulates every one
+                    // after, so a shadow that comes in as a clipmap moves settles rather than popping. A
+                    // dump forces the deterministic first pass, so it is never blended.
                     if (RenderCVars.SurfaceCacheProbe.Value == 0)
                     {
-                        litCards.Bounce(liveField);
+                        litCards.Bounce(liveField, temporalIndex: wantDump ? 0 : cardBounceFrame);
+                        cardBounceFrame++;
                     }
 
                     // Dumped after the SHADOWED pass rather than the one at load, which runs before
