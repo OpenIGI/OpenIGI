@@ -2,7 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
-namespace OpenIGI.Rendering.Tests;
+namespace OpenIGI.TestSupport;
 
 /// <summary>
 /// An <see cref="IGraphicsDevice"/> that records what it is asked to draw instead of drawing it.
@@ -118,6 +118,61 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     // Volumes share the texture handle space with 2D textures, so their counter starts well clear of
     // anything CreateTexture hands out -- a test that confuses the two would otherwise pass.
     private uint _nextVolumeId = 10_000;
+
+    /// <summary>The card atlases opened, as their dimensions.</summary>
+    public List<(int Width, int Height)> CardCaptures { get; } = [];
+
+    /// <summary>The pages drawn into, in order.</summary>
+    public List<(int X, int Y, int Width, int Height)> CardPages { get; } = [];
+
+    /// <summary>Whether a card capture is open right now.</summary>
+    public bool IsCapturingCards { get; private set; }
+
+    /// <inheritdoc/>
+    public bool BeginCardCapture(int width, int height)
+    {
+        if (IsCapturingCards)
+        {
+            throw new GraphicsDeviceException("A card capture is already in progress.");
+        }
+
+        CardCaptures.Add((width, height));
+        IsCapturingCards = true;
+        CurrentPass = ScenePass.Card;
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void SetCardPage(int x, int y, int width, int height)
+    {
+        if (!IsCapturingCards)
+        {
+            throw new GraphicsDeviceException("No card capture is in progress.");
+        }
+
+        CardPages.Add((x, y, width, height));
+    }
+
+    /// <inheritdoc/>
+    public void EndCardCapture()
+    {
+        if (!IsCapturingCards)
+        {
+            throw new GraphicsDeviceException("No card capture is in progress.");
+        }
+
+        IsCapturingCards = false;
+        CurrentPass = ScenePass.None;
+    }
+
+    /// <inheritdoc/>
+    public TextureHandle CardAlbedo => new(90_001);
+
+    /// <inheritdoc/>
+    public TextureHandle CardNormal => new(90_002);
+
+    /// <inheritdoc/>
+    public TextureHandle CardMaterial => new(90_003);
 
     /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
     /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>

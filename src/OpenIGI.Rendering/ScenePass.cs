@@ -32,4 +32,19 @@ public enum ScenePass
 
     /// <summary>Depth-only rendering from a light's point of view.</summary>
     Shadow,
+
+    /// <summary>A model's surface captured into its page of the surface cache atlas.</summary>
+    /// <remarks>
+    /// <para>
+    /// Not part of drawing a frame at all. Each model is rendered a handful of times at load, through
+    /// an orthographic camera per card, into a rectangle of an atlas — so that a ray hitting that model
+    /// later can read what its surface looks like without the model being on screen, or in the frustum,
+    /// or drawn at all.
+    /// </para>
+    /// <para>
+    /// It writes albedo, normal and material, and deliberately <em>not</em> motion: a card is a fixed
+    /// view of a static model, so there is no previous frame for it to have moved from.
+    /// </para>
+    /// </remarks>
+    Card,
 }

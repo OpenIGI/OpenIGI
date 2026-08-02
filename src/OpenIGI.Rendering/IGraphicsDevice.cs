@@ -345,6 +345,50 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetColourLookup(ColourLookupTable? table);
 
+    /// <summary>Opens the surface cache atlas for capture.</summary>
+    /// <param name="width">The atlas width in texels.</param>
+    /// <param name="height">The atlas height in texels.</param>
+    /// <returns><see langword="true"/> when the atlas is ready and cards may be drawn into it.</returns>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="BeginSceneCapture"/>, which describes a frame. This describes an atlas
+    /// that outlives every frame: each model is drawn into it a handful of times at load, through an
+    /// orthographic camera per card, and read for the rest of the level.
+    /// </para>
+    /// <para>
+    /// Clears the whole atlas, including the gutters between pages, which no card ever draws into and a
+    /// linear fetch near a page edge reaches.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">A capture is already open, or a dimension is not positive.</exception>
+    bool BeginCardCapture(int width, int height);
+
+    /// <summary>Restricts the following draws to one card's page of the atlas.</summary>
+    /// <param name="x">The page's left edge in texels.</param>
+    /// <param name="y">The page's bottom edge in texels.</param>
+    /// <param name="width">The page's width in texels.</param>
+    /// <param name="height">The page's height in texels.</param>
+    /// <remarks>
+    /// Scissors as well as sets the viewport. Geometry outside the card's orthographic box is clipped in
+    /// depth but not sideways, so without the scissor a model wider than its card bleeds into whichever
+    /// page was packed beside it.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">No card capture is open.</exception>
+    void SetCardPage(int x, int y, int width, int height);
+
+    /// <summary>Closes the card capture.</summary>
+    /// <exception cref="GraphicsDeviceException">No card capture is open.</exception>
+    void EndCardCapture();
+
+    /// <summary>Gets the atlas texture holding each card's surface colour.</summary>
+    TextureHandle CardAlbedo { get; }
+
+    /// <summary>Gets the atlas texture holding each card's model-space normal.</summary>
+    TextureHandle CardNormal { get; }
+
+    /// <summary>Gets the atlas texture holding each card's roughness, metallic and emissive.</summary>
+    TextureHandle CardMaterial { get; }
+
     /// <summary>Allocates a three-dimensional texture.</summary>
     /// <param name="width">Voxels along x.</param>
     /// <param name="height">Voxels along y.</param>

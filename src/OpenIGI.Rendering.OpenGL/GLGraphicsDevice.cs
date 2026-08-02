@@ -129,6 +129,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _projectionHeight;
     private BlendMode _blend = BlendMode.Opaque;
     private GLShaderProgram? _gbufferProgram;
+    private GLShaderProgram? _cardProgram;
+    private MeshUniforms _cardUniforms;
+    private int _cardMaterial = -1;
+    private int _cardDecodeAlbedo = -1;
+    private GLCardAtlas? _cardAtlas;
+    private bool _cardCaptureActive;
     private GLShaderProgram? _lightingProgram;
     private GLShaderProgram? _lastMeshProgram;
     private MeshUniforms _gbufferUniforms;
@@ -1249,6 +1255,140 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public bool BeginCardCapture(int width, int height)
+    {
+        ThrowIfDisposed();
+
+        if (_cardCaptureActive)
+        {
+            throw new GraphicsDeviceException("A card capture is already in progress.");
+        }
+
+        if (width <= 0 || height <= 0)
+        {
+            throw new GraphicsDeviceException($"A card atlas cannot be {width}x{height}.");
+        }
+
+        _cardAtlas ??= new GLCardAtlas(_gl, _logger);
+
+        // Any handle handed out for the previous atlas is about to name a deleted texture, because
+        // Configure releases what it held. Forgetting them here means a caller that kept one gets a
+        // clean "does not belong to this device" rather than a silent sample of freed memory.
+        ForgetRegistration(_cardAtlas.AlbedoTexture);
+        ForgetRegistration(_cardAtlas.NormalTexture);
+        ForgetRegistration(_cardAtlas.MaterialTexture);
+
+        if (!_cardAtlas.Configure(width, height))
+        {
+            return false;
+        }
+
+        _cardAtlas.BindForCapture();
+        _cardCaptureActive = true;
+        CurrentPass = ScenePass.Card;
+
+        // A card is an orthographic view of one model from outside it, so the near surface is the one
+        // that matters and back faces are never wanted. Both are set here rather than left to the
+        // caller, because a capture is not a frame and has no state of its own to inherit.
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.DepthFunc(DepthFunction.Lequal);
+        _gl.DepthMask(true);
+        _depthState = DepthState.TestAndWrite;
+
+        ApplyBlend(BlendMode.Opaque);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public void SetCardPage(int x, int y, int width, int height)
+    {
+        ThrowIfDisposed();
+
+        if (!_cardCaptureActive || _cardAtlas is null)
+        {
+            throw new GraphicsDeviceException("No card capture is in progress.");
+        }
+
+        _cardAtlas.BindPage(x, y, width, height);
+    }
+
+    /// <inheritdoc/>
+    public void EndCardCapture()
+    {
+        ThrowIfDisposed();
+
+        if (!_cardCaptureActive || _cardAtlas is null)
+        {
+            throw new GraphicsDeviceException("No card capture is in progress.");
+        }
+
+        _cardAtlas.EndCapture();
+        _cardCaptureActive = false;
+        CurrentPass = ScenePass.None;
+
+        // The drawing path caches which program is bound and which mesh uniforms it holds, and both
+        // belong to whichever program the capture used.
+        _lastMeshProgram = null;
+        _meshUniformsPrimed = false;
+        _sentMaterial = null;
+
+        SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+    }
+
+    /// <inheritdoc/>
+    public TextureHandle CardAlbedo => Register(_cardAtlas?.AlbedoTexture ?? 0);
+
+    /// <inheritdoc/>
+    public TextureHandle CardNormal => Register(_cardAtlas?.NormalTexture ?? 0);
+
+    /// <inheritdoc/>
+    public TextureHandle CardMaterial => Register(_cardAtlas?.MaterialTexture ?? 0);
+
+    /// <summary>Drops the handle registered for a backend-owned texture, if there is one.</summary>
+    private void ForgetRegistration(uint name)
+    {
+        if (name == 0)
+        {
+            return;
+        }
+
+        foreach ((uint id, GLTexture entry) in _textures)
+        {
+            if (entry.Name == name)
+            {
+                _textures.Remove(id);
+                return;
+            }
+        }
+    }
+
+    /// <summary>Hands out a handle for a texture the backend owns, so callers can bind it.</summary>
+    /// <remarks>
+    /// The atlas textures are created by the framebuffer rather than by CreateTexture, so they have no
+    /// handle until something asks for one. Registered on demand and remembered, so repeated asks give
+    /// the same handle rather than leaking a new entry per frame.
+    /// </remarks>
+    private TextureHandle Register(uint name)
+    {
+        if (name == 0)
+        {
+            return TextureHandle.None;
+        }
+
+        foreach ((uint id, GLTexture entry) in _textures)
+        {
+            if (entry.Name == name)
+            {
+                return new TextureHandle(id);
+            }
+        }
+
+        uint handle = _nextTextureId++;
+        _textures[handle] = new GLTexture(name, 0, 0, 1);
+        return new TextureHandle(handle);
+    }
+
+    /// <inheritdoc/>
     public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
 
     /// <inheritdoc/>
@@ -2310,14 +2450,22 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         // Which program shades this draw is decided by the pass, not by the caller: a renderer asks
         // for a mesh with a texture and a lightmap and never learns there are two ways to draw it.
+        bool card = CurrentPass == ScenePass.Card;
         bool shadow = CurrentPass == ScenePass.Shadow;
         bool deferred = !shadow
             && CurrentPass == ScenePass.Geometry
             && _sceneTarget is { IsReady: true } gbuffer
             && gbuffer.Description.Deferred;
 
-        GLShaderProgram program = shadow ? _shadowProgram! : deferred ? _gbufferProgram! : _meshProgram!;
-        MeshUniforms uniforms = shadow ? _shadowUniforms : deferred ? _gbufferUniforms : _meshUniforms;
+        GLShaderProgram program = card ? _cardProgram!
+            : shadow ? _shadowProgram!
+            : deferred ? _gbufferProgram!
+            : _meshProgram!;
+
+        MeshUniforms uniforms = card ? _cardUniforms
+            : shadow ? _shadowUniforms
+            : deferred ? _gbufferUniforms
+            : _meshUniforms;
 
         if (!ReferenceEquals(program, _lastMeshProgram))
         {
@@ -2336,7 +2484,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         {
             _sentMaterial = _material;
 
-            if (deferred)
+            if (card)
+            {
+                program.SetVector4(
+                    _cardMaterial,
+                    _material.Roughness,
+                    _material.Metallic,
+                    _material.PackedEmissive,
+                    0f);
+            }
+            else if (deferred)
             {
                 // The fourth component is the per-draw "no history" flag, carried to the motion
                 // target's spare channel so the temporal resolve can refuse to blend where the
@@ -2530,6 +2687,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         DisposeComputeResources();
+        _cardAtlas?.Dispose();
+        _cardProgram?.Dispose();
         _stageProfiler?.Dispose();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
@@ -2692,6 +2851,18 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _gbufferProgram.SetInt("uDiffuse", 0);
         _gbufferProgram.SetInt("uLightmap", 1);
         _gbufferProgram.SetInt("uDetail", 2);
+
+        _cardProgram = GLShaderProgram.Create(_gl, CardAtlasShaders.Vertex, CardAtlasShaders.Fragment);
+        _cardUniforms = new MeshUniforms(
+            _cardProgram.LocationOf("uModelView"),
+            _cardProgram.LocationOf("uProjection"),
+            -1,
+            _cardProgram.LocationOf("uAlphaTest"));
+        _cardMaterial = _cardProgram.LocationOf("uMaterial");
+        _cardDecodeAlbedo = _cardProgram.LocationOf("uDecodeAlbedo");
+        UseProgram(_cardProgram);
+        _cardProgram.SetInt("uDiffuse", 0);
+        _cardProgram.SetInt("uLightmap", 1);
 
         _occlusionProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment);

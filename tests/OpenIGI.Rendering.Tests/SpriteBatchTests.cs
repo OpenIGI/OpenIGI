@@ -1,4 +1,5 @@
 using OpenIGI.Core.Graphics;
+using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Rendering.Tests;
