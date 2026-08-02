@@ -115,6 +115,33 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     private uint _nextComputeId = 1;
     private uint _nextBufferId = 1;
 
+    // Volumes share the texture handle space with 2D textures, so their counter starts well clear of
+    // anything CreateTexture hands out -- a test that confuses the two would otherwise pass.
+    private uint _nextVolumeId = 10_000;
+
+    /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
+    /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>
+    public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];
+
+    /// <inheritdoc/>
+    public TextureHandle CreateVolumeTexture(
+        int width, int height, int depth, VolumeFormat format, string name)
+    {
+        VolumeTextures.Add((name, width, height, depth, format));
+        return new TextureHandle(_nextVolumeId++);
+    }
+
+    /// <inheritdoc/>
+    public void UpdateVolumeTexture<T>(TextureHandle texture, ReadOnlySpan<T> data)
+        where T : unmanaged
+    {
+    }
+
+    /// <inheritdoc/>
+    public void SetVolumeTexture(int unit, TextureHandle texture)
+    {
+    }
+
     /// <inheritdoc/>
     public ComputeShaderHandle CreateComputeShader(string source, string name)
     {

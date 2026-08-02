@@ -3144,7 +3144,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     /// already resolves its diffuse through this dictionary. Attaching it here makes the lookup free;
     /// a second dictionary would be a second hash of the same key, per sub-mesh, per frame.
     /// </remarks>
-    private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels, uint Detail = 0);
+    private readonly record struct GLTexture(
+        uint Name,
+        int Width,
+        int Height,
+        int MipLevels,
+        uint Detail = 0,
+        int Depth = 1,
+        TextureTarget Target = TextureTarget.Texture2D,
+        InternalFormat Format = InternalFormat.Rgba8);
 
     /// <summary>One uploaded mesh.</summary>
     /// <remarks>

@@ -27,6 +27,180 @@ public sealed partial class GLGraphicsDevice
     private uint _boundComputeProgram;
 
     /// <inheritdoc/>
+    public unsafe TextureHandle CreateVolumeTexture(
+        int width, int height, int depth, VolumeFormat format, string name)
+    {
+        ThrowIfDisposed();
+
+        if (width <= 0 || height <= 0 || depth <= 0)
+        {
+            throw new GraphicsDeviceException(
+                $"A volume must have positive dimensions; '{name}' asked for {width}x{height}x{depth}.");
+        }
+
+        (InternalFormat internalFormat, PixelFormat pixelFormat, PixelType pixelType) = Describe(format);
+
+        uint texture = _gl.GenTexture();
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture3D, texture);
+
+        _gl.TexImage3D(
+            TextureTarget.Texture3D,
+            0,
+            (int)internalFormat,
+            (uint)width,
+            (uint)height,
+            (uint)depth,
+            0,
+            pixelFormat,
+            pixelType,
+            null);
+
+        // Linear, because the hardware's trilinear filter IS the blend between eight neighbouring
+        // voxels that a field lookup wants, and it costs nothing. Clamped on all three axes, because a
+        // volume does not tile: the space past its edge is more of the same emptiness rather than the
+        // far side of the level, and wrapping would let a trace leaving one side of a clipmap read
+        // geometry from the other.
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapR, (int)GLEnum.ClampToEdge);
+
+        _gl.BindTexture(TextureTarget.Texture3D, 0);
+        InvalidateTextureUnit(0);
+
+        _textures[texture] = new GLTexture(
+            texture, width, height, 1, 0, depth, TextureTarget.Texture3D, internalFormat);
+
+        _logger.Debug(
+            LogCategory,
+            $"Volume '{name}' allocated as {width}x{height}x{depth} {format}.");
+
+        return new TextureHandle(texture);
+    }
+
+    /// <inheritdoc/>
+    public unsafe void UpdateVolumeTexture<T>(TextureHandle texture, ReadOnlySpan<T> data)
+        where T : unmanaged
+    {
+        ThrowIfDisposed();
+        GLTexture entry = Resolve(texture, nameof(texture));
+
+        if (entry.Target != TextureTarget.Texture3D)
+        {
+            throw new GraphicsDeviceException($"{texture} is not a volume.");
+        }
+
+        (_, PixelFormat pixelFormat, PixelType pixelType) = Describe(entry.Format);
+        int expected = entry.Width * entry.Height * entry.Depth * BytesPerVoxel(entry.Format);
+        int offered = data.Length * sizeof(T);
+
+        if (offered != expected)
+        {
+            throw new GraphicsDeviceException(
+                $"{texture} holds {expected} bytes; {offered} were offered.");
+        }
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture3D, entry.Name);
+
+        // Rows are byte-tight. The default is four, so a single-channel volume whose width is not a
+        // multiple of four is read with padding that is not there -- every row after the first slides,
+        // and the volume shears diagonally.
+        _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+
+        fixed (T* source = data)
+        {
+            _gl.TexSubImage3D(
+                TextureTarget.Texture3D,
+                0,
+                0,
+                0,
+                0,
+                (uint)entry.Width,
+                (uint)entry.Height,
+                (uint)entry.Depth,
+                pixelFormat,
+                pixelType,
+                source);
+        }
+
+        _gl.PixelStore(PixelStoreParameter.UnpackAlignment, 4);
+        _gl.BindTexture(TextureTarget.Texture3D, 0);
+        InvalidateTextureUnit(0);
+    }
+
+    /// <inheritdoc/>
+    public void SetVolumeTexture(int unit, TextureHandle texture)
+    {
+        ThrowIfDisposed();
+        ArgumentOutOfRangeException.ThrowIfNegative(unit);
+
+        uint name = 0;
+
+        if (texture.IsValid)
+        {
+            GLTexture entry = Resolve(texture, nameof(texture));
+
+            if (entry.Target != TextureTarget.Texture3D)
+            {
+                throw new GraphicsDeviceException($"{texture} is not a volume.");
+            }
+
+            name = entry.Name;
+        }
+
+        _gl.ActiveTexture(TextureUnit.Texture0 + unit);
+        _gl.BindTexture(TextureTarget.Texture3D, name);
+        InvalidateTextureUnit(unit);
+    }
+
+    /// <summary>Forgets what the 2D binding cache believes is on a unit.</summary>
+    /// <remarks>
+    /// The drawing path skips a bind when the unit already holds the texture it wants. Binding a volume
+    /// to that unit changes what is there without going through that cache, so the next 2D bind would
+    /// skip itself and the draw would sample whatever the volume left behind. Clearing the entry costs
+    /// one redundant bind and removes a class of fault that only appears once a compute pass and a draw
+    /// pass happen to want the same unit.
+    /// </remarks>
+    private void InvalidateTextureUnit(int unit)
+    {
+        if (unit >= 0 && unit < _textureNames.Length)
+        {
+            _textureNames[unit] = 0;
+        }
+
+        _activeTextureUnit = -1;
+    }
+
+    /// <summary>The GL formats one voxel description maps to.</summary>
+    private static (InternalFormat Internal, PixelFormat Pixel, PixelType Type) Describe(VolumeFormat format) =>
+        format switch
+        {
+            VolumeFormat.R8 => (InternalFormat.R8, PixelFormat.Red, PixelType.UnsignedByte),
+            VolumeFormat.Rgba16F => (InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.HalfFloat),
+            _ => (InternalFormat.Rgba8, PixelFormat.Rgba, PixelType.UnsignedByte),
+        };
+
+    /// <summary>The GL formats one internal format maps back to, for an upload.</summary>
+    private static (InternalFormat Internal, PixelFormat Pixel, PixelType Type) Describe(InternalFormat format) =>
+        format switch
+        {
+            InternalFormat.R8 => (InternalFormat.R8, PixelFormat.Red, PixelType.UnsignedByte),
+            InternalFormat.Rgba16f => (InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.HalfFloat),
+            _ => (InternalFormat.Rgba8, PixelFormat.Rgba, PixelType.UnsignedByte),
+        };
+
+    private static int BytesPerVoxel(InternalFormat format) =>
+        format switch
+        {
+            InternalFormat.R8 => 1,
+            InternalFormat.Rgba16f => 8,
+            _ => 4,
+        };
+
+    /// <inheritdoc/>
     public ComputeShaderHandle CreateComputeShader(string source, string name)
     {
         ThrowIfDisposed();
@@ -222,7 +396,12 @@ public sealed partial class GLGraphicsDevice
         // Layered, because a volume or an array bound one slice at a time is a bind per slice and every
         // volume here is written whole. The layer argument is therefore ignored, which is what the
         // `true` says.
-        _gl.BindImageTexture((uint)slot, entry.Name, level, true, 0, gl, InternalFormat.Rgba8);
+        //
+        // The format is the texture's OWN, not a constant. An image binding reinterprets the storage
+        // through whatever format it is given, and GL does not report a mismatch: declaring an R8
+        // volume as RGBA8 reads a quarter of it as four channels of noise, and the pass looks like it
+        // ran while producing nothing usable.
+        _gl.BindImageTexture((uint)slot, entry.Name, level, true, 0, gl, entry.Format);
     }
 
     /// <inheritdoc/>

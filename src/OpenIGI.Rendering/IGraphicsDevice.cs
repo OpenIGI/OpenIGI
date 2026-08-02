@@ -345,6 +345,46 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetColourLookup(ColourLookupTable? table);
 
+    /// <summary>Allocates a three-dimensional texture.</summary>
+    /// <param name="width">Voxels along x.</param>
+    /// <param name="height">Voxels along y.</param>
+    /// <param name="depth">Voxels along z.</param>
+    /// <param name="format">What one voxel holds.</param>
+    /// <param name="name">A name for the texture, used only in diagnostics.</param>
+    /// <returns>A handle to the texture, its contents undefined until written.</returns>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="CreateTexture"/> rather than an overload of it, because almost nothing
+    /// about the two is shared: a volume has no mip chain, no anisotropy, and is as likely to be written
+    /// by a compute pass as uploaded from memory.
+    /// </para>
+    /// <para>
+    /// Filtered linearly and clamped at every edge. Linear because the hardware's trilinear filter is
+    /// exactly the blend between eight neighbouring voxels that a field lookup wants, and it is free;
+    /// clamped because a volume does not tile — the space past its edge is more of the same emptiness
+    /// rather than the far side of the level.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">A dimension is not positive, or the device refused it.</exception>
+    TextureHandle CreateVolumeTexture(int width, int height, int depth, VolumeFormat format, string name);
+
+    /// <summary>Replaces a volume texture's contents.</summary>
+    /// <typeparam name="T">The element type. Must match the texture's format.</typeparam>
+    /// <param name="texture">The volume to write.</param>
+    /// <param name="data">The voxels, x fastest then y then z.</param>
+    /// <exception cref="GraphicsDeviceException">The handle is not a volume of this device, or the data is the wrong size.</exception>
+    void UpdateVolumeTexture<T>(TextureHandle texture, ReadOnlySpan<T> data)
+        where T : unmanaged;
+
+    /// <summary>Binds a volume texture to a sampling unit.</summary>
+    /// <param name="unit">The texture unit.</param>
+    /// <param name="texture">The volume, or the null handle to unbind.</param>
+    /// <remarks>
+    /// Separate from <see cref="SetTexture"/> because the two bind different targets to the same unit,
+    /// and a unit holding both is a unit whose meaning depends on which sampler reads it.
+    /// </remarks>
+    void SetVolumeTexture(int unit, TextureHandle texture);
+
     /// <summary>Compiles a compute program.</summary>
     /// <param name="source">The GLSL compute shader.</param>
     /// <param name="name">A name for the program, used only in diagnostics.</param>
