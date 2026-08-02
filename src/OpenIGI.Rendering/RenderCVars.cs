@@ -513,16 +513,23 @@ public static class RenderCVars
     /// wrong world position, an unbound sampler, a uniform that never arrived and a field that is
     /// genuinely closed over. Each probe writes one of those intermediates where the light would have
     /// gone, so the dump can tell them apart: 1 writes what the trace sees at its start point, 2 the
-    /// reconstructed world position within the outermost clipmap, 3 the world normal.
+    /// reconstructed world position within the outermost clipmap, 3 the world normal, 4 how the trace
+    /// ended, 5 whether the card index sends a texel back to itself.
+    /// <para>
+    /// <b>Keep the maximum in step with the shader.</b> This clamps, silently and by design, so a probe
+    /// added to the shader but not added here runs as whichever probe the clamp lands on -- which
+    /// presents as the new probe reporting nothing whatsoever, and is indistinguishable from the thing
+    /// it was measuring being broken.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<int> SurfaceCacheProbe = CVar.Int(
         "r_cards_probe",
         0,
         0,
-        4,
+        5,
         CVarOptions.Developer,
         "Diagnostic the card lighting writes instead of light: 0 none, 1 trace start, 2 position, "
-        + "3 normal, 4 trace outcome.");
+        + "3 normal, 4 trace outcome, 5 card index self-test.");
 
     /// <summary>Whether the level's signed distance fields are baked and resampled into clipmaps.</summary>
     /// <remarks>

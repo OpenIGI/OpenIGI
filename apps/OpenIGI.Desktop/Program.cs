@@ -940,7 +940,7 @@ using (window)
 
                 if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
                 {
-                    DumpCardLighting(device, cardLighting, lightingInto, logger);
+                    DumpCardLighting(device, cardLighting, lightingInto, logger, 0, "cards-direct-load.png");
                 }
             }
         }
@@ -1398,7 +1398,7 @@ using (window)
 
     static void DumpCardLighting(
         IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger,
-        int probe = 0)
+        int probe = 0, string name = "cards-direct.png")
     {
         try
         {
@@ -1407,7 +1407,7 @@ using (window)
             Bgra32[] pixels = new Bgra32[lighting.Width * lighting.Height];
             device.ReadStorageTexture(lighting.DirectLighting, pixels);
 
-            string path = Path.Combine(into, "cards-direct.png");
+            string path = Path.Combine(into, name);
             PngWriter.Write(path, pixels, lighting.Width, lighting.Height);
 
             // A probe is judged by its numbers, not its thumbnail: each channel is a question the
@@ -2163,7 +2163,15 @@ using (window)
                 // to trace against -- re-lighting as they move is what brings each page's shadow in as
                 // the player approaches it. Doing it every frame regardless would be tens of thousands
                 // of work groups spent re-deriving an answer that had not changed.
-                if (rebuiltLevels > 0 && cardLighting is { } litCards)
+                // The second clause is what makes a dump deterministic. Re-lighting is otherwise driven
+                // by a clipmap having moved, which is a race against the field bake landing on its
+                // worker: the same command produced two dumps on one run and one on the next, and when
+                // it produced one the file held the UNSHADOWED load-time pass while looking exactly
+                // like the shadowed one. That is how a probe came back reporting nothing at all.
+                bool wantDump = !cardLightingDumped
+                    && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 };
+
+                if ((rebuiltLevels > 0 || wantDump) && cardLighting is { } litCards)
                 {
                     litCards.Light(
                         sun is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
