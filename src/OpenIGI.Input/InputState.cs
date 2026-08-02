@@ -1,8 +1,8 @@
 namespace OpenIGI.Input;
 
 /// <summary>
-/// The per-frame input snapshot the engine reads: keyboard and mouse, each with its previous-frame
-/// shadow.
+/// The per-frame input snapshot the engine reads: keyboard, mouse and game controller, each with its
+/// previous-frame shadow.
 /// </summary>
 /// <remarks>
 /// The host owns one of these and advances it once per frame, before the tick. Game code only reads
@@ -15,6 +15,9 @@ public sealed class InputState
 
     /// <summary>Gets the mouse.</summary>
     public MouseState Mouse { get; } = new();
+
+    /// <summary>Gets the primary game controller.</summary>
+    public GamepadState Gamepad { get; } = new();
 
     /// <summary>Gets or sets a value indicating whether input is suppressed.</summary>
     /// <remarks>
@@ -41,11 +44,12 @@ public sealed class InputState
     /// </remarks>
     public bool Captured
     {
-        get => Keyboard.Captured || Mouse.Captured;
+        get => Keyboard.Captured || Mouse.Captured || Gamepad.Captured;
         set
         {
             Keyboard.Captured = value;
             Mouse.Captured = value;
+            Gamepad.Captured = value;
         }
     }
 
@@ -66,17 +70,21 @@ public sealed class InputState
             Keyboard.Release();
             Mouse.BeginFrame();
             Mouse.Reset();
+            Gamepad.BeginFrame();
+            Gamepad.Release();
             return;
         }
 
         Keyboard.BeginFrame();
         Mouse.BeginFrame();
+        Gamepad.BeginFrame();
     }
 
-    /// <summary>Clears both devices.</summary>
+    /// <summary>Clears every device.</summary>
     public void Reset()
     {
         Keyboard.Reset();
         Mouse.Reset();
+        Gamepad.Reset();
     }
 }

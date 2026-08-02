@@ -267,10 +267,24 @@ public abstract class UiElement
         }
 
         OnDraw(painter);
+
+        bool clip = ClipsChildren;
+        if (clip)
+        {
+            painter.PushClip(ClipRect);
+        }
+
         foreach (UiElement child in _children)
         {
             child.Draw(painter);
         }
+
+        if (clip)
+        {
+            painter.PopClip();
+        }
+
+        OnDrawOverlay(painter);
     }
 
     /// <summary>Advances any per-frame animation the element runs, then its children.</summary>
@@ -324,6 +338,18 @@ public abstract class UiElement
     protected virtual void OnDraw(UiPainter painter)
     {
     }
+
+    /// <summary>Draws over the element's children, after they have been drawn — e.g. a scrollbar.</summary>
+    /// <param name="painter">The painter to draw into.</param>
+    protected virtual void OnDrawOverlay(UiPainter painter)
+    {
+    }
+
+    /// <summary>Gets a value indicating whether children are clipped to <see cref="ClipRect"/> when drawn.</summary>
+    protected virtual bool ClipsChildren => false;
+
+    /// <summary>Gets the rectangle children are clipped to when <see cref="ClipsChildren"/> is set.</summary>
+    protected virtual UiRect ClipRect => Bounds;
 
     /// <summary>Advances the element's own animation.</summary>
     /// <param name="elapsedSeconds">The real seconds since the last update.</param>
