@@ -320,6 +320,7 @@ using (window)
     // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
     // on the render thread once the bake lands.
     SurfaceCacheLighting? cardLighting = null;
+    SurfaceCacheLookup? cardLookup = null;
     bool cardLightingDumped = false;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
@@ -919,6 +920,13 @@ using (window)
             if (cardLighting is not null)
             {
                 cardLighting.SetLocalLights(ProposeLocalLights(scene, resources, logger));
+
+                // Built once, from the same capture and placements the lighting was. A ray that stops
+                // somewhere knows only that it stopped; this is what lets it read the surface it hit.
+                cardLookup?.Dispose();
+                cardLookup = SurfaceCacheLookup.Build(
+                    device, surfaces, placedCards, cardLighting.Origin, logger);
+                cardLighting.SetLookup(cardLookup);
 
                 // A level with no Dirlight has no sun to light the cards with, so they take the sky
                 // alone -- which is what such a level looks like anyway.
