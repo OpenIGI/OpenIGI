@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The abstraction projects only. OpenIGI.UI draws through IGraphicsDevice / SpriteBatch and
+         reads devices through OpenIGI.Input; it never references a concrete backend
+         (OpenIGI.Rendering.OpenGL), which is wired in the app composition root. See README.md. -->
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+    <ProjectReference Include="..\OpenIGI.Input\OpenIGI.Input.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pure-managed TrueType rasteriser; version is pinned centrally in Directory.Packages.props. -->
+    <PackageReference Include="StbTrueTypeSharp" />
+  </ItemGroup>
+
+</Project>

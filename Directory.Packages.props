@@ -19,6 +19,13 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
   </ItemGroup>
 
+  <ItemGroup Label="User interface">
+    <!-- TrueType rasteriser for the SDF font atlas built at startup (R10). A pure-managed port of
+         stb_truetype, so it adds no native dependency and runs the same on every platform the port
+         targets. -->
+    <PackageVersion Include="StbTrueTypeSharp" Version="1.26.12" />
+  </ItemGroup>
+
   <ItemGroup Label="Testing">
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
