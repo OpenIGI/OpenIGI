@@ -158,6 +158,34 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     MeshHandle CreateMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices);
 
+    /// <summary>Uploads a mesh whose vertices will be replaced every pose, keeping the pose before.</summary>
+    /// <param name="vertices">The rest pose, replaced by the first <see cref="UpdateAnimatedMesh"/>.</param>
+    /// <param name="indices">The triangle list, three indices a triangle. Fixed for the mesh's life.</param>
+    /// <returns>A handle naming the mesh.</returns>
+    /// <remarks>
+    /// <para>
+    /// For CPU-skinned bodies. An ordinary mesh is immutable; an animated one is double-buffered, and
+    /// each <see cref="UpdateAnimatedMesh"/> makes the vertices it replaces the mesh's <em>previous
+    /// pose</em> — a second vertex stream the shaders can reach. That stream is what makes two things
+    /// possible for a skinned body that a rigid transform cannot express: exact per-vertex motion for
+    /// the temporal resolve (see <see cref="SetPreviousPose"/>), and drawing <em>between</em> two
+    /// simulation poses (see <see cref="SetPoseInterpolation"/>).
+    /// </para>
+    /// <para>
+    /// A mesh made by <see cref="CreateMesh"/> reports its own vertices as its previous pose, so every
+    /// static mesh has exactly zero pose motion without paying for a second buffer.
+    /// </para>
+    /// </remarks>
+    MeshHandle CreateAnimatedMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices);
+
+    /// <summary>Replaces an animated mesh's vertices; the ones replaced become its previous pose.</summary>
+    /// <param name="mesh">A mesh from <see cref="CreateAnimatedMesh"/>.</param>
+    /// <param name="vertices">The new pose. Must be exactly as many vertices as the mesh was created with.</param>
+    /// <exception cref="ArgumentException">
+    /// The handle is unknown, was not created animated, or the count differs.
+    /// </exception>
+    void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices);
+
     /// <summary>Releases a mesh.</summary>
     /// <param name="mesh">The mesh to release. <see cref="MeshHandle.None"/> is ignored.</param>
     void DestroyMesh(MeshHandle mesh);
@@ -334,6 +362,29 @@ public interface IGraphicsDevice : IDisposable
 
     /// <summary>Stops reporting a previous pose; subsequent meshes are treated as not having moved.</summary>
     void ClearPreviousPose();
+
+    /// <summary>Sets how the next meshes drawn blend between their two poses.</summary>
+    /// <param name="currentBlend">
+    /// How much of the <em>previous-pose</em> vertex stream is mixed into the rasterised position, 0
+    /// to 1. Zero draws the current pose exactly — the value every static mesh is implicitly drawn
+    /// with, since its previous stream is itself.
+    /// </param>
+    /// <param name="previousBlend">
+    /// The same mix for the position reported as <em>last frame's</em>, alongside
+    /// <see cref="SetPreviousPose"/>. The difference between the two blends is precisely the pose
+    /// motion the frame reports: a fixed-tick simulation renders between two known poses, so last
+    /// frame's vertex is a different mix of the same two streams, not a third buffer.
+    /// </param>
+    /// <remarks>
+    /// Meaningful only for meshes from <see cref="CreateAnimatedMesh"/>; everywhere else both streams
+    /// are one buffer and any blend of a value with itself is that value. Cleared by
+    /// <see cref="ClearPoseInterpolation"/>, and by <see cref="ClearPreviousPose"/> callers should
+    /// clear both together — a pose blend without its matching previous pose reports half a motion.
+    /// </remarks>
+    void SetPoseInterpolation(float currentBlend, float previousBlend);
+
+    /// <summary>Stops blending poses; subsequent meshes draw their current vertices exactly.</summary>
+    void ClearPoseInterpolation();
 
     /// <summary>Sets how this frame accumulates into the ones before it.</summary>
     /// <param name="settings">

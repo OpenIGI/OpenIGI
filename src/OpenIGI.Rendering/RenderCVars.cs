@@ -27,6 +27,31 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Wait for the vertical blank when presenting. Off uncaps the frame rate and adds tearing.");
 
+    /// <summary>Whether the presentation interpolates between simulation ticks.</summary>
+    /// <remarks>
+    /// <para>
+    /// The simulation is fixed at 30 Hz and stays there — that is the determinism contract. What this
+    /// changes is only what is <em>drawn</em>: on, each frame renders bodies, poses and the player's
+    /// own eye blended between the last two tick states, so an uncapped frame rate looks uncapped
+    /// instead of a 30 Hz slideshow with a smooth mouse. AI, ballistics and every other consumer keep
+    /// reading tick states, so nothing behaves differently.
+    /// </para>
+    /// <para>
+    /// Off under vanilla by definition: the original presents exactly one tick's state per frame, and
+    /// the reference captures must keep doing so.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar SmoothPresentation = Presets.Define(
+        CVar.Bool(
+            "r_smooth",
+            true,
+            CVarOptions.Archive,
+            "Draw between simulation ticks so movement is as smooth as the frame rate. Sim stays 30 Hz."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>How the picture is scaled relative to the window before being presented.</summary>
     /// <remarks>
     /// Below one this is supersampling in reverse — the scene is rendered smaller and upscaled, which
@@ -376,14 +401,14 @@ public static class RenderCVars
             CVarOptions.Archive,
             "How much of a frame's movement smears; a real shutter is open for part of a frame."),
 
-        // Off at every preset, and it stays off until limb motion is tracked. The blur reads the
-        // motion target, and a soldier reports where his BODY went -- so arms, legs and weapon are
-        // all smeared along the torso's velocity, which is not where any of them travelled. It reads
-        // as trailing behind every moving figure. Shipping it on was a mistake.
+        // Ultra only, by choice rather than by cost. The motion target now carries exact per-vertex
+        // motion for skinned bodies -- limbs and the held weapon smear along their own travel, which
+        // is what once made this unshippable -- so the blur is correct everywhere. It stays off below
+        // ultra because a crisp frame reads better in play; the cvar works at every preset.
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0");
+        ultra: "0.4");
 
     /// <summary>How many samples the defocus and motion gather takes.</summary>
     public static readonly NumericCVar<int> CameraTaps = Presets.Define(
@@ -417,10 +442,10 @@ public static class RenderCVars
 
     /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
     /// <remarks>
-    /// Spatial, and therefore free of ghosting: it reads the displayed picture and nothing else. It is
-    /// the modern path's only anti-aliasing, because a deferred G-buffer cannot be multisampled --
-    /// averaging two normals gives a direction neither surface has -- and the temporal path is
-    /// unusable while soldiers are skinned without previous-pose vertices.
+    /// Spatial, and therefore free of ghosting: it reads the displayed picture and nothing else. With
+    /// the temporal path repaired it is a choice rather than the only option — the ghost-free
+    /// alternative for anyone who dislikes accumulation — and the presets that run TAA leave it off,
+    /// because smoothing an already-converged frame only softens it a second time.
     /// </remarks>
     public static readonly NumericCVar<float> SpatialAa = Presets.Define(
         CVar.Float(
@@ -432,8 +457,8 @@ public static class RenderCVars
             "Edge anti-aliasing strength; 0 turns it off. Spatial, so it never ghosts."),
         vanilla: "0",
         enhanced: "0.75",
-        high: "1",
-        ultra: "1");
+        high: "0",
+        ultra: "0");
 
     /// <summary>The contrast below which a pixel is left untouched.</summary>
     public static readonly NumericCVar<float> SpatialAaThreshold = CVar.Float(
@@ -644,25 +669,21 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Temporal anti-aliasing: share of the pixel taken from this frame. 1 turns it off."),
 
-        // OFF at every preset, and this is a judgement about the game rather than about the technique.
+        // Back on at high and ultra. It was off at every preset because soldiers are SKINNED and
+        // their motion was reported as a rigid transform -- "where the body was, with the arm where
+        // it is now" -- a confidently wrong vector no feedback value could paper over. The G-buffer
+        // now takes the previous clip position from the previous frame's skinned VERTICES
+        // (CreateAnimatedMesh's second stream), so a walking guard's limbs reproject exactly and the
+        // smear that forced this off no longer exists.
         //
-        // Temporal accumulation is exact for the camera and for rigid motion, and this engine's
-        // soldiers are neither: they are SKINNED, so the previous pose says where a body went and not
-        // where its limbs went. Every walking guard therefore reprojects his arms and legs to the
-        // wrong pixels, and no feedback value fixes it -- shortening the history only shortens the
-        // smear. Tested from 0.07 up to 1, and only 1 -- no accumulation at all -- was acceptable.
-        //
-        // The cost is real and should not be hidden: the fog march, the horizon search and the
-        // reflection ray are all deliberately under-sampled and dithered on the assumption that this
-        // pass averages them, and the deferred path cannot fall back to multisampling because
-        // resolving a NORMAL by averaging is meaningless. So until either skinned previous positions
-        // or a spatial anti-aliasing pass exists, the modern path runs without anti-aliasing and with
-        // its stochastic passes showing their noise. That is the honest trade, and it is better than
-        // shipping a smear on every moving figure.
+        // The accumulation is also what pays for the noise in every stochastic pass after it -- the
+        // fog march, the horizon search, the reflection ray are all under-sampled on the assumption
+        // that this averages them. Ultra holds a longer history than high because it runs more of
+        // those passes at higher counts and benefits more from the convergence.
         vanilla: "1",
         enhanced: "1",
-        high: "1",
-        ultra: "1");
+        high: "0.15",
+        ultra: "0.1");
 
     /// <summary>How much of the history's resampling blur is subtracted back out.</summary>
     public static readonly NumericCVar<float> TemporalSharpening = CVar.Float(

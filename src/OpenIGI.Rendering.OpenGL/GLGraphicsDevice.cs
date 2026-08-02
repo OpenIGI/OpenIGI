@@ -110,6 +110,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
     private Matrix4f? _previousPose;
     private Matrix4f _sentPreviousPose;
+    private float _poseBlend;
+    private float _previousPoseBlend;
+    private float _sentPoseBlend;
+    private float _sentPreviousPoseBlend;
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
     private uint _vertexArray;
@@ -704,16 +708,138 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             throw new ArgumentException($"Index {highest} is past the {vertices.Length} vertices supplied.", nameof(indices));
         }
 
-        uint array = _gl.GenVertexArray();
         uint vertexBuffer = _gl.GenBuffer();
         uint indexBuffer = _gl.GenBuffer();
 
-        BindVertexArray(array);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, vertexBuffer);
         _gl.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * Vertex3D.Size), vertices, BufferUsageARB.StaticDraw);
-        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, indexBuffer);
-        _gl.BufferData(BufferTargetARB.ElementArrayBuffer, (nuint)(indices.Length * sizeof(ushort)), indices, BufferUsageARB.StaticDraw);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
 
+        // The previous-pose stream is the mesh's own vertices: a static mesh's previous pose IS its
+        // current one, so aliasing the streams makes its pose delta exactly zero at no memory cost.
+        uint array = BuildMeshVertexArray(vertexBuffer, vertexBuffer, indexBuffer, indices);
+
+        MeshHandle handle = new(_nextMeshId++);
+        _meshes[handle.Id] = new GLMesh(array, vertexBuffer, indexBuffer, indices.Length);
+        return handle;
+    }
+
+    /// <inheritdoc/>
+    public unsafe MeshHandle CreateAnimatedMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
+    {
+        ThrowIfDisposed();
+
+        if (indices.Length % 3 != 0)
+        {
+            throw new ArgumentException($"An index buffer must be a multiple of three, got {indices.Length}.", nameof(indices));
+        }
+
+        if (vertices.IsEmpty || indices.IsEmpty)
+        {
+            throw new ArgumentException("A mesh needs at least one triangle.", nameof(indices));
+        }
+
+        if (vertices.Length > ushort.MaxValue + 1)
+        {
+            throw new ArgumentException(
+                $"A 16-bit index buffer addresses at most {ushort.MaxValue + 1} vertices, got {vertices.Length}.",
+                nameof(vertices));
+        }
+
+        int highest = HighestIndex(indices);
+        if (highest >= vertices.Length)
+        {
+            throw new ArgumentException($"Index {highest} is past the {vertices.Length} vertices supplied.", nameof(indices));
+        }
+
+        // Two whole vertex buffers and a vertex array over each pairing. An update writes the buffer
+        // holding the STALE pose and flips which array draws, so the pose being replaced becomes the
+        // previous-pose stream without a byte being copied.
+        uint bufferA = _gl.GenBuffer();
+        uint bufferB = _gl.GenBuffer();
+        uint indexBuffer = _gl.GenBuffer();
+
+        foreach (uint buffer in (ReadOnlySpan<uint>)[bufferA, bufferB])
+        {
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, buffer);
+            _gl.BufferData(
+                BufferTargetARB.ArrayBuffer,
+                (nuint)(vertices.Length * Vertex3D.Size),
+                vertices,
+                BufferUsageARB.DynamicDraw);
+        }
+
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+
+        uint arrayA = BuildMeshVertexArray(bufferA, bufferB, indexBuffer, indices);
+        uint arrayB = BuildMeshVertexArray(bufferB, bufferA, indexBuffer, uploadIndices: default);
+
+        MeshHandle handle = new(_nextMeshId++);
+        _meshes[handle.Id] = new GLMesh(
+            arrayA, bufferA, indexBuffer, indices.Length, arrayB, bufferB, vertices.Length);
+        return handle;
+    }
+
+    /// <inheritdoc/>
+    public void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices)
+    {
+        ThrowIfDisposed();
+
+        if (!_meshes.TryGetValue(mesh.Id, out GLMesh entry))
+        {
+            throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
+        }
+
+        if (!entry.IsAnimated)
+        {
+            throw new ArgumentException($"{mesh} was not created with {nameof(CreateAnimatedMesh)}.", nameof(mesh));
+        }
+
+        if (vertices.Length != entry.VertexCount)
+        {
+            throw new ArgumentException(
+                $"An animated mesh's vertex count is fixed: created with {entry.VertexCount}, got {vertices.Length}.",
+                nameof(vertices));
+        }
+
+        // Into the buffer holding the OLDER of the two poses; the flip then makes what was current the
+        // previous-pose stream. Orphaned first so the driver never stalls on a buffer a queued frame
+        // is still reading.
+        uint stale = entry.FrontIsFirst ? entry.SecondVertexBuffer : entry.VertexBuffer;
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, stale);
+        _gl.BufferData(
+            BufferTargetARB.ArrayBuffer,
+            (nuint)(vertices.Length * Vertex3D.Size),
+            vertices,
+            BufferUsageARB.DynamicDraw);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+
+        _meshes[mesh.Id] = entry with { FrontIsFirst = !entry.FrontIsFirst };
+    }
+
+    /// <summary>Builds a vertex array reading a mesh's layout from one buffer and its previous pose from another.</summary>
+    /// <param name="currentBuffer">The buffer attributes 0–4 read.</param>
+    /// <param name="previousBuffer">The buffer the previous-pose position and normal (5, 6) read.</param>
+    /// <param name="indexBuffer">The element buffer recorded into the array.</param>
+    /// <param name="uploadIndices">Index data to upload while bound, or empty when already uploaded.</param>
+    /// <returns>The vertex array's name.</returns>
+    private unsafe uint BuildMeshVertexArray(
+        uint currentBuffer, uint previousBuffer, uint indexBuffer, ReadOnlySpan<ushort> uploadIndices)
+    {
+        uint array = _gl.GenVertexArray();
+        BindVertexArray(array);
+
+        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, indexBuffer);
+        if (!uploadIndices.IsEmpty)
+        {
+            _gl.BufferData(
+                BufferTargetARB.ElementArrayBuffer,
+                (nuint)(uploadIndices.Length * sizeof(ushort)),
+                uploadIndices,
+                BufferUsageARB.StaticDraw);
+        }
+
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, currentBuffer);
         _gl.EnableVertexAttribArray(0);
         _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)0);
         _gl.EnableVertexAttribArray(1);
@@ -731,15 +857,19 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             Vertex3D.Size,
             (void*)Vertex3D.ColourOffset);
 
+        // The previous pose's position and normal, from whichever buffer holds it.
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, previousBuffer);
+        _gl.EnableVertexAttribArray(5);
+        _gl.VertexAttribPointer(5, 3, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)0);
+        _gl.EnableVertexAttribArray(6);
+        _gl.VertexAttribPointer(6, 3, VertexAttribPointerType.Float, false, Vertex3D.Size, (void*)12);
+
         // Unbound before the buffer bindings are cleared, or clearing the element array would record
         // "no indices" into the array object that was just configured.
         BindVertexArray(0);
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
         _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, 0);
-
-        MeshHandle handle = new(_nextMeshId++);
-        _meshes[handle.Id] = new GLMesh(array, vertexBuffer, indexBuffer, indices.Length);
-        return handle;
+        return array;
     }
 
     /// <inheritdoc/>
@@ -753,8 +883,15 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _gl.DeleteBuffer(entry.VertexBuffer);
             _gl.DeleteBuffer(entry.IndexBuffer);
 
+            if (entry.IsAnimated)
+            {
+                _gl.DeleteVertexArray(entry.SecondVertexArray);
+                _gl.DeleteBuffer(entry.SecondVertexBuffer);
+            }
+
             // Deleting the bound array reverts GL to zero; the shadow has to say so.
-            if (_currentVertexArray == entry.VertexArray)
+            if (_currentVertexArray == entry.VertexArray
+                || (entry.IsAnimated && _currentVertexArray == entry.SecondVertexArray))
             {
                 _currentVertexArray = 0;
             }
@@ -972,6 +1109,22 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     {
         ThrowIfDisposed();
         _previousPose = null;
+    }
+
+    /// <inheritdoc/>
+    public void SetPoseInterpolation(float currentBlend, float previousBlend)
+    {
+        ThrowIfDisposed();
+        _poseBlend = Math.Clamp(currentBlend, 0f, 1f);
+        _previousPoseBlend = Math.Clamp(previousBlend, 0f, 1f);
+    }
+
+    /// <inheritdoc/>
+    public void ClearPoseInterpolation()
+    {
+        ThrowIfDisposed();
+        _poseBlend = 0f;
+        _previousPoseBlend = 0f;
     }
 
     /// <inheritdoc/>
@@ -2015,12 +2168,15 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
             if (deferred)
             {
+                // The fourth component is the per-draw "no history" flag, carried to the motion
+                // target's spare channel so the temporal resolve can refuse to blend where the
+                // engine KNOWS the previous frame shows something else -- a fresh spawn, a teleport.
                 program.SetVector4(
                     _gbufferMaterial,
                     _material.Roughness,
                     _material.Metallic,
                     _material.PackedEmissive,
-                    0f);
+                    _material.NoHistory ? 1f : 0f);
             }
             else
             {
@@ -2061,11 +2217,23 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _sentProjection = _projection;
             _sentDetailFade = _detailFade;
             _sentAlphaTest = alphaTest;
+            _sentPoseBlend = _poseBlend;
+            _sentPreviousPoseBlend = _previousPoseBlend;
             program.SetMatrix4(uniforms.ModelView, modelView);
 
             if (uniforms.PreviousModelView >= 0)
             {
                 program.SetMatrix4(uniforms.PreviousModelView, previousPose);
+            }
+
+            if (uniforms.PoseBlend >= 0)
+            {
+                program.SetFloat(uniforms.PoseBlend, _poseBlend);
+            }
+
+            if (uniforms.PreviousPoseBlend >= 0)
+            {
+                program.SetFloat(uniforms.PreviousPoseBlend, _previousPoseBlend);
             }
             program.SetMatrix4(uniforms.Projection, _projection);
             program.SetVector4(
@@ -2097,6 +2265,18 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
                 }
             }
 
+            if (uniforms.PoseBlend >= 0 && _sentPoseBlend != _poseBlend)
+            {
+                _sentPoseBlend = _poseBlend;
+                program.SetFloat(uniforms.PoseBlend, _poseBlend);
+            }
+
+            if (uniforms.PreviousPoseBlend >= 0 && _sentPreviousPoseBlend != _previousPoseBlend)
+            {
+                _sentPreviousPoseBlend = _previousPoseBlend;
+                program.SetFloat(uniforms.PreviousPoseBlend, _previousPoseBlend);
+            }
+
             if (_sentProjection != _projection)
             {
                 _sentProjection = _projection;
@@ -2126,7 +2306,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         ApplyBlend(blend);
 
-        BindVertexArray(entry.VertexArray);
+        BindVertexArray(entry.ActiveVertexArray);
         _gl.DrawElements(
             PrimitiveType.Triangles,
             (uint)indexCount,
@@ -2159,6 +2339,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _gl.DeleteVertexArray(mesh.VertexArray);
             _gl.DeleteBuffer(mesh.VertexBuffer);
             _gl.DeleteBuffer(mesh.IndexBuffer);
+
+            if (mesh.IsAnimated)
+            {
+                _gl.DeleteVertexArray(mesh.SecondVertexArray);
+                _gl.DeleteBuffer(mesh.SecondVertexBuffer);
+            }
         }
 
         _meshes.Clear();
@@ -2210,7 +2396,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _meshProgram.LocationOf("uModelView"),
             _meshProgram.LocationOf("uProjection"),
             _meshProgram.LocationOf("uDetailFade"),
-            _meshProgram.LocationOf("uAlphaTest"));
+            _meshProgram.LocationOf("uAlphaTest"),
+            PoseBlend: _meshProgram.LocationOf("uPoseBlend"));
         _meshMaterial = _meshProgram.LocationOf("uMaterial");
         _meshKeyColour = _meshProgram.LocationOf("uKeyColour");
         _meshAmbient = _meshProgram.LocationOf("uAmbientColour");
@@ -2283,7 +2470,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _gbufferProgram.LocationOf("uProjection"),
             _gbufferProgram.LocationOf("uDetailFade"),
             _gbufferProgram.LocationOf("uAlphaTest"),
-            _gbufferProgram.LocationOf("uPreviousModelView"));
+            _gbufferProgram.LocationOf("uPreviousModelView"),
+            _gbufferProgram.LocationOf("uPoseBlend"),
+            _gbufferProgram.LocationOf("uPreviousPoseBlend"));
         _gbufferMaterial = _gbufferProgram.LocationOf("uMaterial");
         _gbufferDecodeAlbedo = _gbufferProgram.LocationOf("uDecodeAlbedo");
         UseProgram(_gbufferProgram);
@@ -2344,7 +2533,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _shadowProgram.LocationOf("uModelView"),
             _shadowProgram.LocationOf("uProjection"),
             _shadowProgram.LocationOf("uDetailFade"),
-            _shadowProgram.LocationOf("uAlphaTest"));
+            _shadowProgram.LocationOf("uAlphaTest"),
+            PoseBlend: _shadowProgram.LocationOf("uPoseBlend"));
         UseProgram(_shadowProgram);
         _shadowProgram.SetInt("uDiffuse", 0);
 
@@ -2731,9 +2921,31 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         int Projection,
         int DetailFade,
         int AlphaTest,
-        int PreviousModelView = -1);
+        int PreviousModelView = -1,
+        int PoseBlend = -1,
+        int PreviousPoseBlend = -1);
 
     private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels);
 
-    private readonly record struct GLMesh(uint VertexArray, uint VertexBuffer, uint IndexBuffer, int IndexCount);
+    /// <summary>One uploaded mesh.</summary>
+    /// <remarks>
+    /// A static mesh is the first four fields, its vertex array reading the previous-pose stream from
+    /// its own buffer. An animated mesh carries a second buffer and a second array with the buffer
+    /// roles exchanged; <see cref="FrontIsFirst"/> says which pairing is current, and an update flips
+    /// it rather than copying anything.
+    /// </remarks>
+    private readonly record struct GLMesh(
+        uint VertexArray,
+        uint VertexBuffer,
+        uint IndexBuffer,
+        int IndexCount,
+        uint SecondVertexArray = 0,
+        uint SecondVertexBuffer = 0,
+        int VertexCount = 0,
+        bool FrontIsFirst = true)
+    {
+        public bool IsAnimated => SecondVertexBuffer != 0;
+
+        public uint ActiveVertexArray => FrontIsFirst ? VertexArray : SecondVertexArray;
+    }
 }

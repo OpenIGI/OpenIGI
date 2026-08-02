@@ -132,6 +132,16 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void ClearPreviousPose() => PreviousPoses.Add(null);
 
+    /// <summary>The pose blends reported, in order; a null entry is a clear.</summary>
+    public List<(float Current, float Previous)?> PoseInterpolations { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetPoseInterpolation(float currentBlend, float previousBlend) =>
+        PoseInterpolations.Add((currentBlend, previousBlend));
+
+    /// <inheritdoc/>
+    public void ClearPoseInterpolation() => PoseInterpolations.Add(null);
+
     /// <summary>The temporal settings each frame was given, in order.</summary>
     public List<TemporalAaSettings> Temporal { get; } = [];
 
@@ -313,7 +323,51 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         return handle;
     }
 
-    public void DestroyMesh(MeshHandle mesh) => Meshes.Remove(mesh.Id);
+    /// <summary>The meshes created animated, with each one's previous-pose vertices.</summary>
+    public Dictionary<uint, Vertex3D[]> PreviousPoseStreams { get; } = [];
+
+    /// <summary>How many times each animated mesh was given a new pose.</summary>
+    public Dictionary<uint, int> AnimatedMeshUpdates { get; } = [];
+
+    public MeshHandle CreateAnimatedMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
+    {
+        MeshHandle handle = CreateMesh(vertices, indices);
+        PreviousPoseStreams[handle.Id] = vertices.ToArray();
+        AnimatedMeshUpdates[handle.Id] = 0;
+        return handle;
+    }
+
+    public void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices)
+    {
+        if (!Meshes.TryGetValue(mesh.Id, out (Vertex3D[] Vertices, ushort[] Indices) entry))
+        {
+            throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
+        }
+
+        if (!PreviousPoseStreams.ContainsKey(mesh.Id))
+        {
+            throw new ArgumentException($"{mesh} was not created with {nameof(CreateAnimatedMesh)}.", nameof(mesh));
+        }
+
+        if (vertices.Length != entry.Vertices.Length)
+        {
+            throw new ArgumentException(
+                $"An animated mesh's vertex count is fixed: created with {entry.Vertices.Length}, got {vertices.Length}.",
+                nameof(vertices));
+        }
+
+        // Exactly the backend's contract: what was current becomes the previous-pose stream.
+        PreviousPoseStreams[mesh.Id] = entry.Vertices;
+        Meshes[mesh.Id] = (vertices.ToArray(), entry.Indices);
+        AnimatedMeshUpdates[mesh.Id]++;
+    }
+
+    public void DestroyMesh(MeshHandle mesh)
+    {
+        Meshes.Remove(mesh.Id);
+        PreviousPoseStreams.Remove(mesh.Id);
+        AnimatedMeshUpdates.Remove(mesh.Id);
+    }
 
     public void SetDepthState(DepthState state) => DepthState = state;
 

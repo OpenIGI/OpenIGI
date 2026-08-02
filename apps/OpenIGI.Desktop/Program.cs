@@ -281,6 +281,13 @@ using (window)
     InteractionCamera interactionCamera = new();
     bool climbActive = false;
     int temporalFrame = 0;
+
+    // The player eye's last two TICK positions, for drawing the walk between them. Orientation is
+    // already per-frame (mouse-look runs on every loop pass); it is the POSITION that stepped at
+    // 30 Hz, which read as the whole world juddering whenever the player moved.
+    Vector3d playerEyePrevTick = default;
+    Vector3d playerEyeTick = default;
+    bool playerEyeCaptured = false;
     IrradianceVolume? probeField = null;
     bool climbSlideArmed = false;
     Random shotRandom = new(20000101);
@@ -1228,6 +1235,11 @@ using (window)
                     playerMode = false;
                     logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
                 }
+                else
+                {
+                    // A placement is a teleport; the eye pair must not be interpolated across it.
+                    playerEyeCaptured = false;
+                }
             }
             else
             {
@@ -1289,6 +1301,13 @@ using (window)
             }
         }
 
+        // The original's schedule admits ONE render per tick, which caps the whole presentation at
+        // 30 Hz however fast the machine is. Smooth mode lifts exactly that latch and nothing else:
+        // tick deadlines, the catch-up budget and everything the simulation observes are untouched.
+        // Lockstep keeps the original pairing -- its synthetic clock advances per frame and the
+        // reference captures depend on the one-to-one schedule.
+        loop.Clock.UncappedRenders = !options.Lockstep && RenderCVars.SmoothPresentation.Value;
+
         FrameOutcome outcome = loop.RunFrame();
 
         // The body advances on the simulation tick and ONLY on it. Tick and Render are mutually
@@ -1304,6 +1323,13 @@ using (window)
             if (!playerDead)
             {
                 player.Tick(window.Input, playerTerrain);
+
+                // The eye's tick pair, for drawing frames between ticks from a position that glides
+                // instead of stepping. Captured AFTER the body moved, so the pair is this tick's and
+                // the one before's.
+                playerEyePrevTick = playerEyeCaptured ? playerEyeTick : player.Camera.Position;
+                playerEyeTick = player.Camera.Position;
+                playerEyeCaptured = true;
             }
 
             // The first round of a mission, reported once — the same one-shot diagnostic the world
@@ -1506,11 +1532,39 @@ using (window)
             // shot of the body -- rather than from the frozen first-person view.
             // On a ladder the eye pulls back to a third-person interaction view (camera mode 3), so you
             // see your character on the rungs rather than the back of your hands.
+            // How far this frame sits between the last two simulation ticks. Everything the
+            // simulation stepped -- the player's own position, the soldiers, their poses -- is drawn
+            // blended between its last two tick states by this amount, which is what makes an
+            // uncapped frame rate look uncapped while the simulation stays at exactly 30 Hz.
+            bool smoothPresentation = !options.Lockstep && RenderCVars.SmoothPresentation.Value;
+            float tickBlend = smoothPresentation ? loop.Clock.TickFraction(loop.TimeSource.Milliseconds) : 1f;
+
             Camera3D eye = playerDead && deathCamera.IsActive
                 ? deathCamera.Camera
                 : player is { IsOnLadder: true } && interactionCamera.IsActive
                     ? interactionCamera.Camera
                     : playerMode && player is not null ? player.Camera : camera.Camera;
+
+            // The walking eye glides between its tick pair, and so does the recoil kick inside its
+            // orientation; the mouse half of the look is this frame's own. The fly, death and ladder
+            // cameras move per frame on their own and need nothing.
+            if (smoothPresentation
+                && playerMode
+                && !playerDead
+                && playerEyeCaptured
+                && player is { IsOnLadder: false })
+            {
+                eye = new Camera3D(
+                    new Vector3d(
+                        playerEyePrevTick.X + ((playerEyeTick.X - playerEyePrevTick.X) * tickBlend),
+                        playerEyePrevTick.Y + ((playerEyeTick.Y - playerEyePrevTick.Y) * tickBlend),
+                        playerEyePrevTick.Z + ((playerEyeTick.Z - playerEyePrevTick.Z) * tickBlend)),
+                    player.SmoothedLookRotation(tickBlend));
+            }
+
+            // Everything soldier-shaped resolves its own frame state once, here, so the shadow
+            // cascades and the geometry pass draw identical bodies in identical places.
+            soldiers?.BeginFrame(tickBlend, smoothPresentation);
 
             // The modern path renders the scene offscreen so that it still exists, with its depth, once
             // it has been drawn -- which is what every effect from stage R3 on needs. With r_hdr off,
@@ -1762,7 +1816,27 @@ using (window)
                     near: 0.1f,
                     far: farPlane);
 
-                arms?.Draw(rig, eye, viewModelProjection);
+                // Between-tick smoothing for everything the rig steps at 30 Hz: its origin (the eye
+                // the body carried plus the clip's hold offset), its skin, and the weapon bone. The
+                // LOOK is already per frame; without this the arms and the knife stepped at 30 Hz
+                // against a camera that now glides -- which read as jitter -- and skipped several
+                // poses per drawn frame whenever ticks ran back to back, which read as the animation
+                // racing.
+                Vector3d? rigOriginUnits = null;
+                Matrix3f? rigOrientation = null;
+                BoneAttachment? weaponAttachment = player.HeldWeapon;
+                float previousPoseShare = 0f;
+                if (smoothPresentation && player.HasViewTickPair)
+                {
+                    (Vector3d smoothedOrigin, Matrix3f smoothedOrientation, BoneAttachment? smoothedWeapon) =
+                        player.SmoothedRig(tickBlend);
+                    rigOriginUnits = smoothedOrigin;
+                    rigOrientation = smoothedOrientation;
+                    weaponAttachment = smoothedWeapon ?? weaponAttachment;
+                    previousPoseShare = 1f - tickBlend;
+                }
+
+                arms?.Draw(rig, eye, viewModelProjection, rigOriginUnits, previousPoseShare, rigOrientation);
 
                 // Cycling weapons changes the model as well as the animations, so the renderer has to
                 // follow whatever the cycle put in hand.
@@ -1771,7 +1845,7 @@ using (window)
                     FollowHeldWeapon(player, heldWeapon, missionForWeapon);
                 }
 
-                if (player.HeldWeapon is { } attachment && heldWeapon is { IsReady: true })
+                if (weaponAttachment is { } attachment && heldWeapon is { IsReady: true })
                 {
                     // The weapon in hand is the one object on screen at all times, so it is the one
                     // worth giving a material to first. Steel: fully metallic, and smooth enough for

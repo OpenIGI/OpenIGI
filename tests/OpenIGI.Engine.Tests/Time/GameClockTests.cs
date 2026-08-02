@@ -310,6 +310,65 @@ public sealed class GameClockTests
         Assert.Throws<ArgumentOutOfRangeException>(() => clock.SetTickRate(-30));
     }
 
+    [Fact]
+    public void TickFractionRisesFromTheLastDeadlineToTheNext()
+    {
+        GameClock clock = Create(out ManualTimeSource time);
+        time.Milliseconds = 0;
+        clock.SetTickRate(30);
+        clock.CompleteTick();
+
+        // Tick 0's deadline was 0 and tick 1's is 33, so the fraction is measured across that span.
+        Assert.Equal(0f, clock.TickFraction(0));
+        Assert.Equal(11f / 33f, clock.TickFraction(11), 5);
+        Assert.Equal(22f / 33f, clock.TickFraction(22), 5);
+        Assert.Equal(1f, clock.TickFraction(33));
+    }
+
+    [Fact]
+    public void TickFractionClampsRatherThanExtrapolatingWhenTheNextTickIsOverdue()
+    {
+        GameClock clock = Create(out ManualTimeSource time);
+        time.Milliseconds = 0;
+        clock.SetTickRate(30);
+        clock.CompleteTick();
+
+        // Mid catch-up the honest picture is the newest completed tick, not a guess past it — and a
+        // guess would also overshoot poses whose next state exists but has not been captured yet.
+        Assert.Equal(1f, clock.TickFraction(500));
+    }
+
+    [Fact]
+    public void TickFractionIsWholeBeforeAnyTickHasRun()
+    {
+        GameClock clock = Create(out ManualTimeSource time);
+        time.Milliseconds = 0;
+        clock.SetTickRate(30);
+
+        // With no tick behind it there is no pair of states to draw between.
+        Assert.Equal(1f, clock.TickFraction(10));
+    }
+
+    [Fact]
+    public void UncappedRendersTradeIdleFramesForRendersAndNothingElse()
+    {
+        GameClock clock = Create(out ManualTimeSource time);
+        time.Milliseconds = 0;
+        clock.SetTickRate(30);
+        clock.CompleteTick();
+        clock.CompleteRender();
+
+        // The original's latch: one render per tick, then idle until the next deadline passes.
+        Assert.Equal(FrameAction.Idle, clock.Decide(10));
+
+        // Lifting the latch turns exactly those idle frames into renders...
+        clock.UncappedRenders = true;
+        Assert.Equal(FrameAction.Render, clock.Decide(10));
+
+        // ...while a due tick still wins the frame, exactly as scheduled.
+        Assert.Equal(FrameAction.Tick, clock.Decide(34));
+    }
+
     private static GameClock Create(out ManualTimeSource time)
     {
         time = new ManualTimeSource();

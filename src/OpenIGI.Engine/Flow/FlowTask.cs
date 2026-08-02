@@ -159,8 +159,15 @@ public sealed class FlowTask : GameTask
 
     private void RunTick()
     {
-        _renderer.Flush();
-        _renderer.Reset();
+        // The original presents here, at the head of a tick -- and with one render per tick that IS
+        // once per frame. With renders uncapped the present belongs to the render instead: presenting
+        // here would both cap the display at the tick rate again and, on a back-to-back tick, show a
+        // buffer that was cleared and never drawn -- which is a solid flash of the clear colour.
+        if (!Clock.UncappedRenders)
+        {
+            _renderer.Flush();
+            _renderer.Reset();
+        }
 
         bool isStartupTick = Clock.IsStartupTick;
         if (isStartupTick)
@@ -184,6 +191,15 @@ public sealed class FlowTask : GameTask
 
     private void RunRender()
     {
+        // Uncapped, every render presents the frame before it and begins its own -- the same
+        // present-then-begin shape the original has, moved from the tick to the render so the display
+        // runs as fast as frames are actually drawn while the tick schedule stays untouched.
+        if (Clock.UncappedRenders)
+        {
+            _renderer.Flush();
+            _renderer.Reset();
+        }
+
         // Evaluated once and reused, as the original does: it tests the frame counter twice but
         // increments it only afterwards, so both tests always agree.
         bool isStartupFrame = Clock.IsStartupFrame;

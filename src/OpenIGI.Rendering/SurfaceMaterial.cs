@@ -32,11 +32,19 @@ namespace OpenIGI.Rendering;
 /// it ends, so the horizon search treats anything thin as reaching to infinity and darkens whatever
 /// stands behind it. Soldiers and wire fences are the two that matter.
 /// </param>
+/// <param name="NoHistory">
+/// Whether the temporal resolve must not blend history onto this surface this frame. For the draws
+/// where the engine <em>knows</em> the previous frame shows something unrelated — a body's first
+/// appearance, anything the simulation teleports — where reprojection would confidently fetch the
+/// wrong pixels. Per draw and per frame: set it for the one frame the discontinuity happens, then
+/// stop, or the surface never converges.
+/// </param>
 public readonly record struct SurfaceMaterial(
     float Roughness = 0.8f,
     float Metallic = 0.0f,
     float Emissive = 0.0f,
-    bool CastsOcclusion = true)
+    bool CastsOcclusion = true,
+    bool NoHistory = false)
 {
     /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
     /// <remarks>

@@ -76,6 +76,26 @@ public sealed class PlayerCamera
     private LadderPlacement? _mountedLadder;
     private bool _nearLadderAtTop;
 
+    // The first-person rig's last two tick states, captured at the end of Tick() — what the
+    // presentation draws between when r_smooth is on. All of it is kept in bone/eye space WITHOUT the
+    // look folded in, so the per-frame mouse orientation composes on top and the weapon stays welded
+    // to the view however fast the frames come.
+    private Vector3d _prevTickEye;
+    private Vector3d _tickEye;
+    private Vector3f _prevTickRootMotion;
+    private Vector3f _tickRootMotion;
+    private Vector3f _prevTickWeaponBonePosition;
+    private Vector3f _tickWeaponBonePosition;
+    private Matrix3f _prevTickWeaponBoneRotation = Matrix3f.Identity;
+    private Matrix3f _tickWeaponBoneRotation = Matrix3f.Identity;
+    private bool _hasWeaponBonePair;
+    private float _prevTickSwayPitch;
+    private float _tickSwayPitch;
+    private float _prevTickSwayYaw;
+    private float _tickSwayYaw;
+    private float _prevTickRecoilPitch;
+    private float _tickRecoilPitch;
+
     /// <summary>Gets the body being driven.</summary>
     public PlayerBody Body => _body;
 
@@ -317,6 +337,9 @@ public sealed class PlayerCamera
 
         _body.Position = new Vector3d(at.X * UnitsPerMetre, at.Y * UnitsPerMetre, at.Z * UnitsPerMetre);
         _body.Yaw = yaw;
+
+        // A placement is a teleport; the rig's tick pair must not be interpolated across it.
+        HasViewTickPair = false;
         return _body.PlaceOnGround(terrain);
     }
 
@@ -410,6 +433,7 @@ public sealed class PlayerCamera
         _body.Position = spawn.Position;
         _body.Yaw = spawn.Gamma;
         _body.Pitch = 0f;
+        HasViewTickPair = false;
         return _body.PlaceOnGround(terrain);
     }
 
@@ -541,6 +565,132 @@ public sealed class PlayerCamera
 
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
         ResolveFire();
+
+        // After the fire has (possibly) started a new clip, so the pair describes what this tick
+        // actually shows.
+        CaptureViewTickState();
+    }
+
+    /// <summary>Gets whether the rig has two tick states for the presentation to draw between.</summary>
+    public bool HasViewTickPair { get; private set; }
+
+    /// <summary>Records the rig's per-tick halves, keeping the tick before's.</summary>
+    private void CaptureViewTickState()
+    {
+        if (_view is not { } view)
+        {
+            HasViewTickPair = false;
+            return;
+        }
+
+        _prevTickEye = HasViewTickPair ? _tickEye : view.Eye;
+        _tickEye = view.Eye;
+
+        Vector3f rootMotion = view.RootMotion;
+        _prevTickRootMotion = HasViewTickPair ? _tickRootMotion : rootMotion;
+        _tickRootMotion = rootMotion;
+
+        // The sway IS the weapon-change animation — no clip plays; two angles ease over eleven ticks
+        // (see HumanViewSway). They step on the tick, so they interpolate like everything else here.
+        float swayPitch = _weapons?.Sway.Pitch ?? 0f;
+        float swayYaw = _weapons?.Sway.Yaw ?? 0f;
+        _prevTickSwayPitch = HasViewTickPair ? _tickSwayPitch : swayPitch;
+        _prevTickSwayYaw = HasViewTickPair ? _tickSwayYaw : swayYaw;
+        _tickSwayPitch = swayPitch;
+        _tickSwayYaw = swayYaw;
+
+        // The view kick accumulates and decays on the tick (ResolveFire ran just above), and it sits
+        // in both the camera and the rig's eye orientation -- so both take the same blended value, or
+        // the weapon would shear against the view with every shot.
+        float recoilPitch = _weapons?.RecoilPitch ?? 0f;
+        _prevTickRecoilPitch = HasViewTickPair ? _tickRecoilPitch : recoilPitch;
+        _tickRecoilPitch = recoilPitch;
+
+        // The weapon bone out of the UNROTATED pose — the identity-root one — so the look can be
+        // applied per frame at draw. Equivalent by the same argument the third-person draw leans on:
+        // the root rotation only ever left-multiplies every bone.
+        BonePose unrotated = view.Bones.Pose();
+        if (HumanAttachPoints.FirstPersonWeapon < unrotated.BoneCount)
+        {
+            Vector3f position = unrotated.Positions[HumanAttachPoints.FirstPersonWeapon];
+            Matrix3f rotation = unrotated.Rotations[HumanAttachPoints.FirstPersonWeapon];
+            _prevTickWeaponBonePosition = _hasWeaponBonePair ? _tickWeaponBonePosition : position;
+            _prevTickWeaponBoneRotation = _hasWeaponBonePair ? _tickWeaponBoneRotation : rotation;
+            _tickWeaponBonePosition = position;
+            _tickWeaponBoneRotation = rotation;
+            _hasWeaponBonePair = true;
+        }
+
+        HasViewTickPair = true;
+    }
+
+    /// <summary>The drawn pitch with the view kick blended between its last two tick values.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <remarks>
+    /// The mouse half (<see cref="PlayerBody.Pitch"/>) is per frame already; only the recoil
+    /// accumulates and decays on the tick. At <paramref name="alpha"/> 1 this is
+    /// <see cref="AimPitch"/> exactly.
+    /// </remarks>
+    private float SmoothedAimPitch(float alpha) => HasViewTickPair
+        ? _body.Pitch + _prevTickRecoilPitch + ((_tickRecoilPitch - _prevTickRecoilPitch) * alpha)
+        : AimPitch;
+
+    /// <summary>The camera's orientation for a frame between two ticks — the kick glides, the look is now.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <remarks>
+    /// The rig takes the same blended pitch through <see cref="SmoothedRig"/>, so the weapon never
+    /// shears against the view mid-kick.
+    /// </remarks>
+    public Matrix3f SmoothedLookRotation(float alpha) =>
+        Camera3D.LookRotation(_body.Yaw, SmoothedAimPitch(alpha));
+
+    /// <summary>The rig's transform and held-weapon attachment for a frame between two ticks.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <returns>
+    /// The rig origin in engine units, its orientation, and the weapon attachment when the bone
+    /// exists.
+    /// </returns>
+    /// <remarks>
+    /// The tick-stepped halves — the eye the body carried, the clip's hold offset, the weapon bone,
+    /// and the sway angles that ARE the weapon-change animation — are interpolated between the pair;
+    /// the LOOK is this frame's own, because the mouse already runs per frame and the arms must stay
+    /// welded to it. At <paramref name="alpha"/> 1 this is the rig's un-smoothed transform exactly.
+    /// </remarks>
+    public (Vector3d OriginUnits, Matrix3f Orientation, BoneAttachment? HeldWeapon) SmoothedRig(float alpha)
+    {
+        if (_view is not { } view || !HasViewTickPair)
+        {
+            return (_view?.Position ?? default, _view?.Orientation ?? Matrix3f.Identity, _view?.HeldWeapon);
+        }
+
+        // The same composition SyncView commits — eye orientation times sway — with the tick-stepped
+        // angles blended: the sway pair (the weapon-change animation) and the recoil kick inside the
+        // aim pitch. The mouse-driven part of the pitch and the yaw are this frame's own.
+        Matrix3f look = Matrix3f.FromEngineEulerAngles(SmoothedAimPitch(alpha), 0f, -_body.Yaw)
+            * Matrix3f.FromEngineEulerAngles(
+                PresentationBlend.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
+                0f,
+                PresentationBlend.LerpAngle(_prevTickSwayYaw, _tickSwayYaw, alpha));
+
+        Vector3d eye = PresentationBlend.Lerp(_prevTickEye, _tickEye, alpha);
+
+        // M · v — the palette's own convention — is the transpose of the row-vector Transform.
+        Vector3f held = look.Transposed().Transform(
+            PresentationBlend.Lerp(_prevTickRootMotion, _tickRootMotion, alpha));
+        Vector3d origin = new(eye.X + held.X, eye.Y + held.Y, eye.Z + held.Z);
+
+        BoneAttachment? weapon = null;
+        if (_hasWeaponBonePair)
+        {
+            Vector3f bone = look.Transposed().Transform(
+                PresentationBlend.Lerp(_prevTickWeaponBonePosition, _tickWeaponBonePosition, alpha));
+            weapon = new BoneAttachment(
+                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
+                look * PresentationBlend.InterpolateRotation(
+                    _prevTickWeaponBoneRotation, _tickWeaponBoneRotation, alpha));
+        }
+
+        return (origin, look, weapon);
     }
 
     /// <summary>The heights the doorway diagnostic probes forward at, in world units above the feet.</summary>

@@ -100,6 +100,23 @@ public sealed class GameClock
     /// <summary>Gets a value indicating whether an excluded-time span is currently open.</summary>
     public bool IsExcludingTime => _exclusionDepth > 0;
 
+    /// <summary>Gets or sets a value indicating whether renders may repeat between ticks.</summary>
+    /// <remarks>
+    /// <para>
+    /// The original's render latch admits <em>one</em> render per tick, which caps the whole
+    /// presentation at the simulation's 30 Hz however fast the machine is. With this set, a frame
+    /// with no tick due renders instead of idling, so the display runs as fast as it can while the
+    /// tick schedule — the deadlines, the catch-up budget, everything the simulation can observe —
+    /// is untouched: ticks still fire exactly when their absolute deadlines pass.
+    /// </para>
+    /// <para>
+    /// Off is the original's behaviour and stays the setting for the vanilla preset and for
+    /// <c>-lockstep</c> runs, whose synthetic clock advances per frame and needs the original's
+    /// one-to-one pairing to stay reproducible.
+    /// </para>
+    /// </remarks>
+    public bool UncappedRenders { get; set; }
+
     /// <summary>Gets the current wall-clock reading.</summary>
     public int Now => _time.Milliseconds;
 
@@ -126,6 +143,44 @@ public sealed class GameClock
         }
     }
 
+    /// <summary>Gets how far through the current tick period a clock reading sits, from 0 to 1.</summary>
+    /// <param name="nowMilliseconds">The wall-clock reading for this frame.</param>
+    /// <returns>0 just after a tick ran, approaching 1 as the next falls due; 1 once it is overdue.</returns>
+    /// <remarks>
+    /// <para>
+    /// For the presentation only, never the simulation: a renderer drawing between two fixed-rate
+    /// ticks uses this as the blend between the states they computed, which is what makes an uncapped
+    /// frame rate look uncapped while the simulation stays at <see cref="TickRate"/> exactly.
+    /// </para>
+    /// <para>
+    /// Measured between the previous and next per-tick <em>deadlines</em>, so it inherits everything
+    /// the schedule already accounts for — the excluded-time stopwatch, the wrap, the absolute
+    /// per-index targets. Overdue readings clamp to 1 rather than extrapolate: during a catch-up
+    /// burst the honest picture is the newest completed tick, not a guess past it.
+    /// </para>
+    /// </remarks>
+    public float TickFraction(int nowMilliseconds)
+    {
+        if (TickCount == 0)
+        {
+            return 1f;
+        }
+
+        int origin = unchecked(TimeBaseMilliseconds + ExcludedMilliseconds);
+        int previousDue = unchecked((int)IgiMath.Trunc((1000.0 / TickRate * (TickCount - 1)) + origin));
+        int nextDue = unchecked((int)DueMilliseconds);
+
+        // Signed differences so both sides wrap together, exactly as IsTickDue compares.
+        int period = unchecked(nextDue - previousDue);
+        if (period <= 0)
+        {
+            return 1f;
+        }
+
+        int elapsed = unchecked(nowMilliseconds - previousDue);
+        return Math.Clamp(elapsed / (float)period, 0f, 1f);
+    }
+
     /// <summary>Decides what the frame at a given clock reading may do.</summary>
     /// <param name="nowMilliseconds">The wall-clock reading for this frame.</param>
     /// <returns>The action the caller should perform.</returns>
@@ -140,7 +195,7 @@ public sealed class GameClock
             return FrameAction.Tick;
         }
 
-        return HasRendered ? FrameAction.Idle : FrameAction.Render;
+        return HasRendered && !UncappedRenders ? FrameAction.Idle : FrameAction.Render;
     }
 
     /// <summary>Determines whether a simulation tick may run at a given clock reading.</summary>

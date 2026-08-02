@@ -112,6 +112,17 @@ public sealed class SoldierRenderer : IDisposable
     private float _playerBodyFacing;
     private AiSoldier.GroundQuery? _playerBodyGround;
 
+    // The player body's own tick-state pair and frame bookkeeping -- the same smoothing a soldier's
+    // Member carries, kept as fields because there is only ever one of it.
+    private Vector3d _playerBodyTickWhere;
+    private Vector3d _playerBodyPrevTickWhere;
+    private bool _playerBodyHasTickState;
+    private int _playerBodyCaptureTick = -1;
+
+    // The frame alpha BeginFrame resolved, kept for DrawPlayerBody which runs once per frame.
+    private float _frameAlpha = 1f;
+    private bool _frameSmooth;
+
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">Where texture bytes are read from.</param>
@@ -178,11 +189,13 @@ public sealed class SoldierRenderer : IDisposable
                 _groups.Add(group);
             }
 
-            // Its own mesh, so it can hold its own pose (see Member).
+            // Its own mesh, so it can hold its own pose (see Member) -- animated, so each tick's
+            // re-skin replaces the vertices in place and the pose replaced becomes the previous-pose
+            // stream the motion vectors and the between-tick blending read.
             MeshHandle own;
             try
             {
-                own = _device.CreateMesh(group.Geometry.Vertices, group.Geometry.Indices);
+                own = _device.CreateAnimatedMesh(group.Geometry.Vertices, group.Geometry.Indices);
             }
             catch (InvalidOperationException)
             {
@@ -1450,6 +1463,11 @@ public sealed class SoldierRenderer : IDisposable
         // through a stack descriptor about once per soldier per frame). Sharing one skinned mesh per group
         // made every soldier wear the first one's pose, so once guards diverged onto real patrol paths
         // nothing appeared to animate at all.
+        //
+        // The skin lands in a persistent per-soldier buffer and replaces the mesh's vertices in place:
+        // no allocation, no mesh churn, and the pose being replaced becomes the mesh's previous-pose
+        // stream -- which is exactly the "previous frame's skinned vertices" the temporal resolve needs
+        // and the second pose the between-tick blend draws against.
         foreach (Group group in _groups)
         {
             if (group.Model is null)
@@ -1465,7 +1483,8 @@ public sealed class SoldierRenderer : IDisposable
                     member.View.Tick();
                 }
 
-                Vertex3D[] skinned = [.. group.Geometry.Vertices];
+                Vertex3D[] skinned = member.SkinScratch ??= new Vertex3D[group.Geometry.Vertices.Length];
+                group.Geometry.Vertices.CopyTo(skinned, 0);
                 try
                 {
                     MefSkinner.Skin(
@@ -1479,29 +1498,217 @@ public sealed class SoldierRenderer : IDisposable
                     continue;
                 }
 
-                MeshHandle replacement;
-                try
-                {
-                    replacement = _device.CreateMesh(skinned, group.Geometry.Indices);
-                }
-                catch (InvalidOperationException)
+                if (!member.Mesh.IsValid)
                 {
                     continue;
                 }
 
-                if (member.Mesh.IsValid)
+                try
                 {
-                    _device.DestroyMesh(member.Mesh);
+                    _device.UpdateAnimatedMesh(member.Mesh, skinned);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
                 }
 
-                member.Mesh = replacement;
+                member.PoseFlippedSinceFrame = true;
             }
+        }
+
+        // With the poses settled, record where each body stands and faces THIS tick. The presentation
+        // draws between the last two of these records, so they are the whole interface between the
+        // 30 Hz simulation and however fast the display runs.
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                CaptureTickState(member);
+            }
+        }
+    }
+
+    /// <summary>Records a soldier's drawn placement for this tick, keeping the tick before.</summary>
+    private void CaptureTickState(Member member)
+    {
+        (Vector3d where, Matrix3f orientation) = TickPlacementOf(member);
+        float facing = FacingOf(orientation);
+
+        member.PrevTickWhere = member.HasTickState ? member.TickWhere : where;
+        member.PrevTickFacing = member.HasTickState ? member.TickFacing : facing;
+        member.TickWhere = where;
+        member.TickFacing = facing;
+        member.TickOrientation = orientation;
+
+        if (member.Weapon is not null)
+        {
+            BonePose pose = member.View.UnrotatedPose();
+            if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
+            {
+                Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
+                Matrix3f rotation = pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
+                member.PrevTickHandPosition = member.HasHandState ? member.TickHandPosition : hand;
+                member.PrevTickHandRotation = member.HasHandState ? member.TickHandRotation : rotation;
+                member.TickHandPosition = hand;
+                member.TickHandRotation = rotation;
+                member.HasHandState = true;
+            }
+        }
+
+        member.HasTickState = true;
+    }
+
+    /// <summary>Where a soldier's body is drawn for the current tick, in metres, and its heading.</summary>
+    /// <remarks>
+    /// The placement <see cref="Draw"/> used to derive per pass, moved to the tick so the ground probe
+    /// runs once per soldier per tick instead of once per soldier per pass — the shadow cascades and
+    /// the geometry pass then agree by construction.
+    /// </remarks>
+    private (Vector3d Where, Matrix3f Orientation) TickPlacementOf(Member member)
+    {
+        SoldierView soldier = member.View;
+
+        // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT HEIGHT.
+        // That is the original's Human+1300 (see SoldierView.RootSample): every retail skeleton's
+        // bone 0 rest translation is zero, so the pose puts the pelvis at the object origin and the
+        // feet a metre below it, and the root track's Z is what bridges the two. Only the Z is taken:
+        // the horizontal part of the root track is what MOVES the body — the mover consumes the same
+        // track's per-tick delta — so adding it again would run the model a stride ahead of its feet.
+        if (_brains.TryGetValue(soldier, out AiSoldier? brain) && brain.HasGroundQuery)
+        {
+            // Snap the feet to whatever the collision puts under them, exactly as the static-soldier
+            // Stand() does. A level often authors a soldier a little below its floor; the query only
+            // pulls UP onto a floor within the half-metre probe, so a soldier already on its floor
+            // does not move.
+            double groundedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+            return (new Vector3d(
+                soldier.Position.X / WorldScene.UnitsPerMetre,
+                soldier.Position.Y / WorldScene.UnitsPerMetre,
+                (groundedZ + soldier.RootSample.Z) / WorldScene.UnitsPerMetre), soldier.Orientation);
+        }
+
+        if (_brains.ContainsKey(soldier))
+        {
+            return (new Vector3d(
+                soldier.Position.X / WorldScene.UnitsPerMetre,
+                soldier.Position.Y / WorldScene.UnitsPerMetre,
+                member.Position.Z), soldier.Orientation);
+        }
+
+        return (member.Position, soldier.Orientation);
+    }
+
+    /// <summary>A body's heading out of its world 3×3 — the inverse of <c>Z(facing)</c>.</summary>
+    /// <remarks>
+    /// The second column is the body's forward, and a soldier's forward is
+    /// <c>(-sin f, cos f)</c> (see <see cref="AiSoldier"/>), so the angle reads straight back out.
+    /// Orientations are pure Z rotations for every body this renderer draws.
+    /// </remarks>
+    private static float FacingOf(in Matrix3f orientation) => MathF.Atan2(-orientation.M12, orientation.M22);
+
+    /// <summary>Resolves where every soldier is drawn for one rendered frame.</summary>
+    /// <param name="tickFraction">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <param name="smooth">
+    /// Whether to draw between the two tick states. Off, every value is this tick's verbatim — the
+    /// original's stepped presentation, which the vanilla reference captures depend on being exact.
+    /// </param>
+    /// <remarks>
+    /// Once per frame, before any pass draws. <see cref="Draw"/> runs once per shadow cascade and once
+    /// for the geometry pass, so anything resolved per frame — the blend, the ground snap, the motion
+    /// bookkeeping — has to be resolved here or the passes would disagree with each other.
+    /// </remarks>
+    public void BeginFrame(float tickFraction, bool smooth)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        float alpha = Math.Clamp(tickFraction, 0f, 1f);
+        _frameAlpha = alpha;
+        _frameSmooth = smooth;
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                ResolveFrameState(member, alpha, smooth);
+            }
+        }
+    }
+
+    /// <summary>Computes one soldier's drawn placement, pose blend and motion for this frame.</summary>
+    private void ResolveFrameState(Member member, float alpha, bool smooth)
+    {
+        if (!member.HasTickState)
+        {
+            // Drawn before its first tick: stand exactly where the level put it.
+            CaptureTickState(member);
+        }
+
+        // The rigid half. When nothing moved — or smoothing is off — the tick's own values pass
+        // through verbatim, so the vanilla picture is not merely close but identical.
+        Vector3d where = smooth && member.PrevTickWhere != member.TickWhere
+            ? PresentationBlend.Lerp(member.PrevTickWhere, member.TickWhere, alpha)
+            : member.TickWhere;
+
+        Matrix3f orientation = smooth && member.PrevTickFacing != member.TickFacing
+            ? Matrix3f.FromEngineEulerAngles(0f, 0f, PresentationBlend.LerpAngle(member.PrevTickFacing, member.TickFacing, alpha))
+            : member.TickOrientation;
+
+        member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
+        member.DrawnWhere = where;
+        member.DrawnOrientation = orientation;
+
+        // The pose half. Smoothing draws 1-alpha of the previous tick's skin; the blend that described
+        // LAST frame's pose is kept so the geometry pass can reconstruct last frame's vertex from the
+        // same two streams. When the streams flipped since the last frame the old blend no longer names
+        // the right pair, and the previous stream itself — the whole of last tick's pose — is the
+        // closest expressible stand-in; by then last frame's blend was nearly there anyway.
+        member.PreviousPoseBlend = member.PoseFlippedSinceFrame ? 1f : member.PoseBlend;
+        member.PoseBlend = smooth ? 1f - alpha : 0f;
+        member.PoseFlippedSinceFrame = false;
+
+        // A body's very first frame has no history anywhere on screen; say so rather than let the
+        // resolve reproject into whatever stood there before.
+        member.NoHistoryThisFrame = !member.HasFrameState;
+        member.HasFrameState = true;
+
+        // The held weapon rides the hand bone, interpolated the same way — rigid, so its previous
+        // transform alone reprojects it exactly.
+        if (member.Weapon is not null && member.HasHandState)
+        {
+            Vector3f hand;
+            Matrix3f handRotation;
+            if (smooth)
+            {
+                hand = member.PrevTickHandPosition + ((member.TickHandPosition - member.PrevTickHandPosition) * alpha);
+                handRotation = PresentationBlend.InterpolateRotation(member.PrevTickHandRotation, member.TickHandRotation, alpha);
+            }
+            else
+            {
+                hand = member.TickHandPosition;
+                handRotation = member.TickHandRotation;
+            }
+
+            // M . v, so the transpose of the row-vector Transform (see DrawWeapon's remarks).
+            Vector3f turned = orientation.Transposed().Transform(hand);
+            member.PreviousWeapon = member.HasWeaponFrameState
+                ? (member.DrawnWeaponOrigin, member.DrawnWeaponRotation)
+                : null;
+            member.DrawnWeaponOrigin = new Vector3d(
+                where.X + (turned.X / WorldScene.UnitsPerMetre),
+                where.Y + (turned.Y / WorldScene.UnitsPerMetre),
+                where.Z + (turned.Z / WorldScene.UnitsPerMetre));
+            member.DrawnWeaponRotation = orientation * handRotation;
+            member.HasWeaponFrameState = true;
         }
     }
 
     /// <summary>Draws every soldier.</summary>
     /// <param name="camera">The eye the scene is drawn from.</param>
     /// <param name="projection">The world's view-to-clip transform — soldiers use no other.</param>
+    /// <remarks>
+    /// Called once per shadow cascade and once for the geometry pass; everything per-frame was settled
+    /// by <see cref="BeginFrame"/>, so every pass draws the same bodies in the same places.
+    /// </remarks>
     public void Draw(in Camera3D camera, in Matrix4f projection)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -1515,78 +1722,49 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
+        // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
+        // built against the scene camera, which the shadow cascades' light cameras are not.
+        bool reportMotion = _device.CurrentPass == ScenePass.Geometry;
+
         foreach (Group group in _groups)
         {
             foreach (Member member in group.Soldiers)
             {
-                SoldierView soldier = member.View;
-                Vector3d metres = member.Position;
-
                 // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
-                // vanishing was only ever the port having no death animation to play. Each soldier now
+                // vanishing was only ever the port having no death animation to play. Each soldier
                 // carries its own skinned mesh, so a corpse is posed by its own death clip.
-
-                // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT
-                // HEIGHT. That is the original's Human+1300 (see SoldierView.RootSample): every retail
-                // skeleton's bone 0 rest translation is zero, so the pose puts the pelvis at the object
-                // origin and the feet a metre below it, and the root track's Z is what bridges the two.
-                //
-                // It replaces "rest the skin's lowest vertex on the ground", which was a recorded
-                // stand-in for exactly this and agrees with it to a couple of centimetres while a
-                // soldier is standing. The difference is a corpse: a death clip takes its root from
-                // 3877 units down to about 600, and the stand-in had no way to know.
-                //
-                // Only the Z is taken. The horizontal part of the root track is what MOVES the body -
-                // the mover consumes the same track's per-tick delta - so adding it again would run the
-                // model a stride ahead of its own feet every cycle. A heading is a rotation about Z, so
-                // dropping the horizontal part costs nothing in the vertical.
-                Vector3d where;
-                if (_brains.TryGetValue(soldier, out AiSoldier? soldierBrain) && soldierBrain.HasGroundQuery)
+                if (!member.HasFrameState)
                 {
-                    // Snap the feet to whatever the collision puts under them, exactly as the static-soldier
-                    // Stand() does. A level often authors a soldier a little below its floor (Building_1111's
-                    // guards sit ~0.29 m under it); without this the body is drawn at that buried height plus
-                    // the clip's root and its feet vanish into the ground. The query only pulls UP onto a
-                    // floor within the half-metre probe, so a soldier already on its floor does not move.
-                    double groundedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
-                    where = new Vector3d(
-                        soldier.Position.X / WorldScene.UnitsPerMetre,
-                        soldier.Position.Y / WorldScene.UnitsPerMetre,
-                        (groundedZ + soldier.RootSample.Z) / WorldScene.UnitsPerMetre);
-                }
-                else if (_brains.ContainsKey(soldier))
-                {
-                    where = new Vector3d(
-                        soldier.Position.X / WorldScene.UnitsPerMetre,
-                        soldier.Position.Y / WorldScene.UnitsPerMetre,
-                        metres.Z);
-                }
-                else
-                {
-                    where = metres;
+                    ResolveFrameState(member, 1f, smooth: false);
                 }
 
-                Matrix4f modelView = camera.CreateModelView(where, soldier.Orientation);
+                Matrix4f modelView = camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation);
 
-                // Before the previous pose is reported, not after: the gun is placed by the hand bone
-                // and so has a transform of its own, and handing it the body's previous pose would
-                // report it sliding by the distance between the two. It keeps the camera-only
-                // reprojection, which is what it had before any of this.
-                DrawWeapon(member, where, camera);
+                // The pose blend applies to the body's animated mesh in every pass — the shadow pass
+                // blends too, or the body would stand a step from its own shadow.
+                _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
 
-                // NOT reported, and the reason is worth keeping: a soldier is SKINNED. The geometry
-                // pass would compute his previous clip position as (previous body transform) applied
-                // to (this frame's skinned vertex) -- "where the body was, but where the arm is now"
-                // -- which is a large, confidently wrong vector for every limb. That is worse than
-                // reporting nothing: with no motion the temporal resolve's neighbourhood clamp catches
-                // the mismatch, whereas a wrong vector sends it to fetch the wrong pixel and trust it.
-                // It showed as dark speckle around every moving guard, worse with the accumulation on
-                // than off, which is the signature of an error being fed back.
-                //
-                // Reporting it correctly means keeping the PREVIOUS frame's skinned vertices and
-                // emitting the previous clip position from those. Until that exists, soldiers take the
-                // camera-only reprojection, which is what they had before motion vectors were added.
-                member.PreviousPose = (where, soldier.Orientation);
+                // The gun first, with its OWN previous transform: it is placed by the hand bone, and
+                // handing it the body's previous pose would report it sliding by the distance between
+                // the two.
+                DrawWeapon(member, camera, reportMotion);
+
+                // The body's previous rigid pose, through the CURRENT camera; the previous-pose vertex
+                // stream carries the limbs. Together they are the exact previous clip position — the
+                // thing whose absence had TAA off at every preset.
+                if (reportMotion && member.PreviousDrawn is { } previous)
+                {
+                    _device.SetPreviousPose(camera.CreateModelView(previous.Where, previous.Orientation));
+                }
+
+                // Out of the ambient occlusion. A soldier is thin, close and moving, which is the
+                // worst case for a search that has to guess how deep a surface is from its front
+                // face alone -- it darkened the ground behind every guard in a halo of speckle
+                // that followed him about. The right repair is a thickness test in the search
+                // itself; until that exists, soldiers are left out rather than shaded wrongly.
+                _device.SetMaterialOverride(new SurfaceMaterial(
+                    CastsOcclusion: false,
+                    NoHistory: member.NoHistoryThisFrame));
 
                 foreach (MeshSubset subset in group.Geometry.Subsets)
                 {
@@ -1604,12 +1782,6 @@ public sealed class SoldierRenderer : IDisposable
                         diffuse = GetTexture(texture);
                     }
 
-                    // Out of the ambient occlusion. A soldier is thin, close and moving, which is the
-                    // worst case for a search that has to guess how deep a surface is from its front
-                    // face alone -- it darkened the ground behind every guard in a halo of speckle
-                    // that followed him about. The right repair is a thickness test in the search
-                    // itself; until that exists, soldiers are left out rather than shaded wrongly.
-                    _device.SetMaterialOverride(new SurfaceMaterial(CastsOcclusion: false));
                     _device.DrawMesh(
                         member.Mesh,
                         subset.IndexOffset,
@@ -1622,6 +1794,7 @@ public sealed class SoldierRenderer : IDisposable
 
                 _device.SetMaterialOverride(SurfaceMaterial.Default);
                 _device.ClearPreviousPose();
+                _device.ClearPoseInterpolation();
             }
         }
     }
@@ -1716,7 +1889,7 @@ public sealed class SoldierRenderer : IDisposable
         MeshHandle own;
         try
         {
-            own = _device.CreateMesh(group.Geometry.Vertices, group.Geometry.Indices);
+            own = _device.CreateAnimatedMesh(group.Geometry.Vertices, group.Geometry.Indices);
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
         {
@@ -1729,6 +1902,8 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyMember = new Member(view, default, own);
         _playerBodyGround = MakeGroundQuery();
         _playerBodyActive = false;
+        _playerBodyHasTickState = false;
+        _playerBodyCaptureTick = -1;
         _logger.Information(LogCategory, $"Loaded the player's third-person body '{model}' on skeleton {set.Skeleton.Id}.");
         return true;
     }
@@ -1751,6 +1926,15 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
         _playerBodyView.Kill(deathAnimation);
         _playerBodyActive = true;
+
+        // A death is a cut, not a movement: the body appears where the player fell, and nothing on
+        // screen is its history. Snap the interpolation pair and start the frame bookkeeping over.
+        CapturePlayerBodyTickState(snap: true);
+        if (_playerBodyMember is { } fresh)
+        {
+            fresh.HasFrameState = false;
+            fresh.HasTickState = false;
+        }
 
         // The fall clip has to resolve in the player's set, or Kill silently keeps the idle and the body
         // never falls; reported once so a wrong id is visible rather than a body that just stands there.
@@ -1801,34 +1985,8 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _playerBodyView.PlaceAt(new Vector3d(px, py, pz), _playerBodyView.Orientation);
-
-        Vertex3D[] skinned = [.. _playerBodyGroup.Geometry.Vertices];
-        try
-        {
-            MefSkinner.Skin(
-                model, _playerBodyView.UnrotatedPose(), (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
-        }
-        catch (ArgumentException)
-        {
-            return;
-        }
-
-        MeshHandle replacement;
-        try
-        {
-            replacement = _device.CreateMesh(skinned, _playerBodyGroup.Geometry.Indices);
-        }
-        catch (InvalidOperationException)
-        {
-            return;
-        }
-
-        if (_playerBodyMember.Mesh.IsValid)
-        {
-            _device.DestroyMesh(_playerBodyMember.Mesh);
-        }
-
-        _playerBodyMember.Mesh = replacement;
+        ReskinPlayerBody(_playerBodyView, model);
+        CapturePlayerBodyTickState(snap: false);
     }
 
     /// <summary>Gets whether the player's third-person body is being shown climbing a ladder.</summary>
@@ -1847,6 +2005,14 @@ public sealed class SoldierRenderer : IDisposable
 
         _playerBodyClimbing = true;
         view.StartClimbLoop(animation);
+
+        // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
+        // temporal history may bridge from wherever it stood before.
+        _playerBodyHasTickState = false;
+        if (_playerBodyMember is { } member)
+        {
+            member.HasFrameState = false;
+        }
     }
 
     /// <summary>Advances the climb clip one tick and returns how far its root motion moved the body.</summary>
@@ -1876,6 +2042,9 @@ public sealed class SoldierRenderer : IDisposable
         rootDelta = SoldierDeathFall.RotateAboutZ(new Vector3d(rm.X, rm.Y, rm.Z), facing);
         cycled = view.ClipEndedThisTick;
         ReskinPlayerBody(view, model);
+
+        // The caller places the body with the delta straight after; the placement call captures the
+        // tick state, so nothing is recorded here off a stale position.
     }
 
     /// <summary>Places the climbing body without advancing its clip — holds the pose at a rung boundary.</summary>
@@ -1893,25 +2062,30 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyFacing = facing;
         view.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
 
-        // Skin at least once so the body draws even before the first rung advances.
-        if (_playerBodyMember is { Mesh.IsValid: false } && _playerBodyGroup?.Model is { } model)
+        // Skin at least once so the body hangs in the climb pose even before the first rung advances
+        // -- the animated mesh otherwise still holds the rest pose it was created with. The scratch
+        // buffer doubles as the has-ever-been-skinned marker.
+        if (_playerBodyMember is { SkinScratch: null } && _playerBodyGroup?.Model is { } model)
         {
             ReskinPlayerBody(view, model);
         }
+
+        CapturePlayerBodyTickState(snap: false);
     }
 
     /// <summary>Stops showing the climbing body — the player has left the ladder.</summary>
     public void HidePlayerBodyClimbing() => _playerBodyClimbing = false;
 
-    // Rebuilds the player body's mesh from its current pose. Shared by the death fall and the ladder climb.
+    // Re-poses the player body's animated mesh in place. Shared by the death fall and the ladder climb.
     private void ReskinPlayerBody(SoldierView view, MefModel model)
     {
-        if (_playerBodyMember is null || _playerBodyGroup is null)
+        if (_playerBodyMember is not { } member || _playerBodyGroup is null || !member.Mesh.IsValid)
         {
             return;
         }
 
-        Vertex3D[] skinned = [.. _playerBodyGroup.Geometry.Vertices];
+        Vertex3D[] skinned = member.SkinScratch ??= new Vertex3D[_playerBodyGroup.Geometry.Vertices.Length];
+        _playerBodyGroup.Geometry.Vertices.CopyTo(skinned, 0);
         try
         {
             MefSkinner.Skin(model, view.UnrotatedPose(), (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
@@ -1921,22 +2095,49 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        MeshHandle replacement;
         try
         {
-            replacement = _device.CreateMesh(skinned, _playerBodyGroup.Geometry.Indices);
+            _device.UpdateAnimatedMesh(member.Mesh, skinned);
         }
-        catch (InvalidOperationException)
+        catch (ArgumentException)
         {
             return;
         }
 
-        if (_playerBodyMember.Mesh.IsValid)
+        member.PoseFlippedSinceFrame = true;
+    }
+
+    /// <summary>Records where the player's body stands this tick, keeping the tick before.</summary>
+    /// <param name="snap">
+    /// Whether this placement is a discontinuity — a death, a ladder mount — after which the pair
+    /// must not be interpolated across.
+    /// </param>
+    private void CapturePlayerBodyTickState(bool snap)
+    {
+        if (_playerBodyView is not { } view)
         {
-            _device.DestroyMesh(_playerBodyMember.Mesh);
+            return;
         }
 
-        _playerBodyMember.Mesh = replacement;
+        double lift = _playerBodyClimbing ? FootToPelvis(view.UnrotatedPose()) : view.RootSample.Z;
+        Vector3d where = new(
+            view.Position.X / WorldScene.UnitsPerMetre,
+            view.Position.Y / WorldScene.UnitsPerMetre,
+            (view.Position.Z + lift) / WorldScene.UnitsPerMetre);
+
+        if (snap || !_playerBodyHasTickState)
+        {
+            _playerBodyPrevTickWhere = where;
+        }
+        else if (_playerBodyCaptureTick != _tick)
+        {
+            _playerBodyPrevTickWhere = _playerBodyTickWhere;
+        }
+
+        // A second capture in the same tick only refines the current state; the previous one stands.
+        _playerBodyTickWhere = where;
+        _playerBodyCaptureTick = _tick;
+        _playerBodyHasTickState = true;
     }
 
     // How far the pose's lowest bone (the feet) sits below the root, in world units — the lift that puts
@@ -1983,13 +2184,44 @@ public sealed class SoldierRenderer : IDisposable
         // is already carried in the body's position; the lift is the pose's own foot-to-pelvis so the feet
         // land on that position and track it as the clip animates. (For a stand or fall this equals
         // RootSample.Z anyway, which is why the corpse still sits on the ground.)
+        //
+        // The tick capture (CapturePlayerBodyTickState) computes exactly this per tick; frames between
+        // ticks draw between the last two captures, the same smoothing a soldier gets.
         double lift = _playerBodyClimbing ? FootToPelvis(view.UnrotatedPose()) : view.RootSample.Z;
         Vector3d where = new(
             view.Position.X / WorldScene.UnitsPerMetre,
             view.Position.Y / WorldScene.UnitsPerMetre,
             (view.Position.Z + lift) / WorldScene.UnitsPerMetre);
 
+        if (_frameSmooth && _playerBodyHasTickState)
+        {
+            where = PresentationBlend.Lerp(_playerBodyPrevTickWhere, _playerBodyTickWhere, _frameAlpha);
+        }
+
+        // The same frame bookkeeping a soldier gets from ResolveFrameState, done here because this
+        // body draws once per frame and in no other pass.
+        member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
+        member.DrawnWhere = where;
+        member.DrawnOrientation = view.Orientation;
+        member.PreviousPoseBlend = member.PoseFlippedSinceFrame ? 1f : member.PoseBlend;
+        member.PoseBlend = _frameSmooth ? 1f - _frameAlpha : 0f;
+        member.PoseFlippedSinceFrame = false;
+        member.NoHistoryThisFrame = !member.HasFrameState;
+        member.HasFrameState = true;
+
         Matrix4f modelView = camera.CreateModelView(where, view.Orientation);
+        bool reportMotion = _device.CurrentPass == ScenePass.Geometry;
+
+        _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
+        if (reportMotion && member.PreviousDrawn is { } previous)
+        {
+            _device.SetPreviousPose(camera.CreateModelView(previous.Where, previous.Orientation));
+        }
+
+        if (member.NoHistoryThisFrame)
+        {
+            _device.SetMaterialOverride(new SurfaceMaterial(NoHistory: true));
+        }
 
         foreach (MeshSubset subset in group.Geometry.Subsets)
         {
@@ -2016,6 +2248,14 @@ public sealed class SoldierRenderer : IDisposable
                 TextureHandle.None,
                 BlendMode.Opaque);
         }
+
+        if (member.NoHistoryThisFrame)
+        {
+            _device.SetMaterialOverride(SurfaceMaterial.Default);
+        }
+
+        _device.ClearPreviousPose();
+        _device.ClearPoseInterpolation();
     }
 
     private void ReleasePlayerBody()
@@ -2038,8 +2278,8 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
     /// <param name="member">The soldier.</param>
-    /// <param name="where">Where the body is drawn, in metres — the same place its skin goes.</param>
     /// <param name="camera">The eye.</param>
+    /// <param name="reportMotion">Whether this pass records motion — the geometry pass and no other.</param>
     /// <remarks>
     /// <para>
     /// The attachment handlers (<c>0x4600C0</c>, <c>player.md</c> §13) do exactly two things: they add the
@@ -2047,39 +2287,30 @@ public sealed class SoldierRenderer : IDisposable
     /// per-weapon offset anywhere in the engine, so the model's own origin is where the hand grips it.
     /// </para>
     /// <para>
-    /// The pose is the unrotated one, for the same reason the body's skin uses it — the heading is a
-    /// rotation about the root, so it can be left in the model matrix and applied to bone and vertex
-    /// together. The composed rotation is <c>heading · bone</c>, and it is applied as <c>M·v</c>, which is
-    /// the convention <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/> and the bone palette both
-    /// use — <b>not</b> <see cref="Matrix3f.Transform(Vector3f)"/>'s row-vector one, which is its inverse.
+    /// The transform itself — hand bone through the body's heading, interpolated between ticks — was
+    /// resolved by <see cref="ResolveFrameState"/>. The composed rotation is <c>heading · bone</c>,
+    /// applied as <c>M·v</c>, which is the convention
+    /// <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/> and the bone palette both use —
+    /// <b>not</b> <see cref="Matrix3f.Transform(Vector3f)"/>'s row-vector one, which is its inverse.
+    /// </para>
+    /// <para>
+    /// A gun is rigid, so unlike the body its previous <em>transform</em> reprojects every vertex
+    /// exactly; last frame's is reported as its previous pose on the geometry pass.
     /// </para>
     /// </remarks>
-    private void DrawWeapon(Member member, Vector3d where, in Camera3D camera)
+    private void DrawWeapon(Member member, in Camera3D camera, bool reportMotion)
     {
-        if (member.Weapon is not { } weapon)
+        if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
         {
             return;
         }
 
-        BonePose pose = member.View.UnrotatedPose();
-        if (HumanAttachPoints.ThirdPersonWeapon >= pose.BoneCount)
+        Matrix4f modelView = camera.CreateModelView(member.DrawnWeaponOrigin, member.DrawnWeaponRotation);
+
+        if (reportMotion && member.PreviousWeapon is { } previous)
         {
-            return;
+            _device.SetPreviousPose(camera.CreateModelView(previous.Origin, previous.Rotation));
         }
-
-        Matrix3f heading = member.View.Orientation;
-        Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
-
-        // M . v, so the transpose of the row-vector Transform.
-        Vector3f turned = heading.Transposed().Transform(hand);
-        Vector3d origin = new(
-            where.X + (turned.X / WorldScene.UnitsPerMetre),
-            where.Y + (turned.Y / WorldScene.UnitsPerMetre),
-            where.Z + (turned.Z / WorldScene.UnitsPerMetre));
-
-        Matrix4f modelView = camera.CreateModelView(
-            origin,
-            heading * pose.Rotations[HumanAttachPoints.ThirdPersonWeapon]);
 
         foreach (MeshSubset subset in weapon.Geometry.Subsets)
         {
@@ -2105,6 +2336,12 @@ public sealed class SoldierRenderer : IDisposable
                 diffuse,
                 TextureHandle.None,
                 BlendMode.Opaque);
+        }
+
+        if (reportMotion)
+        {
+            // The body reports its own previous pose next; the gun's must not leak onto it.
+            _device.ClearPreviousPose();
         }
     }
 
@@ -2569,18 +2806,86 @@ public sealed class SoldierRenderer : IDisposable
         /// <summary>Ticks left of a reload.</summary>
         public int ReloadTicks { get; set; }
 
-        /// <summary>Where this soldier was drawn last frame, for the temporal resolve.</summary>
+        /// <summary>The persistent buffer this soldier's pose is skinned into, allocated once.</summary>
+        public Vertex3D[]? SkinScratch { get; set; }
+
+        /// <summary>Whether the animated mesh took a new pose since the last frame's bookkeeping.</summary>
         /// <remarks>
-        /// A soldier is the one thing in a level that walks, so it is the one thing the temporal
-        /// resolve cannot reproject from depth alone: a pixel of a walking guard reprojects to the wall
-        /// behind him and would blend with whatever was there. Reporting last frame's pose lets the
-        /// geometry pass record how far he slid across the screen, and the accumulation follows him.
-        ///
-        /// This is his <em>rigid</em> motion — where the body is, not where the limbs are. The bodies
-        /// are re-skinned every frame, so an arm swinging inside a stationary soldier is still left to
-        /// the neighbourhood clamp; the trail this removes is the one that came from walking.
+        /// When it did, the previous-pose stream now holds what was on screen last frame, and the
+        /// blend that described last frame is expressed against the OLD stream pair — see
+        /// <see cref="ResolveFrameState"/> for how each case is reported.
         /// </remarks>
-        public (Vector3d Where, Matrix3f Orientation)? PreviousPose { get; set; }
+        public bool PoseFlippedSinceFrame { get; set; }
+
+        // ---- Captured on the simulation tick: the two states the presentation draws between. ----
+
+        /// <summary>Whether the tick states below have been captured at least once.</summary>
+        public bool HasTickState { get; set; }
+
+        /// <summary>Where the body is drawn for the current tick, in metres.</summary>
+        public Vector3d TickWhere { get; set; }
+
+        /// <summary>Where it was drawn the tick before.</summary>
+        public Vector3d PrevTickWhere { get; set; }
+
+        /// <summary>This tick's world 3×3, verbatim — what an unblended frame draws, to the bit.</summary>
+        public Matrix3f TickOrientation { get; set; }
+
+        /// <summary>This tick's heading in radians, for interpolating.</summary>
+        public float TickFacing { get; set; }
+
+        /// <summary>The tick before's heading.</summary>
+        public float PrevTickFacing { get; set; }
+
+        /// <summary>Whether the hand-bone states below are captured (only armed soldiers need them).</summary>
+        public bool HasHandState { get; set; }
+
+        /// <summary>The hand bone's position in body space this tick, in world units.</summary>
+        public Vector3f TickHandPosition { get; set; }
+
+        /// <summary>The tick before's.</summary>
+        public Vector3f PrevTickHandPosition { get; set; }
+
+        /// <summary>The hand bone's rotation this tick.</summary>
+        public Matrix3f TickHandRotation { get; set; } = Matrix3f.Identity;
+
+        /// <summary>The tick before's.</summary>
+        public Matrix3f PrevTickHandRotation { get; set; } = Matrix3f.Identity;
+
+        // ---- Resolved once per rendered frame by ResolveFrameState; every pass draws from these. ----
+
+        /// <summary>Whether a frame has been resolved at all.</summary>
+        public bool HasFrameState { get; set; }
+
+        /// <summary>Where the body is drawn this frame — between the two tick states when smoothing.</summary>
+        public Vector3d DrawnWhere { get; set; }
+
+        /// <summary>Its world 3×3 this frame.</summary>
+        public Matrix3f DrawnOrientation { get; set; } = Matrix3f.Identity;
+
+        /// <summary>Where it was drawn LAST frame — the rigid half of its motion vector.</summary>
+        public (Vector3d Where, Matrix3f Orientation)? PreviousDrawn { get; set; }
+
+        /// <summary>This frame's share of the previous-pose vertex stream in the drawn position.</summary>
+        public float PoseBlend { get; set; }
+
+        /// <summary>The share that reconstructs LAST frame's position from the same streams.</summary>
+        public float PreviousPoseBlend { get; set; }
+
+        /// <summary>Whether this frame is the body's first — nothing on screen is its history.</summary>
+        public bool NoHistoryThisFrame { get; set; }
+
+        /// <summary>Whether the weapon transform below is resolved.</summary>
+        public bool HasWeaponFrameState { get; set; }
+
+        /// <summary>The held weapon's world origin this frame, in metres.</summary>
+        public Vector3d DrawnWeaponOrigin { get; set; }
+
+        /// <summary>Its world rotation this frame — heading times hand bone.</summary>
+        public Matrix3f DrawnWeaponRotation { get; set; } = Matrix3f.Identity;
+
+        /// <summary>Last frame's weapon transform — a rigid model's exact previous pose.</summary>
+        public (Vector3d Origin, Matrix3f Rotation)? PreviousWeapon { get; set; }
     }
 
     /// <summary>

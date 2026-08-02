@@ -111,8 +111,28 @@ public sealed class ViewModelRenderer : IDisposable
     /// <param name="view">The first-person rig.</param>
     /// <param name="camera">The eye the scene is drawn from.</param>
     /// <param name="projection">The view-to-clip transform.</param>
+    /// <param name="originUnits">
+    /// Where to draw the rig, in engine units, or <see langword="null"/> for the rig's own tick-stepped
+    /// <see cref="HumanView.Position"/>. The smooth presentation passes the between-tick origin here so
+    /// the arms glide with the interpolated eye instead of stepping against it.
+    /// </param>
+    /// <param name="previousPoseShare">
+    /// How much of the PREVIOUS tick's skin to blend into the drawn one, 0 to 1 — the presentation's
+    /// <c>1 - tickFraction</c>. Zero draws this tick's pose exactly, which is the vanilla picture.
+    /// </param>
+    /// <param name="orientation">
+    /// The rig's 3×3, or <see langword="null"/> for its own tick-stepped one. The smooth presentation
+    /// passes the sway-blended orientation here — the weapon change animates through the sway angles,
+    /// which step on the tick.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="view"/> is <see langword="null"/>.</exception>
-    public void Draw(HumanView view, in Camera3D camera, in Matrix4f projection)
+    public void Draw(
+        HumanView view,
+        in Camera3D camera,
+        in Matrix4f projection,
+        Vector3d? originUnits = null,
+        float previousPoseShare = 0f,
+        Matrix3f? orientation = null)
     {
         ArgumentNullException.ThrowIfNull(view);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -135,7 +155,7 @@ public sealed class ViewModelRenderer : IDisposable
         // exactly equivalent, because the root rotation only ever left-multiplies every bone, and it
         // means turning to look does not force a re-skin. The original bakes it into the palette and
         // pays that cost every frame.
-        Vector3d origin = view.Position;
+        Vector3d origin = originUnits ?? view.Position;
         Vector3d metres = new(
             origin.X / WorldScene.UnitsPerMetre,
             origin.Y / WorldScene.UnitsPerMetre,
@@ -145,7 +165,11 @@ public sealed class ViewModelRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        Matrix4f modelView = camera.CreateModelView(metres, view.Orientation);
+        Matrix4f modelView = camera.CreateModelView(metres, orientation ?? view.Orientation);
+
+        // The mesh is animated (double-buffered), so the previous tick's skin is a vertex stream the
+        // shader can blend against -- the same between-tick smoothing the soldiers get.
+        _device.SetPoseInterpolation(previousPoseShare, previousPoseShare);
 
         foreach (MeshSubset subset in _geometry.Subsets)
         {
@@ -172,6 +196,8 @@ public sealed class ViewModelRenderer : IDisposable
                 TextureHandle.None,
                 BlendMode.Opaque);
         }
+
+        _device.ClearPoseInterpolation();
     }
 
     /// <inheritdoc/>
@@ -208,15 +234,18 @@ public sealed class ViewModelRenderer : IDisposable
             return false;
         }
 
-        if (_mesh.IsValid)
-        {
-            _device.DestroyMesh(_mesh);
-            _mesh = MeshHandle.None;
-        }
-
         try
         {
-            _mesh = _device.CreateMesh(_skinned, _geometry!.Indices);
+            // Created animated once, replaced in place from then on: the pose being replaced becomes
+            // the mesh's previous-pose stream, which is what the between-tick blend draws against.
+            if (_mesh.IsValid)
+            {
+                _device.UpdateAnimatedMesh(_mesh, _skinned);
+            }
+            else
+            {
+                _mesh = _device.CreateAnimatedMesh(_skinned, _geometry!.Indices);
+            }
         }
         catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
         {

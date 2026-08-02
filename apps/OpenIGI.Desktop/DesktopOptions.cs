@@ -245,6 +245,12 @@ public readonly record struct DesktopOptions(
             {
                 startFlying = true;
             }
+            else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
+            {
+                // Sugar for `+gfx_preset vanilla`: the whole remaster track off in one word -- the
+                // original's renderer, and the original's one-render-per-tick 30 Hz presentation.
+                startupCommands.Add("gfx_preset vanilla");
+            }
             else if (arg.Equals("player", StringComparison.OrdinalIgnoreCase))
             {
                 // Walking is the default now, so this is kept only so an existing command line does
@@ -358,6 +364,10 @@ public readonly record struct DesktopOptions(
           -campos X,Y,Z    Open the fly-through camera at this world position in metres.
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
+          -vanilla         The original's picture and pacing: shorthand for +gfx_preset vanilla,
+                           which turns the whole remaster track off, including the smooth
+                           (between-tick) presentation - the display then steps at the
+                           original's 30 Hz.
           +<command>       Run a console statement at start-up, after settings.cfg has loaded.
                            Arguments run to the next + or -, so
                              +gfx_preset ultra +r_scale 0.8
