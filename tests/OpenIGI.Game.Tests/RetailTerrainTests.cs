@@ -289,9 +289,9 @@ public sealed class RetailTerrainTests
 
         Assert.True(lit > 200, $"only {lit} chunk(s) built geometry");
 
-        // This one view reaches the base material, the grass and the rock; the dirt patches are inside
-        // the base and behind the camera, so the sweep below is what proves they resolve at all.
-        Assert.Equal([0, 1, 5], materials.Order());
+        // This one view, over the base, reaches every material the level declares: the base ground,
+        // the grass on the surrounding hills, and the dirt and rock patches in and around the base.
+        Assert.Equal([0, 1, 4, 5], materials.Order());
 
         // The materials resolve to a spread of tiles rather than one: the base material's own tile map
         // alternates four of them, and each overlay brings its own pair.

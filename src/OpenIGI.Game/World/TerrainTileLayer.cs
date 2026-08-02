@@ -13,19 +13,19 @@ namespace OpenIGI.Game.World;
 /// <c>TextureModifier</c> task. The task's five parameters map onto it directly:
 /// </para>
 /// <list type="table">
-/// <item><term><c>Position</c></term><description>the centre of the square the mask covers.</description></item>
+/// <item><term><c>Position</c></term><description>snapped down to its octree node, the square the mask covers.</description></item>
 /// <item><term><c>Level</c></term><description>an octree level, so the square is <c>2^30 &gt;&gt; Level</c> either side of the centre.</description></item>
 /// <item><term><c>Bitmap ID</c></term><description>a record of <c>terrain.bit</c>.</description></item>
 /// <item><term><c>Size</c></term><description>that record's cells per edge; the two agree in all nine of level 1's modifiers.</description></item>
 /// <item><term><c>Material Index</c></term><description>the terrain material a set bit selects.</description></item>
 /// </list>
 /// <para>
-/// <b>A deliberate divergence.</b> The original activates a modifier over a <em>different</em> square
-/// from the one it samples — the activation box is the position snapped down to a whole cell, while the
-/// mask is centred on the unsnapped position — so near an edge it indexes past the end of the mask and
-/// reads whatever follows it. Here a sample outside the mask simply does not match, and the next layer
-/// (or the base material) applies. The two squares coincide only when a modifier sits at the centre of
-/// its cell, and none of level 1's does.
+/// The mask covers the <em>snapped</em> square, not one centred on the raw position.
+/// <c>sub_5062A0</c> floors the position to a multiple of the node's size — twice the extent — to
+/// build the activation region, and <c>sub_4C6E70</c> writes that snapped centre back into the task
+/// at <c>+32</c>; the record the renderer samples takes its origin from the snapped centre minus the
+/// extent, which is the snapped minimum itself. Mask and activation box are the same square, so a
+/// sample can only leave the mask by leaving the region.
 /// </para>
 /// </remarks>
 public sealed class TerrainTileLayer
@@ -117,12 +117,18 @@ public sealed class TerrainTileLayer
 
         double scale = (size - 1.0) / size / (1L << scaleExponent);
 
+        // The origin is the position floored to the modifier's own octree node, exactly as the
+        // original snaps it — truncate, then mask to a multiple of the node's size.
+        long span = 2L * extent;
+        double originX = (long)position.X & -span;
+        double originY = (long)position.Y & -span;
+
         layer = new TerrainTileLayer(
             materialId,
             level,
             size,
-            position.X - extent,
-            position.Y - extent,
+            originX,
+            originY,
             scale,
             mask);
         return true;
