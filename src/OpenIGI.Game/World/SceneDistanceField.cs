@@ -166,6 +166,27 @@ public sealed class SceneDistanceField
             $"Scene distance field: {scene.FieldCount} model(s) baked, {scene.InstanceCount} instance(s), "
             + $"{scene.BytesUsed / 1024} KiB{(skipped > 0 ? $", {skipped} placement(s) with no usable mesh" : string.Empty)}.");
 
+        // The widest fields, and how much of each baked as solid. A field's range is half its model's
+        // span, so a large model reporting a mostly-solid interior is not a local error: the clipmap
+        // union is a minimum, so that one model sets the distance for every voxel it covers.
+        foreach (MeshDistanceField field in fields.OrderByDescending(f => f.Range).Take(3)
+            .Concat(fields.OrderBy(f => f.Range).Take(3)))
+        {
+            int solid = 0;
+
+            foreach (byte value in field.Distances)
+            {
+                if (value < 128)
+                {
+                    solid++;
+                }
+            }
+
+            log.Information(
+                LogCategory,
+                $"  field: range {field.Range:0.#} m, {solid * 100.0 / field.Distances.Length:0.#}% solid.");
+        }
+
         return scene;
     }
 

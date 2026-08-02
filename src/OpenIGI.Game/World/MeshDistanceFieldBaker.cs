@@ -70,9 +70,12 @@ public static class MeshDistanceFieldBaker
         Vector3f min = new(float.MaxValue);
         Vector3f max = new(float.MinValue);
 
-        for (int i = 0; i < vertices.Length; i++)
+        // Over the vertices the TRIANGLES reference, not the whole array. A MEF vertex buffer carries
+        // slots no index reaches, and bounding those too sizes the volume around geometry that is not
+        // there. It did not turn out to be what broke the field, but the bound is still the wrong one.
+        for (int i = 0; i < triangles * 3; i++)
         {
-            Vector3f p = vertices[i].Position;
+            Vector3f p = vertices[indices[i]].Position;
             min = new Vector3f(MathF.Min(min.X, p.X), MathF.Min(min.Y, p.Y), MathF.Min(min.Z, p.Z));
             max = new Vector3f(MathF.Max(max.X, p.X), MathF.Max(max.Y, p.Y), MathF.Max(max.Z, p.Z));
         }
@@ -93,7 +96,19 @@ public static class MeshDistanceFieldBaker
             (max.X - min.X) / sizeX, (max.Y - min.Y) / sizeY, (max.Z - min.Z) / sizeZ);
 
         int count = sizeX * sizeY * sizeZ;
-        float range = span * 0.5f;
+        // A narrow band around the surface, NOT half the model's span.
+        //
+        // The stored distance is one byte across plus-or-minus this range, so range buys precision.
+        // Half a span spends it all where nothing needs it: a level shell spans hundreds of thousands
+        // of units here -- these are not metres -- so a byte step came to about a kilometre, every real
+        // distance quantised onto the midpoint, and one step below the midpoint decoded as a kilometre
+        // INSIDE. The clipmap union takes a minimum, so that read as solid rock everywhere and the sun
+        // trace shadowed the entire level.
+        //
+        // A few voxels wide instead. Distances past it saturate, which is exactly what a sphere trace
+        // can afford: a saturated step is shorter than the true one, so the ray creeps rather than
+        // overshooting, and precision sits where the surface actually is.
+        float range = MathF.Max(MathF.Max(voxelSize.X, voxelSize.Y), voxelSize.Z) * 4f;
         float[] distance = new float[count];
         Array.Fill(distance, float.MaxValue);
 
@@ -145,7 +160,8 @@ public static class MeshDistanceFieldBaker
         }
 
         Propagate(distance, sizeX, sizeY, sizeZ, voxelSize);
-        bool[] inside = MarkInside(vertices, indices, triangles, min, voxelSize, sizeX, sizeY, sizeZ);
+        bool[] inside = MarkInside(
+            vertices, indices, triangles, min, voxelSize, sizeX, sizeY, sizeZ, IsClosed(indices, triangles));
 
         byte[] encoded = new byte[count];
 
@@ -258,6 +274,41 @@ public static class MeshDistanceFieldBaker
     /// error to survive the vote, two axes have to pass through a hole at once.
     /// </para>
     /// </remarks>
+    private static bool IsClosed(ReadOnlySpan<ushort> indices, int triangles)
+    {
+        // Every edge shared by exactly two triangles. That is what makes ray parity trustworthy: a ray
+        // through a watertight mesh crosses the boundary an even number of times from outside, and no
+        // axis can slip through a gap because there are none.
+        Dictionary<(ushort Low, ushort High), int> edges = [];
+
+        for (int t = 0; t < triangles; t++)
+        {
+            for (int e = 0; e < 3; e++)
+            {
+                ushort a = indices[(t * 3) + e];
+                ushort b = indices[(t * 3) + ((e + 1) % 3)];
+
+                if (a == b)
+                {
+                    return false;
+                }
+
+                (ushort, ushort) key = a < b ? (a, b) : (b, a);
+                edges[key] = edges.TryGetValue(key, out int seen) ? seen + 1 : 1;
+            }
+        }
+
+        foreach (int seen in edges.Values)
+        {
+            if (seen != 2)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool[] MarkInside(
         ReadOnlySpan<Vertex3D> vertices,
         ReadOnlySpan<ushort> indices,
@@ -266,7 +317,8 @@ public static class MeshDistanceFieldBaker
         Vector3f voxelSize,
         int sizeX,
         int sizeY,
-        int sizeZ)
+        int sizeZ,
+        bool closed)
     {
         int count = sizeX * sizeY * sizeZ;
         byte[] votes = new byte[count];
@@ -356,7 +408,31 @@ public static class MeshDistanceFieldBaker
 
         for (int i = 0; i < count; i++)
         {
-            inside[i] = votes[i] >= 2;
+            // A closed mesh can trust a majority; an open one cannot, and this is measured.
+            //
+            // Parity along an axis that exits through a hole reports the whole column behind it as
+            // solid, and this game's large geometry has open backs and missing roofs, so the wrong
+            // answer routinely won two of three votes. Reverting to a majority took the clipmap
+            // straight back to reading solid everywhere; unanimity is what makes it agree with the
+            // exact field.
+            //
+            // Unanimity errs the other way: a voxel genuinely inside a mesh open on any axis reads as
+            // air. That is the safe direction -- air where there is rock costs a missed shadow, rock
+            // where there is air costs the whole level.
+            //
+            // Parity along an axis that exits through a hole reports the whole column behind it as
+            // solid, and this game's large geometry has open backs and missing roofs, so the wrong
+            // answer routinely won two of three votes. Letting a majority decide those took the clipmap
+            // straight back to reading solid everywhere.
+            //
+            // Demanding all three is the safe reading for them -- it errs towards air, and air where
+            // there is rock costs a missed shadow where the reverse cost the whole level. But it is the
+            // WRONG reading for a watertight mesh, where all three axes are already reliable and
+            // unanimity only throws away interiors that a single blocked axis should not veto: it made
+            // a closed cube's own centre read as empty.
+            //
+            // So the mesh decides. Watertight, majority; open, unanimous.
+            inside[i] = votes[i] >= (closed ? 2 : 3);
         }
 
         return inside;

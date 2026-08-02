@@ -35,7 +35,7 @@ namespace OpenIGI.Game.World;
 public readonly record struct GlobalDistanceFieldSettings(
     int Levels = 4,
     int Resolution = 64,
-    float NearExtent = 32f,
+    float NearExtent = 4096f,
     int CellsPerAxis = 8)
 {
     /// <summary>Gets the settings the shipped presets use.</summary>
