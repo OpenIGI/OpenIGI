@@ -98,6 +98,18 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetReflections(in ReflectionSettings settings) => Reflections.Add(settings);
 
+    /// <summary>Whether stage timing was last switched on or off.</summary>
+    public bool StageTimingEnabled { get; private set; }
+
+    /// <inheritdoc/>
+    public void SetStageTiming(bool enabled) => StageTimingEnabled = enabled;
+
+    /// <summary>The timings this device reports; empty, since nothing here runs on a GPU.</summary>
+    public List<RenderStageTiming> Timings { get; } = [];
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RenderStageTiming> StageTimings() => Timings;
+
     /// <summary>The debug views asked for, in order.</summary>
     public List<DebugView> DebugViews { get; } = [];
 

@@ -230,6 +230,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _lightingShadowDetail = -1;
 
     private GLSceneTarget? _sceneTarget;
+    private GLStageProfiler? _stageProfiler;
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
     private int _resolveExposure = -1;
@@ -399,6 +400,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         ThrowIfDisposed();
 
         _present();
+
+        // Whatever the driver has finished, gathered here because this is the one point that happens
+        // exactly once a frame -- which is what tells one frame's stages from the next's. It never
+        // waits: a query with no result yet is simply left for the next frame to ask about.
+        _stageProfiler?.Collect();
 
         // The original unbinds both texture stages immediately after presenting, so the new frame starts
         // from a known state rather than inheriting the last one's. It really unbinds now: the old code
@@ -976,6 +982,27 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetStageTiming(bool enabled)
+    {
+        ThrowIfDisposed();
+
+        if (_stageProfiler is { } profiler)
+        {
+            profiler.Enabled = enabled;
+        }
+    }
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RenderStageTiming> StageTimings() =>
+        _stageProfiler?.Timings() ?? [];
+
+    /// <summary>Times a stage until the returned scope is disposed.</summary>
+    /// <param name="stage">The stage about to run.</param>
+    /// <returns>The scope to keep for the stage's duration.</returns>
+    /// <remarks>Costs nothing when timing is off, and nothing at all before the device is initialised.</remarks>
+    private GLStageProfiler.Scope Measure(RenderStage stage) => new(_stageProfiler, stage);
+
+    /// <inheritdoc/>
     public void SetDebugView(DebugView view)
     {
         ThrowIfDisposed();
@@ -1271,6 +1298,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _activeShadowCascade = cascade;
         CurrentPass = ScenePass.Shadow;
 
+        // Per cascade, and the results add up rather than replace each other, because the budget is for
+        // the shadow pass as a whole -- four cascades is a choice about how to spend one number.
+        _stageProfiler?.Begin(RenderStage.Shadows);
+
         // Depth only, and front faces culled. Casting from the far side of a solid object puts the
         // depth it writes inside the object rather than on the lit surface, which is the cheapest way
         // to stop a bias from having to cover the whole thickness of a wall.
@@ -1290,6 +1321,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             return;
         }
 
+        _stageProfiler?.End();
         _activeShadowCascade = -1;
         CurrentPass = ScenePass.None;
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
@@ -1330,6 +1362,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         {
             _sceneTarget!.BindForGeometry();
         }
+
+        // Started after the bind and, for the forward pass, after the temporal resolve it triggers --
+        // both belong to the stages that own them rather than to this one. Shadow cascades have their
+        // own bracket in BeginShadowCascade.
+        if (pass is ScenePass.Geometry or ScenePass.Forward)
+        {
+            _stageProfiler?.Begin(pass == ScenePass.Geometry ? RenderStage.Geometry : RenderStage.Forward);
+        }
     }
 
     /// <inheritdoc/>
@@ -1345,8 +1385,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // Multisampled rasterisation is resolved as the geometry pass closes rather than at the end of
         // the capture: everything after it -- fog, reflections, the translucent pass -- reads the depth
         // texture, and a multisampled depth buffer is not something a shader can sample.
+        // The stage closes before the multisample resolve, not after: the resolve belongs to the target
+        // rather than to the geometry, and the deferred stages that follow are each timed in their own
+        // right. Only one TIME_ELAPSED query may be open at a time, so they cannot be nested anyway.
         if (CurrentPass == ScenePass.Geometry)
         {
+            _stageProfiler?.End();
             _sceneTarget!.ResolveMultisample();
 
             if (_sceneTarget.Description.Deferred)
@@ -1360,6 +1404,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             {
                 _sceneTarget.BindForGeometry();
             }
+        }
+        else if (CurrentPass == ScenePass.Forward)
+        {
+            _stageProfiler?.End();
         }
 
         CurrentPass = ScenePass.None;
@@ -1402,7 +1450,14 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         }
 
         // A frame with no forward pass -- the free camera draws no view model -- has not resolved yet.
+        // Outside the post bracket: the temporal resolve is its own stage and has already been timed
+        // when the forward pass triggered it.
         ResolveTemporal(target);
+
+        // One bracket over the whole chain -- defocus, bloom, tone map, grade, edge filter -- because
+        // that is the granularity the budget was written at, and because five separate queries over
+        // five full-screen passes would start to perturb what they measure.
+        using GLStageProfiler.Scope timing = Measure(RenderStage.Post);
 
         // Before the bloom, so that a defocused highlight blooms as the wide soft thing it has become
         // rather than as the point it was: the lens spreads what actually reaches it.
@@ -1652,6 +1707,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             return;
         }
 
+        using GLStageProfiler.Scope timing = Measure(RenderStage.Reflections);
+
         target.BindForPostProcess();
         UseProgram(_reflectionProgram);
 
@@ -1748,6 +1805,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             RememberFrame();
             return;
         }
+
+        using GLStageProfiler.Scope timing = Measure(RenderStage.Temporal);
 
         // The first frame after a rebuild has nothing behind it, and the second has a previous camera
         // but no accumulated picture. Both resolve to the current frame alone, which is exactly what a
@@ -1854,6 +1913,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             return false;
         }
 
+        using GLStageProfiler.Scope timing = Measure(RenderStage.AmbientOcclusion);
+
         UseProgram(_occlusionProgram);
         _occlusionProgram.SetVector4(
             _occlusionUnproject,
@@ -1905,6 +1966,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     /// </remarks>
     private void RunDeferredLighting(GLSceneTarget target, bool occluded)
     {
+        using GLStageProfiler.Scope timing = Measure(RenderStage.Lighting);
+
         target.BindForColour();
 
         UseProgram(_lightingProgram!);
@@ -2015,6 +2078,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         {
             return;
         }
+
+        using GLStageProfiler.Scope timing = Measure(RenderStage.Fog);
 
         target.BindForPostProcess();
         UseProgram(_fogProgram);
@@ -2325,6 +2390,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _disposed = true;
 
         ReleaseProbeTextures();
+        _stageProfiler?.Dispose();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
         _shadowMap?.Dispose();
@@ -2603,6 +2669,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _shadowMap = new GLShadowMap(_gl, _logger);
         _fullScreen = new GLFullScreenPass(_gl);
         _sceneTarget = new GLSceneTarget(_gl, _logger);
+        _stageProfiler = new GLStageProfiler(_gl);
 
         _vertexArray = _gl.GenVertexArray();
         _vertexBuffer = _gl.GenBuffer();

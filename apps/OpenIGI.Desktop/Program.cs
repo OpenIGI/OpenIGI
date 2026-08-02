@@ -163,6 +163,11 @@ using (window)
     device.VSyncEnabled = RenderCVars.VSync.Value;
     RenderCVars.VSync.Changed += (_, _) => device.VSyncEnabled = RenderCVars.VSync.Value;
 
+    // Timing is pushed on change rather than read per frame, because switching it off is what discards
+    // the history -- the peaks after switching it back on should belong to the run being watched.
+    device.SetStageTiming(RenderCVars.PerformanceLog.Value);
+    RenderCVars.PerformanceLog.Changed += (_, _) => device.SetStageTiming(RenderCVars.PerformanceLog.Value);
+
     DesktopMenuHost menuHost = new(
         window.Input,
         batch,
@@ -2107,6 +2112,45 @@ using (window)
                 batch.End();
             }
 
+            // r_perflog, its own overlay rather than a section of F12's: it answers a different question
+            // and is read while the game is being played rather than while it is being inspected. Top
+            // right, so the two can be up together.
+            if (RenderCVars.PerformanceLog.Value && hud is { IsReady: true })
+            {
+                static string I(FormattableString s) => FormattableString.Invariant(s);
+
+                IReadOnlyList<RenderStageTiming> timings = device.StageTimings();
+                List<string> perf = ["gpu ms   now   peak"];
+                double total = 0.0;
+
+                foreach (RenderStageTiming timing in timings)
+                {
+                    total += timing.Milliseconds;
+
+                    // The budget beside the measurement, because a number without the number it was
+                    // supposed to beat is a number nobody acts on.
+                    string budget = RenderBudget.For(timing.Stage) is { } allowed
+                        ? I($" /{allowed:0.0}{(timing.Milliseconds > allowed ? " OVER" : string.Empty)}")
+                        : string.Empty;
+
+                    perf.Add(I($"{timing.Stage,-12} {timing.Milliseconds,5:0.00} {timing.PeakMilliseconds,6:0.00}{budget}"));
+                }
+
+                perf.Add(timings.Count > 0
+                    ? I($"{"gpu total",-12} {total,5:0.00}")
+                    : "measuring...");
+
+                device.Set2DProjection(window.Width, window.Height);
+                batch.Begin();
+                hud.DrawDebugTopRight(
+                    batch,
+                    perf,
+                    window.Width - (8f * UiScale.Resolve(options.UiScale, window.Width, window.Height)),
+                    8f * UiScale.Resolve(options.UiScale, window.Width, window.Height),
+                    UiScale.Resolve(options.UiScale, window.Width, window.Height));
+                batch.End();
+            }
+
             if (!reportedWorld)
             {
                 reportedWorld = true;
@@ -2146,6 +2190,46 @@ using (window)
 
             soldiers?.LogAiSummary();
             running = false;
+        }
+    }
+
+    // The measurement, written down. The overlay answers "is it fast right now" for somebody watching
+    // it; this is what a capture run leaves behind, and it is the only form the acceptance criterion
+    // can actually be checked in -- nobody reads an overlay in a thirty-frame headless capture.
+    if (RenderCVars.PerformanceLog.Value)
+    {
+        IReadOnlyList<RenderStageTiming> finalTimings = device.StageTimings();
+
+        if (finalTimings.Count == 0)
+        {
+            logger.Information("Perf", "No stage timings were collected; the run was too short to resolve a query.");
+        }
+        else
+        {
+            double total = 0.0;
+            int over = 0;
+
+            foreach (RenderStageTiming timing in finalTimings)
+            {
+                total += timing.Milliseconds;
+                double? budget = RenderBudget.For(timing.Stage);
+                bool exceeded = budget is { } allowed && timing.Milliseconds > allowed;
+                over += exceeded ? 1 : 0;
+
+                string against = budget is { } allowance
+                    ? FormattableString.Invariant($"  budget {allowance:0.0} ms{(exceeded ? "  OVER" : string.Empty)}")
+                    : "  (unbudgeted)";
+
+                logger.Information(
+                    "Perf",
+                    FormattableString.Invariant(
+                        $"{timing.Stage,-16} {timing.Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
+            }
+
+            logger.Information(
+                "Perf",
+                FormattableString.Invariant(
+                    $"GPU total {total:0.000} ms of the {RenderBudget.FrameMilliseconds:0.0} ms a 60 Hz frame has; {over} stage(s) over budget."));
         }
     }
 

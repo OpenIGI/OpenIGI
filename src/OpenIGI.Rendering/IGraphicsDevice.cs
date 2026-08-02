@@ -303,6 +303,34 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetReflections(in ReflectionSettings settings);
 
+    /// <summary>Turns per-stage GPU timing on or off.</summary>
+    /// <param name="enabled">Whether the backend should time each <see cref="RenderStage"/>.</param>
+    /// <remarks>
+    /// <para>
+    /// Off by default and worth keeping that way when nobody is reading it. A timer query is a
+    /// synchronisation point: the driver is free to reorder and batch work between draw calls, and
+    /// asking when a stage began and ended narrows what it may do. The measurement is close enough to
+    /// judge a budget by and is not free.
+    /// </para>
+    /// <para>
+    /// Switching it off discards the history, so the peaks reported after switching it back on belong
+    /// to the run being watched rather than to some earlier camera angle.
+    /// </para>
+    /// </remarks>
+    void SetStageTiming(bool enabled);
+
+    /// <summary>Gets what each stage of the frame last cost the GPU.</summary>
+    /// <returns>
+    /// One entry per stage that ran, in frame order; empty when timing is off or when no result has
+    /// come back yet.
+    /// </returns>
+    /// <remarks>
+    /// The results lag the frame being drawn by a frame or two, deliberately. A query's result is not
+    /// ready when its stage ends, and waiting for it would stall the very pipeline being measured — so
+    /// the answers are collected whenever the driver has them and reported a little late instead.
+    /// </remarks>
+    IReadOnlyList<RenderStageTiming> StageTimings();
+
     /// <summary>Sets which buffer the frame shows instead of the scene.</summary>
     /// <param name="view">The buffer, or <see cref="DebugView.None"/> for the scene itself.</param>
     /// <remarks>

@@ -647,6 +647,25 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How strongly the probe field lights surfaces; 1 is the amount the bake computed.");
 
+    /// <summary>Whether each stage of the frame is timed on the GPU and shown in an overlay.</summary>
+    /// <remarks>
+    /// <para>
+    /// The instrument the remaster track's frame budget is checkable with, and it did not exist for the
+    /// five stages that were written against it: shadows ≤1.0 ms, occlusion ≤1.0, lighting ≤2.0,
+    /// reflections ≤1.5, fog ≤1.5, post ≤1.5. Every performance claim made before this was an estimate.
+    /// </para>
+    /// <para>
+    /// Developer rather than archived, and off by default, because it is not free: a timer query is a
+    /// synchronisation point in the command stream, so measuring the frame does change it a little. It
+    /// is close enough to judge a budget by and not close enough to leave on.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar PerformanceLog = CVar.Bool(
+        "r_perflog",
+        false,
+        CVarOptions.Developer,
+        "Time each stage of the frame on the GPU and show the result. Costs a little of what it measures.");
+
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(
         "r_debug_view",

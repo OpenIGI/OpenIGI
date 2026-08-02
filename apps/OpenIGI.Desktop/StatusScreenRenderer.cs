@@ -290,7 +290,22 @@ public sealed class StatusScreenRenderer : IDisposable
     /// than sampling the framebuffer to pick a colour: a dark translucent panel sits behind the whole
     /// block, and every line is drawn once in black, offset by a pixel, before the light text goes on top.
     /// </remarks>
-    public void DrawDebug(SpriteBatch batch, IReadOnlyList<string> lines, float scale = 1f)
+    public void DrawDebug(SpriteBatch batch, IReadOnlyList<string> lines, float scale = 1f) =>
+        DrawDebugPanel(batch, lines, 8f * scale, 8f * scale, scale);
+
+    /// <summary>Draws the same stack of lines with its top-right corner at a given point.</summary>
+    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
+    /// <param name="lines">The lines, top to bottom.</param>
+    /// <param name="right">The right edge to hang the block from, in pixels.</param>
+    /// <param name="top">The top edge, in pixels.</param>
+    /// <param name="scale">The UI scale.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// So a second panel can be up at the same time as the first without the two writing over each
+    /// other — the frame timings are read while the state lines are being read.
+    /// </remarks>
+    public void DrawDebugTopRight(
+        SpriteBatch batch, IReadOnlyList<string> lines, float right, float top, float scale = 1f)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(lines);
@@ -299,8 +314,28 @@ public sealed class StatusScreenRenderer : IDisposable
             return;
         }
 
-        float x = 8f * scale;
-        float y = 8f * scale;
+        float widest = 0f;
+        foreach (string line in lines)
+        {
+            if (!string.IsNullOrEmpty(line))
+            {
+                (float w, _) = font.Measure(line, scale, scale);
+                widest = Math.Max(widest, w);
+            }
+        }
+
+        DrawDebugPanel(batch, lines, right - widest, top, scale);
+    }
+
+    private void DrawDebugPanel(SpriteBatch batch, IReadOnlyList<string> lines, float x, float y, float scale)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(lines);
+        if (Font() is not { } font)
+        {
+            return;
+        }
+
         float step = font.LineHeight * scale;
 
         // The backing panel, sized to the widest line — drawn first so it sits behind the text (the batch
