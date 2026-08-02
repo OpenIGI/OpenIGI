@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using Silk.NET.OpenGL;
@@ -25,6 +26,101 @@ public sealed partial class GLGraphicsDevice
     private readonly Dictionary<uint, GLComputeProgram> _computePrograms = [];
     private readonly Dictionary<uint, GLStorageBuffer> _storageBuffers = [];
     private uint _boundComputeProgram;
+
+    /// <inheritdoc/>
+    public unsafe void ReadStorageTexture(TextureHandle texture, Span<Bgra32> destination)
+    {
+        ThrowIfDisposed();
+        GLTexture entry = Resolve(texture, nameof(texture));
+
+        int needed = entry.Width * entry.Height;
+
+        if (destination.Length < needed)
+        {
+            throw new GraphicsDeviceException(
+                $"{texture} is {entry.Width}x{entry.Height}; {needed} texels were needed, "
+                + $"{destination.Length} offered.");
+        }
+
+        // Through a framebuffer rather than glGetTexImage, for the reason measured in L1: on this
+        // driver glGetTexImage does not observe a compute shader's image stores at all. A read buffer
+        // does.
+        uint framebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            entry.Name,
+            0);
+
+        _gl.MemoryBarrier(MemoryBarrierMask.AllBarrierBits);
+        _gl.ReadBuffer(ReadBufferMode.ColorAttachment0);
+        _gl.PixelStore(PixelStoreParameter.PackAlignment, 4);
+
+        // Read as bytes even from a float target: GL converts and clamps, which is what a look at the
+        // result wants. Recovering the values themselves would need a float span and a different call.
+        fixed (Bgra32* target = destination)
+        {
+            _gl.ReadPixels(
+                0, 0, (uint)entry.Width, (uint)entry.Height,
+                PixelFormat.Bgra, PixelType.UnsignedByte, target);
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        _gl.DeleteFramebuffer(framebuffer);
+
+        // GL reads bottom-up; every consumer of this expects top-down.
+        for (int y = 0; y < entry.Height / 2; y++)
+        {
+            Span<Bgra32> top = destination.Slice(y * entry.Width, entry.Width);
+            Span<Bgra32> bottom = destination.Slice((entry.Height - 1 - y) * entry.Width, entry.Width);
+
+            for (int x = 0; x < entry.Width; x++)
+            {
+                (top[x], bottom[x]) = (bottom[x], top[x]);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public TextureHandle CreateStorageTexture(
+        int width, int height, VolumeFormat format, string name)
+    {
+        ThrowIfDisposed();
+        RequireCompute();
+
+        if (width <= 0 || height <= 0)
+        {
+            throw new GraphicsDeviceException(
+                $"A storage texture must have positive dimensions; '{name}' asked for {width}x{height}.");
+        }
+
+        (InternalFormat internalFormat, _, _) = Describe(format);
+
+        uint texture = _gl.GenTexture();
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture2D, texture);
+
+        // Immutable storage, for the reason recorded on CreateVolumeTexture: a mutable texture bound as
+        // an image is accepted without complaint and the stores go nowhere.
+        _gl.TexStorage2D(TextureTarget.Texture2D, 1, (SizedInternalFormat)internalFormat, (uint)width, (uint)height);
+
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        _gl.BindTexture(TextureTarget.Texture2D, 0);
+        InvalidateTextureUnit(0);
+
+        uint id = _nextTextureId++;
+        _textures[id] = new GLTexture(
+            texture, width, height, 1, 0, 1, TextureTarget.Texture2D, internalFormat);
+
+        _logger.Debug(LogCategory, $"Storage texture '{name}' allocated as {width}x{height} {format}.");
+        return new TextureHandle(id);
+    }
 
     /// <inheritdoc/>
     public unsafe TextureHandle CreateVolumeTexture(

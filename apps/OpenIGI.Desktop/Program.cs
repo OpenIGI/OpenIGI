@@ -319,6 +319,9 @@ using (window)
     // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
     // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
     // on the render thread once the bake lands.
+    SurfaceCacheLighting? cardLighting = null;
+    SurfaceCacheCapture.Result? capturedCards = null;
+    SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
     SceneDistanceField? sdfScene = null;
     GlobalDistanceField? sdfClipmaps = null;
@@ -652,10 +655,21 @@ using (window)
                 if (RenderCVars.SurfaceCache.Value && world is not null)
                 {
                     if (world.CaptureSurfaceCache(scene, RenderCVars.SurfaceCacheDensity.Value)
-                        is { } cards
-                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } into)
+                        is { } cards)
                     {
-                        DumpCardAtlas(device, cards.Capture, into, logger);
+                        string into = RenderCVars.SurfaceCacheDump.Value;
+
+                        if (into.Length > 0)
+                        {
+                            DumpCardAtlas(device, cards.Capture, into, logger);
+                        }
+
+                        // Only the ATLAS is built here. Lighting it needs the level's own sun, which is
+                        // not read until further down this load -- and lighting the cards before that
+                        // gave every page a zero sun direction and a picture of pure sky, which is
+                        // exactly what the first run produced.
+                        capturedCards = cards.Capture;
+                        cardInstances = cards.Instances;
                     }
                 }
 
@@ -892,6 +906,31 @@ using (window)
         {
             logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
         }
+
+        // Now that the sun is known. The pages hold unlit albedo by design, so this is the only thing
+        // that puts light into the cache -- and it runs once, because this game's sun is a fixed
+        // direction per mission, which is the bargain the whole surface cache is built on.
+        if (capturedCards is { } surfaces && cardInstances is { } placedCards)
+        {
+            cardLighting?.Dispose();
+            cardLighting = SurfaceCacheLighting.Create(device, surfaces, placedCards, logger);
+
+            if (cardLighting is not null)
+            {
+                // A level with no Dirlight has no sun to light the cards with, so they take the sky
+                // alone -- which is what such a level looks like anyway.
+                cardLighting.Light(
+                    sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
+                    sun?.Colour ?? default,
+                    sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f));
+
+                if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
+                {
+                    DumpCardLighting(device, cardLighting, lightingInto, logger);
+                }
+            }
+        }
+
         if (sky.HasSky)
         {
             scheduler.ClearColour = new Bgra32(
@@ -1290,6 +1329,30 @@ using (window)
     // Writes the captured atlas out as images, because a capture can only be judged by looking at it.
     // Wrong winding shows as models captured inside-out, a wrong card rotation as mirrored pages, a
     // missing scissor as pages bleeding together -- and each produces an atlas of plausible surfaces.
+    // The lit pages, for the same reason the captured ones are dumped: a reconstruction that is
+    // subtly wrong produces lit surfaces in slightly the wrong places, which looks like nothing at all
+    // until a later stage bounces light off them.
+    static void DumpCardLighting(
+        IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger)
+    {
+        try
+        {
+            Directory.CreateDirectory(into);
+
+            Bgra32[] pixels = new Bgra32[lighting.Width * lighting.Height];
+            device.ReadStorageTexture(lighting.DirectLighting, pixels);
+
+            string path = Path.Combine(into, "cards-direct.png");
+            PngWriter.Write(path, pixels, lighting.Width, lighting.Height);
+            logger.Information("SurfaceCache", $"Wrote {path}.");
+        }
+        catch (Exception error)
+            when (error is IOException or UnauthorizedAccessException or GraphicsDeviceException)
+        {
+            logger.Warning("SurfaceCache", $"The card lighting could not be written: {error.Message}");
+        }
+    }
+
     static void DumpCardAtlas(
         IGraphicsDevice device, SurfaceCacheCapture.Result cards, string into, IIgiLogger logger)
     {

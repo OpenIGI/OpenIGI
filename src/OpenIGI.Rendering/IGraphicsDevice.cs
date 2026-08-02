@@ -412,6 +412,32 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     TextureHandle CardDepth { get; }
 
+    /// <summary>Reads a two-dimensional texture back into memory.</summary>
+    /// <param name="texture">The texture to read.</param>
+    /// <param name="destination">Receives the texels, row-major and top row first.</param>
+    /// <remarks>
+    /// For looking at what a compute pass produced. Synchronising, so it belongs at load or behind a
+    /// developer switch. Float formats are tone-mapped into eight bits on the way out, because the
+    /// point is to see the shape of the result rather than to recover its values.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">The handle is not a texture, or the span is too small.</exception>
+    void ReadStorageTexture(TextureHandle texture, Span<Bgra32> destination);
+
+    /// <summary>Allocates a two-dimensional texture a compute pass can write through an image.</summary>
+    /// <param name="width">The width in texels.</param>
+    /// <param name="height">The height in texels.</param>
+    /// <param name="format">What one texel holds.</param>
+    /// <param name="name">A name for the texture, used only in diagnostics.</param>
+    /// <returns>A handle to the texture, its contents undefined until written.</returns>
+    /// <remarks>
+    /// Distinct from <see cref="CreateTexture"/>, which uploads eight-bit colour from memory and builds
+    /// a mip chain. This allocates storage of a chosen precision with no mips and nothing in it, for a
+    /// pass that will fill it on the GPU — the surface cache's lighting, which is radiance rather than
+    /// colour and is not bounded by one.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">Compute is unsupported, or a dimension is not positive.</exception>
+    TextureHandle CreateStorageTexture(int width, int height, VolumeFormat format, string name);
+
     /// <summary>Allocates a three-dimensional texture.</summary>
     /// <param name="width">Voxels along x.</param>
     /// <param name="height">Voxels along y.</param>

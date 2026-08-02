@@ -187,6 +187,19 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];
 
     /// <inheritdoc/>
+    public void ReadStorageTexture(TextureHandle texture, Span<Bgra32> destination)
+    {
+    }
+
+    /// <inheritdoc/>
+    public TextureHandle CreateStorageTexture(
+        int width, int height, VolumeFormat format, string name)
+    {
+        VolumeTextures.Add((name, width, height, 1, format));
+        return new TextureHandle(_nextVolumeId++);
+    }
+
+    /// <inheritdoc/>
     public TextureHandle CreateVolumeTexture(
         int width, int height, int depth, VolumeFormat format, string name)
     {
