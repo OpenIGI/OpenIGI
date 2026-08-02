@@ -54,6 +54,102 @@ public static class DistanceFieldValidation
             + $"{SignDisagreements} sign disagreement(s), {Overstatements} overstatement(s)");
     }
 
+    /// <summary>Reads one clipmap level back, through a compute shader.</summary>
+    /// <remarks>
+    /// <b>Not through glGetTexImage, and that is the whole point of this method existing.</b> Measured
+    /// on the driver this was developed against: glGetTexImage does not observe a compute shader's
+    /// imageStore writes at all — not with TEXTURE_UPDATE, not with ALL_BARRIER_BITS, not after a
+    /// finish, and with no GL error raised. A volume uploaded from memory reads back through that path
+    /// perfectly, so what fails is specifically image-store visibility.
+    /// <para>
+    /// So the values come back the way the compute self-test already proves works: a shader reads the
+    /// image and writes a storage buffer, which reads back correctly. Without this the validator
+    /// reported every clipmap as entirely unwritten, and that false negative cost two stages.
+    /// </para>
+    /// </remarks>
+    private static byte[] Read(
+        IGraphicsDevice device, GlobalDistanceField clipmaps, int level, IIgiLogger log)
+    {
+        GlobalDistanceFieldSettings settings = clipmaps.Settings;
+        int count = settings.VoxelsPerLevel;
+
+        ComputeShaderHandle shader = default;
+        StorageBufferHandle buffer = default;
+
+        try
+        {
+            shader = device.CreateComputeShader(ReadSource, "sdf.clipmap.read");
+            buffer = device.CreateStorageBuffer(count * sizeof(uint), "sdf.clipmap.readback");
+
+            device.BindImage(0, clipmaps.Clipmaps, ImageAccess.Read);
+            device.BindStorageBuffer(0, buffer);
+            device.SetComputeUniform(shader, "uResolution", settings.Resolution);
+            device.SetComputeUniform(shader, "uLevel", level);
+
+            int groups = (settings.Resolution + 3) / 4;
+            device.Dispatch(shader, groups, groups, groups);
+            device.MemoryBarrier(MemoryBarrierScope.StorageBuffer);
+
+            uint[] values = new uint[count];
+            device.ReadStorageBuffer<uint>(buffer, values);
+
+            byte[] bytes = new byte[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                bytes[i] = (byte)Math.Clamp(values[i], 0u, 255u);
+            }
+
+            return bytes;
+        }
+        catch (GraphicsDeviceException error)
+        {
+            log.Error(LogCategory, $"The clipmap read-back failed: {error.Message}");
+            return [];
+        }
+        finally
+        {
+            device.BindImage(0, TextureHandle.None, ImageAccess.Read);
+            device.BindStorageBuffer(0, StorageBufferHandle.None);
+            device.DestroyStorageBuffer(buffer);
+            device.DestroyComputeShader(shader);
+        }
+    }
+
+    private const string ReadSource =
+        """
+        #version 430 core
+
+        layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+        layout(r8, binding = 0) uniform readonly image3D uClipmaps;
+
+        layout(std430, binding = 0) buffer Readback
+        {
+            uint uValues[];
+        };
+
+        uniform int uResolution;
+        uniform int uLevel;
+
+        void main()
+        {
+            ivec3 at = ivec3(gl_GlobalInvocationID);
+
+            if (any(greaterThanEqual(at, ivec3(uResolution))))
+            {
+                return;
+            }
+
+            int index = (((at.z * uResolution) + at.y) * uResolution) + at.x;
+
+            // Back through the byte range it was stored in, so the comparison is against what was
+            // written rather than a float that rounded on the way out.
+            uValues[index] = uint(round(
+                imageLoad(uClipmaps, ivec3(at.xy, (uLevel * uResolution) + at.z)).r * 255.0));
+        }
+        """;
+
     /// <summary>Compares one clipmap level against the exact field.</summary>
     /// <param name="device">The device holding the clipmaps.</param>
     /// <param name="clipmaps">The built clipmaps.</param>
@@ -86,8 +182,13 @@ public static class DistanceFieldValidation
         int resolution = settings.Resolution;
         int perLevel = settings.VoxelsPerLevel;
 
-        byte[] volume = new byte[perLevel * settings.Levels];
-        device.ReadVolumeTexture<byte>(clipmaps.Clipmaps, volume);
+        byte[] volume = Read(device, clipmaps, level, log);
+
+        if (volume.Length == 0)
+        {
+            log.Error(LogCategory, "The clipmap could not be read back; nothing was compared.");
+            return default;
+        }
 
         // What actually landed in the volume, before any interpretation. A clipmap that was never
         // written reads as a single value, and saying so directly is the difference between "the
@@ -98,7 +199,7 @@ public static class DistanceFieldValidation
 
         for (int i = 0; i < perLevel; i++)
         {
-            byte raw = volume[(level * perLevel) + i];
+            byte raw = volume[i];
             rawMin = Math.Min(rawMin, raw);
             rawMax = Math.Max(rawMax, raw);
             rawTotal += raw;
@@ -131,7 +232,7 @@ public static class DistanceFieldValidation
             {
                 for (int x = 0; x < resolution; x++)
                 {
-                    int at = (level * perLevel) + ((((z * resolution) + y) * resolution) + x);
+                    int at = (((z * resolution) + y) * resolution) + x;
                     float built = MeshDistanceField.Decode(volume[at], range);
 
                     Vector3d point = new(
