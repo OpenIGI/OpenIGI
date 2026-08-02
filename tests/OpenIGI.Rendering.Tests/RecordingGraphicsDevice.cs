@@ -101,6 +101,13 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The fog settings each frame was given, in order.</summary>
     public List<VolumetricFogSettings> Fogs { get; } = [];
 
+    /// <summary>The texture-quality settings applied, in order.</summary>
+    public List<(int Anisotropy, bool Mipmaps)> TextureQuality { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps) =>
+        TextureQuality.Add((maxAnisotropy, generateMissingMipmaps));
+
     /// <inheritdoc/>
     public void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight) => Fogs.Add(fog);
 

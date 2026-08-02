@@ -91,6 +91,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private SurfaceMaterial _material = SurfaceMaterial.Default;
     private SceneLighting _lighting = SceneLighting.Baked;
 
+    /// <summary>GL_TEXTURE_MAX_ANISOTROPY. Core since 4.6 and an EXT with the same value long before.</summary>
+    private const GLEnum TextureMaxAnisotropy = (GLEnum)0x84FE;
+
+    /// <summary>GL_MAX_TEXTURE_MAX_ANISOTROPY.</summary>
+    private const GLEnum MaxTextureMaxAnisotropy = (GLEnum)0x84FF;
+
+    private int _anisotropy = 1;
+    private int _anisotropyLimit = 1;
+    private bool _generateMissingMipmaps;
+
     private GLShaderProgram? _fogProgram;
     private VolumetricFogSettings _fog = VolumetricFogSettings.Off;
     private float _cameraHeight;
@@ -413,10 +423,35 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             offset += w * h;
         }
 
-        ApplySampling(description);
+        TextureDescription sampled = description;
+
+        // A texture that arrived without a mip chain gets one built. The terrain's ground tiles are
+        // the case that matters: the atlas's layer descriptors carry no mip count, so every tile is a
+        // single 128x128 level, and minifying that with no mips aliases into a crawling sparkle
+        // wherever the ground recedes -- which is most of the screen in this game.
+        //
+        // Only for power-of-two sizes: glGenerateMipmap accepts others, but the halving is then not
+        // exact and the chain drifts off the source.
+        if (_generateMissingMipmaps
+            && description.MipLevels == 1
+            && IsPowerOfTwo(description.Width)
+            && IsPowerOfTwo(description.Height))
+        {
+            _gl.GenerateMipmap(TextureTarget.Texture2D);
+
+            int levels = 1;
+            for (int size = Math.Max(description.Width, description.Height); size > 1; size >>= 1)
+            {
+                levels++;
+            }
+
+            sampled = description with { MipLevels = levels };
+        }
+
+        ApplySampling(sampled);
 
         uint id = _nextTextureId++;
-        _textures[id] = new GLTexture(name, description.Width, description.Height, description.MipLevels);
+        _textures[id] = new GLTexture(name, description.Width, description.Height, sampled.MipLevels);
         return new TextureHandle(id);
     }
 
@@ -719,6 +754,30 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
+
+    /// <inheritdoc/>
+    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps)
+    {
+        ThrowIfDisposed();
+
+        int clamped = Math.Clamp(maxAnisotropy, 1, Math.Max(1, _anisotropyLimit));
+        if (clamped == _anisotropy && generateMissingMipmaps == _generateMissingMipmaps)
+        {
+            return;
+        }
+
+        _anisotropy = clamped;
+
+        // Mip generation happens at upload, so a change only reaches textures loaded from here on --
+        // in practice the next level. The anisotropy is sampler state and can be re-applied now.
+        _generateMissingMipmaps = generateMissingMipmaps;
+
+        foreach (GLTexture entry in _textures.Values)
+        {
+            BindTextureForUpload(entry.Name);
+            _gl.TexParameter(TextureTarget.Texture2D, (TextureParameterName)TextureMaxAnisotropy, (float)_anisotropy);
+        }
+    }
 
     /// <inheritdoc/>
     public void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight)
@@ -1457,6 +1516,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, minFilter);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, magFilter);
 
+        if (_anisotropy > 1)
+        {
+            _gl.TexParameter(TextureTarget.Texture2D, (TextureParameterName)TextureMaxAnisotropy, (float)_anisotropy);
+        }
+
         int wrap = (int)(description.AddressMode == TextureAddressMode.Repeat ? GLEnum.Repeat : GLEnum.ClampToEdge);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, wrap);
         _gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, wrap);
@@ -1533,6 +1597,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         {
             _gl.GetInteger((GetPName)GLEnum.MaxSamples, out samples);
         }
+
+        _gl.GetInteger((GetPName)MaxTextureMaxAnisotropy, out int anisotropyLimit);
+        _anisotropyLimit = Math.Clamp(anisotropyLimit, 1, 16);
 
         return new GraphicsCapabilities(
             Math.Clamp(units, 1, MaxTextureUnits),
@@ -1650,6 +1717,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     /// is active, so a skipped switch would send the upload to a texture bound on some other unit.
     /// </para>
     /// </remarks>
+    private static bool IsPowerOfTwo(int value) => value > 0 && (value & (value - 1)) == 0;
+
     private void BindTextureForUpload(uint name)
     {
         if (_activeTextureUnit != 0)

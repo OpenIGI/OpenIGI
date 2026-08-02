@@ -324,6 +324,42 @@ public static class RenderCVars
         high: "500",
         ultra: "800");
 
+    /// <summary>The anisotropic filtering ratio, 1 for none.</summary>
+    /// <remarks>
+    /// The single cheapest visible win in this renderer. A ground plane at a grazing angle is the
+    /// worst case trilinear filtering has: a pixel's footprint is a long thin sliver, the mip level
+    /// has to be chosen for its widest axis, and all the detail along the other axis is discarded.
+    /// That is why terrain smears towards the horizon without it.
+    /// </remarks>
+    public static readonly NumericCVar<int> Anisotropy = Presets.Define(
+        CVar.Int(
+            "r_anisotropy",
+            8,
+            1,
+            16,
+            CVarOptions.Archive,
+            "Anisotropic filtering ratio; 1 is off. Mostly decides how sharp the ground stays into the distance."),
+        vanilla: "1",
+        enhanced: "4",
+        high: "8",
+        ultra: "16");
+
+    /// <summary>Whether a mip chain is built for textures that ship without one.</summary>
+    /// <remarks>
+    /// The terrain's ground tiles ship without: the atlas layer descriptors carry no mip count, so
+    /// each is one 128x128 level, and minifying that unfiltered crawls and sparkles.
+    /// </remarks>
+    public static readonly BoolCVar GenerateMipmaps = Presets.Define(
+        CVar.Bool(
+            "r_generate_mipmaps",
+            true,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Build mipmaps for textures that ship without them, such as the terrain's ground tiles."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }

@@ -154,6 +154,12 @@ using (window)
         RenderCVars.VSync.Value = false;
     }
 
+    // Set before anything uploads a texture: mip generation happens at upload, so a level loaded
+    // before this would keep the unfiltered tiles it started with.
+    device.SetTextureQuality(RenderCVars.Anisotropy.Value, RenderCVars.GenerateMipmaps.Value);
+    RenderCVars.Anisotropy.Changed += (_, _) =>
+        device.SetTextureQuality(RenderCVars.Anisotropy.Value, RenderCVars.GenerateMipmaps.Value);
+
     device.VSyncEnabled = RenderCVars.VSync.Value;
     RenderCVars.VSync.Changed += (_, _) => device.VSyncEnabled = RenderCVars.VSync.Value;
 

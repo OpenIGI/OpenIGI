@@ -229,6 +229,23 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetMaterialOverride(in SurfaceMaterial material);
 
+    /// <summary>Sets how textures are sampled.</summary>
+    /// <param name="maxAnisotropy">
+    /// The anisotropic filtering ratio, 1 for none. A ground plane seen at a grazing angle is the
+    /// worst case in the frame for trilinear filtering: the footprint of a pixel is a long thin
+    /// sliver, mipmapping has to pick a level for its <em>widest</em> axis, and everything along the
+    /// other axis is thrown away. That is what turns ground into a smear towards the horizon.
+    /// </param>
+    /// <param name="generateMissingMipmaps">
+    /// Whether to build a mip chain for textures that arrive without one. The terrain's ground tiles
+    /// do: the atlas's layer descriptors carry no mip count, so every one is a single 128x128 level,
+    /// and minifying that without mips aliases into a crawling sparkle.
+    /// </param>
+    /// <remarks>
+    /// Applies to textures created afterwards, and re-applies the sampling to those already uploaded.
+    /// </remarks>
+    void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps);
+
     /// <summary>Sets the participating medium the scene is seen through.</summary>
     /// <param name="fog">The medium, or <see cref="VolumetricFogSettings.Off"/> for none.</param>
     /// <param name="cameraHeight">
