@@ -5,10 +5,15 @@
     "Anything omitted falls back to 'default', and a mission with no entry at all is derived from its",
     "own FlatSky task -- so this file only has to hold the levels where the derived value is wrong.",
     "Density is extinction per metre at baseHeight; heightFalloff is the metres over which it thins to",
-    "a third, and is what makes fog pool rather than hang as a sheet.",
+    "a third, and is what makes fog pool rather than hang as a sheet. uniformFraction is the share of",
+    "it that does NOT thin with height -- raise it on a level whose playable ground is well above the",
+    "median, or the player standing on a ridge climbs clean out of the atmosphere.",
     "",
-    "Volume centres are WORLD METRES. Author them with the free camera: -freecam plus -camlog prints",
-    "the position every frame, so fly to the middle of the room and read it off. Retail has no fog",
+    "baseHeight is NOT authored here: it is the level's own sky-plane height, anchored at load to the",
+    "scene's ground. Volume centres, however, ARE authored, and they are ABSOLUTE world metres -- a",
+    "level's coordinates sit tens of kilometres from the world origin, so a hand-guessed centre near",
+    "zero lands nowhere near the level. Read real ones off with -freecam plus -camlog, which prints the",
+    "camera position every frame: fly to the middle of the room and copy it down. Retail has no fog",
     "entities of any kind, so every volume here is the port's own invention."
   ],
 
@@ -17,6 +22,7 @@
     "heightFalloff": 24.0,
     "anisotropy": 0.7,
     "multipleScattering": 0.35,
+    "uniformFraction": 0.12,
     "distance": 500.0,
     "sunIntensity": 1.0,
     "ambientIntensity": 1.0
@@ -36,7 +42,8 @@
       "heightFalloff": 20.0,
       "albedo": [0.90, 0.92, 0.95],
       "anisotropy": 0.55,
-      "ambientIntensity": 1.25
+      "ambientIntensity": 1.25,
+      "uniformFraction": 0.4
     },
     "5": {
       "$comment": "The level's own FlatSky asks for very little; a blue high-altitude haze suits it.",
@@ -73,18 +80,14 @@
 
   "volumes": {
     "$comment": [
-      "Worked example only. Mission 1's tunnel mouth sits above the fog line, so the outdoor",
-      "height falloff leaves it clear; this puts mist back into it. The other missions are left",
-      "empty deliberately rather than filled with guesses -- each needs flying and reading off."
-    ],
-    "1": [
-      {
-        "$comment": "Mist inside the tunnel entrance.",
-        "shape": "box",
-        "centre": [186.0, -12.0, 12.0],
-        "extent": [18.0, 26.0, 7.0],
-        "densityScale": 3.5
-      }
+      "Empty deliberately. Every centre here has to be flown to and read off -- a guessed one is not",
+      "a weak volume, it is a volume somewhere else entirely, and it does nothing at all. The shape",
+      "each entry takes, for when they are authored:",
+      "",
+      "  \"1\": [ { \"shape\": \"box\",    // or \"sphere\", which uses extent.x as its radius",
+      "           \"centre\": [6000.0, -13600.0, 42590.0],   // absolute world metres, from -camlog",
+      "           \"extent\": [18.0, 26.0, 7.0],             // half-extents",
+      "           \"densityScale\": 3.5 } ]                  // below 1 thins, above 1 thickens"
     ]
   }
 }

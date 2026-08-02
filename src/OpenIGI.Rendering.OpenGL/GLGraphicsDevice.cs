@@ -120,6 +120,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _fogAlbedo = -1;
     private int _fogJitter = -1;
     private int _fogMultiScatter = -1;
+    private int _fogUniformFraction = -1;
     private int _fogVolumeCountLocation = -1;
     private int _fogVolumeCentre = -1;
     private int _fogVolumeExtent = -1;
@@ -1070,6 +1071,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     /// </remarks>
     private void RunVolumetricFog(GLSceneTarget target)
     {
+
         if (!_fog.Enabled || _fogProgram is null || _fullScreen is null)
         {
             return;
@@ -1115,6 +1117,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // Varied per frame so the dither pattern moves; with temporal filtering in stage R5 this is
         // what turns the remaining noise into detail rather than into a static grain.
         _fogProgram.SetFloat(_fogMultiScatter, Math.Clamp(_fog.MultipleScattering, 0f, 1f));
+        _fogProgram.SetFloat(_fogUniformFraction, Math.Clamp(_fog.UniformFraction, 0f, 1f));
         _fogProgram.SetInt(_fogVolumeCountLocation, _fogVolumeCount);
 
         for (int i = 0; i < _fogVolumeCount; i++)
@@ -1475,6 +1478,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _fogAlbedo = _fogProgram.LocationOf("uAlbedo");
         _fogJitter = _fogProgram.LocationOf("uFrameJitter");
         _fogMultiScatter = _fogProgram.LocationOf("uMultiScatter");
+        _fogUniformFraction = _fogProgram.LocationOf("uUniformFraction");
         _fogVolumeCountLocation = _fogProgram.LocationOf("uVolumeCount");
         _fogVolumeCentre = _fogProgram.LocationOf("uVolumeCentre");
         _fogVolumeExtent = _fogProgram.LocationOf("uVolumeExtent");

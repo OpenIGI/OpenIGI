@@ -94,6 +94,21 @@ public sealed class FogPresetTests : IDisposable
     }
 
     [Fact]
+    public void TheAltitudeFloorDefaultsAndIsOverridablePerMission()
+    {
+        // The bug this pins: a purely height-banded medium put mission 3's player sixty metres above
+        // its own fog, which left a mountain level with no atmosphere at all. The floor is the share
+        // of the medium that survives the climb, and a level whose ground sits well above the median
+        // has to be able to ask for more of it.
+        FogPresets presets = Write("""
+            { "default": { "uniformFraction": 0.12 }, "missions": { "3": { "uniformFraction": 0.4 } } }
+            """);
+
+        Assert.Equal(0.12f, presets.Resolve(1, 0.01f, 0f, 32).UniformFraction, 4);
+        Assert.Equal(0.4f, presets.Resolve(3, 0.01f, 0f, 32).UniformFraction, 4);
+    }
+
+    [Fact]
     public void VolumesAreReadWithTheirShapeAndScale()
     {
         FogPresets presets = Write("""

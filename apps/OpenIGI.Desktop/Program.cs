@@ -1040,22 +1040,19 @@ using (window)
         // furthest away. The median height is the ground, because most objects sit on it.
         double[] xs = new double[scene.Placements.Count];
         double[] ys = new double[scene.Placements.Count];
-        double[] zs = new double[scene.Placements.Count];
 
         for (int i = 0; i < scene.Placements.Count; i++)
         {
             xs[i] = scene.Placements[i].Position.X;
             ys[i] = scene.Placements[i].Position.Y;
-            zs[i] = scene.Placements[i].Position.Z;
         }
 
         Array.Sort(xs);
         Array.Sort(ys);
-        Array.Sort(zs);
 
         double centreX = xs[xs.Length / 2];
         double centreY = ys[ys.Length / 2];
-        double ground = zs[zs.Length / 2];
+        double ground = scene.GroundHeight;
 
         // Standing back a hundred metres, twenty-five up, looking north and slightly down.
         return new FreeCamera(
@@ -1513,10 +1510,13 @@ using (window)
             VolumetricFogSettings medium = VolumetricFogSettings.Off;
             if (wantsFog)
             {
+                // The sky plane's height is an offset above the ground, not a world Z: a level's
+                // coordinates carry a kilometres-large absolute offset, so it has to be anchored to
+                // the scene's own ground before the march can compare a sample against it.
                 medium = fogPresets.Resolve(
                     options.StartMission,
                     authoredDensity,
-                    sky is { HasSky: true } ? sky.PlaneHeight : 0f,
+                    (float)(scene.GroundHeight + (sky is { HasSky: true } ? sky.PlaneHeight : 0f)),
                     RenderCVars.FogQuality.Value);
 
                 // A console override beats the authored preset, so a value can be dialled in live and

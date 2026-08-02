@@ -45,6 +45,13 @@ namespace OpenIGI.Rendering;
 /// multiple scattering a single-scattering march does not simulate. Without it the medium is blinding
 /// towards the sun and invisible away from it.
 /// </param>
+/// <param name="UniformFraction">
+/// The share of <see cref="Density"/>, from 0 to 1, that does <em>not</em> thin with height. A purely
+/// height-banded medium vanishes the moment the camera climbs out of it — which is right for a valley
+/// seen from a ridge, and wrong for the ridge itself, because real air hazes the distance at altitude
+/// too. This is that floor: the level's own atmosphere keeps its depth wherever the player stands,
+/// while the banded remainder still pools in the low ground.
+/// </param>
 /// <param name="SunIntensity">A multiplier on the sun's contribution to in-scattering.</param>
 /// <param name="AmbientIntensity">A multiplier on the sky's contribution.</param>
 public readonly record struct VolumetricFogSettings(
@@ -56,6 +63,7 @@ public readonly record struct VolumetricFogSettings(
     float Distance = 500f,
     int Steps = 32,
     float MultipleScattering = 0.35f,
+    float UniformFraction = 0.12f,
     float SunIntensity = 1f,
     float AmbientIntensity = 1f)
 {

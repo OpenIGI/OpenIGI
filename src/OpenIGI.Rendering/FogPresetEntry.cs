@@ -18,6 +18,7 @@ public readonly record struct FogPresetEntry(
     float? Anisotropy,
     float? Distance,
     float? MultipleScattering,
+    float? UniformFraction,
     float? SunIntensity,
     float? AmbientIntensity)
 {
@@ -34,6 +35,7 @@ public readonly record struct FogPresetEntry(
         Anisotropy ?? fallback.Anisotropy,
         Distance ?? fallback.Distance,
         MultipleScattering ?? fallback.MultipleScattering,
+        UniformFraction ?? fallback.UniformFraction,
         SunIntensity ?? fallback.SunIntensity,
         AmbientIntensity ?? fallback.AmbientIntensity);
 
@@ -54,6 +56,7 @@ public readonly record struct FogPresetEntry(
             Number(element, "anisotropy"),
             Number(element, "distance"),
             Number(element, "multipleScattering"),
+            Number(element, "uniformFraction"),
             Number(element, "sunIntensity"),
             Number(element, "ambientIntensity"));
     }

@@ -120,6 +120,7 @@ public sealed class FogPresets
             entry.Distance ?? 500f,
             steps,
             entry.MultipleScattering ?? 0.35f,
+            entry.UniformFraction ?? 0.12f,
             entry.SunIntensity ?? 1f,
             entry.AmbientIntensity ?? 1f);
     }

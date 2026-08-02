@@ -28,6 +28,8 @@ public sealed class WorldScene
 {
     private const string LogCategory = "World";
 
+    private double? _groundHeight;
+
     /// <summary>Engine units per metre, the original's <c>WORLD_METER</c> script constant.</summary>
     /// <remarks>
     /// Registered as a double at <c>0x539558</c>. Model vertices use the same units as world positions:
@@ -169,6 +171,40 @@ public sealed class WorldScene
 
     /// <summary>Gets everything to draw, in the order the level script placed it.</summary>
     public IReadOnlyList<WorldPlacement> Placements { get; }
+
+    /// <summary>Gets the level's ground height, in metres, as an absolute world Z.</summary>
+    /// <remarks>
+    /// <para>
+    /// A level's coordinates carry a large absolute offset — mission 1's ground sits some 42 km from
+    /// the world origin — so a height authored as "four metres up", like the sky plane's or the fog
+    /// base's, is nowhere near a world Z of four. It is an offset, and it has to be anchored to
+    /// something before it means anything. This is that anchor.
+    /// </para>
+    /// <para>
+    /// It is the <em>median</em> placement height rather than the middle of the bounding box, because
+    /// most of what a level places sits on the ground: the median lands on it, while a box is dragged
+    /// upwards by a single radio mast and downwards by a basement.
+    /// </para>
+    /// </remarks>
+    public double GroundHeight => _groundHeight ??= MedianPlacementHeight();
+
+    private double MedianPlacementHeight()
+    {
+        if (Placements.Count == 0)
+        {
+            return 0.0;
+        }
+
+        double[] heights = new double[Placements.Count];
+
+        for (int i = 0; i < heights.Length; i++)
+        {
+            heights[i] = Placements[i].Position.Z;
+        }
+
+        Array.Sort(heights);
+        return heights[heights.Length / 2];
+    }
 
     /// <summary>Gets the ladders the level places, for the player and AI to climb.</summary>
     /// <remarks>

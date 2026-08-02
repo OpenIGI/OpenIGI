@@ -151,20 +151,17 @@ internal static class RetailLevelOneGround
     {
         double[] xs = new double[scene.Placements.Count];
         double[] ys = new double[scene.Placements.Count];
-        double[] zs = new double[scene.Placements.Count];
 
         for (int i = 0; i < scene.Placements.Count; i++)
         {
             xs[i] = scene.Placements[i].Position.X;
             ys[i] = scene.Placements[i].Position.Y;
-            zs[i] = scene.Placements[i].Position.Z;
         }
 
         Array.Sort(xs);
         Array.Sort(ys);
-        Array.Sort(zs);
 
         int middle = xs.Length / 2;
-        return (xs[middle], ys[middle], zs[middle]);
+        return (xs[middle], ys[middle], scene.GroundHeight);
     }
 }
