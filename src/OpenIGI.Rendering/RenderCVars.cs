@@ -284,10 +284,14 @@ public static class RenderCVars
             8,
             CVarOptions.Archive,
             "Ambient occlusion: directions searched per pixel; 0 turns it off."),
+
+        // Raised, because these are no longer averaged over frames. The horizon search is dithered
+        // per pixel AND per frame on the assumption something converges it; with nothing to do that,
+        // the only way to a clean result is to take the samples up front.
         vanilla: "0",
-        enhanced: "2",
-        high: "3",
-        ultra: "4");
+        enhanced: "4",
+        high: "6",
+        ultra: "8");
 
     /// <summary>How far a surface may occlude another, in metres.</summary>
     public static readonly NumericCVar<float> AmbientOcclusionRadius = CVar.Float(
@@ -371,10 +375,15 @@ public static class RenderCVars
             1f,
             CVarOptions.Archive,
             "How much of a frame's movement smears; a real shutter is open for part of a frame."),
+
+        // Off at every preset, and it stays off until limb motion is tracked. The blur reads the
+        // motion target, and a soldier reports where his BODY went -- so arms, legs and weapon are
+        // all smeared along the torso's velocity, which is not where any of them travelled. It reads
+        // as trailing behind every moving figure. Shipping it on was a mistake.
         vanilla: "0",
         enhanced: "0",
-        high: "0.4",
-        ultra: "0.5");
+        high: "0",
+        ultra: "0");
 
     /// <summary>How many samples the defocus and motion gather takes.</summary>
     public static readonly NumericCVar<int> CameraTaps = Presets.Define(
@@ -405,6 +414,35 @@ public static class RenderCVars
         2f,
         CVarOptions.Archive,
         "Scales dynamic lighting to match what the level's textures were painted for.");
+
+    /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
+    /// <remarks>
+    /// Spatial, and therefore free of ghosting: it reads the displayed picture and nothing else. It is
+    /// the modern path's only anti-aliasing, because a deferred G-buffer cannot be multisampled --
+    /// averaging two normals gives a direction neither surface has -- and the temporal path is
+    /// unusable while soldiers are skinned without previous-pose vertices.
+    /// </remarks>
+    public static readonly NumericCVar<float> SpatialAa = Presets.Define(
+        CVar.Float(
+            "r_aa",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Edge anti-aliasing strength; 0 turns it off. Spatial, so it never ghosts."),
+        vanilla: "0",
+        enhanced: "0.75",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>The contrast below which a pixel is left untouched.</summary>
+    public static readonly NumericCVar<float> SpatialAaThreshold = CVar.Float(
+        "r_aa_threshold",
+        0.05f,
+        0.005f,
+        0.5f,
+        CVarOptions.Archive,
+        "Luminance contrast below which a pixel is not treated as an edge.");
 
     /// <summary>How much of the blurred bright pass is mixed back in, or 0 for no bloom.</summary>
     public static readonly NumericCVar<float> Bloom = Presets.Define(
@@ -480,10 +518,14 @@ public static class RenderCVars
             0.2f,
             CVarOptions.Archive,
             "Film grain. A little also hides the banding an 8-bit display gives a smooth gradient."),
+
+        // Off. It was added on the assumption that the temporal accumulation would keep it to a
+        // suggestion; with no accumulation it is one more source of noise on top of the stochastic
+        // passes, and the thing it was hiding -- 8-bit banding -- is the lesser complaint.
         vanilla: "0",
-        enhanced: "0.012",
-        high: "0.014",
-        ultra: "0.016");
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>How far the red and blue channels separate towards the corners.</summary>
     public static readonly NumericCVar<float> ChromaticAberration = Presets.Define(
@@ -601,10 +643,26 @@ public static class RenderCVars
             1f,
             CVarOptions.Archive,
             "Temporal anti-aliasing: share of the pixel taken from this frame. 1 turns it off."),
+
+        // OFF at every preset, and this is a judgement about the game rather than about the technique.
+        //
+        // Temporal accumulation is exact for the camera and for rigid motion, and this engine's
+        // soldiers are neither: they are SKINNED, so the previous pose says where a body went and not
+        // where its limbs went. Every walking guard therefore reprojects his arms and legs to the
+        // wrong pixels, and no feedback value fixes it -- shortening the history only shortens the
+        // smear. Tested from 0.07 up to 1, and only 1 -- no accumulation at all -- was acceptable.
+        //
+        // The cost is real and should not be hidden: the fog march, the horizon search and the
+        // reflection ray are all deliberately under-sampled and dithered on the assumption that this
+        // pass averages them, and the deferred path cannot fall back to multisampling because
+        // resolving a NORMAL by averaging is meaningless. So until either skinned previous positions
+        // or a spatial anti-aliasing pass exists, the modern path runs without anti-aliasing and with
+        // its stochastic passes showing their noise. That is the honest trade, and it is better than
+        // shipping a smear on every moving figure.
         vanilla: "1",
-        enhanced: "0.15",
-        high: "0.1",
-        ultra: "0.07");
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How much of the history's resampling blur is subtracted back out.</summary>
     public static readonly NumericCVar<float> TemporalSharpening = CVar.Float(
@@ -625,10 +683,12 @@ public static class RenderCVars
             128,
             CVarOptions.Archive,
             "Samples per volumetric fog ray; 0 turns the fog off."),
+
+        // Likewise: the march's interleaved-gradient dither used to be averaged away, and now is not.
         vanilla: "0",
-        enhanced: "16",
-        high: "32",
-        ultra: "64");
+        enhanced: "32",
+        high: "64",
+        ultra: "96");
 
     /// <summary>Extinction per metre at the fog's base height, or 0 to take the level's own.</summary>
     public static readonly NumericCVar<float> FogDensity = CVar.Float(

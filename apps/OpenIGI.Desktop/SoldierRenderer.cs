@@ -1574,15 +1574,18 @@ public sealed class SoldierRenderer : IDisposable
                 // reprojection, which is what it had before any of this.
                 DrawWeapon(member, where, camera);
 
-                // Through the CURRENT camera, deliberately: the resolve reprojects the camera itself
-                // exactly, and what it needs from here is only how far the soldier moved under a camera
-                // held still. A soldier who did not move therefore reports a matrix identical to his
-                // current one, which is zero motion to the bit.
-                if (member.PreviousPose is { } previous)
-                {
-                    _device.SetPreviousPose(camera.CreateModelView(previous.Where, previous.Orientation));
-                }
-
+                // NOT reported, and the reason is worth keeping: a soldier is SKINNED. The geometry
+                // pass would compute his previous clip position as (previous body transform) applied
+                // to (this frame's skinned vertex) -- "where the body was, but where the arm is now"
+                // -- which is a large, confidently wrong vector for every limb. That is worse than
+                // reporting nothing: with no motion the temporal resolve's neighbourhood clamp catches
+                // the mismatch, whereas a wrong vector sends it to fetch the wrong pixel and trust it.
+                // It showed as dark speckle around every moving guard, worse with the accumulation on
+                // than off, which is the signature of an error being fed back.
+                //
+                // Reporting it correctly means keeping the PREVIOUS frame's skinned vertices and
+                // emitting the previous clip position from those. Until that exists, soldiers take the
+                // camera-only reprojection, which is what they had before motion vectors were added.
                 member.PreviousPose = (where, soldier.Orientation);
 
                 foreach (MeshSubset subset in group.Geometry.Subsets)
@@ -1601,6 +1604,12 @@ public sealed class SoldierRenderer : IDisposable
                         diffuse = GetTexture(texture);
                     }
 
+                    // Out of the ambient occlusion. A soldier is thin, close and moving, which is the
+                    // worst case for a search that has to guess how deep a surface is from its front
+                    // face alone -- it darkened the ground behind every guard in a halo of speckle
+                    // that followed him about. The right repair is a thickness test in the search
+                    // itself; until that exists, soldiers are left out rather than shaded wrongly.
+                    _device.SetMaterialOverride(new SurfaceMaterial(CastsOcclusion: false));
                     _device.DrawMesh(
                         member.Mesh,
                         subset.IndexOffset,
@@ -1611,6 +1620,7 @@ public sealed class SoldierRenderer : IDisposable
                         BlendMode.Opaque);
                 }
 
+                _device.SetMaterialOverride(SurfaceMaterial.Default);
                 _device.ClearPreviousPose();
             }
         }

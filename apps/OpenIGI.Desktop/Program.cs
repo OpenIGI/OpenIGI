@@ -1847,7 +1847,9 @@ using (window)
                     FocalRange: RenderCVars.FocalRange.Value,
                     FocalBlur: RenderCVars.FocalBlur.Value,
                     MotionBlur: RenderCVars.MotionBlur.Value,
-                    CameraTaps: RenderCVars.CameraTaps.Value));
+                    CameraTaps: RenderCVars.CameraTaps.Value,
+                    SpatialAa: RenderCVars.SpatialAa.Value,
+                    SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value));
                 captured = false;
             }
 

@@ -36,7 +36,15 @@
         "with the default roughness put back."
       ],
       "roughness": 0.08,
-      "metallic": 0.0
+      "metallic": 0.0,
+
+      "$occlusion": [
+        "Left out of the ambient occlusion, as occluder and as receiver. These are the cut-out",
+        "surfaces -- wire fences, foliage, glass -- and a depth buffer cannot describe them: it says",
+        "where a surface starts and never where it ends, so the horizon search treats a wire as a",
+        "solid slab reaching to infinity and darkens everything behind it."
+      ],
+      "castsOcclusion": false
     }
   }
 }

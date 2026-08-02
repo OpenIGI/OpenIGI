@@ -26,11 +26,42 @@ namespace OpenIGI.Rendering;
 /// <param name="Emissive">
 /// How much light the surface gives off on its own, as a multiple of its albedo. Lamps and screens.
 /// </param>
+/// <param name="CastsOcclusion">
+/// Whether this surface takes part in the ambient occlusion, as an occluder and as a receiver. False
+/// for the surfaces a depth buffer cannot describe: it records where a surface starts and never where
+/// it ends, so the horizon search treats anything thin as reaching to infinity and darkens whatever
+/// stands behind it. Soldiers and wire fences are the two that matter.
+/// </param>
 public readonly record struct SurfaceMaterial(
     float Roughness = 0.8f,
     float Metallic = 0.0f,
-    float Emissive = 0.0f)
+    float Emissive = 0.0f,
+    bool CastsOcclusion = true)
 {
+    /// <summary>The emissive channel's value for a surface excluded from ambient occlusion.</summary>
+    /// <remarks>
+    /// <para>
+    /// The G-buffer has no channel to spare — every one of its four targets already carries the
+    /// surface's own alpha, because GL blends each attachment by that attachment's alpha. So the
+    /// exclusion rides in the emissive channel, which in practice only ever holds nought or one: a
+    /// surface either glows or it does not. A third value at a quarter is unambiguous against both,
+    /// and leaves the <c>emissive &gt; 0.5</c> test every other pass already uses working untouched.
+    /// </para>
+    /// <para>
+    /// It is a compromise and worth replacing with a proper flags channel if the G-buffer ever gains
+    /// one.
+    /// </para>
+    /// </remarks>
+    public const float ExcludedFromOcclusion = 0.25f;
+
+    /// <summary>Gets the value written into the G-buffer's emissive channel.</summary>
+    /// <remarks>
+    /// Emission wins where a surface asks for both: a glowing surface is already ignored by the
+    /// occlusion pass, so there is nothing to say.
+    /// </remarks>
+    public float PackedEmissive =>
+        Emissive > 0.5f ? 1f : CastsOcclusion ? Emissive : ExcludedFromOcclusion;
+
     /// <summary>
     /// Gets the material a surface with no rule matching it gets.
     /// </summary>

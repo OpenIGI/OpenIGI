@@ -55,6 +55,15 @@ namespace OpenIGI.Rendering;
 /// corner. A real lens cannot focus every wavelength to the same point, and the error grows with
 /// distance from the axis — which is why this is zero in the middle however high it is set.
 /// </param>
+/// <param name="SpatialAa">
+/// How strongly edges in the finished frame are smoothed, from 0 to 1, or 0 for none. Spatial rather
+/// than temporal: it works from the displayed picture alone, so it cannot ghost — which is why it is
+/// here at all, the temporal path being unusable on this game's skinned soldiers.
+/// </param>
+/// <param name="SpatialAaThreshold">
+/// The luminance contrast below which a pixel is left untouched. Most of a frame is below it, which is
+/// what makes the pass nearly free and what stops it softening texture detail that is not an edge.
+/// </param>
 /// <param name="FocalDistance">
 /// How far, in metres, the camera is focused. Zero switches depth of field off entirely, which is the
 /// right default for a shooter: the player's eye picks what to look at, and a renderer that decides for
@@ -93,7 +102,9 @@ public readonly record struct PostProcessSettings(
     float FocalRange = 12f,
     float FocalBlur = 8f,
     float MotionBlur = 0f,
-    int CameraTaps = 6)
+    int CameraTaps = 6,
+    float SpatialAa = 0f,
+    float SpatialAaThreshold = 0.05f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -118,7 +129,11 @@ public readonly record struct PostProcessSettings(
         && Exposure == 1.0f
         && !WantsBloom
         && !WantsGrading
-        && !WantsCameraEffects;
+        && !WantsCameraEffects
+        && !WantsSpatialAa;
+
+    /// <summary>Gets a value indicating whether edges are smoothed after the tone map.</summary>
+    public bool WantsSpatialAa => SpatialAa > 0f;
 
     /// <summary>Gets a value indicating whether the camera gather would do anything.</summary>
     public bool WantsCameraEffects =>

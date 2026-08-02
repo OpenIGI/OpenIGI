@@ -166,8 +166,15 @@ public sealed class MaterialLibrary
         return new SurfaceMaterial(
             Number(element, "roughness") ?? fallback.Roughness,
             Number(element, "metallic") ?? fallback.Metallic,
-            Number(element, "emissive") ?? fallback.Emissive);
+            Number(element, "emissive") ?? fallback.Emissive,
+            Flag(element, "castsOcclusion") ?? fallback.CastsOcclusion);
     }
+
+    private static bool? Flag(JsonElement element, string name) =>
+        element.TryGetProperty(name, out JsonElement value)
+        && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
 
     private static float? Number(JsonElement element, string name) =>
         element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Number

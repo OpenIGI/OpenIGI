@@ -50,6 +50,8 @@ internal sealed class GLSceneTarget : IDisposable
     private int _bloomHeight;
     private uint _scratchTexture;
     private uint _scratchFramebuffer;
+    private uint _resolvedTexture;
+    private uint _resolvedFramebuffer;
     private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
@@ -219,6 +221,29 @@ internal sealed class GLSceneTarget : IDisposable
         if (!IsComplete("scratch"))
         {
             _logger.Warning(LogCategory, "The scratch buffer could not be created; the camera effects are off.");
+        }
+
+        // Eight-bit, not float: this holds the frame AFTER the tone map and the sRGB encode, which is
+        // the space spatial anti-aliasing has to work in. Edges are a property of the displayed
+        // picture, and detecting them in linear light finds them in the wrong places.
+        _resolvedTexture = CreateTexture(
+            InternalFormat.Rgba8,
+            PixelFormat.Rgba,
+            PixelType.UnsignedByte,
+            description with { Width = description.PresentWidth, Height = description.PresentHeight });
+
+        _resolvedFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _resolvedFramebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            _resolvedTexture,
+            0);
+
+        if (!IsComplete("resolved"))
+        {
+            _logger.Warning(LogCategory, "The resolved buffer could not be created; spatial anti-aliasing is off.");
         }
 
         if (description.Deferred && !CreateOcclusion(description))
@@ -412,6 +437,19 @@ internal sealed class GLSceneTarget : IDisposable
 
     /// <summary>Gets a value indicating whether the scratch buffer exists.</summary>
     public bool HasScratch => _scratchFramebuffer != 0;
+
+    /// <summary>Gets the tone-mapped frame, for a pass that has to run after the resolve.</summary>
+    public uint ResolvedTexture => _resolvedTexture;
+
+    /// <summary>Gets a value indicating whether the tone-mapped frame can be captured.</summary>
+    public bool HasResolved => _resolvedFramebuffer != 0;
+
+    /// <summary>Makes the tone-mapped buffer current, at the presentation size.</summary>
+    public void BindForResolved()
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _resolvedFramebuffer);
+        _gl.Viewport(0, 0, (uint)Description.PresentWidth, (uint)Description.PresentHeight);
+    }
 
     /// <summary>Makes the scratch buffer current, at the presentation size.</summary>
     public void BindForScratch()
@@ -809,6 +847,18 @@ internal sealed class GLSceneTarget : IDisposable
         _historyWrite = 0;
         _historyValid = false;
         _presentingOutput = false;
+
+        if (_resolvedFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_resolvedFramebuffer);
+            _resolvedFramebuffer = 0;
+        }
+
+        if (_resolvedTexture != 0)
+        {
+            _gl.DeleteTexture(_resolvedTexture);
+            _resolvedTexture = 0;
+        }
 
         if (_scratchFramebuffer != 0)
         {

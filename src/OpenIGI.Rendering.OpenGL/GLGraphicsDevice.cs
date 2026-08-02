@@ -244,6 +244,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _bloomThreshold = -1;
     private int _bloomDirection = -1;
 
+    private GLShaderProgram? _spatialAaProgram;
+    private int _spatialAaTexelSize = -1;
+    private int _spatialAaEdge = -1;
+
     private GLShaderProgram? _cameraProgram;
     private int _cameraUnproject = -1;
     private int _cameraFocus = -1;
@@ -1252,8 +1256,23 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         uint scene = RunCameraEffects(target, post);
         bool bloomed = RunBloom(target, post, scene);
 
-        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
-        SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+        // With anti-aliasing on, the tone map lands in a buffer rather than on the screen, so the
+        // edge filter has a finished picture to read. Edges are a property of the DISPLAYED image --
+        // detecting them in linear light finds them in the wrong places -- which is why this sits after
+        // the encode rather than anywhere earlier.
+        bool antiAliased = post.WantsSpatialAa
+            && target.HasResolved
+            && _spatialAaProgram is not null;
+
+        if (antiAliased)
+        {
+            target.BindForResolved();
+        }
+        else
+        {
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+        }
 
         UseProgram(_resolveProgram);
         _resolveProgram.SetFloat(_resolveExposure, post.Exposure);
@@ -1308,6 +1327,25 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         BindTexture(0, scene);
         _fullScreen.Draw();
+
+        if (antiAliased)
+        {
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+            SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
+
+            UseProgram(_spatialAaProgram!);
+            _spatialAaProgram!.SetVector2(
+                _spatialAaTexelSize,
+                1f / target.Description.PresentWidth,
+                1f / target.Description.PresentHeight);
+            _spatialAaProgram.SetVector2(
+                _spatialAaEdge,
+                MathF.Max(post.SpatialAaThreshold, 0.001f),
+                Math.Clamp(post.SpatialAa, 0f, 1f));
+
+            BindTexture(0, target.ResolvedTexture);
+            _fullScreen.Draw();
+        }
 
         // Re-apply the depth state for real rather than just recording it. Writing the shadow alone was
         // a lie: the full-screen pass restores whatever depth state the last 3D draw left, so the next
@@ -1694,6 +1732,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         BindTexture(4, target.DepthTexture);
         BindTexture(1, target.NormalTexture);
         BindTexture(2, target.HistoryTexture);
+        BindTexture(3, target.MaterialTexture);
 
         _gl.Disable(EnableCap.DepthTest);
         _gl.DepthMask(false);
@@ -1977,7 +2016,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             if (deferred)
             {
                 program.SetVector4(
-                    _gbufferMaterial, _material.Roughness, _material.Metallic, _material.Emissive, 0f);
+                    _gbufferMaterial,
+                    _material.Roughness,
+                    _material.Metallic,
+                    _material.PackedEmissive,
+                    0f);
             }
             else
             {
@@ -2221,6 +2264,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _cameraProgram.SetInt("uDepth", 4);
         _cameraProgram.SetInt("uMotion", 5);
 
+        _spatialAaProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, SpatialAaShaders.Fragment);
+        _spatialAaTexelSize = _spatialAaProgram.LocationOf("uTexelSize");
+        _spatialAaEdge = _spatialAaProgram.LocationOf("uEdge");
+        UseProgram(_spatialAaProgram);
+        _spatialAaProgram.SetInt("uScene", 0);
+
         _bloomBlurProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, BloomShaders.Blur);
         _bloomDirection = _bloomBlurProgram.LocationOf("uDirection");
         UseProgram(_bloomBlurProgram);
@@ -2250,6 +2300,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _occlusionProgram.SetInt("uDepth", 4);
         _occlusionProgram.SetInt("uNormal", 1);
         _occlusionProgram.SetInt("uPreviousColour", 2);
+        _occlusionProgram.SetInt("uMaterial", 3);
 
         _lightingProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, DeferredLightingShaders.Fragment);
         _lightingModelLocation = _lightingProgram.LocationOf("uLightingModel");
