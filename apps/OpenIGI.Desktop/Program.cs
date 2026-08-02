@@ -918,6 +918,8 @@ using (window)
 
             if (cardLighting is not null)
             {
+                cardLighting.SetLocalLights(ProposeLocalLights(scene, resources, logger));
+
                 // A level with no Dirlight has no sun to light the cards with, so they take the sky
                 // alone -- which is what such a level looks like anyway.
                 // Unshadowed at load. The clipmaps do not exist yet -- the field bake is still on its
@@ -1336,6 +1338,56 @@ using (window)
     // The lit pages, for the same reason the captured ones are dumped: a reconstruction that is
     // subtly wrong produces lit surfaces in slightly the wrong places, which looks like nothing at all
     // until a later stage bounces light off them.
+    // How light-like a texture must score before it is treated as a source. The score is the share of a
+    // texture's uses that are baked bright, weighted by how bright and discounted for textures used only
+    // once or twice -- so half means bright across most of its uses and genuinely bright, not merely
+    // pale. Level 1's known emitter scores far above this; the cut keeps out light-coloured walls that
+    // happen to stand in the sun.
+    const float EmitterScore = 0.5f;
+
+    // Works out which lights a level has, given that it declares none. The survey ranks textures by how
+    // much they behave like sources and the extractor turns the winning ones into placed fixtures; both
+    // already existed and neither was ever called. What is decided here is only where to cut the
+    // ranking, and the cut is deliberately generous -- a fixture that should not be there shows up as a
+    // glow in the wrong place, which is reviewable, whereas a missing one is invisible and
+    // indistinguishable from the stage not working.
+    static IReadOnlyList<LightFixture> ProposeLocalLights(
+        WorldScene scene, ResourceRegistry resources, IIgiLogger logger)
+    {
+        try
+        {
+            IReadOnlyList<EmissiveTextureSurvey.Finding> findings =
+                EmissiveTextureSurvey.Survey(scene, resources, logger);
+
+            List<string> emitters = [];
+
+            foreach (EmissiveTextureSurvey.Finding finding in findings)
+            {
+                if (finding.Score >= EmitterScore)
+                {
+                    emitters.Add(finding.Texture);
+                }
+            }
+
+            if (emitters.Count == 0)
+            {
+                logger.Information("Emissive", "No texture in this level looks enough like a light source.");
+                return [];
+            }
+
+            // Named rather than counted. This is inferred from art that was never meant to be read this
+            // way, so the list is the first thing to check when a level lights wrongly.
+            logger.Information("Emissive", $"Emitter textures: {string.Join(", ", emitters)}.");
+
+            return LightFixtureExtractor.ProposeFromScene(scene, emitters, logger: logger);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException)
+        {
+            logger.Warning("Emissive", $"The lights could not be proposed: {error.Message}");
+            return [];
+        }
+    }
+
     static void DumpCardLighting(
         IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger,
         int probe = 0)
