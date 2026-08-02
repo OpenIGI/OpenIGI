@@ -651,12 +651,11 @@ using (window)
                 // uploaded, and both belong to the context that made them.
                 if (RenderCVars.SurfaceCache.Value && world is not null)
                 {
-                    SurfaceCacheCapture.Result? cards = world.CaptureSurfaceCache(
-                        scene, RenderCVars.SurfaceCacheDensity.Value);
-
-                    if (cards is not null && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } into)
+                    if (world.CaptureSurfaceCache(scene, RenderCVars.SurfaceCacheDensity.Value)
+                        is { } cards
+                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } into)
                     {
-                        DumpCardAtlas(device, cards.Value, into, logger);
+                        DumpCardAtlas(device, cards.Capture, into, logger);
                     }
                 }
 

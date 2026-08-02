@@ -350,12 +350,17 @@ public sealed class WorldRenderer : IDisposable
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="scene"/> is <see langword="null"/>.</exception>
-    public SurfaceCacheCapture.Result? CaptureSurfaceCache(WorldScene scene, float cardResolution = 8f)
+    public (SurfaceCacheCapture.Result Capture, SurfaceCacheInstances? Instances)? CaptureSurfaceCache(
+        WorldScene scene, float cardResolution = 8f)
     {
         ArgumentNullException.ThrowIfNull(scene);
 
         List<SurfaceCacheCapture.Subject> subjects = [];
         List<MeshHandle> meshes = [];
+
+        // Which captured model each instance name became, so the per-placement lighting layout can join
+        // a placement back to the cards its model contributed.
+        Dictionary<string, int> modelOfName = new(StringComparer.OrdinalIgnoreCase);
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (WorldPlacement placement in scene.Placements)
@@ -408,10 +413,27 @@ public sealed class WorldRenderer : IDisposable
                     return (diffuse, TextureHandle.None, material);
                 }));
 
+            modelOfName[placement.Instance.Name] = subjects.Count - 1;
             meshes.Add(mesh);
         }
 
-        return SurfaceCacheCapture.Capture(_device, subjects, meshes, 8192, _logger);
+        if (SurfaceCacheCapture.Capture(_device, subjects, meshes, 8192, _logger) is not { } captured)
+        {
+            return null;
+        }
+
+        // A card's SURFACE belongs to the model and is shared; its LIGHTING belongs to the placement and
+        // is not -- one crate stands in sunlight and another in a hangar's shadow. So the lighting gets
+        // a second layout, a page per placement of each card.
+        SurfaceCacheInstances? instances = SurfaceCacheInstances.Build(
+            captured,
+            scene.Placements,
+            placement => placement.BentGeometry is null
+                && modelOfName.TryGetValue(placement.Instance.Name, out int model) ? model : -1,
+            8192,
+            _logger);
+
+        return (captured, instances);
     }
 
     private TextureHandle GetTexture(string name)
