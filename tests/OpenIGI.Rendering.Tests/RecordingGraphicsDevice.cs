@@ -92,6 +92,15 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The shadow settings each frame was given, in order.</summary>
     public List<ShadowSettings> Shadows { get; } = [];
 
+    /// <summary>The previous poses reported, in order; a null entry is a clear.</summary>
+    public List<Matrix4f?> PreviousPoses { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetPreviousPose(in Matrix4f previousModelView) => PreviousPoses.Add(previousModelView);
+
+    /// <inheritdoc/>
+    public void ClearPreviousPose() => PreviousPoses.Add(null);
+
     /// <summary>The temporal settings each frame was given, in order.</summary>
     public List<TemporalAaSettings> Temporal { get; } = [];
 

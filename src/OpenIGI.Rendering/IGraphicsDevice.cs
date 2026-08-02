@@ -267,6 +267,29 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Says where the next meshes drawn stood in the previous frame.</summary>
+    /// <param name="previousModelView">
+    /// The object's previous pose seen through the <em>current</em> camera — the same matrix a draw
+    /// would have used last frame had the camera not moved since.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Only for geometry that moves of its own accord: soldiers, doors, trains, the player's body.
+    /// Everything static can ignore this entirely, because the temporal resolve already reprojects the
+    /// camera exactly and a static object's previous pose is its current one — which this reports as
+    /// zero motion without a renderer having to say anything.
+    /// </para>
+    /// <para>
+    /// The current camera rather than the previous one is not an approximation made for convenience: it
+    /// is what isolates the object's own movement from the camera's, so the two are recovered by
+    /// different means and neither is counted twice.
+    /// </para>
+    /// </remarks>
+    void SetPreviousPose(in Matrix4f previousModelView);
+
+    /// <summary>Stops reporting a previous pose; subsequent meshes are treated as not having moved.</summary>
+    void ClearPreviousPose();
+
     /// <summary>Sets how this frame accumulates into the ones before it.</summary>
     /// <param name="settings">
     /// The accumulation, or <see cref="TemporalAaSettings.Off"/> for none. Its jitter is the offset the

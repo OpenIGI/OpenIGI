@@ -61,6 +61,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private (float Scale, float Offset, float Slope, float Enabled) _detailFade;
+    private Matrix4f? _previousPose;
+    private Matrix4f _sentPreviousPose;
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
     private uint _vertexArray;
@@ -140,7 +142,18 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private Matrix3f _temporalViewToWorldValue = Matrix3f.Identity;
     private Matrix4f _previousViewProjection = Matrix4f.Identity;
     private Vector3f _previousCamera;
+    private Matrix3f _previousViewToWorld = Matrix3f.Identity;
     private bool _hasPreviousFrame;
+
+    /// <summary>How far the camera may travel in one frame before the history is treated as a cut.</summary>
+    /// <remarks>
+    /// A mission load, a death camera taking over, the ladder view pulling back: all of them move the
+    /// eye tens of metres between one frame and the next, and reprojecting across that finds a
+    /// different room rather than a different view of the same one. Ten metres is comfortably beyond
+    /// what running or a fast free camera covers in a frame and comfortably below any of those cuts.
+    /// Discarding when in doubt costs a few frames of convergence; keeping when in doubt costs a smear.
+    /// </remarks>
+    private const float CutTravelMetres = 10f;
     private bool _temporalResolved;
 
     private GLShaderProgram? _temporalProgram;
@@ -148,7 +161,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _temporalViewToWorld = -1;
     private int _temporalPrevViewProjection = -1;
     private int _temporalCameraDelta = -1;
-    private int _temporalTexelSize = -1;
+    private int _temporalRenderSize = -1;
+    private int _temporalJitter = -1;
+    private int _temporalUpsampling = -1;
     private int _temporalFeedback = -1;
     private int _temporalSharpening = -1;
 
@@ -170,6 +185,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _resolveToneMap = -1;
     private int _resolveDecodeInput = -1;
     private int _resolveWhitePoint = -1;
+    private int _resolveDebugView = -1;
     private bool _captureActive;
 
     private bool _disposed;
@@ -745,6 +761,20 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetPreviousPose(in Matrix4f previousModelView)
+    {
+        ThrowIfDisposed();
+        _previousPose = previousModelView;
+    }
+
+    /// <inheritdoc/>
+    public void ClearPreviousPose()
+    {
+        ThrowIfDisposed();
+        _previousPose = null;
+    }
+
+    /// <inheritdoc/>
     public void ClearDetailFade()
     {
         ThrowIfDisposed();
@@ -771,6 +801,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _captureActive = true;
         _temporalResolved = false;
+        _sceneTarget.BeginFrame();
         _sceneTarget.BindForGeometry();
         return true;
     }
@@ -1027,6 +1058,21 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveProgram.SetInt(_resolveDecodeInput, post.SceneIsDisplayEncoded ? 1 : 0);
         _resolveProgram.SetFloat(_resolveWhitePoint, post.WhitePoint);
 
+        // Only bound when asked for. There are eight units in all, and holding six of them every frame
+        // for a view nobody has switched on would leave the passes after this two.
+        int debug = target.Description.Deferred ? (int)post.Debug : 0;
+        _resolveProgram.SetInt(_resolveDebugView, debug);
+
+        if (debug != 0)
+        {
+            BindTexture(4, target.DepthTexture);
+            BindTexture(5, target.MotionTexture);
+            BindTexture(6, target.AlbedoTexture);
+            BindTexture(7, target.NormalTexture);
+            BindTexture(1, target.BakedLightTexture);
+            BindTexture(2, target.MaterialTexture);
+        }
+
         BindTexture(0, target.FrontColorTexture);
         _fullScreen.Draw();
 
@@ -1077,7 +1123,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // but no accumulated picture. Both resolve to the current frame alone, which is exactly what a
         // feedback of one does -- so the pass runs either way and the history is seeded rather than
         // special-cased.
-        bool hasHistory = target.HasHistory && _hasPreviousFrame;
+        bool hasHistory = target.HasHistory && _hasPreviousFrame && !IsCut();
         float feedback = hasHistory ? Math.Clamp(_temporal.Feedback, 0f, 1f) : 1f;
 
         UseProgram(_temporalProgram);
@@ -1091,7 +1137,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _temporalCamera.Y - _previousCamera.Y,
             _temporalCamera.Z - _previousCamera.Z);
         _temporalProgram.SetVector2(
-            _temporalTexelSize, 1f / target.Description.Width, 1f / target.Description.Height);
+            _temporalRenderSize, target.Description.Width, target.Description.Height);
+        _temporalProgram.SetVector2(_temporalJitter, _temporal.JitterX, _temporal.JitterY);
+        _temporalProgram.SetFloat(
+            _temporalUpsampling, target.Description.IsUpsampling && target.HasOutput ? 1f : 0f);
         _temporalProgram.SetFloat(_temporalFeedback, feedback);
         // Scaled by the feedback, and this is not a fudge. The sharpening is applied to the history and
         // the result becomes the next frame's history, so it compounds: at a feedback of 0.1 a pixel is
@@ -1106,6 +1155,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         BindTexture(0, target.FrontColorTexture);
         BindTexture(1, target.HistoryTexture);
         BindTexture(4, target.DepthTexture);
+        BindTexture(5, target.MotionTexture);
 
         _gl.Disable(EnableCap.DepthTest);
         _gl.DepthMask(false);
@@ -1118,6 +1168,29 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         RememberFrame();
     }
 
+    /// <summary>Tells whether the camera jumped rather than moved since the previous frame.</summary>
+    private bool IsCut()
+    {
+        float dx = _temporalCamera.X - _previousCamera.X;
+        float dy = _temporalCamera.Y - _previousCamera.Y;
+        float dz = _temporalCamera.Z - _previousCamera.Z;
+
+        if ((dx * dx) + (dy * dy) + (dz * dz) > CutTravelMetres * CutTravelMetres)
+        {
+            return true;
+        }
+
+        // A turn can be a cut without the eye moving at all -- the death camera swinging behind the
+        // body, or a level starting the player facing the other way. The third row is where the view
+        // looks; two frames of ordinary turning agree closely, and anything past a right angle in one
+        // frame is not turning.
+        float facing = (_temporalViewToWorldValue.M31 * _previousViewToWorld.M31)
+            + (_temporalViewToWorldValue.M32 * _previousViewToWorld.M32)
+            + (_temporalViewToWorldValue.M33 * _previousViewToWorld.M33);
+
+        return facing < 0f;
+    }
+
     /// <summary>Keeps this frame's camera so the next one can reproject into it.</summary>
     private void RememberFrame()
     {
@@ -1127,6 +1200,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _previousViewProjection =
             _temporalProjection * Matrix4f.CreateRigid(_temporalViewToWorldValue.Transposed(), default);
         _previousCamera = _temporalCamera;
+        _previousViewToWorld = _temporalViewToWorldValue;
         _hasPreviousFrame = true;
     }
 
@@ -1395,11 +1469,18 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         if (!_meshUniformsPrimed)
         {
             _meshUniformsPrimed = true;
+            Matrix4f previousPose = _previousPose ?? modelView;
             _sentModelView = modelView;
+            _sentPreviousPose = previousPose;
             _sentProjection = _projection;
             _sentDetailFade = _detailFade;
             _sentAlphaTest = alphaTest;
             program.SetMatrix4(uniforms.ModelView, modelView);
+
+            if (uniforms.PreviousModelView >= 0)
+            {
+                program.SetMatrix4(uniforms.PreviousModelView, previousPose);
+            }
             program.SetMatrix4(uniforms.Projection, _projection);
             program.SetVector4(
                 uniforms.DetailFade,
@@ -1415,6 +1496,19 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             {
                 _sentModelView = modelView;
                 program.SetMatrix4(uniforms.ModelView, modelView);
+            }
+
+            // Only the G-buffer program has this; the forward and shadow programs do not, and asking
+            // them to set uniform -1 is a GL error per draw rather than a no-op.
+            if (uniforms.PreviousModelView >= 0)
+            {
+                Matrix4f previousPose = _previousPose ?? modelView;
+
+                if (_sentPreviousPose != previousPose)
+                {
+                    _sentPreviousPose = previousPose;
+                    program.SetMatrix4(uniforms.PreviousModelView, previousPose);
+                }
             }
 
             if (_sentProjection != _projection)
@@ -1548,15 +1642,23 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveToneMap = _resolveProgram.LocationOf("uToneMap");
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
         _resolveWhitePoint = _resolveProgram.LocationOf("uWhitePoint");
+        _resolveDebugView = _resolveProgram.LocationOf("uDebugView");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
+        _resolveProgram.SetInt("uDebugAlbedo", 6);
+        _resolveProgram.SetInt("uDebugNormal", 7);
+        _resolveProgram.SetInt("uDebugBaked", 1);
+        _resolveProgram.SetInt("uDebugMaterial", 2);
+        _resolveProgram.SetInt("uDebugMotion", 5);
+        _resolveProgram.SetInt("uDebugDepth", 4);
 
         _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment);
         _gbufferUniforms = new MeshUniforms(
             _gbufferProgram.LocationOf("uModelView"),
             _gbufferProgram.LocationOf("uProjection"),
             _gbufferProgram.LocationOf("uDetailFade"),
-            _gbufferProgram.LocationOf("uAlphaTest"));
+            _gbufferProgram.LocationOf("uAlphaTest"),
+            _gbufferProgram.LocationOf("uPreviousModelView"));
         _gbufferMaterial = _gbufferProgram.LocationOf("uMaterial");
         _gbufferDecodeAlbedo = _gbufferProgram.LocationOf("uDecodeAlbedo");
         UseProgram(_gbufferProgram);
@@ -1599,13 +1701,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _temporalViewToWorld = _temporalProgram.LocationOf("uViewToWorld");
         _temporalPrevViewProjection = _temporalProgram.LocationOf("uPrevViewProjection");
         _temporalCameraDelta = _temporalProgram.LocationOf("uCameraDelta");
-        _temporalTexelSize = _temporalProgram.LocationOf("uTexelSize");
+        _temporalRenderSize = _temporalProgram.LocationOf("uRenderSize");
+        _temporalJitter = _temporalProgram.LocationOf("uJitter");
+        _temporalUpsampling = _temporalProgram.LocationOf("uUpsampling");
         _temporalFeedback = _temporalProgram.LocationOf("uFeedback");
         _temporalSharpening = _temporalProgram.LocationOf("uSharpening");
         UseProgram(_temporalProgram);
         _temporalProgram.SetInt("uCurrent", 0);
         _temporalProgram.SetInt("uHistory", 1);
         _temporalProgram.SetInt("uDepth", 4);
+        _temporalProgram.SetInt("uMotion", 5);
 
         _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
         _fogSunDirection = _fogProgram.LocationOf("uSunDirection");
@@ -1932,7 +2037,12 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
     /// <summary>The mesh program's uniform locations, resolved once when it is linked.</summary>
-    private readonly record struct MeshUniforms(int ModelView, int Projection, int DetailFade, int AlphaTest);
+    private readonly record struct MeshUniforms(
+        int ModelView,
+        int Projection,
+        int DetailFade,
+        int AlphaTest,
+        int PreviousModelView = -1);
 
     private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels);
 

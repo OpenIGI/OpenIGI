@@ -17,6 +17,11 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 /// <param name="Width">The render width in pixels.</param>
 /// <param name="Height">The render height in pixels.</param>
+/// <param name="OutputWidth">
+/// The width the frame is accumulated and presented at, or 0 for the render width. Larger than
+/// <paramref name="Width"/> asks the temporal resolve to upsample rather than the final blit to stretch.
+/// </param>
+/// <param name="OutputHeight">The matching height, or 0 for the render height.</param>
 /// <param name="SampleCount">
 /// How many samples per pixel the geometry is rasterised with; 1 disables multisampling. Resolved
 /// down before anything reads the target, because a post-process cannot sample a multisampled depth
@@ -37,8 +42,24 @@ public readonly record struct SceneTargetDescription(
     int Height,
     int SampleCount = 1,
     bool Deferred = false,
-    bool HighDynamicRange = true)
+    bool HighDynamicRange = true,
+    int OutputWidth = 0,
+    int OutputHeight = 0)
 {
+    /// <summary>Gets the width the frame is presented at, which is the render width unless upsampling.</summary>
+    public int PresentWidth => OutputWidth > 0 ? OutputWidth : Width;
+
+    /// <summary>Gets the height the frame is presented at, which is the render height unless upsampling.</summary>
+    public int PresentHeight => OutputHeight > 0 ? OutputHeight : Height;
+
+    /// <summary>Gets a value indicating whether the frame is accumulated at a higher resolution than it is drawn.</summary>
+    /// <remarks>
+    /// The point of doing it this way round: a frame drawn at 70% and merely stretched is a frame with
+    /// 70% of the detail, permanently. A frame drawn at 70% with the sample point moved each time and
+    /// accumulated at full resolution is one where every output pixel is eventually sampled directly —
+    /// the missing detail arrives over a handful of frames rather than never.
+    /// </remarks>
+    public bool IsUpsampling => PresentWidth > Width || PresentHeight > Height;
     /// <summary>Gets a value indicating whether the description asks for multisampling.</summary>
     /// <remarks>
     /// <b>Never true while <see cref="Deferred"/> is</b>. Multisampling a G-buffer means multisampling

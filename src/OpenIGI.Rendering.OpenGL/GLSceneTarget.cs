@@ -33,11 +33,15 @@ internal sealed class GLSceneTarget : IDisposable
 
     private readonly uint[] _colorTextures = [0, 0];
     private readonly uint[] _colorFramebuffers = [0, 0];
-    private readonly uint[] _gbufferTextures = [0, 0, 0, 0];
+    private readonly uint[] _gbufferTextures = [0, 0, 0, 0, 0];
     private readonly uint[] _historyTextures = [0, 0];
     private readonly uint[] _historyFramebuffers = [0, 0];
     private int _historyWrite;
     private bool _historyValid;
+    private uint _outputTexture;
+    private uint _outputFramebuffer;
+    private uint _outputDepth;
+    private bool _presentingOutput;
     private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
@@ -62,7 +66,12 @@ internal sealed class GLSceneTarget : IDisposable
     public bool IsReady { get; private set; }
 
     /// <summary>Gets the texture holding the scene as most recently written.</summary>
-    public uint FrontColorTexture => _colorTextures[_front];
+    /// <remarks>
+    /// The upsampled buffer once the temporal resolve has run at a higher output resolution, and the
+    /// render-resolution buffer otherwise. Callers after the resolve — the forward pass and the final
+    /// tone map — want whichever of the two is the frame, and never want to know which it was.
+    /// </remarks>
+    public uint FrontColorTexture => _presentingOutput ? _outputTexture : _colorTextures[_front];
 
     /// <summary>Gets the scene's depth, readable by a shader.</summary>
     public uint DepthTexture => _depthTexture;
@@ -97,6 +106,15 @@ internal sealed class GLSceneTarget : IDisposable
 
     /// <summary>Gets the roughness/metallic/emissive target, or zero when the target is not deferred.</summary>
     public uint MaterialTexture => _gbufferTextures[3];
+
+    /// <summary>Gets the per-surface screen motion target, or zero when the target is not deferred.</summary>
+    /// <remarks>
+    /// How far each surface slid across the screen by moving itself, with the camera's own contribution
+    /// deliberately excluded — the temporal resolve reprojects that exactly from depth, and what it
+    /// cannot recover is which surfaces moved. Zero for everything static, which is nearly the whole
+    /// frame.
+    /// </remarks>
+    public uint MotionTexture => _gbufferTextures[4];
 
     /// <summary>Gets the framebuffer geometry should be rasterised into.</summary>
     /// <remarks>
@@ -233,6 +251,13 @@ internal sealed class GLSceneTarget : IDisposable
     /// </remarks>
     public void BindForColour()
     {
+        if (_presentingOutput)
+        {
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _outputFramebuffer);
+            _gl.Viewport(0, 0, (uint)Description.PresentWidth, (uint)Description.PresentHeight);
+            return;
+        }
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _colorFramebuffers[_front]);
         _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
     }
@@ -258,7 +283,7 @@ internal sealed class GLSceneTarget : IDisposable
         }
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _historyFramebuffers[_historyWrite]);
-        _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+        _gl.Viewport(0, 0, (uint)Description.PresentWidth, (uint)Description.PresentHeight);
         return true;
     }
 
@@ -275,14 +300,38 @@ internal sealed class GLSceneTarget : IDisposable
             return;
         }
 
+        if (_outputFramebuffer == 0)
+        {
+            _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _historyFramebuffers[_historyWrite]);
+            _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _colorFramebuffers[1 - _front]);
+            _gl.BlitFramebuffer(
+                0, 0, Description.Width, Description.Height,
+                0, 0, Description.Width, Description.Height,
+                ClearBufferMask.ColorBufferBit,
+                BlitFramebufferFilter.Nearest);
+            Swap();
+            return;
+        }
+
         _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _historyFramebuffers[_historyWrite]);
-        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _colorFramebuffers[1 - _front]);
+        _gl.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _outputFramebuffer);
         _gl.BlitFramebuffer(
-            0, 0, Description.Width, Description.Height,
-            0, 0, Description.Width, Description.Height,
+            0, 0, Description.PresentWidth, Description.PresentHeight,
+            0, 0, Description.PresentWidth, Description.PresentHeight,
             ClearBufferMask.ColorBufferBit,
             BlitFramebufferFilter.Nearest);
-        Swap();
+
+        // The world's depth, stretched to the output. The view model tests against it, so it has to
+        // exist at the resolution the view model is now drawn at; nearest, because a depth halfway
+        // between a wall and what is behind it is a surface neither of them has.
+        _gl.BindFramebuffer(FramebufferTarget.ReadFramebuffer, _colorFramebuffers[_front]);
+        _gl.BlitFramebuffer(
+            0, 0, Description.Width, Description.Height,
+            0, 0, Description.PresentWidth, Description.PresentHeight,
+            ClearBufferMask.DepthBufferBit,
+            BlitFramebufferFilter.Nearest);
+
+        _presentingOutput = true;
     }
 
     /// <summary>Makes what the temporal resolve just wrote the history the next frame reads.</summary>
@@ -291,6 +340,17 @@ internal sealed class GLSceneTarget : IDisposable
         _historyWrite = 1 - _historyWrite;
         _historyValid = true;
     }
+
+    /// <summary>Gets a value indicating whether an upsampled output buffer exists to accumulate into.</summary>
+    public bool HasOutput => _outputFramebuffer != 0;
+
+    /// <summary>Puts the target back to drawing at the render resolution, for a new frame.</summary>
+    /// <remarks>
+    /// The upsampled output is where the frame lives only from the temporal resolve onwards. Every
+    /// frame starts again at the render resolution, and forgetting to say so leaves the next frame's
+    /// lighting writing into the previous frame's finished picture at the wrong size.
+    /// </remarks>
+    public void BeginFrame() => _presentingOutput = false;
 
     /// <summary>Forgets the accumulated frames, so the next one starts over.</summary>
     /// <remarks>
@@ -335,10 +395,20 @@ internal sealed class GLSceneTarget : IDisposable
     {
         _historyWrite = 0;
         _historyValid = false;
+        _presentingOutput = false;
+
+        // At the OUTPUT resolution, which is the whole of what makes this an upsample rather than a
+        // stretch: the accumulation has to have somewhere to put the detail the render resolution
+        // cannot hold, or there is nowhere for the extra samples to go.
+        SceneTargetDescription output = description with
+        {
+            Width = description.PresentWidth,
+            Height = description.PresentHeight,
+        };
 
         for (int i = 0; i < 2; i++)
         {
-            _historyTextures[i] = CreateTexture(colorFormat, PixelFormat.Rgba, PixelType.Float, description);
+            _historyTextures[i] = CreateTexture(colorFormat, PixelFormat.Rgba, PixelType.Float, output);
             _historyFramebuffers[i] = _gl.GenFramebuffer();
             _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _historyFramebuffers[i]);
 
@@ -357,7 +427,37 @@ internal sealed class GLSceneTarget : IDisposable
             }
         }
 
-        return true;
+        if (!description.IsUpsampling)
+        {
+            return true;
+        }
+
+        // The forward pass draws the view model over the accumulated frame, and once that frame is
+        // bigger than the one the geometry went into it needs a target of its own -- with a depth
+        // buffer, because the view model still tests against the world it is standing in.
+        _outputTexture = CreateTexture(colorFormat, PixelFormat.Rgba, PixelType.Float, output);
+        _outputDepth = CreateTexture(
+            InternalFormat.DepthComponent32f,
+            PixelFormat.DepthComponent,
+            PixelType.Float,
+            output);
+
+        _outputFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _outputFramebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            _outputTexture,
+            0);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D,
+            _outputDepth,
+            0);
+
+        return IsComplete("upsampled output");
     }
 
 
@@ -382,6 +482,10 @@ internal sealed class GLSceneTarget : IDisposable
             InternalFormat.Rgba16f,
             InternalFormat.Rgba8,
             InternalFormat.Rgba8,
+
+            // Signed, and a fraction of a screen per frame -- so it needs a float format, and half
+            // precision is ample for a quantity that is compared against a texel.
+            InternalFormat.Rgba16f,
         ];
 
         for (int i = 0; i < _gbufferTextures.Length; i++)
@@ -418,6 +522,7 @@ internal sealed class GLSceneTarget : IDisposable
             GLEnum.ColorAttachment1,
             GLEnum.ColorAttachment2,
             GLEnum.ColorAttachment3,
+            GLEnum.ColorAttachment4,
         ];
 
         _gl.DrawBuffers(buffers);
@@ -540,6 +645,25 @@ internal sealed class GLSceneTarget : IDisposable
 
         _historyWrite = 0;
         _historyValid = false;
+        _presentingOutput = false;
+
+        if (_outputFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_outputFramebuffer);
+            _outputFramebuffer = 0;
+        }
+
+        if (_outputTexture != 0)
+        {
+            _gl.DeleteTexture(_outputTexture);
+            _outputTexture = 0;
+        }
+
+        if (_outputDepth != 0)
+        {
+            _gl.DeleteTexture(_outputDepth);
+            _outputDepth = 0;
+        }
 
         if (_depthTexture != 0)
         {

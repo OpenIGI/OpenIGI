@@ -1568,7 +1568,22 @@ public sealed class SoldierRenderer : IDisposable
 
                 Matrix4f modelView = camera.CreateModelView(where, soldier.Orientation);
 
+                // Before the previous pose is reported, not after: the gun is placed by the hand bone
+                // and so has a transform of its own, and handing it the body's previous pose would
+                // report it sliding by the distance between the two. It keeps the camera-only
+                // reprojection, which is what it had before any of this.
                 DrawWeapon(member, where, camera);
+
+                // Through the CURRENT camera, deliberately: the resolve reprojects the camera itself
+                // exactly, and what it needs from here is only how far the soldier moved under a camera
+                // held still. A soldier who did not move therefore reports a matrix identical to his
+                // current one, which is zero motion to the bit.
+                if (member.PreviousPose is { } previous)
+                {
+                    _device.SetPreviousPose(camera.CreateModelView(previous.Where, previous.Orientation));
+                }
+
+                member.PreviousPose = (where, soldier.Orientation);
 
                 foreach (MeshSubset subset in group.Geometry.Subsets)
                 {
@@ -1595,6 +1610,8 @@ public sealed class SoldierRenderer : IDisposable
                         TextureHandle.None,
                         BlendMode.Opaque);
                 }
+
+                _device.ClearPreviousPose();
             }
         }
     }
@@ -2541,6 +2558,19 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>Ticks left of a reload.</summary>
         public int ReloadTicks { get; set; }
+
+        /// <summary>Where this soldier was drawn last frame, for the temporal resolve.</summary>
+        /// <remarks>
+        /// A soldier is the one thing in a level that walks, so it is the one thing the temporal
+        /// resolve cannot reproject from depth alone: a pixel of a walking guard reprojects to the wall
+        /// behind him and would blend with whatever was there. Reporting last frame's pose lets the
+        /// geometry pass record how far he slid across the screen, and the accumulation follows him.
+        ///
+        /// This is his <em>rigid</em> motion — where the body is, not where the limbs are. The bodies
+        /// are re-skinned every frame, so an arm swinging inside a stationary soldier is still left to
+        /// the neighbourhood clamp; the trail this removes is the one that came from walking.
+        /// </remarks>
+        public (Vector3d Where, Matrix3f Orientation)? PreviousPose { get; set; }
     }
 
     /// <summary>

@@ -33,13 +33,19 @@ namespace OpenIGI.Rendering;
 /// <param name="SceneIsDisplayEncoded">
 /// Whether the captured scene holds display-encoded colour rather than linear light.
 /// </param>
+/// <param name="Debug">
+/// A buffer to show instead of the scene, or <see cref="DebugView.None"/> for the scene itself. It
+/// short-circuits everything else here, because the point of it is to see a buffer's contents rather
+/// than a graded interpretation of them.
+/// </param>
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
     float Exposure = 1.0f,
     float BloomIntensity = 0.0f,
     float BloomThreshold = 1.0f,
     float WhitePoint = 1.6f,
-    bool SceneIsDisplayEncoded = true)
+    bool SceneIsDisplayEncoded = true,
+    DebugView Debug = DebugView.None)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -60,5 +66,5 @@ public readonly record struct PostProcessSettings(
     /// over it — and, more usefully, a test can assert that the vanilla path asked for nothing.
     /// </remarks>
     public bool IsIdentity =>
-        ToneMap == ToneMapOperator.None && Exposure == 1.0f && !WantsBloom;
+        ToneMap == ToneMapOperator.None && Exposure == 1.0f && !WantsBloom && Debug == DebugView.None;
 }

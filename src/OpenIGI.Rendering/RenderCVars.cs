@@ -267,6 +267,13 @@ public static class RenderCVars
         high: "1.5",
         ultra: "2.5");
 
+    /// <summary>Which buffer to show instead of the scene.</summary>
+    public static readonly EnumCVar<DebugView> Debug = CVar.Choice(
+        "r_debug_view",
+        DebugView.None,
+        CVarOptions.Developer,
+        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight.");
+
     /// <summary>How much of the resolved pixel is this frame, or 1 for no accumulation.</summary>
     /// <remarks>
     /// The lower it is the more samples a pixel holds and the cleaner it converges, but the longer it

@@ -1439,13 +1439,19 @@ using (window)
                 && RenderCVars.Deferred.Value;
 
             Matrix4f projection = unjitteredProjection;
+            float jitterX = 0f;
+            float jitterY = 0f;
 
             if (wantsTemporal)
             {
-                (float jitterX, float jitterY) = TemporalJitter.At(temporalFrame);
+                (jitterX, jitterY) = TemporalJitter.At(temporalFrame);
+
+                // In RENDER pixels, not window pixels: the offset has to be half a pixel of the buffer
+                // being rasterised into, or at a render scale below one it moves the sample by less
+                // than the pixel it is meant to be exploring and the upsample has nothing to gather.
                 projection = Matrix4f.CreateTranslation(
-                    jitterX * 2f / window.Width,
-                    jitterY * 2f / window.Height,
+                    jitterX * 2f / Math.Max(1, (int)(window.Width * RenderCVars.RenderScale.Value)),
+                    jitterY * 2f / Math.Max(1, (int)(window.Height * RenderCVars.RenderScale.Value)),
                     0f) * unjitteredProjection;
                 temporalFrame++;
             }
@@ -1477,7 +1483,12 @@ using (window)
                 // An 8-bit target under the vanilla preset: with no tone map and unit exposure the whole
                 // offscreen detour is then a copy, which is what keeps that preset identical to the
                 // build that had no offscreen path at all.
-                HighDynamicRange: RenderCVars.ToneMap.Value != ToneMapOperator.None);
+                HighDynamicRange: RenderCVars.ToneMap.Value != ToneMapOperator.None,
+
+                // Asked for only when the accumulation is running, because it is the accumulation that
+                // does the upsampling: without it these are two buffers holding a stretched copy.
+                OutputWidth: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? window.Width : 0,
+                OutputHeight: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? window.Height : 0);
 
             // The sun arrives in world space and the G-buffer's normals are in view space, so it is
             // rotated by the camera here. Transposed() is not decoration: the rows of the orientation
@@ -1558,7 +1569,9 @@ using (window)
                 new TemporalAaSettings(
                     wantsTemporal,
                     RenderCVars.TemporalFeedback.Value,
-                    MotionSharpening: RenderCVars.TemporalSharpening.Value),
+                    jitterX,
+                    jitterY,
+                    RenderCVars.TemporalSharpening.Value),
                 unjitteredProjection,
                 new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
                 eye.Orientation.Transposed());
@@ -1746,7 +1759,8 @@ using (window)
                 device.ResolveScene(new PostProcessSettings(
                     RenderCVars.ToneMap.Value,
                     RenderCVars.Exposure.Value,
-                    WhitePoint: RenderCVars.WhitePoint.Value));
+                    WhitePoint: RenderCVars.WhitePoint.Value,
+                    Debug: RenderCVars.Debug.Value));
                 captured = false;
             }
 
