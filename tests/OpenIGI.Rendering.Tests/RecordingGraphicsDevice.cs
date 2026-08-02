@@ -98,6 +98,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetReflections(in ReflectionSettings settings) => Reflections.Add(settings);
 
+    /// <summary>The colour tables handed over, in order; a null entry is a clear.</summary>
+    public List<ColourLookupTable?> ColourLookups { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetColourLookup(ColourLookupTable? table) => ColourLookups.Add(table);
+
     /// <summary>Whether stage timing was last switched on or off.</summary>
     public bool StageTimingEnabled { get; private set; }
 

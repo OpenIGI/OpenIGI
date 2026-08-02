@@ -566,6 +566,47 @@ public static class RenderCVars
         high: "0.8",
         ultra: "1.2");
 
+    /// <summary>How much of the level's authored colour table is applied.</summary>
+    /// <remarks>
+    /// <para>
+    /// Per mission and per preset. A mission's grade is loaded from <c>Assets/luts/&lt;name&gt;.cube</c>
+    /// when one exists, and this is how much of it to use — the same relationship the fog presets have
+    /// with <c>r_fog_density</c>. Zero at vanilla, because vanilla is the game as it shipped and it
+    /// shipped ungraded.
+    /// </para>
+    /// <para>
+    /// Below one on purpose at the middle presets. A grade authored against a clean daylight frame is
+    /// usually too strong once the same frame is also carrying volumetric fog and bloom, and the levels
+    /// this game ships are already strongly coloured by their own lightmaps.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> ColourLookup = Presets.Define(
+        CVar.Float(
+            "r_lut",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of the mission's authored colour grade to apply; 0 turns it off."),
+        vanilla: "0",
+        enhanced: "0.5",
+        high: "0.75",
+        ultra: "1");
+
+    /// <summary>The colour table to use instead of the mission's own, or empty for the mission's own.</summary>
+    /// <remarks>
+    /// An override for authoring, not a setting: naming a table here loads
+    /// <c>Assets/luts/&lt;name&gt;.cube</c> whatever the mission is, which is how a grade is compared
+    /// against another one without restarting into a different level. <c>identity</c> is always
+    /// available and is the table that changes nothing — the one that shows whether the sampler's
+    /// coordinates are right, since with it any visible change at all is a bug.
+    /// </remarks>
+    public static readonly StringCVar ColourLookupTable = CVar.Text(
+        "r_lut_table",
+        string.Empty,
+        CVarOptions.Developer,
+        "Load Assets/luts/<name>.cube instead of the mission's own grade. Empty uses the mission's.");
+
     /// <summary>How much local contrast is restored after the temporal accumulation softens the frame.</summary>
     public static readonly NumericCVar<float> Sharpen = Presets.Define(
         CVar.Float(

@@ -5,6 +5,16 @@
     <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
   </ItemGroup>
 
+  <!--
+    The shipped colour grades, so the tests check the files the game will actually load rather than a
+    copy of them. A grade that parses in a test and not in the game is the failure worth catching.
+  -->
+  <ItemGroup>
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\luts\*.cube"
+          Link="Assets\luts\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

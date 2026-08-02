@@ -84,6 +84,13 @@ namespace OpenIGI.Rendering;
 /// softened the frame. Distinct from the sharpening inside the temporal resolve: that one fights the
 /// history's own resampling blur, and this one is a look.
 /// </param>
+/// <param name="ColourLookup">
+/// How much of the authored <see cref="ColourLookupTable"/> to apply, where 1 is the whole grade and 0
+/// leaves the picture as the procedural knobs left it. A fraction is a genuine control rather than a
+/// convenience: a grade authored for a mission's daylight is usually too strong once the level is also
+/// carrying fog and bloom, and dialling it back is easier than re-authoring it. Has no effect unless a
+/// table has been handed to the device.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -104,7 +111,8 @@ public readonly record struct PostProcessSettings(
     float MotionBlur = 0f,
     int CameraTaps = 6,
     float SpatialAa = 0f,
-    float SpatialAaThreshold = 0.05f)
+    float SpatialAaThreshold = 0.05f,
+    float ColourLookup = 0f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -139,6 +147,13 @@ public readonly record struct PostProcessSettings(
     public bool WantsCameraEffects =>
         CameraTaps > 0 && ((FocalDistance > 0f && FocalBlur > 0f) || MotionBlur > 0f);
 
+    /// <summary>Gets a value indicating whether the authored colour table is applied.</summary>
+    /// <remarks>
+    /// Only ever true when a table has also been handed to the device: this is how much of one to use,
+    /// not whether there is one.
+    /// </remarks>
+    public bool WantsColourLookup => ColourLookup > 0f;
+
     /// <summary>Gets a value indicating whether anything after the tone map would change the picture.</summary>
     public bool WantsGrading =>
         Contrast != 1f
@@ -146,5 +161,6 @@ public readonly record struct PostProcessSettings(
         || Vignette > 0f
         || Grain > 0f
         || ChromaticAberration > 0f
-        || Sharpen > 0f;
+        || Sharpen > 0f
+        || WantsColourLookup;
 }

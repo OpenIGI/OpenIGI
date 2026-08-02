@@ -242,6 +242,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _resolveGrade = -1;
     private int _resolveLens = -1;
     private int _resolveTexelSize = -1;
+    private int _resolveLut = -1;
+    private uint _lutTexture;
+    private int _lutSize;
     private int _gradeFrame;
 
     private GLShaderProgram? _bloomThresholdProgram;
@@ -1017,6 +1020,61 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public unsafe void SetColourLookup(ColourLookupTable? table)
+    {
+        ThrowIfDisposed();
+
+        if (_lutTexture != 0)
+        {
+            _gl.DeleteTexture(_lutTexture);
+            _lutTexture = 0;
+            _lutSize = 0;
+        }
+
+        if (table is null)
+        {
+            return;
+        }
+
+        _lutTexture = _gl.GenTexture();
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture3D, _lutTexture);
+
+        // RGB16F rather than RGB8. The table is sampled in DISPLAY space, where the eye's sensitivity
+        // to a step is greatest in the darks -- and eight bits per channel across a grade that also
+        // lifts the blacks is where banding in a night sky comes from. It is 32^3 entries either way,
+        // which is 786 KB at half float.
+        fixed (float* entries = table.Entries)
+        {
+            _gl.TexImage3D(
+                TextureTarget.Texture3D,
+                0,
+                (int)InternalFormat.Rgb16f,
+                (uint)table.Size,
+                (uint)table.Size,
+                (uint)table.Size,
+                0,
+                PixelFormat.Rgb,
+                PixelType.Float,
+                entries);
+        }
+
+        // Linear on all three axes IS the interpolation: a 32-entry cube resolves a smooth grade only
+        // because the hardware blends between the eight samples around each colour. Clamped, so a
+        // colour that overshoots the domain takes the nearest authored answer rather than wrapping to
+        // the opposite corner of the cube, which would turn a clipped highlight into a hue inversion.
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapR, (int)GLEnum.ClampToEdge);
+
+        _textureNames[0] = 0;
+        _lutSize = table.Size;
+        _logger.Information("Grade", $"Colour table '{table.Name}' uploaded, {table.Size}³.");
+    }
+
+    /// <inheritdoc/>
     public void SetIrradianceVolume(IrradianceVolume? volume)
     {
         ThrowIfDisposed();
@@ -1503,6 +1561,17 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _gradeFrame * 0.61803399f);
         _resolveProgram.SetVector2(
             _resolveTexelSize, 1f / target.Description.PresentWidth, 1f / target.Description.PresentHeight);
+
+        // The strength carries the "is there one" as well: with no table uploaded the shader's branch
+        // is never taken and the sampler is never read, which is what keeps an unbound sampler3D from
+        // being sampled at all.
+        bool graded = post.WantsColourLookup && _lutTexture != 0;
+        _resolveProgram.SetVector2(_resolveLut, graded ? Math.Clamp(post.ColourLookup, 0f, 1f) : 0f, _lutSize);
+
+        if (graded)
+        {
+            BindProbeTexture(8, _lutTexture);
+        }
 
         if (bloomed)
         {
@@ -2390,6 +2459,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _disposed = true;
 
         ReleaseProbeTextures();
+
+        if (_lutTexture != 0)
+        {
+            _gl.DeleteTexture(_lutTexture);
+            _lutTexture = 0;
+        }
+
         _stageProfiler?.Dispose();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
@@ -2487,6 +2563,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveGrade = _resolveProgram.LocationOf("uGrade");
         _resolveLens = _resolveProgram.LocationOf("uLens");
         _resolveTexelSize = _resolveProgram.LocationOf("uTexelSize");
+        _resolveLut = _resolveProgram.LocationOf("uLut");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
         _resolveProgram.SetInt("uDebugAlbedo", 6);
@@ -2496,6 +2573,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveProgram.SetInt("uDebugMotion", 5);
         _resolveProgram.SetInt("uDebugOcclusion", 3);
         _resolveProgram.SetInt("uBloom", 7);
+
+        // Unit 8, past every unit the debug views claim. The grade and a debug view are never both
+        // wanted, but the grade and the BLOOM are -- and bloom is on 7 because the debug set had taken
+        // everything below it.
+        _resolveProgram.SetInt("uColourLut", 8);
 
         _bloomThresholdProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, BloomShaders.Threshold);

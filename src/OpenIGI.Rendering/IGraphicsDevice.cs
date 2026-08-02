@@ -303,6 +303,15 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetReflections(in ReflectionSettings settings);
 
+    /// <summary>Hands over the authored colour grade, or clears it.</summary>
+    /// <param name="table">The table, or <see langword="null"/> to forget the one held.</param>
+    /// <remarks>
+    /// Separate from <see cref="PostProcessSettings.ColourLookup"/>, and called only when the grade
+    /// changes — which in practice is when the mission does. The table is a volume texture upload; how
+    /// much of it to apply is a number per frame.
+    /// </remarks>
+    void SetColourLookup(ColourLookupTable? table);
+
     /// <summary>Turns per-stage GPU timing on or off.</summary>
     /// <param name="enabled">Whether the backend should time each <see cref="RenderStage"/>.</param>
     /// <remarks>
