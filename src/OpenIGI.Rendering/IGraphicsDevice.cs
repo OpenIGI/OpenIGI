@@ -381,7 +381,7 @@ public interface IGraphicsDevice : IDisposable
     void EndCardCapture();
 
     /// <summary>Reads one of the card atlas's targets back into memory.</summary>
-    /// <param name="attachment">Which target: 0 albedo, 1 normal, 2 material.</param>
+    /// <param name="attachment">Which target: 0 albedo, 1 normal, 2 material, 3 depth.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>
     /// <remarks>
     /// <b>For looking at the atlas, and that is not a luxury.</b> A capture is the kind of thing only an
@@ -403,6 +403,14 @@ public interface IGraphicsDevice : IDisposable
 
     /// <summary>Gets the atlas texture holding each card's roughness, metallic and emissive.</summary>
     TextureHandle CardMaterial { get; }
+
+    /// <summary>Gets the atlas texture holding how far behind its card each surface sits.</summary>
+    /// <remarks>
+    /// A fraction of the card's own depth. Without it a card records only where on its plane a surface
+    /// lies, and the plane is the model's bounding box face — nowhere near the surface for anything but
+    /// a flat panel.
+    /// </remarks>
+    TextureHandle CardDepth { get; }
 
     /// <summary>Allocates a three-dimensional texture.</summary>
     /// <param name="width">Voxels along x.</param>

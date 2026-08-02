@@ -1277,6 +1277,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         ForgetRegistration(_cardAtlas.AlbedoTexture);
         ForgetRegistration(_cardAtlas.NormalTexture);
         ForgetRegistration(_cardAtlas.MaterialTexture);
+        ForgetRegistration(_cardAtlas.DepthTexture);
 
         if (!_cardAtlas.Configure(width, height))
         {
@@ -1354,7 +1355,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 + $"{destination.Length} offered.");
         }
 
-        atlas.ReadAttachment(Math.Clamp(attachment, 0, 2), destination);
+        atlas.ReadAttachment(Math.Clamp(attachment, 0, 3), destination);
     }
 
     /// <inheritdoc/>
@@ -1365,6 +1366,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public TextureHandle CardMaterial => Register(_cardAtlas?.MaterialTexture ?? 0);
+
+    /// <inheritdoc/>
+    public TextureHandle CardDepth => Register(_cardAtlas?.DepthTexture ?? 0);
 
     /// <summary>Drops the handle registered for a backend-owned texture, if there is one.</summary>
     private void ForgetRegistration(uint name)

@@ -1301,7 +1301,7 @@ using (window)
             int height = cards.Layout.Height;
             Bgra32[] pixels = new Bgra32[width * height];
 
-            string[] names = ["albedo", "normal", "material"];
+            string[] names = ["albedo", "normal", "material", "depth"];
 
             for (int attachment = 0; attachment < names.Length; attachment++)
             {

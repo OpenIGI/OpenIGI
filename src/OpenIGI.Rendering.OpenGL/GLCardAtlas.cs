@@ -31,7 +31,7 @@ internal sealed class GLCardAtlas : IDisposable
 
     private readonly GL _gl;
     private readonly IIgiLogger _logger;
-    private readonly uint[] _textures = [0, 0, 0];
+    private readonly uint[] _textures = [0, 0, 0, 0];
     private uint _framebuffer;
     private uint _depth;
     private bool _disposed;
@@ -62,6 +62,9 @@ internal sealed class GLCardAtlas : IDisposable
 
     /// <summary>Gets the texture holding each card's roughness, metallic and emissive.</summary>
     public uint MaterialTexture => _textures[2];
+
+    /// <summary>Gets the texture holding how far behind its card each surface sits.</summary>
+    public uint DepthTexture => _textures[3];
 
     /// <summary>Allocates the atlas, replacing anything already held.</summary>
     /// <param name="width">The atlas width in texels.</param>
@@ -96,6 +99,12 @@ internal sealed class GLCardAtlas : IDisposable
             InternalFormat.Rgba8,
             InternalFormat.Rgb10A2,
             InternalFormat.Rgba8,
+
+            // Sixteen bits for the depth, because it is used to POSITION a surface rather than to
+            // display it. Eight bits over a card's depth would put a texel up to a centimetre from
+            // where it belongs on a small model and much further on a large one, and a shadow ray
+            // starting a centimetre inside a wall is a shadow ray that starts occluded.
+            InternalFormat.R16f,
         ];
 
         for (int i = 0; i < _textures.Length; i++)
@@ -145,6 +154,7 @@ internal sealed class GLCardAtlas : IDisposable
             GLEnum.ColorAttachment0,
             GLEnum.ColorAttachment1,
             GLEnum.ColorAttachment2,
+            GLEnum.ColorAttachment3,
         ];
 
         _gl.DrawBuffers(buffers);
@@ -162,7 +172,7 @@ internal sealed class GLCardAtlas : IDisposable
 
         IsReady = true;
         _logger.Information(
-            LogCategory, $"Card atlas: {width}x{height}, albedo, normal and material.");
+            LogCategory, $"Card atlas: {width}x{height}, albedo, normal, material and depth.");
 
         return true;
     }

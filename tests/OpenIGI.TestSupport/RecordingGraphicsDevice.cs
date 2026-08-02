@@ -179,6 +179,9 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle CardMaterial => new(90_003);
 
+    /// <inheritdoc/>
+    public TextureHandle CardDepth => new(90_004);
+
     /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
     /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>
     public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];
