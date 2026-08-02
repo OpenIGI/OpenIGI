@@ -288,6 +288,11 @@ using (window)
     SkyRenderer? sky = null;
     ShadowCasterPass? shadowPass = null;
 
+    // Authored atmosphere. Levels with no entry fall back to what their own FlatSky task asks for.
+    FogPresets fogPresets = FogPresets.Load(
+        Path.Combine(AppContext.BaseDirectory, "Assets", "fog-presets.json"),
+        logger);
+
     // The level's own sun, read from its Dirlight task -- section 12.
     // Null until a level is loaded, and for a level that declares none.
     DirectionalLightSettings? sun = null;
@@ -1501,18 +1506,31 @@ using (window)
                 ? 0.004f + (Math.Clamp(sky.FogAmount, 0f, 1f) * 0.03f)
                 : 0.014f;
 
+            bool wantsFog = RenderCVars.FogQuality.Value > 0
+                && RenderCVars.OffscreenScene.Value
+                && RenderCVars.Deferred.Value;
+
+            VolumetricFogSettings medium = VolumetricFogSettings.Off;
+            if (wantsFog)
+            {
+                medium = fogPresets.Resolve(
+                    options.StartMission,
+                    authoredDensity,
+                    sky is { HasSky: true } ? sky.PlaneHeight : 0f,
+                    RenderCVars.FogQuality.Value);
+
+                // A console override beats the authored preset, so a value can be dialled in live and
+                // then written back into the file.
+                if (RenderCVars.FogDensity.Value > 0f)
+                {
+                    medium = medium with { Density = RenderCVars.FogDensity.Value };
+                }
+            }
+
             device.SetVolumetricFog(
-                RenderCVars.FogQuality.Value > 0 && RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
-                    ? new VolumetricFogSettings(
-                        RenderCVars.FogDensity.Value > 0f ? RenderCVars.FogDensity.Value : authoredDensity,
-                        RenderCVars.FogHeightFalloff.Value,
-                        BaseHeight: sky is { HasSky: true } ? sky.PlaneHeight : 0f,
-                        Albedo: default,
-                        RenderCVars.FogAnisotropy.Value,
-                        RenderCVars.FogDistance.Value,
-                        RenderCVars.FogQuality.Value)
-                    : VolumetricFogSettings.Off,
-                (float)eye.Position.Z);
+                medium,
+                new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
+                wantsFog ? fogPresets.VolumesFor(options.StartMission) : ReadOnlySpan<LocalFogVolume>.Empty);
 
             // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
             // beginning a capture first would leave the shell holding two render targets at once.

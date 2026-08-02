@@ -1,0 +1,90 @@
+{
+  "$comment": [
+    "Per-mission atmosphere for the remaster's volumetric fog.",
+    "",
+    "Anything omitted falls back to 'default', and a mission with no entry at all is derived from its",
+    "own FlatSky task -- so this file only has to hold the levels where the derived value is wrong.",
+    "Density is extinction per metre at baseHeight; heightFalloff is the metres over which it thins to",
+    "a third, and is what makes fog pool rather than hang as a sheet.",
+    "",
+    "Volume centres are WORLD METRES. Author them with the free camera: -freecam plus -camlog prints",
+    "the position every frame, so fly to the middle of the room and read it off. Retail has no fog",
+    "entities of any kind, so every volume here is the port's own invention."
+  ],
+
+  "default": {
+    "density": 0.0,
+    "heightFalloff": 24.0,
+    "anisotropy": 0.7,
+    "multipleScattering": 0.35,
+    "distance": 500.0,
+    "sunIntensity": 1.0,
+    "ambientIntensity": 1.0
+  },
+
+  "missions": {
+    "1": {
+      "$comment": "Cold clear morning over snow. Thin, and high enough to catch the valley.",
+      "density": 0.010,
+      "heightFalloff": 30.0,
+      "albedo": [0.94, 0.96, 1.0],
+      "anisotropy": 0.72
+    },
+    "3": {
+      "$comment": "Overcast. Thicker and flatter -- less forward scatter, more ambient.",
+      "density": 0.018,
+      "heightFalloff": 20.0,
+      "albedo": [0.90, 0.92, 0.95],
+      "anisotropy": 0.55,
+      "ambientIntensity": 1.25
+    },
+    "5": {
+      "$comment": "The level's own FlatSky asks for very little; a blue high-altitude haze suits it.",
+      "density": 0.006,
+      "heightFalloff": 60.0,
+      "albedo": [0.86, 0.93, 1.0],
+      "anisotropy": 0.65
+    },
+    "7": {
+      "$comment": "Sun almost overhead, so a forward lobe buys nothing; keep it soft and even.",
+      "density": 0.012,
+      "heightFalloff": 26.0,
+      "anisotropy": 0.45,
+      "multipleScattering": 0.5
+    },
+    "8": {
+      "$comment": [
+        "This level's authored sun is 55 degrees BELOW the horizon -- see rendering.md section 12.",
+        "Nothing is lit by it, so the fog leans on ambient instead of pretending otherwise."
+      ],
+      "density": 0.016,
+      "heightFalloff": 22.0,
+      "sunIntensity": 0.0,
+      "ambientIntensity": 1.6
+    },
+    "9": {
+      "$comment": "Rail yard in a bowl. Dense and low, so it collects between the cuttings.",
+      "density": 0.022,
+      "heightFalloff": 14.0,
+      "albedo": [0.88, 0.90, 0.93],
+      "anisotropy": 0.6
+    }
+  },
+
+  "volumes": {
+    "$comment": [
+      "Worked example only. Mission 1's tunnel mouth sits above the fog line, so the outdoor",
+      "height falloff leaves it clear; this puts mist back into it. The other missions are left",
+      "empty deliberately rather than filled with guesses -- each needs flying and reading off."
+    ],
+    "1": [
+      {
+        "$comment": "Mist inside the tunnel entrance.",
+        "shape": "box",
+        "centre": [186.0, -12.0, 12.0],
+        "extent": [18.0, 26.0, 7.0],
+        "densityScale": 3.5
+      }
+    ]
+  }
+}

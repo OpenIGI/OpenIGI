@@ -40,6 +40,11 @@ namespace OpenIGI.Rendering;
 /// marching to a 4 km far plane would spend the whole budget on air nobody can resolve.
 /// </param>
 /// <param name="Steps">How many samples each ray takes. The single biggest cost, and the quality dial.</param>
+/// <param name="MultipleScattering">
+/// How much of the phase function is spread back towards isotropic, from 0 to 1, standing in for the
+/// multiple scattering a single-scattering march does not simulate. Without it the medium is blinding
+/// towards the sun and invisible away from it.
+/// </param>
 /// <param name="SunIntensity">A multiplier on the sun's contribution to in-scattering.</param>
 /// <param name="AmbientIntensity">A multiplier on the sky's contribution.</param>
 public readonly record struct VolumetricFogSettings(
@@ -50,6 +55,7 @@ public readonly record struct VolumetricFogSettings(
     float Anisotropy = 0.7f,
     float Distance = 500f,
     int Steps = 32,
+    float MultipleScattering = 0.35f,
     float SunIntensity = 1f,
     float AmbientIntensity = 1f)
 {

@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Authored per-mission atmosphere. Data rather than code so a level can be re-tuned without a
+         rebuild, which matters because tuning it is done by looking. -->
+    <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Emits the [CVarContainer] registrations. Build-time only: nothing of it ships. -->
     <ProjectReference Include="..\..\src\OpenIGI.Generators\OpenIGI.Generators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

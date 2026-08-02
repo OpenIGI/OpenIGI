@@ -109,7 +109,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureQuality.Add((maxAnisotropy, generateMissingMipmaps));
 
     /// <inheritdoc/>
-    public void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight) => Fogs.Add(fog);
+    public void SetVolumetricFog(
+        in VolumetricFogSettings fog,
+        Vector3f cameraPosition,
+        ReadOnlySpan<LocalFogVolume> volumes) => Fogs.Add(fog);
 
     /// <inheritdoc/>
     public void SetShadows(

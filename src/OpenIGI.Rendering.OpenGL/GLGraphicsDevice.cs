@@ -103,7 +103,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
     private GLShaderProgram? _fogProgram;
     private VolumetricFogSettings _fog = VolumetricFogSettings.Off;
-    private float _cameraHeight;
+    private Vector3f _cameraPosition;
+    private readonly LocalFogVolume[] _fogVolumes = new LocalFogVolume[LocalFogVolume.MaxPerLevel];
+    private int _fogVolumeCount;
     private int _fogFrame;
     private int _fogSunDirection = -1;
     private int _fogSunColour = -1;
@@ -117,6 +119,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _fogMarch = -1;
     private int _fogAlbedo = -1;
     private int _fogJitter = -1;
+    private int _fogMultiScatter = -1;
+    private int _fogVolumeCountLocation = -1;
+    private int _fogVolumeCentre = -1;
+    private int _fogVolumeExtent = -1;
 
     private GLShadowMap? _shadowMap;
     private GLShaderProgram? _shadowProgram;
@@ -780,10 +786,19 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetVolumetricFog(in VolumetricFogSettings fog, float cameraHeight)
+    public void SetVolumetricFog(
+        in VolumetricFogSettings fog,
+        Vector3f cameraPosition,
+        ReadOnlySpan<LocalFogVolume> volumes)
     {
         _fog = fog;
-        _cameraHeight = cameraHeight;
+        _cameraPosition = cameraPosition;
+        _fogVolumeCount = Math.Min(volumes.Length, LocalFogVolume.MaxPerLevel);
+
+        for (int i = 0; i < _fogVolumeCount; i++)
+        {
+            _fogVolumes[i] = volumes[i];
+        }
     }
 
     /// <inheritdoc/>
@@ -1088,7 +1103,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
             // The base height arrives in world terms and the march works camera-relative, so it is
             // rebased here rather than in the shader, where it would be recomputed per sample.
-            _fog.BaseHeight - _cameraHeight,
+            _fog.BaseHeight - _cameraPosition.Z,
             Math.Clamp(_fog.Anisotropy, -0.95f, 0.95f));
 
         _fogProgram.SetVector4(
@@ -1099,6 +1114,30 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         // Varied per frame so the dither pattern moves; with temporal filtering in stage R5 this is
         // what turns the remaining noise into detail rather than into a static grain.
+        _fogProgram.SetFloat(_fogMultiScatter, Math.Clamp(_fog.MultipleScattering, 0f, 1f));
+        _fogProgram.SetInt(_fogVolumeCountLocation, _fogVolumeCount);
+
+        for (int i = 0; i < _fogVolumeCount; i++)
+        {
+            LocalFogVolume volume = _fogVolumes[i];
+
+            // Rebased against the camera here, because the march works in camera-relative world space
+            // and doing it per sample would be the same subtraction a few million more times.
+            _fogProgram.SetVector4(
+                _fogVolumeCentre + i,
+                volume.Centre.X - _cameraPosition.X,
+                volume.Centre.Y - _cameraPosition.Y,
+                volume.Centre.Z - _cameraPosition.Z,
+                volume.Shape == FogVolumeShape.Sphere ? 1f : 0f);
+
+            _fogProgram.SetVector4(
+                _fogVolumeExtent + i,
+                MathF.Max(volume.Extent.X, 0.01f),
+                MathF.Max(volume.Extent.Y, 0.01f),
+                MathF.Max(volume.Extent.Z, 0.01f),
+                volume.DensityScale);
+        }
+
         _fogFrame = (_fogFrame + 1) & 63;
         _fogProgram.SetFloat(_fogJitter, _fogFrame * 0.61803399f);
 
@@ -1435,6 +1474,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _fogMarch = _fogProgram.LocationOf("uMarch");
         _fogAlbedo = _fogProgram.LocationOf("uAlbedo");
         _fogJitter = _fogProgram.LocationOf("uFrameJitter");
+        _fogMultiScatter = _fogProgram.LocationOf("uMultiScatter");
+        _fogVolumeCountLocation = _fogProgram.LocationOf("uVolumeCount");
+        _fogVolumeCentre = _fogProgram.LocationOf("uVolumeCentre");
+        _fogVolumeExtent = _fogProgram.LocationOf("uVolumeExtent");
         UseProgram(_fogProgram);
         _fogProgram.SetInt("uScene", 0);
         _fogProgram.SetInt("uDepth", 4);
