@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ai;
+using OpenIGI.Formats.Textures;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Flow;
@@ -926,7 +927,7 @@ using (window)
 
             if (cardLighting is not null)
             {
-                cardLighting.SetLocalLights(ProposeLocalLights(scene, resources, logger));
+                cardLighting.SetLocalLights(ProposeLocalLights(scene, resources, id, logger));
 
                 // Built once, from the same capture and placements the lighting was. A ray that stops
                 // somewhere knows only that it stopped; this is what lets it read the surface it hit.
@@ -1367,8 +1368,20 @@ using (window)
     // glow in the wrong place, which is reviewable, whereas a missing one is invisible and
     // indistinguishable from the stage not working.
     static IReadOnlyList<LightFixture> ProposeLocalLights(
-        WorldScene scene, ResourceRegistry resources, IIgiLogger logger)
+        WorldScene scene, ResourceRegistry resources, int missionId, IIgiLogger logger)
     {
+        // Beside the other authored data, one file per mission. When it exists it is the truth: the
+        // survey ran once to propose the list and a human has had the chance to correct it since, exactly
+        // the way authored material detail wins over the detail derived from a texture. Reading it also
+        // keeps the survey's lightmap decode off the load path entirely.
+        string fixturesPath = Path.Combine(
+            AppContext.BaseDirectory, "Assets", "fixtures", $"mission-{missionId}.json");
+
+        if (LightFixtureStore.TryLoad(fixturesPath, out IReadOnlyList<LightFixture> saved, logger))
+        {
+            return saved;
+        }
+
         try
         {
             IReadOnlyList<EmissiveTextureSurvey.Finding> findings =
@@ -1387,6 +1400,7 @@ using (window)
             if (emitters.Count == 0)
             {
                 logger.Information("Emissive", "No texture in this level looks enough like a light source.");
+                LightFixtureStore.Save(fixturesPath, [], logger);
                 return [];
             }
 
@@ -1394,13 +1408,108 @@ using (window)
             // way, so the list is the first thing to check when a level lights wrongly.
             logger.Information("Emissive", $"Emitter textures: {string.Join(", ", emitters)}.");
 
-            return LightFixtureExtractor.ProposeFromScene(scene, emitters, logger: logger);
+            IReadOnlyList<LightFixture> proposed = LightFixtureExtractor.ProposeFromScene(
+                scene, emitters, EmitterColour(resources), logger: logger);
+
+            // Written so the proposal can be reviewed and corrected, and so the next load reads it back
+            // rather than surveying again.
+            LightFixtureStore.Save(fixturesPath, proposed, logger);
+
+            return proposed;
         }
         catch (Exception error) when (error is IOException or InvalidDataException)
         {
             logger.Warning("Emissive", $"The lights could not be proposed: {error.Message}");
             return [];
         }
+    }
+
+    // Resolves an emitter texture to its mean colour, linear and normalised so its brightest channel is
+    // about one, for the light a fixture drawing it is given. Best effort, and cached per name.
+    //
+    // A texture that resolves as a standalone asset and decodes without a palette gives its own colour.
+    // Most emitter textures do neither: they live inside a level's MTP pack, named the way a material
+    // references them rather than as a file, and are paletted -- decoding those wants the pack and its
+    // palette, which is not wired here yet. Those fall back to white, a tint a reviewer can correct in
+    // the fixtures file, whereas the placement the fixture comes with cannot be guessed later. So a miss
+    // here costs the tint, never the fixture, and never the load: the whole probe is guarded, because the
+    // resource layer treats a bare texture name as an illegal path and throws rather than returning
+    // false.
+    static Func<string, Vector3f> EmitterColour(ResourceRegistry resources)
+    {
+        Dictionary<string, Vector3f> cache = new(StringComparer.OrdinalIgnoreCase);
+
+        return name =>
+        {
+            if (cache.TryGetValue(name, out Vector3f cached))
+            {
+                return cached;
+            }
+
+            Vector3f colour = new(1f, 1f, 1f);
+
+            foreach (string candidate in new[] { name, name + ".tex", name + ".spr" })
+            {
+                try
+                {
+                    if (!resources.TryLoad(candidate, out ReadOnlyMemory<byte> data)
+                        || data.Length < 4
+                        || !TexFile.IsTexture(data.Span))
+                    {
+                        continue;
+                    }
+
+                    colour = MeanColour(TexFile.Load(data.Span));
+                    break;
+                }
+                catch (Exception)
+                {
+                    // Illegal-path names, paletted or malformed payloads -- a tint is never worth taking
+                    // the load down for. It stays white; the fixtures file lets a reviewer correct it.
+                }
+            }
+
+            cache[name] = colour;
+            return colour;
+        };
+    }
+
+    // Averages a decoded texture and normalises it so its brightest channel is about one.
+    static Vector3f MeanColour(TextureImage image)
+    {
+        ReadOnlySpan<Bgra32> pixels = image.Pixels;
+        (int width, int height) = image.GetLevelSize(0);
+        int count = Math.Min(width * height, pixels.Length);
+
+        if (count <= 0)
+        {
+            return new Vector3f(1f, 1f, 1f);
+        }
+
+        double r = 0.0;
+        double g = 0.0;
+        double b = 0.0;
+
+        for (int i = 0; i < count; i++)
+        {
+            Bgra32 pixel = pixels[i];
+            r += pixel.R;
+            g += pixel.G;
+            b += pixel.B;
+        }
+
+        float mr = (float)(r / count);
+        float mg = (float)(g / count);
+        float mb = (float)(b / count);
+
+        // Normalised on the brightest channel, so the fixture's colour is a hue and the intensity is left
+        // to the area and the scale the renderer applies. A texture that averaged to black -- a fully
+        // transparent or empty page -- stays white rather than becoming a division by nothing.
+        float peak = MathF.Max(mr, MathF.Max(mg, mb));
+
+        return peak > 1e-3f
+            ? new Vector3f(mr / peak, mg / peak, mb / peak)
+            : new Vector3f(1f, 1f, 1f);
     }
 
     static void DumpCardLighting(
