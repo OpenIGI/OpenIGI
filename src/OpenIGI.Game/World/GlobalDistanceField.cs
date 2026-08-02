@@ -596,6 +596,15 @@ public sealed class GlobalDistanceField : IDisposable
             vec4 fieldOrigin = uInstances[at + 5];
             vec4 voxelSize = uInstances[at + 6];
 
+            // A field baked with a range of zero encodes nothing: every voxel decodes to zero, which
+            // would read as a surface everywhere inside its slot and shadow whatever stands there. Two
+            // such degenerate fields exist in the data. Treat one as absent -- it contributes no distance
+            // to the union rather than a false one.
+            if (slotCorner.w <= 0.0)
+            {
+                return 1e6;
+            }
+
             // Into the model's own space. The rows carry the world-to-local rotation and the fourth
             // components carry where the object stands.
             vec3 offset = world - vec3(row0.w, row1.w, row2.w);

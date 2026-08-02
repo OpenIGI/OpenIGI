@@ -322,6 +322,15 @@ public sealed class SceneDistanceField
             // clamp to an edge voxel and report a surface at the point when it is metres away. This is
             // exactly what the clipmap build does on the GPU, so the two agree at grid edges.
             MeshDistanceField field = _fields[instance.FieldIndex];
+
+            // A field baked with a range of zero encodes nothing -- every voxel decodes to zero -- so it
+            // is treated as absent rather than as a surface filling its own box, the same as the clipmap
+            // build does.
+            if (field.Range <= 0f)
+            {
+                continue;
+            }
+
             Vector3f local = instance.ToLocal(point);
             float beyond = field.DistanceOutsideSampledRegion(local);
 
