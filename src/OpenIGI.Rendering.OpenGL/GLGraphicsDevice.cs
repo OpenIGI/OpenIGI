@@ -3383,6 +3383,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         program.Use();
         _currentProgram = program.Handle;
+
+        // A graphics program and a compute program share GL's single current-program binding, but each
+        // path caches it separately. Binding a graphics program here changes what GL has bound out from
+        // under the compute cache, so the next UseCompute must not believe its program is still current --
+        // otherwise it skips its own bind and the dispatch runs with a graphics program (or none) active,
+        // which the driver rejects as "no active compute shader". This is the mirror of UseCompute
+        // clearing _currentProgram, and without it a compute pass that follows any draw in the same frame
+        // silently does nothing -- which is exactly how the screen gather produced no atlas whenever a
+        // draw had run since the previous dispatch.
+        _boundComputeProgram = 0;
     }
 
     /// <summary>Binds a vertex array, skipping the call when it is already bound.</summary>

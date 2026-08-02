@@ -562,10 +562,13 @@ public sealed partial class GLGraphicsDevice
             _ => BufferAccessARB.ReadWrite,
         };
 
-        // Layered, because a volume or an array bound one slice at a time is a bind per slice and every
-        // volume here is written whole. The layer argument is therefore ignored, which is what the
-        // `true` says.
-        //
+        // Layered ONLY for a texture that has layers -- a 3D volume or an array -- so the whole thing is
+        // bound at once rather than one slice per bind. A plain 2D texture is NOT layered, and binding it
+        // with layered=true declares to the driver a layered image the shader then reads as a non-layered
+        // image2D: a mismatch that is undefined per the spec even where a driver tolerates it. A 2D image
+        // binds non-layered, layer 0.
+        bool layered = entry.Target is TextureTarget.Texture3D or TextureTarget.Texture2DArray;
+
         // The format is the texture's OWN, not a constant. An image binding reinterprets the storage
         // through whatever format it is given, and GL does not report a mismatch: declaring an R8
         // volume as RGBA8 reads a quarter of it as four channels of noise, and the pass looks like it
@@ -574,7 +577,7 @@ public sealed partial class GLGraphicsDevice
         {
         }
 
-        _gl.BindImageTexture((uint)slot, entry.Name, level, true, 0, gl, entry.Format);
+        _gl.BindImageTexture((uint)slot, entry.Name, level, layered, 0, gl, entry.Format);
 
         if (_gl.GetError() is var bindError && bindError != GLEnum.NoError)
         {
