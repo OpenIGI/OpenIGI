@@ -2831,6 +2831,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // resource, so DisposeComputeResources deletes them; destroying them explicitly here would trip
         // the disposed guard, since Dispose has already marked the device.
         DisposeComputeResources();
+        DisposeTextResources();
         _cardAtlas?.Dispose();
         _cardProgram?.Dispose();
         _stageProfiler?.Dispose();

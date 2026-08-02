@@ -37,6 +37,7 @@ public sealed class ConsoleUiRenderer : IDisposable
     private readonly ConsoleSystem _system;
     private readonly IIgiLogger _logger;
     private UiFont? _font;
+    private UiFont? _wordmark;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ConsoleUiRenderer"/> class.</summary>
@@ -72,6 +73,15 @@ public sealed class ConsoleUiRenderer : IDisposable
         try
         {
             _font = UiFontLibrary.Load(_device, UiFontLibrary.Body, pixelHeight: 48f);
+
+            // The corner wordmark is drawn from a distance-field atlas, so it stays crisp at any size and
+            // carries the outline and glow the SDF shader provides -- the one place the console exercises
+            // that path, the scrollback itself being better served by the coverage atlas at small sizes.
+            if (UiFontLibrary.Exists(UiFontLibrary.Heading))
+            {
+                _wordmark = UiFontLibrary.Load(_device, UiFontLibrary.Heading, pixelHeight: 64f, FontAtlasKind.SignedDistanceField);
+            }
+
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -113,6 +123,25 @@ public sealed class ConsoleUiRenderer : IDisposable
         painter.FillRect(new UiRect(0f, panelHeight - 2f, screenWidth, 2f), Accent.WithAlpha(220), BlendMode.AlphaBlend);
         painter.FillRect(new UiRect(pad, promptTop - 2f, screenWidth - (pad * 2f), 1f), Border, BlendMode.AlphaBlend);
 
+        // A dim distance-field wordmark in the panel's top-right corner, with a dark outline and a faint
+        // accent glow — the console's one use of the SDF text path.
+        if (_wordmark is { } wordmark)
+        {
+            float markSize = size * 1.7f;
+            const string mark = "OPENIGI";
+            float markWidth = wordmark.MeasureWidth(mark, markSize);
+            SdfTextParams effects = SdfTextParams.Plain(0f)
+                .WithOutline(Bgra32.FromRgba(0, 0, 0, 200), 0.18f)
+                .WithGlow(Accent, 0.35f, 0.5f);
+            painter.DrawText(
+                wordmark,
+                mark,
+                new UiVec2(screenWidth - markWidth - pad, pad * 0.5f),
+                markSize,
+                Accent.WithAlpha(150),
+                effects);
+        }
+
         int room = Math.Max(1, (int)((promptTop - pad) / line));
         VisibleLines = room;
 
@@ -151,6 +180,8 @@ public sealed class ConsoleUiRenderer : IDisposable
         _disposed = true;
         _font?.Dispose();
         _font = null;
+        _wordmark?.Dispose();
+        _wordmark = null;
     }
 
     private void DrawPrompt(

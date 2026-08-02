@@ -136,6 +136,51 @@ public sealed class UiPainter
         BlendMode blend = BlendMode.AlphaBlend)
     {
         ArgumentNullException.ThrowIfNull(font);
+
+        // A distance-field font routes through the SDF program with plain fill; a coverage font draws as
+        // an ordinary textured quad. Either way the caller just asks for text.
+        if (font.Kind == FontAtlasKind.SignedDistanceField)
+        {
+            return DrawTextCore(font, text, topLeft, sizePx, color, blend, true, SdfTextParams.Plain(font.Atlas.SdfPadding));
+        }
+
+        return DrawTextCore(font, text, topLeft, sizePx, color, blend, false, default);
+    }
+
+    /// <summary>Draws distance-field text with an outline and glow, for a title or a heading.</summary>
+    /// <param name="font">The SDF font to draw with.</param>
+    /// <param name="text">The text; a line feed starts a new line.</param>
+    /// <param name="topLeft">The top-left of the first line, in pixels.</param>
+    /// <param name="sizePx">The text size in pixels.</param>
+    /// <param name="color">The fill colour.</param>
+    /// <param name="effects">The outline and glow; its <see cref="SdfTextParams.PxRange"/> is overridden by the font's.</param>
+    /// <param name="blend">How the glyphs combine with what is behind them.</param>
+    /// <returns>The pen position after the last glyph, in pixels.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="font"/> is <see langword="null"/>.</exception>
+    public UiVec2 DrawText(
+        UiFont font,
+        ReadOnlySpan<char> text,
+        UiVec2 topLeft,
+        float sizePx,
+        Bgra32 color,
+        in SdfTextParams effects,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        SdfTextParams withRange = effects with { PxRange = font.Atlas.SdfPadding };
+        return DrawTextCore(font, text, topLeft, sizePx, color, blend, true, withRange);
+    }
+
+    private UiVec2 DrawTextCore(
+        UiFont font,
+        ReadOnlySpan<char> text,
+        UiVec2 topLeft,
+        float sizePx,
+        Bgra32 color,
+        BlendMode blend,
+        bool useSdf,
+        in SdfTextParams parameters)
+    {
         if (!font.Texture.IsValid)
         {
             throw new InvalidOperationException("This font was built for measurement only and cannot draw.");
@@ -166,7 +211,14 @@ public sealed class UiPainter
                 RectF source = glyph.SourceRect(font.Atlas.Width, font.Atlas.Height);
                 if (TryClip(clip, ref dest, ref source))
                 {
-                    _batch.Draw(font.Texture, dest.ToRectF(), source, color, blend);
+                    if (useSdf)
+                    {
+                        _batch.DrawText(font.Texture, dest.ToRectF(), source, color, parameters, blend);
+                    }
+                    else
+                    {
+                        _batch.Draw(font.Texture, dest.ToRectF(), source, color, blend);
+                    }
                 }
             }
 

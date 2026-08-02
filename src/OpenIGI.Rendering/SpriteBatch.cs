@@ -22,6 +22,7 @@ public sealed class SpriteBatch
     public const int MaxQuadsPerFlush = ushort.MaxValue / 4;
 
     private readonly IGraphicsDevice _device;
+    private readonly ISdfTextDevice? _sdfDevice;
     private readonly Vertex2D[] _vertices;
     private readonly ushort[] _indices;
     private readonly int _capacityInQuads;
@@ -29,6 +30,8 @@ public sealed class SpriteBatch
     private int _quadCount;
     private TextureHandle _texture;
     private BlendMode _blend;
+    private bool _isText;
+    private SdfTextParams _textParams;
     private bool _inBatch;
 
     /// <summary>Initializes a new instance of the <see cref="SpriteBatch"/> class.</summary>
@@ -43,6 +46,7 @@ public sealed class SpriteBatch
         ArgumentOutOfRangeException.ThrowIfGreaterThan(capacityInQuads, MaxQuadsPerFlush);
 
         _device = device;
+        _sdfDevice = device as ISdfTextDevice;
         _capacityInQuads = capacityInQuads;
         _vertices = new Vertex2D[capacityInQuads * 4];
         _indices = new ushort[capacityInQuads * 6];
@@ -80,6 +84,8 @@ public sealed class SpriteBatch
         _quadCount = 0;
         _texture = TextureHandle.None;
         _blend = BlendMode.AlphaBlend;
+        _isText = false;
+        _textParams = default;
         DrawCallCount = 0;
         QuadCount = 0;
     }
@@ -141,7 +147,9 @@ public sealed class SpriteBatch
             throw new InvalidOperationException("Draw was called outside a Begin/End pair.");
         }
 
-        if (_quadCount > 0 && (texture != _texture || blend != _blend))
+        // A pending run of text-shaded quads cannot merge with a plain textured one, so switching mode
+        // flushes as surely as switching texture or blend does.
+        if (_quadCount > 0 && (texture != _texture || blend != _blend || _isText))
         {
             Flush();
         }
@@ -153,12 +161,75 @@ public sealed class SpriteBatch
 
         _texture = texture;
         _blend = blend;
+        _isText = false;
 
         int v = _quadCount * 4;
         _vertices[v + 0] = topLeft;
         _vertices[v + 1] = topRight;
         _vertices[v + 2] = bottomRight;
         _vertices[v + 3] = bottomLeft;
+        _quadCount++;
+    }
+
+    /// <summary>Queues a distance-field text quad, shaded by the SDF program when the device supports it.</summary>
+    /// <param name="atlas">The signed-distance-field atlas to sample.</param>
+    /// <param name="destination">The destination rectangle in pixels.</param>
+    /// <param name="source">The source rectangle in texture coordinates.</param>
+    /// <param name="color">The fill colour modulated with the glyph.</param>
+    /// <param name="parameters">How to shade the run — spread, outline and glow.</param>
+    /// <param name="blend">How the quad combines with what is behind it.</param>
+    /// <exception cref="InvalidOperationException">No batch is open.</exception>
+    /// <remarks>
+    /// When the device does not implement <see cref="ISdfTextDevice"/> — the recording device the tests
+    /// use — this draws exactly as <see cref="Draw"/> does, so a coverage atlas still renders and the
+    /// draw is still recorded; only the crisp thresholding and the outline and glow are absent.
+    /// </remarks>
+    public void DrawText(
+        TextureHandle atlas,
+        in RectF destination,
+        in RectF source,
+        Bgra32 color,
+        in SdfTextParams parameters,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        if (!_inBatch)
+        {
+            throw new InvalidOperationException("DrawText was called outside a Begin/End pair.");
+        }
+
+        // A device that cannot shade a distance field draws the atlas as ordinary coverage instead.
+        if (_sdfDevice is null)
+        {
+            Draw(atlas, destination, source, color, blend);
+            return;
+        }
+
+        bool differentRun = atlas != _texture || blend != _blend || !_isText || !_textParams.Equals(parameters);
+        if (_quadCount > 0 && differentRun)
+        {
+            Flush();
+        }
+
+        if (_quadCount == _capacityInQuads)
+        {
+            Flush();
+        }
+
+        _texture = atlas;
+        _blend = blend;
+        _isText = true;
+        _textParams = parameters;
+
+        float left = destination.X;
+        float top = destination.Y;
+        float right = destination.Right;
+        float bottom = destination.Bottom;
+
+        int v = _quadCount * 4;
+        _vertices[v + 0] = new Vertex2D(left, top, source.X, source.Y, color);
+        _vertices[v + 1] = new Vertex2D(right, top, source.Right, source.Y, color);
+        _vertices[v + 2] = new Vertex2D(right, bottom, source.Right, source.Bottom, color);
+        _vertices[v + 3] = new Vertex2D(left, bottom, source.X, source.Bottom, color);
         _quadCount++;
     }
 
@@ -182,11 +253,23 @@ public sealed class SpriteBatch
             return;
         }
 
-        _device.DrawTriangles2D(
-            _vertices.AsSpan(0, _quadCount * 4),
-            _indices.AsSpan(0, _quadCount * 6),
-            _texture,
-            _blend);
+        if (_isText && _sdfDevice is not null)
+        {
+            _sdfDevice.DrawText2D(
+                _vertices.AsSpan(0, _quadCount * 4),
+                _indices.AsSpan(0, _quadCount * 6),
+                _texture,
+                _textParams,
+                _blend);
+        }
+        else
+        {
+            _device.DrawTriangles2D(
+                _vertices.AsSpan(0, _quadCount * 4),
+                _indices.AsSpan(0, _quadCount * 6),
+                _texture,
+                _blend);
+        }
 
         DrawCallCount++;
         QuadCount += _quadCount;

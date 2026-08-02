@@ -93,6 +93,32 @@ public sealed class WidgetDrawTests
         Assert.True(TotalQuads(device) >= 1);
     }
 
+    [Fact]
+    public void Sdf_text_falls_back_to_a_textured_draw_on_a_device_without_the_capability()
+    {
+        var device = new RecordingGraphicsDevice(); // not an ISdfTextDevice
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        UiFont sdf = UiFont.Upload(device, FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f, FontAtlasKind.SignedDistanceField));
+
+        var context = new LayoutContext(1920f, 1080f);
+        var batch = new SpriteBatch(device);
+        var painter = new UiPainter(batch, context);
+        batch.Begin();
+        painter.DrawText(
+            sdf,
+            "Hi",
+            new UiVec2(20f, 20f),
+            48f,
+            OpenIGI.Core.Graphics.Bgra32.White,
+            SdfTextParams.Plain(4f).WithOutline(OpenIGI.Core.Graphics.Bgra32.Black, 0.2f));
+        batch.End();
+
+        // The recording device cannot shade a distance field, so the glyphs are still drawn — as ordinary
+        // textured quads sampling the atlas — rather than dropped.
+        Assert.NotEmpty(device.Draws);
+        Assert.Equal(sdf.Texture, device.Draws[0].Texture);
+    }
+
     private static int TotalQuads(RecordingGraphicsDevice device)
     {
         int quads = 0;
