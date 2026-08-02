@@ -434,6 +434,17 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     TextureHandle SceneColour { get; }
 
+    /// <summary>Adds a screen probe gather's indirect light onto the lit scene.</summary>
+    /// <param name="indirect">The probe atlas of indirect irradiance, covering the frame.</param>
+    /// <param name="strength">How strongly to add it. Zero is a no-op.</param>
+    /// <remarks>
+    /// Run after the deferred lighting has filled the scene colour and before the frame resolves: each
+    /// pixel takes its probe's irradiance, multiplied by its own albedo over pi, and adds it to the lit
+    /// colour -- the reference's diffuse indirect, composited onto the frame. A no-op when the target is
+    /// not deferred or the strength is zero, so a preset that leaves it off pays nothing.
+    /// </remarks>
+    void CompositeScreenIndirect(TextureHandle indirect, float strength);
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>

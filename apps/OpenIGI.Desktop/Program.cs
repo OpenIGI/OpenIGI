@@ -331,6 +331,12 @@ using (window)
     // One screen-space indirect dump per run, to verify the gather reads the G-buffer and reconstructs
     // world positions correctly before it feeds the frame.
     bool screenGiDumped = false;
+
+    // The live screen probe gather's indirect atlas, sized to the frame divided by the probe step and
+    // reused across frames. Grown when the window changes.
+    TextureHandle giIndirect = default;
+    int giIndirectWidth = 0;
+    int giIndirectHeight = 0;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
@@ -2497,11 +2503,20 @@ using (window)
                 // The scheduler cleared the back buffer; the target it did not know about needs it too.
                 device.Clear(scheduler.ClearColour);
 
+                // When the screen probe gather is on it REPLACES the flat ambient rather than adding to
+                // it, the way the reference's indirect replaces the crude fill: the deferred pass keeps
+                // its direct light and drops its ambient, and the gather's bounce is composited in below.
+                // Without this the two fills stack and the frame washes out.
+                bool giReplacesAmbient = RenderCVars.ScreenGather.Value > 0f
+                    && sdfClipmaps is not null
+                    && cardLighting is not null
+                    && RenderCVars.SurfaceCacheProbe.Value == 0;
+
                 device.SetLighting(new SceneLighting(
                     RenderCVars.Lighting.Value,
                     viewSunDirection,
                     light.Colour,
-                    light.Ambient,
+                    giReplacesAmbient ? default : light.Ambient,
                     RenderCVars.LightScale.Value));
                 device.BeginPass(ScenePass.Geometry);
 
@@ -2689,6 +2704,54 @@ using (window)
                     window.Width, window.Height, giInto, logger);
             }
 
+            // L6a slice 3: the live gather. When the GI strength is up, trace the surface cache per
+            // screen probe into a persistent atlas here, while the G-buffer is live; the composite adds
+            // it after the deferred lighting fills the scene colour, just below. Only without a card
+            // probe, which fills the cache atlas with a diagnostic rather than light.
+            const int giStep = 8;
+            float giStrength = RenderCVars.ScreenGather.Value;
+            bool giActive = captured
+                && giStrength > 0f
+                && sdfClipmaps is not null
+                && cardLighting is not null
+                && RenderCVars.SurfaceCacheProbe.Value == 0;
+
+            if (giActive && sdfClipmaps is { } liveGiField && cardLighting is { } liveGiCards)
+            {
+                int wantWidth = (window.Width + giStep - 1) / giStep;
+                int wantHeight = (window.Height + giStep - 1) / giStep;
+
+                if (giIndirectWidth != wantWidth || giIndirectHeight != wantHeight)
+                {
+                    if (giIndirect.IsValid)
+                    {
+                        device.DestroyTexture(giIndirect);
+                    }
+
+                    giIndirect = device.CreateStorageTexture(
+                        wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.indirect.live");
+                    giIndirectWidth = wantWidth;
+                    giIndirectHeight = wantHeight;
+                }
+
+                Vector3f giCameraToCache = new(
+                    (float)(eye.Position.X - liveGiCards.Origin.X),
+                    (float)(eye.Position.Y - liveGiCards.Origin.Y),
+                    (float)(eye.Position.Z - liveGiCards.Origin.Z));
+
+                liveGiCards.GatherScreen(
+                    liveGiField,
+                    device.SceneDepth,
+                    device.SceneNormal,
+                    DepthUnprojection.From(unjitteredProjection, 0.1f, farPlane),
+                    eye.Orientation.Transposed(),
+                    giCameraToCache,
+                    window.Width,
+                    window.Height,
+                    giStep,
+                    giIndirect);
+            }
+
             // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
             // the menus and the console are authored in display colours and must never be tone mapped.
             // Unconditional, and outside the player-mode block on purpose -- a free-camera frame draws
@@ -2696,6 +2759,15 @@ using (window)
             if (captured)
             {
                 device.EndPass();
+
+                // The deferred lighting has now filled the scene colour, so the gathered indirect is
+                // added onto the lit frame -- the point the traced global illumination reaches the
+                // screen. Before the resolve, so tone mapping and grading see it as part of the frame.
+                if (giActive)
+                {
+                    device.CompositeScreenIndirect(giIndirect, giStrength);
+                }
+
                 device.EndSceneCapture();
                 device.ResolveScene(new PostProcessSettings(
                     RenderCVars.ToneMap.Value,

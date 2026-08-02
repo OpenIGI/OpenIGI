@@ -127,6 +127,22 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Scene brightness before tone mapping. 1 leaves the level's own lighting alone.");
 
+    /// <summary>How strongly the screen probe gather's indirect light is added to the frame.</summary>
+    /// <remarks>
+    /// Zero is off, which is every preset for now: the gather traces the surface cache per screen probe
+    /// and composites the bounce onto the lit frame, the stage where the traced global illumination
+    /// finally reaches the screen. Above zero scales that contribution, a knob to reach for while it is
+    /// still being tuned. Needs the surface cache and the distance fields, so it does nothing without
+    /// both.
+    /// </remarks>
+    public static readonly NumericCVar<float> ScreenGather = CVar.Float(
+        "r_screen_gi",
+        0f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "Strength of the screen probe gather's indirect light. 0 is off.");
+
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
     /// Off by default, and only ever engages where a tone map is on -- the vanilla copy path returns

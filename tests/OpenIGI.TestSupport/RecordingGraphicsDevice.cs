@@ -191,6 +191,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle SceneColour => new(90_007);
 
+    /// <inheritdoc/>
+    public void CompositeScreenIndirect(TextureHandle indirect, float strength)
+    {
+    }
+
     /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
     /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>
     public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];

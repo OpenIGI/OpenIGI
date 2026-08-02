@@ -84,6 +84,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lightingShowProbes = -1;
     private int _lightingScale = -1;
     private DebugView _debugView;
+
+    // The screen probe gather's composite: adds the game layer's indirect atlas onto the lit frame.
+    private GLShaderProgram? _giCompositeProgram;
+    private int _giCompositeStrength = -1;
+
     private ReflectionSettings _reflections;
     private GLShaderProgram? _reflectionProgram;
     private int _reflectionUnproject = -1;
@@ -2124,6 +2129,39 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         target.Swap();
     }
 
+    /// <inheritdoc/>
+    public void CompositeScreenIndirect(TextureHandle indirect, float strength)
+    {
+        ThrowIfDisposed();
+
+        if (strength <= 0f || !indirect.IsValid || _giCompositeProgram is null || _fullScreen is null)
+        {
+            return;
+        }
+
+        if (_sceneTarget is not { } target || !target.Description.Deferred)
+        {
+            return;
+        }
+
+        // The same read-front, write-back, swap the reflection pass uses: the lit colour plus the
+        // indirect the gather traced, per pixel through its own albedo.
+        target.BindForPostProcess();
+        UseProgram(_giCompositeProgram);
+        _giCompositeProgram.SetFloat(_giCompositeStrength, strength);
+
+        BindTexture(0, target.FrontColorTexture);
+        BindTexture(2, target.AlbedoTexture);
+        SetTexture(6, indirect);
+
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
+        _fullScreen.Draw();
+        target.Swap();
+    }
+
     /// <summary>Blends this frame into the accumulated ones.</summary>
     /// <param name="target">The scene target holding the frame, its depth, and the history.</param>
     /// <remarks>
@@ -2802,6 +2840,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _stageProfiler?.Dispose();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
+        _giCompositeProgram?.Dispose();
         _shadowMap?.Dispose();
         _shadowProgram?.Dispose();
         _gbufferProgram?.Dispose();
@@ -3092,6 +3131,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _reflectionProgram.SetInt("uProbeRed", 8);
         _reflectionProgram.SetInt("uProbeGreen", 9);
         _reflectionProgram.SetInt("uProbeBlue", 10);
+
+        _giCompositeProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, ScreenGatherShaders.Composite);
+        _giCompositeStrength = _giCompositeProgram.LocationOf("uStrength");
+        UseProgram(_giCompositeProgram);
+        _giCompositeProgram.SetInt("uScene", 0);
+        _giCompositeProgram.SetInt("uAlbedo", 2);
+        _giCompositeProgram.SetInt("uIndirect", 6);
 
         _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
         _fogSunDirection = _fogProgram.LocationOf("uSunDirection");
