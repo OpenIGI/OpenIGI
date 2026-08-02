@@ -1376,6 +1376,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle CardDepth => Register(_cardAtlas?.DepthTexture ?? 0);
 
+    /// <inheritdoc/>
+    public TextureHandle SceneDepth => Register(_sceneTarget?.DepthTexture ?? 0);
+
+    /// <inheritdoc/>
+    public TextureHandle SceneNormal => Register(_sceneTarget?.NormalTexture ?? 0);
+
+    /// <inheritdoc/>
+    public TextureHandle SceneColour => Register(_sceneTarget?.FrontColorTexture ?? 0);
+
     /// <summary>Drops the handle registered for a backend-owned texture, if there is one.</summary>
     private void ForgetRegistration(uint name)
     {

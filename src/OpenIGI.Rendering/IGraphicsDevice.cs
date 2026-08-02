@@ -412,6 +412,28 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     TextureHandle CardDepth { get; }
 
+    /// <summary>Gets the current scene target's depth buffer, or <see cref="TextureHandle.None"/>.</summary>
+    /// <remarks>
+    /// The bridge the screen probe gather crosses: a pass in the game layer needs the frame's per-pixel
+    /// depth to place probes and reconstruct where each pixel is in the world. Non-linear device depth,
+    /// turned into a view distance with the same near and far the deferred lighting uses.
+    /// </remarks>
+    TextureHandle SceneDepth { get; }
+
+    /// <summary>Gets the current scene target's normal buffer, or <see cref="TextureHandle.None"/>.</summary>
+    /// <remarks>
+    /// View-space normals, encoded to the zero-to-one range the way the G-buffer writes them. A consumer
+    /// in world space has to lift them through the view-to-world rotation itself.
+    /// </remarks>
+    TextureHandle SceneNormal { get; }
+
+    /// <summary>Gets the current scene target's lit colour, or <see cref="TextureHandle.None"/>.</summary>
+    /// <remarks>
+    /// What the deferred lighting wrote, before tone mapping. The screen probe gather reads it to add its
+    /// indirect term onto the frame the same way the reference composites the surface cache's bounce.
+    /// </remarks>
+    TextureHandle SceneColour { get; }
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>
