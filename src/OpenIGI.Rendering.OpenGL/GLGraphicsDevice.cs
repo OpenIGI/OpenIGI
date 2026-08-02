@@ -134,6 +134,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _resolveExposure = -1;
     private int _resolveToneMap = -1;
     private int _resolveDecodeInput = -1;
+    private int _resolveWhitePoint = -1;
     private bool _captureActive;
 
     private bool _disposed;
@@ -907,6 +908,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveProgram.SetFloat(_resolveExposure, post.Exposure);
         _resolveProgram.SetInt(_resolveToneMap, (int)post.ToneMap);
         _resolveProgram.SetInt(_resolveDecodeInput, post.SceneIsDisplayEncoded ? 1 : 0);
+        _resolveProgram.SetFloat(_resolveWhitePoint, post.WhitePoint);
 
         BindTexture(0, target.FrontColorTexture);
         _fullScreen.Draw();
@@ -1314,6 +1316,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveExposure = _resolveProgram.LocationOf("uExposure");
         _resolveToneMap = _resolveProgram.LocationOf("uToneMap");
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
+        _resolveWhitePoint = _resolveProgram.LocationOf("uWhitePoint");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
 

@@ -1685,7 +1685,8 @@ using (window)
                 device.EndSceneCapture();
                 device.ResolveScene(new PostProcessSettings(
                     RenderCVars.ToneMap.Value,
-                    RenderCVars.Exposure.Value));
+                    RenderCVars.Exposure.Value,
+                    WhitePoint: RenderCVars.WhitePoint.Value));
                 captured = false;
             }
 

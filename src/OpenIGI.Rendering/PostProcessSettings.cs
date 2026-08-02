@@ -24,6 +24,12 @@ namespace OpenIGI.Rendering;
 /// bank or a muzzle flash read as light rather than as a pale patch.
 /// </param>
 /// <param name="BloomThreshold">The luminance above which a pixel contributes to the bloom.</param>
+/// <param name="WhitePoint">
+/// The linear value that maps to display white. This is the amount of headroom the tone map reserves
+/// above white, and it has to match what the scene actually produces: reserving four stops for content
+/// that never exceeds one spends all of it compressing a range that was not there, which shows up as a
+/// washed-out picture rather than as a setting being wrong. One disables the roll-off entirely.
+/// </param>
 /// <param name="SceneIsDisplayEncoded">
 /// Whether the captured scene holds display-encoded colour rather than linear light.
 /// </param>
@@ -32,6 +38,7 @@ public readonly record struct PostProcessSettings(
     float Exposure = 1.0f,
     float BloomIntensity = 0.0f,
     float BloomThreshold = 1.0f,
+    float WhitePoint = 1.6f,
     bool SceneIsDisplayEncoded = true)
 {
     /// <summary>
@@ -42,7 +49,7 @@ public readonly record struct PostProcessSettings(
     /// detour a copy, which is what lets the vanilla preset stay pixel-identical to the build that
     /// had no offscreen path at all.
     /// </remarks>
-    public static PostProcessSettings Identity { get; } = new(ToneMapOperator.None, 1.0f, 0.0f, 1.0f);
+    public static PostProcessSettings Identity { get; } = new(ToneMapOperator.None, 1.0f, 0.0f, 1.0f, 1.6f);
 
     /// <summary>Gets a value indicating whether the bloom pass would do anything.</summary>
     public bool WantsBloom => BloomIntensity > 0.0f;

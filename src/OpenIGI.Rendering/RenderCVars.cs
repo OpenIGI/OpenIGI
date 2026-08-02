@@ -68,7 +68,26 @@ public static class RenderCVars
         vanilla: "none",
         enhanced: "neutral",
         high: "neutral",
-        ultra: "agx");
+
+        // ACES on ultra rather than AgX. Measured over the range this game actually occupies, ACES
+        // holds the most contrast of the four and AgX the least bar neutral -- AgX's strength is
+        // taming very bright highlights, and a world lit by LDR lightmaps does not have any.
+        ultra: "aces");
+
+    /// <summary>The linear value that maps to display white.</summary>
+    /// <remarks>
+    /// How much headroom above white the tone map reserves. It must match what the scene produces:
+    /// this world is LDR textures multiplied by LDR lightmaps, so almost nothing exceeds one, and the
+    /// old fixed value of 4 spent the curve's whole range compressing a span that was not there. One
+    /// disables the roll-off completely.
+    /// </remarks>
+    public static readonly NumericCVar<float> WhitePoint = CVar.Float(
+        "r_white_point",
+        1.6f,
+        1f,
+        8f,
+        CVarOptions.Archive,
+        "Linear value that maps to display white. Lower is more contrast; 1 disables the roll-off.");
 
     /// <summary>A linear multiplier applied to the scene before tone mapping.</summary>
     public static readonly NumericCVar<float> Exposure = CVar.Float(
