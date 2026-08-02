@@ -1380,7 +1380,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         foreach ((uint id, GLTexture entry) in _textures)
         {
-            if (entry.Name == name)
+            // Only ever the borrowed registrations, which are the ones this made: they carry no
+            // dimensions because the backend owns the texture and this holds nothing but its name.
+            //
+            // Matching on the name alone deleted textures it does not own. GL recycles names, so when
+            // the card atlas is torn down and rebuilt on load, a freed name is handed straight back to
+            // the next CreateStorageTexture -- and forgetting the atlas then unregistered a live
+            // storage texture instead. It presented as the surface cache's own bounce atlases not
+            // belonging to the device that had just created them, while the one created first, before
+            // any name had been freed, read back perfectly.
+            if (entry.Name == name && entry is { Width: 0, Height: 0 })
             {
                 _textures.Remove(id);
                 return;
@@ -1403,7 +1412,10 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         foreach ((uint id, GLTexture entry) in _textures)
         {
-            if (entry.Name == name)
+            // Borrowed registrations only, for the same reason forgetting one is fussy: without this a
+            // storage texture that happened to share a recycled name would be handed back here as
+            // though it were the atlas being asked for.
+            if (entry.Name == name && entry is { Width: 0, Height: 0 })
             {
                 return new TextureHandle(id);
             }

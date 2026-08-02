@@ -1423,6 +1423,7 @@ using (window)
                     (lighting.FinalLighting, "cards-final.png"),
                 })
                 {
+                    logger.Information("SurfaceCache", $"Reading {file} from {source}.");
                     device.ReadStorageTexture(source, extra);
                     string other = Path.Combine(into, file);
                     PngWriter.Write(other, extra, lighting.Width, lighting.Height);
