@@ -332,12 +332,19 @@ using (window)
     // world positions correctly before it feeds the frame.
     bool screenGiDumped = false;
 
-    // The live screen probe gather's indirect atlas, sized to the frame divided by the probe step and
-    // reused across frames. Grown when the window changes; fed into the deferred lighting each frame the
-    // gather runs.
-    TextureHandle giIndirect = default;
+    // The live screen probe gather's atlases, sized to the frame divided by the probe step and reused
+    // across frames. Ping-ponged: each frame reads one pair and writes the other, so the accumulation
+    // reprojects onto its own past. giAccum holds the accumulated irradiance the deferred lighting reads;
+    // giPosition holds the world position each probe belongs to, for the reprojection's disocclusion test.
+    // Grown when the window changes, which drops the history with it.
+    TextureHandle[] giAccum = [default, default];
+    TextureHandle[] giPosition = [default, default];
     int giIndirectWidth = 0;
     int giIndirectHeight = 0;
+    int giFrame = 0;
+    bool giHasHistory = false;
+    Matrix3f giPrevWorldToView = Matrix3f.Identity;
+    Vector3f giPrevCameraToCache = default;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
@@ -2556,6 +2563,7 @@ using (window)
             // light. It replaces the ambient inside the shade rather than compositing over the frame, so
             // there is no ambient to zero and nothing runs after the lighting.
             const int giStep = 8;
+            const int giMaxAccum = 32;
             float giStrength = RenderCVars.ScreenGather.Value;
             bool giActive = captured
                 && giStrength > 0f
@@ -2570,15 +2578,29 @@ using (window)
 
                 if (giIndirectWidth != wantWidth || giIndirectHeight != wantHeight)
                 {
-                    if (giIndirect.IsValid)
+                    // A resize drops the history: the atlases are a different shape, so nothing in them
+                    // reprojects onto the new frame.
+                    for (int i = 0; i < 2; i++)
                     {
-                        device.DestroyTexture(giIndirect);
+                        if (giAccum[i].IsValid)
+                        {
+                            device.DestroyTexture(giAccum[i]);
+                        }
+
+                        if (giPosition[i].IsValid)
+                        {
+                            device.DestroyTexture(giPosition[i]);
+                        }
+
+                        giAccum[i] = device.CreateStorageTexture(
+                            wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum");
+                        giPosition[i] = device.CreateStorageTexture(
+                            wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum.pos");
                     }
 
-                    giIndirect = device.CreateStorageTexture(
-                        wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.indirect.live");
                     giIndirectWidth = wantWidth;
                     giIndirectHeight = wantHeight;
+                    giHasHistory = false;
                 }
 
                 Vector3f giCameraToCache = new(
@@ -2586,7 +2608,10 @@ using (window)
                     (float)(eye.Position.Y - liveGiCards.Origin.Y),
                     (float)(eye.Position.Z - liveGiCards.Origin.Z));
 
-                liveGiCards.GatherScreen(
+                int write = giFrame & 1;
+                int read = 1 - write;
+
+                liveGiCards.GatherScreenTemporal(
                     liveGiField,
                     device.SceneDepth,
                     device.SceneNormal,
@@ -2596,10 +2621,32 @@ using (window)
                     window.Width,
                     window.Height,
                     giStep,
-                    giIndirect);
+                    giAccum[write],
+                    giPosition[write],
+                    giAccum[read],
+                    giPosition[read],
+                    giPrevWorldToView,
+                    giPrevCameraToCache,
+                    giFrame,
+                    giMaxAccum,
+                    giHasHistory);
 
                 // Recorded for the deferred lighting to fold in when the pass closes, just below.
-                device.SetScreenIndirect(giIndirect, giStrength);
+                device.SetScreenIndirect(giAccum[write], giStrength);
+
+                // What this frame becomes to the next: its camera, so the next reprojection can find where
+                // each surface sat, and the flag that says there is now a frame to reproject onto. The
+                // world-to-view rotation is the orientation itself -- the inverse of the view-to-world the
+                // gather traced with.
+                giPrevWorldToView = eye.Orientation;
+                giPrevCameraToCache = giCameraToCache;
+                giHasHistory = true;
+                giFrame++;
+            }
+            else
+            {
+                // The gather did not run this frame, so next frame has nothing coherent to reproject onto.
+                giHasHistory = false;
             }
 
             // The view model and anything translucent belong to the forward pass: it is drawn with its
