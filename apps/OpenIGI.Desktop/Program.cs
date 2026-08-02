@@ -320,6 +320,7 @@ using (window)
     // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
     // on the render thread once the bake lands.
     SurfaceCacheLighting? cardLighting = null;
+    bool cardLightingDumped = false;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
@@ -919,6 +920,9 @@ using (window)
             {
                 // A level with no Dirlight has no sun to light the cards with, so they take the sky
                 // alone -- which is what such a level looks like anyway.
+                // Unshadowed at load. The clipmaps do not exist yet -- the field bake is still on its
+                // worker -- so this establishes sun and sky, and the per-frame pass below adds the
+                // shadow once there is a field to trace against.
                 cardLighting.Light(
                     sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
                     sun?.Colour ?? default,
@@ -2008,7 +2012,7 @@ using (window)
             // only becomes wrong by being walked out of.
             if (sdfClipmaps is { } liveField)
             {
-                liveField.Update(eye.Position);
+                int rebuiltLevels = liveField.Update(eye.Position);
 
                 // Once, after the first build, and only when asked. A wrong distance field produces a
                 // picture that is merely subtly wrong several stages later, so the only way to know it
@@ -2017,6 +2021,29 @@ using (window)
                 {
                     sdfValidated = true;
                     DistanceFieldValidation.Compare(device, liveField, exact, 0, logger);
+                }
+
+                // Re-lit whenever a clipmap level moved, and only then. The clipmaps follow the camera
+                // and reach a few hundred metres, so a page on the far side of the level has no field
+                // to trace against -- re-lighting as they move is what brings each page's shadow in as
+                // the player approaches it. Doing it every frame regardless would be tens of thousands
+                // of work groups spent re-deriving an answer that had not changed.
+                if (rebuiltLevels > 0 && cardLighting is { } litCards)
+                {
+                    litCards.Light(
+                        sun is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
+                        sun?.Colour ?? default,
+                        sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f),
+                        liveField);
+
+                    // Dumped after the SHADOWED pass rather than the one at load, which runs before
+                    // there is any field to trace against and would show the unshadowed answer.
+                    if (!cardLightingDumped
+                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
+                    {
+                        cardLightingDumped = true;
+                        DumpCardLighting(device, litCards, shadowInto, logger);
+                    }
                 }
             }
 

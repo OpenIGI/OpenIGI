@@ -520,6 +520,15 @@ public sealed class GlobalDistanceField : IDisposable
     /// </remarks>
     private static float RangeOf(float voxelSize) => voxelSize * 4f;
 
+    /// <summary>The furthest distance a level's stored bytes encode.</summary>
+    /// <param name="level">The level, zero being the innermost.</param>
+    /// <returns>The range in metres.</returns>
+    /// <remarks>
+    /// Public so a pass tracing these clipmaps decodes them exactly as the build encoded them. Two
+    /// copies of this number drifting apart would put every traced surface at the wrong distance.
+    /// </remarks>
+    public float RangeOfLevel(int level) => RangeOf(_settings.VoxelSizeOf(level));
+
     private static int CellIndex(double offset, float cellSize, int cells, int bias)
     {
         int index = (int)Math.Floor(offset / cellSize) + bias;
