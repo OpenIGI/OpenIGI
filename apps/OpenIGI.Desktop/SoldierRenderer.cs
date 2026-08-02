@@ -141,6 +141,10 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Gets the number of soldiers that resolved and will draw.</summary>
     public int Count { get; private set; }
 
+    /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
+    /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
+    public MaterialDetailPack? DetailMaps { get; set; }
+
     /// <summary>Builds the drawable soldiers from a loaded level.</summary>
     /// <param name="mission">The mission whose packs hold the models and animation sets.</param>
     /// <param name="levelRoot">The task the level's subtree hangs off.</param>
@@ -2715,6 +2719,8 @@ public sealed class SoldierRenderer : IDisposable
                         TextureFilter.Linear,
                         TextureAddressMode.Repeat),
                     image.Pixels);
+
+                DetailMaps?.Attach(name, handle);
             }
             catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
             {

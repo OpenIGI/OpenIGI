@@ -62,9 +62,19 @@ public sealed class TerrainRenderer : IDisposable
     /// <see cref="TerrainData.IsUsable"/>.
     /// </param>
     /// <param name="logger">Where to report upload problems.</param>
+    /// <param name="detailMaps">
+    /// The derived surface-detail maps, or <see langword="null"/> for none. A constructor argument
+    /// rather than a settable property, unlike the other renderers': the ground tiles are uploaded
+    /// here and now, so a property assigned by an object initialiser would be set after the only
+    /// moment it could have been read.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The terrain is not drawable.</exception>
-    public TerrainRenderer(IGraphicsDevice device, TerrainSurface surface, IIgiLogger? logger = null)
+    public TerrainRenderer(
+        IGraphicsDevice device,
+        TerrainSurface surface,
+        IIgiLogger? logger = null,
+        MaterialDetailPack? detailMaps = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
@@ -80,6 +90,7 @@ public sealed class TerrainRenderer : IDisposable
         _surface = surface;
         _terrain = surface.Terrain;
         _logger = logger ?? NullLogger.Instance;
+        DetailMaps = detailMaps;
         _tiles = UploadTiles();
     }
 
@@ -95,6 +106,10 @@ public sealed class TerrainRenderer : IDisposable
 
     /// <summary>Gets how many ground tiles were uploaded from the level's atlas.</summary>
     public int TileCount => _tiles.Length;
+
+    /// <summary>Gets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
+    /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
+    public MaterialDetailPack? DetailMaps { get; }
 
     /// <summary>Gets how many octree nodes the last descent entered.</summary>
     public int LastVisitedCount { get; private set; }
@@ -263,6 +278,13 @@ public sealed class TerrainRenderer : IDisposable
                         TextureFilter.Linear,
                         TextureAddressMode.Repeat),
                     tile.Pixels);
+
+                // Derived here rather than read from the pack, because a ground tile arrives as an
+                // index into an atlas and has no name to look one up with. There are a handful of them
+                // and they cover more of the screen than anything else, so this is both the cheapest
+                // case to derive in process and the one it would be most visible to skip.
+                DetailMaps?.AttachDerived(
+                    handles[i], tile.GetLevel(0), tile.Width, tile.Height);
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
             {

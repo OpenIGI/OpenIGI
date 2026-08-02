@@ -45,3 +45,8 @@ a probe of the running original
 # Scratch space for the remaster track's reference captures (tools/capture-reference.sh).
 .capture-tmp/
 .capture-compare/
+
+# Derived surface maps. Regenerated from the game's own textures by `ResExtract images` followed by
+# `ResExtract maps`, so they are reproducible rather than authored -- and they are the game's art with
+# a filter over it, which is not this repository's to carry.
+.textures/

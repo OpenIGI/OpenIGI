@@ -424,6 +424,46 @@ public static class RenderCVars
         high: "6",
         ultra: "10");
 
+    /// <summary>How strongly the derived surface-detail maps are applied, or 0 to ignore them.</summary>
+    /// <remarks>
+    /// <para>
+    /// I.G.I. ships a diffuse texture per surface and nothing else — no normal map, no roughness map.
+    /// A physically-based shading model has four inputs and the data answers one, so the rest are
+    /// derived from the diffuse itself and registered per texture. This is how far to trust that.
+    /// </para>
+    /// <para>
+    /// <b>Invented data, and a deliberate divergence.</b> It is off under vanilla and enhanced, because
+    /// those presets exist to reproduce and to gently improve what shipped rather than to add detail
+    /// nobody painted. It is what makes brick read as brick when the sun crosses it, which is a larger
+    /// visible gap between this renderer and a modern one than any amount of indirect lighting.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> MaterialDetail = Presets.Define(
+        CVar.Float(
+            "r_material_detail",
+            0f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "How strongly derived normal and roughness maps are applied; 0 ignores them."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0.7",
+        ultra: "1");
+
+    /// <summary>Where the derived surface-detail maps are read from.</summary>
+    /// <remarks>
+    /// A directory of PNGs named after the textures they belong to, as
+    /// <c>ResExtract maps</c> writes. Empty means there is no pack and nothing is derived, which is
+    /// what an installation that has never run the tool gets — and it renders exactly as it did before
+    /// the maps existed rather than failing.
+    /// </remarks>
+    public static readonly StringCVar MaterialPack = CVar.Text(
+        "r_material_pack",
+        string.Empty,
+        CVarOptions.Archive | CVarOptions.RequiresRestart,
+        "Directory of derived surface-detail maps; empty for none.");
+
     /// <summary>Scales the whole dynamically-computed irradiance.</summary>
     /// <remarks>
     /// Not a taste control, a calibration. I.G.I.'s diffuse textures are not albedo: they were painted

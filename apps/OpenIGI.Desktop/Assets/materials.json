@@ -27,15 +27,24 @@
   "textures": {
     "*_argb8888": {
       "$comment": [
-        "Glass, and the first surface in the game that reflects anything. It is also every wire fence",
-        "and every bush, which is the price of the only signal the names give -- a leaf reflecting the",
-        "sky is wrong, but it is a small wrongness on a surface that is mostly holes, and the Fresnel",
-        "term means it only shows at a grazing angle where a leaf is edge-on anyway.",
+        "The cut-out surfaces: anything the packs store with an alpha channel. Sixty-eight textures in",
+        "the whole game, and they were ALL given roughness 0.08 here on the reading that this suffix",
+        "marks glass.",
         "",
-        "Anything here that turns out to be foliage rather than glass should be listed by name below",
-        "with the default roughness put back."
+        "It does not. Surveyed: the sixty-eight are window panes, wire fences, railings, cables, road",
+        "signs, ladders, scaffolding, foliage -- and smoke sprites. Ranked by how much alpha perimeter",
+        "each carries per unit of solid area, they run from 0.012 (a few large flat panes, glass-like)",
+        "to 0.79 (wire and leaves), with the median at 0.149. Perhaps ten of them are glass.",
+        "",
+        "The blanket roughness is therefore REMOVED and these take the default. It was a defensible",
+        "compromise while the only consequence was a faint Fresnel on the screen-space reflections; it",
+        "stopped being one when the deferred pass gained a real specular lobe, because near-mirror",
+        "roughness on a bush puts a sharp highlight on every leaf, and on a smoke sprite it is worse.",
+        "",
+        "Glass wants naming individually, which means somebody looking at ten textures rather than",
+        "trusting a suffix. The ranking above is the starting list, not the answer -- a large flat",
+        "alpha region is just as likely to be a road sign or a door."
       ],
-      "roughness": 0.08,
       "metallic": 0.0,
 
       "$occlusion": [

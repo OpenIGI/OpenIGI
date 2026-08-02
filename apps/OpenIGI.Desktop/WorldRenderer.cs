@@ -324,6 +324,14 @@ public sealed class WorldRenderer : IDisposable
         set => _materials = value ?? MaterialLibrary.Empty;
     }
 
+    /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
+    /// <remarks>
+    /// Settable for the same reason <see cref="Materials"/> is, and owned by the shell rather than by
+    /// this renderer: the same pack serves the world, the soldiers and the terrain, and each of them
+    /// loads its own textures.
+    /// </remarks>
+    public MaterialDetailPack? DetailMaps { get; set; }
+
     private TextureHandle GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out TextureHandle cached))
@@ -342,6 +350,11 @@ public sealed class WorldRenderer : IDisposable
                 handle = _device.CreateTexture(
                     new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
                     image.Pixels);
+
+                // The derived normal and roughness this game never shipped, if a pack has been built.
+                // Registered against the texture rather than carried through the draw, so nothing below
+                // this line knows the maps exist.
+                DetailMaps?.Attach(name, handle);
             }
             catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
             {

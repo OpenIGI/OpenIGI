@@ -26,7 +26,7 @@ namespace OpenIGI.Rendering.OpenGL;
 /// for no visible difference.
 /// </para>
 /// </remarks>
-public sealed class GLGraphicsDevice : IGraphicsDevice
+public sealed partial class GLGraphicsDevice : IGraphicsDevice
 {
     /// <summary>How many sampling units the backend tracks internally.</summary>
     /// <remarks>
@@ -143,6 +143,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private SurfaceMaterial? _sentMaterial;
     private SurfaceMaterial _material = SurfaceMaterial.Default;
     private SceneLighting _lighting = SceneLighting.Baked;
+    private float _materialDetail;
+    private int _gbufferDetail = -1;
+    private float _sentDetailStrength = float.NaN;
 
     /// <summary>GL_TEXTURE_MAX_ANISOTROPY. Core since 4.6 and an EXT with the same value long before.</summary>
     private const GLEnum TextureMaxAnisotropy = (GLEnum)0x84FE;
@@ -1248,6 +1251,34 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
 
     /// <inheritdoc/>
+    public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail)
+    {
+        ThrowIfDisposed();
+
+        if (!_textures.TryGetValue(diffuse.Id, out GLTexture entry))
+        {
+            throw new GraphicsDeviceException($"{diffuse} does not belong to this device.");
+        }
+
+        uint name = 0;
+
+        if (detail.IsValid)
+        {
+            if (!_textures.TryGetValue(detail.Id, out GLTexture map))
+            {
+                throw new GraphicsDeviceException($"{detail} does not belong to this device.");
+            }
+
+            name = map.Name;
+        }
+
+        _textures[diffuse.Id] = entry with { Detail = name };
+    }
+
+    /// <inheritdoc/>
+    public void SetMaterialDetail(float strength) => _materialDetail = MathF.Max(strength, 0f);
+
+    /// <inheritdoc/>
     public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
 
     /// <inheritdoc/>
@@ -1833,6 +1864,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         BindTexture(0, target.FrontColorTexture);
         BindTexture(1, target.NormalTexture);
+        BindTexture(2, target.AlbedoTexture);
         BindTexture(3, target.MaterialTexture);
         BindTexture(4, target.DepthTexture);
 
@@ -2292,6 +2324,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _lastMeshProgram = program;
             _meshUniformsPrimed = false;
             _sentMaterial = null;
+            _sentDetailStrength = float.NaN;
         }
 
         UseProgram(program);
@@ -2435,8 +2468,35 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             }
         }
 
-        BindTexture(0, NameOf(diffuse, nameof(diffuse)));
+        // An untextured draw is legitimate and common -- it takes the white texture, as NameOf does --
+        // so the entry is only resolved when there is one to resolve. Resolving unconditionally is what
+        // the first version did, and it threw on the first untextured sub-mesh in the level.
+        GLTexture surface = diffuse.IsValid
+            ? Resolve(diffuse, nameof(diffuse))
+            : new GLTexture(_whiteTexture, 1, 1, 1);
+
+        BindTexture(0, surface.Name);
         BindTexture(1, NameOf(lightmap, nameof(lightmap)));
+
+        // The derived surface detail: the normal and roughness this game's textures never carried. A
+        // texture with no map registered, or a preset that asked for none, sends a strength of zero
+        // rather than a second branch -- the shader's multiply by it is cheaper than the divergence,
+        // and the alternative is two G-buffer programs differing by four lines.
+        if (deferred && _gbufferDetail >= 0)
+        {
+            float strength = surface.Detail != 0 ? _materialDetail : 0f;
+
+            if (_sentDetailStrength != strength)
+            {
+                _sentDetailStrength = strength;
+                program.SetFloat(_gbufferDetail, strength);
+            }
+
+            if (strength > 0f)
+            {
+                BindTexture(2, surface.Detail);
+            }
+        }
 
         ApplyBlend(blend);
 
@@ -2466,6 +2526,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _lutTexture = 0;
         }
 
+        DisposeComputeResources();
         _stageProfiler?.Dispose();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
@@ -2623,9 +2684,11 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             _gbufferProgram.LocationOf("uPreviousPoseBlend"));
         _gbufferMaterial = _gbufferProgram.LocationOf("uMaterial");
         _gbufferDecodeAlbedo = _gbufferProgram.LocationOf("uDecodeAlbedo");
+        _gbufferDetail = _gbufferProgram.LocationOf("uDetailStrength");
         UseProgram(_gbufferProgram);
         _gbufferProgram.SetInt("uDiffuse", 0);
         _gbufferProgram.SetInt("uLightmap", 1);
+        _gbufferProgram.SetInt("uDetail", 2);
 
         _occlusionProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment);
@@ -2719,6 +2782,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         UseProgram(_reflectionProgram);
         _reflectionProgram.SetInt("uScene", 0);
         _reflectionProgram.SetInt("uNormal", 1);
+        _reflectionProgram.SetInt("uAlbedo", 2);
         _reflectionProgram.SetInt("uMaterial", 3);
         _reflectionProgram.SetInt("uDepth", 4);
         _reflectionProgram.SetInt("uProbeRed", 8);
@@ -3074,7 +3138,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         int PoseBlend = -1,
         int PreviousPoseBlend = -1);
 
-    private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels);
+    /// <summary>A texture this device owns, and the derived detail map attached to it, if any.</summary>
+    /// <remarks>
+    /// The detail map lives on the texture entry rather than in a table of its own because every draw
+    /// already resolves its diffuse through this dictionary. Attaching it here makes the lookup free;
+    /// a second dictionary would be a second hash of the same key, per sub-mesh, per frame.
+    /// </remarks>
+    private readonly record struct GLTexture(uint Name, int Width, int Height, int MipLevels, uint Detail = 0);
 
     /// <summary>One uploaded mesh.</summary>
     /// <remarks>

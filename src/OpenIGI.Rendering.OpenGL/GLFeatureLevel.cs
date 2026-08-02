@@ -34,6 +34,22 @@ internal readonly record struct GLFeatureLevel(int Major, int Minor)
     /// <summary>Gets a value indicating whether shader storage buffers are available.</summary>
     public bool SupportsShaderStorageBuffers => AtLeast(4, 3);
 
+    /// <summary>Gets a value indicating whether a shader can share values across a wavefront directly.</summary>
+    /// <remarks>
+    /// <para>
+    /// The tracing and culling stages lean on these heavily — summing across a wave, compacting a list
+    /// by prefix count, broadcasting one lane's answer to the rest. Every one of them has a fallback
+    /// through shared memory, so this decides how fast those passes are rather than whether they run.
+    /// </para>
+    /// <para>
+    /// Reported from the version rather than probed for the extension string. <c>GL_KHR_shader_subgroup</c>
+    /// is exposed by every current desktop driver at 4.6, and a context that reports 4.6 without it is
+    /// one this project has no way to test against — so the version is the honest signal and the shared
+    /// memory path is what an older context gets.
+    /// </para>
+    /// </remarks>
+    public bool SupportsSubgroups => AtLeast(4, 6);
+
     /// <summary>Gets a value indicating whether objects can be modified without being bound first.</summary>
     /// <remarks>Not a feature the player can see; it removes a great deal of bind-and-restore from the backend.</remarks>
     public bool SupportsDirectStateAccess => AtLeast(4, 5);

@@ -315,6 +315,14 @@ using (window)
         Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
         logger);
 
+    // The derived surface detail this game never shipped -- normals, roughness, metal. Built by
+    // `ResExtract maps` and pointed at by r_material_pack; an installation that has never run the tool
+    // has none, and renders exactly as it did before any of this existed.
+    //
+    // Constructed once for the whole session rather than per level, because a texture pack is shared
+    // across missions and the maps are the textures' own property rather than a level's.
+    MaterialDetailPack detailMaps = new(device, RenderCVars.MaterialPack.Value, logger);
+
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than
     // per frame -- it is a volume texture upload, while how much of it to apply is a number.
     // A mission with no table of its own is not a fault: it renders ungraded, which is what every
@@ -404,7 +412,7 @@ using (window)
         new ConditionalContainerGate(loop.Variables, logger).Prepare(levelRoot);
 
         scene = WorldScene.Build(loaded, levelRoot, magic, logger);
-        world = new WorldRenderer(device, resources, logger) { Materials = materials };
+        world = new WorldRenderer(device, resources, logger) { Materials = materials, DetailMaps = detailMaps };
 
         // The walls. Built here because two consumers want it: the player's collision, and the
         // soldiers' ground probe - a guard's declared Position is only where it starts, and without
@@ -417,7 +425,7 @@ using (window)
         // WorldScene placements - a human task is a typed task, and the original draws it through the
         // bone path, not the static one.
         soldiers?.Dispose();
-        soldiers = new SoldierRenderer(device, resources, logger);
+        soldiers = new SoldierRenderer(device, resources, logger) { DetailMaps = detailMaps };
         soldiers.Load(
             loaded,
             levelRoot,
@@ -771,7 +779,7 @@ using (window)
         // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
         terrain?.Dispose();
         terrain = loaded.Terrain is { IsUsable: true } usable
-            ? new TerrainRenderer(device, TerrainSurface.Build(usable, levelRoot, logger), logger)
+            ? new TerrainRenderer(device, TerrainSurface.Build(usable, levelRoot, logger), logger, detailMaps)
             : null;
 
         // The sky is script data on the level's task tree; its fog colour is also what the frame
@@ -1227,6 +1235,12 @@ using (window)
     window.CloseRequested += (_, _) => running = false;
     window.Show();
     logger.Information("Desktop", $"{platform.Name} up on {device.Capabilities.Renderer}.");
+
+    // Proved once, here, rather than discovered several stages later as a wrong picture. Everything
+    // from the distance fields onwards is compute, and none of it draws anything until a good deal of
+    // it is in place -- so a driver that mis-binds a buffer or ignores a barrier would first show up
+    // as lighting that looks subtly wrong, a very long way from its cause.
+    GLComputeSelfTest.Run(device, logger);
 
     // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
     // probe showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail
@@ -1741,6 +1755,13 @@ using (window)
             // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
             // on its ambient exactly as the fog does.
             device.SetDebugView(RenderCVars.Debug.Value);
+
+            // The derived detail is a deferred-path feature: it changes the normal and the roughness
+            // written into the G-buffer, and without one there is nothing to write them into.
+            device.SetMaterialDetail(
+                RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                    ? RenderCVars.MaterialDetail.Value
+                    : 0f);
             device.SetReflections(
                 RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
                     ? new ReflectionSettings(
