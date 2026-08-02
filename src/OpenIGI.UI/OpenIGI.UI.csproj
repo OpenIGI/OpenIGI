@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <!-- StbTrueTypeSharp is a thin unsafe port of stb_truetype: its rasterisers take raw byte* and
+         return byte*. The font-atlas builder is the only unsafe code in the project, fenced into
+         OpenIGI.UI.Text. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- The abstraction projects only. OpenIGI.UI draws through IGraphicsDevice / SpriteBatch and
          reads devices through OpenIGI.Input; it never references a concrete backend

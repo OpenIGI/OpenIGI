@@ -1,0 +1,238 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.Rendering;
+using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
+
+namespace OpenIGI.UI;
+
+/// <summary>
+/// The interface's drawing surface: rectangles, sprites and text emitted into an open
+/// <see cref="SpriteBatch"/>, with a clip stack for scroll views.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Everything funnels through the one <see cref="SpriteBatch"/> the game already uses, so UI draws
+/// interleave with the HUD and the console in submission order exactly as the original's painter's
+/// algorithm expects. The caller opens and closes the batch around a frame's worth of screens; the
+/// painter never does.
+/// </para>
+/// <para>
+/// <b>Clipping is done on the CPU.</b> The 2D seam has no scissor — <see cref="OpenIGI.Rendering.IGraphicsDevice.SetViewport"/>
+/// would remap the coordinate space, not just mask it — so a clip rectangle is applied by trimming each
+/// quad to it and adjusting its texture coordinates in proportion. That is enough for axis-aligned UI:
+/// a scroll view pushes a clip, its rows draw trimmed, and it pops. It costs a little arithmetic per
+/// quad and keeps the whole path inside the sprite batch, which is what lets the draw output be asserted
+/// through <c>RecordingGraphicsDevice</c> without a GPU.
+/// </para>
+/// </remarks>
+public sealed class UiPainter
+{
+    private readonly SpriteBatch _batch;
+    private readonly Stack<UiRect> _clips = new();
+
+    /// <summary>Initializes a new instance of the <see cref="UiPainter"/> class.</summary>
+    /// <param name="batch">The open sprite batch to draw into.</param>
+    /// <param name="context">The layout context mapping design units to this back buffer.</param>
+    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+    public UiPainter(SpriteBatch batch, LayoutContext context)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(context);
+        _batch = batch;
+        Context = context;
+    }
+
+    /// <summary>Gets the layout context for this frame.</summary>
+    public LayoutContext Context { get; }
+
+    /// <summary>Gets the current clip rectangle, the whole viewport when nothing is pushed.</summary>
+    public UiRect Clip => _clips.Count > 0 ? _clips.Peek() : new UiRect(0f, 0f, Context.Viewport.X, Context.Viewport.Y);
+
+    /// <summary>Restricts drawing to the intersection of the current clip and a rectangle.</summary>
+    /// <param name="rect">The rectangle to clip to.</param>
+    public void PushClip(UiRect rect) => _clips.Push(_clips.Count > 0 ? _clips.Peek().Intersect(rect) : rect);
+
+    /// <summary>Restores the clip in force before the matching <see cref="PushClip"/>.</summary>
+    /// <exception cref="InvalidOperationException">No clip is pushed.</exception>
+    public void PopClip()
+    {
+        if (_clips.Count == 0)
+        {
+            throw new InvalidOperationException("PopClip was called without a matching PushClip.");
+        }
+
+        _clips.Pop();
+    }
+
+    /// <summary>Fills a rectangle with a solid colour.</summary>
+    /// <param name="rect">The rectangle in pixels.</param>
+    /// <param name="color">The fill colour.</param>
+    /// <param name="blend">How the fill combines with what is behind it.</param>
+    public void FillRect(UiRect rect, Bgra32 color, BlendMode blend = BlendMode.AlphaBlend)
+    {
+        UiRect dest = rect;
+        RectF source = RectF.Unit;
+        if (TryClip(Clip, ref dest, ref source))
+        {
+            _batch.Draw(TextureHandle.None, dest.ToRectF(), source, color, blend);
+        }
+    }
+
+    /// <summary>Strokes a rectangle's outline with four thin fills.</summary>
+    /// <param name="rect">The rectangle in pixels.</param>
+    /// <param name="thickness">The stroke thickness in pixels.</param>
+    /// <param name="color">The stroke colour.</param>
+    /// <param name="blend">How the stroke combines with what is behind it.</param>
+    public void StrokeRect(UiRect rect, float thickness, Bgra32 color, BlendMode blend = BlendMode.AlphaBlend)
+    {
+        if (thickness <= 0f)
+        {
+            return;
+        }
+
+        FillRect(new UiRect(rect.X, rect.Y, rect.Width, thickness), color, blend);
+        FillRect(new UiRect(rect.X, rect.Bottom - thickness, rect.Width, thickness), color, blend);
+        FillRect(new UiRect(rect.X, rect.Y, thickness, rect.Height), color, blend);
+        FillRect(new UiRect(rect.Right - thickness, rect.Y, thickness, rect.Height), color, blend);
+    }
+
+    /// <summary>Draws a textured sprite.</summary>
+    /// <param name="texture">The texture to sample.</param>
+    /// <param name="destination">The destination rectangle in pixels.</param>
+    /// <param name="source">The source rectangle in texture coordinates.</param>
+    /// <param name="color">The colour modulated with the texture.</param>
+    /// <param name="blend">How the sprite combines with what is behind it.</param>
+    public void DrawSprite(
+        TextureHandle texture,
+        UiRect destination,
+        RectF source,
+        Bgra32 color,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        UiRect dest = destination;
+        RectF src = source;
+        if (TryClip(Clip, ref dest, ref src))
+        {
+            _batch.Draw(texture, dest.ToRectF(), src, color, blend);
+        }
+    }
+
+    /// <summary>Draws a string with its top-left at a point.</summary>
+    /// <param name="font">The font to draw with.</param>
+    /// <param name="text">The text; a line feed starts a new line at the original left edge.</param>
+    /// <param name="topLeft">The top-left of the first line, in pixels.</param>
+    /// <param name="sizePx">The text size in pixels.</param>
+    /// <param name="color">The text colour.</param>
+    /// <param name="blend">How the glyphs combine with what is behind them.</param>
+    /// <returns>The pen position after the last glyph, in pixels.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="font"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The font has no atlas texture (it is measurement-only).</exception>
+    public UiVec2 DrawText(
+        UiFont font,
+        ReadOnlySpan<char> text,
+        UiVec2 topLeft,
+        float sizePx,
+        Bgra32 color,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        if (!font.Texture.IsValid)
+        {
+            throw new InvalidOperationException("This font was built for measurement only and cannot draw.");
+        }
+
+        float scale = font.ScaleFor(sizePx);
+        float penX = topLeft.X;
+        float baseline = topLeft.Y + font.Ascent(sizePx);
+        UiRect clip = Clip;
+
+        foreach (char c in text)
+        {
+            if (c == '\n')
+            {
+                penX = topLeft.X;
+                baseline += font.LineHeight(sizePx);
+                continue;
+            }
+
+            GlyphInfo glyph = font.GetGlyph(c);
+            if (glyph.HasBitmap)
+            {
+                UiRect dest = new(
+                    penX + (glyph.OffsetX * scale),
+                    baseline + (glyph.OffsetY * scale),
+                    glyph.Width * scale,
+                    glyph.Height * scale);
+                RectF source = glyph.SourceRect(font.Atlas.Width, font.Atlas.Height);
+                if (TryClip(clip, ref dest, ref source))
+                {
+                    _batch.Draw(font.Texture, dest.ToRectF(), source, color, blend);
+                }
+            }
+
+            penX += glyph.Advance * scale;
+        }
+
+        return new UiVec2(penX, baseline - font.Ascent(sizePx));
+    }
+
+    /// <summary>Draws a string with a soft drop shadow, then the text on top.</summary>
+    /// <param name="font">The font to draw with.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="topLeft">The top-left of the first line, in pixels.</param>
+    /// <param name="sizePx">The text size in pixels.</param>
+    /// <param name="color">The text colour.</param>
+    /// <param name="shadow">The shadow colour, typically translucent black.</param>
+    /// <param name="offset">The shadow offset in pixels.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="font"/> is <see langword="null"/>.</exception>
+    public void DrawTextShadowed(
+        UiFont font,
+        ReadOnlySpan<char> text,
+        UiVec2 topLeft,
+        float sizePx,
+        Bgra32 color,
+        Bgra32 shadow,
+        UiVec2 offset)
+    {
+        DrawText(font, text, topLeft + offset, sizePx, shadow);
+        DrawText(font, text, topLeft, sizePx, color);
+    }
+
+    /// <summary>Trims a destination rectangle to a clip, adjusting its source rectangle to match.</summary>
+    /// <param name="clip">The clip rectangle.</param>
+    /// <param name="dest">The destination, trimmed in place.</param>
+    /// <param name="source">The source, trimmed in proportion in place.</param>
+    /// <returns><see langword="false"/> when the destination lies wholly outside the clip.</returns>
+    internal static bool TryClip(UiRect clip, ref UiRect dest, ref RectF source)
+    {
+        if (dest.Width <= 0f || dest.Height <= 0f)
+        {
+            return false;
+        }
+
+        float left = MathF.Max(dest.X, clip.X);
+        float top = MathF.Max(dest.Y, clip.Y);
+        float right = MathF.Min(dest.Right, clip.Right);
+        float bottom = MathF.Min(dest.Bottom, clip.Bottom);
+        if (right <= left || bottom <= top)
+        {
+            return false;
+        }
+
+        // Nothing to trim: leave the source untouched so an unclipped draw is bit-for-bit what it was.
+        if (left == dest.X && top == dest.Y && right == dest.Right && bottom == dest.Bottom)
+        {
+            return true;
+        }
+
+        float uPerPx = source.Width / dest.Width;
+        float vPerPx = source.Height / dest.Height;
+        source = new RectF(
+            source.X + ((left - dest.X) * uPerPx),
+            source.Y + ((top - dest.Y) * vPerPx),
+            (right - left) * uPerPx,
+            (bottom - top) * vPerPx);
+        dest = UiRect.FromEdges(left, top, right, bottom);
+        return true;
+    }
+}
