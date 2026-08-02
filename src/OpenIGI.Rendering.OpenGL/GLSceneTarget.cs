@@ -42,6 +42,8 @@ internal sealed class GLSceneTarget : IDisposable
     private uint _outputFramebuffer;
     private uint _outputDepth;
     private bool _presentingOutput;
+    private uint _occlusionTexture;
+    private uint _occlusionFramebuffer;
     private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
@@ -186,6 +188,13 @@ internal sealed class GLSceneTarget : IDisposable
         {
             Release();
             return false;
+        }
+
+        if (description.Deferred && !CreateOcclusion(description))
+        {
+            // Nothing else depends on it: the lighting pass reads full visibility when it is absent, so
+            // a target without one is the same picture with flat ambient.
+            _logger.Warning(LogCategory, "The occlusion buffer could not be created; ambient occlusion is off.");
         }
 
         if (!CreateHistory(colorFormat, description))
@@ -341,6 +350,27 @@ internal sealed class GLSceneTarget : IDisposable
         _historyValid = true;
     }
 
+    /// <summary>Gets the ambient visibility and bounced colour, or zero when the target is not deferred.</summary>
+    /// <remarks>
+    /// Alpha is how much of the sky the surface can see, and the colour is what its neighbours bounce
+    /// onto it. They travel together because the same horizon search produces both.
+    /// </remarks>
+    public uint OcclusionTexture => _occlusionTexture;
+
+    /// <summary>Makes the occlusion buffer current, for the horizon search to write into.</summary>
+    /// <returns><see langword="true"/> when there is a buffer to write into.</returns>
+    public bool BindForOcclusion()
+    {
+        if (_occlusionFramebuffer == 0)
+        {
+            return false;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _occlusionFramebuffer);
+        _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+        return true;
+    }
+
     /// <summary>Gets a value indicating whether an upsampled output buffer exists to accumulate into.</summary>
     public bool HasOutput => _outputFramebuffer != 0;
 
@@ -385,6 +415,31 @@ internal sealed class GLSceneTarget : IDisposable
 
         _disposed = true;
         Release();
+    }
+
+    /// <summary>Creates the buffer the horizon search writes visibility and bounced colour into.</summary>
+    /// <param name="description">The target being built.</param>
+    /// <returns><see langword="true"/> when the buffer exists.</returns>
+    /// <remarks>
+    /// Sixteen-bit float rather than eight-bit: the bounced colour shares it, and bounced light is
+    /// linear radiance that a byte cannot hold the low end of without banding the very gradients the
+    /// effect exists to produce.
+    /// </remarks>
+    private bool CreateOcclusion(in SceneTargetDescription description)
+    {
+        _occlusionTexture = CreateTexture(
+            InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.Float, description);
+
+        _occlusionFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _occlusionFramebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            _occlusionTexture,
+            0);
+
+        return IsComplete("occlusion");
     }
 
     /// <summary>Creates the pair of accumulation buffers the temporal resolve alternates between.</summary>
@@ -646,6 +701,18 @@ internal sealed class GLSceneTarget : IDisposable
         _historyWrite = 0;
         _historyValid = false;
         _presentingOutput = false;
+
+        if (_occlusionFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_occlusionFramebuffer);
+            _occlusionFramebuffer = 0;
+        }
+
+        if (_occlusionTexture != 0)
+        {
+            _gl.DeleteTexture(_occlusionTexture);
+            _occlusionTexture = 0;
+        }
 
         if (_outputFramebuffer != 0)
         {

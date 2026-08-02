@@ -1563,6 +1563,18 @@ using (window)
                 }
             }
 
+            // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
+            // there is a G-buffer; without one the lighting has no ambient term of its own to shade.
+            device.SetAmbientOcclusion(
+                RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                    ? new AmbientOcclusionSettings(
+                        RenderCVars.AmbientOcclusion.Value,
+                        RenderCVars.AmbientOcclusionRadius.Value,
+                        RenderCVars.AmbientOcclusionIntensity.Value,
+                        RenderCVars.ScreenSpaceGi.Value,
+                        RenderCVars.ScreenSpaceGiIntensity.Value)
+                    : AmbientOcclusionSettings.Off);
+
             // Reprojection compares two frames, and the jitter is precisely what differs between them,
             // so the matrix handed over is the one without it.
             device.SetTemporalAntiAliasing(

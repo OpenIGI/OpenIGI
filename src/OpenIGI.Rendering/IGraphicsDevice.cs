@@ -267,6 +267,18 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Sets how much of the sky each surface can see, and what its neighbours bounce onto it.</summary>
+    /// <param name="settings">
+    /// The search, or <see cref="AmbientOcclusionSettings.Off"/> for none. With none, the lighting pass
+    /// uses full visibility and no bounce, which is the flat ambient the stage before this one had.
+    /// </param>
+    /// <remarks>
+    /// Applied to the ambient and bounced terms only, never to the sun. Occluding direct light is what
+    /// shadow maps are for, and doing it here as well would darken the same geometry twice — visibly so
+    /// in a corner that is both shadowed and enclosed, which is most corners.
+    /// </remarks>
+    void SetAmbientOcclusion(in AmbientOcclusionSettings settings);
+
     /// <summary>Says where the next meshes drawn stood in the previous frame.</summary>
     /// <param name="previousModelView">
     /// The object's previous pose seen through the <em>current</em> camera — the same matrix a draw

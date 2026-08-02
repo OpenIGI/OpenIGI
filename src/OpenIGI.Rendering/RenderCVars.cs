@@ -267,6 +267,65 @@ public static class RenderCVars
         high: "1.5",
         ultra: "2.5");
 
+    /// <summary>How many directions each pixel searches for its horizons, or 0 for no occlusion.</summary>
+    /// <remarks>
+    /// Follows the same convention as <c>r_fog_quality</c>: the quality dial doubles as the switch,
+    /// because a separate on/off would let the two disagree and a preset would then have to set both.
+    /// </remarks>
+    public static readonly NumericCVar<int> AmbientOcclusion = Presets.Define(
+        CVar.Int(
+            "r_ao",
+            0,
+            0,
+            8,
+            CVarOptions.Archive,
+            "Ambient occlusion: directions searched per pixel; 0 turns it off."),
+        vanilla: "0",
+        enhanced: "2",
+        high: "3",
+        ultra: "4");
+
+    /// <summary>How far a surface may occlude another, in metres.</summary>
+    public static readonly NumericCVar<float> AmbientOcclusionRadius = CVar.Float(
+        "r_ao_radius",
+        1.5f,
+        0.05f,
+        16f,
+        CVarOptions.Archive,
+        "How far, in metres, one surface can shade another.");
+
+    /// <summary>How strongly the occlusion is applied, where 1 is the physical amount.</summary>
+    public static readonly NumericCVar<float> AmbientOcclusionIntensity = CVar.Float(
+        "r_ao_intensity",
+        1.2f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "How deeply ambient occlusion darkens; 1 is the physical amount.");
+
+    /// <summary>How many samples gather bounced colour, or 0 for no screen-space bounce.</summary>
+    public static readonly NumericCVar<int> ScreenSpaceGi = Presets.Define(
+        CVar.Int(
+            "r_ssgi",
+            0,
+            0,
+            8,
+            CVarOptions.Archive,
+            "Screen-space bounced light: samples per direction; 0 turns it off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "2",
+        ultra: "4");
+
+    /// <summary>How strongly the bounced colour is added back.</summary>
+    public static readonly NumericCVar<float> ScreenSpaceGiIntensity = CVar.Float(
+        "r_ssgi_intensity",
+        1f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "How strongly surfaces bounce their colour onto each other.");
+
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(
         "r_debug_view",

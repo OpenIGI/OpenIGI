@@ -35,4 +35,10 @@ public enum DebugView
 
     /// <summary>The baked irradiance the original's lightmaps carry.</summary>
     BakedLight = 6,
+
+    /// <summary>How much of the sky each surface can see, white for open and black for buried.</summary>
+    Ao = 7,
+
+    /// <summary>The colour neighbouring surfaces bounce onto each surface, with nothing else added.</summary>
+    Ssgi = 8,
 }

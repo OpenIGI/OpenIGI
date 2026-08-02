@@ -92,6 +92,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The shadow settings each frame was given, in order.</summary>
     public List<ShadowSettings> Shadows { get; } = [];
 
+    /// <summary>The occlusion settings each frame was given, in order.</summary>
+    public List<AmbientOcclusionSettings> Occlusion { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetAmbientOcclusion(in AmbientOcclusionSettings settings) => Occlusion.Add(settings);
+
     /// <summary>The previous poses reported, in order; a null entry is a clear.</summary>
     public List<Matrix4f?> PreviousPoses { get; } = [];
 

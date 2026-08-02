@@ -61,6 +61,15 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private (float Scale, float Offset, float Slope, float Enabled) _detailFade;
+    private AmbientOcclusionSettings _occlusion;
+    private GLShaderProgram? _occlusionProgram;
+    private int _occlusionUnproject = -1;
+    private int _occlusionSearch = -1;
+    private int _occlusionBounce = -1;
+    private int _occlusionTexelSize = -1;
+    private int _occlusionFrame;
+    private int _lightingOcclusionEnabled = -1;
+
     private Matrix4f? _previousPose;
     private Matrix4f _sentPreviousPose;
     private DepthState _depthState = DepthState.Disabled;
@@ -761,6 +770,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetAmbientOcclusion(in AmbientOcclusionSettings settings)
+    {
+        ThrowIfDisposed();
+        _occlusion = settings;
+    }
+
+    /// <inheritdoc/>
     public void SetPreviousPose(in Matrix4f previousModelView)
     {
         ThrowIfDisposed();
@@ -998,7 +1014,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
             if (_sceneTarget.Description.Deferred)
             {
-                RunDeferredLighting(_sceneTarget);
+                bool occluded = RunAmbientOcclusion(_sceneTarget);
+                RunDeferredLighting(_sceneTarget, occluded);
                 RunVolumetricFog(_sceneTarget);
             }
             else
@@ -1066,6 +1083,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         if (debug != 0)
         {
             BindTexture(4, target.DepthTexture);
+            BindTexture(3, target.OcclusionTexture);
             BindTexture(5, target.MotionTexture);
             BindTexture(6, target.AlbedoTexture);
             BindTexture(7, target.NormalTexture);
@@ -1204,19 +1222,86 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _hasPreviousFrame = true;
     }
 
+    /// <summary>Searches the depth buffer's horizons for how open each surface is.</summary>
+    /// <param name="target">The scene target holding the G-buffer and the occlusion buffer.</param>
+    /// <returns><see langword="true"/> when the lighting pass has an occlusion buffer to read.</returns>
+    /// <remarks>
+    /// Before the lighting rather than after it, because its result is an input to the ambient term
+    /// rather than a filter over the finished picture. Darkening a lit frame afterwards would darken
+    /// the sunlight too, and sunlight in a corner is the shadow map's business.
+    /// </remarks>
+    private bool RunAmbientOcclusion(GLSceneTarget target)
+    {
+        if (!_occlusion.Enabled || _occlusionProgram is null || _fullScreen is null)
+        {
+            return false;
+        }
+
+        if (!target.BindForOcclusion())
+        {
+            return false;
+        }
+
+        UseProgram(_occlusionProgram);
+        _occlusionProgram.SetVector4(
+            _occlusionUnproject,
+            _unprojection.XScale,
+            _unprojection.YScale,
+            _unprojection.Near,
+            _unprojection.Far);
+        _occlusionProgram.SetVector4(
+            _occlusionSearch,
+            Math.Clamp(_occlusion.Quality, 1, 8),
+            Math.Clamp(_occlusion.BounceQuality > 0 ? _occlusion.BounceQuality * 4 : _occlusion.Quality * 4, 1, 32),
+            MathF.Max(_occlusion.Radius, 0.01f),
+            MathF.Max(_occlusion.Intensity, 0f));
+
+        // Rotated by a different amount each frame as well as each pixel, so that the directions a
+        // pixel has not searched this frame are ones it searches next -- which is what turns a handful
+        // of slices into a converged hemisphere once the temporal accumulation has it.
+        _occlusionFrame = (_occlusionFrame + 1) & 63;
+        _occlusionProgram.SetVector4(
+            _occlusionBounce,
+            _occlusion.WantsBounce ? _occlusion.BounceIntensity : 0f,
+            _occlusion.WantsBounce ? 1f : 0f,
+            _occlusionFrame * 0.61803399f,
+            0f);
+
+        _occlusionProgram.SetVector2(
+            _occlusionTexelSize, 1f / target.Description.Width, 1f / target.Description.Height);
+
+        BindTexture(4, target.DepthTexture);
+        BindTexture(1, target.NormalTexture);
+        BindTexture(2, target.HistoryTexture);
+
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
+        _fullScreen.Draw();
+        return true;
+    }
+
     /// <summary>Lights the G-buffer into the scene's colour buffer.</summary>
     /// <param name="target">The scene target holding the G-buffer.</param>
+    /// <param name="occluded">Whether the occlusion buffer holds this frame's horizon search.</param>
     /// <remarks>
     /// One full-screen pass. Under <see cref="LightingModel.Baked"/> it computes <c>albedo × baked</c>,
     /// which is the same product the original's forward shader writes — so the deferred path
     /// reproduces the forward one rather than approximating it.
     /// </remarks>
-    private void RunDeferredLighting(GLSceneTarget target)
+    private void RunDeferredLighting(GLSceneTarget target, bool occluded)
     {
         target.BindForColour();
 
         UseProgram(_lightingProgram!);
         _lightingProgram!.SetInt(_lightingModelLocation, (int)_lighting.Model);
+        _lightingProgram.SetInt(_lightingOcclusionEnabled, occluded ? 1 : 0);
+
+        if (occluded)
+        {
+            BindTexture(6, target.OcclusionTexture);
+        }
         _lightingProgram.SetVector3(
             _lightingSunDirection, _lighting.SunDirection.X, _lighting.SunDirection.Y, _lighting.SunDirection.Z);
         _lightingProgram.SetVector3(
@@ -1650,6 +1735,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveProgram.SetInt("uDebugBaked", 1);
         _resolveProgram.SetInt("uDebugMaterial", 2);
         _resolveProgram.SetInt("uDebugMotion", 5);
+        _resolveProgram.SetInt("uDebugOcclusion", 3);
         _resolveProgram.SetInt("uDebugDepth", 4);
 
         _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment);
@@ -1665,6 +1751,17 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _gbufferProgram.SetInt("uDiffuse", 0);
         _gbufferProgram.SetInt("uLightmap", 1);
 
+        _occlusionProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment);
+        _occlusionUnproject = _occlusionProgram.LocationOf("uUnproject");
+        _occlusionSearch = _occlusionProgram.LocationOf("uSearch");
+        _occlusionBounce = _occlusionProgram.LocationOf("uBounce");
+        _occlusionTexelSize = _occlusionProgram.LocationOf("uTexelSize");
+        UseProgram(_occlusionProgram);
+        _occlusionProgram.SetInt("uDepth", 4);
+        _occlusionProgram.SetInt("uNormal", 1);
+        _occlusionProgram.SetInt("uPreviousColour", 2);
+
         _lightingProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, DeferredLightingShaders.Fragment);
         _lightingModelLocation = _lightingProgram.LocationOf("uLightingModel");
         _lightingSunDirection = _lightingProgram.LocationOf("uSunDirection");
@@ -1675,7 +1772,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt("uNormal", 1);
         _lightingProgram.SetInt("uBakedLight", 2);
         _lightingProgram.SetInt("uMaterial", 3);
+        _lightingProgram.SetInt("uOcclusion", 6);
 
+        _lightingOcclusionEnabled = _lightingProgram.LocationOf("uOcclusionEnabled");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");
