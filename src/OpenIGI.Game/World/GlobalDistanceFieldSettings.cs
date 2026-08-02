@@ -27,6 +27,13 @@ namespace OpenIGI.Game.World;
 /// <param name="NearExtent">
 /// How many metres across the innermost level is. Its voxels are this divided by
 /// <paramref name="Resolution"/>.
+/// <para>
+/// The world these cover IS in metres — <c>WorldScene</c> divides every raw coordinate by 4096 on
+/// load, and the player's eye sits 1.8 above the ground to prove it. This was 4096 for a while, on a
+/// theory that the units were raw and a metre was a hundred of them; that made the finest voxel 64
+/// metres, so the sun trace started its rays 96 metres off every surface and called a hit anything
+/// within 32 — which in a built-up level is everywhere, and every card sat in shadow.
+/// </para>
 /// </param>
 /// <param name="CellsPerAxis">
 /// How many cells each level is divided into for culling. Each cell holds the list of objects that
@@ -35,7 +42,7 @@ namespace OpenIGI.Game.World;
 public readonly record struct GlobalDistanceFieldSettings(
     int Levels = 4,
     int Resolution = 64,
-    float NearExtent = 4096f,
+    float NearExtent = 64f,
     int CellsPerAxis = 8)
 {
     /// <summary>Gets the settings the shipped presets use.</summary>

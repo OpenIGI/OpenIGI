@@ -507,6 +507,23 @@ public static class RenderCVars
         CVarOptions.Developer,
         "Directory to write the captured card atlas to as PNGs; empty writes none.");
 
+    /// <summary>What the lighting pass writes into its atlas: light, or a chosen diagnostic.</summary>
+    /// <remarks>
+    /// A shadow trace that fails leaves nothing to look at — a black atlas is equally consistent with a
+    /// wrong world position, an unbound sampler, a uniform that never arrived and a field that is
+    /// genuinely closed over. Each probe writes one of those intermediates where the light would have
+    /// gone, so the dump can tell them apart: 1 writes what the trace sees at its start point, 2 the
+    /// reconstructed world position within the outermost clipmap, 3 the world normal.
+    /// </remarks>
+    public static readonly NumericCVar<int> SurfaceCacheProbe = CVar.Int(
+        "r_cards_probe",
+        0,
+        0,
+        4,
+        CVarOptions.Developer,
+        "Diagnostic the card lighting writes instead of light: 0 none, 1 trace start, 2 position, "
+        + "3 normal, 4 trace outcome.");
+
     /// <summary>Whether the level's signed distance fields are baked and resampled into clipmaps.</summary>
     /// <remarks>
     /// <para>

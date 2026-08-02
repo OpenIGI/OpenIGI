@@ -1337,7 +1337,8 @@ using (window)
     // subtly wrong produces lit surfaces in slightly the wrong places, which looks like nothing at all
     // until a later stage bounces light off them.
     static void DumpCardLighting(
-        IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger)
+        IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger,
+        int probe = 0)
     {
         try
         {
@@ -1348,6 +1349,48 @@ using (window)
 
             string path = Path.Combine(into, "cards-direct.png");
             PngWriter.Write(path, pixels, lighting.Width, lighting.Height);
+
+            // A probe is judged by its numbers, not its thumbnail: each channel is a question the
+            // shader answered per texel, and min/mean/max over the covered texels is the answer.
+            if (probe != 0)
+            {
+                long covered = 0;
+                long inside = 0;
+                long sumR = 0, sumG = 0, sumB = 0;
+                int minR = 255, minG = 255, minB = 255;
+                int maxR = 0, maxG = 0, maxB = 0;
+
+                foreach (Bgra32 pixel in pixels)
+                {
+                    // The shader writes alpha for every covered texel: one when a clipmap contained
+                    // the probe point, half when none did. Uncovered atlas stays at zero.
+                    if (pixel.A < 64)
+                    {
+                        continue;
+                    }
+
+                    covered++;
+                    inside += pixel.A >= 192 ? 1 : 0;
+                    sumR += pixel.R;
+                    sumG += pixel.G;
+                    sumB += pixel.B;
+                    minR = Math.Min(minR, pixel.R);
+                    minG = Math.Min(minG, pixel.G);
+                    minB = Math.Min(minB, pixel.B);
+                    maxR = Math.Max(maxR, pixel.R);
+                    maxG = Math.Max(maxG, pixel.G);
+                    maxB = Math.Max(maxB, pixel.B);
+                }
+
+                long n = Math.Max(covered, 1);
+                logger.Information(
+                    "SurfaceCache",
+                    $"Probe {probe} over {covered} texel(s), {inside * 100.0 / n:0.#}% inside a "
+                    + $"clipmap: R {minR}..{maxR} mean {sumR / (double)n:0.#}, "
+                    + $"G {minG}..{maxG} mean {sumG / (double)n:0.#}, "
+                    + $"B {minB}..{maxB} mean {sumB / (double)n:0.#}.");
+                return;
+            }
 
             // What share of the written pages the sun actually reaches, reported rather than eyeballed.
             // A shadow pass is judged by this number: too high and it is not shadowing, too low and it
@@ -2066,7 +2109,8 @@ using (window)
                         sun is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
                         sun?.Colour ?? default,
                         sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f),
-                        liveField);
+                        liveField,
+                        RenderCVars.SurfaceCacheProbe.Value);
 
                     // Dumped after the SHADOWED pass rather than the one at load, which runs before
                     // there is any field to trace against and would show the unshadowed answer.
@@ -2074,7 +2118,8 @@ using (window)
                         && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
                     {
                         cardLightingDumped = true;
-                        DumpCardLighting(device, litCards, shadowInto, logger);
+                        DumpCardLighting(
+                            device, litCards, shadowInto, logger, RenderCVars.SurfaceCacheProbe.Value);
                     }
                 }
             }

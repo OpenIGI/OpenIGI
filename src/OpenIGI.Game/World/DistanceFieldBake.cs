@@ -83,7 +83,11 @@ public sealed class DistanceFieldBake
                 {
                     if (!meshes.TryGetValue(model, out MeshGeometry? mesh))
                     {
-                        mesh = MefMeshBuilder.Build(model);
+                        // In METRES, like the placements the fields stand at. Model vertices are raw
+                        // engine units (4096 to the metre); baking them unscaled put every field
+                        // 4096 times too large around a metre-space position, and the validator never
+                        // saw it because the exact field and the clipmap shared the mistake.
+                        mesh = MefMeshBuilder.Build(model, (float)(1.0 / WorldScene.UnitsPerMetre));
                         meshes[model] = mesh;
                     }
 
