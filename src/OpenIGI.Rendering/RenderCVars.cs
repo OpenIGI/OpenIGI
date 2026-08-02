@@ -180,7 +180,11 @@ public static class RenderCVars
         vanilla: "baked",
         enhanced: "baked",
         high: "baked",
-        ultra: "baked");
+
+        // Ultra is the preset that stops using the artists' lightmaps. It can, because the probe field
+        // is what replaces them rather than adding to them: hybrid was tried and blows the ground out,
+        // since a bake that already contains the sun plus a sun is the sun twice.
+        ultra: "dynamic");
 
     /// <summary>The side length in texels of each shadow cascade, or 0 for no shadows.</summary>
     /// <remarks>
@@ -325,6 +329,41 @@ public static class RenderCVars
         4f,
         CVarOptions.Archive,
         "How strongly surfaces bounce their colour onto each other.");
+
+    /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
+    /// <remarks>
+    /// Costs a trace of the level at load rather than anything per frame, which is why it is a
+    /// restart-scope setting in practice even though nothing enforces that: turning it on mid-level
+    /// finds no field baked and changes nothing until the next load.
+    /// </remarks>
+    public static readonly BoolCVar GlobalIllumination = Presets.Define(
+        CVar.Bool(
+            "r_gi",
+            false,
+            CVarOptions.Archive,
+            "Light surfaces from the level's baked probe field instead of a flat ambient term."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How far apart the probes sit, in metres.</summary>
+    public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(
+        "r_gi_probe_spacing",
+        6f,
+        1f,
+        32f,
+        CVarOptions.Archive,
+        "Metres between irradiance probes. Finer resolves smaller rooms and takes longer to bake.");
+
+    /// <summary>How strongly the probe field's light is applied.</summary>
+    public static readonly NumericCVar<float> GlobalIlluminationIntensity = CVar.Float(
+        "r_gi_intensity",
+        1f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "How strongly the probe field lights surfaces; 1 is the amount the bake computed.");
 
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(

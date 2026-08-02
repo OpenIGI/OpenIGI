@@ -92,6 +92,25 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The shadow settings each frame was given, in order.</summary>
     public List<ShadowSettings> Shadows { get; } = [];
 
+    /// <summary>The debug views asked for, in order.</summary>
+    public List<DebugView> DebugViews { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetDebugView(DebugView view) => DebugViews.Add(view);
+
+    /// <summary>The probe volumes handed over, in order; a null entry is a clear.</summary>
+    public List<IrradianceVolume?> Volumes { get; } = [];
+
+    /// <summary>The volume settings each frame was given, in order.</summary>
+    public List<IrradianceVolumeSettings> VolumeSettings { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetIrradianceVolume(IrradianceVolume? volume) => Volumes.Add(volume);
+
+    /// <inheritdoc/>
+    public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings) =>
+        VolumeSettings.Add(settings);
+
     /// <summary>The occlusion settings each frame was given, in order.</summary>
     public List<AmbientOcclusionSettings> Occlusion { get; } = [];
 

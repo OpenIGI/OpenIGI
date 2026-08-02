@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using System.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Core.Numerics;
@@ -280,6 +281,7 @@ using (window)
     InteractionCamera interactionCamera = new();
     bool climbActive = false;
     int temporalFrame = 0;
+    IrradianceVolume? probeField = null;
     bool climbSlideArmed = false;
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
@@ -458,6 +460,42 @@ using (window)
                 // The level's doors, before the brains: a walker asks the registry for the nearest door
                 // on a door hop, and an open door is switched out of the collision index so the
                 // doorway is walkable. Both have to exist before Animate hands each brain its query.
+                // The probe field, traced against the same collision the AI sees through. Before the
+                // doors are opened deliberately: a door standing open at load would be baked as a hole
+                // in the wall it is part of, and the field is static.
+                // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
+                // alone -- which is what such a level looks like anyway.
+                if (RenderCVars.GlobalIllumination.Value)
+                {
+                    Vector3f bakeSunDirection = sun is { } declared && !declared.IsBelowHorizon
+                        ? declared.Direction
+                        : default;
+                    long startedAt = Stopwatch.GetTimestamp();
+
+                    probeField = IrradianceProbeBaker.Bake(
+                        scene,
+                        levelCast,
+                        bakeSunDirection,
+
+                        // Whatever the console says, but never so fine that a big level spends a minute
+                        // of load tracing rays nobody asked for.
+                        RenderCVars.GlobalIlluminationSpacing.Value,
+
+                        // One albedo for the whole level. The alternative is reading each hit's own
+                        // texture, which needs the ray to report a material rather than a triangle --
+                        // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
+                        // any of them.
+                        new Vector3f(0.42f, 0.40f, 0.37f),
+                        logger);
+
+                    logger.Information(
+                        "GI",
+                        FormattableString.Invariant(
+                            $"Probe bake took {Stopwatch.GetElapsedTime(startedAt).TotalSeconds:0.00} s."));
+                }
+
+                device.SetIrradianceVolume(probeField);
+
                 DoorRegistry levelDoors = DoorRegistry.Build(levelRoot);
                 soldiers.SetDoors(levelDoors, solids);
                 if (levelDoors.Doors.Count > 0)
@@ -1563,6 +1601,18 @@ using (window)
                 }
             }
 
+            // The bake stored how much sky reaches each probe, never what colour it was, so the
+            // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
+            // on its ambient exactly as the fog does.
+            device.SetDebugView(RenderCVars.Debug.Value);
+            device.SetIrradianceVolumeSettings(
+                probeField is not null && RenderCVars.GlobalIllumination.Value
+                    ? new IrradianceVolumeSettings(
+                        true,
+                        RenderCVars.GlobalIlluminationIntensity.Value,
+                        light.Ambient)
+                    : IrradianceVolumeSettings.Off);
+
             // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
             // there is a G-buffer; without one the lighting has no ambient term of its own to shade.
             device.SetAmbientOcclusion(
@@ -1771,8 +1821,7 @@ using (window)
                 device.ResolveScene(new PostProcessSettings(
                     RenderCVars.ToneMap.Value,
                     RenderCVars.Exposure.Value,
-                    WhitePoint: RenderCVars.WhitePoint.Value,
-                    Debug: RenderCVars.Debug.Value));
+                    WhitePoint: RenderCVars.WhitePoint.Value));
                 captured = false;
             }
 

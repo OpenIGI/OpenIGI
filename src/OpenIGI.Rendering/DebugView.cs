@@ -41,4 +41,11 @@ public enum DebugView
 
     /// <summary>The colour neighbouring surfaces bounce onto each surface, with nothing else added.</summary>
     Ssgi = 8,
+
+    /// <summary>
+    /// What the probe field alone says each surface receives, with no sun, no albedo and no occlusion.
+    /// The one view that shows whether light is leaking through a wall, because leaked light is
+    /// invisible once it has been multiplied by a dark surface.
+    /// </summary>
+    Probes = 9,
 }

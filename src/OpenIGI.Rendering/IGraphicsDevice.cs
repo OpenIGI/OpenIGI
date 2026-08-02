@@ -267,6 +267,31 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Sets which buffer the frame shows instead of the scene.</summary>
+    /// <param name="view">The buffer, or <see cref="DebugView.None"/> for the scene itself.</param>
+    /// <remarks>
+    /// Its own member rather than a field of <see cref="PostProcessSettings"/> because the passes that
+    /// can answer it are not all the resolve: the probe field's contribution exists only inside the
+    /// lighting pass, and by the time the frame resolves it has been multiplied into the picture.
+    /// </remarks>
+    void SetDebugView(DebugView view);
+
+    /// <summary>Hands over the level's baked probe field, or clears it.</summary>
+    /// <param name="volume">The baked volume, or <see langword="null"/> to forget the one held.</param>
+    /// <remarks>
+    /// Separate from <see cref="SetIrradianceVolumeSettings"/> and called only when the level changes:
+    /// the volume is megabytes of baked transfer that does not vary per frame, while the colours
+    /// applied to it do.
+    /// </remarks>
+    void SetIrradianceVolume(IrradianceVolume? volume);
+
+    /// <summary>Sets how this frame lights itself from the probe field.</summary>
+    /// <param name="settings">
+    /// The application, or <see cref="IrradianceVolumeSettings.Off"/> for none. With none, or with no
+    /// volume handed over, surfaces fall back to the flat ambient term.
+    /// </param>
+    void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings);
+
     /// <summary>Sets how much of the sky each surface can see, and what its neighbours bounce onto it.</summary>
     /// <param name="settings">
     /// The search, or <see cref="AmbientOcclusionSettings.Off"/> for none. With none, the lighting pass

@@ -28,7 +28,13 @@ namespace OpenIGI.Rendering.OpenGL;
 /// </remarks>
 public sealed class GLGraphicsDevice : IGraphicsDevice
 {
-    private const int MaxTextureUnits = 8;
+    /// <summary>How many sampling units the backend tracks internally.</summary>
+    /// <remarks>
+    /// Not the same number as <see cref="GraphicsCapabilities.TextureUnits"/>, which is what the seam
+    /// lets a caller address and stays at the original's eight. These are the backend's own: the probe
+    /// field alone wants four, and GL 3.3 guarantees sixteen to a fragment shader.
+    /// </remarks>
+    private const int MaxTextureUnits = 16;
     private const string LogCategory = "OpenGL";
 
     private readonly GL _gl;
@@ -61,6 +67,22 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private (float Scale, float Offset, float Slope, float Enabled) _detailFade;
+    private IrradianceVolumeSettings _volumeSettings;
+    private readonly uint[] _probeTextures = [0, 0, 0, 0];
+    private Vector3f _probeOrigin;
+    private Vector3f _probeInverseCount;
+    private float _probeSpacing;
+    private bool _hasProbes;
+    private int _lightingProbesEnabled = -1;
+    private int _lightingProbeOrigin = -1;
+    private int _lightingProbeInverseCount = -1;
+    private int _lightingProbeScale = -1;
+    private int _lightingProbeSky = -1;
+    private int _lightingProbeViewToWorld = -1;
+    private int _lightingProbeCamera = -1;
+    private int _lightingShowProbes = -1;
+    private DebugView _debugView;
+
     private AmbientOcclusionSettings _occlusion;
     private GLShaderProgram? _occlusionProgram;
     private int _occlusionUnproject = -1;
@@ -770,6 +792,121 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetDebugView(DebugView view)
+    {
+        ThrowIfDisposed();
+        _debugView = view;
+    }
+
+    /// <inheritdoc/>
+    public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)
+    {
+        ThrowIfDisposed();
+        _volumeSettings = settings;
+    }
+
+    /// <inheritdoc/>
+    public void SetIrradianceVolume(IrradianceVolume? volume)
+    {
+        ThrowIfDisposed();
+        ReleaseProbeTextures();
+
+        if (volume is null || volume.ProbeCount == 0)
+        {
+            return;
+        }
+
+        int count = volume.ProbeCount;
+        float[] red = new float[count * 4];
+        float[] green = new float[count * 4];
+        float[] blue = new float[count * 4];
+        float[] distance = new float[count * 4];
+
+        ReadOnlySpan<float> source = volume.Coefficients;
+        ReadOnlySpan<float> moments = volume.Distances;
+
+        for (int probe = 0; probe < count; probe++)
+        {
+            int from = probe * IrradianceVolume.CoefficientsPerProbe;
+            int to = probe * 4;
+
+            for (int i = 0; i < 4; i++)
+            {
+                red[to + i] = source[from + i];
+                green[to + i] = source[from + 4 + i];
+                blue[to + i] = source[from + 8 + i];
+            }
+
+            distance[to] = moments[probe * 2];
+            distance[to + 1] = moments[(probe * 2) + 1];
+        }
+
+        _probeTextures[0] = CreateProbeTexture(volume, red);
+        _probeTextures[1] = CreateProbeTexture(volume, green);
+        _probeTextures[2] = CreateProbeTexture(volume, blue);
+        _probeTextures[3] = CreateProbeTexture(volume, distance);
+
+        _probeOrigin = volume.Origin;
+        _probeSpacing = volume.Spacing;
+        _probeInverseCount = new Vector3f(1f / volume.CountX, 1f / volume.CountY, 1f / volume.CountZ);
+        _hasProbes = true;
+
+        _logger.Information(
+            "GI",
+            $"Probe field uploaded: {volume.CountX}x{volume.CountY}x{volume.CountZ} at {volume.Spacing:0.#} m.");
+    }
+
+    /// <summary>Uploads one channel of the probe field as a filtered volume texture.</summary>
+    private unsafe uint CreateProbeTexture(IrradianceVolume volume, float[] data)
+    {
+        uint name = _gl.GenTexture();
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture3D, name);
+
+        fixed (float* pixels = data)
+        {
+            _gl.TexImage3D(
+                TextureTarget.Texture3D,
+                0,
+                (int)InternalFormat.Rgba16f,
+                (uint)volume.CountX,
+                (uint)volume.CountY,
+                (uint)volume.CountZ,
+                0,
+                PixelFormat.Rgba,
+                PixelType.Float,
+                pixels);
+        }
+
+        // Linear, because the blend between eight neighbouring probes is exactly what a probe field
+        // wants and the hardware does it for nothing. Clamped, because a surface at the edge of the
+        // volume should take the nearest probe's answer rather than one from the opposite corner.
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapR, (int)GLEnum.ClampToEdge);
+
+        _textureNames[0] = 0;
+        return name;
+    }
+
+    /// <summary>Drops the probe field, for a level change or shutdown.</summary>
+    private void ReleaseProbeTextures()
+    {
+        for (int i = 0; i < _probeTextures.Length; i++)
+        {
+            if (_probeTextures[i] != 0)
+            {
+                _gl.DeleteTexture(_probeTextures[i]);
+                _probeTextures[i] = 0;
+            }
+        }
+
+        _hasProbes = false;
+    }
+
+    /// <inheritdoc/>
     public void SetAmbientOcclusion(in AmbientOcclusionSettings settings)
     {
         ThrowIfDisposed();
@@ -1077,7 +1214,9 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         // Only bound when asked for. There are eight units in all, and holding six of them every frame
         // for a view nobody has switched on would leave the passes after this two.
-        int debug = target.Description.Deferred ? (int)post.Debug : 0;
+        // The probe view is answered by the lighting pass, which has already run and written it into
+        // the scene, so the resolve must pass that through rather than overwrite it with a G-buffer.
+        int debug = target.Description.Deferred && _debugView != DebugView.Probes ? (int)_debugView : 0;
         _resolveProgram.SetInt(_resolveDebugView, debug);
 
         if (debug != 0)
@@ -1301,6 +1440,38 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         if (occluded)
         {
             BindTexture(6, target.OcclusionTexture);
+        }
+
+        bool probes = _hasProbes && _volumeSettings.Enabled;
+        _lightingProgram.SetInt(_lightingProbesEnabled, probes ? 1 : 0);
+        _lightingProgram.SetInt(_lightingShowProbes, _debugView == DebugView.Probes ? 1 : 0);
+
+        if (probes)
+        {
+            BindProbeTexture(8, _probeTextures[0]);
+            BindProbeTexture(9, _probeTextures[1]);
+            BindProbeTexture(10, _probeTextures[2]);
+            BindProbeTexture(11, _probeTextures[3]);
+
+            _lightingProgram.SetVector3(
+                _lightingProbeOrigin, _probeOrigin.X, _probeOrigin.Y, _probeOrigin.Z);
+            _lightingProgram.SetVector3(
+                _lightingProbeInverseCount,
+                _probeInverseCount.X,
+                _probeInverseCount.Y,
+                _probeInverseCount.Z);
+
+            // The normal offset is half a probe spacing: far enough to leave the surface it shades,
+            // near enough not to cross the next wall along.
+            _lightingProgram.SetVector2(_lightingProbeScale, _probeSpacing, _probeSpacing * 0.5f);
+
+            Vector3f sky = _volumeSettings.Sky;
+            float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
+            _lightingProgram.SetVector3(
+                _lightingProbeSky, sky.X * intensity, sky.Y * intensity, sky.Z * intensity);
+            _lightingProgram.SetMatrix3(_lightingProbeViewToWorld, _viewToWorld);
+            _lightingProgram.SetVector3(
+                _lightingProbeCamera, _cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z);
         }
         _lightingProgram.SetVector3(
             _lightingSunDirection, _lighting.SunDirection.X, _lighting.SunDirection.Y, _lighting.SunDirection.Z);
@@ -1643,6 +1814,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _disposed = true;
 
+        ReleaseProbeTextures();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
         _shadowMap?.Dispose();
@@ -1773,8 +1945,20 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt("uBakedLight", 2);
         _lightingProgram.SetInt("uMaterial", 3);
         _lightingProgram.SetInt("uOcclusion", 6);
+        _lightingProgram.SetInt("uProbeRed", 8);
+        _lightingProgram.SetInt("uProbeGreen", 9);
+        _lightingProgram.SetInt("uProbeBlue", 10);
+        _lightingProgram.SetInt("uProbeDistance", 11);
 
         _lightingOcclusionEnabled = _lightingProgram.LocationOf("uOcclusionEnabled");
+        _lightingProbesEnabled = _lightingProgram.LocationOf("uProbesEnabled");
+        _lightingProbeOrigin = _lightingProgram.LocationOf("uProbeOrigin");
+        _lightingProbeInverseCount = _lightingProgram.LocationOf("uProbeInverseCount");
+        _lightingProbeScale = _lightingProgram.LocationOf("uProbeScale");
+        _lightingProbeSky = _lightingProgram.LocationOf("uProbeSky");
+        _lightingProbeViewToWorld = _lightingProgram.LocationOf("uProbeViewToWorld");
+        _lightingProbeCamera = _lightingProgram.LocationOf("uProbeCamera");
+        _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");
@@ -2080,6 +2264,20 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
 
         _gl.BindVertexArray(array);
         _currentVertexArray = array;
+    }
+
+    /// <summary>Binds a volume texture to a unit.</summary>
+    /// <remarks>
+    /// Separate from the two-dimensional path because the unit cache records a name without recording
+    /// which target it was bound to, and a volume left in a unit that a later pass binds a flat texture
+    /// into is a sampler reading nothing.
+    /// </remarks>
+    private void BindProbeTexture(int unit, uint name)
+    {
+        _gl.ActiveTexture(TextureUnit.Texture0 + unit);
+        _gl.BindTexture(TextureTarget.Texture3D, name);
+        _activeTextureUnit = unit;
+        _textureNames[unit] = 0;
     }
 
     /// <summary>Binds a texture name to a unit, skipping the call when it is already there.</summary>

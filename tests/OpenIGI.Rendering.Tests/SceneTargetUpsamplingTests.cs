@@ -68,13 +68,11 @@ public sealed class SceneTargetUpsamplingTests
     }
 
     [Fact]
-    public void ADebugViewIsNeverAnIdentityResolve()
+    public void TheIdentityResolveAsksForNothing()
     {
-        // Otherwise a backend allowed to skip the resolve when it changes nothing would skip the one
-        // pass that was going to show the buffer.
-        PostProcessSettings post = PostProcessSettings.Identity with { Debug = DebugView.Motion };
-
-        Assert.False(post.IsIdentity);
+        // The vanilla preset's whole claim: with no tone map, unit exposure and no bloom, going through
+        // the offscreen target is a copy, and a backend may say so.
         Assert.True(PostProcessSettings.Identity.IsIdentity);
+        Assert.False((PostProcessSettings.Identity with { Exposure = 1.4f }).IsIdentity);
     }
 }
