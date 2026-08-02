@@ -33,6 +33,15 @@ public enum MemoryBarrierScope
     /// <summary>Writes that a subsequent ordinary texture fetch has to see.</summary>
     TextureFetch = 1 << 3,
 
+    /// <summary>Writes that a read or write through the texture API has to see.</summary>
+    /// <remarks>
+    /// Distinct from <see cref="TextureFetch"/>, which covers a shader sampling the texture. Reading a
+    /// texture back with the API after a shader wrote it through an image binding needs THIS one, and
+    /// the difference is not academic: without it the readback returns the texture's allocated contents
+    /// rather than what the pass computed, which reads as a pass that never ran.
+    /// </remarks>
+    TextureUpdate = 1 << 4,
+
     /// <summary>Everything. Correct, and the slowest thing on this list.</summary>
-    All = StorageBuffer | Image | IndirectArguments | TextureFetch,
+    All = StorageBuffer | Image | IndirectArguments | TextureFetch | TextureUpdate,
 }

@@ -1,6 +1,7 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
+using InstanceView = OpenIGI.Game.World.SceneDistanceField.InstanceView;
 
 namespace OpenIGI.Game.World;
 
@@ -110,7 +111,6 @@ public sealed class GlobalDistanceField : IDisposable
     /// <param name="device">The device to allocate on. Must support compute.</param>
     /// <param name="scene">The level's exact field, which this resamples.</param>
     /// <param name="atlas">Every model's field packed into one volume.</param>
-    /// <param name="levelOrigin">The world point float coordinates are measured from.</param>
     /// <param name="settings">How the clipmaps are laid out.</param>
     /// <param name="logger">Where to report what was allocated.</param>
     /// <returns>The clipmaps, or <see langword="null"/> when the device cannot build them.</returns>
@@ -119,7 +119,6 @@ public sealed class GlobalDistanceField : IDisposable
         IGraphicsDevice device,
         SceneDistanceField scene,
         DistanceFieldAtlas atlas,
-        Vector3d levelOrigin,
         GlobalDistanceFieldSettings settings,
         IIgiLogger? logger = null)
     {
@@ -141,11 +140,19 @@ public sealed class GlobalDistanceField : IDisposable
             return null;
         }
 
+        // Derived from the level rather than passed in, and specifically NOT the camera. Every float
+        // the GPU sees is an offset from this point, so it has to be fixed for the life of the level:
+        // a moving origin would silently re-base every instance in the buffer between one rebuild and
+        // the next. Taking the centre of what was baked also keeps the offsets as small as they can be,
+        // which is the whole reason the origin exists.
+        Vector3d levelOrigin = CentreOf(scene);
+
         try
         {
             TextureHandle atlasTexture = device.CreateVolumeTexture(
                 atlas.Width, atlas.Height, atlas.Depth, VolumeFormat.R8, "sdf.atlas");
             device.UpdateVolumeTexture<byte>(atlasTexture, atlas.Volume);
+
 
             TextureHandle clipmaps = device.CreateVolumeTexture(
                 settings.Resolution,
@@ -163,11 +170,12 @@ public sealed class GlobalDistanceField : IDisposable
             StorageBufferHandle cellOffsets = device.CreateStorageBuffer(
                 (settings.CellsPerLevel + 1) * sizeof(int), "sdf.cell.offsets");
 
-            // Worst case every object reaches every cell. Bounded rather than grown, because the buffer
-            // is allocated once and a level whose objects genuinely all overlap is a level that was
-            // going to be slow regardless.
+            // The true worst case: every object listed in every cell. Sized for it rather than
+            // guessed at, because the buffer is allocated once and an estimate that is wrong is a hard
+            // failure at load rather than a slow frame -- which is exactly how the first version of
+            // this behaved on level 1.
             StorageBufferHandle cellIndices = device.CreateStorageBuffer(
-                Math.Max(instanceCount * settings.CellsPerLevel / 4, 1024) * sizeof(int), "sdf.cell.indices");
+                Math.Max(instanceCount * settings.CellsPerLevel, 1024) * sizeof(int), "sdf.cell.indices");
 
             GlobalDistanceField field = new(
                 device, log, settings, scene, levelOrigin,
@@ -302,18 +310,51 @@ public sealed class GlobalDistanceField : IDisposable
         _device.DestroyTexture(_atlasTexture);
     }
 
+    /// <summary>The centre of everything the scene baked, which the GPU's floats are measured from.</summary>
+    /// <remarks>
+    /// I.G.I.'s world coordinates carry a kilometres-large absolute offset, and a float at that
+    /// magnitude resolves tens of centimetres — coarser than the voxels being placed. Measuring from
+    /// the middle of the level keeps every offset small enough that a float describes it precisely.
+    /// </remarks>
+    private static Vector3d CentreOf(SceneDistanceField scene)
+    {
+        InstanceView[] views = scene.Describe();
+
+        if (views.Length == 0)
+        {
+            return default;
+        }
+
+        Vector3d min = new(double.MaxValue);
+        Vector3d max = new(double.MinValue);
+
+        foreach (InstanceView view in views)
+        {
+            min = new Vector3d(
+                Math.Min(min.X, view.BoundsMin.X),
+                Math.Min(min.Y, view.BoundsMin.Y),
+                Math.Min(min.Z, view.BoundsMin.Z));
+            max = new Vector3d(
+                Math.Max(max.X, view.BoundsMax.X),
+                Math.Max(max.Y, view.BoundsMax.Y),
+                Math.Max(max.Z, view.BoundsMax.Z));
+        }
+
+        return new Vector3d((min.X + max.X) * 0.5, (min.Y + max.Y) * 0.5, (min.Z + max.Z) * 0.5);
+    }
+
     private static bool Same(Vector3d a, Vector3d b) =>
         Math.Abs(a.X - b.X) < 1e-6 && Math.Abs(a.Y - b.Y) < 1e-6 && Math.Abs(a.Z - b.Z) < 1e-6;
 
     /// <summary>Packs every instance into the layout the shader reads.</summary>
     private void UploadInstances(DistanceFieldAtlas atlas)
     {
-        SceneDistanceField.InstanceView[] views = _scene.Describe();
+        InstanceView[] views = _scene.Describe();
         float[] packed = new float[Math.Max(views.Length, 1) * FloatsPerInstance];
 
         for (int i = 0; i < views.Length; i++)
         {
-            SceneDistanceField.InstanceView view = views[i];
+            InstanceView view = views[i];
             DistanceFieldAtlas.Slot slot = atlas.Slots[view.FieldIndex];
             int at = i * FloatsPerInstance;
 
@@ -373,8 +414,9 @@ public sealed class GlobalDistanceField : IDisposable
         float voxel = _settings.VoxelSizeOf(level);
         int cells = _settings.CellsPerAxis;
         float cellSize = extent / cells;
+        float reach = RangeOf(voxel);
 
-        SceneDistanceField.InstanceView[] views = _scene.Describe();
+        InstanceView[] views = _scene.Describe();
 
         List<int>[] buckets = new List<int>[_settings.CellsPerLevel];
 
@@ -385,17 +427,27 @@ public sealed class GlobalDistanceField : IDisposable
 
         for (int i = 0; i < views.Length; i++)
         {
-            SceneDistanceField.InstanceView view = views[i];
+            InstanceView view = views[i];
 
-            // The cell range this object's box reaches, in this level's space. Expanded by one cell so
-            // an object just outside a cell still contributes the distance TO it -- a field that only
-            // knew about objects it overlapped would report empty space right up against every wall.
-            int x0 = CellIndex(view.BoundsMin.X - origin.X, cellSize, cells, -1);
-            int y0 = CellIndex(view.BoundsMin.Y - origin.Y, cellSize, cells, -1);
-            int z0 = CellIndex(view.BoundsMin.Z - origin.Z, cellSize, cells, -1);
-            int x1 = CellIndex(view.BoundsMax.X - origin.X, cellSize, cells, 1);
-            int y1 = CellIndex(view.BoundsMax.Y - origin.Y, cellSize, cells, 1);
-            int z1 = CellIndex(view.BoundsMax.Z - origin.Z, cellSize, cells, 1);
+            // The cells this object's box reaches, grown by exactly the distance a voxel can care
+            // about. A field that only listed objects it overlapped would report empty space right up
+            // against every wall; one grown by a whole cell lists nearly everything in nearly every
+            // cell, which is what overflowed the index buffer. The range is the honest bound: beyond
+            // it, this level stores saturation and the trace moves to the next level out.
+            int x0 = CellIndex((view.BoundsMin.X - reach) - origin.X, cellSize, cells, 0);
+            int y0 = CellIndex((view.BoundsMin.Y - reach) - origin.Y, cellSize, cells, 0);
+            int z0 = CellIndex((view.BoundsMin.Z - reach) - origin.Z, cellSize, cells, 0);
+            int x1 = CellIndex((view.BoundsMax.X + reach) - origin.X, cellSize, cells, 0);
+            int y1 = CellIndex((view.BoundsMax.Y + reach) - origin.Y, cellSize, cells, 0);
+            int z1 = CellIndex((view.BoundsMax.Z + reach) - origin.Z, cellSize, cells, 0);
+
+            // Wholly outside this level, so it contributes nothing anywhere in it.
+            if (view.BoundsMin.X - reach > origin.X + extent || view.BoundsMax.X + reach < origin.X
+                || view.BoundsMin.Y - reach > origin.Y + extent || view.BoundsMax.Y + reach < origin.Y
+                || view.BoundsMin.Z - reach > origin.Z + extent || view.BoundsMax.Z + reach < origin.Z)
+            {
+                continue;
+            }
 
             for (int z = z0; z <= z1; z++)
             {
@@ -443,16 +495,29 @@ public sealed class GlobalDistanceField : IDisposable
                 (float)(origin.Y - _levelOrigin.Y),
                 (float)(origin.Z - _levelOrigin.Z)));
 
-        // The range the clipmap's own bytes encode. Two voxels either side is what a sphere trace can
-        // actually use: a step longer than the grid's own resolution is a step past detail the grid
-        // never recorded, so storing a larger range would be storing a promise it cannot keep.
-        float range = voxel * _settings.Resolution * 0.5f;
+        float range = RangeOf(voxel);
         _device.SetComputeUniform(_build, "uRange", range);
 
         const int group = 4;
         int groups = (_settings.Resolution + group - 1) / group;
+
         _device.Dispatch(_build, groups, groups, groups);
     }
+
+    /// <summary>The furthest distance one clipmap level's bytes encode.</summary>
+    /// <remarks>
+    /// <b>A few voxels, not half the grid.</b> The first version stored up to half the level's extent,
+    /// which is wrong twice over. A grid cannot honour a distance far larger than its own resolution —
+    /// it never recorded the detail that would justify one — and, more practically, a voxel that cares
+    /// about geometry sixteen metres away needs every object within sixteen metres in its cull list,
+    /// which on level 1 meant listing almost every object in almost every cell. That is what made the
+    /// index buffer overflow.
+    /// <para>
+    /// Four voxels is what the nesting exists to permit: a ray that wants to step further than this
+    /// steps in the next level out, whose voxels are twice as large and whose range is twice as far.
+    /// </para>
+    /// </remarks>
+    private static float RangeOf(float voxelSize) => voxelSize * 4f;
 
     private static int CellIndex(double offset, float cellSize, int cells, int bias)
     {

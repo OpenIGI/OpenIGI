@@ -44,17 +44,18 @@ public sealed partial class GLGraphicsDevice
         _gl.ActiveTexture(TextureUnit.Texture0);
         _gl.BindTexture(TextureTarget.Texture3D, texture);
 
-        _gl.TexImage3D(
+        // Immutable storage, not TexImage3D. A mutable texture can be bound as an image and the driver
+        // will accept it without complaint, but the stores go nowhere -- which is exactly how this
+        // presented: a dispatch that ran, reported no GL error, and left the volume at its allocated
+        // contents. Immutable storage is the documented path for image load/store and costs nothing,
+        // since these volumes are allocated once and never resized.
+        _gl.TexStorage3D(
             TextureTarget.Texture3D,
-            0,
-            (int)internalFormat,
+            1,
+            (SizedInternalFormat)internalFormat,
             (uint)width,
             (uint)height,
-            (uint)depth,
-            0,
-            pixelFormat,
-            pixelType,
-            null);
+            (uint)depth);
 
         // Linear, because the hardware's trilinear filter IS the blend between eight neighbouring
         // voxels that a field lookup wants, and it costs nothing. Clamped on all three axes, because a
@@ -70,14 +71,23 @@ public sealed partial class GLGraphicsDevice
         _gl.BindTexture(TextureTarget.Texture3D, 0);
         InvalidateTextureUnit(0);
 
-        _textures[texture] = new GLTexture(
+        // The handle id comes from the SAME counter 2D textures use, not from the GL name. The two are
+        // different spaces -- CreateTexture hands out a running id and stores the GL name inside the
+        // entry -- so keying a volume by its GL name puts it at an id the counter will later hand to a
+        // 2D texture, which then overwrites the volume's entry in the shared table.
+        //
+        // The symptom was a volume that existed, uploaded correctly, and then reported itself as a
+        // 128x128 2D texture the moment a level finished loading its art.
+        uint id = _nextTextureId++;
+
+        _textures[id] = new GLTexture(
             texture, width, height, 1, 0, depth, TextureTarget.Texture3D, internalFormat);
 
         _logger.Debug(
             LogCategory,
             $"Volume '{name}' allocated as {width}x{height}x{depth} {format}.");
 
-        return new TextureHandle(texture);
+        return new TextureHandle(id);
     }
 
     /// <inheritdoc/>
@@ -89,7 +99,7 @@ public sealed partial class GLGraphicsDevice
 
         if (entry.Target != TextureTarget.Texture3D)
         {
-            throw new GraphicsDeviceException($"{texture} is not a volume.");
+            throw new GraphicsDeviceException($"{texture} is not a volume; it is a {entry.Target} of {entry.Width}x{entry.Height}x{entry.Depth}.");
         }
 
         (_, PixelFormat pixelFormat, PixelType pixelType) = Describe(entry.Format);
@@ -132,6 +142,52 @@ public sealed partial class GLGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public unsafe void ReadVolumeTexture<T>(TextureHandle texture, Span<T> destination)
+        where T : unmanaged
+    {
+        ThrowIfDisposed();
+        GLTexture entry = Resolve(texture, nameof(texture));
+
+        if (entry.Target != TextureTarget.Texture3D)
+        {
+            throw new GraphicsDeviceException($"{texture} is not a volume; it is a {entry.Target} of {entry.Width}x{entry.Height}x{entry.Depth}.");
+        }
+
+        (_, PixelFormat pixelFormat, PixelType pixelType) = Describe(entry.Format);
+        int expected = entry.Width * entry.Height * entry.Depth * BytesPerVoxel(entry.Format);
+        int offered = destination.Length * sizeof(T);
+
+        if (offered < expected)
+        {
+            throw new GraphicsDeviceException(
+                $"{texture} holds {expected} bytes; only {offered} were offered to receive it.");
+        }
+
+        // Everything, because this is a diagnostic path and being sure costs nothing here. The bit that
+        // actually matters is TEXTURE_UPDATE: glGetTexImage does NOT observe a shader's image stores
+        // without it, and returns the texture's allocated contents instead -- which reads as a compute
+        // pass that ran, reported no error, and wrote nothing.
+        _gl.MemoryBarrier(MemoryBarrierMask.AllBarrierBits);
+
+        _gl.ActiveTexture(TextureUnit.Texture0);
+        _gl.BindTexture(TextureTarget.Texture3D, entry.Name);
+
+        // Byte-tight, for the same reason the upload is: the default of four would have GL write each
+        // row padded, and a single-channel volume whose width is not a multiple of four would come back
+        // sheared.
+        _gl.PixelStore(PixelStoreParameter.PackAlignment, 1);
+
+        fixed (T* target = destination)
+        {
+            _gl.GetTexImage(TextureTarget.Texture3D, 0, pixelFormat, pixelType, target);
+        }
+
+        _gl.PixelStore(PixelStoreParameter.PackAlignment, 4);
+        _gl.BindTexture(TextureTarget.Texture3D, 0);
+        InvalidateTextureUnit(0);
+    }
+
+    /// <inheritdoc/>
     public void SetVolumeTexture(int unit, TextureHandle texture)
     {
         ThrowIfDisposed();
@@ -145,7 +201,7 @@ public sealed partial class GLGraphicsDevice
 
             if (entry.Target != TextureTarget.Texture3D)
             {
-                throw new GraphicsDeviceException($"{texture} is not a volume.");
+                throw new GraphicsDeviceException($"{texture} is not a volume; it is a {entry.Target} of {entry.Width}x{entry.Height}x{entry.Depth}.");
             }
 
             name = entry.Name;
@@ -401,7 +457,18 @@ public sealed partial class GLGraphicsDevice
         // through whatever format it is given, and GL does not report a mismatch: declaring an R8
         // volume as RGBA8 reads a quarter of it as four channels of noise, and the pass looks like it
         // ran while producing nothing usable.
+        while (_gl.GetError() != GLEnum.NoError)
+        {
+        }
+
         _gl.BindImageTexture((uint)slot, entry.Name, level, true, 0, gl, entry.Format);
+
+        if (_gl.GetError() is var bindError && bindError != GLEnum.NoError)
+        {
+            _logger.Warning(
+                LogCategory,
+                $"Image binding of {texture} ({entry.Format}) to unit {slot} was rejected: {bindError}.");
+        }
     }
 
     /// <inheritdoc/>
@@ -413,7 +480,24 @@ public sealed partial class GLGraphicsDevice
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(groupsZ);
 
         UseCompute(shader);
+
+        // Cleared first, so what is read afterwards belongs to this dispatch rather than to whatever
+        // happened earlier in the frame.
+        while (_gl.GetError() != GLEnum.NoError)
+        {
+        }
+
         _gl.DispatchCompute((uint)groupsX, (uint)groupsY, (uint)groupsZ);
+
+        // GL reports a rejected dispatch here and nowhere else. Without this the pass simply does
+        // nothing, the volume keeps whatever it was allocated with, and the fault surfaces as lighting
+        // that is wrong several stages later.
+        if (_gl.GetError() is var error && error != GLEnum.NoError)
+        {
+            _logger.Warning(
+                LogCategory,
+                $"A compute dispatch of {groupsX}x{groupsY}x{groupsZ} groups was rejected: {error}.");
+        }
     }
 
     /// <inheritdoc/>
@@ -464,6 +548,11 @@ public sealed partial class GLGraphicsDevice
         if (scope.HasFlag(MemoryBarrierScope.TextureFetch))
         {
             mask |= MemoryBarrierMask.TextureFetchBarrierBit;
+        }
+
+        if (scope.HasFlag(MemoryBarrierScope.TextureUpdate))
+        {
+            mask |= MemoryBarrierMask.TextureUpdateBarrierBit;
         }
 
         _gl.MemoryBarrier(mask);

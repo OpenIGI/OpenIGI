@@ -376,6 +376,21 @@ public interface IGraphicsDevice : IDisposable
     void UpdateVolumeTexture<T>(TextureHandle texture, ReadOnlySpan<T> data)
         where T : unmanaged;
 
+    /// <summary>Reads a volume texture back into memory.</summary>
+    /// <typeparam name="T">The element type. Must match the texture's format.</typeparam>
+    /// <param name="texture">The volume to read.</param>
+    /// <param name="destination">Receives the voxels, x fastest then y then z.</param>
+    /// <remarks>
+    /// <b>Synchronising, and therefore for diagnostics rather than for a frame.</b> It exists because a
+    /// volume built by a compute pass cannot be judged by looking at it — a wrong distance field
+    /// produces a picture that is merely subtly wrong, several stages downstream. Reading it back and
+    /// comparing against an answer computed another way is the only check that distinguishes a correct
+    /// volume from a plausible one.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">The handle is not a volume, or the span is the wrong size.</exception>
+    void ReadVolumeTexture<T>(TextureHandle texture, Span<T> destination)
+        where T : unmanaged;
+
     /// <summary>Binds a volume texture to a sampling unit.</summary>
     /// <param name="unit">The texture unit.</param>
     /// <param name="texture">The volume, or the null handle to unbind.</param>

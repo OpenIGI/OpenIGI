@@ -297,6 +297,14 @@ using (window)
     // The bake in flight, while it is in flight. Non-null only between the level load starting one and
     // the render thread collecting it; a lockstep capture never sees it, because that path waits.
     IrradianceProbeBake? probeBake = null;
+
+    // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
+    // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
+    // on the render thread once the bake lands.
+    DistanceFieldBake? sdfBake = null;
+    SceneDistanceField? sdfScene = null;
+    GlobalDistanceField? sdfClipmaps = null;
+    bool sdfValidated = false;
     bool climbSlideArmed = false;
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
@@ -573,6 +581,36 @@ using (window)
                     {
                         probeField = probeBake.WaitForResult();
                         probeBake = null;
+                    }
+                }
+
+                // The distance fields, on a worker beside the probe bake. Tracing every distinct
+                // model is arithmetic and moves off the render thread freely; only the upload cannot,
+                // because a GL texture belongs to the context that made it.
+                if (RenderCVars.DistanceFields.Value && device.Capabilities.SupportsCompute)
+                {
+                    sdfClipmaps?.Dispose();
+                    sdfClipmaps = null;
+                    sdfScene = null;
+                    sdfValidated = false;
+
+                    sdfBake?.Cancel();
+                    sdfBake = DistanceFieldBake.Start(
+                        scene.Placements, RenderCVars.DistanceFieldResolution.Value, logger);
+
+                    // A capture must not race the worker, for the reason the probe bake records: a
+                    // reference image has to either contain the field or not, never whichever frame
+                    // the worker happened to reach.
+                    if (options.Lockstep && sdfBake.WaitForResult() is { } readyField)
+                    {
+                        sdfScene = readyField.Scene;
+                        sdfClipmaps = GlobalDistanceField.Create(
+                            device,
+                            readyField.Scene,
+                            readyField.Atlas,
+                            GlobalDistanceFieldSettings.Default,
+                            logger);
+                        sdfBake = null;
                     }
                 }
 
@@ -1285,6 +1323,19 @@ using (window)
             device.SetIrradianceVolume(probeField);
         }
 
+        // Same handover, same reason: the atlas becomes a GL volume, and the context belongs here.
+        if (sdfBake is { } pendingField && pendingField.TryCollect(out DistanceFieldBake.Result baked))
+        {
+            sdfBake = null;
+            sdfScene = baked.Scene;
+            sdfClipmaps = GlobalDistanceField.Create(
+                device,
+                baked.Scene,
+                baked.Atlas,
+                GlobalDistanceFieldSettings.Default,
+                logger);
+        }
+
         // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
         // an accumulated step so the schedule cannot drift. Per loop pass would be wrong: the loop
         // pumps many times per frame, so the clock would jump a whole tick each pump and the catch-up
@@ -1759,6 +1810,23 @@ using (window)
             // The bake stored how much sky reaches each probe, never what colour it was, so the
             // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
             // on its ambient exactly as the fog does.
+            // The clipmaps follow the camera. Each level is rebuilt only when the camera has left it,
+            // which for the outer levels is almost never -- I.G.I.'s geometry is static, so a clipmap
+            // only becomes wrong by being walked out of.
+            if (sdfClipmaps is { } liveField)
+            {
+                liveField.Update(eye.Position);
+
+                // Once, after the first build, and only when asked. A wrong distance field produces a
+                // picture that is merely subtly wrong several stages later, so the only way to know it
+                // is right is to compare it against the exact answer at the same points.
+                if (!sdfValidated && RenderCVars.DistanceFieldValidate.Value && sdfScene is { } exact)
+                {
+                    sdfValidated = true;
+                    DistanceFieldValidation.Compare(device, liveField, exact, 0, logger);
+                }
+            }
+
             device.SetDebugView(RenderCVars.Debug.Value);
 
             // The derived detail is a deferred-path feature: it changes the normal and the roughness

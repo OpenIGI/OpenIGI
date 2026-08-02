@@ -169,6 +169,14 @@ public sealed class SceneDistanceField
         return scene;
     }
 
+    /// <summary>Gets the baked fields, in the order instances index them.</summary>
+    /// <remarks>
+    /// Handed out so the atlas can pack them. The array itself is not copied — these are large and
+    /// immutable once baked, and duplicating a level's worth of them to hand them to one consumer
+    /// would be megabytes for nothing.
+    /// </remarks>
+    public IReadOnlyList<MeshDistanceField> Fields => _fields;
+
     /// <summary>What one placement is, in the terms a shader needs to sample it.</summary>
     /// <param name="FieldIndex">Which baked field describes this placement.</param>
     /// <param name="Position">Where the model stands, in world space.</param>

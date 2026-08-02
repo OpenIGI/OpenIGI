@@ -138,6 +138,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void ReadVolumeTexture<T>(TextureHandle texture, Span<T> destination)
+        where T : unmanaged
+    {
+    }
+
+    /// <inheritdoc/>
     public void SetVolumeTexture(int unit, TextureHandle texture)
     {
     }

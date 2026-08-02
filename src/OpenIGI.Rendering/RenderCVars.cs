@@ -464,6 +464,57 @@ public static class RenderCVars
         CVarOptions.Archive | CVarOptions.RequiresRestart,
         "Directory of derived surface-detail maps; empty for none.");
 
+    /// <summary>Whether the level's signed distance fields are baked and resampled into clipmaps.</summary>
+    /// <remarks>
+    /// <para>
+    /// The structure everything in the realtime GI track traces through. A ray marched against
+    /// triangles tests every triangle it might cross; a ray marched against a distance field asks how
+    /// far the nearest surface is and steps exactly that far, which cannot overshoot.
+    /// </para>
+    /// <para>
+    /// Needs compute, so it is off wherever the context cannot honour it whatever this says. Off at
+    /// every preset until the stages that consume it exist — a field nothing traces is a load-time cost
+    /// with nothing to show for it.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar DistanceFields = Presets.Define(
+        CVar.Bool(
+            "r_sdf",
+            false,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Bake the level's signed distance fields and keep clipmaps of them around the camera."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
+    /// <summary>How many voxels the longest axis of each model's distance field gets.</summary>
+    /// <remarks>
+    /// The cost of a bake is roughly this cubed per distinct model, and the memory exactly so. Thirty-two
+    /// gives this game's crates and huts voxels of a few centimetres, which is fine enough for a trace
+    /// to land on the right side of a wall.
+    /// </remarks>
+    public static readonly NumericCVar<int> DistanceFieldResolution = CVar.Int(
+        "r_sdf_resolution",
+        32,
+        8,
+        128,
+        CVarOptions.Archive | CVarOptions.RequiresRestart,
+        "Voxels along the longest axis of each model's distance field.");
+
+    /// <summary>Whether the built clipmaps are checked against the exact field once, after a load.</summary>
+    /// <remarks>
+    /// Reads the clipmap back and compares every voxel against <c>SceneDistanceField</c>, which answers
+    /// the same question exactly. Costs a synchronising readback and a few hundred thousand CPU
+    /// evaluations, so it is a diagnostic rather than something to leave on — but a wrong distance field
+    /// is invisible in a rendered frame, and this is the only thing that can see it.
+    /// </remarks>
+    public static readonly BoolCVar DistanceFieldValidate = CVar.Bool(
+        "r_sdf_validate",
+        false,
+        CVarOptions.Developer,
+        "After a load, compare the built clipmap against the exact field and report the difference.");
+
     /// <summary>Scales the whole dynamically-computed irradiance.</summary>
     /// <remarks>
     /// Not a taste control, a calibration. I.G.I.'s diffuse textures are not albedo: they were painted
