@@ -331,6 +331,13 @@ using (window)
     // One screen-space indirect dump per run, to verify the gather reads the G-buffer and reconstructs
     // world positions correctly before it feeds the frame.
     bool screenGiDumped = false;
+
+    // The live screen probe gather's indirect atlas, sized to the frame divided by the probe step and
+    // reused across frames. Grown when the window changes; fed into the deferred lighting each frame the
+    // gather runs.
+    TextureHandle giIndirect = default;
+    int giIndirectWidth = 0;
+    int giIndirectHeight = 0;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
@@ -2540,6 +2547,59 @@ using (window)
             if (marks is not null && player is not null)
             {
                 marks.Draw(player.Marks, eye, projection);
+            }
+
+            // L6/L9: the live screen probe gather. Traced here, while the G-buffer the geometry pass just
+            // filled is still live and BEFORE the pass closes -- because closing it runs the deferred
+            // lighting, which reads the atlas as its diffuse fill. So the gather has to have written it
+            // first. Only without a card probe, which fills the cache atlas with a diagnostic rather than
+            // light. It replaces the ambient inside the shade rather than compositing over the frame, so
+            // there is no ambient to zero and nothing runs after the lighting.
+            const int giStep = 8;
+            float giStrength = RenderCVars.ScreenGather.Value;
+            bool giActive = captured
+                && giStrength > 0f
+                && sdfClipmaps is not null
+                && cardLighting is not null
+                && RenderCVars.SurfaceCacheProbe.Value == 0;
+
+            if (giActive && sdfClipmaps is { } liveGiField && cardLighting is { } liveGiCards)
+            {
+                int wantWidth = (window.Width + giStep - 1) / giStep;
+                int wantHeight = (window.Height + giStep - 1) / giStep;
+
+                if (giIndirectWidth != wantWidth || giIndirectHeight != wantHeight)
+                {
+                    if (giIndirect.IsValid)
+                    {
+                        device.DestroyTexture(giIndirect);
+                    }
+
+                    giIndirect = device.CreateStorageTexture(
+                        wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.indirect.live");
+                    giIndirectWidth = wantWidth;
+                    giIndirectHeight = wantHeight;
+                }
+
+                Vector3f giCameraToCache = new(
+                    (float)(eye.Position.X - liveGiCards.Origin.X),
+                    (float)(eye.Position.Y - liveGiCards.Origin.Y),
+                    (float)(eye.Position.Z - liveGiCards.Origin.Z));
+
+                liveGiCards.GatherScreen(
+                    liveGiField,
+                    device.SceneDepth,
+                    device.SceneNormal,
+                    DepthUnprojection.From(unjitteredProjection, 0.1f, farPlane),
+                    eye.Orientation.Transposed(),
+                    giCameraToCache,
+                    window.Width,
+                    window.Height,
+                    giStep,
+                    giIndirect);
+
+                // Recorded for the deferred lighting to fold in when the pass closes, just below.
+                device.SetScreenIndirect(giIndirect, giStrength);
             }
 
             // The view model and anything translucent belong to the forward pass: it is drawn with its

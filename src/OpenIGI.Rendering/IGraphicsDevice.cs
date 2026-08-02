@@ -434,6 +434,18 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     TextureHandle SceneColour { get; }
 
+    /// <summary>Feeds a screen probe gather's indirect light into the deferred lighting.</summary>
+    /// <param name="indirect">The probe atlas of indirect irradiance, covering the frame.</param>
+    /// <param name="strength">How strongly to apply it. Zero, or an invalid handle, is a no-op.</param>
+    /// <remarks>
+    /// Set while the G-buffer is live, before the geometry pass closes: the deferred lighting reads it
+    /// as its diffuse fill in place of the flat ambient, where the surface's own albedo and the light
+    /// scale are already applied -- so this is not a post-pass over the lit frame but part of the shade
+    /// itself, in the renderer's <c>albedo * E</c> convention with metals excluded. A no-op when the
+    /// target is not deferred or the strength is zero, so a preset that leaves it off pays nothing.
+    /// </remarks>
+    void SetScreenIndirect(TextureHandle indirect, float strength);
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>

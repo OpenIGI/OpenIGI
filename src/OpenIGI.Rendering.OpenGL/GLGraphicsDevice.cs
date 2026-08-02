@@ -83,6 +83,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lightingProbeCamera = -1;
     private int _lightingShowProbes = -1;
     private int _lightingScale = -1;
+
+    // The screen probe gather's indirect atlas, fed into the deferred lighting's own diffuse irradiance
+    // rather than composited as a post-pass. Set per frame by the game layer while the G-buffer is live;
+    // read by RunDeferredLighting and then cleared, so a frame that does not gather adds nothing.
+    private int _lightingGiStrength = -1;
+    private TextureHandle _screenIndirect;
+    private float _screenIndirectStrength;
+
     private DebugView _debugView;
     private ReflectionSettings _reflections;
     private GLShaderProgram? _reflectionProgram;
@@ -2407,13 +2415,39 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         BindTexture(2, target.BakedLightTexture);
         BindTexture(3, target.MaterialTexture);
 
+        // The screen probe gather's indirect, if the game layer traced one this frame. It arrives as
+        // irradiance E and becomes the diffuse fill in place of the flat ambient: fed into the shader's
+        // own diffuseIrradiance, where albedo * E * uLightScale applies it in this renderer's convention
+        // -- no one-over-pi, metals excluded by diffuseAlbedo -- rather than as a post-pass. Cleared
+        // after, so the next frame starts from nothing.
+        bool screenGi = _screenIndirectStrength > 0f && _screenIndirect.IsValid;
+        _lightingProgram.SetFloat(_lightingGiStrength, screenGi ? _screenIndirectStrength : 0f);
+
+        if (screenGi)
+        {
+            SetTexture(7, _screenIndirect);
+        }
+
         _fullScreen!.Draw();
+
+        _screenIndirect = default;
+        _screenIndirectStrength = 0f;
 
         // The pass left the bindings and the depth shadow in a state the next draw must not inherit.
         _currentVertexArray = 0;
         _gl.Disable(EnableCap.DepthTest);
         _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
+    }
+
+    /// <inheritdoc/>
+    public void SetScreenIndirect(TextureHandle indirect, float strength)
+    {
+        // Held, not acted on: the deferred lighting reads it when the geometry pass closes, so this only
+        // records what the next RunDeferredLighting should fold in. Called before EndPass, while the
+        // G-buffer the gather traced from is still live.
+        _screenIndirect = indirect;
+        _screenIndirectStrength = MathF.Max(strength, 0f);
     }
 
     /// <summary>Marches the participating medium over the lit scene.</summary>
@@ -3020,6 +3054,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt("uProbeGreen", 9);
         _lightingProgram.SetInt("uProbeBlue", 10);
         _lightingProgram.SetInt("uProbeDistance", 11);
+        _lightingProgram.SetInt("uGI", 7);
 
         _lightingOcclusionEnabled = _lightingProgram.LocationOf("uOcclusionEnabled");
         _lightingProbesEnabled = _lightingProgram.LocationOf("uProbesEnabled");
@@ -3032,6 +3067,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingProbeCamera = _lightingProgram.LocationOf("uProbeCamera");
         _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
         _lightingScale = _lightingProgram.LocationOf("uLightScale");
+        _lightingGiStrength = _lightingProgram.LocationOf("uGiStrength");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");

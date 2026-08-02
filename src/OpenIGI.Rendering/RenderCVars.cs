@@ -127,6 +127,24 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Scene brightness before tone mapping. 1 leaves the level's own lighting alone.");
 
+    /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
+    /// <remarks>
+    /// Zero is off, which is every preset for now: above zero, the gather traces the surface cache per
+    /// screen probe into an atlas and the deferred lighting reads it as its diffuse fill in place of the
+    /// flat ambient -- the stage where the traced global illumination reaches the screen. Not a name
+    /// clash with <see cref="GlobalIllumination"/> (<c>r_gi</c>), which is the baked probe field; this is
+    /// the live screen-space gather, and it needs the surface cache and the distance fields, so it does
+    /// nothing without both. The magnitude reads as irradiance, so a value near the ambient it replaces
+    /// (about a third) matches its brightness; it stays a knob while the look is tuned.
+    /// </remarks>
+    public static readonly NumericCVar<float> ScreenGather = CVar.Float(
+        "r_screen_gi",
+        0f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off.");
+
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
     /// Off by default, and only ever engages where a tone map is on -- the vanilla copy path returns
