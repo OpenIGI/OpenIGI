@@ -32,11 +32,27 @@ public sealed class SceneDistanceField
 
     private readonly MeshDistanceField[] _fields;
     private readonly Instance[] _instances;
+    private readonly float _surface;
 
     private SceneDistanceField(MeshDistanceField[] fields, Instance[] instances)
     {
         _fields = fields;
         _instances = instances;
+
+        // The finest half-voxel of any field, which is what a trace can call a surface. The fields
+        // are unsigned, so a ray never sees a zero crossing -- near a wall the trilinear read
+        // bottoms out around half a voxel, and a hit threshold below that floor lets the ray step
+        // straight through the wall it was slowing down for.
+        float finest = float.MaxValue;
+
+        foreach (MeshDistanceField field in fields)
+        {
+            finest = MathF.Min(
+                finest,
+                MathF.Min(MathF.Min(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z));
+        }
+
+        _surface = fields.Length > 0 ? finest * 0.5f : 0.02f;
     }
 
     /// <summary>Gets how many distinct models were baked.</summary>
@@ -208,26 +224,19 @@ public sealed class SceneDistanceField
         return scene;
     }
 
-    /// <summary>The coarsest voxel a field may bake to before it is discarded.</summary>
+    /// <summary>The coarsest voxel a field may bake to before it is discarded, in metres.</summary>
     /// <remarks>
-    /// <b>Coarseness, not size.</b> An earlier attempt cut on the model's extent and threw away 106 of
-    /// level 1's 110 models, because these units are not metres and an ordinary building is hundreds of
-    /// them across. What actually disqualifies a field is its voxel: every field gets the same voxel
-    /// count, so a model spanning four hundred thousand units resolves to voxels of twenty-five
-    /// thousand.
-    /// <para>
-    /// Such a field is worse than absent. Its band is as coarse as its voxels, so one byte step spans
-    /// hundreds of units and every true distance near zero quantises to just BELOW the midpoint -- a
-    /// small negative. Its bounds cover the whole level, the union takes a minimum, and the result was
-    /// a level calling 100% of itself solid while the exact field and the clipmap agreed perfectly with
-    /// each other. Open sky ten thousand units up read as three thousand units inside rock.
-    /// </para>
-    /// <para>
-    /// The real models sit two orders of magnitude below this, so the cut is not close: level 1's
-    /// ordinary geometry bakes to voxels of twenty to sixty units.
-    /// </para>
+    /// <b>Coarseness, not size.</b> An earlier attempt cut on the model's extent, which throws away
+    /// buildings; what actually disqualifies a field is its voxel, because every field gets the same
+    /// voxel count. A crate bakes voxels of centimetres and the largest buildings a few metres, and
+    /// those all describe their surfaces usefully. The sky and level-bounds shells span kilometres, so
+    /// their voxels come to hundreds of metres — and such a field is worse than absent: its band is as
+    /// coarse as its voxels, one byte step spans tens of metres, every true distance in the playable
+    /// space quantises to noise, its bounds cover the whole level, and the union takes a minimum. That
+    /// noise is what stopped the sun trace in mid-air. Sixteen metres keeps every model whose surfaces
+    /// a trace can actually land on and drops the shells whose answers were never real.
     /// </remarks>
-    public const float MaximumVoxelSize = 4096f;
+    public const float MaximumVoxelSize = 16f;
 
     /// <summary>Gets the baked fields, in the order instances index them.</summary>
     /// <remarks>
@@ -276,7 +285,11 @@ public sealed class SceneDistanceField
 
     /// <summary>How far a world-space point is from the nearest surface in the level.</summary>
     /// <param name="point">The point, in world space.</param>
-    /// <returns>The signed distance. Negative is inside geometry.</returns>
+    /// <returns>
+    /// The distance to the nearest surface. The fields are unsigned — this game's meshes are
+    /// single-sided shells with no meaningful interior — so both sides of a wall read as clearance
+    /// from it, and near zero means at a surface.
+    /// </returns>
     /// <remarks>
     /// The minimum over every instance, which is the correct combination for a distance field and the
     /// reason a union of shapes is free: the nearest surface to a point is the nearest surface of
@@ -382,7 +395,9 @@ public sealed class SceneDistanceField
     {
         hitDistance = 0f;
 
-        const float surface = 0.02f;
+        // Derived, not written down: what counts as "at the surface" is set by the resolution of the
+        // finest field, computed once at build.
+        float surface = _surface;
         const float minimumStep = 0.01f;
         const int maximumSteps = 256;
 

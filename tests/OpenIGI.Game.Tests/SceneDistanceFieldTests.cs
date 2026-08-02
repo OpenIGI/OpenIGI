@@ -92,9 +92,11 @@ public sealed class SceneDistanceFieldTests
     {
         SceneDistanceField scene = SceneOfCubes(new Vector3d(100, -50, 25));
 
+        // The fields are unsigned, so what pins the placement is the surface: a point on the placed
+        // cube's face reads as a surface there, and the world origin reads far from everything.
         Assert.True(
-            scene.Sample(new Vector3d(100, -50, 25)) < 0f,
-            "the centre of the placed cube did not read as inside it.");
+            MathF.Abs(scene.Sample(new Vector3d(100.5, -50, 25))) < 0.2f,
+            "the face of the placed cube did not read as a surface.");
 
         Assert.True(
             scene.Sample(Vector3d.Zero) > 1f,

@@ -91,16 +91,29 @@ public sealed class MeshDistanceFieldBakerTests
     /// cannot tell a wall from the air beside it walks straight through the level.
     /// </remarks>
     [Fact]
-    public void SignIsNegativeInsideAndPositiveOutside()
+    public void DistanceIsToTheNearestSurfaceFromEitherSide()
     {
         (Vertex3D[] vertices, ushort[] indices) = Sphere(1f);
 
         MeshDistanceField field = MeshDistanceFieldBaker.Bake(vertices, indices, 32)!;
 
-        Assert.True(field.Sample(Vector3f.Zero) < 0f, "the centre of the sphere read as outside it.");
+        // The field is unsigned: this game's meshes are single-sided shells with no meaningful
+        // interior, so both sides of a surface read as clearance from it. The sphere's centre sits a
+        // whole radius from the shell -- far past the band -- so it saturates high rather than
+        // reading as anything's inside.
+        float voxel = MathF.Max(MathF.Max(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z);
+
+        Assert.True(
+            field.Sample(Vector3f.Zero) >= field.Range - (voxel * 2f),
+            "the centre of the sphere did not read as clear of its shell.");
 
         Vector3f corner = new(field.Extent.X - 0.01f, field.Extent.Y - 0.01f, field.Extent.Z - 0.01f);
         Assert.True(field.Sample(corner) > 0f, "the far corner of the volume read as inside the sphere.");
+
+        // And the shell itself reads as a surface: a sample on the sphere sits within a voxel of zero.
+        Assert.True(
+            MathF.Abs(field.Sample(new Vector3f(1f, 0f, 0f))) <= voxel * 1.5f,
+            "the surface itself did not read as near zero.");
     }
 
     /// <summary>The distance must be the analytic one, within the resolution it was baked at.</summary>
@@ -126,7 +139,10 @@ public sealed class MeshDistanceFieldBakerTests
         MeshDistanceField field = MeshDistanceFieldBaker.Bake(vertices, indices, resolution)!;
 
         Vector3f point = new(x, y, z);
-        float expected = MathF.Sqrt((x * x) + (y * y) + (z * z)) - radius;
+
+        // Unsigned: the analytic answer is how far the point sits from the shell, whichever side it
+        // is on.
+        float expected = MathF.Abs(MathF.Sqrt((x * x) + (y * y) + (z * z)) - radius);
         float actual = field.Sample(point);
 
         // The tolerance is the voxel size, because that is genuinely the resolution of the answer:
@@ -219,8 +235,8 @@ public sealed class MeshDistanceFieldBakerTests
                 field.Origin.Y + ((field.Extent.Y - field.Origin.Y) * Fract(t * 3.71f)),
                 field.Origin.Z + ((field.Extent.Z - field.Origin.Z) * Fract(t * 5.37f)));
 
-            float truth = MathF.Sqrt(
-                (point.X * point.X) + (point.Y * point.Y) + (point.Z * point.Z)) - radius;
+            float truth = MathF.Abs(MathF.Sqrt(
+                (point.X * point.X) + (point.Y * point.Y) + (point.Z * point.Z)) - radius);
 
             float actual = field.Sample(point);
 

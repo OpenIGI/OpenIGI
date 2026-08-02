@@ -46,31 +46,6 @@ public static class MeshDistanceFieldBaker
     /// </remarks>
     public const int DefaultResolution = 32;
 
-    /// <summary>How wide a model must be before its interior is disregarded.</summary>
-    /// <remarks>
-    /// Matched to the innermost clipmap's own reach. A model wider than the volume the trace works in
-    /// is not a prop the trace is meant to resolve; it is the thing the props stand inside. Level 1 has
-    /// a shell spanning nine thousand units and another spanning ninety thousand -- skybox and
-    /// level-bounds volumes. They are watertight, so ray parity marks their whole interior solid, which
-    /// is geometrically right and useless here: the union takes a minimum, so the entire playable
-    /// volume read as rock. Measured, the level called 100% of itself solid and open sky ten thousand
-    /// units up sat three thousand units inside stone.
-    /// <para>
-    /// Left unsigned rather than dropped. Their surfaces still occlude -- a ceiling should stop a ray
-    /// that reaches it -- but nothing they enclose is called solid.
-    /// </para>
-    /// <para>
-    /// <b>This does not go far enough, and the remainder is recorded rather than guessed at.</b> It
-    /// takes the level from 100% solid to 59%, which is still absurd for open ground: the rest is
-    /// ordinary buildings, whose interiors are where the player walks. Making every field unsigned
-    /// takes it to 0% with every clipmap level agreeing with the exact field on sign across 235,358
-    /// samples, which says this game's single-sided shells have no meaningful interior at all. That is
-    /// a larger decision than a shadow ray needs -- it would retire the sign tests and change what L5's
-    /// hit lighting can ask -- so it is left for its own change.
-    /// </para>
-    /// </remarks>
-    public const float ContainerSpan = 4096f;
-
     /// <summary>Bakes a distance field for a model.</summary>
     /// <param name="vertices">The model's vertices.</param>
     /// <param name="indices">Its triangle indices, three per triangle.</param>
@@ -185,31 +160,20 @@ public static class MeshDistanceFieldBaker
         }
 
         Propagate(distance, sizeX, sizeY, sizeZ, voxelSize);
-        // A model this big is a container, and a container's interior is where the game happens.
-        //
-        // Level 1 has a shell spanning nine thousand units and another spanning ninety thousand --
-        // skybox and level-bounds volumes. They are watertight, so ray parity marks their entire
-        // interior solid, which is geometrically right and catastrophic here: the union takes a
-        // minimum, so the whole playable volume read as rock. Measured, the level called 100% of itself
-        // solid and open sky ten thousand units up sat three thousand units inside stone.
-        //
-        // Left unsigned instead of dropped. Its surfaces still occlude -- a skybox ceiling should stop
-        // a ray that reaches it -- but nothing it encloses is called solid. That is the same treatment
-        // a two-sided surface gets, and for the same reason: there is no meaningful interior.
-        bool container = span > ContainerSpan;
 
-        bool[] inside = container
-            ? new bool[count]
-            : MarkInside(
-                vertices, indices, triangles, min, voxelSize, sizeX, sizeY, sizeZ,
-                IsClosed(indices, triangles));
-
+        // Unsigned, deliberately. This game's meshes are single-sided shells from 2000 -- open backs,
+        // coincident faces, walls with no thickness -- so an interior sign never described anything
+        // the game treats as solid, and the interiors are exactly where the game happens: the skybox
+        // and level-bounds shells enclose the whole level, and a building's inside is where the player
+        // walks. Ray-parity marking was tried, voted across the axes, and gated on watertightness, and
+        // the union of the results still called most of the playable volume rock. Every consumer asks
+        // how far the nearest surface is; a trace guards against its own surface with an offset along
+        // the normal, not with a sign.
         byte[] encoded = new byte[count];
 
         for (int i = 0; i < count; i++)
         {
-            float signed = inside[i] ? -distance[i] : distance[i];
-            encoded[i] = MeshDistanceField.Encode(signed, range);
+            encoded[i] = MeshDistanceField.Encode(distance[i], range);
         }
 
         return new MeshDistanceField(min, voxelSize, sizeX, sizeY, sizeZ, range, encoded);
@@ -303,223 +267,6 @@ public static class MeshDistanceFieldBaker
         }
     }
 
-    /// <summary>Decides which voxels are inside the surface, by casting along all three axes.</summary>
-    /// <remarks>
-    /// One ray per voxel per axis would be three casts times tens of thousands of voxels. Instead each
-    /// <em>row</em> is done at once: every triangle crossing that row's line is collected, sorted, and
-    /// the voxels along it flip between outside and inside at each crossing. That is one pass over the
-    /// triangles per row rather than per voxel.
-    /// <para>
-    /// The majority vote across the three axes is what tolerates this game's open geometry. A single
-    /// axis through a model with an open back reports the whole column behind it as inside; for the
-    /// error to survive the vote, two axes have to pass through a hole at once.
-    /// </para>
-    /// </remarks>
-    private static bool IsClosed(ReadOnlySpan<ushort> indices, int triangles)
-    {
-        // Every edge shared by exactly two triangles. That is what makes ray parity trustworthy: a ray
-        // through a watertight mesh crosses the boundary an even number of times from outside, and no
-        // axis can slip through a gap because there are none.
-        Dictionary<(ushort Low, ushort High), int> edges = [];
-
-        for (int t = 0; t < triangles; t++)
-        {
-            for (int e = 0; e < 3; e++)
-            {
-                ushort a = indices[(t * 3) + e];
-                ushort b = indices[(t * 3) + ((e + 1) % 3)];
-
-                if (a == b)
-                {
-                    return false;
-                }
-
-                (ushort, ushort) key = a < b ? (a, b) : (b, a);
-                edges[key] = edges.TryGetValue(key, out int seen) ? seen + 1 : 1;
-            }
-        }
-
-        foreach (int seen in edges.Values)
-        {
-            if (seen != 2)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool[] MarkInside(
-        ReadOnlySpan<Vertex3D> vertices,
-        ReadOnlySpan<ushort> indices,
-        int triangles,
-        Vector3f min,
-        Vector3f voxelSize,
-        int sizeX,
-        int sizeY,
-        int sizeZ,
-        bool closed)
-    {
-        int count = sizeX * sizeY * sizeZ;
-        byte[] votes = new byte[count];
-
-        Vector3d[] a = new Vector3d[triangles];
-        Vector3d[] b = new Vector3d[triangles];
-        Vector3d[] c = new Vector3d[triangles];
-
-        for (int t = 0; t < triangles; t++)
-        {
-            a[t] = ToDouble(vertices[indices[t * 3]].Position);
-            b[t] = ToDouble(vertices[indices[(t * 3) + 1]].Position);
-            c[t] = ToDouble(vertices[indices[(t * 3) + 2]].Position);
-        }
-
-        List<double> crossings = [];
-
-        int[] sizes = [sizeX, sizeY, sizeZ];
-        float[] origins = [min.X, min.Y, min.Z];
-        float[] spacing = [voxelSize.X, voxelSize.Y, voxelSize.Z];
-
-        // Each axis in turn. Written as a loop over the three rather than three times over, because the
-        // only thing that differs is which index varies -- and three near-identical copies of a parity
-        // sweep is three places for an axis to be transposed.
-        for (int axis = 0; axis < 3; axis++)
-        {
-            int outerA = (axis + 1) % 3;
-            int outerB = (axis + 2) % 3;
-
-            // The segment the ray is cast along, running from just outside the volume to just outside
-            // the far side. RayTriangle.Intersect is a SEGMENT test, not an infinite ray: it reports a
-            // hit as a fraction of the direction vector and rejects anything at or past one. Handing it
-            // a unit direction therefore searches exactly one unit ahead, which found no crossings at
-            // all and reported the inside of every model as empty air.
-            double start = origins[axis] - spacing[axis];
-            double end = origins[axis] + (spacing[axis] * (sizes[axis] + 1));
-            double span = end - start;
-
-            for (int outer = 0; outer < sizes[outerB]; outer++)
-            {
-                for (int inner = 0; inner < sizes[outerA]; inner++)
-                {
-                    double[] position = new double[3];
-                    position[axis] = start;
-                    position[outerA] = origins[outerA] + ((inner + 0.5) * spacing[outerA]);
-                    position[outerB] = origins[outerB] + ((outer + 0.5) * spacing[outerB]);
-
-                    double[] direction = new double[3];
-                    direction[axis] = span;
-
-                    Collect(
-                        crossings,
-                        new Vector3d(position[0], position[1], position[2]),
-                        new Vector3d(direction[0], direction[1], direction[2]),
-                        a,
-                        b,
-                        c,
-                        triangles);
-
-                    if (crossings.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    for (int step = 0; step < sizes[axis]; step++)
-                    {
-                        // As a fraction of the segment, because that is the space the crossings are in.
-                        double at = ((origins[axis] + ((step + 0.5) * spacing[axis])) - start) / span;
-
-                        if (!IsInside(crossings, at))
-                        {
-                            continue;
-                        }
-
-                        int[] voxel = new int[3];
-                        voxel[axis] = step;
-                        voxel[outerA] = inner;
-                        voxel[outerB] = outer;
-
-                        votes[(((voxel[2] * sizeY) + voxel[1]) * sizeX) + voxel[0]]++;
-                    }
-                }
-            }
-        }
-
-        bool[] inside = new bool[count];
-
-        for (int i = 0; i < count; i++)
-        {
-            // A closed mesh can trust a majority; an open one cannot, and this is measured.
-            //
-            // Parity along an axis that exits through a hole reports the whole column behind it as
-            // solid, and this game's large geometry has open backs and missing roofs, so the wrong
-            // answer routinely won two of three votes. Reverting to a majority took the clipmap
-            // straight back to reading solid everywhere; unanimity is what makes it agree with the
-            // exact field.
-            //
-            // Unanimity errs the other way: a voxel genuinely inside a mesh open on any axis reads as
-            // air. That is the safe direction -- air where there is rock costs a missed shadow, rock
-            // where there is air costs the whole level.
-            //
-            // Parity along an axis that exits through a hole reports the whole column behind it as
-            // solid, and this game's large geometry has open backs and missing roofs, so the wrong
-            // answer routinely won two of three votes. Letting a majority decide those took the clipmap
-            // straight back to reading solid everywhere.
-            //
-            // Demanding all three is the safe reading for them -- it errs towards air, and air where
-            // there is rock costs a missed shadow where the reverse cost the whole level. But it is the
-            // WRONG reading for a watertight mesh, where all three axes are already reliable and
-            // unanimity only throws away interiors that a single blocked axis should not veto: it made
-            // a closed cube's own centre read as empty.
-            //
-            // So the mesh decides. Watertight, majority; open, unanimous.
-            inside[i] = votes[i] >= (closed ? 2 : 3);
-        }
-
-        return inside;
-    }
-
-    /// <summary>Collects, in order, how far along a ray each triangle crossing is.</summary>
-    private static void Collect(
-        List<double> crossings,
-        Vector3d origin,
-        Vector3d direction,
-        Vector3d[] a,
-        Vector3d[] b,
-        Vector3d[] c,
-        int triangles)
-    {
-        crossings.Clear();
-
-        for (int t = 0; t < triangles; t++)
-        {
-            if (RayTriangle.Intersect(origin, direction, a[t], b[t], c[t], out double hit))
-            {
-                crossings.Add(hit);
-            }
-        }
-
-        crossings.Sort();
-    }
-
-    /// <summary>Counts how many crossings lie before a point, which is odd exactly when it is inside.</summary>
-    private static bool IsInside(List<double> crossings, double at)
-    {
-        int before = 0;
-
-        foreach (double crossing in crossings)
-        {
-            if (crossing > at)
-            {
-                break;
-            }
-
-            before++;
-        }
-
-        return (before & 1) == 1;
-    }
-
     /// <summary>The distance from a point to a triangle.</summary>
     /// <remarks>
     /// The closest point on a triangle lies in its interior, on one of its three edges, or at one of its
@@ -589,8 +336,6 @@ public static class MeshDistanceFieldBaker
 
         return Length(Subtract(ap, Add(Scale(ab, vv), Scale(ac, ww))));
     }
-
-    private static Vector3d ToDouble(Vector3f v) => new(v.X, v.Y, v.Z);
 
     private static Vector3f Add(Vector3f a, Vector3f b) => new(a.X + b.X, a.Y + b.Y, a.Z + b.Z);
 
