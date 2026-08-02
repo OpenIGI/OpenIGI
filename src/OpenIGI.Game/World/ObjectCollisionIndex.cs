@@ -121,7 +121,32 @@ public sealed class ObjectCollisionIndex
     /// <param name="end">Where it stops.</param>
     /// <param name="hit">Receives the nearest contact.</param>
     /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
-    public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit)
+    public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        Cast(origin, end, honourPassable: true, out hit);
+
+    /// <summary>Casts a ray with every door treated as shut, whatever it is doing right now.</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="hit">Receives the nearest contact.</param>
+    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
+    /// <remarks>
+    /// <para>
+    /// For the probe bake, which wants both halves of that sentence. A door standing open when the bake
+    /// runs would be traced as a hole in the wall it is part of, and the field is static, so the hole
+    /// would still be there once the door shut.
+    /// </para>
+    /// <para>
+    /// It is also the only cast safe to run off the main thread. <see cref="TryCast"/> reads
+    /// <see cref="_passable"/>, which <see cref="SetPassable"/> mutates whenever a door moves; this
+    /// touches nothing but the entry array, which never changes after
+    /// <see cref="Build"/>. Ordering the bake before the doors open would answer the first point and
+    /// not the second.
+    /// </para>
+    /// </remarks>
+    public bool TryCastWithDoorsShut(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        Cast(origin, end, honourPassable: false, out hit);
+
+    private bool Cast(Vector3d origin, Vector3d end, bool honourPassable, out WorldRayHit hit)
     {
         hit = default;
 
@@ -138,7 +163,7 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (entry.TaskName.Length > 0 && _passable.Contains(entry.TaskName))
+            if (honourPassable && entry.TaskName.Length > 0 && _passable.Contains(entry.TaskName))
             {
                 continue;
             }
@@ -196,6 +221,11 @@ public sealed class ObjectCollisionIndex
     /// <summary>Gets a cast delegate bound to this index.</summary>
     /// <returns>The delegate the sweep takes.</returns>
     public WorldRayCast Caster() => TryCast;
+
+    /// <summary>Gets a cast delegate that treats every door as shut and reads no mutable state.</summary>
+    /// <returns>The delegate the probe bake takes.</returns>
+    /// <remarks>See <see cref="TryCastWithDoorsShut"/> for why the bake wants both properties.</remarks>
+    public WorldRayCast CasterWithDoorsShut() => TryCastWithDoorsShut;
 
     /// <summary>Casts a ray and names the object it meets — a diagnostic for "what am I walking into".</summary>
     /// <param name="origin">Where the ray starts, in world units.</param>

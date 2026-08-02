@@ -1,5 +1,4 @@
 ﻿using OpenIGI.Core.Diagnostics;
-using System.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Core.Numerics;
@@ -289,6 +288,10 @@ using (window)
     Vector3d playerEyeTick = default;
     bool playerEyeCaptured = false;
     IrradianceVolume? probeField = null;
+
+    // The bake in flight, while it is in flight. Non-null only between the level load starting one and
+    // the render thread collecting it; a lockstep capture never sees it, because that path waits.
+    IrradianceProbeBake? probeBake = null;
     bool climbSlideArmed = false;
     Random shotRandom = new(20000101);
     int reportedHumanHits = 0;
@@ -468,12 +471,19 @@ using (window)
                     blockedAt = onObject;
                     return hitObject;
                 };
-                // The level's doors, before the brains: a walker asks the registry for the nearest door
-                // on a door hop, and an open door is switched out of the collision index so the
-                // doorway is walkable. Both have to exist before Animate hands each brain its query.
-                // The probe field, traced against the same collision the AI sees through. Before the
-                // doors are opened deliberately: a door standing open at load would be baked as a hole
-                // in the wall it is part of, and the field is static.
+                // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
+                // about three seconds in Release and half a minute in Debug, and by this point the window
+                // and its GL context are live -- so the process stops answering, the GPU is handed no
+                // work for the whole of it, and Windows' watchdog takes the context away. Loading mission
+                // 1 from the menu died that way, with exit 0xCFFFFFFF. The main thread carries on loading
+                // and presenting; IrradianceProbeBake hands the volume over when it is ready.
+                //
+                // It traces with every door SHUT, which is two things at once. A door standing open would
+                // otherwise be baked as a hole in the wall it belongs to, and the field is static, so the
+                // hole would outlast the door -- that is why this used to have to run before the doors
+                // did. And the shut cast is the only one that reads no state the game mutates, which is
+                // what makes running it alongside a live level safe rather than merely early.
+                //
                 // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
                 // alone -- which is what such a level looks like anyway.
                 if (RenderCVars.GlobalIllumination.Value)
@@ -481,11 +491,26 @@ using (window)
                     Vector3f bakeSunDirection = sun is { } declared && !declared.IsBelowHorizon
                         ? declared.Direction
                         : default;
-                    long startedAt = Stopwatch.GetTimestamp();
 
-                    probeField = IrradianceProbeBaker.Bake(
+                    WorldRayCast shutObjectCast = solids.CasterWithDoorsShut();
+                    WorldRayCast bakeCast = (Vector3d a, Vector3d b, out WorldRayHit blockedAt) =>
+                    {
+                        bool hitObject = shutObjectCast(a, b, out WorldRayHit onObject);
+                        if (playerTerrain is { } bakeGround
+                            && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
+                            && (!hitObject || onGround.Distance < onObject.Distance))
+                        {
+                            blockedAt = onGround;
+                            return true;
+                        }
+
+                        blockedAt = onObject;
+                        return hitObject;
+                    };
+
+                    probeBake = IrradianceProbeBake.Start(
                         scene,
-                        levelCast,
+                        bakeCast,
                         bakeSunDirection,
 
                         // Whatever the console says, but never so fine that a big level spends a minute
@@ -499,13 +524,22 @@ using (window)
                         new Vector3f(0.42f, 0.40f, 0.37f),
                         logger);
 
-                    logger.Information(
-                        "GI",
-                        FormattableString.Invariant(
-                            $"Probe bake took {Stopwatch.GetElapsedTime(startedAt).TotalSeconds:0.00} s."));
+                    // A capture is not allowed to race the worker. A reference image has to either
+                    // contain the field or not contain it, never "whatever frame 30 happened to catch",
+                    // so a lockstep run pays the block back and stays reproducible. Nobody is looking at
+                    // this window, and the watchdog is a problem for an interactive load.
+                    if (options.Lockstep)
+                    {
+                        probeField = probeBake.WaitForResult();
+                        probeBake = null;
+                    }
                 }
 
                 device.SetIrradianceVolume(probeField);
+
+                // The level's doors, before the brains: a walker asks the registry for the nearest door
+                // on a door hop, and an open door is switched out of the collision index so the
+                // doorway is walkable. Both have to exist before Animate hands each brain its query.
 
                 DoorRegistry levelDoors = DoorRegistry.Build(levelRoot);
                 soldiers.SetDoors(levelDoors, solids);
@@ -1187,6 +1221,16 @@ using (window)
     while (running && loop.IsRunning && !window.IsClosing)
     {
         window.PumpEvents();
+
+        // The probe bake, if one is still tracing. Collected HERE rather than on the worker because
+        // what comes back becomes a GL texture, and the context belongs to this thread. TryCollect
+        // answers true once, so this costs a completed-flag read per frame until then and nothing after.
+        if (probeBake is { } pendingBake && pendingBake.TryCollect(out IrradianceVolume? bakedField))
+        {
+            probeField = bakedField;
+            probeBake = null;
+            device.SetIrradianceVolume(probeField);
+        }
 
         // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
         // an accumulated step so the schedule cannot drift. Per loop pass would be wrong: the loop
@@ -2104,6 +2148,11 @@ using (window)
             running = false;
         }
     }
+
+    // A bake still tracing at this point is tracing for a level nobody will see again. The worker is a
+    // thread-pool thread and cannot hold the process open, so this is not about shutting down cleanly --
+    // it is about not spending every core on it while the rest of the shutdown runs.
+    probeBake?.Cancel();
 
     SaveConfiguration(gamePath, configuration, logger);
     console.SaveSettings();
