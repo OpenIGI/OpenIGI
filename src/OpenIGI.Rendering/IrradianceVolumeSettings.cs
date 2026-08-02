@@ -19,10 +19,24 @@ namespace OpenIGI.Rendering;
 /// What the open sky is worth this frame. The bake stored how much sky reaches each probe, not what
 /// colour it was, so a mission's own sky decides that here without rebaking anything.
 /// </param>
+/// <param name="Blend">
+/// How much of the volume's answer has replaced the flat ambient it stands in for, from 0 to 1.
+/// <para>
+/// The field is traced on a worker and arrives several seconds into a level, and until it does every
+/// surface is lit by one constant colour. Switching between the two in a single frame relights the
+/// whole world at once — which reads as a fault rather than as a load finishing, and is worse the more
+/// the field differs from the ambient it replaces.
+/// </para>
+/// <para>
+/// A blend rather than a fade to black and back: both terms are meaningful at every point in between,
+/// so the intermediate frames are a lighting solution rather than a transition artefact.
+/// </para>
+/// </param>
 public readonly record struct IrradianceVolumeSettings(
     bool Enabled = false,
     float Intensity = 1f,
-    Vector3f SkyColour = default)
+    Vector3f SkyColour = default,
+    float Blend = 1f)
 {
     /// <summary>Gets settings under which the volume contributes nothing.</summary>
     public static IrradianceVolumeSettings Off { get; }

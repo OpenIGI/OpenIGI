@@ -78,6 +78,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lightingProbeInverseCount = -1;
     private int _lightingProbeScale = -1;
     private int _lightingProbeSky = -1;
+    private int _lightingProbeBlend = -1;
     private int _lightingProbeViewToWorld = -1;
     private int _lightingProbeCamera = -1;
     private int _lightingShowProbes = -1;
@@ -2110,6 +2111,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
             Vector3f sky = _volumeSettings.Sky;
             float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
+            _lightingProgram.SetFloat(
+                _lightingProbeBlend, Math.Clamp(_volumeSettings.Blend, 0f, 1f));
             _lightingProgram.SetVector3(
                 _lightingProbeSky, sky.X * intensity, sky.Y * intensity, sky.Z * intensity);
             _lightingProgram.SetMatrix3(_lightingProbeViewToWorld, _viewToWorld);
@@ -2724,6 +2727,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingProbeInverseCount = _lightingProgram.LocationOf("uProbeInverseCount");
         _lightingProbeScale = _lightingProgram.LocationOf("uProbeScale");
         _lightingProbeSky = _lightingProgram.LocationOf("uProbeSky");
+        _lightingProbeBlend = _lightingProgram.LocationOf("uProbeBlend");
         _lightingProbeViewToWorld = _lightingProgram.LocationOf("uProbeViewToWorld");
         _lightingProbeCamera = _lightingProgram.LocationOf("uProbeCamera");
         _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");

@@ -298,6 +298,24 @@ using (window)
     // the render thread collecting it; a lockstep capture never sees it, because that path waits.
     IrradianceProbeBake? probeBake = null;
 
+    // When the probe field landed, in the loop's own milliseconds, or -1 for "no fade owed". The field
+    // is traced on a worker and arrives several seconds into a level; until it does, every surface is
+    // lit by one flat ambient colour, and swapping the two in a single frame relights the entire world
+    // at once. That reads as a fault rather than as a load finishing.
+    //
+    // A lockstep capture never fades: it waits for the field at load, so there is nothing to blend from
+    // and nothing time-dependent for a reference image to disagree about.
+    long probeArrivedAt = -1;
+
+    // How long the field takes to replace the ambient it stands in for. Long enough that the eye reads
+    // it as light settling rather than as a cut, short enough that nobody waits for it -- and well
+    // under the several seconds the bake itself takes, so the two do not read as one long event.
+    const float ProbeFadeMilliseconds = 600f;
+
+    // How long a load will hold for the lighting before giving up and letting the player in anyway. A
+    // level that somehow never finishes tracing must not become a game that never starts.
+    const int LightingWaitMilliseconds = 30_000;
+
     // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
     // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
     // on the render thread once the bake lands.
@@ -580,6 +598,20 @@ using (window)
                     if (options.Lockstep)
                     {
                         probeField = probeBake.WaitForResult();
+                        probeBake = null;
+                    }
+                    else
+                    {
+                        // A level is not ready to be played until it is lit. The alternative -- letting
+                        // the player in and swapping the lighting under them when the bake lands -- is
+                        // what a loading screen exists to prevent, and no amount of blending makes an
+                        // unlit level the right thing to show.
+                        //
+                        // Waited for by PUMPING, not by blocking. Blocking is exactly what moved this
+                        // bake onto a worker in the first place: the window answers nothing, the GPU is
+                        // handed no work, and Windows' watchdog takes the context away. So the message
+                        // queue keeps draining and the frame keeps presenting while the worker traces.
+                        probeField = WaitForLighting(probeBake);
                         probeBake = null;
                     }
                 }
@@ -1190,6 +1222,58 @@ using (window)
         }
     }
 
+    // Holds the load open until the probe field lands, keeping the window alive throughout.
+    //
+    // The pump is the whole point. This runs on the thread that owns the GL context, so a plain wait
+    // stops the process answering the operating system and the watchdog resets the driver -- which is
+    // the fault that put this bake on a worker to begin with, and it exits 0xCFFFFFFF rather than
+    // reporting anything. Draining the queue and presenting a cleared frame costs almost nothing and
+    // keeps the process demonstrably alive.
+    IrradianceVolume? WaitForLighting(IrradianceProbeBake bake)
+    {
+        int startedAt = loop.TimeSource.Milliseconds;
+
+        while (true)
+        {
+            // Taken here rather than in the loop's condition, because TryCollect answers true exactly
+            // once by contract -- asking again after the loop to find out what it handed over would
+            // get nothing, and the level would load unlit having just waited for its lighting.
+            if (bake.TryCollect(out IrradianceVolume? ready))
+            {
+                logger.Information(
+                    "Light", $"Waited {loop.TimeSource.Milliseconds - startedAt} ms for the probe field.");
+
+                return ready;
+            }
+
+            if (window.IsClosing)
+            {
+                bake.Cancel();
+                return null;
+            }
+
+            window.PumpEvents();
+
+            // Cleared to the level's own fog colour rather than to black, so the wait reads as the
+            // level arriving rather than as the picture having gone.
+            device.Clear(scheduler.ClearColour);
+            device.SwapBuffers();
+
+            // The bake is bounded work on a thread pool rather than a poll of something that may never
+            // arrive -- but a level whose trace somehow never finishes must not become a game that
+            // never starts. Falling through here leaves the blend to cover it.
+            if (loop.TimeSource.Milliseconds - startedAt > LightingWaitMilliseconds)
+            {
+                logger.Warning(
+                    "Light",
+                    $"The probe field did not arrive within {LightingWaitMilliseconds / 1000} s; "
+                    + "entering the level unlit and blending it in when it lands.");
+
+                return null;
+            }
+        }
+    }
+
     menuHost.StartGame = () => StartMission(missionState.PendingMissionId);
 
     static FreeCamera CreateCamera(WorldScene scene, float yaw, float pitch, float height)
@@ -1320,6 +1404,7 @@ using (window)
         {
             probeField = bakedField;
             probeBake = null;
+            probeArrivedAt = loop.TimeSource.Milliseconds;
             device.SetIrradianceVolume(probeField);
         }
 
@@ -1842,12 +1927,20 @@ using (window)
                         RenderCVars.ReflectionIntensity.Value,
                         RenderCVars.ReflectionMaxRoughness.Value)
                     : ReflectionSettings.Off);
+            // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
+            // stop as a second, smaller event -- which is the thing this exists to remove.
+            float probeFade = probeArrivedAt < 0
+                ? 1f
+                : Math.Clamp((loop.TimeSource.Milliseconds - probeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
+            probeFade = probeFade * probeFade * (3f - (2f * probeFade));
+
             device.SetIrradianceVolumeSettings(
                 probeField is not null && RenderCVars.GlobalIllumination.Value
                     ? new IrradianceVolumeSettings(
                         true,
                         RenderCVars.GlobalIlluminationIntensity.Value,
-                        light.Ambient)
+                        light.Ambient,
+                        probeFade)
                     : IrradianceVolumeSettings.Off);
 
             // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
