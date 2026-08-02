@@ -327,6 +327,10 @@ using (window)
     // How many times the bounce has been re-lit this mission. Zero converges in one shot; each relight
     // after that accumulates over frames. Reset when a mission loads.
     int cardBounceFrame = 0;
+
+    // One screen-space indirect dump per run, to verify the gather reads the G-buffer and reconstructs
+    // world positions correctly before it feeds the frame.
+    bool screenGiDumped = false;
     SurfaceCacheCapture.Result? capturedCards = null;
     SurfaceCacheInstances? cardInstances = null;
     DistanceFieldBake? sdfBake = null;
@@ -1512,6 +1516,65 @@ using (window)
             : new Vector3f(1f, 1f, 1f);
     }
 
+    // Runs the screen probe gather once and writes its probe atlas to a PNG, to verify the gather reads
+    // the G-buffer and reconstructs world positions before it is wired into the frame.
+    static void DumpScreenGather(
+        IGraphicsDevice device, SurfaceCacheLighting cards, GlobalDistanceField field, Camera3D eye,
+        Matrix4f projection, float farPlane, int width, int height, string into, IIgiLogger logger)
+    {
+        try
+        {
+            const int step = 8;
+            int gridW = (width + step - 1) / step;
+            int gridH = (height + step - 1) / step;
+
+            TextureHandle output = device.CreateStorageTexture(
+                gridW, gridH, VolumeFormat.Rgba16F, "cards.screen.indirect");
+
+            Vector3f cameraToCache = new(
+                (float)(eye.Position.X - cards.Origin.X),
+                (float)(eye.Position.Y - cards.Origin.Y),
+                (float)(eye.Position.Z - cards.Origin.Z));
+
+            cards.GatherScreen(
+                field,
+                device.SceneDepth,
+                device.SceneNormal,
+                DepthUnprojection.From(projection, 0.1f, farPlane),
+                eye.Orientation.Transposed(),
+                cameraToCache,
+                width,
+                height,
+                step,
+                output);
+
+            Bgra32[] pixels = new Bgra32[gridW * gridH];
+            device.ReadStorageTexture(output, pixels);
+
+            long lit = 0;
+
+            foreach (Bgra32 pixel in pixels)
+            {
+                if (pixel.R > 0 || pixel.G > 0 || pixel.B > 0)
+                {
+                    lit++;
+                }
+            }
+
+            Directory.CreateDirectory(into);
+            string path = Path.Combine(into, "screen-indirect.png");
+            PngWriter.Write(path, pixels, gridW, gridH);
+            logger.Information(
+                "SurfaceCache", $"Wrote {path}: {gridW}x{gridH} probe(s), {lit} carry indirect.");
+
+            device.DestroyTexture(output);
+        }
+        catch (GraphicsDeviceException error)
+        {
+            logger.Warning("SurfaceCache", $"The screen gather dump failed: {error.Message}");
+        }
+    }
+
     static void DumpCardLighting(
         IGraphicsDevice device, SurfaceCacheLighting lighting, string into, IIgiLogger logger,
         int probe = 0, string name = "cards-direct.png")
@@ -2607,6 +2670,23 @@ using (window)
                         UiScale.Resolve(options.UiScale, window.Width, window.Height));
                     batch.End();
                 }
+            }
+
+            // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
+            // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
+            // depth-to-world reconstruction before the gather feeds the frame. Only when no card probe is
+            // running, since that fills the cache atlas with a diagnostic rather than light.
+            if (captured
+                && !screenGiDumped
+                && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
+                && sdfClipmaps is { } giField
+                && cardLighting is { } giCards
+                && RenderCVars.SurfaceCacheProbe.Value == 0)
+            {
+                screenGiDumped = true;
+                DumpScreenGather(
+                    device, giCards, giField, eye, unjitteredProjection, farPlane,
+                    window.Width, window.Height, giInto, logger);
             }
 
             // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
