@@ -10,6 +10,13 @@
     <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
   </ItemGroup>
 
+  <!-- The shipped Saira faces, so screens measure and bind against the fonts the game rasterises. -->
+  <ItemGroup>
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\fonts\*.ttf"
+          Link="Assets\fonts\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
