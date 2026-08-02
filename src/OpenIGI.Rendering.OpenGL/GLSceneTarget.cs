@@ -48,6 +48,8 @@ internal sealed class GLSceneTarget : IDisposable
     private readonly uint[] _bloomFramebuffers = [0, 0];
     private int _bloomWidth;
     private int _bloomHeight;
+    private uint _scratchTexture;
+    private uint _scratchFramebuffer;
     private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
@@ -197,6 +199,26 @@ internal sealed class GLSceneTarget : IDisposable
         if (!CreateBloom(colorFormat, description))
         {
             _logger.Warning(LogCategory, "The bloom buffers could not be created; bloom is off.");
+        }
+
+        _scratchTexture = CreateTexture(
+            colorFormat,
+            PixelFormat.Rgba,
+            PixelType.Float,
+            description with { Width = description.PresentWidth, Height = description.PresentHeight });
+
+        _scratchFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _scratchFramebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            _scratchTexture,
+            0);
+
+        if (!IsComplete("scratch"))
+        {
+            _logger.Warning(LogCategory, "The scratch buffer could not be created; the camera effects are off.");
         }
 
         if (description.Deferred && !CreateOcclusion(description))
@@ -378,6 +400,24 @@ internal sealed class GLSceneTarget : IDisposable
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _occlusionFramebuffer);
         _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
         return true;
+    }
+
+    /// <summary>Gets the presentation-sized scratch buffer the camera effects write into.</summary>
+    /// <remarks>
+    /// Its own buffer rather than the scene ping-pong, because by the time these run the frame may be
+    /// at the <em>output</em> resolution — the temporal upsample has already happened — and the scene
+    /// pair is sized for the render resolution.
+    /// </remarks>
+    public uint ScratchTexture => _scratchTexture;
+
+    /// <summary>Gets a value indicating whether the scratch buffer exists.</summary>
+    public bool HasScratch => _scratchFramebuffer != 0;
+
+    /// <summary>Makes the scratch buffer current, at the presentation size.</summary>
+    public void BindForScratch()
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _scratchFramebuffer);
+        _gl.Viewport(0, 0, (uint)Description.PresentWidth, (uint)Description.PresentHeight);
     }
 
     /// <summary>Gets the blurred bright parts of the frame, or zero when there is no bloom buffer.</summary>
@@ -769,6 +809,18 @@ internal sealed class GLSceneTarget : IDisposable
         _historyWrite = 0;
         _historyValid = false;
         _presentingOutput = false;
+
+        if (_scratchFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_scratchFramebuffer);
+            _scratchFramebuffer = 0;
+        }
+
+        if (_scratchTexture != 0)
+        {
+            _gl.DeleteTexture(_scratchTexture);
+            _scratchTexture = 0;
+        }
 
         for (int i = 0; i < 2; i++)
         {

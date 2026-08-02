@@ -330,6 +330,66 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How strongly surfaces bounce their colour onto each other.");
 
+    /// <summary>How far, in metres, the camera is focused, or 0 for no depth of field.</summary>
+    /// <remarks>
+    /// Off by default and deliberately so: in a first-person shooter the player's eye chooses what to
+    /// look at, and a renderer that blurs everything else is fighting them. Its place is the menu
+    /// camera and the sniper scope, which decide where the eye is going anyway.
+    /// </remarks>
+    public static readonly NumericCVar<float> FocalDistance = CVar.Float(
+        "r_dof",
+        0f,
+        0f,
+        500f,
+        CVarOptions.Archive,
+        "Focal distance in metres; 0 turns depth of field off.");
+
+    /// <summary>Over how many metres a surface goes from sharp to fully defocused.</summary>
+    public static readonly NumericCVar<float> FocalRange = CVar.Float(
+        "r_dof_range",
+        12f,
+        0.5f,
+        200f,
+        CVarOptions.Archive,
+        "Metres from the focal plane over which a surface defocuses completely.");
+
+    /// <summary>The widest the defocus gets, in pixels.</summary>
+    public static readonly NumericCVar<float> FocalBlur = CVar.Float(
+        "r_dof_blur",
+        8f,
+        0f,
+        64f,
+        CVarOptions.Archive,
+        "The widest defocus, in pixels.");
+
+    /// <summary>How much of a frame's movement is smeared.</summary>
+    public static readonly NumericCVar<float> MotionBlur = Presets.Define(
+        CVar.Float(
+            "r_motion_blur",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of a frame's movement smears; a real shutter is open for part of a frame."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0.4",
+        ultra: "0.5");
+
+    /// <summary>How many samples the defocus and motion gather takes.</summary>
+    public static readonly NumericCVar<int> CameraTaps = Presets.Define(
+        CVar.Int(
+            "r_camera_taps",
+            6,
+            1,
+            16,
+            CVarOptions.Archive,
+            "Samples per pixel for depth of field and motion blur together."),
+        vanilla: "6",
+        enhanced: "4",
+        high: "6",
+        ultra: "10");
+
     /// <summary>Scales the whole dynamically-computed irradiance.</summary>
     /// <remarks>
     /// Not a taste control, a calibration. I.G.I.'s diffuse textures are not albedo: they were painted

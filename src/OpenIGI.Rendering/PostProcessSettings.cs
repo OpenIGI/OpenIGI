@@ -55,6 +55,21 @@ namespace OpenIGI.Rendering;
 /// corner. A real lens cannot focus every wavelength to the same point, and the error grows with
 /// distance from the axis — which is why this is zero in the middle however high it is set.
 /// </param>
+/// <param name="FocalDistance">
+/// How far, in metres, the camera is focused. Zero switches depth of field off entirely, which is the
+/// right default for a shooter: the player's eye picks what to look at, and a renderer that decides for
+/// them fights that. It earns its place on the menu camera and down a scope.
+/// </param>
+/// <param name="FocalRange">Over how many metres a surface goes from sharp to fully defocused.</param>
+/// <param name="FocalBlur">The widest the defocus gets, in pixels.</param>
+/// <param name="MotionBlur">
+/// How much of a frame's movement is smeared, where 1 is the whole of it. A real shutter is open for
+/// part of a frame rather than all of it, so values below 1 are the physical range.
+/// </param>
+/// <param name="CameraTaps">
+/// How many samples the defocus and motion gather takes. The cost of both effects together, and their
+/// only quality dial.
+/// </param>
 /// <param name="Sharpen">
 /// How much local contrast is restored after the temporal accumulation and any upsampling have
 /// softened the frame. Distinct from the sharpening inside the temporal resolve: that one fights the
@@ -73,7 +88,12 @@ public readonly record struct PostProcessSettings(
     float Vignette = 0f,
     float Grain = 0f,
     float ChromaticAberration = 0f,
-    float Sharpen = 0f)
+    float Sharpen = 0f,
+    float FocalDistance = 0f,
+    float FocalRange = 12f,
+    float FocalBlur = 8f,
+    float MotionBlur = 0f,
+    int CameraTaps = 6)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -97,7 +117,12 @@ public readonly record struct PostProcessSettings(
         ToneMap == ToneMapOperator.None
         && Exposure == 1.0f
         && !WantsBloom
-        && !WantsGrading;
+        && !WantsGrading
+        && !WantsCameraEffects;
+
+    /// <summary>Gets a value indicating whether the camera gather would do anything.</summary>
+    public bool WantsCameraEffects =>
+        CameraTaps > 0 && ((FocalDistance > 0f && FocalBlur > 0f) || MotionBlur > 0f);
 
     /// <summary>Gets a value indicating whether anything after the tone map would change the picture.</summary>
     public bool WantsGrading =>

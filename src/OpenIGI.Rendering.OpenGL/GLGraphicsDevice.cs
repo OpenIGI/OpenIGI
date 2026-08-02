@@ -243,6 +243,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private GLShaderProgram? _bloomBlurProgram;
     private int _bloomThreshold = -1;
     private int _bloomDirection = -1;
+
+    private GLShaderProgram? _cameraProgram;
+    private int _cameraUnproject = -1;
+    private int _cameraFocus = -1;
+    private int _cameraMotionBlur = -1;
+    private int _cameraPrevViewProjection = -1;
+    private int _cameraDelta = -1;
+    private int _cameraViewToWorld = -1;
+    private int _cameraTexelSize = -1;
+    private int _cameraFrame;
     private bool _captureActive;
 
     private bool _disposed;
@@ -1237,7 +1247,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // A frame with no forward pass -- the free camera draws no view model -- has not resolved yet.
         ResolveTemporal(target);
 
-        bool bloomed = RunBloom(target, post);
+        // Before the bloom, so that a defocused highlight blooms as the wide soft thing it has become
+        // rather than as the point it was: the lens spreads what actually reaches it.
+        uint scene = RunCameraEffects(target, post);
+        bool bloomed = RunBloom(target, post, scene);
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
@@ -1293,7 +1306,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             BindTexture(2, target.MaterialTexture);
         }
 
-        BindTexture(0, target.FrontColorTexture);
+        BindTexture(0, scene);
         _fullScreen.Draw();
 
         // Re-apply the depth state for real rather than just recording it. Writing the shadow alone was
@@ -1308,15 +1321,85 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _currentVertexArray = 0;
     }
 
+    /// <summary>Defocuses what is off the focal plane and smears what moved.</summary>
+    /// <param name="target">The scene target holding the finished frame, its depth and its motion.</param>
+    /// <param name="post">The frame's settings.</param>
+    /// <returns>The texture holding the frame afterwards, which is unchanged when nothing ran.</returns>
+    /// <remarks>
+    /// Into a buffer of its own rather than the scene ping-pong, because by this point the frame may
+    /// be at the output resolution — the temporal upsample has already happened — while the scene pair
+    /// is sized for the render resolution.
+    /// </remarks>
+    private uint RunCameraEffects(GLSceneTarget target, in PostProcessSettings post)
+    {
+        if (!post.WantsCameraEffects
+            || !target.HasScratch
+            || _cameraProgram is null
+            || _fullScreen is null)
+        {
+            return target.FrontColorTexture;
+        }
+
+        target.BindForScratch();
+        UseProgram(_cameraProgram);
+
+        _cameraProgram.SetVector4(
+            _cameraUnproject,
+            _unprojection.XScale,
+            _unprojection.YScale,
+            _unprojection.Near,
+            _unprojection.Far);
+        _cameraProgram.SetVector4(
+            _cameraFocus,
+            MathF.Max(post.FocalDistance, 0f),
+            MathF.Max(post.FocalRange, 0.01f),
+            post.FocalDistance > 0f ? MathF.Max(post.FocalBlur, 0f) : 0f,
+            Math.Clamp(post.CameraTaps, 1, 16));
+
+        _cameraFrame = (_cameraFrame + 1) & 63;
+        _cameraProgram.SetVector3(
+            _cameraMotionBlur,
+            Math.Clamp(post.MotionBlur, 0f, 1f),
+
+            // A hard ceiling in pixels, so one very fast object cannot smear across the frame -- and
+            // cannot cost a thousand taps doing it.
+            48f,
+            _cameraFrame * 0.61803399f);
+
+        _cameraProgram.SetMatrix4(_cameraPrevViewProjection, _previousViewProjection);
+        _cameraProgram.SetVector3(
+            _cameraDelta,
+            _temporalCamera.X - _previousCamera.X,
+            _temporalCamera.Y - _previousCamera.Y,
+            _temporalCamera.Z - _previousCamera.Z);
+        _cameraProgram.SetMatrix3(_cameraViewToWorld, _temporalViewToWorldValue);
+        _cameraProgram.SetVector2(
+            _cameraTexelSize,
+            1f / target.Description.PresentWidth,
+            1f / target.Description.PresentHeight);
+
+        BindTexture(0, target.FrontColorTexture);
+        BindTexture(4, target.DepthTexture);
+        BindTexture(5, target.MotionTexture);
+
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
+        _fullScreen.Draw();
+        return target.ScratchTexture;
+    }
+
     /// <summary>Spreads the brightest part of the frame into a half-resolution buffer.</summary>
     /// <param name="target">The scene target holding the finished frame.</param>
     /// <param name="post">The frame's settings, for the threshold and whether to run at all.</param>
+    /// <param name="scene">The finished frame, which may be the camera pass's output rather than the target's own.</param>
     /// <returns><see langword="true"/> when there is a bloom buffer for the resolve to add.</returns>
     /// <remarks>
     /// Bright pass, then a separable Gaussian: a two-dimensional Gaussian is the product of two
     /// one-dimensional ones, so a wide blur costs two passes rather than the square of its radius.
     /// </remarks>
-    private bool RunBloom(GLSceneTarget target, in PostProcessSettings post)
+    private bool RunBloom(GLSceneTarget target, in PostProcessSettings post, uint scene)
     {
         if (!post.WantsBloom
             || !target.HasBloom
@@ -1340,7 +1423,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // the threshold" has to scale with the threshold, or a high one gets a hard edge back.
         _bloomThresholdProgram.SetVector2(
             _bloomThreshold, post.BloomThreshold, MathF.Max(post.BloomThreshold * 0.25f, 0.01f));
-        BindTexture(0, target.FrontColorTexture);
+        BindTexture(0, scene);
         _fullScreen.Draw();
 
         UseProgram(_bloomBlurProgram);
@@ -2123,6 +2206,20 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _bloomThreshold = _bloomThresholdProgram.LocationOf("uThreshold");
         UseProgram(_bloomThresholdProgram);
         _bloomThresholdProgram.SetInt("uScene", 0);
+
+        _cameraProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, CameraEffectShaders.Fragment);
+        _cameraUnproject = _cameraProgram.LocationOf("uUnproject");
+        _cameraFocus = _cameraProgram.LocationOf("uFocus");
+        _cameraMotionBlur = _cameraProgram.LocationOf("uMotionBlur");
+        _cameraPrevViewProjection = _cameraProgram.LocationOf("uPrevViewProjection");
+        _cameraDelta = _cameraProgram.LocationOf("uCameraDelta");
+        _cameraViewToWorld = _cameraProgram.LocationOf("uViewToWorld");
+        _cameraTexelSize = _cameraProgram.LocationOf("uTexelSize");
+        UseProgram(_cameraProgram);
+        _cameraProgram.SetInt("uScene", 0);
+        _cameraProgram.SetInt("uDepth", 4);
+        _cameraProgram.SetInt("uMotion", 5);
 
         _bloomBlurProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, BloomShaders.Blur);
         _bloomDirection = _bloomBlurProgram.LocationOf("uDirection");

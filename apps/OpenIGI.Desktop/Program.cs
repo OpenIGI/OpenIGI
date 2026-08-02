@@ -1842,7 +1842,12 @@ using (window)
                     Vignette: RenderCVars.Vignette.Value,
                     Grain: RenderCVars.Grain.Value,
                     ChromaticAberration: RenderCVars.ChromaticAberration.Value,
-                    Sharpen: RenderCVars.Sharpen.Value));
+                    Sharpen: RenderCVars.Sharpen.Value,
+                    FocalDistance: RenderCVars.FocalDistance.Value,
+                    FocalRange: RenderCVars.FocalRange.Value,
+                    FocalBlur: RenderCVars.FocalBlur.Value,
+                    MotionBlur: RenderCVars.MotionBlur.Value,
+                    CameraTaps: RenderCVars.CameraTaps.Value));
                 captured = false;
             }
 
