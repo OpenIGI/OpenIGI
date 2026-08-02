@@ -257,6 +257,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lutSize;
     private int _gradeFrame;
 
+    // Auto-exposure. Two compute passes reduce the scene to an average brightness and ease a running
+    // exposure towards it, kept in a small buffer between frames; the resolve reads it back a frame late.
+    private ComputeShaderHandle _autoExposureReduce;
+    private ComputeShaderHandle _autoExposureAdapt;
+    private StorageBufferHandle _autoExposureAccum;
+
     private GLShaderProgram? _bloomThresholdProgram;
     private GLShaderProgram? _bloomBlurProgram;
     private int _bloomThreshold = -1;
@@ -1750,8 +1756,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
         }
 
+        // Auto-exposure runs before the resolve uses its result: it reads last frame's adapted value and
+        // measures this frame for the next. Off, or without a tone map, it returns the cvar's exposure
+        // unchanged -- and the vanilla copy path never reaches here at all, so it is untouched either way.
+        float exposure = RunAutoExposure(scene, post);
+
         UseProgram(_resolveProgram);
-        _resolveProgram.SetFloat(_resolveExposure, post.Exposure);
+        _resolveProgram.SetFloat(_resolveExposure, exposure);
         _resolveProgram.SetInt(_resolveToneMap, (int)post.ToneMap);
         _resolveProgram.SetInt(_resolveDecodeInput, post.SceneIsDisplayEncoded ? 1 : 0);
         _resolveProgram.SetFloat(_resolveWhitePoint, post.WhitePoint);
@@ -1913,6 +1924,55 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _fullScreen.Draw();
         return target.ScratchTexture;
+    }
+
+    // Measures the scene's brightness and eases a running exposure towards it, returning the exposure to
+    // resolve with. Off, or on a context without compute, or before a tone map, it returns the cvar's own
+    // exposure and does nothing else.
+    private float RunAutoExposure(uint scene, in PostProcessSettings post)
+    {
+        if (!post.AutoExposure
+            || post.ToneMap == ToneMapOperator.None
+            || !_autoExposureReduce.IsValid
+            || !_autoExposureAdapt.IsValid)
+        {
+            return post.Exposure;
+        }
+
+        // Last frame's adapted exposure, read before this frame overwrites it. A frame of latency, which
+        // eye adaptation does not notice, and no stall waiting on work only just submitted.
+        uint[] state = new uint[3];
+        ReadStorageBuffer<uint>(_autoExposureAccum, state);
+        float adapted = BitConverter.UInt32BitsToSingle(state[2]);
+
+        // Measure this frame into the accumulator and ease the running exposure towards it, for the next
+        // frame to read. The scene is bound to unit zero, which the resolve rebinds for itself afterwards.
+        BindTexture(0, scene);
+        SetComputeUniform(_autoExposureReduce, "uScene", 0);
+        SetComputeUniform(_autoExposureReduce, "uDecode", post.SceneIsDisplayEncoded ? 1 : 0);
+        SetComputeUniform(_autoExposureReduce, "uGrid", AutoExposureShaders.Grid);
+        SetComputeUniform(_autoExposureReduce, "uFixedScale", AutoExposureShaders.FixedScale);
+        SetComputeUniform(_autoExposureReduce, "uFixedBias", AutoExposureShaders.FixedBias);
+        BindStorageBuffer(0, _autoExposureAccum);
+
+        int groups = (AutoExposureShaders.Grid + 7) / 8;
+        Dispatch(_autoExposureReduce, groups, groups);
+        MemoryBarrier(MemoryBarrierScope.StorageBuffer);
+
+        // Middle grey as the target, a small step per frame so the eye adapts over a moment rather than
+        // snapping, and a range that keeps a black or blown scene from driving the exposure to an extreme.
+        SetComputeUniform(_autoExposureAdapt, "uKey", 0.18f);
+        SetComputeUniform(_autoExposureAdapt, "uRate", 0.04f);
+        SetComputeUniform(_autoExposureAdapt, "uMin", 0.05f);
+        SetComputeUniform(_autoExposureAdapt, "uMax", 16.0f);
+        SetComputeUniform(_autoExposureAdapt, "uFixedScale", AutoExposureShaders.FixedScale);
+        SetComputeUniform(_autoExposureAdapt, "uFixedBias", AutoExposureShaders.FixedBias);
+        BindStorageBuffer(0, _autoExposureAccum);
+        Dispatch(_autoExposureAdapt, 1);
+        MemoryBarrier(MemoryBarrierScope.StorageBuffer);
+
+        // Until the first adapt has run the buffer still holds zero; the cvar's exposure stands in.
+        return adapted > 0f ? adapted * post.Exposure : post.Exposure;
     }
 
     /// <summary>Spreads the brightest part of the frame into a half-resolution buffer.</summary>
@@ -2724,6 +2784,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _lutTexture = 0;
         }
 
+        // The auto-exposure compute programs and their buffer are tracked like any other compute
+        // resource, so DisposeComputeResources deletes them; destroying them explicitly here would trip
+        // the disposed guard, since Dispose has already marked the device.
         DisposeComputeResources();
         _cardAtlas?.Dispose();
         _cardProgram?.Dispose();
@@ -2839,6 +2902,26 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // wanted, but the grade and the BLOOM are -- and bloom is on 7 because the debug set had taken
         // everything below it.
         _resolveProgram.SetInt("uColourLut", 8);
+
+        // Auto-exposure's two compute passes and the tiny buffer they share. Compute only, and never
+        // fatal: a context without it, or a shader that will not build, simply leaves the feature off and
+        // the exposure the cvar's own value. The buffer is three uints -- log-luminance sum, count, and
+        // the running exposure as float bits -- zeroed so the first frame starts adapted.
+        if (Capabilities.SupportsCompute)
+        {
+            try
+            {
+                _autoExposureReduce = CreateComputeShader(AutoExposureShaders.Reduce, "autoexposure.reduce");
+                _autoExposureAdapt = CreateComputeShader(AutoExposureShaders.Adapt, "autoexposure.adapt");
+                _autoExposureAccum = CreateStorageBuffer(3 * sizeof(uint), "autoexposure.accum");
+                UpdateStorageBuffer<uint>(_autoExposureAccum, new uint[3]);
+            }
+            catch (GraphicsDeviceException)
+            {
+                _autoExposureReduce = default;
+                _autoExposureAdapt = default;
+            }
+        }
 
         _bloomThresholdProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, BloomShaders.Threshold);

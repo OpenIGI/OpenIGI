@@ -91,6 +91,11 @@ namespace OpenIGI.Rendering;
 /// carrying fog and bloom, and dialling it back is easier than re-authoring it. Has no effect unless a
 /// table has been handed to the device.
 /// </param>
+/// <param name="AutoExposure">
+/// Whether the exposure adapts to the scene's own average brightness over time, with
+/// <see cref="Exposure"/> becoming a bias on the result. Has no effect under the identity tone map: the
+/// vanilla path resolves as a straight copy and never applies exposure at all.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -112,7 +117,8 @@ public readonly record struct PostProcessSettings(
     int CameraTaps = 6,
     float SpatialAa = 0f,
     float SpatialAaThreshold = 0.05f,
-    float ColourLookup = 0f)
+    float ColourLookup = 0f,
+    bool AutoExposure = false)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.

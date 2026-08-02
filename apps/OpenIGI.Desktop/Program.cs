@@ -2637,7 +2637,8 @@ using (window)
                     CameraTaps: RenderCVars.CameraTaps.Value,
                     SpatialAa: RenderCVars.SpatialAa.Value,
                     SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
-                    ColourLookup: RenderCVars.ColourLookup.Value));
+                    ColourLookup: RenderCVars.ColourLookup.Value,
+                    AutoExposure: RenderCVars.AutoExposure.Value));
                 captured = false;
             }
 

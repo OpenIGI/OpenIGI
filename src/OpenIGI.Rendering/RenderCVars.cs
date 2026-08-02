@@ -115,6 +115,10 @@ public static class RenderCVars
         "Linear value that maps to display white. Lower is more contrast; 1 disables the roll-off.");
 
     /// <summary>A linear multiplier applied to the scene before tone mapping.</summary>
+    /// <remarks>
+    /// With <see cref="AutoExposure"/> on this becomes a bias on the adapted exposure rather than the
+    /// whole of it: the eye adapts to the scene's own brightness and this nudges the result up or down.
+    /// </remarks>
     public static readonly NumericCVar<float> Exposure = CVar.Float(
         "r_exposure",
         1.0f,
@@ -122,6 +126,24 @@ public static class RenderCVars
         16.0f,
         CVarOptions.Archive,
         "Scene brightness before tone mapping. 1 leaves the level's own lighting alone.");
+
+    /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
+    /// <remarks>
+    /// Off by default, and only ever engages where a tone map is on -- the vanilla copy path returns
+    /// before exposure is applied at all, so a traced preset can adapt while vanilla stays byte-identical.
+    /// A traced scene without eye adaptation reads worse than one lit the original's way, which is why the
+    /// plan calls it non-optional there; it is opt-in here until a preset turns it on.
+    /// </remarks>
+    public static readonly BoolCVar AutoExposure = Presets.Define(
+        CVar.Bool(
+            "r_autoexposure",
+            false,
+            CVarOptions.Archive,
+            "Adapt exposure to the scene's average brightness over time. Only where a tone map is on."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>How many samples per pixel the scene is rasterised with.</summary>
     /// <remarks>
