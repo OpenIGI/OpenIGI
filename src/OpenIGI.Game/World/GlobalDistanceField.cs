@@ -32,6 +32,16 @@ namespace OpenIGI.Game.World;
 /// All levels live in one volume texture stacked along z, so a trace binds one image and indexes it by
 /// level rather than binding four.
 /// </para>
+/// <para>
+/// <b>This subsumes the reference's separate mesh-SDF trace tier, deliberately.</b> The reference keeps
+/// every mesh's own distance field and, for a ray, culls the meshes near it into a froxel grid
+/// (<c>LumenMeshSDFCulling</c>) so the ray tests only those, finer than its coarse global field. This
+/// resamples every mesh field into the clipmap at build, culling the instances per cell as it goes, so
+/// the one global trace already carries the per-object detail the reference's mesh-SDF tier existed to
+/// add — at the cost of the clipmap's own voxel resolution, which for indirect light is enough. The
+/// froxel-culled mesh-SDF tier is therefore not ported: it would recover only sub-clipmap-voxel detail a
+/// bounce does not need, at the price of a second acceleration structure and a per-ray cull.
+/// </para>
 /// </remarks>
 public sealed class GlobalDistanceField : IDisposable
 {
