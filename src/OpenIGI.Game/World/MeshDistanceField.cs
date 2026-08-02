@@ -104,6 +104,33 @@ public sealed class MeshDistanceField
     /// <summary>Gets how many voxels the field holds.</summary>
     public int VoxelCount => SizeX * SizeY * SizeZ;
 
+    /// <summary>How far a point in the model's own space lies outside the field's sampled region.</summary>
+    /// <param name="point">The point, in the model's own space.</param>
+    /// <returns>The distance in metres, or zero when the point is within the sampled region.</returns>
+    /// <remarks>
+    /// The region a trilinear read covers without clamping runs from the first voxel centre to the last,
+    /// half a voxel inside the grid's outer faces each way. Beyond it the field holds no information, so a
+    /// consumer that wants the honest distance takes this and does not read the field: reading it there
+    /// returns the edge voxel's value as if the point sat on that voxel, which reports a surface metres
+    /// away as touching. This is what the clipmap build measures on the GPU when a sample falls outside a
+    /// slot, and the exact field has to measure the same thing or the two disagree at every grid edge.
+    /// </remarks>
+    public float DistanceOutsideSampledRegion(Vector3f point)
+    {
+        float loX = Origin.X + (VoxelSize.X * 0.5f);
+        float loY = Origin.Y + (VoxelSize.Y * 0.5f);
+        float loZ = Origin.Z + (VoxelSize.Z * 0.5f);
+        float hiX = Origin.X + (VoxelSize.X * (SizeX - 0.5f));
+        float hiY = Origin.Y + (VoxelSize.Y * (SizeY - 0.5f));
+        float hiZ = Origin.Z + (VoxelSize.Z * (SizeZ - 0.5f));
+
+        float dx = MathF.Max(MathF.Max(loX - point.X, 0f), point.X - hiX);
+        float dy = MathF.Max(MathF.Max(loY - point.Y, 0f), point.Y - hiY);
+        float dz = MathF.Max(MathF.Max(loZ - point.Z, 0f), point.Z - hiZ);
+
+        return MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+    }
+
     /// <summary>Encodes a signed distance into the stored byte range.</summary>
     /// <param name="distance">The signed distance. Negative is inside the surface.</param>
     /// <param name="range">The distance that maps to the extremes.</param>

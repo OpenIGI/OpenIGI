@@ -306,24 +306,26 @@ public sealed class SceneDistanceField
 
         foreach (Instance instance in _instances)
         {
+            // A cheap reject on the world-aligned box first: it is looser than the object's own grid, so
+            // whatever it says is at least this far cannot be beaten by the grid inside it. This only
+            // skips work -- it is never the answer, because a rotated box is larger than the grid it
+            // bounds and a point in that slack is outside the grid though inside the box.
             float outside = instance.DistanceToBounds(point);
 
-            // Already further away than the best answer so far, by the box alone. The field inside that
-            // box cannot beat it, so the sample is skipped -- which is what makes this affordable over
-            // hundreds of instances.
             if (outside >= nearest)
             {
                 continue;
             }
 
-            if (outside > 0f)
-            {
-                nearest = outside;
-                continue;
-            }
-
+            // The honest distance is measured to the object's own grid in local space. Outside it the
+            // field holds nothing, so the distance to it stands; sampling the field there instead would
+            // clamp to an edge voxel and report a surface at the point when it is metres away. This is
+            // exactly what the clipmap build does on the GPU, so the two agree at grid edges.
+            MeshDistanceField field = _fields[instance.FieldIndex];
             Vector3f local = instance.ToLocal(point);
-            nearest = MathF.Min(nearest, _fields[instance.FieldIndex].Sample(local));
+            float beyond = field.DistanceOutsideSampledRegion(local);
+
+            nearest = MathF.Min(nearest, beyond > 0f ? beyond : field.Sample(local));
         }
 
         return nearest == float.MaxValue ? float.MaxValue / 4f : nearest;
@@ -345,10 +347,10 @@ public sealed class SceneDistanceField
         for (int i = 0; i < _instances.Length; i++)
         {
             Instance instance = _instances[i];
-            float outside = instance.DistanceToBounds(point);
-            float value = outside > 0f
-                ? outside
-                : _fields[instance.FieldIndex].Sample(instance.ToLocal(point));
+            MeshDistanceField instanceField = _fields[instance.FieldIndex];
+            Vector3f local = instance.ToLocal(point);
+            float beyond = instanceField.DistanceOutsideSampledRegion(local);
+            float value = beyond > 0f ? beyond : instanceField.Sample(local);
 
             if (value < nearest)
             {

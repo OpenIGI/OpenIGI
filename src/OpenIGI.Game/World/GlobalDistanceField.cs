@@ -614,12 +614,18 @@ public sealed class GlobalDistanceField : IDisposable
             float encoded = texture(uAtlas, uvw).r;
             float distance = ((encoded * 2.0) - 1.0) * slotCorner.w;
 
-            // How far the sample had to be dragged back inside the slot. A point outside an object's
-            // own volume is at least that far from anything the volume describes, so adding it keeps
-            // the answer conservative -- which is the only safe direction for a sphere trace.
-            vec3 outside = (clamped - voxel) * voxelSize.xyz;
+            // How far the sample had to be dragged back inside the slot, in local metres.
+            float beyond = length((clamped - voxel) * voxelSize.xyz);
 
-            return distance + length(outside);
+            // Outside its own slot an object's field holds no information, so the honest conservative
+            // distance is the distance to the slot itself and nothing more. A slot is baked a margin
+            // larger than the object's box, so its outer texels read near the field's full range -- and
+            // the previous form added that range on top of the distance to the slot, handing back
+            // clearance that is not there and letting a sphere trace step through the surface the slot
+            // contains. The exact field this resamples composites the same way, taking the distance to an
+            // object's bounds for any point outside them and only sampling the field within. Inside the
+            // slot the outside distance is zero and the field value stands, sign and all.
+            return beyond > 0.0 ? beyond : distance;
         }
 
         void main()

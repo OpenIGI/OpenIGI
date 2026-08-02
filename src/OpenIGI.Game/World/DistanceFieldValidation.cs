@@ -222,6 +222,10 @@ public static class DistanceFieldValidation
 
         double total = 0;
         float worst = 0f;
+        float worstOver = 0f;
+        Vector3d worstOverAt = default;
+        float worstOverBuilt = 0f;
+        float worstOverExact = 0f;
         int signs = 0;
         long points = 0;
         long exactInside = 0;
@@ -281,6 +285,14 @@ public static class DistanceFieldValidation
                     if (built > exact + tolerance)
                     {
                         overstated++;
+
+                        if (built - exact > worstOver)
+                        {
+                            worstOver = built - exact;
+                            worstOverAt = point;
+                            worstOverBuilt = built;
+                            worstOverExact = exact;
+                        }
                     }
                 }
             }
@@ -303,6 +315,14 @@ public static class DistanceFieldValidation
             LogCategory,
             $"Occupancy over {points} voxel(s): the clipmap calls {builtInside * 100.0 / Math.Max(points, 1):0.#}% "
             + $"solid, the exact field {exactInside * 100.0 / Math.Max(points, 1):0.#}%.");
+
+        if (worstOver > 0f)
+        {
+            log.Information(
+                LogCategory,
+                $"  worst overstatement at ({worstOverAt.X:0.#}, {worstOverAt.Y:0.#}, {worstOverAt.Z:0.#}): "
+                + $"clipmap {worstOverBuilt:0.##} m, exact {worstOverExact:0.##} m -- {scene.Explain(worstOverAt)}.");
+        }
 
         Report report = new(
             compared, compared > 0 ? (float)(total / compared) : 0f, worst, signs, overstated);
