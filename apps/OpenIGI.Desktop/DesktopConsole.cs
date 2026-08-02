@@ -1,6 +1,7 @@
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Input;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
 
@@ -28,7 +29,7 @@ public sealed class DesktopConsole : IDisposable
 
     private readonly IIgiLogger _logger;
     private readonly string _settingsPath;
-    private readonly ConsoleRenderer _renderer;
+    private readonly ConsoleUiRenderer _renderer;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="DesktopConsole"/> class.</summary>
@@ -45,7 +46,7 @@ public sealed class DesktopConsole : IDisposable
         System = new ConsoleSystem();
         Model = new ConsoleModel(System);
         Input = new ConsoleInputController(Model);
-        _renderer = new ConsoleRenderer(device, _logger);
+        _renderer = new ConsoleUiRenderer(device, System, _logger);
 
         string configDirectory = Path.GetDirectoryName(_settingsPath) ?? SettingsPaths.PortableDirectory;
         BuiltInConsoleCommands.Register(System, new DirectoryConsoleFileSystem(configDirectory));
@@ -112,7 +113,7 @@ public sealed class DesktopConsole : IDisposable
             System.Execute(statement);
         }
 
-        if (!_renderer.Load(fileSystem))
+        if (!_renderer.Load())
         {
             _logger.Warning(LogCategory, "The console has no font; it will accept commands but draw nothing.");
         }
@@ -135,19 +136,96 @@ public sealed class DesktopConsole : IDisposable
     /// <param name="input">The input state for this frame.</param>
     /// <param name="elapsedSeconds">How long since the last call, for the caret blink.</param>
     /// <returns><see langword="true"/> when the console consumed the input and the game should ignore it.</returns>
-    public bool Update(OpenIGI.Input.InputState input, float elapsedSeconds)
+    public bool Update(InputState input, float elapsedSeconds)
     {
+        ArgumentNullException.ThrowIfNull(input);
         Input.Advance(elapsedSeconds);
-        return Input.Update(input, _renderer.VisibleLines);
+
+        // Gamepad navigation is read first, while the frame's input is still uncaptured: once
+        // Input.Update has taken the keyboard it also marks the frame captured, and the gamepad edge
+        // tests would then report nothing.
+        bool wasOpen = Model.IsOpen;
+        if (wasOpen)
+        {
+            HandleGamepad(input);
+        }
+
+        bool consumed = Input.Update(input, _renderer.VisibleLines);
+        if (wasOpen)
+        {
+            input.Captured = true;
+        }
+
+        return consumed || wasOpen;
     }
 
     /// <summary>Draws the console, if it is open.</summary>
     /// <param name="batch">The batch to draw into; it must already be between Begin and End.</param>
     /// <param name="screenWidth">The back buffer's width.</param>
     /// <param name="screenHeight">The back buffer's height.</param>
-    /// <param name="scale">How much to magnify the text.</param>
-    public void Draw(SpriteBatch batch, int screenWidth, int screenHeight, float scale = 1f) =>
-        _renderer.Draw(batch, Model, screenWidth, screenHeight, scale, Input.CaretVisible);
+    /// <param name="scale">Retained for call-site compatibility; the reskinned console sizes itself.</param>
+    public void Draw(SpriteBatch batch, int screenWidth, int screenHeight, float scale = 1f)
+    {
+        _ = scale;
+        _renderer.Draw(batch, Model, screenWidth, screenHeight, Input.CaretVisible);
+    }
+
+    /// <summary>
+    /// Drives the open console from the game controller, so it is fully navigable without a keyboard —
+    /// scroll, history, completion, submit and close. Typing itself still needs a keyboard, as a text
+    /// console must.
+    /// </summary>
+    /// <param name="input">The frame's input.</param>
+    private void HandleGamepad(InputState input)
+    {
+        GamepadState pad = input.Gamepad;
+        int page = Math.Max(1, _renderer.VisibleLines - 2);
+
+        if (pad.WasPressed(GamepadButton.DpadUp))
+        {
+            Model.Scroll(1, _renderer.VisibleLines);
+        }
+
+        if (pad.WasPressed(GamepadButton.DpadDown))
+        {
+            Model.Scroll(-1, _renderer.VisibleLines);
+        }
+
+        if (pad.WasPressed(GamepadButton.LeftShoulder))
+        {
+            Model.Scroll(page, _renderer.VisibleLines);
+        }
+
+        if (pad.WasPressed(GamepadButton.RightShoulder))
+        {
+            Model.Scroll(-page, _renderer.VisibleLines);
+        }
+
+        if (pad.WasPressed(GamepadButton.DpadLeft))
+        {
+            Model.HistoryPrevious();
+        }
+
+        if (pad.WasPressed(GamepadButton.DpadRight))
+        {
+            Model.HistoryNext();
+        }
+
+        if (pad.WasPressed(GamepadButton.West))
+        {
+            Model.Complete();
+        }
+
+        if (pad.WasPressed(GamepadButton.South) || pad.WasPressed(GamepadButton.Start))
+        {
+            Model.Submit();
+        }
+
+        if (pad.WasPressed(GamepadButton.East) || pad.WasPressed(GamepadButton.Back))
+        {
+            Model.IsOpen = false;
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether this console is running without the saved settings file.

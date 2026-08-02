@@ -9,7 +9,7 @@ namespace OpenIGI.Desktop;
 /// <remarks>
 /// <para>
 /// Kept apart from <see cref="ConsoleModel"/>, which knows nothing about input devices, and from
-/// <see cref="ConsoleRenderer"/>, which knows nothing about editing. This is the only piece that has
+/// <see cref="ConsoleUiRenderer"/>, which knows nothing about editing. This is the only piece that has
 /// to know a key code from a caret.
 /// </para>
 /// <para>

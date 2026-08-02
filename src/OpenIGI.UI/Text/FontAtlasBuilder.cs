@@ -24,6 +24,17 @@ public static class FontAtlasBuilder
     /// <summary>Gets the printable ASCII code points, U+0020 through U+007E.</summary>
     public static IReadOnlyList<int> AsciiPrintable { get; } = BuildAsciiRange();
 
+    /// <summary>
+    /// Gets printable ASCII plus the Latin-1 letters and the punctuation that turns up in log lines and
+    /// menu strings — the em and en dashes, curly quotes, the ellipsis and the bullet.
+    /// </summary>
+    /// <remarks>
+    /// The plain ASCII set renders an em dash (U+2014, common in this codebase's log messages) as the
+    /// fallback glyph, which reads as a stray "?". Baking the handful of typographic marks and the
+    /// Latin-1 range the localised menus use avoids that at a negligible cost in atlas size.
+    /// </remarks>
+    public static IReadOnlyList<int> Extended { get; } = BuildExtendedRange();
+
     /// <summary>Rasterises a font into an atlas.</summary>
     /// <param name="fontData">The TrueType file's bytes.</param>
     /// <param name="pixelHeight">The base pixel height to rasterise at. Larger is sharper and larger on disk.</param>
@@ -179,6 +190,25 @@ public static class FontAtlasBuilder
         }
 
         return range;
+    }
+
+    private static int[] BuildExtendedRange()
+    {
+        var codepoints = new List<int>(0x7F - 0x20 + 0x60 + 8);
+        for (int cp = 0x20; cp < 0x7F; cp++)
+        {
+            codepoints.Add(cp);
+        }
+
+        // Latin-1 supplement's printable range: the accented letters the localised menus use.
+        for (int cp = 0xA0; cp <= 0xFF; cp++)
+        {
+            codepoints.Add(cp);
+        }
+
+        // General-punctuation marks that appear in logs and prose.
+        codepoints.AddRange([0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026]);
+        return [.. codepoints];
     }
 
     private readonly record struct RasterGlyph(
