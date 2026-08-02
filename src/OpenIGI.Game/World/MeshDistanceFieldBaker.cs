@@ -46,6 +46,31 @@ public static class MeshDistanceFieldBaker
     /// </remarks>
     public const int DefaultResolution = 32;
 
+    /// <summary>How wide a model must be before its interior is disregarded.</summary>
+    /// <remarks>
+    /// Matched to the innermost clipmap's own reach. A model wider than the volume the trace works in
+    /// is not a prop the trace is meant to resolve; it is the thing the props stand inside. Level 1 has
+    /// a shell spanning nine thousand units and another spanning ninety thousand -- skybox and
+    /// level-bounds volumes. They are watertight, so ray parity marks their whole interior solid, which
+    /// is geometrically right and useless here: the union takes a minimum, so the entire playable
+    /// volume read as rock. Measured, the level called 100% of itself solid and open sky ten thousand
+    /// units up sat three thousand units inside stone.
+    /// <para>
+    /// Left unsigned rather than dropped. Their surfaces still occlude -- a ceiling should stop a ray
+    /// that reaches it -- but nothing they enclose is called solid.
+    /// </para>
+    /// <para>
+    /// <b>This does not go far enough, and the remainder is recorded rather than guessed at.</b> It
+    /// takes the level from 100% solid to 59%, which is still absurd for open ground: the rest is
+    /// ordinary buildings, whose interiors are where the player walks. Making every field unsigned
+    /// takes it to 0% with every clipmap level agreeing with the exact field on sign across 235,358
+    /// samples, which says this game's single-sided shells have no meaningful interior at all. That is
+    /// a larger decision than a shadow ray needs -- it would retire the sign tests and change what L5's
+    /// hit lighting can ask -- so it is left for its own change.
+    /// </para>
+    /// </remarks>
+    public const float ContainerSpan = 4096f;
+
     /// <summary>Bakes a distance field for a model.</summary>
     /// <param name="vertices">The model's vertices.</param>
     /// <param name="indices">Its triangle indices, three per triangle.</param>
@@ -160,8 +185,24 @@ public static class MeshDistanceFieldBaker
         }
 
         Propagate(distance, sizeX, sizeY, sizeZ, voxelSize);
-        bool[] inside = MarkInside(
-            vertices, indices, triangles, min, voxelSize, sizeX, sizeY, sizeZ, IsClosed(indices, triangles));
+        // A model this big is a container, and a container's interior is where the game happens.
+        //
+        // Level 1 has a shell spanning nine thousand units and another spanning ninety thousand --
+        // skybox and level-bounds volumes. They are watertight, so ray parity marks their entire
+        // interior solid, which is geometrically right and catastrophic here: the union takes a
+        // minimum, so the whole playable volume read as rock. Measured, the level called 100% of itself
+        // solid and open sky ten thousand units up sat three thousand units inside stone.
+        //
+        // Left unsigned instead of dropped. Its surfaces still occlude -- a skybox ceiling should stop
+        // a ray that reaches it -- but nothing it encloses is called solid. That is the same treatment
+        // a two-sided surface gets, and for the same reason: there is no meaningful interior.
+        bool container = span > ContainerSpan;
+
+        bool[] inside = container
+            ? new bool[count]
+            : MarkInside(
+                vertices, indices, triangles, min, voxelSize, sizeX, sizeY, sizeZ,
+                IsClosed(indices, triangles));
 
         byte[] encoded = new byte[count];
 

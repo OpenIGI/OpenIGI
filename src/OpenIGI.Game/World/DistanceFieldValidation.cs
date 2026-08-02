@@ -223,6 +223,9 @@ public static class DistanceFieldValidation
         double total = 0;
         float worst = 0f;
         int signs = 0;
+        long points = 0;
+        long exactInside = 0;
+        long builtInside = 0;
         int overstated = 0;
         int compared = 0;
 
@@ -241,6 +244,18 @@ public static class DistanceFieldValidation
                         origin.Z + ((z + 0.5) * voxel));
 
                     float exact = scene.Sample(point);
+
+                    if (exact < 0f)
+                    {
+                        exactInside++;
+                    }
+
+                    if (built < 0f)
+                    {
+                        builtInside++;
+                    }
+
+                    points++;
 
                     // Only the band the clipmap can actually represent is checked, and the test is on
                     // the MAGNITUDE rather than the value. A saturated voxel carries no information
@@ -270,6 +285,24 @@ public static class DistanceFieldValidation
                 }
             }
         }
+
+        // Straight up, well clear of anything. If the exact field calls open sky solid then the fault
+        // is in the composite or the instance transform, not in anything the clipmap does.
+        foreach (double up in new[] { 0.0, 1000.0, 10000.0, 100000.0 })
+        {
+            Vector3d sky = new(origin.X + (voxel * resolution * 0.5), origin.Y + (voxel * resolution * 0.5), origin.Z + up);
+            log.Information(
+                LogCategory,
+                $"  exact field {up:0} above the clipmap: {scene.Sample(sky):0.##} -- {scene.Explain(sky)}.");
+        }
+
+        // How much of the region each side calls solid, over EVERY voxel rather than the unsaturated
+        // few the comparison keeps. Agreement on a subset says nothing if both are inside everywhere,
+        // and a level with open ground plainly is not.
+        log.Information(
+            LogCategory,
+            $"Occupancy over {points} voxel(s): the clipmap calls {builtInside * 100.0 / Math.Max(points, 1):0.#}% "
+            + $"solid, the exact field {exactInside * 100.0 / Math.Max(points, 1):0.#}%.");
 
         Report report = new(
             compared, compared > 0 ? (float)(total / compared) : 0f, worst, signs, overstated);

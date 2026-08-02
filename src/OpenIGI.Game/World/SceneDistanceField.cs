@@ -129,6 +129,7 @@ public sealed class SceneDistanceField
         List<Instance> instances = [];
         Dictionary<MefModel, int> baked = [];
         int skipped = 0;
+        int tooCoarse = 0;
 
         foreach (WorldPlacement placement in placements)
         {
@@ -142,8 +143,18 @@ public sealed class SceneDistanceField
                 {
                     if (MeshDistanceFieldBaker.Bake(mesh.Vertices, mesh.Indices, resolution) is { } field)
                     {
-                        index = fields.Count;
-                        fields.Add(field);
+                        float coarsest = MathF.Max(
+                            MathF.Max(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z);
+
+                        if (coarsest <= MaximumVoxelSize)
+                        {
+                            index = fields.Count;
+                            fields.Add(field);
+                        }
+                        else
+                        {
+                            tooCoarse++;
+                        }
                     }
                 }
 
@@ -165,6 +176,13 @@ public sealed class SceneDistanceField
             LogCategory,
             $"Scene distance field: {scene.FieldCount} model(s) baked, {scene.InstanceCount} instance(s), "
             + $"{scene.BytesUsed / 1024} KiB{(skipped > 0 ? $", {skipped} placement(s) with no usable mesh" : string.Empty)}.");
+
+        if (tooCoarse > 0)
+        {
+            log.Information(
+                LogCategory,
+                $"{tooCoarse} model(s) bake to voxels too coarse to describe anything and were left out.");
+        }
 
         // The widest fields, and how much of each baked as solid. A field's range is half its model's
         // span, so a large model reporting a mostly-solid interior is not a local error: the clipmap
@@ -189,6 +207,27 @@ public sealed class SceneDistanceField
 
         return scene;
     }
+
+    /// <summary>The coarsest voxel a field may bake to before it is discarded.</summary>
+    /// <remarks>
+    /// <b>Coarseness, not size.</b> An earlier attempt cut on the model's extent and threw away 106 of
+    /// level 1's 110 models, because these units are not metres and an ordinary building is hundreds of
+    /// them across. What actually disqualifies a field is its voxel: every field gets the same voxel
+    /// count, so a model spanning four hundred thousand units resolves to voxels of twenty-five
+    /// thousand.
+    /// <para>
+    /// Such a field is worse than absent. Its band is as coarse as its voxels, so one byte step spans
+    /// hundreds of units and every true distance near zero quantises to just BELOW the midpoint -- a
+    /// small negative. Its bounds cover the whole level, the union takes a minimum, and the result was
+    /// a level calling 100% of itself solid while the exact field and the clipmap agreed perfectly with
+    /// each other. Open sky ten thousand units up read as three thousand units inside rock.
+    /// </para>
+    /// <para>
+    /// The real models sit two orders of magnitude below this, so the cut is not close: level 1's
+    /// ordinary geometry bakes to voxels of twenty to sixty units.
+    /// </para>
+    /// </remarks>
+    public const float MaximumVoxelSize = 4096f;
 
     /// <summary>Gets the baked fields, in the order instances index them.</summary>
     /// <remarks>
@@ -275,6 +314,49 @@ public sealed class SceneDistanceField
         }
 
         return nearest == float.MaxValue ? float.MaxValue / 4f : nearest;
+    }
+
+    /// <summary>Names the instance responsible for the answer at a point.</summary>
+    /// <param name="point">The point, in world space.</param>
+    /// <returns>A description of the nearest instance and what it reported.</returns>
+    /// <remarks>
+    /// For diagnosis only. A union hides which member decided the result, and when the union is wrong
+    /// that is the only thing worth knowing -- reasoning about which model it might be, at the scale
+    /// these levels run to, is guesswork.
+    /// </remarks>
+    public string Explain(Vector3d point)
+    {
+        float nearest = float.MaxValue;
+        int culprit = -1;
+
+        for (int i = 0; i < _instances.Length; i++)
+        {
+            Instance instance = _instances[i];
+            float outside = instance.DistanceToBounds(point);
+            float value = outside > 0f
+                ? outside
+                : _fields[instance.FieldIndex].Sample(instance.ToLocal(point));
+
+            if (value < nearest)
+            {
+                nearest = value;
+                culprit = i;
+            }
+        }
+
+        if (culprit < 0)
+        {
+            return "no instance";
+        }
+
+        Instance winner = _instances[culprit];
+        MeshDistanceField field = _fields[winner.FieldIndex];
+        Vector3d span = winner.BoundsMax - winner.BoundsMin;
+
+        float voxel = MathF.Max(MathF.Max(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z);
+
+        return FormattableString.Invariant(
+            $"field {winner.FieldIndex} reported {nearest:0.##}; voxel {voxel:0.#}, band {field.Range:0.#}, span ({span.X:0}, {span.Y:0}, {span.Z:0})");
     }
 
     /// <summary>Marches a ray until it meets a surface.</summary>

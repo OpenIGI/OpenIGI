@@ -1348,7 +1348,33 @@ using (window)
 
             string path = Path.Combine(into, "cards-direct.png");
             PngWriter.Write(path, pixels, lighting.Width, lighting.Height);
-            logger.Information("SurfaceCache", $"Wrote {path}.");
+
+            // What share of the written pages the sun actually reaches, reported rather than eyeballed.
+            // A shadow pass is judged by this number: too high and it is not shadowing, too low and it
+            // is shadowing everything, and both look plausible in a thumbnail. Unwritten atlas is
+            // excluded, because at 77% occupancy the empty quarter would dominate either way.
+            long written = 0;
+            long bright = 0;
+
+            foreach (Bgra32 pixel in pixels)
+            {
+                if (pixel.R == 0 && pixel.G == 0 && pixel.B == 0)
+                {
+                    continue;
+                }
+
+                written++;
+
+                if (Math.Max(Math.Max(pixel.R, pixel.G), pixel.B) >= 128)
+                {
+                    bright++;
+                }
+            }
+
+            logger.Information(
+                "SurfaceCache",
+                $"Wrote {path}: {bright * 100.0 / Math.Max(written, 1):0.#}% of {written} lit texel(s) "
+                + "are in sunlight.");
         }
         catch (Exception error)
             when (error is IOException or UnauthorizedAccessException or GraphicsDeviceException)
@@ -2020,7 +2046,13 @@ using (window)
                 if (!sdfValidated && RenderCVars.DistanceFieldValidate.Value && sdfScene is { } exact)
                 {
                     sdfValidated = true;
-                    DistanceFieldValidation.Compare(device, liveField, exact, 0, logger);
+                    // Every level, not just the innermost. A trace falls through to the outer
+                    // clipmaps as soon as it leaves the fine one, so an unbuilt level 2 is invisible to
+                    // a check that only ever looked at level 0 -- and it shadows everything.
+                    for (int level = 0; level < liveField.Settings.Levels; level++)
+                    {
+                        DistanceFieldValidation.Compare(device, liveField, exact, level, logger);
+                    }
                 }
 
                 // Re-lit whenever a clipmap level moved, and only then. The clipmaps follow the camera
