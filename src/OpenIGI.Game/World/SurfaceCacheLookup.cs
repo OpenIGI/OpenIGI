@@ -35,12 +35,13 @@ public sealed class SurfaceCacheLookup : IDisposable
 
     /// <summary>How many cells the grid gets along each axis.</summary>
     /// <remarks>
-    /// Sixty-four cubed is a quarter of a million cells, which is two megabytes of ranges and cheap to
-    /// walk on the CPU once. Across a level of a few hundred metres that puts a cell at several metres
-    /// — larger than most props, so a small object lands in one cell, and small enough that a cell in a
-    /// crowded yard still holds a handful of pages rather than hundreds.
+    /// A hundred and twenty-eight cubed is two million cells and sixteen megabytes of ranges, built
+    /// once and never rebuilt. It started at sixty-four, which put a cell at twelve metres and left the
+    /// busiest holding 196 pages — and the lookup walks every page in a cell, so that figure multiplied
+    /// by eight rays by a million texels is what the gather actually costs. Halving the cell is the
+    /// cheapest thing that moves it.
     /// </remarks>
-    public const int Resolution = 64;
+    public const int Resolution = 128;
 
     private readonly IGraphicsDevice _device;
     private bool _disposed;

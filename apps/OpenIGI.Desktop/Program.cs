@@ -1407,6 +1407,44 @@ using (window)
             Bgra32[] pixels = new Bgra32[lighting.Width * lighting.Height];
             device.ReadStorageTexture(lighting.DirectLighting, pixels);
 
+            // The bounce and the atlas a trace actually reads, beside the direct term. Judging indirect
+            // light from the direct atlas alone is how a gather that returns nothing goes unnoticed.
+            //
+            // Guarded on its own, because a diagnostic must not be able to take the game down with it:
+            // reading these threw at load, the throw escaped the outer catch, and every run after that
+            // died before it reached anything worth measuring while looking exactly like a slow gather.
+            try
+            {
+                Bgra32[] extra = new Bgra32[lighting.Width * lighting.Height];
+
+                foreach ((TextureHandle source, string file) in new[]
+                {
+                    (lighting.IndirectLighting, "cards-indirect.png"),
+                    (lighting.FinalLighting, "cards-final.png"),
+                })
+                {
+                    device.ReadStorageTexture(source, extra);
+                    string other = Path.Combine(into, file);
+                    PngWriter.Write(other, extra, lighting.Width, lighting.Height);
+
+                    long carrying = 0;
+
+                    foreach (Bgra32 pixel in extra)
+                    {
+                        if (pixel.R > 0 || pixel.G > 0 || pixel.B > 0)
+                        {
+                            carrying++;
+                        }
+                    }
+
+                    logger.Information("SurfaceCache", $"Wrote {other}: {carrying} texel(s) carry light.");
+                }
+            }
+            catch (Exception error)
+            {
+                logger.Warning("SurfaceCache", $"The bounce atlases could not be written: {error.Message}");
+            }
+
             string path = Path.Combine(into, name);
             PngWriter.Write(path, pixels, lighting.Width, lighting.Height);
 
@@ -2179,6 +2217,14 @@ using (window)
                         sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f),
                         liveField,
                         RenderCVars.SurfaceCacheProbe.Value);
+
+                    // The bounce, once the direct term it gathers from is in place. Only when no probe
+                    // is running: a probe writes a diagnostic into the direct atlas rather than light,
+                    // and gathering from that would report on the diagnostic.
+                    if (RenderCVars.SurfaceCacheProbe.Value == 0)
+                    {
+                        litCards.Bounce(liveField);
+                    }
 
                     // Dumped after the SHADOWED pass rather than the one at load, which runs before
                     // there is any field to trace against and would show the unshadowed answer.
