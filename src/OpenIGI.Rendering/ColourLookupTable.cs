@@ -23,10 +23,11 @@ namespace OpenIGI.Rendering;
 /// isolation — is the case that wants more, and this reads whatever size the file declares.
 /// </para>
 /// <para>
-/// <b>The <c>.cube</c> format</b>, because it is text. Every colour tool exports it, it can be read in
-/// a diff, and it needs no image decoder — this project has no PNG reader and adding one to load a
-/// grade would be a strange way round. Lines are <c>R G B</c> triples in 0–1, red varying fastest, then
-/// green, then blue.
+/// <b>The <c>.cube</c> format</b>, because it is text. Every colour tool exports it, and it can be read
+/// and corrected in a diff — which the alternative, a PNG strip of the cube's slices, cannot be. That
+/// matters more than it sounds: a grade is content, and content that can only be inspected by opening
+/// it in an image editor is content nobody reviews. Lines are <c>R G B</c> triples in 0–1, red varying
+/// fastest, then green, then blue.
 /// </para>
 /// </remarks>
 public sealed class ColourLookupTable
