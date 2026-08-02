@@ -1240,7 +1240,12 @@ using (window)
     // from the distance fields onwards is compute, and none of it draws anything until a good deal of
     // it is in place -- so a driver that mis-binds a buffer or ignores a barrier would first show up
     // as lighting that looks subtly wrong, a very long way from its cause.
-    GLComputeSelfTest.Run(device, logger);
+    if (GLComputeSelfTest.Run(device, logger))
+    {
+        // Compiled here rather than when a level first needs it, which is a long way into a run. A
+        // shader that does not compile would surface there as a stage that silently did nothing.
+        GlobalDistanceField.ValidateShader(device, logger);
+    }
 
     // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
     // probe showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail

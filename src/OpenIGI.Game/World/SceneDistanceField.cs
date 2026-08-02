@@ -169,6 +169,43 @@ public sealed class SceneDistanceField
         return scene;
     }
 
+    /// <summary>What one placement is, in the terms a shader needs to sample it.</summary>
+    /// <param name="FieldIndex">Which baked field describes this placement.</param>
+    /// <param name="Position">Where the model stands, in world space.</param>
+    /// <param name="Orientation">
+    /// The rotation that takes a world offset into the model's own space — already the inverse of the
+    /// one the renderer draws with, so a consumer applies it directly rather than transposing again.
+    /// </param>
+    /// <param name="BoundsMin">The minimum corner of the world-space box the field covers.</param>
+    /// <param name="BoundsMax">The maximum corner of that box.</param>
+    public readonly record struct InstanceView(
+        int FieldIndex, Vector3d Position, Matrix3f Orientation, Vector3d BoundsMin, Vector3d BoundsMax);
+
+    /// <summary>Describes every placement, for a consumer that will resample this onto a grid.</summary>
+    /// <returns>One entry per placement.</returns>
+    /// <remarks>
+    /// The instances are private because nothing outside should be able to move an object without its
+    /// bounds being recomputed. This hands out a copy of what they say instead, which is what the
+    /// clipmap builder packs into a storage buffer.
+    /// </remarks>
+    public InstanceView[] Describe()
+    {
+        InstanceView[] views = new InstanceView[_instances.Length];
+
+        for (int i = 0; i < _instances.Length; i++)
+        {
+            Instance instance = _instances[i];
+            views[i] = new InstanceView(
+                instance.FieldIndex,
+                instance.Position,
+                instance.Orientation,
+                instance.BoundsMin,
+                instance.BoundsMax);
+        }
+
+        return views;
+    }
+
     /// <summary>How far a world-space point is from the nearest surface in the level.</summary>
     /// <param name="point">The point, in world space.</param>
     /// <returns>The signed distance. Negative is inside geometry.</returns>
