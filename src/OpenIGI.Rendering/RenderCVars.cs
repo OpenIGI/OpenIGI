@@ -464,6 +464,49 @@ public static class RenderCVars
         CVarOptions.Archive | CVarOptions.RequiresRestart,
         "Directory of derived surface-detail maps; empty for none.");
 
+    /// <summary>Whether every model's surface is captured into the card atlas at load.</summary>
+    /// <remarks>
+    /// The structure that lets light bounce off geometry the camera cannot see: a ray hitting a model
+    /// reads its captured surface rather than needing the model drawn. Off at every preset until the
+    /// stages that read it exist — an atlas nothing samples is load time and video memory spent on
+    /// nothing.
+    /// </remarks>
+    public static readonly BoolCVar SurfaceCache = Presets.Define(
+        CVar.Bool(
+            "r_cards",
+            false,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Capture every model's surface into the card atlas at load."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
+    /// <summary>How many texels of card a world unit of surface is given.</summary>
+    /// <remarks>
+    /// The dial that decides both the atlas size and how much detail a bounce carries. Higher resolves
+    /// a doorway rather than averaging over a wall, and costs the square of itself.
+    /// </remarks>
+    public static readonly NumericCVar<float> SurfaceCacheDensity = CVar.Float(
+        "r_cards_density",
+        8f,
+        1f,
+        64f,
+        CVarOptions.Archive | CVarOptions.RequiresRestart,
+        "Texels of card per world unit of surface.");
+
+    /// <summary>Where to write the captured atlas as images, or empty to write none.</summary>
+    /// <remarks>
+    /// A capture can only be judged by looking at it. Wrong winding shows as models captured
+    /// inside-out, a wrong card rotation as mirrored pages, a missing scissor as pages bleeding into
+    /// each other — and every one of those produces an atlas full of entirely plausible surfaces.
+    /// </remarks>
+    public static readonly StringCVar SurfaceCacheDump = CVar.Text(
+        "r_cards_dump",
+        string.Empty,
+        CVarOptions.Developer,
+        "Directory to write the captured card atlas to as PNGs; empty writes none.");
+
     /// <summary>Whether the level's signed distance fields are baked and resampled into clipmaps.</summary>
     /// <remarks>
     /// <para>

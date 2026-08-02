@@ -132,35 +132,45 @@ public static class SurfaceCacheCapture
         return new Result(layout, [.. cards], [.. owners]);
     }
 
+    private static Vector3f Negate(Vector3f v) => new(-v.X, -v.Y, -v.Z);
+
     /// <summary>Renders one model through one card's orthographic view.</summary>
     private static void DrawCard(
         IGraphicsDevice device, in Subject subject, MeshHandle mesh, MeshCard card)
     {
-        // The card's own frame, as a rotation whose rows are its axes. Written as rows because that is
-        // the convention Camera3D uses for a view matrix, and the backend applies a 3x3 the same way
-        // wherever it came from -- a card that built its rotation the other way round would capture the
-        // model mirrored, which looks like a plausible surface and is not.
-        Matrix3f view = Matrix3f.FromRows(card.Right, card.Up, card.Direction);
+        // The card's own frame, as a rotation whose rows are its view axes -- the convention Camera3D
+        // uses, and the one the backend applies a 3x3 under wherever it came from.
+        //
+        // The FORWARD row is -Direction, not Direction, and that is what the first capture got wrong.
+        // A card faces outwards, so looking along its facing looks AWAY from the model: the geometry
+        // sat entirely behind the camera and every page came back black bar a few slivers. The camera
+        // has to sit on the card's plane and look inwards.
+        //
+        // Up is negated with it to keep the frame right-handed. Right x Up is Direction by
+        // construction, so flipping only the forward axis would mirror every capture -- and a mirrored
+        // page is a perfectly plausible surface that nothing downstream can detect.
+        Matrix3f view = Matrix3f.FromRows(card.Right, Negate(card.Up), Negate(card.Direction));
 
-        // The camera sits on the card's own plane looking along its facing, so the model is behind it.
         // Negated because the rotation takes world into the card's frame and the translation has to be
-        // in that frame too, exactly as the world-to-view transform does it.
+        // expressed in that frame too, exactly as the world-to-view transform does it.
         Vector3f eye = card.Centre;
         Vector3f offset = view.Transform(new Vector3f(-eye.X, -eye.Y, -eye.Z));
 
         Matrix4f modelView = Matrix4f.CreateRigid(view, offset);
 
-        // The box the card covers: its rectangle across, and its depth back. A near plane of zero is
-        // what puts the card's own plane at the front of the capture, which is where the surface it
-        // describes begins.
+        // The box the card covers: its rectangle across, and its depth back. A near plane of zero puts
+        // the card's own plane at the front of the capture, which is where the surface it describes
+        // begins, and the depth test then keeps the surface nearest the card.
         Matrix4f projection = Matrix4f.CreateOrthographic(
             card.Width, card.Height, 0f, MathF.Max(card.Depth, 0.01f));
 
         device.SetProjection(projection);
 
-        // Back faces are the inside of the model as seen from this card, and capturing them would put
-        // the far wall of a crate into the page describing its near one.
-        device.SetCullMode(CullMode.CounterClockwise);
+        // Both facings, for the reason WorldRenderer.Draw gives for the same choice: this game's
+        // winding rule inside a strip is the original's own and is not yet pinned, so culling here
+        // would silently drop whichever half guessed wrong. A card wants the surface nearest it, and
+        // the depth test is what actually decides that.
+        device.SetCullMode(CullMode.None);
 
         foreach (MeshSubset piece in subject.Geometry.Subsets)
         {

@@ -380,6 +380,21 @@ public interface IGraphicsDevice : IDisposable
     /// <exception cref="GraphicsDeviceException">No card capture is open.</exception>
     void EndCardCapture();
 
+    /// <summary>Reads one of the card atlas's targets back into memory.</summary>
+    /// <param name="attachment">Which target: 0 albedo, 1 normal, 2 material.</param>
+    /// <param name="destination">Receives the texels, row-major and top row first.</param>
+    /// <remarks>
+    /// <b>For looking at the atlas, and that is not a luxury.</b> A capture is the kind of thing only an
+    /// eye can judge: wrong winding shows as models captured inside-out, a wrong card rotation as
+    /// mirrored pages, a missing scissor as pages bleeding into each other — and all three produce a
+    /// perfectly plausible atlas full of perfectly plausible surfaces.
+    /// <para>
+    /// Synchronising, so it belongs at load or behind a developer switch rather than in a frame.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">There is no atlas, or the span is too small.</exception>
+    void ReadCardAtlas(int attachment, Span<Bgra32> destination);
+
     /// <summary>Gets the atlas texture holding each card's surface colour.</summary>
     TextureHandle CardAlbedo { get; }
 

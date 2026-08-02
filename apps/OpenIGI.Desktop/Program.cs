@@ -646,6 +646,20 @@ using (window)
                     }
                 }
 
+                // Every distinct model's surface, captured into the card atlas. On the render thread
+                // because it IS a render pass -- the atlas is a framebuffer and the geometry is already
+                // uploaded, and both belong to the context that made them.
+                if (RenderCVars.SurfaceCache.Value && world is not null)
+                {
+                    SurfaceCacheCapture.Result? cards = world.CaptureSurfaceCache(
+                        scene, RenderCVars.SurfaceCacheDensity.Value);
+
+                    if (cards is not null && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } into)
+                    {
+                        DumpCardAtlas(device, cards.Value, into, logger);
+                    }
+                }
+
                 device.SetIrradianceVolume(probeField);
                 ApplyColourLookup(options.StartMission);
 
@@ -1271,6 +1285,38 @@ using (window)
 
                 return null;
             }
+        }
+    }
+
+    // Writes the captured atlas out as images, because a capture can only be judged by looking at it.
+    // Wrong winding shows as models captured inside-out, a wrong card rotation as mirrored pages, a
+    // missing scissor as pages bleeding together -- and each produces an atlas of plausible surfaces.
+    static void DumpCardAtlas(
+        IGraphicsDevice device, SurfaceCacheCapture.Result cards, string into, IIgiLogger logger)
+    {
+        try
+        {
+            Directory.CreateDirectory(into);
+
+            int width = cards.Layout.Width;
+            int height = cards.Layout.Height;
+            Bgra32[] pixels = new Bgra32[width * height];
+
+            string[] names = ["albedo", "normal", "material"];
+
+            for (int attachment = 0; attachment < names.Length; attachment++)
+            {
+                device.ReadCardAtlas(attachment, pixels);
+
+                string path = Path.Combine(into, $"cards-{names[attachment]}.png");
+                PngWriter.Write(path, pixels, width, height);
+                logger.Information("SurfaceCache", $"Wrote {path}.");
+            }
+        }
+        catch (Exception error)
+            when (error is IOException or UnauthorizedAccessException or GraphicsDeviceException)
+        {
+            logger.Warning("SurfaceCache", $"The card atlas could not be written: {error.Message}");
         }
     }
 

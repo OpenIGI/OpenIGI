@@ -1336,6 +1336,28 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void ReadCardAtlas(int attachment, Span<Bgra32> destination)
+    {
+        ThrowIfDisposed();
+
+        if (_cardAtlas is not { IsReady: true } atlas)
+        {
+            throw new GraphicsDeviceException("There is no card atlas to read.");
+        }
+
+        int needed = atlas.Width * atlas.Height;
+
+        if (destination.Length < needed)
+        {
+            throw new GraphicsDeviceException(
+                $"The card atlas is {atlas.Width}x{atlas.Height}; {needed} texels were needed, "
+                + $"{destination.Length} offered.");
+        }
+
+        atlas.ReadAttachment(Math.Clamp(attachment, 0, 2), destination);
+    }
+
+    /// <inheritdoc/>
     public TextureHandle CardAlbedo => Register(_cardAtlas?.AlbedoTexture ?? 0);
 
     /// <inheritdoc/>
@@ -2862,7 +2884,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _cardDecodeAlbedo = _cardProgram.LocationOf("uDecodeAlbedo");
         UseProgram(_cardProgram);
         _cardProgram.SetInt("uDiffuse", 0);
-        _cardProgram.SetInt("uLightmap", 1);
 
         _occlusionProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment);

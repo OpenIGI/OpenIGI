@@ -166,6 +166,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void ReadCardAtlas(int attachment, Span<Bgra32> destination)
+    {
+    }
+
+    /// <inheritdoc/>
     public TextureHandle CardAlbedo => new(90_001);
 
     /// <inheritdoc/>

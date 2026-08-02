@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Diagnostics;
 using Silk.NET.OpenGL;
 
@@ -199,6 +200,42 @@ internal sealed class GLCardAtlas : IDisposable
         _gl.Viewport(x, y, (uint)width, (uint)height);
         _gl.Enable(EnableCap.ScissorTest);
         _gl.Scissor(x, y, (uint)width, (uint)height);
+    }
+
+    /// <summary>Reads one colour attachment back into memory, top row first.</summary>
+    /// <param name="attachment">Which target: 0 albedo, 1 normal, 2 material.</param>
+    /// <param name="destination">Receives the texels.</param>
+    /// <remarks>
+    /// Through the framebuffer rather than through glGetTexImage. These targets are written by a render
+    /// pass, so a read buffer sees them the way the pipeline left them -- and it sidesteps the fact,
+    /// measured earlier in this track, that glGetTexImage cannot observe everything a GPU writes.
+    /// </remarks>
+    public unsafe void ReadAttachment(int attachment, Span<Bgra32> destination)
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _framebuffer);
+        _gl.ReadBuffer((ReadBufferMode)((int)ReadBufferMode.ColorAttachment0 + attachment));
+        _gl.PixelStore(PixelStoreParameter.PackAlignment, 4);
+
+        fixed (Bgra32* target = destination)
+        {
+            _gl.ReadPixels(
+                0, 0, (uint)Width, (uint)Height, PixelFormat.Bgra, PixelType.UnsignedByte, target);
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+
+        // GL reads bottom-up and every consumer of this expects top-down, so the rows are flipped here
+        // rather than by whoever writes the image out.
+        for (int y = 0; y < Height / 2; y++)
+        {
+            Span<Bgra32> top = destination.Slice(y * Width, Width);
+            Span<Bgra32> bottom = destination.Slice((Height - 1 - y) * Width, Width);
+
+            for (int x = 0; x < Width; x++)
+            {
+                (top[x], bottom[x]) = (bottom[x], top[x]);
+            }
+        }
     }
 
     /// <summary>Finishes the capture and returns to the back buffer.</summary>
