@@ -296,6 +296,10 @@ using (window)
         Path.Combine(AppContext.BaseDirectory, "Assets", "fog-presets.json"),
         logger);
 
+    MaterialLibrary materials = MaterialLibrary.Load(
+        Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
+        logger);
+
     // The level's own sun, read from its Dirlight task -- section 12.
     // Null until a level is loaded, and for a level that declares none.
     DirectionalLightSettings? sun = null;
@@ -357,7 +361,7 @@ using (window)
         new ConditionalContainerGate(loop.Variables, logger).Prepare(levelRoot);
 
         scene = WorldScene.Build(loaded, levelRoot, magic, logger);
-        world = new WorldRenderer(device, resources, logger);
+        world = new WorldRenderer(device, resources, logger) { Materials = materials };
 
         // The walls. Built here because two consumers want it: the player's collision, and the
         // soldiers' ground probe - a guard's declared Position is only where it starts, and without
@@ -1605,6 +1609,13 @@ using (window)
             // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
             // on its ambient exactly as the fog does.
             device.SetDebugView(RenderCVars.Debug.Value);
+            device.SetReflections(
+                RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                    ? new ReflectionSettings(
+                        RenderCVars.Reflections.Value,
+                        RenderCVars.ReflectionIntensity.Value,
+                        RenderCVars.ReflectionMaxRoughness.Value)
+                    : ReflectionSettings.Off);
             device.SetIrradianceVolumeSettings(
                 probeField is not null && RenderCVars.GlobalIllumination.Value
                     ? new IrradianceVolumeSettings(

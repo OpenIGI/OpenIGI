@@ -1,0 +1,42 @@
+{
+  "$comment": [
+    "What each surface is made of, for the reflections and the specular response.",
+    "",
+    "The usual trick for an old game -- match texture names like snow* or metal* -- cannot work here.",
+    "I.G.I.'s textures are NUMBERED: level 1 draws 203_04_1, 216_01_1_argb8888, 219_02_1 and a hundred",
+    "more like them, and no rule over those strings knows which one is glass.",
+    "",
+    "So there are two ways to name a surface below.",
+    "",
+    "  *suffix        matches any texture ending that way. The one piece of meaning the names carry is",
+    "                 _argb8888, which marks the textures the packs store with an alpha channel -- in",
+    "                 this game the glass, the wire fences and the foliage.",
+    "  exact_name     matches that one texture. Laborious, and the only honest way to say that a",
+    "                 particular numbered texture is polished metal: someone has to look at it.",
+    "",
+    "An exact name beats a suffix rule. Roughness runs 0 (a mirror) to 1 (chalk); metallic is very",
+    "nearly always 0 or 1, because a surface is either a conductor or it is not."
+  ],
+
+  "default": {
+    "$comment": "Concrete, dirt, snow, painted metal -- the overwhelming majority of the game.",
+    "roughness": 0.8,
+    "metallic": 0.0
+  },
+
+  "textures": {
+    "*_argb8888": {
+      "$comment": [
+        "Glass, and the first surface in the game that reflects anything. It is also every wire fence",
+        "and every bush, which is the price of the only signal the names give -- a leaf reflecting the",
+        "sky is wrong, but it is a small wrongness on a surface that is mostly holes, and the Fresnel",
+        "term means it only shows at a grazing angle where a leaf is edge-on anyway.",
+        "",
+        "Anything here that turns out to be foliage rather than glass should be listed by name below",
+        "with the default roughness put back."
+      ],
+      "roughness": 0.08,
+      "metallic": 0.0
+    }
+  }
+}

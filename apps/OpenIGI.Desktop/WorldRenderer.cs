@@ -30,6 +30,7 @@ public sealed class WorldRenderer : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IIgiLogger _logger;
+    private MaterialLibrary _materials = MaterialLibrary.Empty;
     private readonly Dictionary<string, MeshGeometry?> _geometry = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, MeshHandle> _meshes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
@@ -117,10 +118,17 @@ public sealed class WorldRenderer : IDisposable
                 }
 
                 TextureHandle diffuse = TextureHandle.None;
+                SurfaceMaterial material = _materials.Default;
+
                 if (subset.HasMaterial
                     && placement.Pack.TryGetTextureName(placement.Instance, subset.MaterialSlot, out string texture))
                 {
                     diffuse = GetTexture(texture);
+
+                    // What this surface is made of. Only the sub-meshes that name a texture can be
+                    // judged; one that names none keeps whatever the last draw set, which is why the
+                    // else branch below puts the default back rather than leaving it.
+                    material = _materials.For(texture);
                 }
 
                 // Each sub-mesh names the page it samples; a model with none, or one whose bake is
@@ -129,6 +137,7 @@ public sealed class WorldRenderer : IDisposable
                     ? pages[subset.LightmapPage]
                     : TextureHandle.None;
 
+                _device.SetMaterialOverride(material);
                 _device.DrawMesh(
                     mesh,
                     subset.IndexOffset,
@@ -301,6 +310,18 @@ public sealed class WorldRenderer : IDisposable
     {
         int slash = name.LastIndexOfAny(['/', '\\']);
         return slash >= 0 ? name[(slash + 1)..] : name;
+    }
+
+    /// <summary>Gets or sets what each of the level's textures is made of.</summary>
+    /// <remarks>
+    /// Settable rather than constructor-injected because it is data the shell loads once and may
+    /// reload, and because a renderer with no library still draws -- every surface simply takes the
+    /// default, which is the behaviour from before materials existed.
+    /// </remarks>
+    public MaterialLibrary Materials
+    {
+        get => _materials;
+        set => _materials = value ?? MaterialLibrary.Empty;
     }
 
     private TextureHandle GetTexture(string name)

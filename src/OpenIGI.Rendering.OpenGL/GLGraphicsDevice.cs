@@ -82,6 +82,21 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _lightingProbeCamera = -1;
     private int _lightingShowProbes = -1;
     private DebugView _debugView;
+    private ReflectionSettings _reflections;
+    private GLShaderProgram? _reflectionProgram;
+    private int _reflectionUnproject = -1;
+    private int _reflectionMarch = -1;
+    private int _reflectionTexelSize = -1;
+    private int _reflectionJitter = -1;
+    private int _reflectionProbesEnabled = -1;
+    private int _reflectionProbeOrigin = -1;
+    private int _reflectionProbeInverseCount = -1;
+    private int _reflectionProbeSpacing = -1;
+    private int _reflectionProbeSky = -1;
+    private int _reflectionViewToWorld = -1;
+    private int _reflectionCamera = -1;
+    private int _reflectionShow = -1;
+    private int _reflectionFrame;
 
     private AmbientOcclusionSettings _occlusion;
     private GLShaderProgram? _occlusionProgram;
@@ -792,6 +807,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetReflections(in ReflectionSettings settings)
+    {
+        ThrowIfDisposed();
+        _reflections = settings;
+    }
+
+    /// <inheritdoc/>
     public void SetDebugView(DebugView view)
     {
         ThrowIfDisposed();
@@ -1153,6 +1175,7 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
             {
                 bool occluded = RunAmbientOcclusion(_sceneTarget);
                 RunDeferredLighting(_sceneTarget, occluded);
+                RunReflections(_sceneTarget);
                 RunVolumetricFog(_sceneTarget);
             }
             else
@@ -1216,7 +1239,13 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // for a view nobody has switched on would leave the passes after this two.
         // The probe view is answered by the lighting pass, which has already run and written it into
         // the scene, so the resolve must pass that through rather than overwrite it with a G-buffer.
-        int debug = target.Description.Deferred && _debugView != DebugView.Probes ? (int)_debugView : 0;
+        // The probe and reflection views are answered by the passes that own them and are already in
+        // the scene, so the resolve passes those through rather than overwriting with a G-buffer.
+        int debug = target.Description.Deferred
+            && _debugView != DebugView.Probes
+            && _debugView != DebugView.Ssr
+                ? (int)_debugView
+                : 0;
         _resolveProgram.SetInt(_resolveDebugView, debug);
 
         if (debug != 0)
@@ -1243,6 +1272,85 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _depthState = DepthState.Disabled;
 
         _currentVertexArray = 0;
+    }
+
+    /// <summary>Reflects the lit frame in the surfaces smooth enough to show it.</summary>
+    /// <param name="target">The scene target holding the lit colour, its depth and the G-buffer.</param>
+    /// <remarks>
+    /// After the lighting because a reflection is of the lit world, and before the fog because a
+    /// reflection belongs behind the air rather than in front of it.
+    /// </remarks>
+    private void RunReflections(GLSceneTarget target)
+    {
+        if (!_reflections.Enabled || _reflectionProgram is null || _fullScreen is null)
+        {
+            return;
+        }
+
+        target.BindForPostProcess();
+        UseProgram(_reflectionProgram);
+
+        _reflectionProgram.SetVector4(
+            _reflectionUnproject,
+            _unprojection.XScale,
+            _unprojection.YScale,
+            _unprojection.Near,
+            _unprojection.Far);
+        _reflectionProgram.SetVector4(
+            _reflectionMarch,
+            _reflections.Marches ? _reflections.Quality : 0,
+            MathF.Max(_reflections.Intensity, 0f),
+            MathF.Max(_reflections.MaxRoughness, 0.01f),
+            MathF.Max(_reflections.Thickness, 0.01f));
+        _reflectionProgram.SetVector2(
+            _reflectionTexelSize, 1f / target.Description.Width, 1f / target.Description.Height);
+
+        _reflectionFrame = (_reflectionFrame + 1) & 63;
+        _reflectionProgram.SetFloat(_reflectionJitter, _reflectionFrame * 0.61803399f);
+
+        bool probes = _hasProbes && _volumeSettings.Enabled;
+        _reflectionProgram.SetInt(_reflectionProbesEnabled, probes ? 1 : 0);
+
+        if (probes)
+        {
+            BindProbeTexture(8, _probeTextures[0]);
+            BindProbeTexture(9, _probeTextures[1]);
+            BindProbeTexture(10, _probeTextures[2]);
+            _reflectionProgram.SetVector3(
+                _reflectionProbeOrigin, _probeOrigin.X, _probeOrigin.Y, _probeOrigin.Z);
+            _reflectionProgram.SetVector3(
+                _reflectionProbeInverseCount,
+                _probeInverseCount.X,
+                _probeInverseCount.Y,
+                _probeInverseCount.Z);
+            _reflectionProgram.SetFloat(_reflectionProbeSpacing, _probeSpacing);
+        }
+
+        // What a ray that finds nothing at all falls back to. The sky is what most of a reflected ray
+        // in this game would have hit, and the ambient term is what the level says its sky is worth.
+        float intensity = probes ? MathF.Max(_volumeSettings.Intensity, 0f) : 1f;
+        _reflectionProgram.SetVector3(
+            _reflectionProbeSky,
+            _lighting.AmbientColour.X * intensity,
+            _lighting.AmbientColour.Y * intensity,
+            _lighting.AmbientColour.Z * intensity);
+
+        _reflectionProgram.SetMatrix3(_reflectionViewToWorld, _viewToWorld);
+        _reflectionProgram.SetVector3(
+            _reflectionCamera, _cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z);
+        _reflectionProgram.SetInt(_reflectionShow, _debugView == DebugView.Ssr ? 1 : 0);
+
+        BindTexture(0, target.FrontColorTexture);
+        BindTexture(1, target.NormalTexture);
+        BindTexture(3, target.MaterialTexture);
+        BindTexture(4, target.DepthTexture);
+
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
+        _fullScreen.Draw();
+        target.Swap();
     }
 
     /// <summary>Blends this frame into the accumulated ones.</summary>
@@ -1994,6 +2102,29 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _temporalProgram.SetInt("uHistory", 1);
         _temporalProgram.SetInt("uDepth", 4);
         _temporalProgram.SetInt("uMotion", 5);
+
+        _reflectionProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, ReflectionShaders.Fragment);
+        _reflectionUnproject = _reflectionProgram.LocationOf("uUnproject");
+        _reflectionMarch = _reflectionProgram.LocationOf("uMarch");
+        _reflectionTexelSize = _reflectionProgram.LocationOf("uTexelSize");
+        _reflectionJitter = _reflectionProgram.LocationOf("uFrameJitter");
+        _reflectionProbesEnabled = _reflectionProgram.LocationOf("uProbesEnabled");
+        _reflectionProbeOrigin = _reflectionProgram.LocationOf("uProbeOrigin");
+        _reflectionProbeInverseCount = _reflectionProgram.LocationOf("uProbeInverseCount");
+        _reflectionProbeSpacing = _reflectionProgram.LocationOf("uProbeSpacing");
+        _reflectionProbeSky = _reflectionProgram.LocationOf("uProbeSky");
+        _reflectionViewToWorld = _reflectionProgram.LocationOf("uViewToWorld");
+        _reflectionCamera = _reflectionProgram.LocationOf("uCameraPosition");
+        _reflectionShow = _reflectionProgram.LocationOf("uShowReflections");
+        UseProgram(_reflectionProgram);
+        _reflectionProgram.SetInt("uScene", 0);
+        _reflectionProgram.SetInt("uNormal", 1);
+        _reflectionProgram.SetInt("uMaterial", 3);
+        _reflectionProgram.SetInt("uDepth", 4);
+        _reflectionProgram.SetInt("uProbeRed", 8);
+        _reflectionProgram.SetInt("uProbeGreen", 9);
+        _reflectionProgram.SetInt("uProbeBlue", 10);
 
         _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
         _fogSunDirection = _fogProgram.LocationOf("uSunDirection");

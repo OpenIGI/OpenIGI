@@ -330,6 +330,38 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How strongly surfaces bounce their colour onto each other.");
 
+    /// <summary>How many steps a reflected ray takes, or 0 for the fallback alone.</summary>
+    public static readonly NumericCVar<int> Reflections = Presets.Define(
+        CVar.Int(
+            "r_ssr",
+            0,
+            0,
+            256,
+            CVarOptions.Archive,
+            "Screen-space reflections: steps per reflected ray; 0 leaves only the probe fallback."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "32",
+        ultra: "64");
+
+    /// <summary>How strongly reflections are mixed in.</summary>
+    public static readonly NumericCVar<float> ReflectionIntensity = CVar.Float(
+        "r_ssr_intensity",
+        1f,
+        0f,
+        2f,
+        CVarOptions.Archive,
+        "How strongly surfaces reflect; 1 is the physical amount.");
+
+    /// <summary>The roughness past which a surface stops reflecting sharply enough to march for.</summary>
+    public static readonly NumericCVar<float> ReflectionMaxRoughness = CVar.Float(
+        "r_ssr_max_roughness",
+        0.6f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "Roughest surface that still reflects. Rougher ones scatter too widely for one ray to describe.");
+
     /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
     /// <remarks>
     /// Costs a trace of the level at load rather than anything per frame, which is why it is a

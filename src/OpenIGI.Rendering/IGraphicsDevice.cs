@@ -267,6 +267,14 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Sets what surfaces reflect and how far the frame is searched to find it.</summary>
+    /// <param name="settings">The search, or <see cref="ReflectionSettings.Off"/> for none.</param>
+    /// <remarks>
+    /// Applied after the lighting and before the fog: a reflection is of the lit world, and it belongs
+    /// behind the air rather than in front of it.
+    /// </remarks>
+    void SetReflections(in ReflectionSettings settings);
+
     /// <summary>Sets which buffer the frame shows instead of the scene.</summary>
     /// <param name="view">The buffer, or <see cref="DebugView.None"/> for the scene itself.</param>
     /// <remarks>

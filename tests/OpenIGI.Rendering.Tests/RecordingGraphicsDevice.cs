@@ -92,6 +92,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The shadow settings each frame was given, in order.</summary>
     public List<ShadowSettings> Shadows { get; } = [];
 
+    /// <summary>The reflection settings each frame was given, in order.</summary>
+    public List<ReflectionSettings> Reflections { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetReflections(in ReflectionSettings settings) => Reflections.Add(settings);
+
     /// <summary>The debug views asked for, in order.</summary>
     public List<DebugView> DebugViews { get; } = [];
 
