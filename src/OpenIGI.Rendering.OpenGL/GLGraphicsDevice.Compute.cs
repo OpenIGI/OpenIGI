@@ -163,10 +163,18 @@ public sealed partial class GLGraphicsDevice
                 $"{texture} holds {expected} bytes; only {offered} were offered to receive it.");
         }
 
-        // Everything, because this is a diagnostic path and being sure costs nothing here. The bit that
-        // actually matters is TEXTURE_UPDATE: glGetTexImage does NOT observe a shader's image stores
-        // without it, and returns the texture's allocated contents instead -- which reads as a compute
-        // pass that ran, reported no error, and wrote nothing.
+        // Everything, because this is a diagnostic path and being sure costs nothing here.
+        //
+        // KNOWN LIMITATION, measured rather than assumed: on the driver this was developed against,
+        // glGetTexImage does NOT observe a compute shader's imageStore writes AT ALL -- not with
+        // TEXTURE_UPDATE, not with ALL_BARRIER_BITS, not after glFinish, and with no GL error raised.
+        // A volume uploaded through UpdateVolumeTexture reads back perfectly through this same path, so
+        // what fails is specifically image-store visibility.
+        //
+        // That was established by having the shader imageLoad its own store back: it returned exactly
+        // the value written while this returned zeros. So a zero here means "cannot see it", not
+        // "nothing was written", and anything that needs to VERIFY a compute-written volume must read
+        // it with a compute shader into a storage buffer instead.
         _gl.MemoryBarrier(MemoryBarrierMask.AllBarrierBits);
 
         _gl.ActiveTexture(TextureUnit.Texture0);
@@ -177,9 +185,18 @@ public sealed partial class GLGraphicsDevice
         // sheared.
         _gl.PixelStore(PixelStoreParameter.PackAlignment, 1);
 
+        while (_gl.GetError() != GLEnum.NoError)
+        {
+        }
+
         fixed (T* target = destination)
         {
             _gl.GetTexImage(TextureTarget.Texture3D, 0, pixelFormat, pixelType, target);
+        }
+
+        if (_gl.GetError() is var readError && readError != GLEnum.NoError)
+        {
+            _logger.Warning(LogCategory, $"Reading {texture} back was rejected: {readError}.");
         }
 
         _gl.PixelStore(PixelStoreParameter.PackAlignment, 4);

@@ -502,6 +502,7 @@ public sealed class GlobalDistanceField : IDisposable
         int groups = (_settings.Resolution + group - 1) / group;
 
         _device.Dispatch(_build, groups, groups, groups);
+
     }
 
     /// <summary>The furthest distance one clipmap level's bytes encode.</summary>
