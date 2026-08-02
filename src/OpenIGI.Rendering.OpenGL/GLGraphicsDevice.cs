@@ -232,6 +232,16 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
     private int _resolveDecodeInput = -1;
     private int _resolveWhitePoint = -1;
     private int _resolveDebugView = -1;
+    private int _resolveBloomIntensity = -1;
+    private int _resolveGrade = -1;
+    private int _resolveLens = -1;
+    private int _resolveTexelSize = -1;
+    private int _gradeFrame;
+
+    private GLShaderProgram? _bloomThresholdProgram;
+    private GLShaderProgram? _bloomBlurProgram;
+    private int _bloomThreshold = -1;
+    private int _bloomDirection = -1;
     private bool _captureActive;
 
     private bool _disposed;
@@ -1226,6 +1236,8 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         // A frame with no forward pass -- the free camera draws no view model -- has not resolved yet.
         ResolveTemporal(target);
 
+        bool bloomed = RunBloom(target, post);
+
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
 
@@ -1234,6 +1246,27 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveProgram.SetInt(_resolveToneMap, (int)post.ToneMap);
         _resolveProgram.SetInt(_resolveDecodeInput, post.SceneIsDisplayEncoded ? 1 : 0);
         _resolveProgram.SetFloat(_resolveWhitePoint, post.WhitePoint);
+        _resolveProgram.SetFloat(_resolveBloomIntensity, bloomed ? post.BloomIntensity : 0f);
+        _resolveProgram.SetVector4(
+            _resolveGrade,
+            MathF.Max(post.Contrast, 0f),
+            MathF.Max(post.Saturation, 0f),
+            Math.Clamp(post.Vignette, 0f, 1f),
+            Math.Clamp(post.Grain, 0f, 1f));
+
+        _gradeFrame = (_gradeFrame + 1) & 1023;
+        _resolveProgram.SetVector3(
+            _resolveLens,
+            MathF.Max(post.ChromaticAberration, 0f),
+            MathF.Max(post.Sharpen, 0f),
+            _gradeFrame * 0.61803399f);
+        _resolveProgram.SetVector2(
+            _resolveTexelSize, 1f / target.Description.PresentWidth, 1f / target.Description.PresentHeight);
+
+        if (bloomed)
+        {
+            BindTexture(7, target.BloomTexture);
+        }
 
         // Only bound when asked for. There are eight units in all, and holding six of them every frame
         // for a view nobody has switched on would leave the passes after this two.
@@ -1272,6 +1305,63 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _depthState = DepthState.Disabled;
 
         _currentVertexArray = 0;
+    }
+
+    /// <summary>Spreads the brightest part of the frame into a half-resolution buffer.</summary>
+    /// <param name="target">The scene target holding the finished frame.</param>
+    /// <param name="post">The frame's settings, for the threshold and whether to run at all.</param>
+    /// <returns><see langword="true"/> when there is a bloom buffer for the resolve to add.</returns>
+    /// <remarks>
+    /// Bright pass, then a separable Gaussian: a two-dimensional Gaussian is the product of two
+    /// one-dimensional ones, so a wide blur costs two passes rather than the square of its radius.
+    /// </remarks>
+    private bool RunBloom(GLSceneTarget target, in PostProcessSettings post)
+    {
+        if (!post.WantsBloom
+            || !target.HasBloom
+            || _bloomThresholdProgram is null
+            || _bloomBlurProgram is null
+            || _fullScreen is null)
+        {
+            return false;
+        }
+
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
+        (float texelX, float texelY) = target.BloomTexelSize;
+
+        target.BindForBloom(0);
+        UseProgram(_bloomThresholdProgram);
+
+        // The knee is a quarter of the threshold rather than a constant: what counts as "just below
+        // the threshold" has to scale with the threshold, or a high one gets a hard edge back.
+        _bloomThresholdProgram.SetVector2(
+            _bloomThreshold, post.BloomThreshold, MathF.Max(post.BloomThreshold * 0.25f, 0.01f));
+        BindTexture(0, target.FrontColorTexture);
+        _fullScreen.Draw();
+
+        UseProgram(_bloomBlurProgram);
+
+        // Two passes per widening, run twice: the second pair samples an already-blurred image, so the
+        // effective radius grows far faster than the tap count does.
+        for (int pass = 0; pass < 2; pass++)
+        {
+            float spread = pass + 1;
+
+            target.BindForBloom(1);
+            _bloomBlurProgram.SetVector2(_bloomDirection, texelX * spread, 0f);
+            BindTexture(0, target.BloomTextureAt(0));
+            _fullScreen.Draw();
+
+            target.BindForBloom(0);
+            _bloomBlurProgram.SetVector2(_bloomDirection, 0f, texelY * spread);
+            BindTexture(0, target.BloomTextureAt(1));
+            _fullScreen.Draw();
+        }
+
+        return true;
     }
 
     /// <summary>Reflects the lit frame in the surfaces smooth enough to show it.</summary>
@@ -2008,6 +2098,10 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
         _resolveWhitePoint = _resolveProgram.LocationOf("uWhitePoint");
         _resolveDebugView = _resolveProgram.LocationOf("uDebugView");
+        _resolveBloomIntensity = _resolveProgram.LocationOf("uBloomIntensity");
+        _resolveGrade = _resolveProgram.LocationOf("uGrade");
+        _resolveLens = _resolveProgram.LocationOf("uLens");
+        _resolveTexelSize = _resolveProgram.LocationOf("uTexelSize");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
         _resolveProgram.SetInt("uDebugAlbedo", 6);
@@ -2016,6 +2110,18 @@ public sealed class GLGraphicsDevice : IGraphicsDevice
         _resolveProgram.SetInt("uDebugMaterial", 2);
         _resolveProgram.SetInt("uDebugMotion", 5);
         _resolveProgram.SetInt("uDebugOcclusion", 3);
+        _resolveProgram.SetInt("uBloom", 7);
+
+        _bloomThresholdProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, BloomShaders.Threshold);
+        _bloomThreshold = _bloomThresholdProgram.LocationOf("uThreshold");
+        UseProgram(_bloomThresholdProgram);
+        _bloomThresholdProgram.SetInt("uScene", 0);
+
+        _bloomBlurProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, BloomShaders.Blur);
+        _bloomDirection = _bloomBlurProgram.LocationOf("uDirection");
+        UseProgram(_bloomBlurProgram);
+        _bloomBlurProgram.SetInt("uSource", 0);
         _resolveProgram.SetInt("uDebugDepth", 4);
 
         _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment);

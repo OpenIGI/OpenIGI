@@ -44,6 +44,10 @@ internal sealed class GLSceneTarget : IDisposable
     private bool _presentingOutput;
     private uint _occlusionTexture;
     private uint _occlusionFramebuffer;
+    private readonly uint[] _bloomTextures = [0, 0];
+    private readonly uint[] _bloomFramebuffers = [0, 0];
+    private int _bloomWidth;
+    private int _bloomHeight;
     private uint _gbufferFramebuffer;
     private uint _depthTexture;
     private uint _msaaFramebuffer;
@@ -188,6 +192,11 @@ internal sealed class GLSceneTarget : IDisposable
         {
             Release();
             return false;
+        }
+
+        if (!CreateBloom(colorFormat, description))
+        {
+            _logger.Warning(LogCategory, "The bloom buffers could not be created; bloom is off.");
         }
 
         if (description.Deferred && !CreateOcclusion(description))
@@ -371,6 +380,28 @@ internal sealed class GLSceneTarget : IDisposable
         return true;
     }
 
+    /// <summary>Gets the blurred bright parts of the frame, or zero when there is no bloom buffer.</summary>
+    public uint BloomTexture => _bloomTextures[0];
+
+    /// <summary>Gets a value indicating whether the bloom buffers exist.</summary>
+    public bool HasBloom => _bloomFramebuffers[0] != 0;
+
+    /// <summary>Makes one of the two half-resolution bloom buffers current.</summary>
+    /// <param name="index">Which of the pair, 0 or 1.</param>
+    public void BindForBloom(int index)
+    {
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFramebuffers[index]);
+        _gl.Viewport(0, 0, (uint)_bloomWidth, (uint)_bloomHeight);
+    }
+
+    /// <summary>Gets one of the two half-resolution bloom textures.</summary>
+    /// <param name="index">Which of the pair, 0 or 1.</param>
+    /// <returns>The texture name.</returns>
+    public uint BloomTextureAt(int index) => _bloomTextures[index];
+
+    /// <summary>Gets the size of one texel of the bloom buffers, for the blur's step.</summary>
+    public (float X, float Y) BloomTexelSize => (1f / MathF.Max(_bloomWidth, 1), 1f / MathF.Max(_bloomHeight, 1));
+
     /// <summary>Gets a value indicating whether an upsampled output buffer exists to accumulate into.</summary>
     public bool HasOutput => _outputFramebuffer != 0;
 
@@ -415,6 +446,43 @@ internal sealed class GLSceneTarget : IDisposable
 
         _disposed = true;
         Release();
+    }
+
+    /// <summary>Creates the pair of half-resolution buffers the bloom blur ping-pongs between.</summary>
+    /// <param name="colorFormat">The scene's colour format, which the bloom has to match.</param>
+    /// <param name="description">The target being built.</param>
+    /// <returns><see langword="true"/> when both buffers exist.</returns>
+    /// <remarks>
+    /// Half resolution costs nothing in quality here, and the reason is worth stating: the pass is a
+    /// low-pass filter, so the detail lost to halving is exactly the detail the blur was about to
+    /// remove anyway.
+    /// </remarks>
+    private bool CreateBloom(InternalFormat colorFormat, in SceneTargetDescription description)
+    {
+        _bloomWidth = Math.Max(1, description.Width / 2);
+        _bloomHeight = Math.Max(1, description.Height / 2);
+
+        SceneTargetDescription half = description with { Width = _bloomWidth, Height = _bloomHeight };
+
+        for (int i = 0; i < 2; i++)
+        {
+            _bloomTextures[i] = CreateTexture(colorFormat, PixelFormat.Rgba, PixelType.Float, half);
+            _bloomFramebuffers[i] = _gl.GenFramebuffer();
+            _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _bloomFramebuffers[i]);
+            _gl.FramebufferTexture2D(
+                FramebufferTarget.Framebuffer,
+                FramebufferAttachment.ColorAttachment0,
+                TextureTarget.Texture2D,
+                _bloomTextures[i],
+                0);
+
+            if (!IsComplete($"bloom {i}"))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Creates the buffer the horizon search writes visibility and bounced colour into.</summary>
@@ -701,6 +769,21 @@ internal sealed class GLSceneTarget : IDisposable
         _historyWrite = 0;
         _historyValid = false;
         _presentingOutput = false;
+
+        for (int i = 0; i < 2; i++)
+        {
+            if (_bloomFramebuffers[i] != 0)
+            {
+                _gl.DeleteFramebuffer(_bloomFramebuffers[i]);
+                _bloomFramebuffers[i] = 0;
+            }
+
+            if (_bloomTextures[i] != 0)
+            {
+                _gl.DeleteTexture(_bloomTextures[i]);
+                _bloomTextures[i] = 0;
+            }
+        }
 
         if (_occlusionFramebuffer != 0)
         {

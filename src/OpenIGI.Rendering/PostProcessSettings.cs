@@ -33,6 +33,33 @@ namespace OpenIGI.Rendering;
 /// <param name="SceneIsDisplayEncoded">
 /// Whether the captured scene holds display-encoded colour rather than linear light.
 /// </param>
+/// <param name="Contrast">
+/// How far colour is pushed away from mid-grey, where 1 leaves it alone. Applied in the display space
+/// after the tone map, because contrast is a statement about the picture rather than about the light,
+/// and doing it in linear light crushes the shadows before the curve has had a chance to shape them.
+/// </param>
+/// <param name="Saturation">
+/// How far colour is pushed away from its own luminance, where 1 leaves it alone. Zero is greyscale.
+/// </param>
+/// <param name="Vignette">
+/// How much the corners are darkened, from 0 to 1. Every lens does this and every photograph has it;
+/// its absence is one of the quiet reasons rendered images read as rendered.
+/// </param>
+/// <param name="Grain">
+/// How much film grain is added. Subtle by default and animated per frame, because static grain is
+/// dirt on the lens rather than grain — and because a little of it hides the banding that an 8-bit
+/// display gives a smooth gradient.
+/// </param>
+/// <param name="ChromaticAberration">
+/// How far the red and blue channels are separated towards the edges of the frame, in pixels at the
+/// corner. A real lens cannot focus every wavelength to the same point, and the error grows with
+/// distance from the axis — which is why this is zero in the middle however high it is set.
+/// </param>
+/// <param name="Sharpen">
+/// How much local contrast is restored after the temporal accumulation and any upsampling have
+/// softened the frame. Distinct from the sharpening inside the temporal resolve: that one fights the
+/// history's own resampling blur, and this one is a look.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -40,7 +67,13 @@ public readonly record struct PostProcessSettings(
     float BloomIntensity = 0.0f,
     float BloomThreshold = 1.0f,
     float WhitePoint = 1.6f,
-    bool SceneIsDisplayEncoded = true)
+    bool SceneIsDisplayEncoded = true,
+    float Contrast = 1f,
+    float Saturation = 1f,
+    float Vignette = 0f,
+    float Grain = 0f,
+    float ChromaticAberration = 0f,
+    float Sharpen = 0f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -61,5 +94,17 @@ public readonly record struct PostProcessSettings(
     /// over it — and, more usefully, a test can assert that the vanilla path asked for nothing.
     /// </remarks>
     public bool IsIdentity =>
-        ToneMap == ToneMapOperator.None && Exposure == 1.0f && !WantsBloom;
+        ToneMap == ToneMapOperator.None
+        && Exposure == 1.0f
+        && !WantsBloom
+        && !WantsGrading;
+
+    /// <summary>Gets a value indicating whether anything after the tone map would change the picture.</summary>
+    public bool WantsGrading =>
+        Contrast != 1f
+        || Saturation != 1f
+        || Vignette > 0f
+        || Grain > 0f
+        || ChromaticAberration > 0f
+        || Sharpen > 0f;
 }

@@ -330,6 +330,113 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How strongly surfaces bounce their colour onto each other.");
 
+    /// <summary>How much of the blurred bright pass is mixed back in, or 0 for no bloom.</summary>
+    public static readonly NumericCVar<float> Bloom = Presets.Define(
+        CVar.Float(
+            "r_bloom",
+            0f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "How much light spills out of the bright parts of the frame; 0 turns it off."),
+        vanilla: "0",
+        enhanced: "0.25",
+        high: "0.35",
+        ultra: "0.45");
+
+    /// <summary>The luminance above which a pixel starts to bloom.</summary>
+    public static readonly NumericCVar<float> BloomThreshold = CVar.Float(
+        "r_bloom_threshold",
+        1f,
+        0.1f,
+        8f,
+        CVarOptions.Archive,
+        "The brightness a pixel has to pass before it spills.");
+
+    /// <summary>How far colour is pushed away from mid-grey.</summary>
+    public static readonly NumericCVar<float> Contrast = Presets.Define(
+        CVar.Float(
+            "r_contrast",
+            1f,
+            0.25f,
+            2f,
+            CVarOptions.Archive,
+            "Contrast, where 1 leaves the picture alone."),
+        vanilla: "1",
+        enhanced: "1.04",
+        high: "1.06",
+        ultra: "1.08");
+
+    /// <summary>How far colour is pushed away from its own luminance.</summary>
+    public static readonly NumericCVar<float> Saturation = Presets.Define(
+        CVar.Float(
+            "r_saturation",
+            1f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "Colour saturation, where 1 leaves the picture alone and 0 is greyscale."),
+        vanilla: "1",
+        enhanced: "1.05",
+        high: "1.08",
+        ultra: "1.1");
+
+    /// <summary>How much the corners of the frame are darkened.</summary>
+    public static readonly NumericCVar<float> Vignette = Presets.Define(
+        CVar.Float(
+            "r_vignette",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much the corners darken. Every lens does this; its absence reads as rendered."),
+        vanilla: "0",
+        enhanced: "0.25",
+        high: "0.3",
+        ultra: "0.35");
+
+    /// <summary>How much film grain is added.</summary>
+    public static readonly NumericCVar<float> Grain = Presets.Define(
+        CVar.Float(
+            "r_grain",
+            0f,
+            0f,
+            0.2f,
+            CVarOptions.Archive,
+            "Film grain. A little also hides the banding an 8-bit display gives a smooth gradient."),
+        vanilla: "0",
+        enhanced: "0.012",
+        high: "0.014",
+        ultra: "0.016");
+
+    /// <summary>How far the red and blue channels separate towards the corners.</summary>
+    public static readonly NumericCVar<float> ChromaticAberration = Presets.Define(
+        CVar.Float(
+            "r_chromatic",
+            0f,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "Lens colour fringing at the corners, in pixels. Zero in the middle however high it is."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0.8",
+        ultra: "1.2");
+
+    /// <summary>How much local contrast is restored after the temporal accumulation softens the frame.</summary>
+    public static readonly NumericCVar<float> Sharpen = Presets.Define(
+        CVar.Float(
+            "r_sharpen",
+            0f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Restores local contrast lost to temporal accumulation and upsampling."),
+        vanilla: "0",
+        enhanced: "0.1",
+        high: "0.15",
+        ultra: "0.2");
+
     /// <summary>How many steps a reflected ray takes, or 0 for the fallback alone.</summary>
     public static readonly NumericCVar<int> Reflections = Presets.Define(
         CVar.Int(

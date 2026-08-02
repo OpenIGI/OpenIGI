@@ -1832,7 +1832,16 @@ using (window)
                 device.ResolveScene(new PostProcessSettings(
                     RenderCVars.ToneMap.Value,
                     RenderCVars.Exposure.Value,
-                    WhitePoint: RenderCVars.WhitePoint.Value));
+                    RenderCVars.Bloom.Value,
+                    RenderCVars.BloomThreshold.Value,
+                    RenderCVars.WhitePoint.Value,
+                    SceneIsDisplayEncoded: true,
+                    Contrast: RenderCVars.Contrast.Value,
+                    Saturation: RenderCVars.Saturation.Value,
+                    Vignette: RenderCVars.Vignette.Value,
+                    Grain: RenderCVars.Grain.Value,
+                    ChromaticAberration: RenderCVars.ChromaticAberration.Value,
+                    Sharpen: RenderCVars.Sharpen.Value));
                 captured = false;
             }
 
