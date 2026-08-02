@@ -145,6 +145,20 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off.");
 
+    /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
+    /// <remarks>
+    /// On by default, but only ever engaged while <see cref="ScreenGather"/> is up: each gather ray first
+    /// marches the depth buffer and, on an on-screen hit, reads the previous frame's lit colour there --
+    /// on-screen bounce at full frame detail rather than the surface cache's coarse card -- falling
+    /// through to the cache only when the ray leaves the screen or finds nothing. A knob to turn off for
+    /// comparison; it does nothing when the gather itself is off.
+    /// </remarks>
+    public static readonly BoolCVar ScreenGatherTrace = CVar.Bool(
+        "r_screen_gi_trace",
+        true,
+        CVarOptions.Archive,
+        "Trace on-screen geometry from the frame before falling back to the surface cache.");
+
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
     /// Off by default, and only ever engages where a tone map is on -- the vanilla copy path returns

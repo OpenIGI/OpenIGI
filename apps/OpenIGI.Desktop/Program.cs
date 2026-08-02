@@ -2564,6 +2564,12 @@ using (window)
             // there is no ambient to zero and nothing runs after the lighting.
             const int giStep = 8;
             const int giMaxAccum = 32;
+
+            // The screen trace tier: how far its rays reach across the frame and their step cap, plus the
+            // surface thickness its hit test assumes. Metres, save the step count.
+            const int giTraceSteps = 32;
+            const float giTraceDistance = 24f;
+            const float giTraceThickness = 0.5f;
             float giStrength = RenderCVars.ScreenGather.Value;
             bool giActive = captured
                 && giStrength > 0f
@@ -2629,7 +2635,15 @@ using (window)
                     giPrevCameraToCache,
                     giFrame,
                     giMaxAccum,
-                    giHasHistory);
+                    giHasHistory,
+
+                    // The screen trace tier (L5b): the previous frame's lit scene, read at on-screen hits
+                    // before the ray falls through to the surface cache. device.SceneColour holds last
+                    // frame's linear scene here -- this runs before the current frame is lit.
+                    device.SceneColour,
+                    RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
+                    giTraceDistance,
+                    giTraceThickness);
 
                 // Recorded for the deferred lighting to fold in when the pass closes, just below.
                 device.SetScreenIndirect(giAccum[write], giStrength);
