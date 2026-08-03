@@ -173,6 +173,16 @@ internal sealed partial class DesktopGame
                         return hitObject;
                     };
 
+                    // Dev verification for the path-traced lightmapper (phases 1-2): when IGI_BAKELM_DIR is
+                    // set, enumerate the lightmapped texels, bake direct sun + sky, and dump the largest few
+                    // pages' normals and radiance so the texel map and the direct pass can be checked by eye.
+                    // Off unless the env var is set.
+                    if (Environment.GetEnvironmentVariable("IGI_BAKELM_DIR") is { Length: > 0 } lightmapDir
+                        && _scene is { } lightmapScene)
+                    {
+                        DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
+                    }
+
                     // Whatever the console says, but never so fine that a big level spends a minute of
                     // load tracing rays nobody asked for.
                     float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
@@ -817,6 +827,98 @@ internal sealed partial class DesktopGame
         // needed once a real mission is up; letting it go releases that level's packs.
         _backdrop = null;
         _logger.Information("Mission", $"Loaded {loaded}.");
+    }
+
+    // The path-traced lightmapper's phase 1-2 verification: enumerate the lightmapped texels, bake the
+    // direct sun + sky, report coverage, and dump the largest few pages as normal and radiance images. A
+    // correct normal page reads as a UV unwrap of the object; a correct radiance page shows the sun and its
+    // shadows. Dev-only, driven by IGI_BAKELM_DIR, so it never runs in a normal load.
+    private void DumpLightmapVerification(
+        WorldScene scene, WorldRayCast cast, Vector3f sunDirection, string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+
+        IReadOnlyList<LightmapBaker.LightmapTarget> targets = LightmapBaker.EnumerateTargets(scene);
+
+        long covered = 0;
+        long total = 0;
+        foreach (LightmapBaker.LightmapTarget target in targets)
+        {
+            total += target.Texels.Length;
+            foreach (LightmapBaker.LightmapTexel texel in target.Texels)
+            {
+                if (texel.IsCovered)
+                {
+                    covered++;
+                }
+            }
+        }
+
+        _logger.Information(
+            "Lightmap", $"Enumerated {targets.Count} target(s); {covered}/{total} texels covered.");
+
+        Vector3f sunColour = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+        Vector3f skyColour = _sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
+        LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, hemisphereRays: 64);
+
+        // A numerical spot-check on the largest page: how many texels it covered, and a few of them with
+        // their world position (should sit near the placement) and baked radiance (sunlit near the sun
+        // colour, shadowed/skylit near the ambient). This settles what an image cannot show clearly.
+        if (targets.OrderByDescending(t => t.Texels.Length).FirstOrDefault() is { } sample)
+        {
+            int sampleCovered = 0;
+            foreach (LightmapBaker.LightmapTexel t in sample.Texels)
+            {
+                if (t.IsCovered)
+                {
+                    sampleCovered++;
+                }
+            }
+
+            Vector3d origin = scene.Placements[sample.PlacementIndex].Position;
+            _logger.Information(
+                "Lightmap",
+                FormattableString.Invariant(
+                    $"Largest page p{sample.PlacementIndex} {sample.Width}x{sample.Height}: {sampleCovered} covered, placement at ({origin.X:F1},{origin.Y:F1},{origin.Z:F1})."));
+
+            int shown = 0;
+            for (int i = 0; i < sample.Texels.Length && shown < 4; i++)
+            {
+                if (!sample.Texels[i].IsCovered)
+                {
+                    continue;
+                }
+
+                LightmapBaker.LightmapTexel t = sample.Texels[i];
+                Vector3f rad = sample.Radiance[i];
+                _logger.Information(
+                    "Lightmap",
+                    FormattableString.Invariant(
+                        $"  texel {i}: pos ({t.WorldPosition.X:F1},{t.WorldPosition.Y:F1},{t.WorldPosition.Z:F1}) n ({t.Normal.X:F2},{t.Normal.Y:F2},{t.Normal.Z:F2}) rad ({rad.X:F2},{rad.Y:F2},{rad.Z:F2})"));
+                shown++;
+            }
+        }
+
+        int dumped = 0;
+        foreach (LightmapBaker.LightmapTarget target in targets.OrderByDescending(t => t.Texels.Length).Take(6))
+        {
+            string stem = FormattableString.Invariant(
+                $"lm_p{target.PlacementIndex}_r{target.RecordIndex}_{target.Width}x{target.Height}");
+
+            Bgra32[] normals = new Bgra32[target.Texels.Length];
+            LightmapBaker.DumpTargetNormals(target, normals);
+            BitmapWriter.Write(
+                Path.Combine(outputDirectory, stem + "_normal.bmp"), target.Width, target.Height, normals);
+
+            Bgra32[] radiance = new Bgra32[target.Texels.Length];
+            LightmapBaker.DumpTargetRadiance(target, radiance, exposure: 1f);
+            BitmapWriter.Write(
+                Path.Combine(outputDirectory, stem + "_radiance.bmp"), target.Width, target.Height, radiance);
+
+            dumped++;
+        }
+
+        _logger.Information("Lightmap", $"Dumped {dumped} page(s) to {outputDirectory}.");
     }
 
     // Puts a weapon in the player's hands and loads the model its roster entry names.
