@@ -145,6 +145,20 @@ public static class IrradianceProbeBaker
         {
             IrradianceVolume? previous = bounce == 0 ? null : volume.Clone();
 
+            // Published partway through the pass, not only at its end, so the field the game shows updates
+            // many times a second and the light resolves in CONTINUOUSLY rather than jumping once per pass.
+            // A pass takes a few seconds to trace every probe; without this the room sat unchanged for all
+            // of it and then stepped. Every Nth slice a worker finishes hands over a snapshot of the volume
+            // so far -- on the first pass the un-traced slices still read dark, so the light sweeps across
+            // the level as it fills. The render thread only ever uploads the newest snapshot (a version
+            // counter), so publishing far more often than it can draw costs nothing.
+            // Counted in ROWS rather than whole slices: a level is only a handful of probes deep, so a
+            // slice is a big chunk of the pass and all the threads finish theirs at once -- publishing per
+            // slice would hand over two or three bursts, not a steady stream. A row is fine enough that
+            // whichever thread crosses the next multiple hands over a snapshot, and they come in evenly.
+            int rowsDone = 0;
+            int publishEvery = Math.Max(1, countY * countZ / PublishesPerPass);
+
             Parallel.For(0, countZ, options, z =>
             {
                 float[] coefficients = new float[IrradianceVolume.CoefficientsPerProbe];
@@ -164,12 +178,20 @@ public static class IrradianceProbeBaker
                             coefficients,
                             previous);
                     }
+
+                    // A copy each time: the snapshot is read on the render thread while later rows are
+                    // still being written here, and only a distinct clone is safe to hand across. Cheap
+                    // beside the tracing, and the render thread drops all but the latest anyway.
+                    if (onBouncePass is not null && Interlocked.Increment(ref rowsDone) % publishEvery == 0)
+                    {
+                        onBouncePass(volume.Clone());
+                    }
                 }
             });
 
-            // Hand this pass's field over as it finishes, so the game can show the light building up
-            // bounce by bounce -- a room fills over the first seconds of a level rather than snapping to
-            // the finished answer. A copy, because the next pass overwrites the live volume in place.
+            // And the finished pass, always -- the partial publishes above skip the tail below the last
+            // whole multiple of publishEvery, and the final pass's clone is the one the cache is written
+            // from. A copy, because the next pass overwrites the live volume in place.
             onBouncePass?.Invoke(volume.Clone());
         }
 
@@ -381,6 +403,15 @@ public static class IrradianceProbeBaker
     /// pass and running the light away in enclosed rooms.
     /// </remarks>
     private const float IndirectFeedbackScale = 0.282095f;
+
+    /// <summary>How many times a single bounce pass hands over its progress before it finishes.</summary>
+    /// <remarks>
+    /// The pass publishes a snapshot roughly this many times, spread across the rows it traces, so the field
+    /// the game shows advances steadily over the pass rather than once at its end -- enough that the light
+    /// reads as resolving in continuously. The render thread coalesces to the newest, so a larger number
+    /// only smooths the fill; it does not cost an upload each time.
+    /// </remarks>
+    private const int PublishesPerPass = 24;
 
     /// <summary>How far off a surface a shadow ray starts, in engine units.</summary>
     /// <remarks>
