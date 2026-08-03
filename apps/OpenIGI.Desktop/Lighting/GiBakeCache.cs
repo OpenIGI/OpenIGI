@@ -107,6 +107,45 @@ public sealed class GiBakeCache
         }
     }
 
+    /// <summary>Deletes every baked field from the writable cache, so each mission re-traces on next load.</summary>
+    /// <returns>How many files were removed.</returns>
+    /// <remarks>
+    /// For the live re-bake: clears what was traced before so the light is generated afresh rather than
+    /// reloaded. Only the per-user write directory is touched -- a shipped, read-only <c>Assets/gi</c> is
+    /// left alone, being a build artifact rather than a cache the game is free to discard.
+    /// </remarks>
+    public int DeleteAll()
+    {
+        int removed = 0;
+
+        try
+        {
+            if (!Directory.Exists(_writeDirectory))
+            {
+                return 0;
+            }
+
+            foreach (string path in Directory.EnumerateFiles(_writeDirectory, "mission-*.giv"))
+            {
+                try
+                {
+                    File.Delete(path);
+                    removed++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    _logger.Warning("Light", $"Could not delete a baked field at {path}: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Warning("Light", $"Could not clear the baked-field cache: {ex.Message}");
+        }
+
+        return removed;
+    }
+
     private static string FileName(int missionId) => $"mission-{missionId}.giv";
 
     private bool TryReadFile(string path, float spacing, Vector3f sunDirection, out IrradianceVolume? volume)

@@ -187,6 +187,14 @@ internal sealed partial class DesktopGame
                     // load tracing rays nobody asked for.
                     float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
 
+                    // Remembered so the live re-bake (F11) can trace the field again from exactly the
+                    // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
+                    // from the cache or the tracer below.
+                    _bakeCast = bakeCast;
+                    _probeBakeMission = id;
+                    _probeBakeSpacing = giSpacing;
+                    _probeBakeSun = bakeSunDirection;
+
                     // A shipped (or previously-written) bake loads instantly; only a mission without one
                     // pays to trace it here, and then writes the result so no load pays for it again.
                     if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
@@ -205,7 +213,7 @@ internal sealed partial class DesktopGame
                             // texture, which needs the ray to report a material rather than a triangle --
                             // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
                             // any of them.
-                            new Vector3f(0.42f, 0.40f, 0.37f),
+                            ProbeBakeAlbedo,
                             _logger);
 
                         if (_options.Lockstep)
@@ -223,15 +231,12 @@ internal sealed partial class DesktopGame
                         }
                         else
                         {
-                            // Interactive play enters the level on flat ambient and watches the bounces
-                            // stream in: the render loop polls TryCollectLatest and uploads each pass as it
-                            // lands, so a room fills with light over the first seconds rather than the load
-                            // stalling until it is lit. The cache is written once the bake completes, so the
-                            // key it is written under is remembered here.
+                            // Interactive play enters the level on flat ambient and watches the light
+                            // stream in: the render loop polls TryCollectLatest and eases each snapshot in
+                            // as it lands, so a room fills with light over the first seconds rather than the
+                            // load stalling until it is lit. The cache is written once the bake completes,
+                            // under the key already remembered above.
                             _probeField = null;
-                            _probeBakeMission = id;
-                            _probeBakeSpacing = giSpacing;
-                            _probeBakeSun = bakeSunDirection;
                         }
                     }
                 }

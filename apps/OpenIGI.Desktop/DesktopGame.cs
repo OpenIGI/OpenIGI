@@ -86,9 +86,15 @@ internal sealed partial class DesktopGame : IDisposable
 
     // The cache key an in-flight interactive bake is written under once it finishes -- remembered here
     // because the load no longer blocks for the field, so the save moves to the frame the bake completes.
+    // The cast is kept too, so the live re-bake (F11) can trace the field again from the same inputs.
     private int _probeBakeMission;
     private float _probeBakeSpacing;
     private Vector3f _probeBakeSun;
+    private WorldRayCast? _bakeCast;
+
+    // One albedo for the whole level, shared by the load-time trace and the live re-bake. IGI's palette is
+    // concrete, snow and dirt, so a warm grey stands in for reading each hit's own texture.
+    private static readonly Vector3f ProbeBakeAlbedo = new(0.42f, 0.40f, 0.37f);
 
     // How the displayed field eases towards the newest bounce pass. The rate is an exponential approach in
     // reciprocal seconds -- at 2.0 the field covers ~86% of the gap in one second, which settles well
@@ -984,6 +990,32 @@ internal sealed partial class DesktopGame : IDisposable
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F12))
             {
                 showDebug = !showDebug;
+            }
+
+            // F11 re-bakes the lighting from scratch, live. It throws away every cached field and the one
+            // on screen, then starts tracing again from the same inputs this level loaded with, so the
+            // light resolves back in from nothing over the next seconds -- the way to see a change to the
+            // bake without reloading the level, and to watch it generate. Ignored where there is nothing to
+            // bake (GI off, or the level's scene or cast not yet set up).
+            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
+                && RenderCVars.GlobalIllumination.Value
+                && _scene is not null
+                && _bakeCast is not null)
+            {
+                _probeBake?.Cancel();
+                int cleared = _giCache.DeleteAll();
+
+                _probeField = null;
+                _probeTarget = null;
+                _device.SetIrradianceVolume(null);
+                probeArrivedAt = -1;
+                lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+
+                _probeBake = IrradianceProbeBake.Start(
+                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _logger);
+
+                _logger.Information(
+                    "GI", $"Re-baking the lighting from scratch (F11); cleared {cleared} cached field(s).");
             }
 
             // F1 swaps between flying and walking. The player takes the camera's position when it is
