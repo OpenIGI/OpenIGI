@@ -87,6 +87,32 @@ public abstract class UiElement
     /// <summary>Gets the rectangle the element occupies in pixels, valid after <see cref="Arrange"/>.</summary>
     public UiRect Bounds { get; private set; }
 
+    /// <summary>Gets the part of <see cref="Bounds"/> left after every clipping ancestor has trimmed it.</summary>
+    /// <remarks>
+    /// The part of the element a pointer can actually reach. A row scrolled out of its
+    /// <see cref="OpenIGI.UI.Widgets.ScrollView"/> still has bounds — the viewport simply does not draw
+    /// them — and must not answer a click at those coordinates, which is what made a settings row behind
+    /// the panel edge steal clicks from the row that was really there. Directional traversal deliberately
+    /// keeps using <see cref="Bounds"/>, so pressing down still reaches a row that is off-screen and the
+    /// screen then scrolls it into view.
+    /// </remarks>
+    public UiRect VisibleBounds
+    {
+        get
+        {
+            UiRect visible = Bounds;
+            for (UiElement? ancestor = Parent; ancestor is not null && !visible.IsEmpty; ancestor = ancestor.Parent)
+            {
+                if (ancestor.ClipsChildren)
+                {
+                    visible = visible.Intersect(ancestor.ClipRect);
+                }
+            }
+
+            return visible;
+        }
+    }
+
     /// <summary>Gets the layout context from the most recent <see cref="Measure"/>.</summary>
     protected LayoutContext? Context { get; private set; }
 
@@ -153,6 +179,40 @@ public abstract class UiElement
         }
 
         return null;
+    }
+
+    /// <summary>Finds the nearest ancestor of a given type, starting with this element.</summary>
+    /// <typeparam name="T">The type to look for.</typeparam>
+    /// <returns>The element itself or its nearest matching ancestor, or <see langword="null"/> when none matches.</returns>
+    /// <remarks>This is how a screen finds the viewport a pointer or a newly-focused row is inside.</remarks>
+    public T? FindAncestor<T>()
+        where T : UiElement
+    {
+        for (UiElement? element = this; element is not null; element = element.Parent)
+        {
+            if (element is T match)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Determines whether an element is this one or one of its ancestors.</summary>
+    /// <param name="candidate">The element to look for.</param>
+    /// <returns><see langword="true"/> when <paramref name="candidate"/> is this element or encloses it.</returns>
+    public bool IsWithin(UiElement? candidate)
+    {
+        for (UiElement? element = this; element is not null; element = element.Parent)
+        {
+            if (ReferenceEquals(element, candidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Enumerates this element and its whole subtree in tree order.</summary>

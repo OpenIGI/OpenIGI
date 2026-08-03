@@ -434,7 +434,7 @@ public sealed class SilkGameWindow : IGameWindow
 
     private void SetButton(SilkMouseButton button, bool down)
     {
-        OpenIGI.Input.MouseButton? mapped = button switch
+        Input.MouseButton? mapped = button switch
         {
             SilkMouseButton.Left => OpenIGI.Input.MouseButton.Left,
             SilkMouseButton.Right => OpenIGI.Input.MouseButton.Right,

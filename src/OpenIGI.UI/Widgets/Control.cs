@@ -47,8 +47,19 @@ public abstract class Control : UiElement, IFocusable
     /// <summary>Gets a value indicating whether the control can take focus at all when enabled.</summary>
     protected virtual bool IsFocusable => true;
 
+    /// <summary>Gets a value indicating whether the pointer is currently over the control.</summary>
+    /// <remarks>Set by the screen that routes the pointer; a widget reads it to light a hovered row or tab.</remarks>
+    public bool IsPointerOver { get; private set; }
+
     /// <inheritdoc/>
     public UiRect FocusBounds => Bounds;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Overridden by a widget that draws outside its own layout box and expects clicks there — a menu that
+    /// opens a list below itself. Everything else is exactly where it was laid out.
+    /// </remarks>
+    public virtual UiRect PointerBounds => VisibleBounds;
 
     /// <inheritdoc/>
     public bool CanFocus =>
@@ -56,6 +67,39 @@ public abstract class Control : UiElement, IFocusable
 
     /// <inheritdoc/>
     public void SetFocused(bool focused) => Visual.SetFocused(focused && IsEnabled);
+
+    /// <summary>Tells the control whether the pointer is over it.</summary>
+    /// <param name="over">Whether the pointer is inside the control.</param>
+    public void SetPointerOver(bool over)
+    {
+        if (IsPointerOver == over)
+        {
+            return;
+        }
+
+        IsPointerOver = over;
+        OnPointerOverChanged(over);
+    }
+
+    /// <summary>Tells the control where the pointer is while it is over it.</summary>
+    /// <param name="point">The pointer position in pixels.</param>
+    /// <remarks>
+    /// Only a widget that is several targets in one — a tab strip, a list of rows — needs this; a button
+    /// is wholly one target and ignores it.
+    /// </remarks>
+    public virtual void PointerMoved(UiVec2 point)
+    {
+    }
+
+    /// <summary>Activates the control from a click at a point.</summary>
+    /// <param name="point">Where the pointer was clicked, in pixels.</param>
+    /// <remarks>
+    /// The default ignores the point and behaves exactly like <see cref="Activate"/>, which is right for a
+    /// button. A widget whose surface holds several targets overrides it so that clicking a particular tab
+    /// selects <em>that</em> tab, a click on a slider's track jumps to that value, and a click on a row
+    /// picks that row — the behaviour a pointer expects and that accept-on-the-whole-widget cannot give.
+    /// </remarks>
+    public virtual void ActivateAt(UiVec2 point) => Activate();
 
     /// <summary>Sets whether the control is being pressed, for its press animation.</summary>
     /// <param name="pressed">Whether the control is pressed.</param>
@@ -80,8 +124,28 @@ public abstract class Control : UiElement, IFocusable
         }
     }
 
+    /// <summary>Raises <see cref="Activated"/> without running <see cref="OnActivate"/>.</summary>
+    /// <remarks>
+    /// For a widget whose <see cref="ActivateAt"/> has already done the work the activation stands for —
+    /// a dropdown that stepped to the option the pointer clicked — so the listeners still hear about it
+    /// without the default step happening a second time.
+    /// </remarks>
+    protected void RaiseActivated()
+    {
+        if (IsEnabled)
+        {
+            Activated?.Invoke(this);
+        }
+    }
+
     /// <summary>Called when the control is activated, before <see cref="Activated"/> is raised.</summary>
     protected virtual void OnActivate()
+    {
+    }
+
+    /// <summary>Called when the pointer enters or leaves the control.</summary>
+    /// <param name="over">Whether the pointer is now inside the control.</param>
+    protected virtual void OnPointerOverChanged(bool over)
     {
     }
 

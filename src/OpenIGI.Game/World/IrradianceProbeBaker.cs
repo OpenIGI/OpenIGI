@@ -35,6 +35,20 @@ public static class IrradianceProbeBaker
     /// </remarks>
     public const int RaysPerProbe = 64;
 
+    /// <summary>How many times the light is allowed to bounce through the volume.</summary>
+    /// <remarks>
+    /// One bounce is a surface lit by the sun and the sky and nothing else, which leaves a room the sun
+    /// never reaches almost dark -- the light that fills such a room is what has already reflected two,
+    /// three, four times off its walls. Each extra pass re-traces every probe reading the light the last
+    /// pass left on the geometry, so the series converges on the true multi-bounce answer. It is a
+    /// one-time cached bake, so bounces cost nothing at runtime and the count is set for convergence, not
+    /// speed: at the grey retail albedo (~0.4) the fifth pass adds about two per cent, but a white-walled
+    /// room reflects far more per bounce and keeps gaining for several more, so eight is past the point
+    /// ANY surface still adds visibly. This is the difference between an interior that reads lit and one
+    /// that reads like a cave, and it is why the sun through a window fills the room rather than its floor.
+    /// </remarks>
+    public const int Bounces = 8;
+
     /// <summary>How far, in metres, a probe looks before calling a direction open sky.</summary>
     public const float MaxTraceMetres = 30f;
 
@@ -115,28 +129,38 @@ public static class IrradianceProbeBaker
             MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
         };
 
-        Parallel.For(0, countZ, options, z =>
+        // One pass per bounce. The first reads no previous light (a surface lit by sun and sky alone);
+        // each after it reads the light the last pass left on the geometry, so a further bounce arrives
+        // and the series converges on the true multi-bounce answer. The previous pass is a snapshot the
+        // whole grid reads while this pass overwrites the live volume, so the reads never race the writes.
+        for (int bounce = 0; bounce < Math.Max(Bounces, 1); bounce++)
         {
-            float[] coefficients = new float[IrradianceVolume.CoefficientsPerProbe];
+            IrradianceVolume? previous = bounce == 0 ? null : volume.Clone();
 
-            for (int y = 0; y < countY; y++)
+            Parallel.For(0, countZ, options, z =>
             {
-                for (int x = 0; x < countX; x++)
-                {
-                    TraceProbe(
-                        volume,
-                        volume.PositionOf(x, y, z),
-                        directions,
-                        cast,
-                        sunDirection,
-                        groundAlbedo,
-                        volume.IndexOf(x, y, z),
-                        coefficients);
-                }
-            }
-        });
+                float[] coefficients = new float[IrradianceVolume.CoefficientsPerProbe];
 
-        log.Information(LogCategory, "Probe bake complete.");
+                for (int y = 0; y < countY; y++)
+                {
+                    for (int x = 0; x < countX; x++)
+                    {
+                        TraceProbe(
+                            volume,
+                            volume.PositionOf(x, y, z),
+                            directions,
+                            cast,
+                            sunDirection,
+                            groundAlbedo,
+                            volume.IndexOf(x, y, z),
+                            coefficients,
+                            previous);
+                    }
+                }
+            });
+        }
+
+        log.Information(LogCategory, $"Probe bake complete ({Bounces} bounce(s)).");
         return volume;
     }
 
@@ -206,7 +230,8 @@ public static class IrradianceProbeBaker
         Vector3f sunDirection,
         Vector3f groundAlbedo,
         int probe,
-        Span<float> coefficients)
+        Span<float> coefficients,
+        IrradianceVolume? previous)
     {
         coefficients.Clear();
 
@@ -265,10 +290,28 @@ public static class IrradianceProbeBaker
                     }
                 }
 
+                // The further bounce: the surface this ray landed on is itself lit by the light the last
+                // pass left on the volume, and it reflects a share of that onwards too. Sampled at the hit,
+                // pushed a little off the surface along its normal so the read is of the room the surface
+                // faces rather than of the wall it is part of. Null on the first pass, when there is no
+                // previous light to gather -- that pass is the sun-and-sky-only bounce this one builds on.
+                Vector3f indirect = default;
+
+                if (previous is not null)
+                {
+                    float biasMetres = (float)(SunBiasInUnits / WorldScene.UnitsPerMetre);
+                    Vector3f hitMetres = new(
+                        (float)(hit.Position.X / WorldScene.UnitsPerMetre) + (hit.Normal.X * biasMetres),
+                        (float)(hit.Position.Y / WorldScene.UnitsPerMetre) + (hit.Normal.Y * biasMetres),
+                        (float)(hit.Position.Z / WorldScene.UnitsPerMetre) + (hit.Normal.Z * biasMetres));
+
+                    indirect = previous.SampleIrradiance(hitMetres, hit.Normal);
+                }
+
                 arriving = new Vector3f(
-                    groundAlbedo.X * exposure,
-                    groundAlbedo.Y * exposure,
-                    groundAlbedo.Z * exposure);
+                    groundAlbedo.X * (exposure + indirect.X),
+                    groundAlbedo.Y * (exposure + indirect.Y),
+                    groundAlbedo.Z * (exposure + indirect.Z));
             }
             else
             {

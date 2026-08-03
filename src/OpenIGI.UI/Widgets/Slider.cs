@@ -17,6 +17,7 @@ public class Slider : Control
 {
     private readonly Spring _display;
     private float _value;
+    private UiRect _track;
 
     /// <summary>Initializes a new instance of the <see cref="Slider"/> class.</summary>
     /// <param name="theme">The theme to draw from.</param>
@@ -94,6 +95,39 @@ public class Slider : Control
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A click lands the value where the pointer is along the track, snapped to <see cref="Step"/>, which
+    /// is the only sensible reading of clicking a slider — activating it as a whole would mean nothing.
+    /// </remarks>
+    public override void ActivateAt(UiVec2 point)
+    {
+        UiRect track = _track;
+        if (track.Width <= 0f)
+        {
+            return;
+        }
+
+        float t = Math.Clamp((point.X - track.X) / track.Width, 0f, 1f);
+        float raw = Minimum + (t * (Maximum - Minimum));
+        Value = Step > 0f ? Minimum + (MathF.Round((raw - Minimum) / Step) * Step) : raw;
+        RaiseActivated();
+    }
+
+    /// <inheritdoc/>
+    protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
+    {
+        // The track is resolved here rather than in the draw so a click can be mapped onto it whether or
+        // not the widget has been drawn yet.
+        float pad = context.Px(8f);
+        float trackH = context.Px(6f);
+        _track = new UiRect(
+            contentRect.X + pad,
+            contentRect.Bottom - pad - trackH,
+            MathF.Max(0f, contentRect.Width - (pad * 2f)),
+            trackH);
+    }
+
+    /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
         base.OnUpdate(elapsedSeconds);
@@ -111,7 +145,7 @@ public class Slider : Control
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = Visual.Focus;
+        float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
         if (focus > 0.001f)
         {
             painter.FillRect(Bounds, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * focus)), BlendMode.AlphaBlend);
@@ -127,10 +161,8 @@ public class Slider : Control
         float readoutWidth = Theme.Body.MeasureWidth(readout, sizePx);
         painter.DrawText(Theme.Body, readout, new UiVec2(Bounds.Right - pad - readoutWidth, Bounds.Y + pad), sizePx, textColor);
 
-        // The track sits below the caption row.
-        float trackH = painter.Context.Px(6f);
-        float trackY = Bounds.Bottom - pad - trackH;
-        var track = new UiRect(Bounds.X + pad, trackY, Bounds.Width - (pad * 2f), trackH);
+        // The track sits below the caption row, where Arrange put it.
+        UiRect track = _track;
         painter.FillRect(track, Theme.Border, BlendMode.AlphaBlend);
 
         float t = Math.Clamp(_display.Value, 0f, 1f);

@@ -93,6 +93,19 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void CaptureFrame(int width, int height, Span<Bgra32> destination);
 
+    /// <summary>Copies the render target into a texture, without going through system memory.</summary>
+    /// <param name="texture">The destination texture; it must be at least <paramref name="width"/> × <paramref name="height"/>.</param>
+    /// <param name="width">The width to copy in pixels.</param>
+    /// <param name="height">The height to copy in pixels.</param>
+    /// <remarks>
+    /// <see cref="CaptureFrame"/>'s counterpart for the case where the frame is wanted <em>as a texture</em>
+    /// rather than as an image: it stays on the GPU, so it costs a copy instead of a read back plus an
+    /// upload. What it is for is a cross-dissolve — holding the last frame of the outgoing picture so it can
+    /// be drawn over the incoming one and faded off, which is the only way to blend two of something the
+    /// renderer only keeps one of.
+    /// </remarks>
+    void CopyFrameToTexture(TextureHandle texture, int width, int height);
+
     /// <summary>Allocates a texture and uploads its pixels. Mirrors <c>AllocTexture</c> + <c>DownloadTexture</c>.</summary>
     /// <param name="description">The texture's size, mip count and sampling.</param>
     /// <param name="pixels">The whole mip chain, largest level first, each level tightly packed.</param>

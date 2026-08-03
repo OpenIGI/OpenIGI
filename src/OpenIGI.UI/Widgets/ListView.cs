@@ -21,6 +21,7 @@ public class ListView : Control
     private readonly Spring _scroll = new(0f, smoothTime: 0.12f);
     private readonly Spring _highlight = new(0f, smoothTime: 0.10f);
     private int _selected;
+    private int _hovered = -1;
 
     /// <summary>Initializes a new instance of the <see cref="ListView"/> class.</summary>
     /// <param name="theme">The theme to draw from.</param>
@@ -96,6 +97,46 @@ public class ListView : Control
         }
     }
 
+    /// <summary>Gets the index of the row under a point, or -1 when the point is over none.</summary>
+    /// <param name="point">The point in pixels.</param>
+    /// <returns>The row index, or -1.</returns>
+    public int IndexAt(UiVec2 point)
+    {
+        float rowHeight = Context?.Px(RowHeight) ?? RowHeight;
+        if (rowHeight <= 0f || !Bounds.Contains(point))
+        {
+            return -1;
+        }
+
+        int index = (int)MathF.Floor((point.Y - Bounds.Y + Math.Clamp(_scroll.Value, 0f, MaxScrollPixels(rowHeight))) / rowHeight);
+        return index >= 0 && index < _items.Count ? index : -1;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Clicking a row picks that row and activates it, rather than activating whatever was current.</remarks>
+    public override void ActivateAt(UiVec2 point)
+    {
+        int index = IndexAt(point);
+        if (index >= 0)
+        {
+            SelectedIndex = index;
+        }
+
+        Activate();
+    }
+
+    /// <inheritdoc/>
+    public override void PointerMoved(UiVec2 point) => _hovered = IndexAt(point);
+
+    /// <inheritdoc/>
+    protected override void OnPointerOverChanged(bool over)
+    {
+        if (!over)
+        {
+            _hovered = -1;
+        }
+    }
+
     /// <inheritdoc/>
     protected override void OnActivate()
     {
@@ -104,6 +145,8 @@ public class ListView : Control
             ItemActivated?.Invoke(_selected);
         }
     }
+
+    private float MaxScrollPixels(float rowHeight) => MathF.Max(0f, (_items.Count * rowHeight) - Bounds.Height);
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
@@ -167,8 +210,17 @@ public class ListView : Control
             }
 
             bool selected = i == _selected;
+            if (i == _hovered && !selected)
+            {
+                painter.FillRect(
+                    new UiRect(Bounds.X, y, Bounds.Width, rowHeight),
+                    Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * 0.5f)),
+                    BlendMode.AlphaBlend);
+            }
+
             Bgra32 color = !IsEnabled ? Theme.TextDisabled
                 : selected ? Interpolate.Lerp(Theme.Text, Theme.Accent, Visual.Focus)
+                : i == _hovered ? Theme.Text
                 : Theme.TextMuted;
             float textY = y + ((rowHeight - Theme.Body.LineHeight(sizePx)) * 0.5f);
             painter.DrawText(Theme.Body, _items[i], new UiVec2(Bounds.X + pad, textY), sizePx, color);

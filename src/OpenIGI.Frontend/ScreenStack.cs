@@ -148,6 +148,18 @@ public sealed class ScreenStack
             }
         }
 
+        // A screen put on the stack from inside another screen's input — a tab press, which resets the
+        // stack — arrives after the prepare pass above and has no widget tree yet. Preparing it here rather
+        // than leaving it until the next frame is what stops the swap showing one frame of nothing: without
+        // it, the whole shell blinked out and back every time a tab was clicked.
+        foreach (Screen screen in _screens)
+        {
+            if (screen.Root is null)
+            {
+                screen.Prepare(context);
+            }
+        }
+
         _screens.RemoveAll(s => s.IsFinishedExiting);
     }
 

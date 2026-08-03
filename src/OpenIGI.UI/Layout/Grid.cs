@@ -80,25 +80,51 @@ public class Grid : UiElement
         float[] columnWidths = ResolveTracks(columns, inner.X, columnGap, context, horizontal: true);
         float[] rowHeights = ResolveTracks(rows, inner.Y, rowGap, context, horizontal: false);
 
-        _lastColumnWidths = columnWidths;
-        _lastRowHeights = rowHeights;
-        _lastColumnGap = columnGap;
-        _lastRowGap = rowGap;
-
         float width = Sum(columnWidths) + (columnGap * Math.Max(0, columnWidths.Length - 1));
         float height = Sum(rowHeights) + (rowGap * Math.Max(0, rowHeights.Length - 1));
         return new UiVec2(width + padding.Horizontal, height + padding.Vertical);
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// The tracks are resolved again here, against the space the grid was actually <em>given</em>. Carrying
+    /// the sizes over from the measure pass is wrong whenever a grid is arranged into less room than it was
+    /// offered — a grid inside a narrow column of an outer grid is measured against the whole viewport,
+    /// so its star tracks came out viewport-wide and its children were laid out hanging off the side of
+    /// the column they belong to.
+    /// </remarks>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
         UiRect inner = contentRect.Deflate(context.Px(Padding));
-        float[] columnWidths = _lastColumnWidths;
-        float[] rowHeights = _lastRowHeights;
+        float columnGap = context.Px(ColumnSpacing);
+        float rowGap = context.Px(RowSpacing);
 
-        float[] columnX = Offsets(inner.X, columnWidths, _lastColumnGap);
-        float[] rowY = Offsets(inner.Y, rowHeights, _lastRowGap);
+        GridLength[] columns = ColumnDefinitions.Count > 0 ? [.. ColumnDefinitions] : [GridLength.Star];
+        GridLength[] rows = RowDefinitions.Count > 0 ? [.. RowDefinitions] : [GridLength.Star];
+
+        float[] columnWidths = ResolveTracks(columns, inner.Width, columnGap, context, horizontal: true);
+
+        // Re-measure each child against the width its cell really has before the rows are sized. A child
+        // that sizes to content across the axis it is not stretched on — a wrapping paragraph — reports a
+        // different height at a different width, and an auto row that trusted the measure pass would be
+        // the height the text needed when it was offered the whole viewport.
+        foreach (UiElement child in Children)
+        {
+            if (child.Visibility == Visibility.Collapsed)
+            {
+                continue;
+            }
+
+            Cell cell = CellOf(child);
+            int col = Math.Min(cell.Column, columnWidths.Length - 1);
+            int colSpan = Math.Min(cell.ColumnSpan, columnWidths.Length - col);
+            child.Measure(context, new UiVec2(SpanSize(columnWidths, col, colSpan, columnGap), inner.Height));
+        }
+
+        float[] rowHeights = ResolveTracks(rows, inner.Height, rowGap, context, horizontal: false);
+
+        float[] columnX = Offsets(inner.X, columnWidths, columnGap);
+        float[] rowY = Offsets(inner.Y, rowHeights, rowGap);
 
         foreach (UiElement child in Children)
         {
@@ -107,7 +133,7 @@ public class Grid : UiElement
                 continue;
             }
 
-            Cell cell = _cells.TryGetValue(child, out Cell c) ? c : new Cell(0, 0, 1, 1);
+            Cell cell = CellOf(child);
             int col = Math.Min(cell.Column, columnWidths.Length - 1);
             int row = Math.Min(cell.Row, rowHeights.Length - 1);
             int colSpan = Math.Min(cell.ColumnSpan, columnWidths.Length - col);
@@ -115,11 +141,13 @@ public class Grid : UiElement
 
             float x = columnX[col];
             float y = rowY[row];
-            float w = SpanSize(columnWidths, col, colSpan, _lastColumnGap);
-            float h = SpanSize(rowHeights, row, rowSpan, _lastRowGap);
+            float w = SpanSize(columnWidths, col, colSpan, columnGap);
+            float h = SpanSize(rowHeights, row, rowSpan, rowGap);
             child.Arrange(new UiRect(x, y, w, h));
         }
     }
+
+    private Cell CellOf(UiElement child) => _cells.TryGetValue(child, out Cell cell) ? cell : new Cell(0, 0, 1, 1);
 
     private static float Sum(float[] values)
     {
@@ -215,11 +243,6 @@ public class Grid : UiElement
 
         return size;
     }
-
-    private float[] _lastColumnWidths = [];
-    private float[] _lastRowHeights = [];
-    private float _lastColumnGap;
-    private float _lastRowGap;
 
     private readonly record struct Cell(int Row, int Column, int RowSpan, int ColumnSpan);
 }

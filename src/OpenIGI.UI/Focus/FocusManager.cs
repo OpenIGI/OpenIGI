@@ -157,20 +157,37 @@ public sealed class FocusManager
         return true;
     }
 
-    /// <summary>Sets focus from a pointer position, focusing the topmost focusable widget under it.</summary>
+    /// <summary>Finds the topmost focusable widget under a pointer, without focusing it.</summary>
     /// <param name="point">The pointer position in pixels.</param>
-    /// <returns>The widget focused, or <see langword="null"/> when the pointer is over none.</returns>
-    public IFocusable? FocusAt(UiVec2 point)
+    /// <returns>The widget, or <see langword="null"/> when the pointer is over none.</returns>
+    /// <remarks>
+    /// The hover test. It goes through the focus model rather than through
+    /// <see cref="UiElement.HitTest"/> because a widget may answer for a region outside its own layout box
+    /// — an open menu's list — and the tree walk, which descends only into elements whose bounds contain
+    /// the point, would never reach it.
+    /// </remarks>
+    public IFocusable? At(UiVec2 point)
     {
         IFocusable? hit = null;
         foreach (IFocusable candidate in Candidates())
         {
-            if (candidate.FocusBounds.Contains(point))
+            // The clipped region, not the laid-out one: a row scrolled out of a viewport is still a
+            // candidate for directional traversal but must not be reachable by pointing at it.
+            if (candidate.PointerBounds.Contains(point))
             {
                 hit = candidate; // later widgets are drawn on top, so keep the last match
             }
         }
 
+        return hit;
+    }
+
+    /// <summary>Sets focus from a pointer position, focusing the topmost focusable widget under it.</summary>
+    /// <param name="point">The pointer position in pixels.</param>
+    /// <returns>The widget focused, or <see langword="null"/> when the pointer is over none.</returns>
+    public IFocusable? FocusAt(UiVec2 point)
+    {
+        IFocusable? hit = At(point);
         if (hit is not null)
         {
             Focus(hit);

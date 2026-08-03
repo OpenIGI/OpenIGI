@@ -227,4 +227,131 @@ public sealed class FocusTests
         Assert.True(row.TryCaptureKey(OpenIGI.Input.KeyCode.Escape));
         Assert.Equal(OpenIGI.Input.KeyCode.LeftControl, row.BoundKey);
     }
+
+    [Fact]
+    public void Clicking_a_tab_selects_that_tab_rather_than_the_current_one()
+    {
+        UiTheme theme = Theme();
+        var tabs = new TabStrip(theme, ["Graphics", "Display", "Audio", "Controls"])
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        Layout(tabs);
+
+        int changedTo = -1;
+        tabs.SelectionChanged += i => changedTo = i;
+
+        // Every tab must be reachable by pointing at it — the whole strip being one control is what made
+        // clicking Audio only ever re-activate Graphics.
+        for (int i = 0; i < tabs.Tabs.Count; i++)
+        {
+            Assert.Equal(i, tabs.IndexAt(tabs.RectOf(i).Center));
+        }
+
+        tabs.ActivateAt(tabs.RectOf(2).Center);
+        Assert.Equal(2, tabs.SelectedIndex);
+        Assert.Equal(2, changedTo);
+    }
+
+    [Fact]
+    public void The_wheel_scrolls_a_viewport_and_a_row_scrolled_out_of_it_cannot_be_clicked()
+    {
+        UiTheme theme = Theme();
+        var scroll = new ScrollView(theme) { Height = 200f };
+        var rows = new StackPanel { Orientation = Orientation.Vertical };
+        var buttons = new List<Button>();
+        for (int i = 0; i < 20; i++)
+        {
+            var button = new Button(theme, $"Row {i}");
+            buttons.Add(button);
+            rows.AddChild(button);
+        }
+
+        scroll.SetContent(rows);
+        Layout(scroll);
+
+        Assert.True(scroll.MaxScroll > 0f);
+        Assert.True(scroll.ScrollByWheel(-2f));   // pulling the wheel towards you scrolls down
+        Assert.True(scroll.ScrollOffset > 0f);
+
+        // The last row is laid out well below the viewport, so it is still a candidate for directional
+        // traversal but must not answer a click at coordinates the viewport does not show.
+        Button offScreen = buttons[^1];
+        Assert.True(offScreen.Bounds.Bottom > scroll.Bounds.Bottom);
+        Assert.True(offScreen.VisibleBounds.IsEmpty);
+        Assert.True(offScreen.CanFocus);
+
+        var focus = new FocusManager(scroll);
+        Assert.Null(focus.FocusAt(offScreen.Bounds.Center));
+    }
+
+    [Fact]
+    public void A_viewport_scrolls_a_newly_focused_row_back_into_view()
+    {
+        UiTheme theme = Theme();
+        var scroll = new ScrollView(theme) { Height = 200f };
+        var rows = new StackPanel { Orientation = Orientation.Vertical };
+        var buttons = new List<Button>();
+        for (int i = 0; i < 20; i++)
+        {
+            var button = new Button(theme, $"Row {i}");
+            buttons.Add(button);
+            rows.AddChild(button);
+        }
+
+        scroll.SetContent(rows);
+        Layout(scroll);
+
+        scroll.EnsureVisible(buttons[^1].Bounds);
+        Assert.Equal(scroll.MaxScroll, scroll.ScrollOffset, 2);
+    }
+
+    [Fact]
+    public void A_dropdown_button_lists_a_disabled_choice_but_will_not_pick_it()
+    {
+        UiTheme theme = Theme();
+        var menu = new DropdownButton(theme, "PROJECT I.G.I.", ["Project I.G.I.", "I.G.I. 2"])
+        {
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            CurrentIndex = 0,
+            ItemEnabled = index => index == 0,
+        };
+        Layout(menu);
+
+        int picked = -1;
+        menu.ItemSelected += i => picked = i;
+
+        // Shut, it answers only for itself; open, it answers for its list too — which is what lets a click
+        // below the bar reach it at all.
+        UiRect shut = menu.PointerBounds;
+        menu.Activate();
+        Assert.True(menu.IsOpen);
+        Assert.True(menu.PointerBounds.Height > shut.Height);
+        Layout(menu);
+
+        // The second row is the unavailable title. Clicking it must do nothing at all — not select it, and
+        // not quietly shut the menu as though it had worked.
+        var second = new UiVec2(menu.Bounds.X + 10f, menu.Bounds.Bottom + (menu.PointerBounds.Height - menu.Bounds.Height) * 0.75f);
+        menu.ActivateAt(second);
+        Assert.Equal(-1, picked);
+        Assert.True(menu.IsOpen);
+        Assert.Equal(0, menu.CurrentIndex);
+    }
+
+    [Fact]
+    public void A_dropdown_steps_over_options_that_cannot_be_chosen()
+    {
+        UiTheme theme = Theme();
+        var dropdown = new Dropdown(theme, "Game", ["Installed", "Missing", "Also installed"])
+        {
+            OptionEnabled = index => index != 1,
+        };
+
+        dropdown.Step(1);
+        Assert.Equal(2, dropdown.SelectedIndex); // the middle option is not landed on
+        dropdown.Step(-1);
+        Assert.Equal(0, dropdown.SelectedIndex);
+    }
 }

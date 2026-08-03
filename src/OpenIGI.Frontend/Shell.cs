@@ -32,6 +32,34 @@ public sealed class Shell
     /// <summary>Gets the screen stack the shell drives.</summary>
     public ScreenStack Stack { get; }
 
+    /// <summary>Opens the shell on a named section instead of the landing page.</summary>
+    /// <param name="tab">The section name — <c>campaign</c>, <c>settings</c>, <c>profile</c> or <c>extras</c>.</param>
+    /// <returns><see langword="true"/> when the name matched a section.</returns>
+    /// <remarks>
+    /// For the composition root's <c>-shelltab</c> development shortcut, which is the cinematic shell's
+    /// counterpart to <c>-screen</c>: a capture of the campaign or the settings should not need someone to
+    /// click their way there first. An unknown name leaves the shell on the landing page.
+    /// </remarks>
+    public bool OpenOn(string? tab)
+    {
+        Screen? screen = tab?.ToLowerInvariant() switch
+        {
+            "campaign" => new CampaignScreen(_context),
+            "settings" => new SettingsScreen(_context),
+            "profile" or "profiles" => new ProfilesScreen(_context),
+            "extras" => new ExtrasScreen(_context),
+            _ => null,
+        };
+
+        if (screen is null)
+        {
+            return false;
+        }
+
+        Stack.Reset(screen, animate: false);
+        return true;
+    }
+
     /// <summary>Advances the shell for a frame.</summary>
     /// <param name="context">The layout context for this frame.</param>
     /// <param name="input">The frame's input.</param>

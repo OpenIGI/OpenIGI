@@ -114,7 +114,7 @@ public sealed class ShellTests
     }
 
     [Fact]
-    public void Activating_campaign_pushes_the_mission_carousel_bound_to_the_missions()
+    public void Activating_campaign_lists_the_missions_as_rows_bound_to_the_mission_data()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
         try
@@ -127,12 +127,51 @@ public sealed class ShellTests
             Pump(shell, 0.6f);
 
             var screen = Assert.IsType<CampaignScreen>(shell.Stack.Top);
-            Carousel carousel = Find<Carousel>(screen, _ => true)!;
-            Assert.Equal(2, carousel.Items.Count);
-            Assert.Contains("Mission One", carousel.Items[0]);
+            List<ListCard> rows = [.. screen.Root!.Descendants().OfType<ListCard>()];
+            Assert.Equal(2, rows.Count);
+            Assert.Equal("01", rows[0].Badge);
+            Assert.Equal("Mission One", rows[0].Title);
+            Assert.Equal("Mission Two", rows[1].Title);
+
+            // Every row carries its progress, which is what tells a locked mission from an available one.
+            Assert.All(rows, row => Assert.NotEmpty(row.Tag));
 
             // Entering the campaign previews the first mission behind the menu.
             Assert.Equal(1, host.Previewed);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Clicking_a_mission_row_selects_it_and_previews_that_mission()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            var screen = (CampaignScreen)shell.Stack.Top!;
+            ListCard second = screen.Root!.Descendants().OfType<ListCard>().ElementAt(1);
+            UiVec2 centre = second.Bounds.Center;
+
+            var input = new InputState();
+            input.BeginFrame();
+            input.Mouse.SetPosition(centre.X, centre.Y);
+            input.Mouse.AddMotion(4f, 4f);
+            input.Mouse.SetButton(MouseButton.Left, true);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+
+            Assert.True(second.Selected);
+            Assert.Equal(2, host.Previewed);
         }
         finally
         {
@@ -206,7 +245,7 @@ public sealed class ShellTests
             Pump(shell, 0.6f);
 
             var campaign = (CampaignScreen)shell.Stack.Top!;
-            Find<Button>(campaign, b => b.Text == "Play")!.Activate();
+            Find<Button>(campaign, b => b.Text == "PLAY")!.Activate();
 
             Assert.Equal(1, host.StartedMission); // first mission selected by default
             Assert.True(host.StartedDifficulty >= 0);

@@ -1,4 +1,4 @@
-using OpenIGI.Game.Ai;
+﻿using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 
 namespace OpenIGI.Desktop;
@@ -76,6 +76,14 @@ public readonly record struct DesktopOptions(
         int height = 0;
         string? screenshot = null;
         (double X, double Y, double Z)? cameraPosition = null;
+
+        // Null until a flight end pose is named. When any of the three is set the free camera is flown
+        // from its opening pose to this one over the frame budget, and -screenshot writes one numbered
+        // frame per rendered frame instead of a single still -- the only way to see the temporal filter's
+        // in-motion behaviour, which a static capture cannot show.
+        (double X, double Y, double Z)? cameraEnd = null;
+        float? cameraYawEnd = null;
+        float? cameraPitchEnd = null;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
@@ -88,6 +96,8 @@ public readonly record struct DesktopOptions(
         int startScreen = 0;
         int startMission = 0;
         bool vanillaMenu = false;
+        string? shellTab = null;
+        string? showcasePointDump = null;
         bool bakeAll = false;
 
         List<string> startupCommands = [];
@@ -227,6 +237,28 @@ public readonly record struct DesktopOptions(
 
                 cameraPosition = (px, py, pz);
             }
+            else if (arg.Equals("camend", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "camend");
+                string[] parts = value.Split(',');
+                if (parts.Length != 3
+                    || !double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ex)
+                    || !double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ey)
+                    || !double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double ez))
+                {
+                    throw new ArgumentException($"-camend expects X,Y,Z in metres, got '{value}'.", nameof(args));
+                }
+
+                cameraEnd = (ex, ey, ez);
+            }
+            else if (arg.Equals("yawend", StringComparison.OrdinalIgnoreCase))
+            {
+                cameraYawEnd = ParseNumber(Next(args, ref i, "yawend"), "yawend", args);
+            }
+            else if (arg.Equals("pitchend", StringComparison.OrdinalIgnoreCase))
+            {
+                cameraPitchEnd = ParseNumber(Next(args, ref i, "pitchend"), "pitchend", args);
+            }
             else if (arg.Equals("viewdist", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "viewdist");
@@ -258,6 +290,19 @@ public readonly record struct DesktopOptions(
             {
                 // Just the front end: the byte-for-byte retail menu system, but the modern renderer.
                 vanillaMenu = true;
+            }
+            else if (arg.Equals("poidump", StringComparison.OrdinalIgnoreCase))
+            {
+                // Walk every mission, find the places its backdrop should circle, write them out and quit.
+                // A tool, not a game mode -- the file it writes is then owned and edited by hand.
+                showcasePointDump = Next(args, ref i, "poidump");
+            }
+            else if (arg.Equals("shelltab", StringComparison.OrdinalIgnoreCase))
+            {
+                // The cinematic shell's counterpart to -screen: open straight on a section rather than on
+                // the landing page, so a capture of the campaign or the settings does not need someone to
+                // click their way there first.
+                shellTab = Next(args, ref i, "shelltab");
             }
             else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
             {
@@ -304,6 +349,13 @@ public readonly record struct DesktopOptions(
             height = 480;
         }
 
+        // A flight is a free-camera move: the walking player never takes an authored path, so naming an
+        // end pose is by itself a request to fly, the same way -size is a request for a window.
+        if (cameraEnd is not null || cameraYawEnd is not null || cameraPitchEnd is not null)
+        {
+            startFlying = true;
+        }
+
         return new DesktopOptions(
             gamePath,
             resolvedMode,
@@ -324,15 +376,57 @@ public readonly record struct DesktopOptions(
             uiScale)
         {
             CameraPosition = cameraPosition,
+            CameraEnd = cameraEnd,
+            CameraYawEnd = cameraYawEnd,
+            CameraPitchEnd = cameraPitchEnd,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             VanillaMenu = vanillaMenu,
+            ShellTab = shellTab,
+            ShowcasePointDump = showcasePointDump,
             BakeAll = bakeAll,
         };
     }
 
+    /// <summary>
+    /// Gets the cinematic shell's section to open on — <c>campaign</c>, <c>settings</c>, <c>profile</c> or
+    /// <c>extras</c> — or <see langword="null"/> for the landing page. Set by <c>-shelltab</c>.
+    /// </summary>
+    /// <remarks>A development shortcut, the shell's counterpart to <c>-screen</c>; not a game feature.</remarks>
+    public string? ShellTab { get; init; }
+
+    /// <summary>
+    /// Gets the file every mission's showcase places are written to, or <see langword="null"/> to run the
+    /// game. Set by <c>-poidump</c>.
+    /// </summary>
+    /// <remarks>
+    /// A tool: it builds each mission in turn, finds the places its menu backdrop should circle, writes
+    /// them out and quits. What it produces is then hand-owned — see <see cref="ShowcasePointFile"/>.
+    /// </remarks>
+    public string? ShowcasePointDump { get; init; }
+
     /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
     public (double X, double Y, double Z)? CameraPosition { get; init; }
+
+    /// <summary>
+    /// Gets the world position in metres the fly-through camera ends a flight at, or <see langword="null"/>
+    /// for no flight. Set by <c>-camend</c>; see <see cref="HasFlight"/>.
+    /// </summary>
+    public (double X, double Y, double Z)? CameraEnd { get; init; }
+
+    /// <summary>Gets the yaw in radians the flight ends on, or <see langword="null"/> to hold the opening yaw. Set by <c>-yawend</c>.</summary>
+    public float? CameraYawEnd { get; init; }
+
+    /// <summary>Gets the pitch in radians the flight ends on, or <see langword="null"/> to hold the opening pitch. Set by <c>-pitchend</c>.</summary>
+    public float? CameraPitchEnd { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether a scripted free-camera flight is asked for — an end pose the opening
+    /// camera is flown to over the frame budget. When set, <c>-screenshot</c> writes one numbered frame per
+    /// rendered frame rather than a single still, so the in-motion behaviour of the temporal filters is
+    /// visible in the sequence.
+    /// </summary>
+    public bool HasFlight => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null;
 
     /// <summary>
     /// Gets the difficulty override from <c>-difficulty</c>, or <see langword="null"/> to use the active
@@ -400,6 +494,12 @@ public readonly record struct DesktopOptions(
           -screen <id>     Open on this menu screen instead of the one the script names.
                            mainmenu.qvm has 900 and 904-916.
           -campos X,Y,Z    Open the fly-through camera at this world position in metres.
+          -camend X,Y,Z    Fly the free camera from its opening pose to this one over the frame
+                           budget (implies -freecam). With -screenshot it writes one numbered
+                           frame per rendered frame, for a moving-camera sequence -- the only way
+                           to judge the temporal filters (GI, TAA) in motion. Pair with -frames.
+          -yawend <rad>    Yaw the flight ends on. Defaults to the opening yaw (-yaw).
+          -pitchend <rad>  Pitch the flight ends on. Defaults to the opening pitch (-pitch).
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
           -vanilla         The whole remaster track off: the retail menu system and the original's
@@ -407,6 +507,11 @@ public readonly record struct DesktopOptions(
                            including the original's 30 Hz between-tick presentation).
           -vanillamenu     The byte-for-byte retail menu system instead of the cinematic shell,
                            over the modern renderer.
+          -shelltab <s>    Open the cinematic shell on a section instead of its landing page:
+                           campaign, settings, profile or extras. The shell's -screen.
+          -poidump <f>     Find the places each mission's menu backdrop should circle, write them
+                           to <f> as menu-cameras.json, and quit. Run once; the file it writes is
+                           then edited by hand. Without it the places are found at load instead.
           -vanillarender   The cinematic shell over the original's render path
                            (shorthand for +gfx_preset vanilla).
           -bakeall         Trace every mission's global-illumination probe field, write it to the

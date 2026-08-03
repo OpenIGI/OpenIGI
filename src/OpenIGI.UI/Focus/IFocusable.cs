@@ -16,6 +16,14 @@ public interface IFocusable
     /// <summary>Gets the rectangle used to place the widget for directional traversal, in pixels.</summary>
     UiRect FocusBounds { get; }
 
+    /// <summary>Gets the region a pointer can hit, in pixels.</summary>
+    /// <remarks>
+    /// The same rectangle as <see cref="FocusBounds"/> for a widget nothing clips, and the clipped part of
+    /// it for one inside a scrolling viewport. The two are separate on purpose: a row scrolled out of sight
+    /// must not answer a click where it would be, but pressing down must still be able to reach it.
+    /// </remarks>
+    UiRect PointerBounds => FocusBounds;
+
     /// <summary>Gets a value indicating whether the widget can take focus right now.</summary>
     /// <remarks><see langword="false"/> for a disabled, hidden or collapsed widget.</remarks>
     bool CanFocus { get; }

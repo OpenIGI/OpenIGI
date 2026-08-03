@@ -1,5 +1,6 @@
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
@@ -68,13 +69,20 @@ public sealed class TerrainRenderer : IDisposable
     /// here and now, so a property assigned by an object initialiser would be set after the only
     /// moment it could have been read.
     /// </param>
+    /// <param name="derivedDetail">
+    /// Detail maps already derived for the ground tiles, one per tile and in tile order, or
+    /// <see langword="null"/> to derive them here. Deriving one measured at tens of milliseconds, so a
+    /// level's worth of them is most of a second; the menu's backdrop loader does the arithmetic on a
+    /// worker and passes the results in, leaving this constructor with only the upload.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">The terrain is not drawable.</exception>
     public TerrainRenderer(
         IGraphicsDevice device,
         TerrainSurface surface,
         IIgiLogger? logger = null,
-        MaterialDetailPack? detailMaps = null)
+        MaterialDetailPack? detailMaps = null,
+        IReadOnlyList<Bgra32[]>? derivedDetail = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(surface);
@@ -91,7 +99,7 @@ public sealed class TerrainRenderer : IDisposable
         _terrain = surface.Terrain;
         _logger = logger ?? NullLogger.Instance;
         DetailMaps = detailMaps;
-        _tiles = UploadTiles();
+        _tiles = UploadTiles(derivedDetail);
     }
 
     /// <summary>Gets how many chunks the last <see cref="Draw"/> selected.</summary>
@@ -256,7 +264,7 @@ public sealed class TerrainRenderer : IDisposable
     /// Eighteen 128×128 tiles is a third of a megabyte, and a chunk can name any of them, so there is
     /// nothing to gain from doing this on demand. They repeat across the ground, hence the wrapping.
     /// </remarks>
-    private TextureHandle[] UploadTiles()
+    private TextureHandle[] UploadTiles(IReadOnlyList<Bgra32[]>? derivedDetail)
     {
         if (_terrain.Tiles is not { } atlas || atlas.Tiles.Count == 0)
         {
@@ -282,9 +290,17 @@ public sealed class TerrainRenderer : IDisposable
                 // Derived here rather than read from the pack, because a ground tile arrives as an
                 // index into an atlas and has no name to look one up with. There are a handful of them
                 // and they cover more of the screen than anything else, so this is both the cheapest
-                // case to derive in process and the one it would be most visible to skip.
-                DetailMaps?.AttachDerived(
-                    handles[i], tile.GetLevel(0), tile.Width, tile.Height);
+                // case to derive in process and the one it would be most visible to skip. A caller that
+                // has already done the arithmetic off this thread hands the result in instead.
+                if (derivedDetail is not null && i < derivedDetail.Count && derivedDetail[i].Length > 0)
+                {
+                    DetailMaps?.AttachPacked(handles[i], derivedDetail[i], tile.Width, tile.Height);
+                }
+                else
+                {
+                    DetailMaps?.AttachDerived(
+                        handles[i], tile.GetLevel(0), tile.Width, tile.Height);
+                }
             }
             catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
             {

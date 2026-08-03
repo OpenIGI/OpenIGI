@@ -91,6 +91,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private TextureHandle _screenIndirect;
     private float _screenIndirectStrength;
 
+    // The level's real-time local lights -- the lamp fixtures, in view space. Set per frame by the game
+    // layer before the pass closes and cleared after, the same lifetime as the screen indirect: a frame
+    // that submits none lights from none. Packed for one glUniform4fv each: position.xyz + reach, then
+    // colour.rgb + intensity, per light, up to the shader's array size.
+    private int _lightingLocalLightCount = -1;
+    private int _lightingLocalLightPositionRadius = -1;
+    private int _lightingLocalLightColourIntensity = -1;
+    private readonly float[] _localLightPositionRadius = new float[DeferredLocalLight.Maximum * 4];
+    private readonly float[] _localLightColourIntensity = new float[DeferredLocalLight.Maximum * 4];
+    private int _localLightCount;
+
     private DebugView _debugView;
     private ReflectionSettings _reflections;
     private GLShaderProgram? _reflectionProgram;
@@ -523,6 +534,32 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             bottom.CopyTo(top);
             row.CopyTo(bottom);
         }
+    }
+
+    /// <inheritdoc/>
+    public void CopyFrameToTexture(TextureHandle texture, int width, int height)
+    {
+        ThrowIfDisposed();
+
+        if (width <= 0 || height <= 0 || !_textures.TryGetValue(texture.Id, out GLTexture entry))
+        {
+            return;
+        }
+
+        // Straight from the back buffer into the texture's level 0 — no read back, no upload. The copy
+        // keeps GL's bottom-up row order, so whoever draws it flips the source rectangle rather than the
+        // pixels; that costs nothing and this is a per-swap operation, not a per-frame one.
+        _gl.ReadBuffer(ReadBufferMode.Back);
+        BindTextureForUpload(entry.Name);
+        _gl.CopyTexSubImage2D(
+            TextureTarget.Texture2D,
+            0,
+            0,
+            0,
+            0,
+            0,
+            (uint)Math.Min(width, entry.Width),
+            (uint)Math.Min(height, entry.Height));
     }
 
     /// <inheritdoc/>
@@ -2428,10 +2465,24 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             SetTexture(7, _screenIndirect);
         }
 
+        // The level's local lights (lamps), if the game set any this frame. The baked model returns before
+        // it ever reaches them, and the game only submits under a shading model, so the count is enough of
+        // a guard here -- an empty set is a count of zero and the shader's loop does not run.
+        _lightingProgram.SetInt(_lightingLocalLightCount, _localLightCount);
+
+        if (_localLightCount > 0)
+        {
+            _lightingProgram.SetVector4Array(
+                _lightingLocalLightPositionRadius, _localLightPositionRadius.AsSpan(0, _localLightCount * 4));
+            _lightingProgram.SetVector4Array(
+                _lightingLocalLightColourIntensity, _localLightColourIntensity.AsSpan(0, _localLightCount * 4));
+        }
+
         _fullScreen!.Draw();
 
         _screenIndirect = default;
         _screenIndirectStrength = 0f;
+        _localLightCount = 0;
 
         // The pass left the bindings and the depth shadow in a state the next draw must not inherit.
         _currentVertexArray = 0;
@@ -2448,6 +2499,38 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // G-buffer the gather traced from is still live.
         _screenIndirect = indirect;
         _screenIndirectStrength = MathF.Max(strength, 0f);
+    }
+
+    /// <summary>Sets the level's real-time local lights for the next deferred lighting pass.</summary>
+    /// <param name="lights">The lights, in view space; a set longer than <see cref="DeferredLocalLight.Maximum"/> is truncated.</param>
+    /// <remarks>
+    /// Held, not acted on: like <see cref="SetScreenIndirect"/> this only records what the next
+    /// <see cref="RunDeferredLighting"/> folds in, and the pass clears it after, so a frame that sets none
+    /// lights from none. Called each frame while the G-buffer is live, before the geometry pass closes.
+    /// The positions are already in view space -- the game layer transforms them there in double precision,
+    /// because the level sits at large world coordinates and a float subtract of the camera loses too much.
+    /// </remarks>
+    public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
+    {
+        int count = Math.Min(lights.Length, DeferredLocalLight.Maximum);
+
+        for (int i = 0; i < count; i++)
+        {
+            DeferredLocalLight light = lights[i];
+            int at = i * 4;
+
+            _localLightPositionRadius[at + 0] = light.ViewPosition.X;
+            _localLightPositionRadius[at + 1] = light.ViewPosition.Y;
+            _localLightPositionRadius[at + 2] = light.ViewPosition.Z;
+            _localLightPositionRadius[at + 3] = light.Radius;
+
+            _localLightColourIntensity[at + 0] = light.Colour.X;
+            _localLightColourIntensity[at + 1] = light.Colour.Y;
+            _localLightColourIntensity[at + 2] = light.Colour.Z;
+            _localLightColourIntensity[at + 3] = light.Intensity;
+        }
+
+        _localLightCount = count;
     }
 
     /// <summary>Marches the participating medium over the lit scene.</summary>
@@ -3069,6 +3152,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
         _lightingScale = _lightingProgram.LocationOf("uLightScale");
         _lightingGiStrength = _lightingProgram.LocationOf("uGiStrength");
+        _lightingLocalLightCount = _lightingProgram.LocationOf("uLocalLightCount");
+        _lightingLocalLightPositionRadius = _lightingProgram.LocationOf("uLocalLightPositionRadius");
+        _lightingLocalLightColourIntensity = _lightingProgram.LocationOf("uLocalLightColourIntensity");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");

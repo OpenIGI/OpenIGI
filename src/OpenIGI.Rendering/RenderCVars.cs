@@ -108,7 +108,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> WhitePoint = CVar.Float(
         "r_white_point",
-        1.6f,
+        1.1f,
         1f,
         8f,
         CVarOptions.Archive,
@@ -119,13 +119,25 @@ public static class RenderCVars
     /// With <see cref="AutoExposure"/> on this becomes a bias on the adapted exposure rather than the
     /// whole of it: the eye adapts to the scene's own brightness and this nudges the result up or down.
     /// </remarks>
-    public static readonly NumericCVar<float> Exposure = CVar.Float(
-        "r_exposure",
-        1.0f,
-        0.05f,
-        16.0f,
-        CVarOptions.Archive,
-        "Scene brightness before tone mapping. 1 leaves the level's own lighting alone.");
+    public static readonly NumericCVar<float> Exposure = Presets.Define(
+        CVar.Float(
+            "r_exposure",
+            1.0f,
+            0.05f,
+            16.0f,
+            CVarOptions.Archive,
+            "Scene brightness before tone mapping. 1 leaves the level's own lighting alone."),
+
+        // Vanilla never tone maps, so its value is ignored. The others are calibrated so the scene reads
+        // right at a FIXED exposure -- no auto-exposure crutch. The dynamic model (ultra) lights from a GI
+        // bake and a live sun whose linear values sit well below one, so a room the sun fills through
+        // bounces still needs the frame lifted to read as lit; the bake-lit presets carry the artists'
+        // brighter lightmaps and need less. The tone map rolls off the sky, so lifting interiors this far
+        // does not blow the exterior -- measured across the outdoor, window and windowless views.
+        vanilla: "1",
+        enhanced: "1.4",
+        high: "1.6",
+        ultra: "2.5");
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
@@ -137,13 +149,47 @@ public static class RenderCVars
     /// nothing without both. The magnitude reads as irradiance, so a value near the ambient it replaces
     /// (about a third) matches its brightness; it stays a knob while the look is tuned.
     /// </remarks>
-    public static readonly NumericCVar<float> ScreenGather = CVar.Float(
-        "r_screen_gi",
-        0f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off.");
+    public static readonly NumericCVar<float> ScreenGather = Presets.Define(
+        CVar.Float(
+            "r_screen_gi",
+            0f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // OFF at ultra now. The real-time screen gather traces only sixteen rays a probe a frame and leans
+        // on the temporal filter to hide the noise, which never reads clean and cannot fill a room the way
+        // the multi-bounce probe bake does. Ultra's indirect is that bake -- path-traced to convergence
+        // once per mission, so it is noise-free and genuinely bright -- and the gather is left as an opt-in
+        // extra for on-screen colour bleed rather than the main event. See IrradianceProbeBaker.Bounces.
+        ultra: "0");
+
+    /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
+    /// <remarks>
+    /// The screen gather only carries light that already exists in the frame -- daylight through a window,
+    /// a sunlit wall -- so a windowless interior it cannot help: there is no source to gather. This turns
+    /// the lamp fixtures the emissive survey proposes (see the game layer's light-fixture proposer) into
+    /// direct punctual lights, which is the honest way to light such a room -- a real source with a real
+    /// falloff, not exposure lifting a black frame into grey. Scales the whole set; the fixtures' relative
+    /// intensities are the survey's, and this is the one number tuned by eye. Off below ultra, where the
+    /// bakes still carry the interiors.
+    /// </remarks>
+    public static readonly NumericCVar<float> LocalLightScale = Presets.Define(
+        CVar.Float(
+            "r_local_light_scale",
+            0f,
+            0f,
+            64f,
+            CVarOptions.Archive,
+            "Strength of the level's inferred lamp fixtures as real point lights. 0 is off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "6");
 
     /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
     /// <remarks>
@@ -191,6 +237,12 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
+
+        // OFF at ultra now. It was on to rescue interiors that the real-time gather left dark, but that was
+        // papering over weak light: the multi-bounce GI bake and the calibrated fixed exposure (r_exposure
+        // ultra 2.5) now light interiors and exteriors together WITHOUT the eye adapting, which is the
+        // honest result -- a sunny scene that reads sunny at a fixed exposure rather than one the camera
+        // keeps rebalancing. Left as an opt-in for anyone who wants eye adaptation.
         ultra: "0");
 
     /// <summary>How many samples per pixel the scene is rasterised with.</summary>
@@ -518,8 +570,16 @@ public static class RenderCVars
             "How strongly derived normal and roughness maps are applied; 0 ignores them."),
         vanilla: "0",
         enhanced: "0",
-        high: "0.7",
-        ultra: "1");
+
+        // Deliberately mild. The maps are DERIVED from tiny diffuse textures (8x8 to 128x128), and at full
+        // strength their Scharr normals turn every surface into grainy, sparkling relief that catches the
+        // sun, the local lights and the screen-space reflections -- the "everything is reflective and
+        // blurry" fault. Measured on mission 1's interiors: relief still reads at a quarter, and the noise
+        // only sets in past a third. Full strength was calibrated on one brick wall in isolation and does
+        // not survive a whole room. The generator itself (MaterialMapGenerator) wants gentler normals; until
+        // then this is where the strength is held.
+        high: "0.25",
+        ultra: "0.3");
 
     /// <summary>Where the derived surface-detail maps are read from.</summary>
     /// <remarks>
@@ -550,7 +610,11 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0");
+
+        // Ultra's real-time global illumination is built on the surface cache: the screen probe gather
+        // traces it for the indirect fill, so ultra is the one preset that pays to capture it. The other
+        // three light from the bakes and never read a card.
+        ultra: "1");
 
     /// <summary>How many texels of card a world unit of surface is given.</summary>
     /// <remarks>
@@ -623,7 +687,10 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0");
+
+        // The screen probe gather traces the distance fields for the rays that leave the screen, so ultra
+        // bakes them for the same reason it captures the cards. The cheaper presets need neither.
+        ultra: "1");
 
     /// <summary>How many voxels the longest axis of each model's distance field gets.</summary>
     /// <remarks>
@@ -667,6 +734,28 @@ public static class RenderCVars
         2f,
         CVarOptions.Archive,
         "Scales dynamic lighting to match what the level's textures were painted for.");
+
+    /// <summary>Scales the real-time sun so a sunlit surface reads as sunlit rather than as flat daylight.</summary>
+    /// <remarks>
+    /// The artists' lightmaps carry the sun at its full radiosity intensity (18 in every mission), so the
+    /// baked model has bright, high-contrast sunlight for free. The dynamic model adds the sun live from
+    /// its colour alone -- magnitude about one -- which is barely stronger than the ambient sky fill, so a
+    /// sunlit wall reads the same as a shaded one and the whole scene looks overcast rather than sunny.
+    /// This lifts the live sun back to where the contrast reads as direct sunlight. Only the dynamic model
+    /// touches it: the baked model lights from the lightmaps and never adds a live sun at all.
+    /// </remarks>
+    public static readonly NumericCVar<float> SunScale = Presets.Define(
+        CVar.Float(
+            "r_sun_scale",
+            1f,
+            0.25f,
+            4f,
+            CVarOptions.Archive,
+            "Scales the real-time sun so sunlit surfaces read as sunlit. Only the dynamic lighting model reads it."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "2");
 
     /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
     /// <remarks>
@@ -915,6 +1004,29 @@ public static class RenderCVars
         4f,
         CVarOptions.Archive,
         "How strongly the probe field lights surfaces; 1 is the amount the bake computed.");
+
+    /// <summary>The diffuse colour boost the surface cache reflects light through — the reference's DiffuseColorBoost.</summary>
+    /// <remarks>
+    /// The single lever for how bright the bounced light is. Each time light reflects off a card, the
+    /// surface's albedo is raised by <c>pow(luminance, boost)</c> before it passes light along, so a
+    /// <b>lower</b> value lifts a dark, low-albedo surface's reflectance towards one and lets a sunless
+    /// interior carry far more indirect -- which the raw retail albedos (~0.4) otherwise swallow after a
+    /// bounce or two. One is off (physical albedo). It never reaches one (the surface would return
+    /// everything it received and the feedback would diverge); the shader clamps it below. This is what to
+    /// reach for when interiors read dark, ahead of exposure or more bounces.
+    /// </remarks>
+    public static readonly NumericCVar<float> GlobalIlluminationBoost = Presets.Define(
+        CVar.Float(
+            "r_gi_boost",
+            0.8f,
+            0.1f,
+            1f,
+            CVarOptions.Archive,
+            "Diffuse colour boost for bounced light: LOWER lifts dark surfaces so interiors carry more indirect. 1 is off."),
+        vanilla: "0.8",
+        enhanced: "0.8",
+        high: "0.8",
+        ultra: "0.6");
 
     /// <summary>Whether each stage of the frame is timed on the GPU and shown in an overlay.</summary>
     /// <remarks>

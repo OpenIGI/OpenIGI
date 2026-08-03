@@ -86,6 +86,24 @@ public class Carousel : Control
     }
 
     /// <inheritdoc/>
+    /// <remarks>Clicking either side of the centred item steps that way, the pointer's reading of the row.</remarks>
+    public override void ActivateAt(UiVec2 point)
+    {
+        float dead = Bounds.Width * 0.12f;
+        float offset = point.X - Bounds.Center.X;
+        if (offset < -dead)
+        {
+            SelectedIndex -= 1;
+        }
+        else if (offset > dead)
+        {
+            SelectedIndex += 1;
+        }
+
+        RaiseActivated();
+    }
+
+    /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
     {
         base.OnUpdate(elapsedSeconds);

@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
 using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
@@ -28,10 +28,31 @@ namespace OpenIGI.Frontend.Screens;
 /// </remarks>
 public sealed class SettingsScreen : ShellScreen
 {
+    /// <summary>The design-unit width a settings column wants before a second one is worth having.</summary>
+    /// <remarks>
+    /// A row is a caption at one end and its control at the other, so past about this width the two stop
+    /// reading as one row. Rather than narrow the page to suit, the rows are dealt into as many columns of
+    /// roughly this width as the page will hold — which is what lets the panel use the whole screen.
+    /// </remarks>
+    private const float ColumnWidth = 560f;
+
+    /// <summary>What the page's own margins and padding take off the width before it is divided up.</summary>
+    private const float PageChrome = 200f;
+
+    /// <summary>The most columns the rows are ever dealt into, however wide the display is.</summary>
+    private const int MaxColumns = 3;
+
     private readonly Dictionary<Control, ICVar> _boundCvars = [];
     private readonly List<UiElement> _tabPanels = [];
 
+    // Each category's focusable rows in reading order — down a column, then on to the top of the next. Up
+    // and down walk THIS rather than the spatial traversal, because a control consumes left and right for
+    // its own value, so nothing else could carry focus from one column to another. Parallel to _tabPanels.
+    private readonly List<List<Control>> _tabRows = [];
+
     private Label? _help;
+    private int _columns = 1;
+    private int _activeTab;
 
     /// <summary>Initializes a new instance of the <see cref="SettingsScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
@@ -48,9 +69,25 @@ public sealed class SettingsScreen : ShellScreen
     {
         _boundCvars.Clear();
         _tabPanels.Clear();
+        _tabRows.Clear();
+        _activeTab = 0;
 
         UiTheme theme = Context.Theme;
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 14f };
+
+        // How many columns the page will hold. Measured in DESIGN units, so it follows the display's shape
+        // rather than its resolution — every 16:9 display is 1920 units wide whatever its pixel count, and
+        // it is the aspect ratio that decides whether a third column fits. 4:3 gets two, 16:9 three.
+        float usable = (context.SafeRect.Width / context.Scale) - PageChrome;
+        _columns = Math.Clamp((int)(usable / ColumnWidth), 1, MaxColumns);
+
+        // A grid rather than a stack: the panel row is a star track, so the categories fill everything
+        // between the tab strip and the footer whatever the display is. A fixed height left the bottom of
+        // a 1440p screen empty and cut the list short on a small one.
+        var layout = new Grid { RowSpacing = 10f };
+        layout.ColumnDefinitions.Add(GridLength.Star);
+        layout.RowDefinitions.Add(GridLength.Auto); // the category tabs
+        layout.RowDefinitions.Add(GridLength.Star); // the current category, filling the rest
+        layout.RowDefinitions.Add(GridLength.Auto); // the per-row help footer
 
         (string Title, Func<Panel> Build)[] categories =
         [
@@ -67,11 +104,11 @@ public sealed class SettingsScreen : ShellScreen
             tabTitles[i] = categories[i].Title;
         }
 
-        var tabs = new TabStrip(theme, tabTitles);
+        var tabs = new TabStrip(theme, tabTitles) { HorizontalAlignment = HorizontalAlignment.Left };
         tabs.SelectionChanged += ShowTab;
-        column.AddChild(tabs);
+        layout.Add(tabs, 0, 0);
 
-        var content = new Panel { Height = 560f };
+        var content = new Panel();
         for (int i = 0; i < categories.Length; i++)
         {
             Panel panel = categories[i].Build();
@@ -80,14 +117,14 @@ public sealed class SettingsScreen : ShellScreen
             content.AddChild(panel);
         }
 
-        column.AddChild(content);
+        layout.Add(content, 1, 0);
 
         _help = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.95f, theme.TextMuted)
         {
-            Margin = new Thickness(0f, 8f, 0f, 0f),
+            Margin = new Thickness(0f, 6f, 0f, 0f),
         };
-        column.AddChild(_help);
-        return column;
+        layout.Add(_help, 2, 0);
+        return layout;
     }
 
     /// <inheritdoc/>
@@ -108,6 +145,33 @@ public sealed class SettingsScreen : ShellScreen
         }
 
         return base.HandleInput(nav, input);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Up and down walk the category's rows in the order they were dealt into columns, so the foot of one
+    /// column leads to the head of the next. Spatial traversal cannot do it: there is nothing below the
+    /// last row of a column, and left and right — which is where the next column is — belong to the
+    /// controls themselves. At either end it falls through, so up from the first row still reaches the
+    /// category tabs.
+    /// </remarks>
+    protected override bool MoveFocus(NavDirection direction)
+    {
+        if (direction is NavDirection.Up or NavDirection.Down
+            && Focus?.Focused is Control focused
+            && _activeTab >= 0 && _activeTab < _tabRows.Count)
+        {
+            List<Control> rows = _tabRows[_activeTab];
+            int index = rows.IndexOf(focused);
+            int next = index + (direction == NavDirection.Down ? 1 : -1);
+            if (index >= 0 && next >= 0 && next < rows.Count)
+            {
+                Focus.Focus(rows[next]);
+                return true;
+            }
+        }
+
+        return base.MoveFocus(direction);
     }
 
     /// <inheritdoc/>
@@ -138,19 +202,23 @@ public sealed class SettingsScreen : ShellScreen
 
     private void ShowTab(int index)
     {
+        _activeTab = index;
         for (int i = 0; i < _tabPanels.Count; i++)
         {
             _tabPanels[i].Visibility = i == index ? Visibility.Visible : Visibility.Collapsed;
         }
 
+        // The focused row belongs to the category that has just been collapsed, so it can no longer hold
+        // focus; dropping it and taking the first row of the new panel is what keeps the keyboard working
+        // after a tab change.
         Focus?.Validate();
+        Focus?.FocusFirst();
     }
 
     private Panel BuildCvarPanel(IReadOnlyList<string> names, bool includePresets)
     {
         UiTheme theme = Context.Theme;
-        var scroll = new ScrollView(theme);
-        var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f };
+        var rows = new List<Control>();
 
         if (includePresets)
         {
@@ -172,7 +240,7 @@ public sealed class SettingsScreen : ShellScreen
                     presets.SelectedIndex = idx;
                 }
             };
-            stack.AddChild(presets);
+            rows.Add(presets);
         }
 
         foreach (string name in names)
@@ -183,42 +251,85 @@ public sealed class SettingsScreen : ShellScreen
                 if (control is not null)
                 {
                     _boundCvars[control] = cvar;
-                    stack.AddChild(control);
+                    rows.Add(control);
                 }
             }
         }
 
-        scroll.SetContent(stack);
+        return BuildColumns(theme, rows);
+    }
+
+    /// <summary>Deals a category's rows into columns across the page and returns the panel holding them.</summary>
+    /// <remarks>
+    /// Column-major, so a column is read top to bottom and then the next one starts — the order the rows
+    /// were declared in, just folded. The split is by count rather than by measured height: rows differ a
+    /// little in height (a slider is taller than a toggle) but not enough for an even count to look uneven,
+    /// and folding on a number is predictable where folding on a measurement moves as the display changes.
+    /// </remarks>
+    private Panel BuildColumns(UiTheme theme, List<Control> rows)
+    {
+        _tabRows.Add(rows);
+
+        ScrollView scroll = BuildScrollHost(theme);
+        int columns = Math.Max(1, Math.Min(_columns, rows.Count));
+        int perColumn = (int)MathF.Ceiling(rows.Count / (float)columns);
+
+        // The right margin is the scrollbar's lane: the thumb is drawn down the viewport's right edge, and
+        // without it the last column's sliders run underneath it.
+        var grid = new Grid { ColumnSpacing = 40f, Margin = new Thickness(0f, 0f, 22f, 0f) };
+        grid.RowDefinitions.Add(GridLength.Auto);
+        for (int column = 0; column < columns; column++)
+        {
+            grid.ColumnDefinitions.Add(GridLength.Star);
+
+            var stack = new StackPanel
+            {
+                Orientation = Orientation.Vertical,
+                Spacing = 4f,
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+
+            for (int i = column * perColumn; i < Math.Min((column + 1) * perColumn, rows.Count); i++)
+            {
+                stack.AddChild(rows[i]);
+            }
+
+            grid.Add(stack, 0, column);
+        }
+
+        scroll.SetContent(grid);
         return new Panel().WithChild(scroll);
     }
 
     private Panel BuildControlsPanel()
     {
         UiTheme theme = Context.Theme;
-        var scroll = new ScrollView(theme);
-        var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f };
-
         var profile = Context.Config.Active;
         if (profile is null || profile.Bindings.Count == 0)
         {
-            stack.AddChild(new Label(theme.Body, "No control bindings in the active profile.", theme.BodyTextSize, theme.TextMuted));
-        }
-        else
-        {
-            for (int i = 0; i < profile.Bindings.Count; i++)
-            {
-                int index = i;
-                var binding = profile.Bindings[index];
-                KeyCode current = Enum.TryParse(binding.Key, ignoreCase: true, out KeyCode parsed) ? parsed : KeyCode.None;
-                var row = new KeyBindingRow(theme, binding.Action, current);
-                row.BindingChanged += key => profile.Bindings[index] = binding with { Key = key.ToString() };
-                stack.AddChild(row);
-            }
+            _tabRows.Add([]); // kept parallel to _tabPanels even when a category has no rows at all
+            ScrollView empty = BuildScrollHost(theme);
+            empty.SetContent(
+                new Label(theme.Body, "No control bindings in the active profile.", theme.BodyTextSize, theme.TextMuted));
+            return new Panel().WithChild(empty);
         }
 
-        scroll.SetContent(stack);
-        return new Panel().WithChild(scroll);
+        var rows = new List<Control>(profile.Bindings.Count);
+        for (int i = 0; i < profile.Bindings.Count; i++)
+        {
+            int index = i;
+            var binding = profile.Bindings[index];
+            KeyCode current = Enum.TryParse(binding.Key, ignoreCase: true, out KeyCode parsed) ? parsed : KeyCode.None;
+            var row = new KeyBindingRow(theme, binding.Action, current);
+            row.BindingChanged += key => profile.Bindings[index] = binding with { Key = key.ToString() };
+            rows.Add(row);
+        }
+
+        return BuildColumns(theme, rows);
     }
+
+    /// <summary>The viewport a category's rows scroll inside: the full page, top to bottom and edge to edge.</summary>
+    private static ScrollView BuildScrollHost(UiTheme theme) => new(theme);
 
     private List<string> NamesWithPrefix(string prefix, bool excludeDisplay = false)
     {

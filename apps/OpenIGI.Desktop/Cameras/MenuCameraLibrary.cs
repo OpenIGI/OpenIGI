@@ -32,11 +32,36 @@ public readonly record struct MenuCameraSpec(
 public sealed class MenuCameraLibrary
 {
     private readonly Dictionary<int, MenuCameraSpec> _byMission;
+    private readonly Dictionary<int, IReadOnlyList<ShowcasePoint>> _pointsByMission;
 
-    private MenuCameraLibrary(Dictionary<int, MenuCameraSpec> byMission) => _byMission = byMission;
+    private MenuCameraLibrary(
+        Dictionary<int, MenuCameraSpec> byMission,
+        Dictionary<int, IReadOnlyList<ShowcasePoint>> pointsByMission)
+    {
+        _byMission = byMission;
+        _pointsByMission = pointsByMission;
+    }
 
     /// <summary>Gets a library with no authored entries; every mission uses the default orbit.</summary>
-    public static MenuCameraLibrary Empty { get; } = new([]);
+    public static MenuCameraLibrary Empty { get; } = new([], []);
+
+    /// <summary>
+    /// How the file is read. Case-insensitive because the file is authored in the JSON convention —
+    /// <c>"mission"</c>, <c>"pitchBias"</c> — while the record that receives it is named in the C# one.
+    /// </summary>
+    /// <remarks>
+    /// Without this the file parsed without error and bound <em>nothing</em>: every entry came back with
+    /// its members at their defaults, so the whole library keyed itself under mission 0 and every real
+    /// mission silently fell back to the built-in orbit. An authored camera that quietly does nothing is
+    /// worse than one that fails loudly, which is what this being an explicit option rather than an
+    /// implicit default is meant to keep visible.
+    /// </remarks>
+    private static readonly JsonSerializerOptions ReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
 
     /// <summary>Loads the library from a JSON file, falling back to an empty one on any problem.</summary>
     /// <param name="path">The JSON file path.</param>
@@ -51,19 +76,35 @@ public sealed class MenuCameraLibrary
 
         try
         {
-            Entry[]? entries = JsonSerializer.Deserialize<Entry[]>(File.ReadAllText(path));
+            Entry[]? entries = JsonSerializer.Deserialize<Entry[]>(File.ReadAllText(path), ReadOptions);
             var map = new Dictionary<int, MenuCameraSpec>();
+            var points = new Dictionary<int, IReadOnlyList<ShowcasePoint>>();
             foreach (Entry entry in entries ?? [])
             {
-                map[entry.Mission] = new MenuCameraSpec(
+                var spec = new MenuCameraSpec(
                     entry.Radius,
                     entry.Height,
                     entry.Speed,
                     entry.StartAngle,
                     entry.PitchBias);
+                map[entry.Mission] = spec;
+
+                if (entry.Points is { Length: > 0 } authored)
+                {
+                    points[entry.Mission] =
+                    [
+                        .. authored.Select(p => new ShowcasePoint(
+                            new OpenIGI.Core.Numerics.Vector3d(p.X, p.Y, p.Z),
+                            spec with
+                            {
+                                Radius = p.Radius > 0.0 ? p.Radius : spec.Radius,
+                                Height = p.Height > 0.0 ? p.Height : spec.Height,
+                            })),
+                    ];
+                }
             }
 
-            return new MenuCameraLibrary(map);
+            return new MenuCameraLibrary(map, points);
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -78,11 +119,33 @@ public sealed class MenuCameraLibrary
     public MenuCameraSpec For(int missionId) =>
         _byMission.TryGetValue(missionId, out MenuCameraSpec spec) ? spec : MenuCameraSpec.Default;
 
+    /// <summary>Gets the hand-authored places a mission's backdrop cycles between, or none.</summary>
+    /// <param name="missionId">The mission id.</param>
+    /// <returns>The authored places, or an empty list to let them be derived from the level.</returns>
+    /// <remarks>
+    /// An escape hatch, not the normal path: the places are derived from where a level put its geometry
+    /// (<see cref="MissionShowcasePoints"/>) so that every mission has them and a mod's levels get them
+    /// too. Authoring a <c>points</c> array for a mission overrides that entirely, which is what to reach
+    /// for when a particular level's automatic pick is dull — the same "data, not code" escape the orbit
+    /// numbers themselves are.
+    /// </remarks>
+    public IReadOnlyList<ShowcasePoint> PointsFor(int missionId) =>
+        _pointsByMission.TryGetValue(missionId, out IReadOnlyList<ShowcasePoint>? points) ? points : [];
+
     private sealed record Entry(
         int Mission,
         double Radius,
         double Height,
         double Speed,
         double StartAngle,
-        float PitchBias);
+        float PitchBias,
+        PointEntry[]? Points = null);
+
+    /// <summary>One hand-authored place, in metres, with an optional orbit of its own.</summary>
+    private sealed record PointEntry(
+        double X,
+        double Y,
+        double Z,
+        double Radius = 0.0,
+        double Height = 0.0);
 }

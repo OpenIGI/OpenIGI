@@ -40,6 +40,9 @@ public sealed class MissionRegistry
     /// <summary>The script each mission directory is expected to hold.</summary>
     public const string MissionScriptName = "mission.qvm";
 
+    /// <summary>The id the campaign chain starts at. <c>0x417090</c> returns this constant.</summary>
+    public const int FirstMissionId = 1;
+
     private readonly List<MissionDescriptor> _missions = [];
     private readonly Dictionary<int, MissionDescriptor> _byId = [];
     private readonly IIgiLogger _logger;
@@ -85,6 +88,56 @@ public sealed class MissionRegistry
         TryGet(id, out MissionDescriptor? descriptor)
             ? descriptor
             : throw new EngineFatalException($"The mission ID {id} does not exist.");
+
+    /// <summary>Walks the missions in campaign order — the <c>NextMissionId</c> chain from an id.</summary>
+    /// <param name="firstId">The id the walk starts at; defaults to <see cref="FirstMissionId"/>.</param>
+    /// <returns>Each mission in the chain, ending at <see cref="MissionDescriptor.NextMissionUndefined"/>.</returns>
+    /// <remarks>
+    /// <b>The order is the chain's, not the table's.</b> <see cref="Missions"/> is in the order the startup
+    /// scan happened to find each <c>mission.qvm</c> — a directory walk, so alphabetical, which puts level
+    /// 10 before level 2. The campaign's real order is declared: every descriptor names its successor, and
+    /// that is what the retail menu's three fill natives (<c>0x405660</c>, <c>0x4056F0</c>,
+    /// <c>0x405760</c>) walk. A descriptor pointing at itself, or at a mission already visited, would
+    /// otherwise spin, so visited ids are tracked.
+    /// </remarks>
+    public IEnumerable<MissionDescriptor> Chain(int firstId = FirstMissionId)
+    {
+        HashSet<int> seen = [];
+        int id = firstId;
+        while (id != MissionDescriptor.NextMissionUndefined && seen.Add(id))
+        {
+            if (!TryGet(id, out MissionDescriptor? mission))
+            {
+                yield break;
+            }
+
+            yield return mission;
+            id = mission.NextMissionId;
+        }
+    }
+
+    /// <summary>Walks every registered mission, the chain first and anything it does not reach after it.</summary>
+    /// <returns>The chain in campaign order, then the unreachable missions by ascending id.</returns>
+    /// <remarks>
+    /// What a mission <em>browser</em> wants, as opposed to the campaign's own progression: the chain is
+    /// the truth about the order, but a mission the chain does not reach — a mod's extra level, an
+    /// installation with a broken descriptor — still exists and should still be listed rather than
+    /// silently vanishing. <see cref="Chain"/> stays the faithful walk for the retail menus.
+    /// </remarks>
+    public IEnumerable<MissionDescriptor> InCampaignOrder()
+    {
+        HashSet<int> chained = [];
+        foreach (MissionDescriptor mission in Chain())
+        {
+            chained.Add(mission.Id);
+            yield return mission;
+        }
+
+        foreach (MissionDescriptor mission in _missions.Where(m => !chained.Contains(m.Id)).OrderBy(m => m.Id))
+        {
+            yield return mission;
+        }
+    }
 
     /// <summary>Empties the table.</summary>
     public void Clear()

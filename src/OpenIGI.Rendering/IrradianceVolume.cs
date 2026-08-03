@@ -114,6 +114,16 @@ public sealed class IrradianceVolume
         Origin.Y + (y * Spacing),
         Origin.Z + (z * Spacing));
 
+    /// <summary>Makes a deep copy, so a bounce pass can read the last pass's light while writing the next.</summary>
+    /// <returns>An independent volume with the same probes.</returns>
+    public IrradianceVolume Clone()
+    {
+        IrradianceVolume copy = new(Origin, Spacing, CountX, CountY, CountZ);
+        _coefficients.CopyTo(copy._coefficients.AsSpan());
+        _distances.CopyTo(copy._distances.AsSpan());
+        return copy;
+    }
+
     /// <summary>Records what a probe receives.</summary>
     /// <param name="probe">The probe's ordinal, from <see cref="IndexOf"/>.</param>
     /// <param name="coefficients">Twelve coefficients: four per channel, red first.</param>
@@ -155,6 +165,66 @@ public sealed class IrradianceVolume
                 + (coefficients[2] * direction.Y)
                 + (coefficients[3] * direction.Z),
             0f);
+
+    /// <summary>
+    /// Samples the irradiance the volume holds at a world point facing a given way, for the bake's own
+    /// bounce feedback.
+    /// </summary>
+    /// <param name="worldPosition">Where to sample, in world metres.</param>
+    /// <param name="normal">The surface normal to receive the light along, unit length.</param>
+    /// <returns>The interpolated irradiance per channel, never below zero.</returns>
+    /// <remarks>
+    /// Plain trilinear interpolation of the eight surrounding probes, then the cosine-convolved SH
+    /// evaluated along the normal. This is what turns the single-bounce transfer into a multi-bounce one:
+    /// a surface a probe's ray lands on is itself lit by what the volume already holds there, and a
+    /// further bounce is that light times the surface's albedo. No leak test here -- the bake feeds this
+    /// back into itself over a handful of passes, and a wall reading a little of its neighbour's light is
+    /// harmless where the same read at runtime would show through the wall.
+    /// </remarks>
+    public Vector3f SampleIrradiance(Vector3f worldPosition, Vector3f normal)
+    {
+        float gx = (worldPosition.X - Origin.X) / Spacing;
+        float gy = (worldPosition.Y - Origin.Y) / Spacing;
+        float gz = (worldPosition.Z - Origin.Z) / Spacing;
+
+        int x0 = Math.Clamp((int)MathF.Floor(gx), 0, CountX - 1);
+        int y0 = Math.Clamp((int)MathF.Floor(gy), 0, CountY - 1);
+        int z0 = Math.Clamp((int)MathF.Floor(gz), 0, CountZ - 1);
+        int x1 = Math.Min(x0 + 1, CountX - 1);
+        int y1 = Math.Min(y0 + 1, CountY - 1);
+        int z1 = Math.Min(z0 + 1, CountZ - 1);
+
+        float fx = Math.Clamp(gx - x0, 0f, 1f);
+        float fy = Math.Clamp(gy - y0, 0f, 1f);
+        float fz = Math.Clamp(gz - z0, 0f, 1f);
+
+        Vector3f result = default;
+
+        for (int corner = 0; corner < 8; corner++)
+        {
+            int cx = (corner & 1) == 0 ? x0 : x1;
+            int cy = (corner & 2) == 0 ? y0 : y1;
+            int cz = (corner & 4) == 0 ? z0 : z1;
+
+            float wx = (corner & 1) == 0 ? 1f - fx : fx;
+            float wy = (corner & 2) == 0 ? 1f - fy : fy;
+            float wz = (corner & 4) == 0 ? 1f - fz : fz;
+            float weight = wx * wy * wz;
+
+            if (weight <= 0f)
+            {
+                continue;
+            }
+
+            ReadOnlySpan<float> c = _coefficients.AsSpan(IndexOf(cx, cy, cz) * CoefficientsPerProbe, CoefficientsPerProbe);
+            result = new Vector3f(
+                result.X + (weight * Evaluate(c.Slice(0, 4), normal)),
+                result.Y + (weight * Evaluate(c.Slice(4, 4), normal)),
+                result.Z + (weight * Evaluate(c.Slice(8, 4), normal)));
+        }
+
+        return result;
+    }
 
     /// <summary>
     /// Weighs how much a probe should be trusted by a surface, from its distance moments.

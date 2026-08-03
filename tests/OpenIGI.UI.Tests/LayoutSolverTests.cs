@@ -1,5 +1,9 @@
+﻿using System.Linq;
+using OpenIGI.Core.Graphics;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
+using OpenIGI.UI.Widgets;
 using Xunit;
 
 namespace OpenIGI.UI.Tests;
@@ -207,5 +211,69 @@ public sealed class LayoutSolverTests
 
         // c follows a directly, as if the collapsed box were not in the tree.
         Assert.Equal(40f, c.Bounds.Y, 2);
+    }
+
+    [Fact]
+    public void A_grid_arranged_narrower_than_it_was_measured_resizes_its_star_tracks()
+    {
+        // The shape that caught this: an outer grid measures every child against the whole viewport and
+        // only then hands each one its column. A grid inside one of those columns therefore sees the full
+        // width at measure and a fraction of it at arrange, and reusing the measured track sizes laid its
+        // children out hanging off the side of the column they belong to.
+        LayoutContext context = Reference();
+
+        var outer = new Grid();
+        outer.ColumnDefinitions.Add(GridLength.Stars(0.25f));
+        outer.ColumnDefinitions.Add(GridLength.Stars(0.75f));
+        outer.RowDefinitions.Add(GridLength.Star);
+
+        var inner = new Grid();
+        inner.ColumnDefinitions.Add(GridLength.Star);
+        inner.RowDefinitions.Add(GridLength.Star);
+        var child = new TestBox { ContentSize = new UiVec2(50f, 50f) };
+        inner.Add(child, 0, 0);
+
+        outer.Add(inner, 0, 0);
+        outer.Add(new TestBox { ContentSize = new UiVec2(50f, 50f) }, 0, 1);
+        Layout(outer, context);
+
+        Assert.Equal(context.SafeRect.Width * 0.25f, inner.Bounds.Width, 1);
+        Assert.Equal(inner.Bounds.Width, child.Bounds.Width, 1);
+        Assert.True(
+            child.Bounds.Right <= inner.Bounds.Right + 0.5f,
+            $"the child ran to {child.Bounds.Right} past its column's {inner.Bounds.Right}");
+    }
+
+    [Fact]
+    public void A_grid_row_sizes_to_what_a_wrapping_child_needs_at_its_real_width()
+    {
+        // The same staleness seen through the other axis: a paragraph measured against the whole viewport
+        // reports one line, so an auto row sized from that pass is one line tall however narrow the column
+        // it actually lands in turns out to be.
+        LayoutContext context = Reference();
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        UiFont font = UiFont.ForMeasurement(FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f));
+
+        var outer = new Grid();
+        outer.ColumnDefinitions.Add(GridLength.Stars(0.2f));
+        outer.ColumnDefinitions.Add(GridLength.Stars(0.8f));
+        outer.RowDefinitions.Add(GridLength.Star);
+
+        var inner = new Grid();
+        inner.ColumnDefinitions.Add(GridLength.Star);
+        inner.RowDefinitions.Add(GridLength.Auto);
+        inner.RowDefinitions.Add(GridLength.Star);
+
+        var paragraph = new Label(font, string.Join(' ', Enumerable.Repeat("briefing", 40)), 22f, Bgra32.White)
+        {
+            Wrap = true,
+        };
+        inner.Add(paragraph, 0, 0);
+        outer.Add(inner, 0, 0);
+        Layout(outer, context);
+
+        Assert.True(
+            paragraph.Bounds.Height > font.LineHeight(context.Px(22f)) * 2f,
+            $"the paragraph was given {paragraph.Bounds.Height}px, which is too few lines for its column");
     }
 }

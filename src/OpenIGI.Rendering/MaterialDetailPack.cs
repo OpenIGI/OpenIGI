@@ -121,12 +121,42 @@ public sealed class MaterialDetailPack : IDisposable
             return;
         }
 
+        AttachPacked(diffuse, Derive(pixels, width, height), width, height);
+    }
+
+    /// <summary>Derives a packed detail map from a texture's pixels, without a device.</summary>
+    /// <param name="pixels">The diffuse pixels of the level the map is derived from.</param>
+    /// <param name="width">The texture width in pixels.</param>
+    /// <param name="height">The texture height in pixels.</param>
+    /// <returns>The packed detail pixels, ready for <see cref="AttachPacked"/>.</returns>
+    /// <remarks>
+    /// The expensive half of <see cref="AttachDerived"/> and the half that touches no graphics state, split
+    /// out so it can run on a worker. Deriving a ground tile's maps measured at tens of milliseconds each,
+    /// which on a level's worth of tiles is most of a second — far too much to spend on the thread that is
+    /// holding a menu up, and none of it work that has to be there.
+    /// </remarks>
+    public static Bgra32[] Derive(ReadOnlySpan<Bgra32> pixels, int width, int height)
+    {
+        MaterialMapGenerator.Maps maps = MaterialMapGenerator.Generate(pixels, width, height);
+        Bgra32[] packed = new Bgra32[width * height];
+        MaterialMapGenerator.PackDetail(maps, packed);
+        return packed;
+    }
+
+    /// <summary>Attaches an already-derived detail map to a texture, uploading it as it is.</summary>
+    /// <param name="diffuse">The texture the map belongs to.</param>
+    /// <param name="packed">The packed detail pixels, from <see cref="Derive"/>.</param>
+    /// <param name="width">The map width in pixels.</param>
+    /// <param name="height">The map height in pixels.</param>
+    public void AttachPacked(TextureHandle diffuse, ReadOnlySpan<Bgra32> packed, int width, int height)
+    {
+        if (!diffuse.IsValid || width <= 0 || height <= 0 || packed.Length < width * height)
+        {
+            return;
+        }
+
         try
         {
-            MaterialMapGenerator.Maps maps = MaterialMapGenerator.Generate(pixels, width, height);
-            Bgra32[] packed = new Bgra32[width * height];
-            MaterialMapGenerator.PackDetail(maps, packed);
-
             TextureHandle map = _device.CreateTexture(
                 new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
                 packed);

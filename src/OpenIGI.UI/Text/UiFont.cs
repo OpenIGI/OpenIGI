@@ -145,6 +145,66 @@ public sealed class UiFont : IDisposable
         return new UiVec2(widest, lines * Atlas.LineHeight * scale);
     }
 
+    /// <summary>Breaks text onto lines no wider than a limit, at spaces, honouring existing line feeds.</summary>
+    /// <param name="text">The text to wrap.</param>
+    /// <param name="sizePx">The requested text size in pixels.</param>
+    /// <param name="maxWidthPx">The widest a line may be, in pixels.</param>
+    /// <returns>The same text with line feeds inserted at the break points.</returns>
+    /// <remarks>
+    /// Greedy word wrapping: a word that will not fit starts a new line, and one that is longer than the
+    /// limit on its own is left to overhang rather than being broken mid-word. Enough for prose in a
+    /// briefing panel or a credits block, which is all the shell asks of it.
+    /// </remarks>
+    public string WrapText(string text, float sizePx, float maxWidthPx)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (maxWidthPx <= 0f || text.Length == 0)
+        {
+            return text;
+        }
+
+        var wrapped = new System.Text.StringBuilder(text.Length + 16);
+        float spaceWidth = MeasureWidth(" ", sizePx);
+
+        foreach (string paragraph in text.Split('\n'))
+        {
+            if (wrapped.Length > 0)
+            {
+                wrapped.Append('\n');
+            }
+
+            float lineWidth = 0f;
+            bool firstWordOnLine = true;
+            foreach (string word in paragraph.Split(' '))
+            {
+                if (word.Length == 0)
+                {
+                    continue;
+                }
+
+                float wordWidth = MeasureWidth(word, sizePx);
+                if (!firstWordOnLine && lineWidth + spaceWidth + wordWidth > maxWidthPx)
+                {
+                    wrapped.Append('\n');
+                    lineWidth = 0f;
+                    firstWordOnLine = true;
+                }
+
+                if (!firstWordOnLine)
+                {
+                    wrapped.Append(' ');
+                    lineWidth += spaceWidth;
+                }
+
+                wrapped.Append(word);
+                lineWidth += wordWidth;
+                firstWordOnLine = false;
+            }
+        }
+
+        return wrapped.ToString();
+    }
+
     /// <summary>Measures the advance width of a single line, ignoring line feeds.</summary>
     /// <param name="text">The text to measure.</param>
     /// <param name="sizePx">The requested text size in pixels.</param>

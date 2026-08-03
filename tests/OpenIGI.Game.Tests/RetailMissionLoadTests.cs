@@ -76,6 +76,27 @@ public sealed class RetailMissionLoadTests
     }
 
     [RequiresGameDataFact]
+    public void TheCampaignOrderFollowsTheChainRatherThanTheScan()
+    {
+        MissionRegistry registry = Fixture.Create().Registry;
+
+        // The scan order is a directory walk, so it is alphabetical: missions/location0/level10 sorts
+        // between level1 and level2. Every menu that shows the campaign has to follow the successor links
+        // instead, which is what the mission list in the shell was not doing.
+        List<MissionDescriptor> chained = [.. registry.InCampaignOrder()];
+        Assert.Equal(registry.Missions.Count, chained.Count);
+        Assert.Equal(MissionRegistry.FirstMissionId, chained[0].Id);
+
+        for (int i = 0; i + 1 < chained.Count; i++)
+        {
+            if (chained[i].NextMissionId != MissionDescriptor.NextMissionUndefined)
+            {
+                Assert.Equal(chained[i].NextMissionId, chained[i + 1].Id);
+            }
+        }
+    }
+
+    [RequiresGameDataFact]
     public void LoadingMissionOneBindsBothPacksAndBuildsTheTaskTree()
     {
         Fixture fixture = Fixture.Create();

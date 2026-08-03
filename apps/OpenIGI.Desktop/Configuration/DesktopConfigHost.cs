@@ -20,7 +20,7 @@ namespace OpenIGI.Desktop;
 public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow window) : IConfigHost
 {
     /// <summary>The id the mission chain starts at. <c>0x417090</c> returns this constant.</summary>
-    private const int FirstMissionId = 1;
+    private const int FirstMissionId = MissionRegistry.FirstMissionId;
 
     private readonly List<(int Width, int Height)> _modes = [];
 
@@ -148,30 +148,11 @@ public sealed class DesktopConfigHost(IGraphicsDevice graphics, IGameWindow wind
 
     /// <summary>Walks the mission chain from the first id, the way all three fill natives do.</summary>
     /// <remarks>
-    /// The order is the chain's, not the table's: each descriptor names its successor, and the walk ends
-    /// at <see cref="MissionDescriptor.NextMissionUndefined"/>. A descriptor that pointed at itself would
-    /// otherwise spin, so visited ids are tracked.
+    /// The order is the chain's, not the table's — see <see cref="MissionRegistry.Chain"/>, which is where
+    /// the walk lives now that the cinematic shell's mission list needs the same order.
     /// </remarks>
-    private IEnumerable<MissionDescriptor> Chain()
-    {
-        if (Missions is null)
-        {
-            yield break;
-        }
-
-        HashSet<int> seen = [];
-        int id = FirstMissionId;
-        while (id != MissionDescriptor.NextMissionUndefined && seen.Add(id))
-        {
-            if (!Missions.TryGet(id, out MissionDescriptor? mission))
-            {
-                yield break;
-            }
-
-            yield return mission;
-            id = mission.NextMissionId;
-        }
-    }
+    private IEnumerable<MissionDescriptor> Chain() =>
+        Missions?.Chain(FirstMissionId) ?? [];
 
     /// <summary>Resolves a descriptor's name or description, which are language keys rather than text.</summary>
     private string Localise(string key) => Strings is null ? key : Strings.Get(key);

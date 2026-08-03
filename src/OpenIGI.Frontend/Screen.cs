@@ -46,8 +46,18 @@ public abstract class Screen
     /// <summary>The delay added per control for the staggered entrance, in seconds.</summary>
     public const float EntranceStagger = 0.04f;
 
+    /// <summary>The longest a control ever waits for its turn in the staggered entrance, in seconds.</summary>
+    /// <remarks>
+    /// Without a ceiling the delay is the control's index times the stagger, so a settings page with a
+    /// hundred bound rows left the last of them invisible for four seconds — and, because the top bar is
+    /// built after the page content, took the bar's captions with it. A third of a second is long enough
+    /// for the cascade to read and short enough that nothing is ever missing.
+    /// </remarks>
+    public const float MaxEntranceDelay = 0.30f;
+
     private readonly Tween _transition = new(0f, duration: 0.35f, Ease.OutQuint);
     private UiVec2 _builtViewport = new(-1f, -1f);
+    private Control? _hovered;
 
     /// <summary>Gets the root of the screen's widget tree, valid after the first <see cref="Prepare"/>.</summary>
     public UiElement? Root { get; private set; }
@@ -134,21 +144,25 @@ public abstract class Screen
             return;
         }
 
+        UiElement? chrome = Chrome;
         int index = 0;
         foreach (UiElement element in Root.Descendants())
         {
-            if (element is Control control)
+            if (element is not Control control)
             {
-                if (animate)
-                {
-                    control.PlayEnter(index * EntranceStagger);
-                    index++;
-                }
-                else
-                {
-                    control.Visual.AppearInstantly();
-                }
+                continue;
             }
+
+            // The chrome belongs to the shell, not to this page, so it is already there: it never plays
+            // an entrance and never waits its turn behind the page's own controls.
+            if (!animate || (chrome is not null && control.IsWithin(chrome)))
+            {
+                control.Visual.AppearInstantly();
+                continue;
+            }
+
+            control.PlayEnter(MathF.Min(index * EntranceStagger, MaxEntranceDelay));
+            index++;
         }
     }
 
@@ -192,6 +206,17 @@ public abstract class Screen
     {
         ArgumentNullException.ThrowIfNull(painter);
 
+        // The chrome is the same frame on every page, so fading it in with whichever page happens to own
+        // it is what made switching tabs flash the whole bar out and back. It is skipped inside the
+        // transition and drawn after it at full opacity — a page changes underneath a bar that does not
+        // move. A screen on its way out has no chrome to keep, so it fades as one.
+        UiElement? chrome = Phase == ScreenPhase.Exiting ? null : Chrome;
+        Visibility restore = chrome?.Visibility ?? Visibility.Visible;
+        if (chrome is not null)
+        {
+            chrome.Visibility = Visibility.Hidden; // still laid out, simply not drawn in this pass
+        }
+
         // The transition amount becomes a screen-wide fade, so entering and exiting screens cross-fade
         // without every widget needing to know about it.
         painter.PushOpacity(Transition);
@@ -199,7 +224,21 @@ public abstract class Screen
         Root?.Draw(painter);
         OnDrawForeground(painter);
         painter.PopOpacity();
+
+        if (chrome is not null)
+        {
+            chrome.Visibility = restore;
+            chrome.Draw(painter);
+        }
     }
+
+    /// <summary>Gets the part of the tree that is shell chrome rather than page content.</summary>
+    /// <remarks>
+    /// Chrome is drawn outside the enter/exit fade and never plays the staggered entrance, because it is
+    /// the same object on the page being left and the page being arrived at. The shell's top bar is the
+    /// only chrome there is; a screen with none returns <see langword="null"/> and fades as a whole.
+    /// </remarks>
+    protected virtual UiElement? Chrome => null;
 
     /// <summary>Builds the screen's widget tree.</summary>
     /// <param name="context">The layout context, for sizing decisions made at build time.</param>
@@ -222,18 +261,30 @@ public abstract class Screen
             return nav.Back;
         }
 
-        // Mouse: moving the pointer focuses whatever is under it, a left click activates it. Only on a
-        // real move, so the pointer resting on a row does not fight keyboard or gamepad focus.
         MouseState mouse = input.Mouse;
+        var pointer = new UiVec2(mouse.X, mouse.Y);
+
+        // Hover: the control under the pointer is told the pointer is on it (and where), so a tab strip or
+        // a list can light the one target the click is about to land on rather than the whole widget.
+        UpdateHover(pointer);
+
+        // Moving the pointer focuses whatever is under it, a left click activates it at that point. Only
+        // on a real move, so the pointer resting on a row does not fight keyboard or gamepad focus.
         if (mouse.DeltaX != 0f || mouse.DeltaY != 0f)
         {
-            focus.FocusAt(new UiVec2(mouse.X, mouse.Y));
+            focus.FocusAt(pointer);
         }
 
-        if (mouse.WasPressed(MouseButton.Left)
-            && focus.FocusAt(new UiVec2(mouse.X, mouse.Y)) is Control clicked)
+        if (mouse.WasPressed(MouseButton.Left) && focus.FocusAt(pointer) is Control clicked)
         {
-            clicked.Activate();
+            clicked.ActivateAt(pointer);
+        }
+
+        // The wheel belongs to whichever viewport the pointer is inside, not to the focused widget — the
+        // reading every desktop interface has.
+        if (mouse.WheelDelta != 0f)
+        {
+            ScrollUnderPointer(pointer, mouse.WheelDelta);
         }
 
         if (nav.Direction is { } direction)
@@ -243,9 +294,9 @@ public abstract class Screen
             {
                 // handled by the control
             }
-            else
+            else if (MoveFocus(direction))
             {
-                focus.Move(direction);
+                RevealFocused();
             }
         }
 
@@ -255,6 +306,61 @@ public abstract class Screen
         }
 
         return nav.Back;
+    }
+
+    /// <summary>Moves focus in a direction, by default by spatial traversal.</summary>
+    /// <param name="direction">The direction pressed.</param>
+    /// <returns><see langword="true"/> when focus moved.</returns>
+    /// <remarks>
+    /// Overridden by a screen whose widgets have an order the geometry does not express — a form dealt into
+    /// columns, where the foot of one column leads to the head of the next and nothing on screen says so.
+    /// Left and right cannot carry that, because the controls consume them for their own values.
+    /// </remarks>
+    protected virtual bool MoveFocus(NavDirection direction) => Focus?.Move(direction) ?? false;
+
+    /// <summary>Scrolls the viewport the newly focused widget is inside so that it is on screen.</summary>
+    /// <remarks>
+    /// This is what makes the keyboard and the pad scroll a long settings panel: focus walks down the rows
+    /// as usual, and the viewport follows it. A screen calls it after moving focus by any means.
+    /// </remarks>
+    protected void RevealFocused()
+    {
+        if (Focus?.Focused is UiElement focused
+            && focused.FindAncestor<ScrollView>() is { } viewport)
+        {
+            viewport.EnsureVisible(focused.Bounds);
+        }
+    }
+
+    private void UpdateHover(UiVec2 pointer)
+    {
+        // Through the focus model rather than the tree walk: a widget may answer for a region outside its
+        // own layout box — an open menu's list — and the walk descends only into elements whose bounds
+        // contain the point, so it would never reach one. The walk is still the fallback for anything the
+        // focus model does not know about.
+        Control? hovered = Focus?.At(pointer) as Control
+            ?? Root?.HitTest(pointer)?.FindAncestor<Control>();
+        if (!ReferenceEquals(hovered, _hovered))
+        {
+            _hovered?.SetPointerOver(false);
+            _hovered = hovered;
+            _hovered?.SetPointerOver(true);
+        }
+
+        hovered?.PointerMoved(pointer);
+    }
+
+    private void ScrollUnderPointer(UiVec2 pointer, float notches)
+    {
+        // The innermost viewport under the pointer gets the wheel; if it has nothing left to scroll the
+        // one enclosing it takes over, so a nested list does not swallow the page's own scrolling.
+        for (UiElement? element = Root?.HitTest(pointer); element is not null; element = element.Parent)
+        {
+            if (element is ScrollView viewport && viewport.ScrollByWheel(notches))
+            {
+                return;
+            }
+        }
     }
 
     /// <summary>Called once after the widget tree is (re)built.</summary>

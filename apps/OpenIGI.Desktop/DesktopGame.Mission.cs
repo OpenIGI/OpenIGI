@@ -812,6 +812,10 @@ internal sealed partial class DesktopGame
         // The menus are done; without dropping the renderer the last screen would keep drawing over
         // the world.
         _renderer = null;
+
+        // The menu's backdrop, and with it the private resource context a preview was built in, is not
+        // needed once a real mission is up; letting it go releases that level's packs.
+        _backdrop = null;
         _logger.Information("Mission", $"Loaded {loaded}.");
     }
 

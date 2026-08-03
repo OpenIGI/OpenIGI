@@ -91,7 +91,7 @@ public class Toggle : Control
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = Visual.Focus;
+        float focus = MathF.Max(Visual.Focus, IsPointerOver ? 0.35f : 0f);
         if (focus > 0.001f)
         {
             painter.FillRect(Bounds, Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * focus)), BlendMode.AlphaBlend);

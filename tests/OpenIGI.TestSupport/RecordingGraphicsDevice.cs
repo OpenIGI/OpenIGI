@@ -536,6 +536,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public void CaptureFrame(int width, int height, Span<Bgra32> destination) => destination.Clear();
 
+    public void CopyFrameToTexture(TextureHandle texture, int width, int height)
+    {
+    }
+
     public TextureHandle CreateTexture(in TextureDescription description, ReadOnlySpan<Bgra32> pixels) =>
         new(_nextTexture++);
 

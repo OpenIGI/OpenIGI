@@ -45,14 +45,16 @@ public sealed class ProfilesScreen : ShellScreen
         return columns;
     }
 
-    private StackPanel BuildProfiles(UiTheme theme)
+    private Grid BuildProfiles(UiTheme theme)
     {
-        var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        stack.AddChild(new Label(theme.Body, "Profiles", theme.BodyTextSize * 1.15f, theme.Accent));
+        // A column that fills the page: the heading and the buttons take what they need and the list takes
+        // everything left, so the panel is not a short block with an empty screen under it.
+        Grid column = BuildColumn();
+        column.Add(new Label(theme.Body, "Profiles", theme.BodyTextSize * 1.15f, theme.Accent), 0, 0);
 
         _profiles = new ListView(theme, ProfileNames()) { VisibleRows = 8, SelectedIndex = Context.Config.ActiveIndex };
         _profiles.SelectionChanged += i => Context.Config.ActiveIndex = i;
-        stack.AddChild(_profiles);
+        column.Add(_profiles, 1, 0);
 
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 16f };
         var create = new Button(theme, "New");
@@ -71,17 +73,17 @@ public sealed class ProfilesScreen : ShellScreen
         };
         actions.Add(create);
         actions.Add(delete);
-        stack.AddChild(actions);
-        return stack;
+        column.Add(actions, 2, 0);
+        return column;
     }
 
-    private StackPanel BuildSaves(UiTheme theme)
+    private Grid BuildSaves(UiTheme theme)
     {
-        var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        stack.AddChild(new Label(theme.Body, "Save slots", theme.BodyTextSize * 1.15f, theme.Accent));
+        Grid column = BuildColumn();
+        column.Add(new Label(theme.Body, "Save slots", theme.BodyTextSize * 1.15f, theme.Accent), 0, 0);
 
         _slots = new ListView(theme, SlotSummaries()) { VisibleRows = 8 };
-        stack.AddChild(_slots);
+        column.Add(_slots, 1, 0);
 
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 16f };
         var save = new Button(theme, "Save");
@@ -93,8 +95,18 @@ public sealed class ProfilesScreen : ShellScreen
         actions.Add(save);
         actions.Add(load);
         actions.Add(delete);
-        stack.AddChild(actions);
-        return stack;
+        column.Add(actions, 2, 0);
+        return column;
+    }
+
+    private static Grid BuildColumn()
+    {
+        var column = new Grid { RowSpacing = 10f };
+        column.ColumnDefinitions.Add(GridLength.Star);
+        column.RowDefinitions.Add(GridLength.Auto); // the heading
+        column.RowDefinitions.Add(GridLength.Star); // the list, taking the rest
+        column.RowDefinitions.Add(GridLength.Auto); // the actions
+        return column;
     }
 
     private void SaveToSelectedSlot()
