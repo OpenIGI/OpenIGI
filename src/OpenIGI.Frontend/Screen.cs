@@ -43,6 +43,9 @@ public enum ScreenPhase
 /// </remarks>
 public abstract class Screen
 {
+    /// <summary>The delay added per control for the staggered entrance, in seconds.</summary>
+    public const float EntranceStagger = 0.04f;
+
     private readonly Tween _transition = new(0f, duration: 0.35f, Ease.OutQuint);
     private UiVec2 _builtViewport = new(-1f, -1f);
 
@@ -73,16 +76,28 @@ public abstract class Screen
 
         // Rebuild only when the viewport changes: the tree is retained across frames so animation, focus
         // and scroll survive, and a relayout each frame keeps it correct without discarding that state.
+        bool rebuilt = false;
         if (Root is null || _builtViewport != context.Viewport)
         {
             Root = BuildRoot(context);
             Focus = new FocusManager(Root);
             _builtViewport = context.Viewport;
+            rebuilt = true;
             OnBuilt();
         }
 
         Root.Measure(context, context.SafeRect.Size);
         Root.Arrange(context.SafeRect);
+
+        if (rebuilt)
+        {
+            Focus!.FocusFirst();
+
+            // Animate the controls in only on a real entrance; a rebuild from a resize while the screen
+            // is already up snaps them present so the layout does not replay its animation.
+            ApplyEntrance(Phase == ScreenPhase.Entering && !_transition.IsComplete);
+        }
+
         Focus!.Validate();
     }
 
@@ -91,7 +106,6 @@ public abstract class Screen
     {
         Phase = ScreenPhase.Entering;
         _transition.Retarget(1f);
-        Focus?.FocusFirst();
         OnEnter();
     }
 
@@ -100,7 +114,6 @@ public abstract class Screen
     {
         Phase = ScreenPhase.Active;
         _transition.SnapTo(1f);
-        Focus?.FocusFirst();
         OnEnter();
     }
 
@@ -112,6 +125,31 @@ public abstract class Screen
     {
         Phase = ScreenPhase.Active;
         Focus?.FocusFirst();
+    }
+
+    private void ApplyEntrance(bool animate)
+    {
+        if (Root is null)
+        {
+            return;
+        }
+
+        int index = 0;
+        foreach (UiElement element in Root.Descendants())
+        {
+            if (element is Control control)
+            {
+                if (animate)
+                {
+                    control.PlayEnter(index * EntranceStagger);
+                    index++;
+                }
+                else
+                {
+                    control.Visual.AppearInstantly();
+                }
+            }
+        }
     }
 
     /// <summary>Begins the exit transition.</summary>
@@ -153,9 +191,14 @@ public abstract class Screen
     public void Draw(UiPainter painter)
     {
         ArgumentNullException.ThrowIfNull(painter);
+
+        // The transition amount becomes a screen-wide fade, so entering and exiting screens cross-fade
+        // without every widget needing to know about it.
+        painter.PushOpacity(Transition);
         OnDrawBackground(painter);
         Root?.Draw(painter);
         OnDrawForeground(painter);
+        painter.PopOpacity();
     }
 
     /// <summary>Builds the screen's widget tree.</summary>

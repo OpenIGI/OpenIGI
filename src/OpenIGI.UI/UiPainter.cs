@@ -29,6 +29,8 @@ public sealed class UiPainter
 {
     private readonly SpriteBatch _batch;
     private readonly Stack<UiRect> _clips = new();
+    private readonly Stack<float> _opacityStack = new();
+    private float _opacity = 1f;
 
     /// <summary>Initializes a new instance of the <see cref="UiPainter"/> class.</summary>
     /// <param name="batch">The open sprite batch to draw into.</param>
@@ -47,6 +49,32 @@ public sealed class UiPainter
 
     /// <summary>Gets the current clip rectangle, the whole viewport when nothing is pushed.</summary>
     public UiRect Clip => _clips.Count > 0 ? _clips.Peek() : new UiRect(0f, 0f, Context.Viewport.X, Context.Viewport.Y);
+
+    /// <summary>Gets the current opacity multiplier applied to every drawn colour's alpha.</summary>
+    public float Opacity => _opacity;
+
+    /// <summary>Multiplies the current opacity for subsequent draws — the screen fade a transition uses.</summary>
+    /// <param name="opacity">The factor to multiply in, 0 transparent to 1 opaque.</param>
+    public void PushOpacity(float opacity)
+    {
+        _opacityStack.Push(_opacity);
+        _opacity = Math.Clamp(_opacity * opacity, 0f, 1f);
+    }
+
+    /// <summary>Restores the opacity in force before the matching <see cref="PushOpacity"/>.</summary>
+    /// <exception cref="InvalidOperationException">No opacity is pushed.</exception>
+    public void PopOpacity()
+    {
+        if (_opacityStack.Count == 0)
+        {
+            throw new InvalidOperationException("PopOpacity was called without a matching PushOpacity.");
+        }
+
+        _opacity = _opacityStack.Pop();
+    }
+
+    private Bgra32 Fade(Bgra32 color) =>
+        _opacity >= 1f ? color : color.WithAlpha((byte)(color.A * _opacity));
 
     /// <summary>Restricts drawing to the intersection of the current clip and a rectangle.</summary>
     /// <param name="rect">The rectangle to clip to.</param>
@@ -74,7 +102,7 @@ public sealed class UiPainter
         RectF source = RectF.Unit;
         if (TryClip(Clip, ref dest, ref source))
         {
-            _batch.Draw(TextureHandle.None, dest.ToRectF(), source, color, blend);
+            _batch.Draw(TextureHandle.None, dest.ToRectF(), source, Fade(color), blend);
         }
     }
 
@@ -113,7 +141,7 @@ public sealed class UiPainter
         RectF src = source;
         if (TryClip(Clip, ref dest, ref src))
         {
-            _batch.Draw(texture, dest.ToRectF(), src, color, blend);
+            _batch.Draw(texture, dest.ToRectF(), src, Fade(color), blend);
         }
     }
 
@@ -211,13 +239,14 @@ public sealed class UiPainter
                 RectF source = glyph.SourceRect(font.Atlas.Width, font.Atlas.Height);
                 if (TryClip(clip, ref dest, ref source))
                 {
+                    Bgra32 faded = Fade(color);
                     if (useSdf)
                     {
-                        _batch.DrawText(font.Texture, dest.ToRectF(), source, color, parameters, blend);
+                        _batch.DrawText(font.Texture, dest.ToRectF(), source, faded, parameters, blend);
                     }
                     else
                     {
-                        _batch.Draw(font.Texture, dest.ToRectF(), source, color, blend);
+                        _batch.Draw(font.Texture, dest.ToRectF(), source, faded, blend);
                     }
                 }
             }
