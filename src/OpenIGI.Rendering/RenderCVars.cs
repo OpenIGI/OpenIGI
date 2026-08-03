@@ -161,12 +161,13 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
 
-        // OFF at ultra now. The real-time screen gather traces only sixteen rays a probe a frame and leans
-        // on the temporal filter to hide the noise, which never reads clean and cannot fill a room the way
-        // the multi-bounce probe bake does. Ultra's indirect is that bake -- path-traced to convergence
-        // once per mission, so it is noise-free and genuinely bright -- and the gather is left as an opt-in
-        // extra for on-screen colour bleed rather than the main event. See IrradianceProbeBaker.Bounces.
-        ultra: "0");
+        // Ultra's indirect is this real-time screen probe gather: it traces the surface cache and the
+        // distance fields along the view and reads back as the diffuse fill, so the bounced light responds
+        // to the frame -- a lamp switched on, a door opened, the camera moved -- with no bake. About a
+        // third matches the ambient it replaces. It carries only light already in the frame, so a
+        // windowless room has nothing to gather; the lamp fixtures (r_local_light_scale) light those. The
+        // cheaper presets have no surface cache and light from the baked field (r_gi) instead.
+        ultra: "0.3");
 
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
@@ -985,7 +986,11 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "1",
-        ultra: "1");
+
+        // Off at ultra: there the real-time screen gather (r_screen_gi) is the indirect, and it supersedes
+        // this baked field in the shader anyway -- so baking one would only spend the load tracing a field
+        // nothing reads. High and below, with no surface cache to gather, light from this bake.
+        ultra: "0");
 
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(
