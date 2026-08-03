@@ -42,12 +42,15 @@ public static class IrradianceProbeBaker
     /// three, four times off its walls. Each extra pass re-traces every probe reading the light the last
     /// pass left on the geometry, so the series converges on the true multi-bounce answer. It is a
     /// one-time cached bake, so bounces cost nothing at runtime and the count is set for convergence, not
-    /// speed: at the grey retail albedo (~0.4) the fifth pass adds about two per cent, but a white-walled
-    /// room reflects far more per bounce and keeps gaining for several more, so eight is past the point
-    /// ANY surface still adds visibly. This is the difference between an interior that reads lit and one
-    /// that reads like a cave, and it is why the sun through a window fills the room rather than its floor.
+    /// speed. With the feedback carried at the surface's re-emitted radiance (see
+    /// <see cref="IndirectFeedbackScale"/>) the per-bounce gain is albedo times how much of the gather the
+    /// geometry catches, which is below one, so the light settles geometrically: at the grey retail albedo
+    /// (~0.4-0.5) an enclosed room is within a per cent of its limit by the fourth pass. Five leaves a
+    /// pass of headroom for a brighter-walled room without tracing the whole grid twice for a gain no
+    /// surface still shows. This is the difference between an interior that reads lit and one that reads
+    /// like a cave, and it is why the sun through a window fills the room rather than only its floor.
     /// </remarks>
-    public const int Bounces = 8;
+    public const int Bounces = 5;
 
     /// <summary>How far, in metres, a probe looks before calling a direction open sky.</summary>
     public const float MaxTraceMetres = 30f;
@@ -315,7 +318,15 @@ public static class IrradianceProbeBaker
                         (float)(hit.Position.Y / WorldScene.UnitsPerMetre) + (hit.Normal.Y * biasMetres),
                         (float)(hit.Position.Z / WorldScene.UnitsPerMetre) + (hit.Normal.Z * biasMetres));
 
-                    indirect = previous.SampleIrradiance(hitMetres, hit.Normal);
+                    // Brought back to the radiance the surface actually re-emits before it is bounced on.
+                    // The stored field is at the SH projection's scale: Evaluate reconstructs c0 without
+                    // the Y0 basis constant that Project multiplied in, so a uniform field reads back 2*sqrt(pi)
+                    // -- about 3.5 -- times its radiance. Feeding that straight back multiplies the light by
+                    // that factor on EVERY bounce, and an enclosed room (where nearly every gather ray lands
+                    // on another lit surface) then runs away brighter each pass instead of settling. The
+                    // factor belongs to storage, not to transport; dividing it out by the same Y0 leaves a
+                    // per-bounce gain of albedo times geometry, which loses energy each bounce and converges.
+                    indirect = previous.SampleIrradiance(hitMetres, hit.Normal) * IndirectFeedbackScale;
                 }
 
                 arriving = new Vector3f(
@@ -361,6 +372,15 @@ public static class IrradianceProbeBaker
     /// count it twice.
     /// </remarks>
     private const float SunlitBounce = 3.5f;
+
+    /// <summary>Undoes the SH projection scale when reading light back for a further bounce.</summary>
+    /// <remarks>
+    /// The zeroth SH basis constant, <c>Y0 = 0.282095</c>. <see cref="IrradianceVolume.Evaluate"/> omits it,
+    /// so a gathered value comes back at <c>2*sqrt(pi)</c> times the radiance it represents; multiplying by
+    /// <c>Y0</c> cancels that, which is what stops the bounce feedback from compounding a factor of ~3.5 per
+    /// pass and running the light away in enclosed rooms.
+    /// </remarks>
+    private const float IndirectFeedbackScale = 0.282095f;
 
     /// <summary>How far off a surface a shadow ray starts, in engine units.</summary>
     /// <remarks>
