@@ -1,5 +1,14 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Frontend;
+using OpenIGI.Frontend.Saves;
+using OpenIGI.Game.Profiles;
+using OpenIGI.Rendering.Presets;
+using OpenIGI.UI;
+using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
+using OpenIGI.UI.Widgets;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Core.Numerics;
@@ -1817,15 +1826,114 @@ using (window)
         menu.Manager.Initialize(menu, menuHost, logger);
     };
 
-    // -mission is a development shortcut: it skips the menus and drops straight into a level, which is
-    // how the fly-through gets captured without anyone clicking OK.
+    // R11: the cinematic shell (OpenIGI.Frontend) is the default front end; -vanilla and -vanillamenu
+    // reach the byte-for-byte retail menus instead. -mission still skips the menus straight into a level.
+    Shell? shell = null;
+    MenuShowcaseCamera? showcaseCamera = null;
+    MissionWarmer? missionWarmer = null;
+    UiFont? shellBodyFont = null;
+    UiFont? shellHeadingFont = null;
+    bool menuMode = false;
+    const int ShowcaseMissionId = 1;
+
     if (options.StartMission > 0)
     {
         StartMission(options.StartMission);
     }
-    else
+    else if (options.VanillaMenu)
     {
         loop.Flow.Request(FlowEvent.MainMenu);
+    }
+    else
+    {
+        MenuCameraLibrary menuCameras = MenuCameraLibrary.Load(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), logger);
+        missionWarmer = new MissionWarmer(gamePath, missions, logger);
+
+        // Saira for body, Saira Condensed as a distance field for the headings the shell sets large.
+        shellBodyFont = UiFontLibrary.Load(device, UiFontLibrary.Body, 48f);
+        shellHeadingFont = UiFontLibrary.Load(device, UiFontLibrary.Heading, 64f, FontAtlasKind.SignedDistanceField);
+        var shellTheme = new UiTheme(shellBodyFont, shellHeadingFont);
+
+        // The real DefineMission data, resolved to display strings through the language table.
+        var shellMissions = new List<MissionInfo>();
+        int missionNumber = 1;
+        foreach (MissionDescriptor descriptor in missions.Missions)
+        {
+            shellMissions.Add(new MissionInfo(
+                descriptor.Id,
+                missionNumber++,
+                strings.Get(descriptor.Name),
+                strings.Get(descriptor.Description),
+                descriptor.BriefingSprite));
+        }
+
+        var saves = new SaveSlotStore(Path.Combine(SettingsPaths.GetUserDirectory(), "saves"));
+
+        var shellHost = new DesktopShellHost(
+            startMission: (id, difficulty) =>
+            {
+                if (configuration.Active is { } activeProfile)
+                {
+                    activeProfile.Difficulty = difficulty;
+                }
+
+                menuMode = false;
+                StartMission(id);
+            },
+            quit: () => running = false,
+            previewMission: id => missionWarmer?.Warm(id ?? ShowcaseMissionId),
+            saveSettings: () => console.SaveSettings(),
+            captureThumbnail: (out int captureWidth, out int captureHeight) =>
+            {
+                captureWidth = window.Width;
+                captureHeight = window.Height;
+                var pixels = new Bgra32[captureWidth * captureHeight];
+                device.CaptureFrame(captureWidth, captureHeight, pixels);
+                return pixels;
+            });
+
+        shell = new Shell(new ShellContext(
+            shellTheme,
+            shellHost,
+            new ScreenStack(),
+            GameProfileResolver.BuildCatalogue(gamePath, null, null),
+            shellMissions,
+            CVarRegistry.Default,
+            GraphicsPresetRegistry.Default,
+            configuration,
+            saves));
+
+        // Load a showcase level behind the menu and orbit it slowly; heavy depth of field frames the UI.
+        StartMission(ShowcaseMissionId);
+        playerMode = false;
+        menuMode = true;
+
+        Vector3d showcaseCentre = default;
+        if (scene is { Placements.Count: > 0 } showcaseScene)
+        {
+            double[] centreXs = new double[showcaseScene.Placements.Count];
+            double[] centreYs = new double[showcaseScene.Placements.Count];
+            for (int i = 0; i < showcaseScene.Placements.Count; i++)
+            {
+                centreXs[i] = showcaseScene.Placements[i].Position.X;
+                centreYs[i] = showcaseScene.Placements[i].Position.Y;
+            }
+
+            Array.Sort(centreXs);
+            Array.Sort(centreYs);
+            showcaseCentre = new Vector3d(
+                centreXs[centreXs.Length / 2],
+                centreYs[centreYs.Length / 2],
+                showcaseScene.GroundHeight + 15.0);
+        }
+
+        showcaseCamera = new MenuShowcaseCamera(showcaseCentre, menuCameras.For(ShowcaseMissionId));
+
+        // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
+        RenderCVars.FocalDistance.Value = 40f;
+        RenderCVars.FocalRange.Value = 18f;
+        RenderCVars.FocalBlur.Value = 1f;
     }
 
     window.CloseRequested += (_, _) => running = false;
@@ -1862,6 +1970,8 @@ using (window)
 
     int lastCameraMilliseconds = loop.TimeSource.Milliseconds;
     int lastConsoleMilliseconds = loop.TimeSource.Milliseconds;
+    int lastShellMilliseconds = loop.TimeSource.Milliseconds;
+    int lastMenuCameraMilliseconds = loop.TimeSource.Milliseconds;
 
     // A capture run is a background process as far as the person at the keyboard is concerned: it must
     // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
@@ -1917,6 +2027,23 @@ using (window)
         int consoleNow = loop.TimeSource.Milliseconds;
         console.Update(window.Input, Math.Clamp((consoleNow - lastConsoleMilliseconds) / 1000f, 0f, 0.25f));
         lastConsoleMilliseconds = consoleNow;
+
+        // The cinematic shell reads the frame's input after the console and, like it, marks the frame
+        // captured so the free camera and the game beneath see an idle keyboard and pad. When the console
+        // is open it owns the frame and the shell only advances its animation.
+        if (menuMode && shell is not null)
+        {
+            int shellNow = loop.TimeSource.Milliseconds;
+            float shellElapsed = Math.Clamp((shellNow - lastShellMilliseconds) / 1000f, 0f, 0.1f);
+            lastShellMilliseconds = shellNow;
+
+            var shellFrame = new LayoutContext(window.Width, window.Height);
+            shell.Update(shellFrame, window.Input, shellElapsed);
+            if (!console.IsOpen)
+            {
+                window.Input.Captured = true;
+            }
+        }
 
         // The camera is advanced on every pass of the loop, not only on the passes that render. The
         // pump clears the mouse's motion accumulator, and the loop pumps several times per rendered
@@ -2267,6 +2394,16 @@ using (window)
                         playerEyePrevTick.Y + ((playerEyeTick.Y - playerEyePrevTick.Y) * tickBlend),
                         playerEyePrevTick.Z + ((playerEyeTick.Z - playerEyePrevTick.Z) * tickBlend)),
                     player.SmoothedLookRotation(tickBlend));
+            }
+
+            // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
+            // camera the scene would otherwise have used.
+            if (menuMode && showcaseCamera is not null)
+            {
+                int menuCameraNow = loop.TimeSource.Milliseconds;
+                float menuCameraElapsed = Math.Clamp((menuCameraNow - lastMenuCameraMilliseconds) / 1000f, 0f, 0.1f);
+                lastMenuCameraMilliseconds = menuCameraNow;
+                eye = showcaseCamera.Update(menuCameraElapsed);
             }
 
             // Everything soldier-shaped resolves its own frame state once, here, so the shadow
@@ -3064,6 +3201,17 @@ using (window)
             }
         }
 
+        // The cinematic shell draws over the resolved showcase scene, in 2D on the back buffer, before
+        // the console (which goes over even the shell).
+        if (menuMode && shell is not null)
+        {
+            device.Set2DProjection(window.Width, window.Height);
+            var shellPainter = new UiPainter(batch, new LayoutContext(window.Width, window.Height));
+            batch.Begin();
+            shell.Draw(shellPainter);
+            batch.End();
+        }
+
         // The console goes over everything, including the menus, so it is the last thing drawn.
         if (console.IsOpen)
         {
@@ -3143,6 +3291,9 @@ using (window)
     hud?.Dispose();
     marks?.Dispose();
     renderer?.Dispose();
+    missionWarmer?.Dispose();
+    shellBodyFont?.Dispose();
+    shellHeadingFont?.Dispose();
     logger.Information(
         "Desktop",
         $"Shutting down after {loop.Clock.TickCount} ticks and {loop.Clock.FrameCount} frames.");

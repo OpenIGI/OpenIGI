@@ -1,0 +1,10 @@
+[
+  {
+    "mission": 1,
+    "radius": 150.0,
+    "height": 60.0,
+    "speed": 0.05,
+    "startAngle": 0.6,
+    "pitchBias": -0.05
+  }
+]

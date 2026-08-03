@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering.OpenGL\OpenIGI.Rendering.OpenGL.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio.OpenAL\OpenIGI.Audio.OpenAL.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Input\OpenIGI.Input.csproj" />

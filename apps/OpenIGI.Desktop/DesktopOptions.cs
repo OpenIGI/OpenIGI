@@ -87,6 +87,7 @@ public readonly record struct DesktopOptions(
         int terrainViewDistance = 0;
         int startScreen = 0;
         int startMission = 0;
+        bool vanillaMenu = false;
 
         List<string> startupCommands = [];
 
@@ -247,8 +248,19 @@ public readonly record struct DesktopOptions(
             }
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
-                // Sugar for `+gfx_preset vanilla`: the whole remaster track off in one word -- the
-                // original's renderer, and the original's one-render-per-tick 30 Hz presentation.
+                // The whole remaster track off in one word: the retail menus instead of the cinematic
+                // shell, and the original's renderer and one-render-per-tick 30 Hz presentation.
+                vanillaMenu = true;
+                startupCommands.Add("gfx_preset vanilla");
+            }
+            else if (arg.Equals("vanillamenu", StringComparison.OrdinalIgnoreCase))
+            {
+                // Just the front end: the byte-for-byte retail menu system, but the modern renderer.
+                vanillaMenu = true;
+            }
+            else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
+            {
+                // Just the renderer: the cinematic shell over the original's render path.
                 startupCommands.Add("gfx_preset vanilla");
             }
             else if (arg.Equals("player", StringComparison.OrdinalIgnoreCase))
@@ -307,6 +319,7 @@ public readonly record struct DesktopOptions(
             CameraPosition = cameraPosition,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
+            VanillaMenu = vanillaMenu,
         };
     }
 
@@ -329,6 +342,17 @@ public readonly record struct DesktopOptions(
     /// is the behaviour every console game has.
     /// </remarks>
     public IReadOnlyList<string> StartupCommands { get; init; } = [];
+
+    /// <summary>
+    /// Gets a value indicating whether the byte-for-byte retail menu system is used instead of the
+    /// cinematic shell. Set by <c>-vanilla</c> and <c>-vanillamenu</c>.
+    /// </summary>
+    /// <remarks>
+    /// Independent of the render path: <c>-vanillamenu</c> gives the retail menus over the modern
+    /// renderer, while <c>-vanillarender</c> gives the shell over the original's render path.
+    /// <c>-vanilla</c> asks for both.
+    /// </remarks>
+    public bool VanillaMenu { get; init; }
 
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
@@ -364,10 +388,13 @@ public readonly record struct DesktopOptions(
           -campos X,Y,Z    Open the fly-through camera at this world position in metres.
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
-          -vanilla         The original's picture and pacing: shorthand for +gfx_preset vanilla,
-                           which turns the whole remaster track off, including the smooth
-                           (between-tick) presentation - the display then steps at the
-                           original's 30 Hz.
+          -vanilla         The whole remaster track off: the retail menu system and the original's
+                           picture and pacing (implies -vanillamenu and +gfx_preset vanilla,
+                           including the original's 30 Hz between-tick presentation).
+          -vanillamenu     The byte-for-byte retail menu system instead of the cinematic shell,
+                           over the modern renderer.
+          -vanillarender   The cinematic shell over the original's render path
+                           (shorthand for +gfx_preset vanilla).
           +<command>       Run a console statement at start-up, after settings.cfg has loaded.
                            Arguments run to the next + or -, so
                              +gfx_preset ultra +r_scale 0.8
