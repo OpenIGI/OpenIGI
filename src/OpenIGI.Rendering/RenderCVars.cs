@@ -159,6 +159,22 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Trace on-screen geometry from the frame before falling back to the surface cache.");
 
+    /// <summary>How far the screen probe gather's spatial denoise blur reaches, in probes. Zero is off.</summary>
+    /// <remarks>
+    /// The spatial half of the gather's denoise, paired with its temporal accumulation. The per-frame
+    /// estimate is noisy and the temporal pass resets along depth edges, so the probes freshest near a
+    /// wall shimmer; blending each probe with its neighbours, weighted so light does not cross an edge,
+    /// smooths that. One probe each way is usually enough; higher is smoother but softer. Only ever runs
+    /// while <see cref="ScreenGather"/> is up.
+    /// </remarks>
+    public static readonly NumericCVar<int> ScreenGatherFilter = CVar.Int(
+        "r_screen_gi_filter",
+        1,
+        0,
+        4,
+        CVarOptions.Archive,
+        "Radius, in probes, of the screen probe gather's spatial denoise. 0 is off.");
+
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
     /// Off by default, and only ever engages where a tone map is on -- the vanilla copy path returns

@@ -339,6 +339,7 @@ using (window)
     // Grown when the window changes, which drops the history with it.
     TextureHandle[] giAccum = [default, default];
     TextureHandle[] giPosition = [default, default];
+    TextureHandle giFiltered = default;
     int giIndirectWidth = 0;
     int giIndirectHeight = 0;
     int giFrame = 0;
@@ -2604,6 +2605,16 @@ using (window)
                             wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum.pos");
                     }
 
+                    // The spatial denoise's output, regenerated each frame from the accumulation, so a
+                    // single buffer rather than a ping-pong pair.
+                    if (giFiltered.IsValid)
+                    {
+                        device.DestroyTexture(giFiltered);
+                    }
+
+                    giFiltered = device.CreateStorageTexture(
+                        wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.filtered");
+
                     giIndirectWidth = wantWidth;
                     giIndirectHeight = wantHeight;
                     giHasHistory = false;
@@ -2645,8 +2656,20 @@ using (window)
                     giTraceDistance,
                     giTraceThickness);
 
+                // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
+                // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
+                int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
+                TextureHandle giRead = giAccum[write];
+
+                if (giFilterRadius > 0)
+                {
+                    liveGiCards.FilterScreen(
+                        giAccum[write], giPosition[write], giFiltered, giIndirectWidth, giIndirectHeight, giFilterRadius);
+                    giRead = giFiltered;
+                }
+
                 // Recorded for the deferred lighting to fold in when the pass closes, just below.
-                device.SetScreenIndirect(giAccum[write], giStrength);
+                device.SetScreenIndirect(giRead, giStrength);
 
                 // What this frame becomes to the next: its camera, so the next reprojection can find where
                 // each surface sat, and the flag that says there is now a frame to reproject onto. The
