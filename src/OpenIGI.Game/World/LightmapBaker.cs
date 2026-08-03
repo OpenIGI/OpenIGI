@@ -1,6 +1,8 @@
 using System.Threading;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Resources;
+using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -311,17 +313,25 @@ public static class LightmapBaker
         Vector3d A, Vector3d B, Vector3d C, int Target,
         float U0, float V0, float U1, float V1, float U2, float V2, Vector3f Albedo);
 
+    /// <summary>The albedo a surface whose texture cannot be resolved falls back to -- a neutral mid grey.</summary>
+    private static readonly Vector3f DefaultAlbedo = new(0.5f, 0.5f, 0.5f);
+
     /// <summary>Builds the world-space lightmapped triangles the gather traces against.</summary>
     /// <param name="scene">The scene the targets came from.</param>
     /// <param name="targets">The targets from <see cref="EnumerateTargets"/>; a triangle's <c>Target</c> indexes this.</param>
-    /// <returns>Every lightmapped triangle, tagged with its target and lightmap UVs.</returns>
+    /// <param name="resources">Where a record's diffuse texture is read from, for its bounce colour; null keeps every surface grey.</param>
+    /// <returns>Every lightmapped triangle, tagged with its target, lightmap UVs and albedo colour.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="scene"/> or <paramref name="targets"/> is null.</exception>
-    public static LightmapTriangle[] BuildTriangles(WorldScene scene, IReadOnlyList<LightmapTarget> targets)
+    public static LightmapTriangle[] BuildTriangles(
+        WorldScene scene, IReadOnlyList<LightmapTarget> targets, ResourceRegistry? resources = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(targets);
 
         List<LightmapTriangle> triangles = [];
+
+        // One decode per distinct texture, not per record: a texture drawn a hundred times is read once.
+        Dictionary<string, Vector3f> albedoByTexture = new(StringComparer.OrdinalIgnoreCase);
 
         for (int t = 0; t < targets.Count; t++)
         {
@@ -332,10 +342,9 @@ public static class LightmapBaker
             ReadOnlySpan<MefVertex> vertices = model.Vertices;
             ReadOnlySpan<ushort> indices = record.Indices.Span;
 
-            // The diffuse colour is not decoded yet -- I.G.I.'s textures are paletted and the CPU palette
-            // decode is not wired (phase 3b). A mid grey stands in so the multi-bounce STRUCTURE works and
-            // can be verified; turning it into the surface's real colour is then a data swap, not a rewrite.
-            Vector3f albedo = new(0.5f, 0.5f, 0.5f);
+            // The surface's own colour, which is what turns the bounce from grey to coloured -- a warm
+            // wooden floor throws warm light, a red sign tints the wall beside it.
+            Vector3f albedo = ResolveAlbedo(placement, record, resources, albedoByTexture);
 
             for (int i = 0; i + 2 < indices.Length; i += 3)
             {
@@ -354,6 +363,79 @@ public static class LightmapBaker
         }
 
         return [.. triangles];
+    }
+
+    // The mean colour of a record's diffuse texture, used as its bounce albedo. The texture name comes
+    // from the pack's material binding (REND slot -> instance texture); the pixels from the level's own
+    // textures/<name>.tex, which decode direct-colour (no palette). A texture that will not resolve or
+    // decode keeps the grey default -- a miss costs the tint on that surface, never the bake. Cached per
+    // name so a texture used a hundred times is read once.
+    private static Vector3f ResolveAlbedo(
+        WorldPlacement placement, MefDrawRecord record, ResourceRegistry? resources, Dictionary<string, Vector3f> cache)
+    {
+        if (resources is null
+            || record.MaterialSlot == MefDrawRecord.NoMaterialSlot
+            || !placement.Pack.TryGetTextureName(placement.Instance, record.MaterialSlot, out string texture))
+        {
+            return DefaultAlbedo;
+        }
+
+        if (cache.TryGetValue(texture, out Vector3f cached))
+        {
+            return cached;
+        }
+
+        Vector3f colour = DefaultAlbedo;
+
+        try
+        {
+            if (resources.TryLoad(LoadedPack.TextureResourceName(texture), out ReadOnlyMemory<byte> data)
+                && data.Length >= 4
+                && TexFile.IsTexture(data.Span))
+            {
+                colour = MeanColour(TexFile.Load(data.Span));
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException)
+        {
+            // Illegal name, atlas rather than a plain texture, paletted with no palette shipped: the tint
+            // is never worth taking the bake down for. It stays grey.
+        }
+
+        cache[texture] = colour;
+        return colour;
+    }
+
+    // Averages a decoded texture into a single albedo colour. Divided into [0,1]; I.G.I.'s textures carry
+    // some painted-in lighting so this over-reads the true reflectance a little, but it is the HUE that
+    // matters for a coloured bounce, and the bounce's own scale carries the magnitude.
+    private static Vector3f MeanColour(TextureImage image)
+    {
+        ReadOnlySpan<Bgra32> pixels = image.Pixels;
+        (int width, int height) = image.GetLevelSize(0);
+        int count = Math.Min(width * height, pixels.Length);
+
+        if (count <= 0)
+        {
+            return DefaultAlbedo;
+        }
+
+        double r = 0;
+        double g = 0;
+        double b = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            Bgra32 pixel = pixels[i];
+            r += pixel.R;
+            g += pixel.G;
+            b += pixel.B;
+        }
+
+        return new Vector3f(
+            (float)(r / count / 255.0),
+            (float)(g / count / 255.0),
+            (float)(b / count / 255.0));
     }
 
     // Walks a record's triangle list and rasterises each one into the target's lightmap-UV space, filling

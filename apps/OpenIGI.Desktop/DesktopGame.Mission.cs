@@ -864,7 +864,12 @@ internal sealed partial class DesktopGame
         // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
         // then gather several bounces reading the last pass's light. Grey albedo for now (colour is 3b),
         // so this verifies the bounce fills and brightens rather than the colour it carries.
-        LightmapBaker.LightmapTriangle[] triangles = LightmapBaker.BuildTriangles(scene, targets);
+        LightmapBaker.LightmapTriangle[] triangles = LightmapBaker.BuildTriangles(scene, targets, _resources);
+        int coloured = triangles.Count(t => MathF.Abs(t.Albedo.X - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Y - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Z - 0.5f) > 0.02f);
+        _logger.Information(
+            "Lightmap",
+            FormattableString.Invariant(
+                $"Albedo: {coloured}/{triangles.Length} triangles got a resolved colour; samples ({triangles[0].Albedo.X:F2},{triangles[0].Albedo.Y:F2},{triangles[0].Albedo.Z:F2}) ({triangles[triangles.Length / 2].Albedo.X:F2},{triangles[triangles.Length / 2].Albedo.Y:F2},{triangles[triangles.Length / 2].Albedo.Z:F2})."));
         LightmapBaker.LightmapBvh bvh = LightmapBaker.LightmapBvh.Build(triangles);
         _logger.Information("Lightmap", $"Built a BVH over {triangles.Length} triangle(s); gathering bounces.");
         LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, passes: 4, hemisphereRays: 64);
