@@ -88,6 +88,7 @@ public readonly record struct DesktopOptions(
         int startScreen = 0;
         int startMission = 0;
         bool vanillaMenu = false;
+        bool bakeAll = false;
 
         List<string> startupCommands = [];
 
@@ -263,6 +264,12 @@ public readonly record struct DesktopOptions(
                 // Just the renderer: the cinematic shell over the original's render path.
                 startupCommands.Add("gfx_preset vanilla");
             }
+            else if (arg.Equals("bakeall", StringComparison.OrdinalIgnoreCase))
+            {
+                // Trace every mission's global-illumination probe field and write it to the cache, then
+                // quit. Run once; the .giv files can then be shipped so no player traces a level.
+                bakeAll = true;
+            }
             else if (arg.Equals("player", StringComparison.OrdinalIgnoreCase))
             {
                 // Walking is the default now, so this is kept only so an existing command line does
@@ -320,6 +327,7 @@ public readonly record struct DesktopOptions(
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             VanillaMenu = vanillaMenu,
+            BakeAll = bakeAll,
         };
     }
 
@@ -353,6 +361,12 @@ public readonly record struct DesktopOptions(
     /// <c>-vanilla</c> asks for both.
     /// </remarks>
     public bool VanillaMenu { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether every mission's global-illumination probe field is traced and
+    /// written to the cache and the game then quits, set by <c>-bakeall</c>.
+    /// </summary>
+    public bool BakeAll { get; init; }
 
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
@@ -395,6 +409,8 @@ public readonly record struct DesktopOptions(
                            over the modern renderer.
           -vanillarender   The cinematic shell over the original's render path
                            (shorthand for +gfx_preset vanilla).
+          -bakeall         Trace every mission's global-illumination probe field, write it to the
+                           cache and quit. Run once; ship the .giv files so no player traces a level.
           +<command>       Run a console statement at start-up, after settings.cfg has loaded.
                            Arguments run to the next + or -, so
                              +gfx_preset ultra +r_scale 0.8
