@@ -44,6 +44,10 @@ public class Label : UiElement
     /// <summary>Gets or sets how the text sits horizontally when the label is wider than its text.</summary>
     public HorizontalAlignment TextAlignment { get; set; } = HorizontalAlignment.Left;
 
+    /// <summary>Gets or sets a value indicating whether the text is centred vertically in the label's bounds.</summary>
+    /// <remarks>Only matters when a container stretches the label taller than its text — a nav bar row.</remarks>
+    public bool CenterTextVertically { get; set; }
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available) =>
         _font.Measure(Text, context.Px(SizeInDesignUnits));
@@ -60,7 +64,14 @@ public class Label : UiElement
             _ => Bounds.X,
         };
 
-        var origin = new UiVec2(x, Bounds.Y);
+        float y = Bounds.Y;
+        if (CenterTextVertically)
+        {
+            float textHeight = _font.Measure(Text, sizePx).Y;
+            y = Bounds.Y + MathF.Max(0f, (Bounds.Height - textHeight) * 0.5f);
+        }
+
+        var origin = new UiVec2(x, y);
         if (Shadow is { } shadow)
         {
             float offset = MathF.Max(1f, painter.Context.Px(1.5f));

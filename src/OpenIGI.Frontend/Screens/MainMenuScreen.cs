@@ -5,14 +5,14 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The shell's front page: a game-selector chip and the Campaign / Settings / Profile / Extras / Quit
-/// entries in a translucent panel over the slowly-orbiting showcase level.
+/// The shell's front page: the game title, a horizontal nav bar of Campaign / Settings / Profile /
+/// Extras / Quit and a game-selector chip, in a translucent strip across the top of the slowly-orbiting
+/// showcase level.
 /// </summary>
 /// <remarks>
-/// The panel is anchored to the left of the screen so the showcase — drawn behind the shell by the app,
-/// with its heavy depth-of-field and grading — fills the rest. The panel is transparent-backed apart from
-/// its own translucent fill, so nothing here hides the scene; the menu reads as a HUD over a living
-/// world rather than a page.
+/// The bar spans the width at the top so the showcase — drawn behind the shell by the app, with its heavy
+/// depth of field and grading — fills the rest of the screen beneath it. Only the strip's own translucent
+/// fill sits over the scene; the menu reads as a top navigation over a living world.
 /// </remarks>
 public sealed class MainMenuScreen : Screen
 {
@@ -34,25 +34,34 @@ public sealed class MainMenuScreen : Screen
         UiTheme theme = _context.Theme;
         var canvas = new Canvas();
 
-        var panel = new Panel
+        var bar = new Panel { Background = theme.Panel };
+        var row = new FlexPanel
         {
-            Background = theme.Panel,
-            Padding = new Thickness(48f, 52f),
+            Orientation = Orientation.Horizontal,
+            Gap = 6f,
+            Padding = new Thickness(48f, 0f),
+            Justify = FlexJustify.Start,
         };
 
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f };
-
-        column.AddChild(new Label(theme.Heading, "PROJECT I.G.I.", theme.HeadingTextSize, theme.Accent)
+        // The title on the left, vertically centred in the bar.
+        row.Add(new Label(theme.Heading, "PROJECT I.G.I.", theme.HeadingTextSize * 0.62f, theme.Accent)
         {
             Shadow = theme.Shadow,
-        });
-        column.AddChild(new Label(theme.Body, "OpenIGI — cinematic shell", theme.BodyTextSize, theme.TextMuted)
-        {
-            Margin = new Thickness(0f, 0f, 0f, 28f),
+            CenterTextVertically = true,
+            Margin = new Thickness(0f, 0f, 40f, 0f),
         });
 
-        // Game selector: every known title, the unavailable ones flagged. Selecting one that cannot be
-        // played snaps back to the active title rather than pretending to switch.
+        // The nav entries as horizontal tabs; each button fills the bar height, so its focus fill reads as
+        // a tab highlight.
+        AddButton(row, "Campaign", () => _context.Stack.Push(new CampaignScreen(_context)));
+        AddButton(row, "Settings", () => _context.Stack.Push(new SettingsScreen(_context)));
+        AddButton(row, "Profile", () => _context.Stack.Push(new ProfilesScreen(_context)));
+        AddButton(row, "Extras", () => _context.Stack.Push(new ExtrasScreen(_context)));
+        AddButton(row, "Quit", _context.Host.Quit);
+
+        // A growing spacer pushes the game selector to the right edge.
+        row.Add(new Panel(), grow: 1f);
+
         string[] games = new string[_context.Games.Count];
         for (int i = 0; i < games.Length; i++)
         {
@@ -61,7 +70,7 @@ public sealed class MainMenuScreen : Screen
                 : _context.Games[i].DisplayName + "  (unavailable)";
         }
 
-        var selector = new Dropdown(theme, "Game", games) { Margin = new Thickness(0f, 0f, 0f, 28f) };
+        var selector = new Dropdown(theme, "Game", games) { Width = 340f };
         selector.SelectionChanged += index =>
         {
             if (index < 0 || index >= _context.Games.Count || !_context.Games[index].IsPlayable)
@@ -69,26 +78,20 @@ public sealed class MainMenuScreen : Screen
                 selector.SelectedIndex = 0;
             }
         };
-        column.AddChild(selector);
+        row.Add(selector);
 
-        AddButton(column, "Campaign", () => _context.Stack.Push(new CampaignScreen(_context)));
-        AddButton(column, "Settings", () => _context.Stack.Push(new SettingsScreen(_context)));
-        AddButton(column, "Profile", () => _context.Stack.Push(new ProfilesScreen(_context)));
-        AddButton(column, "Extras", () => _context.Stack.Push(new ExtrasScreen(_context)));
-        AddButton(column, "Quit", _context.Host.Quit);
-
-        panel.AddChild(column);
-        canvas.Add(panel, new Anchor(UiVec2.Zero, new UiVec2(0.42f, 1f)));
+        bar.AddChild(row);
+        canvas.Add(bar, new Anchor(UiVec2.Zero, new UiVec2(1f, 0.14f)));
         return canvas;
     }
 
     /// <inheritdoc/>
     protected override void OnEnter() => _context.Host.PreviewMission(null); // show the default showcase
 
-    private void AddButton(StackPanel column, string text, Action onActivate)
+    private void AddButton(FlexPanel row, string text, Action onActivate)
     {
-        var button = new Button(_context.Theme, text) { TextSize = _context.Theme.BodyTextSize * 1.25f };
+        var button = new Button(_context.Theme, text) { TextSize = _context.Theme.BodyTextSize * 1.15f };
         button.Activated += _ => onActivate();
-        column.AddChild(button);
+        row.Add(button);
     }
 }

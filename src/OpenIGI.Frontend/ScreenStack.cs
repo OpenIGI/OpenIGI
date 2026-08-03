@@ -32,6 +32,8 @@ public sealed class ScreenStack
 {
     private readonly List<Screen> _screens = [];
     private readonly UiNavigation _navigation = new();
+    private UiVec2 _pointer;
+    private bool _pointerVisible;
 
     /// <summary>Gets the number of screens currently on the stack, including one that is exiting.</summary>
     public int Count => _screens.Count;
@@ -113,6 +115,18 @@ public sealed class ScreenStack
 
         _navigation.Update(input, elapsedSeconds);
 
+        // Track the pointer for the drawn cursor, and let the last input device decide whether it shows:
+        // moving the mouse brings the cursor up, a directional or accept press from keyboard/pad hides it.
+        _pointer = new UiVec2(input.Mouse.X, input.Mouse.Y);
+        if (input.Mouse.DeltaX != 0f || input.Mouse.DeltaY != 0f)
+        {
+            _pointerVisible = true;
+        }
+        else if (_navigation.Direction is not null || _navigation.Accept)
+        {
+            _pointerVisible = false;
+        }
+
         foreach (Screen screen in _screens)
         {
             screen.Prepare(context);
@@ -147,6 +161,29 @@ public sealed class ScreenStack
         {
             screen.Draw(painter);
         }
+
+        if (_pointerVisible)
+        {
+            DrawCursor(painter);
+        }
+    }
+
+    private void DrawCursor(UiPainter painter)
+    {
+        // A classic arrow: a white triangle over a slightly larger dark one for contrast, its tip at the
+        // pointer. Sized gently with the viewport so it stays a sensible size from 480p to 4K.
+        float size = Math.Clamp(painter.Context.Viewport.Y / 42f, 18f, 40f);
+        DrawArrow(painter, _pointer, size + 3f, OpenIGI.Core.Graphics.Bgra32.FromRgba(0, 0, 0, 200));
+        DrawArrow(painter, _pointer, size, OpenIGI.Core.Graphics.Bgra32.White);
+    }
+
+    private static void DrawArrow(UiPainter painter, UiVec2 tip, float size, OpenIGI.Core.Graphics.Bgra32 color)
+    {
+        var down = new UiVec2(tip.X, tip.Y + size);
+        var elbow = new UiVec2(tip.X + (size * 0.36f), tip.Y + (size * 0.72f));
+        var barb = new UiVec2(tip.X + (size * 0.72f), tip.Y + (size * 0.72f));
+        painter.FillTriangle(tip, down, elbow, color);
+        painter.FillTriangle(tip, elbow, barb, color);
     }
 
     private int TopIndex

@@ -222,6 +222,20 @@ public abstract class Screen
             return nav.Back;
         }
 
+        // Mouse: moving the pointer focuses whatever is under it, a left click activates it. Only on a
+        // real move, so the pointer resting on a row does not fight keyboard or gamepad focus.
+        MouseState mouse = input.Mouse;
+        if (mouse.DeltaX != 0f || mouse.DeltaY != 0f)
+        {
+            focus.FocusAt(new UiVec2(mouse.X, mouse.Y));
+        }
+
+        if (mouse.WasPressed(MouseButton.Left)
+            && focus.FocusAt(new UiVec2(mouse.X, mouse.Y)) is Control clicked)
+        {
+            clicked.Activate();
+        }
+
         if (nav.Direction is { } direction)
         {
             // The focused control gets first refusal; only if it declines does focus move.

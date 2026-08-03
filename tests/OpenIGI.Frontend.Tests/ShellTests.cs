@@ -144,6 +144,37 @@ public sealed class ShellTests
     }
 
     [Fact]
+    public void A_mouse_click_activates_the_control_under_the_pointer()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f); // build + lay out the top bar
+
+            Button campaign = Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!;
+            UiVec2 centre = campaign.Bounds.Center;
+
+            var input = new InputState();
+            input.BeginFrame();
+            input.Mouse.SetPosition(centre.X, centre.Y);
+            input.Mouse.AddMotion(4f, 4f);                 // a move, so the pointer hover-focuses
+            input.Mouse.SetButton(MouseButton.Left, true); // and a click
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+
+            Pump(shell, 0.6f);
+            Assert.IsType<CampaignScreen>(shell.Stack.Top);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Quit_reaches_the_host()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));

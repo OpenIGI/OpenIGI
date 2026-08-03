@@ -124,6 +124,28 @@ public sealed class UiPainter
         FillRect(new UiRect(rect.Right - thickness, rect.Y, thickness, rect.Height), color, blend);
     }
 
+    /// <summary>Fills a triangle, unclipped — for small overlay shapes such as the mouse cursor.</summary>
+    /// <param name="a">The first corner.</param>
+    /// <param name="b">The second corner.</param>
+    /// <param name="c">The third corner.</param>
+    /// <param name="color">The fill colour.</param>
+    /// <remarks>
+    /// Emitted as a degenerate quad (its last two corners coincide), so it rides the same batch as every
+    /// other 2D draw. It does not honour the clip stack; the cursor is always on screen and never inside
+    /// a scroll view.
+    /// </remarks>
+    public void FillTriangle(UiVec2 a, UiVec2 b, UiVec2 c, Bgra32 color)
+    {
+        Bgra32 faded = Fade(color);
+        _batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(a.X, a.Y, 0f, 0f, faded),
+            new Vertex2D(b.X, b.Y, 0f, 0f, faded),
+            new Vertex2D(c.X, c.Y, 0f, 0f, faded),
+            new Vertex2D(c.X, c.Y, 0f, 0f, faded),
+            BlendMode.AlphaBlend);
+    }
+
     /// <summary>Draws a textured sprite.</summary>
     /// <param name="texture">The texture to sample.</param>
     /// <param name="destination">The destination rectangle in pixels.</param>
