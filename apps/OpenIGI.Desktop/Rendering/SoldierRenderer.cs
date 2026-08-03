@@ -1,5 +1,4 @@
 ﻿using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
@@ -565,7 +564,7 @@ public sealed class SoldierRenderer : IDisposable
                     GameTask taskRoot = levelRoot;
                     brain.SetActivateSupport(
                         _activationClaims,
-                        (int id, out Vector3d position) =>
+                        (id, out position) =>
                         {
                             position = TaskPositionOf(taskRoot, id);
                             return position != default;
@@ -1202,7 +1201,7 @@ public sealed class SoldierRenderer : IDisposable
             return null;
         }
 
-        return (double x, double y, double z, out double groundZ) =>
+        return (x, y, z, out groundZ) =>
         {
             groundZ = double.MinValue;
             bool found = false;
