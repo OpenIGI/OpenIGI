@@ -114,6 +114,40 @@ public sealed class IrradianceVolume
         Origin.Y + (y * Spacing),
         Origin.Z + (z * Spacing));
 
+    /// <summary>Moves this volume's light a fraction of the way towards another's, in place.</summary>
+    /// <param name="target">The volume to move towards; must have the same probe layout.</param>
+    /// <param name="t">How far to move, 0 for none and 1 for all the way.</param>
+    /// <returns>The largest change any coefficient made, so a caller can tell when the blend has settled.</returns>
+    /// <remarks>
+    /// For the interactive bake: the displayed field chases the newest bounce pass rather than snapping to
+    /// it, so a room brightens smoothly as the light builds up instead of jumping a step per pass. Only the
+    /// coefficients move -- the distance moments are a property of the fixed geometry and never change
+    /// between passes.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="target"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="target"/> has a different probe count.</exception>
+    public float BlendToward(IrradianceVolume target, float t)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+
+        if (target._coefficients.Length != _coefficients.Length)
+        {
+            throw new ArgumentException("The target volume has a different probe layout.", nameof(target));
+        }
+
+        float amount = Math.Clamp(t, 0f, 1f);
+        float maxChange = 0f;
+
+        for (int i = 0; i < _coefficients.Length; i++)
+        {
+            float change = (target._coefficients[i] - _coefficients[i]) * amount;
+            _coefficients[i] += change;
+            maxChange = MathF.Max(maxChange, MathF.Abs(change));
+        }
+
+        return maxChange;
+    }
+
     /// <summary>Makes a deep copy, so a bounce pass can read the last pass's light while writing the next.</summary>
     /// <returns>An independent volume with the same probes.</returns>
     public IrradianceVolume Clone()

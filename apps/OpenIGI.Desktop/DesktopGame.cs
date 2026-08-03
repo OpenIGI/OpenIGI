@@ -79,11 +79,24 @@ internal sealed partial class DesktopGame : IDisposable
     private IrradianceVolume? _probeField;
     private IrradianceProbeBake? _probeBake;
 
+    // The newest bounce pass the display is easing towards. Held apart from _probeField (what is on the
+    // GPU right now) so a pass does not snap in: a bounce adds a chunk of indirect light, and eight snaps
+    // read as the room stepping brighter eight times. _probeField chases this instead.
+    private IrradianceVolume? _probeTarget;
+
     // The cache key an in-flight interactive bake is written under once it finishes -- remembered here
     // because the load no longer blocks for the field, so the save moves to the frame the bake completes.
     private int _probeBakeMission;
     private float _probeBakeSpacing;
     private Vector3f _probeBakeSun;
+
+    // How the displayed field eases towards the newest bounce pass. The rate is an exponential approach in
+    // reciprocal seconds -- at 2.0 the field covers ~86% of the gap in one second, which settles well
+    // before the next pass (~5 s apart) yet reads as a smooth fill rather than a step. The settle cut-off
+    // is the largest per-frame coefficient move below which the ease is treated as arrived and stops
+    // re-uploading, so a converging tail does not upload the volume forever.
+    private const float ProbeChaseRate = 2.0f;
+    private const float ProbeChaseSettle = 0.001f;
     private SurfaceCacheLighting? _cardLighting;
     private SurfaceCacheLookup? _cardLookup;
 
@@ -767,6 +780,7 @@ internal sealed partial class DesktopGame : IDisposable
         int lastConsoleMilliseconds = _loop.TimeSource.Milliseconds;
         int lastShellMilliseconds = _loop.TimeSource.Milliseconds;
         int lastMenuCameraMilliseconds = _loop.TimeSource.Milliseconds;
+        int lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
 
         // A capture run is a background process as far as the person at the keyboard is concerned: it must
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
@@ -781,33 +795,63 @@ internal sealed partial class DesktopGame : IDisposable
             // answers true once, so this costs a completed-flag read per frame until then and nothing after.
             if (_probeBake is { } pendingBake)
             {
-                // Each bounce pass as it lands, so the interactive load shows the light building up rather
-                // than waiting for the finished field. Uploaded here because the volume becomes a GL
-                // texture and the context belongs to this thread; the first arrival starts the fade from
-                // flat ambient, and the rest snap (a bounce changes the field only a little).
+                // Each bounce pass becomes the field the display eases towards, not one shown outright:
+                // the smooth chase below fills the light in over about a second rather than stepping it.
                 if (pendingBake.TryCollectLatest(out IrradianceVolume? streamedField) && streamedField is not null)
                 {
-                    _probeField = streamedField;
-                    _device.SetIrradianceVolume(_probeField);
-
-                    if (probeArrivedAt < 0)
+                    if (_probeField is null)
                     {
+                        // First light: shown at once and faded up from flat ambient by the device's own
+                        // blend, so there is a starting field for later passes to ease away from.
+                        _probeField = streamedField;
+                        _probeTarget = streamedField;
+                        _device.SetIrradianceVolume(_probeField);
                         probeArrivedAt = _loop.TimeSource.Milliseconds;
                     }
-                }
-
-                // Once the bake is done, the last field it streamed is the finished one; write it to the
-                // cache so the next load reads it instead of tracing again, and stop polling.
-                if (pendingBake.IsComplete)
-                {
-                    pendingBake.TryCollect(out _);
-                    _probeBake = null;
-
-                    if (_probeField is not null)
+                    else
                     {
-                        _giCache.Save(_probeBakeMission, _probeBakeSpacing, _probeBakeSun, _probeField);
+                        _probeTarget = streamedField;
                     }
                 }
+
+                // Once the bake is done, the authoritative final field is both what the display settles on
+                // and what the cache keeps, so the next load reads it instead of tracing again.
+                if (pendingBake.IsComplete)
+                {
+                    if (pendingBake.TryCollect(out IrradianceVolume? finalField) && finalField is not null)
+                    {
+                        _probeTarget = finalField;
+                        _giCache.Save(_probeBakeMission, _probeBakeSpacing, _probeBakeSun, finalField);
+                    }
+
+                    _probeBake = null;
+                }
+            }
+
+            // Ease the displayed field towards the newest baked pass. Framerate-independent, so the fill
+            // looks the same however fast frames go out, and it keeps running after the bake handle is gone
+            // until the last pass has settled -- at which point the field points straight at the target and
+            // the per-frame re-upload stops.
+            if (_probeTarget is not null && _probeField is not null && !ReferenceEquals(_probeField, _probeTarget))
+            {
+                int chaseNow = _loop.TimeSource.Milliseconds;
+                float chaseSeconds = MathF.Max(0f, (chaseNow - lastProbeChaseMilliseconds) / 1000f);
+                lastProbeChaseMilliseconds = chaseNow;
+
+                float step = 1f - MathF.Exp(-ProbeChaseRate * chaseSeconds);
+                float moved = _probeField.BlendToward(_probeTarget, step);
+                _device.SetIrradianceVolume(_probeField);
+
+                if (moved < ProbeChaseSettle)
+                {
+                    _probeField = _probeTarget;
+                }
+            }
+            else
+            {
+                // Keep the clock current while idle, so the first frame of the next ease steps by one
+                // frame's worth of time rather than the whole idle gap.
+                lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
             }
 
             // Same handover, same reason: the atlas becomes a GL volume, and the context belongs here.

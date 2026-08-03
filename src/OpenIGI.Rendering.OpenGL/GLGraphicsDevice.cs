@@ -73,6 +73,10 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private Vector3f _probeInverseCount;
     private float _probeSpacing;
     private bool _hasProbes;
+
+    // The last probe layout logged as uploaded, so re-uploads of the same field (the interactive bake
+    // easing light in frame by frame) do not each print a line.
+    private (int X, int Y, int Z, float Spacing) _loggedProbeLayout;
     private int _lightingProbesEnabled = -1;
     private int _lightingProbeOrigin = -1;
     private int _lightingProbeInverseCount = -1;
@@ -1181,9 +1185,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _probeInverseCount = new Vector3f(1f / volume.CountX, 1f / volume.CountY, 1f / volume.CountZ);
         _hasProbes = true;
 
-        _logger.Information(
-            "GI",
-            $"Probe field uploaded: {volume.CountX}x{volume.CountY}x{volume.CountZ} at {volume.Spacing:0.#} m.");
+        // Only when the field's shape changes, not on every upload. An interactive bake re-uploads this
+        // volume every frame for a second or so as the light eases in -- same layout each time -- and
+        // logging that per frame would bury the rest of the frame's diagnostics.
+        var layout = (volume.CountX, volume.CountY, volume.CountZ, volume.Spacing);
+        if (layout != _loggedProbeLayout)
+        {
+            _loggedProbeLayout = layout;
+            _logger.Information(
+                "GI",
+                $"Probe field uploaded: {volume.CountX}x{volume.CountY}x{volume.CountZ} at {volume.Spacing:0.#} m.");
+        }
     }
 
     /// <summary>Uploads one channel of the probe field as a filtered volume texture.</summary>
