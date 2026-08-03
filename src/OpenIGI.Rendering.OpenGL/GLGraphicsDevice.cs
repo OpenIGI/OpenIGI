@@ -67,44 +67,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private (float Scale, float Offset, float Slope, float Enabled) _detailFade;
-    private IrradianceVolumeSettings _volumeSettings;
-    private readonly uint[] _probeTextures = [0, 0, 0, 0];
-    private Vector3f _probeOrigin;
-    private Vector3f _probeInverseCount;
-    private float _probeSpacing;
-    private bool _hasProbes;
-
-    // The last probe layout logged as uploaded, so re-uploads of the same field (the interactive bake
-    // easing light in frame by frame) do not each print a line.
-    private (int X, int Y, int Z, float Spacing) _loggedProbeLayout;
-    private int _lightingProbesEnabled = -1;
-    private int _lightingProbeOrigin = -1;
-    private int _lightingProbeInverseCount = -1;
-    private int _lightingProbeScale = -1;
-    private int _lightingProbeSky = -1;
-    private int _lightingProbeBlend = -1;
-    private int _lightingProbeViewToWorld = -1;
-    private int _lightingProbeCamera = -1;
-    private int _lightingShowProbes = -1;
     private int _lightingScale = -1;
 
-    // The screen probe gather's indirect atlas, fed into the deferred lighting's own diffuse irradiance
-    // rather than composited as a post-pass. Set per frame by the game layer while the G-buffer is live;
-    // read by RunDeferredLighting and then cleared, so a frame that does not gather adds nothing.
-    private int _lightingGiStrength = -1;
-    private TextureHandle _screenIndirect;
-    private float _screenIndirectStrength;
-
-    // The level's real-time local lights -- the lamp fixtures, in view space. Set per frame by the game
-    // layer before the pass closes and cleared after, the same lifetime as the screen indirect: a frame
-    // that submits none lights from none. Packed for one glUniform4fv each: position.xyz + reach, then
-    // colour.rgb + intensity, per light, up to the shader's array size.
-    private int _lightingLocalLightCount = -1;
-    private int _lightingLocalLightPositionRadius = -1;
-    private int _lightingLocalLightColourIntensity = -1;
-    private readonly float[] _localLightPositionRadius = new float[DeferredLocalLight.Maximum * 4];
-    private readonly float[] _localLightColourIntensity = new float[DeferredLocalLight.Maximum * 4];
-    private int _localLightCount;
 
     private DebugView _debugView;
     private ReflectionSettings _reflections;
@@ -113,10 +77,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _reflectionMarch = -1;
     private int _reflectionTexelSize = -1;
     private int _reflectionJitter = -1;
-    private int _reflectionProbesEnabled = -1;
-    private int _reflectionProbeOrigin = -1;
-    private int _reflectionProbeInverseCount = -1;
-    private int _reflectionProbeSpacing = -1;
     private int _reflectionProbeSky = -1;
     private int _reflectionViewToWorld = -1;
     private int _reflectionCamera = -1;
@@ -152,12 +112,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _projectionHeight;
     private BlendMode _blend = BlendMode.Opaque;
     private GLShaderProgram? _gbufferProgram;
-    private GLShaderProgram? _cardProgram;
-    private MeshUniforms _cardUniforms;
-    private int _cardMaterial = -1;
-    private int _cardDecodeAlbedo = -1;
-    private GLCardAtlas? _cardAtlas;
-    private bool _cardCaptureActive;
     private GLShaderProgram? _lightingProgram;
     private GLShaderProgram? _lastMeshProgram;
     private MeshUniforms _gbufferUniforms;
@@ -1078,13 +1032,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)
-    {
-        ThrowIfDisposed();
-        _volumeSettings = settings;
-    }
-
-    /// <inheritdoc/>
     public unsafe void SetColourLookup(ColourLookupTable? table)
     {
         ThrowIfDisposed();
@@ -1137,115 +1084,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _textureNames[0] = 0;
         _lutSize = table.Size;
         _logger.Information("Grade", $"Colour table '{table.Name}' uploaded, {table.Size}³.");
-    }
-
-    /// <inheritdoc/>
-    public void SetIrradianceVolume(IrradianceVolume? volume)
-    {
-        ThrowIfDisposed();
-        ReleaseProbeTextures();
-
-        if (volume is null || volume.ProbeCount == 0)
-        {
-            return;
-        }
-
-        int count = volume.ProbeCount;
-        float[] red = new float[count * 4];
-        float[] green = new float[count * 4];
-        float[] blue = new float[count * 4];
-        float[] distance = new float[count * 4];
-
-        ReadOnlySpan<float> source = volume.Coefficients;
-        ReadOnlySpan<float> moments = volume.Distances;
-
-        for (int probe = 0; probe < count; probe++)
-        {
-            int from = probe * IrradianceVolume.CoefficientsPerProbe;
-            int to = probe * 4;
-
-            for (int i = 0; i < 4; i++)
-            {
-                red[to + i] = source[from + i];
-                green[to + i] = source[from + 4 + i];
-                blue[to + i] = source[from + 8 + i];
-            }
-
-            distance[to] = moments[probe * 2];
-            distance[to + 1] = moments[(probe * 2) + 1];
-        }
-
-        _probeTextures[0] = CreateProbeTexture(volume, red);
-        _probeTextures[1] = CreateProbeTexture(volume, green);
-        _probeTextures[2] = CreateProbeTexture(volume, blue);
-        _probeTextures[3] = CreateProbeTexture(volume, distance);
-
-        _probeOrigin = volume.Origin;
-        _probeSpacing = volume.Spacing;
-        _probeInverseCount = new Vector3f(1f / volume.CountX, 1f / volume.CountY, 1f / volume.CountZ);
-        _hasProbes = true;
-
-        // Only when the field's shape changes, not on every upload. An interactive bake re-uploads this
-        // volume every frame for a second or so as the light eases in -- same layout each time -- and
-        // logging that per frame would bury the rest of the frame's diagnostics.
-        var layout = (volume.CountX, volume.CountY, volume.CountZ, volume.Spacing);
-        if (layout != _loggedProbeLayout)
-        {
-            _loggedProbeLayout = layout;
-            _logger.Information(
-                "GI",
-                $"Probe field uploaded: {volume.CountX}x{volume.CountY}x{volume.CountZ} at {volume.Spacing:0.#} m.");
-        }
-    }
-
-    /// <summary>Uploads one channel of the probe field as a filtered volume texture.</summary>
-    private unsafe uint CreateProbeTexture(IrradianceVolume volume, float[] data)
-    {
-        uint name = _gl.GenTexture();
-        _gl.ActiveTexture(TextureUnit.Texture0);
-        _gl.BindTexture(TextureTarget.Texture3D, name);
-
-        fixed (float* pixels = data)
-        {
-            _gl.TexImage3D(
-                TextureTarget.Texture3D,
-                0,
-                (int)InternalFormat.Rgba16f,
-                (uint)volume.CountX,
-                (uint)volume.CountY,
-                (uint)volume.CountZ,
-                0,
-                PixelFormat.Rgba,
-                PixelType.Float,
-                pixels);
-        }
-
-        // Linear, because the blend between eight neighbouring probes is exactly what a probe field
-        // wants and the hardware does it for nothing. Clamped, because a surface at the edge of the
-        // volume should take the nearest probe's answer rather than one from the opposite corner.
-        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMinFilter, (int)GLEnum.Linear);
-        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
-        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
-        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
-        _gl.TexParameter(TextureTarget.Texture3D, TextureParameterName.TextureWrapR, (int)GLEnum.ClampToEdge);
-
-        _textureNames[0] = 0;
-        return name;
-    }
-
-    /// <summary>Drops the probe field, for a level change or shutdown.</summary>
-    private void ReleaseProbeTextures()
-    {
-        for (int i = 0; i < _probeTextures.Length; i++)
-        {
-            if (_probeTextures[i] != 0)
-            {
-                _gl.DeleteTexture(_probeTextures[i]);
-                _probeTextures[i] = 0;
-            }
-        }
-
-        _hasProbes = false;
     }
 
     /// <inheritdoc/>
@@ -1316,122 +1154,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _sceneTarget.BindForGeometry();
         return true;
     }
-
-    /// <inheritdoc/>
-    public bool BeginCardCapture(int width, int height)
-    {
-        ThrowIfDisposed();
-
-        if (_cardCaptureActive)
-        {
-            throw new GraphicsDeviceException("A card capture is already in progress.");
-        }
-
-        if (width <= 0 || height <= 0)
-        {
-            throw new GraphicsDeviceException($"A card atlas cannot be {width}x{height}.");
-        }
-
-        _cardAtlas ??= new GLCardAtlas(_gl, _logger);
-
-        // Any handle handed out for the previous atlas is about to name a deleted texture, because
-        // Configure releases what it held. Forgetting them here means a caller that kept one gets a
-        // clean "does not belong to this device" rather than a silent sample of freed memory.
-        ForgetRegistration(_cardAtlas.AlbedoTexture);
-        ForgetRegistration(_cardAtlas.NormalTexture);
-        ForgetRegistration(_cardAtlas.MaterialTexture);
-        ForgetRegistration(_cardAtlas.DepthTexture);
-
-        if (!_cardAtlas.Configure(width, height))
-        {
-            return false;
-        }
-
-        _cardAtlas.BindForCapture();
-        _cardCaptureActive = true;
-        CurrentPass = ScenePass.Card;
-
-        // A card is an orthographic view of one model from outside it, so the near surface is the one
-        // that matters and back faces are never wanted. Both are set here rather than left to the
-        // caller, because a capture is not a frame and has no state of its own to inherit.
-        _gl.Enable(EnableCap.DepthTest);
-        _gl.DepthFunc(DepthFunction.Lequal);
-        _gl.DepthMask(true);
-        _depthState = DepthState.TestAndWrite;
-
-        ApplyBlend(BlendMode.Opaque);
-        return true;
-    }
-
-    /// <inheritdoc/>
-    public void SetCardPage(int x, int y, int width, int height)
-    {
-        ThrowIfDisposed();
-
-        if (!_cardCaptureActive || _cardAtlas is null)
-        {
-            throw new GraphicsDeviceException("No card capture is in progress.");
-        }
-
-        _cardAtlas.BindPage(x, y, width, height);
-    }
-
-    /// <inheritdoc/>
-    public void EndCardCapture()
-    {
-        ThrowIfDisposed();
-
-        if (!_cardCaptureActive || _cardAtlas is null)
-        {
-            throw new GraphicsDeviceException("No card capture is in progress.");
-        }
-
-        _cardAtlas.EndCapture();
-        _cardCaptureActive = false;
-        CurrentPass = ScenePass.None;
-
-        // The drawing path caches which program is bound and which mesh uniforms it holds, and both
-        // belong to whichever program the capture used.
-        _lastMeshProgram = null;
-        _meshUniformsPrimed = false;
-        _sentMaterial = null;
-
-        SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
-    }
-
-    /// <inheritdoc/>
-    public void ReadCardAtlas(int attachment, Span<Bgra32> destination)
-    {
-        ThrowIfDisposed();
-
-        if (_cardAtlas is not { IsReady: true } atlas)
-        {
-            throw new GraphicsDeviceException("There is no card atlas to read.");
-        }
-
-        int needed = atlas.Width * atlas.Height;
-
-        if (destination.Length < needed)
-        {
-            throw new GraphicsDeviceException(
-                $"The card atlas is {atlas.Width}x{atlas.Height}; {needed} texels were needed, "
-                + $"{destination.Length} offered.");
-        }
-
-        atlas.ReadAttachment(Math.Clamp(attachment, 0, 3), destination);
-    }
-
-    /// <inheritdoc/>
-    public TextureHandle CardAlbedo => Register(_cardAtlas?.AlbedoTexture ?? 0);
-
-    /// <inheritdoc/>
-    public TextureHandle CardNormal => Register(_cardAtlas?.NormalTexture ?? 0);
-
-    /// <inheritdoc/>
-    public TextureHandle CardMaterial => Register(_cardAtlas?.MaterialTexture ?? 0);
-
-    /// <inheritdoc/>
-    public TextureHandle CardDepth => Register(_cardAtlas?.DepthTexture ?? 0);
 
     /// <inheritdoc/>
     public TextureHandle SceneDepth => Register(_sceneTarget?.DepthTexture ?? 0);
@@ -2135,32 +1857,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _reflectionFrame = (_reflectionFrame + 1) & 63;
         _reflectionProgram.SetFloat(_reflectionJitter, _reflectionFrame * 0.61803399f);
 
-        bool probes = _hasProbes && _volumeSettings.Enabled;
-        _reflectionProgram.SetInt(_reflectionProbesEnabled, probes ? 1 : 0);
-
-        if (probes)
-        {
-            BindProbeTexture(8, _probeTextures[0]);
-            BindProbeTexture(9, _probeTextures[1]);
-            BindProbeTexture(10, _probeTextures[2]);
-            _reflectionProgram.SetVector3(
-                _reflectionProbeOrigin, _probeOrigin.X, _probeOrigin.Y, _probeOrigin.Z);
-            _reflectionProgram.SetVector3(
-                _reflectionProbeInverseCount,
-                _probeInverseCount.X,
-                _probeInverseCount.Y,
-                _probeInverseCount.Z);
-            _reflectionProgram.SetFloat(_reflectionProbeSpacing, _probeSpacing);
-        }
-
         // What a ray that finds nothing at all falls back to. The sky is what most of a reflected ray
         // in this game would have hit, and the ambient term is what the level says its sky is worth.
-        float intensity = probes ? MathF.Max(_volumeSettings.Intensity, 0f) : 1f;
         _reflectionProgram.SetVector3(
             _reflectionProbeSky,
-            _lighting.AmbientColour.X * intensity,
-            _lighting.AmbientColour.Y * intensity,
-            _lighting.AmbientColour.Z * intensity);
+            _lighting.AmbientColour.X,
+            _lighting.AmbientColour.Y,
+            _lighting.AmbientColour.Z);
 
         _reflectionProgram.SetMatrix3(_reflectionViewToWorld, _viewToWorld);
         _reflectionProgram.SetVector3(
@@ -2385,44 +2088,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             BindTexture(6, target.OcclusionTexture);
         }
 
-        bool probes = _hasProbes && _volumeSettings.Enabled;
-        _lightingProgram.SetInt(_lightingProbesEnabled, probes ? 1 : 0);
-        _lightingProgram.SetInt(_lightingShowProbes, _debugView == DebugView.Probes ? 1 : 0);
-
         // Never scales the baked model: that path has to reproduce the original exactly, and the
         // original multiplies the texture by the lightmap and stops.
         _lightingProgram.SetFloat(
             _lightingScale, _lighting.Model == LightingModel.Baked ? 1f : MathF.Max(_lighting.Scale, 0f));
 
-        if (probes)
-        {
-            BindProbeTexture(8, _probeTextures[0]);
-            BindProbeTexture(9, _probeTextures[1]);
-            BindProbeTexture(10, _probeTextures[2]);
-            BindProbeTexture(11, _probeTextures[3]);
-
-            _lightingProgram.SetVector3(
-                _lightingProbeOrigin, _probeOrigin.X, _probeOrigin.Y, _probeOrigin.Z);
-            _lightingProgram.SetVector3(
-                _lightingProbeInverseCount,
-                _probeInverseCount.X,
-                _probeInverseCount.Y,
-                _probeInverseCount.Z);
-
-            // The normal offset is half a probe spacing: far enough to leave the surface it shades,
-            // near enough not to cross the next wall along.
-            _lightingProgram.SetVector2(_lightingProbeScale, _probeSpacing, _probeSpacing * 0.5f);
-
-            Vector3f sky = _volumeSettings.Sky;
-            float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
-            _lightingProgram.SetFloat(
-                _lightingProbeBlend, Math.Clamp(_volumeSettings.Blend, 0f, 1f));
-            _lightingProgram.SetVector3(
-                _lightingProbeSky, sky.X * intensity, sky.Y * intensity, sky.Z * intensity);
-            _lightingProgram.SetMatrix3(_lightingProbeViewToWorld, _viewToWorld);
-            _lightingProgram.SetVector3(
-                _lightingProbeCamera, _cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z);
-        }
         _lightingProgram.SetVector3(
             _lightingSunDirection, _lighting.SunDirection.X, _lighting.SunDirection.Y, _lighting.SunDirection.Z);
         _lightingProgram.SetVector3(
@@ -2464,85 +2134,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         BindTexture(2, target.BakedLightTexture);
         BindTexture(3, target.MaterialTexture);
 
-        // The screen probe gather's indirect, if the game layer traced one this frame. It arrives as
-        // irradiance E and becomes the diffuse fill in place of the flat ambient: fed into the shader's
-        // own diffuseIrradiance, where albedo * E * uLightScale applies it in this renderer's convention
-        // -- no one-over-pi, metals excluded by diffuseAlbedo -- rather than as a post-pass. Cleared
-        // after, so the next frame starts from nothing.
-        bool screenGi = _screenIndirectStrength > 0f && _screenIndirect.IsValid;
-        _lightingProgram.SetFloat(_lightingGiStrength, screenGi ? _screenIndirectStrength : 0f);
-
-        if (screenGi)
-        {
-            SetTexture(7, _screenIndirect);
-        }
-
-        // The level's local lights (lamps), if the game set any this frame. The baked model returns before
-        // it ever reaches them, and the game only submits under a shading model, so the count is enough of
-        // a guard here -- an empty set is a count of zero and the shader's loop does not run.
-        _lightingProgram.SetInt(_lightingLocalLightCount, _localLightCount);
-
-        if (_localLightCount > 0)
-        {
-            _lightingProgram.SetVector4Array(
-                _lightingLocalLightPositionRadius, _localLightPositionRadius.AsSpan(0, _localLightCount * 4));
-            _lightingProgram.SetVector4Array(
-                _lightingLocalLightColourIntensity, _localLightColourIntensity.AsSpan(0, _localLightCount * 4));
-        }
-
         _fullScreen!.Draw();
-
-        _screenIndirect = default;
-        _screenIndirectStrength = 0f;
-        _localLightCount = 0;
 
         // The pass left the bindings and the depth shadow in a state the next draw must not inherit.
         _currentVertexArray = 0;
         _gl.Disable(EnableCap.DepthTest);
         _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
-    }
-
-    /// <inheritdoc/>
-    public void SetScreenIndirect(TextureHandle indirect, float strength)
-    {
-        // Held, not acted on: the deferred lighting reads it when the geometry pass closes, so this only
-        // records what the next RunDeferredLighting should fold in. Called before EndPass, while the
-        // G-buffer the gather traced from is still live.
-        _screenIndirect = indirect;
-        _screenIndirectStrength = MathF.Max(strength, 0f);
-    }
-
-    /// <summary>Sets the level's real-time local lights for the next deferred lighting pass.</summary>
-    /// <param name="lights">The lights, in view space; a set longer than <see cref="DeferredLocalLight.Maximum"/> is truncated.</param>
-    /// <remarks>
-    /// Held, not acted on: like <see cref="SetScreenIndirect"/> this only records what the next
-    /// <see cref="RunDeferredLighting"/> folds in, and the pass clears it after, so a frame that sets none
-    /// lights from none. Called each frame while the G-buffer is live, before the geometry pass closes.
-    /// The positions are already in view space -- the game layer transforms them there in double precision,
-    /// because the level sits at large world coordinates and a float subtract of the camera loses too much.
-    /// </remarks>
-    public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
-    {
-        int count = Math.Min(lights.Length, DeferredLocalLight.Maximum);
-
-        for (int i = 0; i < count; i++)
-        {
-            DeferredLocalLight light = lights[i];
-            int at = i * 4;
-
-            _localLightPositionRadius[at + 0] = light.ViewPosition.X;
-            _localLightPositionRadius[at + 1] = light.ViewPosition.Y;
-            _localLightPositionRadius[at + 2] = light.ViewPosition.Z;
-            _localLightPositionRadius[at + 3] = light.Radius;
-
-            _localLightColourIntensity[at + 0] = light.Colour.X;
-            _localLightColourIntensity[at + 1] = light.Colour.Y;
-            _localLightColourIntensity[at + 2] = light.Colour.Z;
-            _localLightColourIntensity[at + 3] = light.Intensity;
-        }
-
-        _localLightCount = count;
     }
 
     /// <summary>Marches the participating medium over the lit scene.</summary>
@@ -2686,20 +2284,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         // Which program shades this draw is decided by the pass, not by the caller: a renderer asks
         // for a mesh with a texture and a lightmap and never learns there are two ways to draw it.
-        bool card = CurrentPass == ScenePass.Card;
         bool shadow = CurrentPass == ScenePass.Shadow;
         bool deferred = !shadow
             && CurrentPass == ScenePass.Geometry
             && _sceneTarget is { IsReady: true } gbuffer
             && gbuffer.Description.Deferred;
 
-        GLShaderProgram program = card ? _cardProgram!
-            : shadow ? _shadowProgram!
+        GLShaderProgram program = shadow ? _shadowProgram!
             : deferred ? _gbufferProgram!
             : _meshProgram!;
 
-        MeshUniforms uniforms = card ? _cardUniforms
-            : shadow ? _shadowUniforms
+        MeshUniforms uniforms = shadow ? _shadowUniforms
             : deferred ? _gbufferUniforms
             : _meshUniforms;
 
@@ -2720,16 +2315,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         {
             _sentMaterial = _material;
 
-            if (card)
-            {
-                program.SetVector4(
-                    _cardMaterial,
-                    _material.Roughness,
-                    _material.Metallic,
-                    _material.PackedEmissive,
-                    0f);
-            }
-            else if (deferred)
+            if (deferred)
             {
                 // The fourth component is the per-draw "no history" flag, carried to the motion
                 // target's spare channel so the temporal resolve can refuse to blend where the
@@ -2914,8 +2500,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _disposed = true;
 
-        ReleaseProbeTextures();
-
         if (_lutTexture != 0)
         {
             _gl.DeleteTexture(_lutTexture);
@@ -2927,8 +2511,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // the disposed guard, since Dispose has already marked the device.
         DisposeComputeResources();
         DisposeTextResources();
-        _cardAtlas?.Dispose();
-        _cardProgram?.Dispose();
         _stageProfiler?.Dispose();
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
@@ -3112,17 +2694,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _gbufferProgram.SetInt("uLightmap", 1);
         _gbufferProgram.SetInt("uDetail", 2);
 
-        _cardProgram = GLShaderProgram.Create(_gl, CardAtlasShaders.Vertex, CardAtlasShaders.Fragment);
-        _cardUniforms = new MeshUniforms(
-            _cardProgram.LocationOf("uModelView"),
-            _cardProgram.LocationOf("uProjection"),
-            -1,
-            _cardProgram.LocationOf("uAlphaTest"));
-        _cardMaterial = _cardProgram.LocationOf("uMaterial");
-        _cardDecodeAlbedo = _cardProgram.LocationOf("uDecodeAlbedo");
-        UseProgram(_cardProgram);
-        _cardProgram.SetInt("uDiffuse", 0);
-
         _occlusionProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment);
         _occlusionUnproject = _occlusionProgram.LocationOf("uUnproject");
@@ -3146,27 +2717,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt("uBakedLight", 2);
         _lightingProgram.SetInt("uMaterial", 3);
         _lightingProgram.SetInt("uOcclusion", 6);
-        _lightingProgram.SetInt("uProbeRed", 8);
-        _lightingProgram.SetInt("uProbeGreen", 9);
-        _lightingProgram.SetInt("uProbeBlue", 10);
-        _lightingProgram.SetInt("uProbeDistance", 11);
-        _lightingProgram.SetInt("uGI", 7);
 
         _lightingOcclusionEnabled = _lightingProgram.LocationOf("uOcclusionEnabled");
-        _lightingProbesEnabled = _lightingProgram.LocationOf("uProbesEnabled");
-        _lightingProbeOrigin = _lightingProgram.LocationOf("uProbeOrigin");
-        _lightingProbeInverseCount = _lightingProgram.LocationOf("uProbeInverseCount");
-        _lightingProbeScale = _lightingProgram.LocationOf("uProbeScale");
-        _lightingProbeSky = _lightingProgram.LocationOf("uProbeSky");
-        _lightingProbeBlend = _lightingProgram.LocationOf("uProbeBlend");
-        _lightingProbeViewToWorld = _lightingProgram.LocationOf("uProbeViewToWorld");
-        _lightingProbeCamera = _lightingProgram.LocationOf("uProbeCamera");
-        _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
         _lightingScale = _lightingProgram.LocationOf("uLightScale");
-        _lightingGiStrength = _lightingProgram.LocationOf("uGiStrength");
-        _lightingLocalLightCount = _lightingProgram.LocationOf("uLocalLightCount");
-        _lightingLocalLightPositionRadius = _lightingProgram.LocationOf("uLocalLightPositionRadius");
-        _lightingLocalLightColourIntensity = _lightingProgram.LocationOf("uLocalLightColourIntensity");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");
@@ -3210,10 +2763,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _reflectionMarch = _reflectionProgram.LocationOf("uMarch");
         _reflectionTexelSize = _reflectionProgram.LocationOf("uTexelSize");
         _reflectionJitter = _reflectionProgram.LocationOf("uFrameJitter");
-        _reflectionProbesEnabled = _reflectionProgram.LocationOf("uProbesEnabled");
-        _reflectionProbeOrigin = _reflectionProgram.LocationOf("uProbeOrigin");
-        _reflectionProbeInverseCount = _reflectionProgram.LocationOf("uProbeInverseCount");
-        _reflectionProbeSpacing = _reflectionProgram.LocationOf("uProbeSpacing");
         _reflectionProbeSky = _reflectionProgram.LocationOf("uProbeSky");
         _reflectionViewToWorld = _reflectionProgram.LocationOf("uViewToWorld");
         _reflectionCamera = _reflectionProgram.LocationOf("uCameraPosition");
@@ -3224,9 +2773,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _reflectionProgram.SetInt("uAlbedo", 2);
         _reflectionProgram.SetInt("uMaterial", 3);
         _reflectionProgram.SetInt("uDepth", 4);
-        _reflectionProgram.SetInt("uProbeRed", 8);
-        _reflectionProgram.SetInt("uProbeGreen", 9);
-        _reflectionProgram.SetInt("uProbeBlue", 10);
 
         _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
         _fogSunDirection = _fogProgram.LocationOf("uSunDirection");

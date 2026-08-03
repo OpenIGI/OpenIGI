@@ -41,8 +41,7 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// <b>What is left on the render thread.</b> Only the uploads: a GL texture belongs to the context that
 /// made it, so the terrain's tiles, the sky and the world renderer are built in
-/// <c>DesktopGame</c> when the result is collected. That is the same handover
-/// <see cref="IrradianceProbeBake"/> and <c>DistanceFieldBake</c> already use.
+/// <c>DesktopGame</c> when the result is collected.
 /// </para>
 /// <para>
 /// A request supersedes whatever was in flight: the worker's result carries the mission it was for, and a
@@ -54,14 +53,12 @@ namespace OpenIGI.Desktop;
 /// <param name="gamePath">The installation to read from.</param>
 /// <param name="missions">The mission table, complete and read-only after the start-up scan.</param>
 /// <param name="magic">The magic-object table, likewise read-only after start-up.</param>
-/// <param name="probeFields">The shipped and per-user probe caches, read for a mission's baked lighting.</param>
 /// <param name="cameras">The authored orbit styles each mission's showcase points are based on.</param>
 /// <param name="logger">The logger.</param>
 public sealed class MissionPreviewLoader(
     string gamePath,
     MissionRegistry missions,
     MagicObjectRegistry magic,
-    GiBakeCache probeFields,
     MenuCameraLibrary cameras,
     IIgiLogger logger) : IDisposable
 {
@@ -273,14 +270,6 @@ public sealed class MissionPreviewLoader(
         DirectionalLightSettings? sun =
             DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings read) ? read : null;
 
-        // A shipped or previously-written bake is a file read and a parse, both of which belong here. A
-        // mission with no bake previews unbounced rather than tracing one: the trace is seconds of CPU for
-        // a backdrop, and its result could not be cached from this context anyway.
-        Vector3f bakeSun = sun is { IsBelowHorizon: false } lit ? lit.Direction : default;
-        IrradianceVolume? probeField = RenderCVars.GlobalIllumination.Value
-            ? probeFields.TryLoad(missionId, RenderCVars.GlobalIlluminationSpacing.Value, bakeSun)
-            : null;
-
         Bgra32[][] detail = groundDetail.GetAwaiter().GetResult();
 
         logger.Information(
@@ -297,7 +286,6 @@ public sealed class MissionPreviewLoader(
             detail,
             pointsOfInterest,
             sun,
-            probeField,
             resources,
             fileSystem);
     }

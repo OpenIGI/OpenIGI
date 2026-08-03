@@ -163,21 +163,6 @@ internal sealed class GLShaderProgram : IDisposable
     public void SetMatrix4(int baseLocation, int index, in Matrix4f value) =>
         SetMatrix4(baseLocation + index, value);
 
-    /// <summary>Sets a <c>vec4</c> array uniform in one call.</summary>
-    /// <param name="location">The location of element zero.</param>
-    /// <param name="values">The elements, four floats each and tightly packed.</param>
-    /// <remarks>
-    /// One <c>glUniform4fv</c> for the whole array, which the local-light list wants: unlike the matrix
-    /// array above the elements are already contiguous, so there is no reason to pay a call per element.
-    /// </remarks>
-    public unsafe void SetVector4Array(int location, ReadOnlySpan<float> values)
-    {
-        fixed (float* data = values)
-        {
-            _gl.Uniform4(location, (uint)(values.Length / 4), data);
-        }
-    }
-
     /// <summary>Sets a <c>mat3</c> uniform.</summary>
     /// <param name="location">The uniform location, from <see cref="LocationOf"/>.</param>
     /// <param name="value">The matrix, in the engine's row-major layout.</param>
