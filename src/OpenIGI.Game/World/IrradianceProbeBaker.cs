@@ -75,6 +75,10 @@ public static class IrradianceProbeBaker
     /// each hit's own material, which needs the ray to report a texture rather than a triangle.
     /// </param>
     /// <param name="logger">Where to report the bake's size and duration.</param>
+    /// <param name="onBouncePass">
+    /// Called with a copy of the field after each bounce pass, so a caller can show the light building up
+    /// as it bakes rather than only the finished result. Null to ignore the intermediate passes.
+    /// </param>
     /// <param name="cancellationToken">
     /// Asks a bake in progress to stop — a level change or a shutdown while
     /// <see cref="IrradianceProbeBake"/> is tracing on a worker.
@@ -89,6 +93,7 @@ public static class IrradianceProbeBaker
         float spacing,
         Vector3f groundAlbedo,
         IIgiLogger? logger = null,
+        Action<IrradianceVolume>? onBouncePass = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -158,6 +163,11 @@ public static class IrradianceProbeBaker
                     }
                 }
             });
+
+            // Hand this pass's field over as it finishes, so the game can show the light building up
+            // bounce by bounce -- a room fills over the first seconds of a level rather than snapping to
+            // the finished answer. A copy, because the next pass overwrites the live volume in place.
+            onBouncePass?.Invoke(volume.Clone());
         }
 
         log.Information(LogCategory, $"Probe bake complete ({Bounces} bounce(s)).");

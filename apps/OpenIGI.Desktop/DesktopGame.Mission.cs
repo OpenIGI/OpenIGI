@@ -208,19 +208,30 @@ internal sealed partial class DesktopGame
                             new Vector3f(0.42f, 0.40f, 0.37f),
                             _logger);
 
-                        // A capture is not allowed to race the worker. A reference image has to either
-                        // contain the field or not contain it, never "whatever frame 30 happened to
-                        // catch", so a lockstep run pays the block back and stays reproducible. An
-                        // interactive load waits by PUMPING, not blocking, or Windows' watchdog takes the
-                        // context away; either way the level is not shown until it is lit.
-                        _probeField = _options.Lockstep ? _probeBake.WaitForResult() : WaitForLighting(_probeBake);
-                        _probeBake = null;
-
-                        // Write the trace so the next load -- this player's, or everyone's once it ships
-                        // in Assets/gi -- reads it instead of paying for it again.
-                        if (_probeField is not null)
+                        if (_options.Lockstep)
                         {
-                            _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
+                            // A capture is not allowed to race the worker: a reference image has to either
+                            // contain the field or not, never "whatever frame 30 caught". So a lockstep run
+                            // blocks for the finished field and writes the cache inline.
+                            _probeField = _probeBake.WaitForResult();
+                            _probeBake = null;
+
+                            if (_probeField is not null)
+                            {
+                                _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
+                            }
+                        }
+                        else
+                        {
+                            // Interactive play enters the level on flat ambient and watches the bounces
+                            // stream in: the render loop polls TryCollectLatest and uploads each pass as it
+                            // lands, so a room fills with light over the first seconds rather than the load
+                            // stalling until it is lit. The cache is written once the bake completes, so the
+                            // key it is written under is remembered here.
+                            _probeField = null;
+                            _probeBakeMission = id;
+                            _probeBakeSpacing = giSpacing;
+                            _probeBakeSun = bakeSunDirection;
                         }
                     }
                 }

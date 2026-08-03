@@ -78,6 +78,12 @@ internal sealed partial class DesktopGame : IDisposable
     // --- Global illumination, distance fields and the surface cache ---
     private IrradianceVolume? _probeField;
     private IrradianceProbeBake? _probeBake;
+
+    // The cache key an in-flight interactive bake is written under once it finishes -- remembered here
+    // because the load no longer blocks for the field, so the save moves to the frame the bake completes.
+    private int _probeBakeMission;
+    private float _probeBakeSpacing;
+    private Vector3f _probeBakeSun;
     private SurfaceCacheLighting? _cardLighting;
     private SurfaceCacheLookup? _cardLookup;
 
@@ -773,12 +779,35 @@ internal sealed partial class DesktopGame : IDisposable
             // The probe bake, if one is still tracing. Collected HERE rather than on the worker because
             // what comes back becomes a GL texture, and the context belongs to this thread. TryCollect
             // answers true once, so this costs a completed-flag read per frame until then and nothing after.
-            if (_probeBake is { } pendingBake && pendingBake.TryCollect(out IrradianceVolume? bakedField))
+            if (_probeBake is { } pendingBake)
             {
-                _probeField = bakedField;
-                _probeBake = null;
-                probeArrivedAt = _loop.TimeSource.Milliseconds;
-                _device.SetIrradianceVolume(_probeField);
+                // Each bounce pass as it lands, so the interactive load shows the light building up rather
+                // than waiting for the finished field. Uploaded here because the volume becomes a GL
+                // texture and the context belongs to this thread; the first arrival starts the fade from
+                // flat ambient, and the rest snap (a bounce changes the field only a little).
+                if (pendingBake.TryCollectLatest(out IrradianceVolume? streamedField) && streamedField is not null)
+                {
+                    _probeField = streamedField;
+                    _device.SetIrradianceVolume(_probeField);
+
+                    if (probeArrivedAt < 0)
+                    {
+                        probeArrivedAt = _loop.TimeSource.Milliseconds;
+                    }
+                }
+
+                // Once the bake is done, the last field it streamed is the finished one; write it to the
+                // cache so the next load reads it instead of tracing again, and stop polling.
+                if (pendingBake.IsComplete)
+                {
+                    pendingBake.TryCollect(out _);
+                    _probeBake = null;
+
+                    if (_probeField is not null)
+                    {
+                        _giCache.Save(_probeBakeMission, _probeBakeSpacing, _probeBakeSun, _probeField);
+                    }
+                }
             }
 
             // Same handover, same reason: the atlas becomes a GL volume, and the context belongs here.

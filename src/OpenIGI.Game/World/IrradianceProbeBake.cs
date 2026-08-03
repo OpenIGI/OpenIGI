@@ -35,12 +35,50 @@ public sealed class IrradianceProbeBake
 
     private readonly Task<IrradianceVolume?> _work;
     private readonly CancellationTokenSource _cancellation;
+    private readonly Stream _stream;
     private bool _collected;
 
-    private IrradianceProbeBake(Task<IrradianceVolume?> work, CancellationTokenSource cancellation)
+    private IrradianceProbeBake(Task<IrradianceVolume?> work, CancellationTokenSource cancellation, Stream stream)
     {
         _work = work;
         _cancellation = cancellation;
+        _stream = stream;
+    }
+
+    // The worker publishes each bounce pass's field here as it finishes; the render thread takes the
+    // newest it has not seen. A version counter, not a queue: only the latest field matters, and a slow
+    // frame should skip straight to it rather than upload every pass it missed.
+    private sealed class Stream
+    {
+        private readonly object _gate = new();
+        private IrradianceVolume? _latest;
+        private int _version;
+        private int _taken;
+
+        public void Publish(IrradianceVolume volume)
+        {
+            lock (_gate)
+            {
+                _latest = volume;
+                _version++;
+            }
+        }
+
+        public bool TryTake(out IrradianceVolume? volume)
+        {
+            lock (_gate)
+            {
+                if (_version == _taken)
+                {
+                    volume = null;
+                    return false;
+                }
+
+                _taken = _version;
+                volume = _latest;
+                return true;
+            }
+        }
     }
 
     /// <summary>Gets whether the trace has finished, however it finished.</summary>
@@ -71,6 +109,7 @@ public sealed class IrradianceProbeBake
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         CancellationTokenSource cancellation = new();
+        Stream stream = new();
 
         Task<IrradianceVolume?> work = Task.Run(
             () =>
@@ -80,7 +119,7 @@ public sealed class IrradianceProbeBake
                 try
                 {
                     IrradianceVolume? volume = IrradianceProbeBaker.Bake(
-                        scene, cast, sunDirection, spacing, groundAlbedo, log, cancellation.Token);
+                        scene, cast, sunDirection, spacing, groundAlbedo, log, stream.Publish, cancellation.Token);
 
                     if (volume is not null)
                     {
@@ -110,8 +149,18 @@ public sealed class IrradianceProbeBake
             },
             CancellationToken.None);
 
-        return new IrradianceProbeBake(work, cancellation);
+        return new IrradianceProbeBake(work, cancellation, stream);
     }
+
+    /// <summary>Takes the newest bounce pass's field the render thread has not yet uploaded.</summary>
+    /// <param name="volume">Receives the latest intermediate field, for the game to show the light building up.</param>
+    /// <returns><see langword="true"/> when a newer field than the last taken is available.</returns>
+    /// <remarks>
+    /// Poll every frame while the bake runs. Unlike <see cref="TryCollect"/>, which fires once at the end,
+    /// this returns each pass as it lands, so an interactive load can enter the level on flat ambient and
+    /// watch the multi-bounce fill in rather than waiting for the finished field.
+    /// </remarks>
+    public bool TryCollectLatest(out IrradianceVolume? volume) => _stream.TryTake(out volume);
 
     /// <summary>Takes the finished volume, if it is finished.</summary>
     /// <param name="volume">
