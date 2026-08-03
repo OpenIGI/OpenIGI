@@ -861,6 +861,14 @@ internal sealed partial class DesktopGame
         Vector3f skyColour = _sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
         LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, hemisphereRays: 64);
 
+        // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
+        // then gather several bounces reading the last pass's light. Grey albedo for now (colour is 3b),
+        // so this verifies the bounce fills and brightens rather than the colour it carries.
+        LightmapBaker.LightmapTriangle[] triangles = LightmapBaker.BuildTriangles(scene, targets);
+        LightmapBaker.LightmapBvh bvh = LightmapBaker.LightmapBvh.Build(triangles);
+        _logger.Information("Lightmap", $"Built a BVH over {triangles.Length} triangle(s); gathering bounces.");
+        LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, passes: 4, hemisphereRays: 64);
+
         // A numerical spot-check on the largest page: how many texels it covered, and a few of them with
         // their world position (should sit near the placement) and baked radiance (sunlit near the sun
         // colour, shadowed/skylit near the ambient). This settles what an image cannot show clearly.

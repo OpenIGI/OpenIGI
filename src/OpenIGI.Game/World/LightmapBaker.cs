@@ -53,6 +53,7 @@ public static class LightmapBaker
             Height = height;
             Texels = new LightmapTexel[width * height];
             Radiance = new Vector3f[width * height];
+            Direct = new Vector3f[width * height];
         }
 
         /// <summary>The scene placement this page belongs to.</summary>
@@ -76,6 +77,9 @@ public static class LightmapBaker
         /// <summary>The light each texel receives, filled by the bake; parallel to <see cref="Texels"/>.</summary>
         /// <remarks>Direct sun plus sky after phase 2; the multi-bounce indirect is folded in by phase 3.</remarks>
         public Vector3f[] Radiance { get; }
+
+        /// <summary>The direct sun term alone, kept so each bounce pass can re-add it rather than re-tracing it.</summary>
+        public Vector3f[] Direct { get; }
     }
 
     /// <summary>Builds the texel maps for every lightmapped surface a scene places.</summary>
@@ -175,7 +179,8 @@ public static class LightmapBaker
 
                 if (texel.IsCovered)
                 {
-                    target.Radiance[i] = ShadeTexel(texel, cast, hasSun, sunDirection, sunColour, skyColour, hemisphere);
+                    (target.Direct[i], target.Radiance[i]) =
+                        ShadeTexel(texel, cast, hasSun, sunDirection, sunColour, skyColour, hemisphere);
                 }
             }
         });
@@ -184,7 +189,7 @@ public static class LightmapBaker
     // The light one texel receives: the sun if the shadow ray to it is clear, plus the share of the sky
     // hemisphere the cosine-weighted rays find open. Both start a little off the surface along its normal,
     // or a ray would begin inside the texel's own triangle and report it occluded.
-    private static Vector3f ShadeTexel(
+    private static (Vector3f Direct, Vector3f Total) ShadeTexel(
         LightmapTexel texel, WorldRayCast cast, bool hasSun, Vector3f sunDirection, Vector3f sunColour,
         Vector3f skyColour, Vector3f[] hemisphere)
     {
@@ -244,10 +249,11 @@ public static class LightmapBaker
         }
 
         float skyVisibility = (float)open / hemisphere.Length;
-        return new Vector3f(
+        Vector3f total = new(
             result.X + (skyColour.X * skyVisibility),
             result.Y + (skyColour.Y * skyVisibility),
             result.Z + (skyColour.Z * skyVisibility));
+        return (result, total);
     }
 
     // A right-handed tangent frame around a normal, for turning the local hemisphere set into world
@@ -282,6 +288,72 @@ public static class LightmapBaker
         }
 
         return directions;
+    }
+
+    // ---------- Phase 3: multi-bounce via a BVH over the lightmapped triangles ----------
+
+    /// <summary>
+    /// One lightmapped triangle a gather ray can hit, carrying what a bounce needs: its world corners, its
+    /// albedo, and which target and lightmap UVs to read the light already on it.
+    /// </summary>
+    /// <param name="A">First corner, world metres.</param>
+    /// <param name="B">Second corner.</param>
+    /// <param name="C">Third corner.</param>
+    /// <param name="Target">Index into the targets list of the page this triangle draws into.</param>
+    /// <param name="U0">First corner's lightmap U.</param>
+    /// <param name="V0">First corner's lightmap V.</param>
+    /// <param name="U1">Second corner's lightmap U.</param>
+    /// <param name="V1">Second corner's lightmap V.</param>
+    /// <param name="U2">Third corner's lightmap U.</param>
+    /// <param name="V2">Third corner's lightmap V.</param>
+    /// <param name="Albedo">The surface's diffuse reflectance, per channel.</param>
+    public readonly record struct LightmapTriangle(
+        Vector3d A, Vector3d B, Vector3d C, int Target,
+        float U0, float V0, float U1, float V1, float U2, float V2, Vector3f Albedo);
+
+    /// <summary>Builds the world-space lightmapped triangles the gather traces against.</summary>
+    /// <param name="scene">The scene the targets came from.</param>
+    /// <param name="targets">The targets from <see cref="EnumerateTargets"/>; a triangle's <c>Target</c> indexes this.</param>
+    /// <returns>Every lightmapped triangle, tagged with its target and lightmap UVs.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="scene"/> or <paramref name="targets"/> is null.</exception>
+    public static LightmapTriangle[] BuildTriangles(WorldScene scene, IReadOnlyList<LightmapTarget> targets)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(targets);
+
+        List<LightmapTriangle> triangles = [];
+
+        for (int t = 0; t < targets.Count; t++)
+        {
+            LightmapTarget target = targets[t];
+            WorldPlacement placement = scene.Placements[target.PlacementIndex];
+            MefModel model = placement.Model;
+            MefDrawRecord record = model.DrawRecords[target.RecordIndex];
+            ReadOnlySpan<MefVertex> vertices = model.Vertices;
+            ReadOnlySpan<ushort> indices = record.Indices.Span;
+
+            // The diffuse colour is not decoded yet -- I.G.I.'s textures are paletted and the CPU palette
+            // decode is not wired (phase 3b). A mid grey stands in so the multi-bounce STRUCTURE works and
+            // can be verified; turning it into the surface's real colour is then a data swap, not a rewrite.
+            Vector3f albedo = new(0.5f, 0.5f, 0.5f);
+
+            for (int i = 0; i + 2 < indices.Length; i += 3)
+            {
+                MefVertex va = ResolveVertex(vertices, record, indices[i]);
+                MefVertex vb = ResolveVertex(vertices, record, indices[i + 1]);
+                MefVertex vc = ResolveVertex(vertices, record, indices[i + 2]);
+
+                triangles.Add(new LightmapTriangle(
+                    ToWorldMetres(placement, va.Position),
+                    ToWorldMetres(placement, vb.Position),
+                    ToWorldMetres(placement, vc.Position),
+                    t,
+                    va.LightmapU, va.LightmapV, vb.LightmapU, vb.LightmapV, vc.LightmapU, vc.LightmapV,
+                    albedo));
+            }
+        }
+
+        return [.. triangles];
     }
 
     // Walks a record's triangle list and rasterises each one into the target's lightmap-UV space, filling
@@ -403,6 +475,355 @@ public static class LightmapBaker
     {
         float length = MathF.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
         return length > 1e-8f ? new Vector3f(value.X / length, value.Y / length, value.Z / length) : new Vector3f(0f, 0f, 1f);
+    }
+
+    /// <summary>A bounding-volume hierarchy over the lightmapped triangles, for the gather rays to trace.</summary>
+    /// <remarks>
+    /// A median-split BVH: the triangles are recursively partitioned by the midpoint of their centroids
+    /// along the widest axis, so a ray tests a logarithmic number of them rather than all thirty-odd
+    /// thousand. Distances are in world metres, matching the triangle corners.
+    /// </remarks>
+    public sealed class LightmapBvh
+    {
+        private readonly LightmapTriangle[] _triangles;
+        private readonly int[] _order;
+        private readonly Node[] _nodes;
+
+        private LightmapBvh(LightmapTriangle[] triangles, int[] order, Node[] nodes)
+        {
+            _triangles = triangles;
+            _order = order;
+            _nodes = nodes;
+        }
+
+        private struct Node
+        {
+            public Vector3d Min;
+            public Vector3d Max;
+            public int Start;
+            public int Count;
+            public int Left;
+            public int Right;
+        }
+
+        /// <summary>Builds a hierarchy over the triangles.</summary>
+        /// <param name="triangles">The triangles from <see cref="BuildTriangles"/>.</param>
+        /// <returns>The built hierarchy.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="triangles"/> is null.</exception>
+        public static LightmapBvh Build(LightmapTriangle[] triangles)
+        {
+            ArgumentNullException.ThrowIfNull(triangles);
+
+            int count = triangles.Length;
+            int[] order = new int[count];
+            Vector3d[] centroid = new Vector3d[count];
+            Vector3d[] triMin = new Vector3d[count];
+            Vector3d[] triMax = new Vector3d[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                order[i] = i;
+                LightmapTriangle t = triangles[i];
+                triMin[i] = MinVec(MinVec(t.A, t.B), t.C);
+                triMax[i] = MaxVec(MaxVec(t.A, t.B), t.C);
+                centroid[i] = new Vector3d(
+                    (triMin[i].X + triMax[i].X) * 0.5,
+                    (triMin[i].Y + triMax[i].Y) * 0.5,
+                    (triMin[i].Z + triMax[i].Z) * 0.5);
+            }
+
+            List<Node> nodes = [];
+            if (count > 0)
+            {
+                BuildRange(nodes, order, centroid, triMin, triMax, 0, count);
+            }
+
+            return new LightmapBvh(triangles, order, [.. nodes]);
+        }
+
+        private static int BuildRange(
+            List<Node> nodes, int[] order, Vector3d[] centroid, Vector3d[] triMin, Vector3d[] triMax,
+            int start, int count)
+        {
+            Vector3d min = new(double.MaxValue, double.MaxValue, double.MaxValue);
+            Vector3d max = new(double.MinValue, double.MinValue, double.MinValue);
+            Vector3d centreMin = min;
+            Vector3d centreMax = max;
+
+            for (int i = start; i < start + count; i++)
+            {
+                int tri = order[i];
+                min = MinVec(min, triMin[tri]);
+                max = MaxVec(max, triMax[tri]);
+                centreMin = MinVec(centreMin, centroid[tri]);
+                centreMax = MaxVec(centreMax, centroid[tri]);
+            }
+
+            int node = nodes.Count;
+            nodes.Add(default);
+
+            // A small leaf, or a range whose centroids all coincide (no axis to split on), becomes a leaf.
+            double ex = centreMax.X - centreMin.X;
+            double ey = centreMax.Y - centreMin.Y;
+            double ez = centreMax.Z - centreMin.Z;
+
+            if (count <= 4 || (ex <= 1e-9 && ey <= 1e-9 && ez <= 1e-9))
+            {
+                nodes[node] = new Node { Min = min, Max = max, Start = start, Count = count, Left = -1, Right = -1 };
+                return node;
+            }
+
+            int axis = ex >= ey && ex >= ez ? 0 : (ey >= ez ? 1 : 2);
+            Array.Sort(order, start, count, Comparer<int>.Create((a, b) =>
+                Axis(centroid[a], axis).CompareTo(Axis(centroid[b], axis))));
+
+            int mid = count / 2;
+            int left = BuildRange(nodes, order, centroid, triMin, triMax, start, mid);
+            int right = BuildRange(nodes, order, centroid, triMin, triMax, start + mid, count - mid);
+            nodes[node] = new Node { Min = min, Max = max, Start = 0, Count = 0, Left = left, Right = right };
+            return node;
+        }
+
+        /// <summary>The nearest triangle a ray meets, with the barycentric coordinates of the hit.</summary>
+        /// <param name="origin">The ray start, world metres.</param>
+        /// <param name="direction">The ray direction, need not be unit length.</param>
+        /// <param name="maxDistance">How far to look, in the same units as <paramref name="direction"/> is long.</param>
+        /// <param name="triangle">The hit triangle's index, or −1 for a miss.</param>
+        /// <param name="u">The hit's barycentric weight towards <see cref="LightmapTriangle.B"/>.</param>
+        /// <param name="v">Its weight towards <see cref="LightmapTriangle.C"/>.</param>
+        /// <returns>Whether anything was hit.</returns>
+        public bool ClosestHit(Vector3d origin, Vector3d direction, double maxDistance, out int triangle, out double u, out double v)
+        {
+            triangle = -1;
+            u = 0;
+            v = 0;
+
+            if (_nodes.Length == 0)
+            {
+                return false;
+            }
+
+            Vector3d inverse = new(1.0 / direction.X, 1.0 / direction.Y, 1.0 / direction.Z);
+            double closest = maxDistance;
+
+            Span<int> stack = stackalloc int[128];
+            int top = 0;
+            stack[top++] = 0;
+
+            while (top > 0)
+            {
+                Node node = _nodes[stack[--top]];
+
+                if (!SlabTest(node.Min, node.Max, origin, inverse, closest))
+                {
+                    continue;
+                }
+
+                if (node.Count > 0)
+                {
+                    for (int k = 0; k < node.Count; k++)
+                    {
+                        int tri = _order[node.Start + k];
+                        if (Intersect(origin, direction, _triangles[tri], out double t, out double bu, out double bv)
+                            && t > 1e-5 && t < closest)
+                        {
+                            closest = t;
+                            triangle = tri;
+                            u = bu;
+                            v = bv;
+                        }
+                    }
+                }
+                else if (top + 2 <= stack.Length)
+                {
+                    stack[top++] = node.Left;
+                    stack[top++] = node.Right;
+                }
+            }
+
+            return triangle >= 0;
+        }
+
+        private static double Axis(Vector3d value, int axis) => axis == 0 ? value.X : axis == 1 ? value.Y : value.Z;
+
+        private static Vector3d MinVec(Vector3d a, Vector3d b) =>
+            new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Min(a.Z, b.Z));
+
+        private static Vector3d MaxVec(Vector3d a, Vector3d b) =>
+            new(Math.Max(a.X, b.X), Math.Max(a.Y, b.Y), Math.Max(a.Z, b.Z));
+
+        // The ray-slab test: the ray hits the box if the entry into all three slabs precedes the exit from
+        // any of them, and the exit is ahead of the ray and nearer than the current closest hit.
+        private static bool SlabTest(Vector3d min, Vector3d max, Vector3d origin, Vector3d inverse, double closest)
+        {
+            double tx1 = (min.X - origin.X) * inverse.X;
+            double tx2 = (max.X - origin.X) * inverse.X;
+            double tMin = Math.Min(tx1, tx2);
+            double tMax = Math.Max(tx1, tx2);
+
+            double ty1 = (min.Y - origin.Y) * inverse.Y;
+            double ty2 = (max.Y - origin.Y) * inverse.Y;
+            tMin = Math.Max(tMin, Math.Min(ty1, ty2));
+            tMax = Math.Min(tMax, Math.Max(ty1, ty2));
+
+            double tz1 = (min.Z - origin.Z) * inverse.Z;
+            double tz2 = (max.Z - origin.Z) * inverse.Z;
+            tMin = Math.Max(tMin, Math.Min(tz1, tz2));
+            tMax = Math.Min(tMax, Math.Max(tz1, tz2));
+
+            return tMax >= Math.Max(tMin, 0.0) && tMin < closest;
+        }
+
+        // Moeller-Trumbore, in double precision because the world coordinates are tens of kilometres from
+        // the origin and a single-precision cross product there loses the triangle.
+        private static bool Intersect(Vector3d origin, Vector3d direction, LightmapTriangle tri, out double t, out double u, out double v)
+        {
+            t = 0;
+            u = 0;
+            v = 0;
+
+            Vector3d edge1 = new(tri.B.X - tri.A.X, tri.B.Y - tri.A.Y, tri.B.Z - tri.A.Z);
+            Vector3d edge2 = new(tri.C.X - tri.A.X, tri.C.Y - tri.A.Y, tri.C.Z - tri.A.Z);
+
+            Vector3d p = new(
+                (direction.Y * edge2.Z) - (direction.Z * edge2.Y),
+                (direction.Z * edge2.X) - (direction.X * edge2.Z),
+                (direction.X * edge2.Y) - (direction.Y * edge2.X));
+
+            double determinant = (edge1.X * p.X) + (edge1.Y * p.Y) + (edge1.Z * p.Z);
+
+            if (determinant is > -1e-12 and < 1e-12)
+            {
+                return false;
+            }
+
+            double inverse = 1.0 / determinant;
+            Vector3d s = new(origin.X - tri.A.X, origin.Y - tri.A.Y, origin.Z - tri.A.Z);
+            u = ((s.X * p.X) + (s.Y * p.Y) + (s.Z * p.Z)) * inverse;
+
+            if (u is < 0.0 or > 1.0)
+            {
+                return false;
+            }
+
+            Vector3d q = new(
+                (s.Y * edge1.Z) - (s.Z * edge1.Y),
+                (s.Z * edge1.X) - (s.X * edge1.Z),
+                (s.X * edge1.Y) - (s.Y * edge1.X));
+
+            v = ((direction.X * q.X) + (direction.Y * q.Y) + (direction.Z * q.Z)) * inverse;
+
+            if (v < 0.0 || u + v > 1.0)
+            {
+                return false;
+            }
+
+            t = ((edge2.X * q.X) + (edge2.Y * q.Y) + (edge2.Z * q.Z)) * inverse;
+            return t > 0.0;
+        }
+    }
+
+    /// <summary>Folds the multi-bounce indirect into each texel's radiance (phase 3), reading the light the last pass left.</summary>
+    /// <param name="targets">The targets, with <see cref="LightmapTarget.Direct"/> and an initial <see cref="LightmapTarget.Radiance"/> from <see cref="BakeDirectAndSky"/>.</param>
+    /// <param name="triangles">The triangles the <paramref name="bvh"/> was built over; a hit's triangle indexes this.</param>
+    /// <param name="bvh">The hierarchy the gather rays trace.</param>
+    /// <param name="skyColour">The radiance a ray that leaves the level receives.</param>
+    /// <param name="passes">How many bounces to accumulate; each reads the last.</param>
+    /// <param name="hemisphereRays">Cosine-weighted gather rays per texel.</param>
+    /// <param name="cancellationToken">Cancels a bake in flight.</param>
+    /// <exception cref="ArgumentNullException">A required argument is null.</exception>
+    public static void BakeBounces(
+        IReadOnlyList<LightmapTarget> targets,
+        LightmapTriangle[] triangles,
+        LightmapBvh bvh,
+        Vector3f skyColour,
+        int passes = 4,
+        int hemisphereRays = 64,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        ArgumentNullException.ThrowIfNull(triangles);
+        ArgumentNullException.ThrowIfNull(bvh);
+
+        Vector3f[] hemisphere = CosineHemisphere(Math.Max(hemisphereRays, 1));
+        float inverseRays = 1f / hemisphere.Length;
+        float biasMetres = (float)(RayBiasUnits / WorldScene.UnitsPerMetre);
+        double reachMetres = RayReachMetres;
+
+        ParallelOptions options = new()
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
+        };
+
+        for (int pass = 0; pass < Math.Max(passes, 1); pass++)
+        {
+            // The light the last pass left, so this pass reads a stable snapshot rather than racing itself.
+            Vector3f[][] previous = new Vector3f[targets.Count][];
+            for (int t = 0; t < targets.Count; t++)
+            {
+                previous[t] = (Vector3f[])targets[t].Radiance.Clone();
+            }
+
+            Parallel.For(0, targets.Count, options, t =>
+            {
+                LightmapTarget target = targets[t];
+
+                for (int i = 0; i < target.Texels.Length; i++)
+                {
+                    LightmapTexel texel = target.Texels[i];
+                    if (!texel.IsCovered)
+                    {
+                        continue;
+                    }
+
+                    Vector3d origin = new(
+                        texel.WorldPosition.X + (texel.Normal.X * biasMetres),
+                        texel.WorldPosition.Y + (texel.Normal.Y * biasMetres),
+                        texel.WorldPosition.Z + (texel.Normal.Z * biasMetres));
+
+                    (Vector3f tangent, Vector3f bitangent) = TangentFrame(texel.Normal);
+                    Vector3f gather = default;
+
+                    for (int r = 0; r < hemisphere.Length; r++)
+                    {
+                        Vector3f local = hemisphere[r];
+                        Vector3d dir = new(
+                            (tangent.X * local.X) + (bitangent.X * local.Y) + (texel.Normal.X * local.Z),
+                            (tangent.Y * local.X) + (bitangent.Y * local.Y) + (texel.Normal.Y * local.Z),
+                            (tangent.Z * local.X) + (bitangent.Z * local.Y) + (texel.Normal.Z * local.Z));
+
+                        if (bvh.ClosestHit(origin, dir, reachMetres, out int hitTriangle, out double bu, out double bv))
+                        {
+                            LightmapTriangle tri = triangles[hitTriangle];
+                            double bw = 1.0 - bu - bv;
+                            float lightmapU = (float)((bw * tri.U0) + (bu * tri.U1) + (bv * tri.U2));
+                            float lightmapV = (float)((bw * tri.V0) + (bu * tri.V1) + (bv * tri.V2));
+
+                            LightmapTarget hitTarget = targets[tri.Target];
+                            int hx = Math.Clamp((int)(lightmapU * hitTarget.Width), 0, hitTarget.Width - 1);
+                            int hy = Math.Clamp((int)(lightmapV * hitTarget.Height), 0, hitTarget.Height - 1);
+                            Vector3f incoming = previous[tri.Target][(hy * hitTarget.Width) + hx];
+
+                            gather = new Vector3f(
+                                gather.X + (tri.Albedo.X * incoming.X),
+                                gather.Y + (tri.Albedo.Y * incoming.Y),
+                                gather.Z + (tri.Albedo.Z * incoming.Z));
+                        }
+                        else
+                        {
+                            gather = new Vector3f(gather.X + skyColour.X, gather.Y + skyColour.Y, gather.Z + skyColour.Z);
+                        }
+                    }
+
+                    Vector3f direct = target.Direct[i];
+                    target.Radiance[i] = new Vector3f(
+                        direct.X + (gather.X * inverseRays),
+                        direct.Y + (gather.Y * inverseRays),
+                        direct.Z + (gather.Z * inverseRays));
+                }
+            });
+        }
     }
 
     /// <summary>Renders a target's normals as an image, for verifying the texel map before any light is traced.</summary>
