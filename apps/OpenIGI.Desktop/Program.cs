@@ -2654,7 +2654,12 @@ using (window)
                     device.SceneColour,
                     RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
                     giTraceDistance,
-                    giTraceThickness);
+                    giTraceThickness,
+
+                    // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
+                    // the surface cache lights its cards with, so the indirect that replaces the ambient
+                    // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
+                    sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f));
 
                 // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                 // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
