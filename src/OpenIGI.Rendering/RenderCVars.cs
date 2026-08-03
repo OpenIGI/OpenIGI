@@ -146,15 +146,19 @@ public static class RenderCVars
     /// flat ambient -- the stage where the traced global illumination reaches the screen. Not a name
     /// clash with <see cref="GlobalIllumination"/> (<c>r_gi</c>), which is the baked probe field; this is
     /// the live screen-space gather, and it needs the surface cache and the distance fields, so it does
-    /// nothing without both. The magnitude reads as irradiance, so a value near the ambient it replaces
-    /// (about a third) matches its brightness; it stays a knob while the look is tuned.
+    /// nothing without both. The magnitude compensates for how the gather reads the cache: the surface
+    /// cache's final atlas holds each card's OUTGOING radiance -- the incident light already taken through
+    /// the surface's albedo and the Lambertian one-over-pi -- and the deferred fill then takes the
+    /// receiver's albedo again, so the raw gather lands roughly an order of magnitude below the ambient it
+    /// stands in for. A strength around two and a half lifts it back, so a shadowed wall reads as lit
+    /// concrete rather than black. It stays a knob while the look is tuned.
     /// </remarks>
     public static readonly NumericCVar<float> ScreenGather = Presets.Define(
         CVar.Float(
             "r_screen_gi",
             0f,
             0f,
-            4f,
+            8f,
             CVarOptions.Archive,
             "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off."),
         vanilla: "0",
@@ -163,11 +167,12 @@ public static class RenderCVars
 
         // Ultra's indirect is this real-time screen probe gather: it traces the surface cache and the
         // distance fields along the view and reads back as the diffuse fill, so the bounced light responds
-        // to the frame -- a lamp switched on, a door opened, the camera moved -- with no bake. About a
-        // third matches the ambient it replaces. It carries only light already in the frame, so a
-        // windowless room has nothing to gather; the lamp fixtures (r_local_light_scale) light those. The
-        // cheaper presets have no surface cache and light from the baked field (r_gi) instead.
-        ultra: "0.3");
+        // to the frame -- a lamp switched on, a door opened, the camera moved -- with no bake. Calibrated so
+        // a shadowed wall reads as lit concrete rather than black: the cache holds outgoing radiance (see
+        // the remarks), so the gather needs lifting by about this much to stand in for the ambient. It
+        // carries only light already in the frame, so a windowless room still leans on the lamp fixtures
+        // (r_local_light_scale). The cheaper presets light from the baked field (r_gi) instead.
+        ultra: "2.5");
 
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
