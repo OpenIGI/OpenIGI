@@ -10,55 +10,47 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The settings screen: a tab per category, every row a CVar bound to its control, with a live preview,
-/// per-row help, restart badges, reset-to-default and a graphics-preset selector.
+/// The settings section: a category tab strip, every row a CVar bound to its control, with a live
+/// preview, per-row help, restart notes, and a graphics-preset selector.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Categories are grouped by CVar name prefix — <c>r_</c> is graphics/display, <c>snd_</c> audio,
-/// <c>g_</c>/<c>ui_</c> gameplay — because that is the only grouping the CVar system carries (there is no
-/// category metadata). Controls are the <see cref="CVarBinding"/> rows, so every change previews the
-/// instant it is made through the CVar's own change event, exactly as the console does. A row whose CVar
-/// requires a restart is flagged in the footer while it is focused.
+/// <c>g_</c>/<c>ui_</c> gameplay — because that is the only grouping the CVar system carries. Controls are
+/// the <see cref="CVarBinding"/> rows, so every change previews the instant it is made through the CVar's
+/// own change event. A row whose CVar requires a restart is flagged in the footer while it is focused.
 /// </para>
 /// <para>
 /// The Controls tab rebinds keys against the active profile. It captures a key code the port understands
-/// and stores its name; that is the port's binding, not a faithful DirectInput scan-code name, which is a
+/// and stores its name; that is the port's binding, not a faithful DirectInput scan-code name — a
 /// deliberate simplification until input remap reaches full retail fidelity.
 /// </para>
 /// </remarks>
-public sealed class SettingsScreen : Screen
+public sealed class SettingsScreen : ShellScreen
 {
-    private readonly ShellContext _context;
     private readonly Dictionary<Control, ICVar> _boundCvars = [];
     private readonly List<UiElement> _tabPanels = [];
-    private readonly List<ICVar[]> _tabCvars = [];
 
-    private TabStrip? _tabs;
     private Label? _help;
 
     /// <summary>Initializes a new instance of the <see cref="SettingsScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     public SettingsScreen(ShellContext context)
+        : base(context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        _context = context;
-        Name = "Settings";
     }
 
     /// <inheritdoc/>
-    protected override UiElement BuildRoot(LayoutContext context)
+    protected override ShellTab Tab => ShellTab.Settings;
+
+    /// <inheritdoc/>
+    protected override UiElement? BuildContent(LayoutContext context)
     {
         _boundCvars.Clear();
         _tabPanels.Clear();
-        _tabCvars.Clear();
 
-        UiTheme theme = _context.Theme;
-        var canvas = new Canvas();
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f };
-
-        column.AddChild(new Label(theme.Heading, "SETTINGS", theme.HeadingTextSize, theme.Accent) { Shadow = theme.Shadow });
+        UiTheme theme = Context.Theme;
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 14f };
 
         (string Title, Func<Panel> Build)[] categories =
         [
@@ -75,12 +67,11 @@ public sealed class SettingsScreen : Screen
             tabTitles[i] = categories[i].Title;
         }
 
-        _tabs = new TabStrip(theme, tabTitles);
-        _tabs.SelectionChanged += ShowTab;
-        column.AddChild(_tabs);
+        var tabs = new TabStrip(theme, tabTitles);
+        tabs.SelectionChanged += ShowTab;
+        column.AddChild(tabs);
 
-        // Build every tab panel once; only the selected one is visible.
-        var content = new Panel { Height = 620f };
+        var content = new Panel { Height = 560f };
         for (int i = 0; i < categories.Length; i++)
         {
             Panel panel = categories[i].Build();
@@ -93,19 +84,16 @@ public sealed class SettingsScreen : Screen
 
         _help = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.95f, theme.TextMuted)
         {
-            Margin = new Thickness(0f, 12f, 0f, 0f),
+            Margin = new Thickness(0f, 8f, 0f, 0f),
         };
         column.AddChild(_help);
-
-        canvas.Add(column, Anchor.Filled(64f));
-        return canvas;
+        return column;
     }
 
     /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)
     {
-        // A key-binding row that is listening swallows the keyboard until it captures a key, so a stray
-        // navigation press does not escape mid-rebind.
+        // A key-binding row that is listening swallows the keyboard until it captures a key.
         if (Focus?.Focused is KeyBindingRow { IsListening: true } row)
         {
             while (input.Keyboard.TryDequeuePress(out KeyCode key))
@@ -123,7 +111,7 @@ public sealed class SettingsScreen : Screen
     }
 
     /// <inheritdoc/>
-    protected override void OnExit() => _context.Host.SaveSettings();
+    protected override void OnExit() => Context.Host.SaveSettings();
 
     /// <inheritdoc/>
     protected override void OnUpdate(float elapsedSeconds)
@@ -133,7 +121,6 @@ public sealed class SettingsScreen : Screen
             return;
         }
 
-        // The footer shows the focused row's help and whether it needs a restart.
         if (Focus?.Focused is Control control && _boundCvars.TryGetValue(control, out ICVar? cvar))
         {
             string restart = cvar.Flags.HasFlag(CVarOptions.RequiresRestart) ? "   [restart required]" : string.Empty;
@@ -156,29 +143,28 @@ public sealed class SettingsScreen : Screen
             _tabPanels[i].Visibility = i == index ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        // Move focus into the newly-shown tab; the collapsed tabs' controls are no longer focusable.
         Focus?.Validate();
     }
 
     private Panel BuildCvarPanel(IReadOnlyList<string> names, bool includePresets)
     {
-        UiTheme theme = _context.Theme;
+        UiTheme theme = Context.Theme;
         var scroll = new ScrollView(theme);
         var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f };
 
         if (includePresets)
         {
             string[] presetNames = Enum.GetNames<GraphicsPreset>();
-            int current = Array.IndexOf(presetNames, _context.Presets.Current.ToString());
+            int current = Array.IndexOf(presetNames, Context.Presets.Current.ToString());
             var presets = new Dropdown(theme, "Preset", presetNames, Math.Max(0, current));
             presets.SelectionChanged += i =>
             {
                 if (Enum.TryParse(presetNames[i], out GraphicsPreset preset))
                 {
-                    _context.Presets.Apply(preset);
+                    Context.Presets.Apply(preset);
                 }
             };
-            _context.Presets.PresetChanged += (_, preset) =>
+            Context.Presets.PresetChanged += (_, preset) =>
             {
                 int idx = Array.IndexOf(presetNames, preset.ToString());
                 if (idx >= 0)
@@ -189,64 +175,55 @@ public sealed class SettingsScreen : Screen
             stack.AddChild(presets);
         }
 
-        var cvars = new List<ICVar>();
         foreach (string name in names)
         {
-            if (_context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null && CVarBinding.CanBind(cvar))
+            if (Context.Cvars.TryGet(name, out ICVar? cvar) && cvar is not null && CVarBinding.CanBind(cvar))
             {
                 Control? control = CVarBinding.CreateControl(theme, cvar);
                 if (control is not null)
                 {
                     _boundCvars[control] = cvar;
-                    cvars.Add(cvar);
                     stack.AddChild(control);
                 }
             }
         }
 
-        _tabCvars.Add([.. cvars]);
         scroll.SetContent(stack);
-        return WrapScroll(scroll);
+        return new Panel().WithChild(scroll);
     }
 
     private Panel BuildControlsPanel()
     {
-        UiTheme theme = _context.Theme;
+        UiTheme theme = Context.Theme;
         var scroll = new ScrollView(theme);
         var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4f };
 
-        PlayerProfileBindings(stack, theme);
-        _tabCvars.Add([]);
-        scroll.SetContent(stack);
-        return WrapScroll(scroll);
-    }
-
-    private void PlayerProfileBindings(StackPanel stack, UiTheme theme)
-    {
-        var profile = _context.Config.Active;
+        var profile = Context.Config.Active;
         if (profile is null || profile.Bindings.Count == 0)
         {
             stack.AddChild(new Label(theme.Body, "No control bindings in the active profile.", theme.BodyTextSize, theme.TextMuted));
-            return;
         }
-
-        for (int i = 0; i < profile.Bindings.Count; i++)
+        else
         {
-            int index = i;
-            var binding = profile.Bindings[index];
-            KeyCode current = Enum.TryParse(binding.Key, ignoreCase: true, out KeyCode parsed) ? parsed : KeyCode.None;
-            var row = new KeyBindingRow(theme, binding.Action, current);
-            row.BindingChanged += key => profile.Bindings[index] = binding with { Key = key.ToString() };
-            stack.AddChild(row);
+            for (int i = 0; i < profile.Bindings.Count; i++)
+            {
+                int index = i;
+                var binding = profile.Bindings[index];
+                KeyCode current = Enum.TryParse(binding.Key, ignoreCase: true, out KeyCode parsed) ? parsed : KeyCode.None;
+                var row = new KeyBindingRow(theme, binding.Action, current);
+                row.BindingChanged += key => profile.Bindings[index] = binding with { Key = key.ToString() };
+                stack.AddChild(row);
+            }
         }
-    }
 
-    private static Panel WrapScroll(ScrollView scroll) => new Panel().Also(p => p.AddChild(scroll));
+        scroll.SetContent(stack);
+        return new Panel().WithChild(scroll);
+    }
 
     private List<string> NamesWithPrefix(string prefix, bool excludeDisplay = false)
     {
         var names = new List<string>();
-        foreach (ICVar cvar in _context.Cvars.All)
+        foreach (ICVar cvar in Context.Cvars.All)
         {
             if (cvar.Name.StartsWith(prefix, StringComparison.Ordinal)
                 && !cvar.Flags.HasFlag(CVarOptions.Hidden)
@@ -262,7 +239,7 @@ public sealed class SettingsScreen : Screen
     private List<string> DisplayNames()
     {
         var names = new List<string>();
-        foreach (ICVar cvar in _context.Cvars.All)
+        foreach (ICVar cvar in Context.Cvars.All)
         {
             if (IsDisplayName(cvar.Name) && !cvar.Flags.HasFlag(CVarOptions.Hidden))
             {
@@ -276,7 +253,7 @@ public sealed class SettingsScreen : Screen
     private List<string> GameplayNames()
     {
         var names = new List<string>();
-        foreach (ICVar cvar in _context.Cvars.All)
+        foreach (ICVar cvar in Context.Cvars.All)
         {
             if ((cvar.Name.StartsWith("g_", StringComparison.Ordinal) || cvar.Name.StartsWith("ui_", StringComparison.Ordinal))
                 && !cvar.Flags.HasFlag(CVarOptions.Hidden))
@@ -295,9 +272,9 @@ public sealed class SettingsScreen : Screen
 /// <summary>Small fluent helper for one-line child wiring.</summary>
 internal static class PanelFluent
 {
-    public static Panel Also(this Panel panel, Action<Panel> configure)
+    public static Panel WithChild(this Panel panel, UiElement child)
     {
-        configure(panel);
+        panel.AddChild(child);
         return panel;
     }
 }

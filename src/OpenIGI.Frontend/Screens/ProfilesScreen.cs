@@ -8,73 +8,63 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// Profiles and saves: the player's profiles on the left, the save slots on the right, each with the
-/// actions that operate on it.
+/// The profiles and saves section: the player's profiles on the left, the save slots on the right, each
+/// with the actions that operate on it.
 /// </summary>
 /// <remarks>
 /// Profiles are the retail surface — a name, a difficulty and the furthest mission reached — read and
 /// written through <see cref="OpenIGI.Game.Config.GameConfig"/> and its byte-compatible
 /// <c>openigi-config.qvm</c>; the retail <c>config.qvm</c> is never touched. Save slots are the port's
-/// own new format (<see cref="SaveSlotStore"/>): a named, timestamped, screenshotted point per slot,
-/// separate from the profile so it can carry detail a profile does not.
+/// own new format (<see cref="SaveSlotStore"/>): a named, timestamped, screenshotted point per slot.
 /// </remarks>
-public sealed class ProfilesScreen : Screen
+public sealed class ProfilesScreen : ShellScreen
 {
-    private readonly ShellContext _context;
     private ListView? _profiles;
     private ListView? _slots;
 
     /// <summary>Initializes a new instance of the <see cref="ProfilesScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     public ProfilesScreen(ShellContext context)
+        : base(context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        _context = context;
-        Name = "Profiles";
     }
 
     /// <inheritdoc/>
-    protected override UiElement BuildRoot(LayoutContext context)
-    {
-        UiTheme theme = _context.Theme;
-        var canvas = new Canvas();
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f };
-        column.AddChild(new Label(theme.Heading, "PROFILES & SAVES", theme.HeadingTextSize, theme.Accent) { Shadow = theme.Shadow });
+    protected override ShellTab Tab => ShellTab.Profile;
 
-        var columns = new Grid { Height = 560f, ColumnSpacing = 40f };
+    /// <inheritdoc/>
+    protected override UiElement? BuildContent(LayoutContext context)
+    {
+        var columns = new Grid { ColumnSpacing = 40f };
         columns.ColumnDefinitions.Add(GridLength.Star);
         columns.ColumnDefinitions.Add(GridLength.Star);
         columns.RowDefinitions.Add(GridLength.Star);
 
-        columns.Add(BuildProfiles(theme), 0, 0);
-        columns.Add(BuildSaves(theme), 0, 1);
-        column.AddChild(columns);
-
-        canvas.Add(column, Anchor.Filled(64f));
-        return canvas;
+        columns.Add(BuildProfiles(Context.Theme), 0, 0);
+        columns.Add(BuildSaves(Context.Theme), 0, 1);
+        return columns;
     }
 
     private StackPanel BuildProfiles(UiTheme theme)
     {
         var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        stack.AddChild(new Label(theme.Body, "Profiles", theme.BodyTextSize * 1.1f, theme.Text));
+        stack.AddChild(new Label(theme.Body, "Profiles", theme.BodyTextSize * 1.15f, theme.Accent));
 
-        _profiles = new ListView(theme, ProfileNames()) { VisibleRows = 8, SelectedIndex = _context.Config.ActiveIndex };
-        _profiles.SelectionChanged += i => _context.Config.ActiveIndex = i;
+        _profiles = new ListView(theme, ProfileNames()) { VisibleRows = 8, SelectedIndex = Context.Config.ActiveIndex };
+        _profiles.SelectionChanged += i => Context.Config.ActiveIndex = i;
         stack.AddChild(_profiles);
 
         var actions = new FlexPanel { Orientation = Orientation.Horizontal, Gap = 16f };
         var create = new Button(theme, "New");
         create.Activated += _ =>
         {
-            _context.Config.CreateProfile(null, _context.Config.Active?.Difficulty ?? 1);
+            Context.Config.CreateProfile(null, Context.Config.Active?.Difficulty ?? 1);
             RefreshProfiles();
         };
         var delete = new Button(theme, "Delete");
         delete.Activated += _ =>
         {
-            if (_context.Config.DeleteProfile(_context.Config.ActiveIndex))
+            if (Context.Config.DeleteProfile(Context.Config.ActiveIndex))
             {
                 RefreshProfiles();
             }
@@ -88,7 +78,7 @@ public sealed class ProfilesScreen : Screen
     private StackPanel BuildSaves(UiTheme theme)
     {
         var stack = new StackPanel { Orientation = Orientation.Vertical, Spacing = 10f };
-        stack.AddChild(new Label(theme.Body, "Save slots", theme.BodyTextSize * 1.1f, theme.Text));
+        stack.AddChild(new Label(theme.Body, "Save slots", theme.BodyTextSize * 1.15f, theme.Accent));
 
         _slots = new ListView(theme, SlotSummaries()) { VisibleRows = 8 };
         stack.AddChild(_slots);
@@ -110,16 +100,15 @@ public sealed class ProfilesScreen : Screen
     private void SaveToSelectedSlot()
     {
         int slot = _slots?.SelectedIndex ?? 0;
-        var profile = _context.Config.Active;
+        var profile = Context.Config.Active;
         int missionId = profile?.ActiveMission ?? 1;
-        string missionName = MissionName(missionId);
 
-        Bgra32[] thumb = _context.Host.CaptureThumbnail(out int width, out int height);
-        _context.Saves.Save(
+        Bgra32[] thumb = Context.Host.CaptureThumbnail(out int width, out int height);
+        Context.Saves.Save(
             slot,
             profile?.Name ?? "Profile",
             missionId,
-            missionName,
+            MissionName(missionId),
             DateTimeOffset.Now,
             thumb,
             width,
@@ -134,16 +123,16 @@ public sealed class ProfilesScreen : Screen
             return;
         }
 
-        SaveSlot? save = _context.Saves.Find(_slots.SelectedIndex);
+        SaveSlot? save = Context.Saves.Find(_slots.SelectedIndex);
         if (save is not null)
         {
-            _context.Host.StartMission(save.MissionId, _context.Config.Active?.Difficulty ?? 1);
+            Context.Host.StartMission(save.MissionId, Context.Config.Active?.Difficulty ?? 1);
         }
     }
 
     private void DeleteSelectedSlot()
     {
-        if (_slots is not null && _context.Saves.Delete(_slots.SelectedIndex))
+        if (_slots is not null && Context.Saves.Delete(_slots.SelectedIndex))
         {
             RefreshSlots();
         }
@@ -155,10 +144,10 @@ public sealed class ProfilesScreen : Screen
 
     private string[] ProfileNames()
     {
-        var names = new string[_context.Config.Profiles.Count];
+        var names = new string[Context.Config.Profiles.Count];
         for (int i = 0; i < names.Length; i++)
         {
-            names[i] = _context.Config.Profiles[i].Name;
+            names[i] = Context.Config.Profiles[i].Name;
         }
 
         return names;
@@ -170,7 +159,7 @@ public sealed class ProfilesScreen : Screen
         var summaries = new string[slotCount];
         for (int i = 0; i < slotCount; i++)
         {
-            SaveSlot? slot = _context.Saves.Find(i);
+            SaveSlot? slot = Context.Saves.Find(i);
             summaries[i] = slot is null
                 ? $"Slot {i + 1}  —  empty"
                 : $"Slot {i + 1}  —  {slot.MissionName}  ·  {slot.SavedAt.LocalDateTime.ToString("g", CultureInfo.CurrentCulture)}";
@@ -181,7 +170,7 @@ public sealed class ProfilesScreen : Screen
 
     private string MissionName(int missionId)
     {
-        foreach (MissionInfo mission in _context.Missions)
+        foreach (MissionInfo mission in Context.Missions)
         {
             if (mission.Id == missionId)
             {

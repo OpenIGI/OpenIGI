@@ -13,7 +13,8 @@ namespace OpenIGI.Scripting.Runtime;
 /// plays that role here, so tests and tools can build a namespace containing exactly what they want.
 /// </para>
 /// <para>
-/// Names are case-sensitive, matching the original's lookup, and each may be registered once.
+/// Names are case-sensitive, matching the original's lookup. Registering a name that is already present
+/// rebinds it, which is how a level reload re-points the define natives and constants at fresh instances.
 /// </para>
 /// </remarks>
 public sealed class NativeRegistry
@@ -33,7 +34,6 @@ public sealed class NativeRegistry
     /// <param name="returnType">Which representation of the result a call pushes. Defaults to an integer, as the original's registration does.</param>
     /// <param name="context">The object the native receives on every call.</param>
     /// <returns>The registered symbol.</returns>
-    /// <exception cref="InvalidOperationException">The name is already registered.</exception>
     public QvmSymbol RegisterFunction(
         string name,
         QvmNativeFunction function,
@@ -46,14 +46,12 @@ public sealed class NativeRegistry
     /// <param name="name">The script-visible name.</param>
     /// <param name="value">The value.</param>
     /// <returns>The registered symbol.</returns>
-    /// <exception cref="InvalidOperationException">The name is already registered.</exception>
     public QvmSymbol RegisterConstant(string name, int value) => Add(QvmSymbol.CreateConstant(name, value));
 
     /// <summary>Registers a variable.</summary>
     /// <param name="name">The script-visible name.</param>
     /// <param name="variable">The storage binding.</param>
     /// <returns>The registered symbol.</returns>
-    /// <exception cref="InvalidOperationException">The name is already registered.</exception>
     public QvmSymbol RegisterVariable(string name, IQvmVariable variable) => Add(QvmSymbol.CreateVariable(name, variable));
 
     /// <summary>Removes a symbol.</summary>
@@ -110,11 +108,12 @@ public sealed class NativeRegistry
 
     private QvmSymbol Add(QvmSymbol symbol)
     {
-        if (!_symbols.TryAdd(symbol.Name, symbol))
-        {
-            throw new InvalidOperationException($"The script symbol '{symbol.Name}' is already registered.");
-        }
-
+        // Re-registering a name rebinds it rather than failing. That is what makes a second level load
+        // work: the define scripts (DefineWeaponType, the WEAPON_ID_* constants, the material and player
+        // tables) run again against fresh registry instances, and this re-points the symbol at the new
+        // one — exactly what the original does with Script_SetSymbolContext plus re-running the defines,
+        // rather than a process that can only ever load one mission.
+        _symbols[symbol.Name] = symbol;
         return symbol;
     }
 }

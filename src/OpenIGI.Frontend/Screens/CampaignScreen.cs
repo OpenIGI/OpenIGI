@@ -5,57 +5,51 @@ using OpenIGI.UI.Widgets;
 namespace OpenIGI.Frontend.Screens;
 
 /// <summary>
-/// The campaign: a carousel of the real missions, a briefing that follows the selection, a difficulty
-/// picker and a Play button. Changing the selection previews that mission's level behind the menu.
+/// The campaign section: a carousel of the real missions, a briefing and progress that follow the
+/// selection, a difficulty picker and Play. Changing the selection previews that mission behind the menu.
 /// </summary>
 /// <remarks>
 /// The mission list is the port's own <c>DefineMission</c> data, already resolved to display strings by
 /// the composition root. As the carousel moves it calls <see cref="IShellHost.PreviewMission"/>, which is
-/// where the app streams the hovered level in on a worker thread and moves the showcase camera to it —
-/// the screen itself only says which mission is under the cursor.
+/// where the app streams the hovered level in and moves the showcase camera to it.
 /// </remarks>
-public sealed class CampaignScreen : Screen
+public sealed class CampaignScreen : ShellScreen
 {
     private static readonly string[] Difficulties = ["Easy", "Normal", "Hard"];
 
-    private readonly ShellContext _context;
     private Carousel? _carousel;
     private Label? _briefing;
     private Label? _progress;
 
     /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class.</summary>
     /// <param name="context">The shared shell context.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     public CampaignScreen(ShellContext context)
+        : base(context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        _context = context;
-        Name = "Campaign";
     }
 
     /// <inheritdoc/>
-    protected override UiElement BuildRoot(LayoutContext context)
+    protected override ShellTab Tab => ShellTab.Campaign;
+
+    /// <inheritdoc/>
+    protected override UiElement? BuildContent(LayoutContext context)
     {
-        UiTheme theme = _context.Theme;
-        var canvas = new Canvas();
-        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 18f };
+        UiTheme theme = Context.Theme;
+        var column = new StackPanel { Orientation = Orientation.Vertical, Spacing = 16f };
 
-        column.AddChild(new Label(theme.Heading, "CAMPAIGN", theme.HeadingTextSize, theme.Accent) { Shadow = theme.Shadow });
-
-        if (_context.Missions.Count == 0)
+        if (Context.Missions.Count == 0)
         {
             column.AddChild(new Label(theme.Body, "No missions were found in this installation.", theme.BodyTextSize, theme.TextMuted));
-            canvas.Add(column, Anchor.Filled(64f));
-            return canvas;
+            return column;
         }
 
-        string[] names = new string[_context.Missions.Count];
+        string[] names = new string[Context.Missions.Count];
         for (int i = 0; i < names.Length; i++)
         {
-            names[i] = $"{_context.Missions[i].Number:00}  {_context.Missions[i].Name}";
+            names[i] = $"{Context.Missions[i].Number:00}  {Context.Missions[i].Name}";
         }
 
-        _carousel = new Carousel(theme, names) { Margin = new Thickness(0f, 12f, 0f, 12f) };
+        _carousel = new Carousel(theme, names) { Margin = new Thickness(0f, 24f, 0f, 12f) };
         _carousel.SelectionChanged += OnMissionSelected;
         column.AddChild(_carousel);
 
@@ -81,49 +75,48 @@ public sealed class CampaignScreen : Screen
             Justify = FlexJustify.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        var difficulty = new Dropdown(theme, "Difficulty", Difficulties, DefaultDifficultyIndex());
+        var difficulty = new Dropdown(theme, "Difficulty", Difficulties, DefaultDifficultyIndex()) { Width = 320f };
         var play = new Button(theme, "Play") { TextSize = theme.BodyTextSize * 1.2f };
         play.Activated += _ =>
         {
-            MissionInfo mission = _context.Missions[_carousel!.SelectedIndex];
-            _context.Host.StartMission(mission.Id, difficulty.SelectedIndex);
+            MissionInfo mission = Context.Missions[_carousel!.SelectedIndex];
+            Context.Host.StartMission(mission.Id, difficulty.SelectedIndex);
         };
         actions.Add(difficulty);
         actions.Add(play);
         column.AddChild(actions);
 
-        canvas.Add(column, Anchor.Filled(64f));
         Refresh(0);
-        return canvas;
+        return column;
     }
 
     /// <inheritdoc/>
     protected override void OnBuilt()
     {
         // Preview the current selection once the carousel exists; OnEnter runs before the tree is built.
-        if (_context.Missions.Count > 0 && _carousel is not null)
+        if (Context.Missions.Count > 0 && _carousel is not null)
         {
-            _context.Host.PreviewMission(_context.Missions[_carousel.SelectedIndex].Id);
+            Context.Host.PreviewMission(Context.Missions[_carousel.SelectedIndex].Id);
         }
     }
 
     private void OnMissionSelected(int index)
     {
         Refresh(index);
-        if (index >= 0 && index < _context.Missions.Count)
+        if (index >= 0 && index < Context.Missions.Count)
         {
-            _context.Host.PreviewMission(_context.Missions[index].Id);
+            Context.Host.PreviewMission(Context.Missions[index].Id);
         }
     }
 
     private void Refresh(int index)
     {
-        if (index < 0 || index >= _context.Missions.Count)
+        if (index < 0 || index >= Context.Missions.Count)
         {
             return;
         }
 
-        MissionInfo mission = _context.Missions[index];
+        MissionInfo mission = Context.Missions[index];
         if (_briefing is not null)
         {
             _briefing.Text = mission.Description;
@@ -131,10 +124,12 @@ public sealed class CampaignScreen : Screen
 
         if (_progress is not null)
         {
-            int furthest = _context.Config.Active?.ActiveMission ?? 0;
-            _progress.Text = mission.Id <= furthest ? "Completed" : mission.Number == 1 || mission.Id <= furthest + 1 ? "Available" : "Locked";
+            int furthest = Context.Config.Active?.ActiveMission ?? 0;
+            _progress.Text = mission.Id <= furthest ? "Completed"
+                : mission.Number == 1 || mission.Id <= furthest + 1 ? "Available"
+                : "Locked";
         }
     }
 
-    private int DefaultDifficultyIndex() => Math.Clamp(_context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
+    private int DefaultDifficultyIndex() => Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
 }

@@ -33,6 +33,11 @@ public class Button : Control
     /// <summary>Gets or sets the padding around the caption, in design units.</summary>
     public Thickness Padding { get; set; } = new(24f, 10f);
 
+    /// <summary>Gets or sets a value indicating whether the button is drawn as a persistently selected tab.</summary>
+    /// <remarks>A selected button keeps a partial focus highlight and accent tint even without focus, so a
+    /// tab strip built from buttons can show which one is current.</remarks>
+    public bool Selected { get; set; }
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
@@ -45,7 +50,8 @@ public class Button : Control
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
-        float focus = Visual.Focus;
+        // A selected tab reads as focused-but-quieter even when focus is elsewhere.
+        float focus = MathF.Max(Visual.Focus, Selected ? 0.55f : 0f);
         float press = Visual.Press;
         float appear = Visual.Appear;
 

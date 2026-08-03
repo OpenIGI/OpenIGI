@@ -1831,10 +1831,39 @@ using (window)
     Shell? shell = null;
     MenuShowcaseCamera? showcaseCamera = null;
     MissionWarmer? missionWarmer = null;
+    MenuCameraLibrary menuCameras = MenuCameraLibrary.Empty;
     UiFont? shellBodyFont = null;
     UiFont? shellHeadingFont = null;
     bool menuMode = false;
+    bool showcasePending = false;
     const int ShowcaseMissionId = 1;
+    int currentShowcaseMissionId = ShowcaseMissionId;
+    int? pendingPreviewMissionId = null;
+    int previewRequestedAtMs = 0;
+
+    // Rebuilds the orbit around the currently-loaded showcase scene. The scene's placements decide the
+    // centre (medians, so a few far outliers do not drag it off the level), and the mission's own entry
+    // in menu-cameras.json decides the orbit.
+    void ApplyShowcaseCamera(int missionId)
+    {
+        Vector3d centre = default;
+        if (scene is { Placements.Count: > 0 } showcaseScene)
+        {
+            double[] centreXs = new double[showcaseScene.Placements.Count];
+            double[] centreYs = new double[showcaseScene.Placements.Count];
+            for (int i = 0; i < showcaseScene.Placements.Count; i++)
+            {
+                centreXs[i] = showcaseScene.Placements[i].Position.X;
+                centreYs[i] = showcaseScene.Placements[i].Position.Y;
+            }
+
+            Array.Sort(centreXs);
+            Array.Sort(centreYs);
+            centre = new Vector3d(centreXs[centreXs.Length / 2], centreYs[centreYs.Length / 2], showcaseScene.GroundHeight + 15.0);
+        }
+
+        showcaseCamera = new MenuShowcaseCamera(centre, menuCameras.For(missionId));
+    }
 
     if (options.StartMission > 0)
     {
@@ -1846,7 +1875,7 @@ using (window)
     }
     else
     {
-        MenuCameraLibrary menuCameras = MenuCameraLibrary.Load(
+        menuCameras = MenuCameraLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), logger);
         missionWarmer = new MissionWarmer(gamePath, missions, logger);
 
@@ -1882,7 +1911,23 @@ using (window)
                 StartMission(id);
             },
             quit: () => running = false,
-            previewMission: id => missionWarmer?.Warm(id ?? ShowcaseMissionId),
+            previewMission: id =>
+            {
+                int wanted = id ?? ShowcaseMissionId;
+                if (wanted != currentShowcaseMissionId)
+                {
+                    // Warm the level's files on a worker now, and queue the visible swap for once the
+                    // selection has settled (see the loop) so scrubbing the carousel does not reload
+                    // every step.
+                    pendingPreviewMissionId = wanted;
+                    previewRequestedAtMs = loop.TimeSource.Milliseconds;
+                    missionWarmer?.Warm(wanted);
+                }
+                else
+                {
+                    pendingPreviewMissionId = null;
+                }
+            },
             saveSettings: () => console.SaveSettings(),
             captureThumbnail: (out int captureWidth, out int captureHeight) =>
             {
@@ -1904,31 +1949,12 @@ using (window)
             configuration,
             saves));
 
-        // Load a showcase level behind the menu and orbit it slowly; heavy depth of field frames the UI.
-        StartMission(ShowcaseMissionId);
-        playerMode = false;
+        // The showcase level is loaded a couple of frames into the loop, not here: loading it now would
+        // block for a few seconds before the window ever showed the menu (the "blue screen" that is just
+        // the frame's clear). Deferring it lets the menu draw first over a dark backdrop, then the
+        // showcase streams in behind it.
         menuMode = true;
-
-        Vector3d showcaseCentre = default;
-        if (scene is { Placements.Count: > 0 } showcaseScene)
-        {
-            double[] centreXs = new double[showcaseScene.Placements.Count];
-            double[] centreYs = new double[showcaseScene.Placements.Count];
-            for (int i = 0; i < showcaseScene.Placements.Count; i++)
-            {
-                centreXs[i] = showcaseScene.Placements[i].Position.X;
-                centreYs[i] = showcaseScene.Placements[i].Position.Y;
-            }
-
-            Array.Sort(centreXs);
-            Array.Sort(centreYs);
-            showcaseCentre = new Vector3d(
-                centreXs[centreXs.Length / 2],
-                centreYs[centreYs.Length / 2],
-                showcaseScene.GroundHeight + 15.0);
-        }
-
-        showcaseCamera = new MenuShowcaseCamera(showcaseCentre, menuCameras.For(ShowcaseMissionId));
+        showcasePending = true;
 
         // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
         RenderCVars.FocalDistance.Value = 40f;
@@ -2045,6 +2071,31 @@ using (window)
             }
         }
 
+        // The deferred showcase load: after a couple of menu frames have shown, load the level behind the
+        // menu. Blocks briefly, but the menu is already on screen (over its dark backdrop) rather than a
+        // blank blue clear.
+        if (menuMode && showcasePending && loop.Clock.FrameCount >= 2)
+        {
+            showcasePending = false;
+            StartMission(ShowcaseMissionId);
+            playerMode = false;
+            ApplyShowcaseCamera(ShowcaseMissionId);
+        }
+
+        // The queued preview swap: once the campaign selection has settled for a moment, load that mission
+        // behind the menu so the showcase actually changes. Synchronous — it hitches briefly, softened by
+        // the worker warm-up — because the renderer keeps one live world; a second one is out of scope.
+        if (menuMode
+            && pendingPreviewMissionId is { } previewMissionId
+            && loop.TimeSource.Milliseconds - previewRequestedAtMs > 350)
+        {
+            pendingPreviewMissionId = null;
+            currentShowcaseMissionId = previewMissionId;
+            StartMission(previewMissionId);
+            playerMode = false;
+            ApplyShowcaseCamera(previewMissionId);
+        }
+
         // The camera is advanced on every pass of the loop, not only on the passes that render. The
         // pump clears the mouse's motion accumulator, and the loop pumps several times per rendered
         // frame — so consuming it only on a render threw most of the mouse movement away and made the
@@ -2140,7 +2191,10 @@ using (window)
         // tick deadlines, the catch-up budget and everything the simulation observes are untouched.
         // Lockstep keeps the original pairing -- its synthetic clock advances per frame and the
         // reference captures depend on the one-to-one schedule.
-        loop.Clock.UncappedRenders = !options.Lockstep && RenderCVars.SmoothPresentation.Value;
+        // The cinematic shell always renders uncapped so the menu is smooth whatever the render preset's
+        // r_smooth is; the orbit and the tweens run on real time and want every frame the display offers.
+        // In game the original's one-render-per-tick latch is lifted only by smooth mode.
+        loop.Clock.UncappedRenders = menuMode || (!options.Lockstep && RenderCVars.SmoothPresentation.Value);
 
         FrameOutcome outcome = loop.RunFrame();
 
@@ -3208,6 +3262,14 @@ using (window)
             device.Set2DProjection(window.Width, window.Height);
             var shellPainter = new UiPainter(batch, new LayoutContext(window.Width, window.Height));
             batch.Begin();
+
+            // Before the showcase level has loaded there is no scene to draw, so fill a dark backdrop
+            // rather than leaving the frame's blue clear behind the menu.
+            if (scene is null)
+            {
+                shellPainter.FillRect(new UiRect(0f, 0f, window.Width, window.Height), Bgra32.FromRgb(12, 14, 18));
+            }
+
             shell.Draw(shellPainter);
             batch.End();
         }
