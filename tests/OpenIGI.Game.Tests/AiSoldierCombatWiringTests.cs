@@ -341,6 +341,39 @@ public sealed class AiSoldierCombatWiringTests
             $"the patrol never fired (activity {soldier.Activity}, action {soldier.PatrolAction})");
     }
 
+    /// <summary>A rejected route never becomes a destination which combat can mistake for an active walk.</summary>
+    [RequiresGameDataFact]
+    public void AnUnreachableCombatDestinationIsNotPublished()
+    {
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "missions", "location0", "level1", "graphs", "graph4019.dat")));
+
+        (GraphNode From, GraphNode To)? unreachable = null;
+        foreach (GraphNode from in graph.Nodes)
+        {
+            foreach (GraphNode to in graph.Nodes)
+            {
+                if (from.Id != to.Id && graph.RouteTable!.EnumerateRoute(from.Id, to.Id).Count == 0)
+                {
+                    unreachable = (from, to);
+                    break;
+                }
+            }
+
+            if (unreachable is not null)
+            {
+                break;
+            }
+        }
+
+        Assert.NotNull(unreachable);
+        AiSoldier soldier = new(
+            graph, unreachable.Value.From.Position, facing: 0f, phase: 0, seed: 1);
+
+        Assert.False(soldier.GoTo(unreachable.Value.To.Id));
+        Assert.Equal(-1, soldier.DestinationNode);
+    }
+
     /// <summary>
     /// <c>AIAction_Activate</c>: the guard claims the alarm, walks to it, presses it, and releases the
     /// claims — <c>0x48E620</c> / <c>0x48E7D0</c> / <c>0x48E870</c>.
@@ -515,6 +548,139 @@ public sealed class AiSoldierCombatWiringTests
 
         Assert.Equal(0, record.Count(AiAimMode.Aiming));
         Assert.False(record.IsLive);
+    }
+
+    /// <summary>
+    /// Once a patrol installs Stand-Fire, crowding cannot interrupt that child action before it reaches
+    /// the trigger. Retail's <c>sub_48BC00</c> runs action+36 to completion and does not call the chooser
+    /// again; only the next child action is subject to the three-aimer patrol limit.
+    /// </summary>
+    [Fact]
+    public void APatrolFinishesAnInstalledBurstEvenWhenOtherGuardsFillTheAimSlots()
+    {
+        int clip = 30;
+        Vector3d position = new(1000, 2000, 3000);
+        Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre), position.Z);
+        Vector3d enemy = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
+        AiCombatTarget target = new("player");
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetDefaultTarget(target);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_PATROL_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                TrackingDistanceMetres = 15f,
+                MinimumClipFraction = 0.8f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.6f,
+            }),
+            () => new AiCombatWeaponState(clip, 30, 30, WeaponCategory.Gun));
+
+        int tick = 1;
+        while (tick < 100 && soldier.CombatPhase != AiCombatPhase.Fire)
+        {
+            soldier.Tick(tick++, enemy, rootMotionThisTick: 0.0, enemyFeet: enemyFeet);
+        }
+
+        Assert.Equal(AiCombatPhase.Fire, soldier.CombatPhase);
+        Assert.Equal(AiPatrolAction.Fire, soldier.PatrolAction);
+
+        // Four other shooters fill the record. A fresh chooser must wait, but this soldier already owns
+        // an installed Fire callback and retail lets that callback finish.
+        for (int i = 0; i < AiCombatTarget.MaximumAimers; i++)
+        {
+            object other = new();
+            target.Add(other);
+            target.Aim(other, AiAimMode.Aiming);
+        }
+
+        bool fired = false;
+        for (; tick < 140; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0, enemyFeet: enemyFeet);
+            if (soldier.Combat.PullTrigger)
+            {
+                fired = true;
+                clip--;
+                break;
+            }
+        }
+
+        Assert.True(fired, "the installed patrol burst was abandoned when the shared aim slots filled");
+    }
+
+    /// <summary>
+    /// A heard shot can start combat before the shooter has ever been visible: the living enemy's
+    /// detection slot is already registered by classification, which is what retail combat tests.
+    /// </summary>
+    [Fact]
+    public void AHeardUnseenEnemyHasACombatDetectionSlotAndSharedTarget()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+        Vector3d enemyBehind = new(position.X, position.Y - (10 * Metre), position.Z);
+        AiCombatTarget target = new("player");
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetDefaultTarget(target);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_GUARD_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                MinimumClipFraction = 0.8f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.6f,
+            }),
+            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+
+        soldier.Tick(1, enemyBehind, rootMotionThisTick: 0.0, enemyFeet: enemyBehind);
+        Assert.False(soldier.SeesEnemy);
+        Assert.True(soldier.HearGunshot(enemyBehind, AiScriptApi.GunshotRange));
+
+        soldier.ApplyActions([new AiProducedAction("AIAction_SetCombat", [], 0)]);
+        soldier.Tick(2, enemyBehind, rootMotionThisTick: 0.0, enemyFeet: enemyBehind);
+
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+        Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
+        Assert.Same(target, soldier.Target);
+        Assert.Equal(enemyBehind, target.Position);
+    }
+
+    /// <summary>A living enemy is reclassified after a prior dead tick unregistered its slot.</summary>
+    [Fact]
+    public void ARespawnedEnemyReRegistersItsDetectionSlot()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+        Vector3d enemy = new(position.X, position.Y - Metre, position.Z);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_GUARD_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                MinimumClipFraction = 0.8f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.6f,
+            }),
+            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+
+        soldier.Tick(1, enemy, 0.0, enemyAlive: false);
+        soldier.ApplyActions([new AiProducedAction("AIAction_SetCombat", [], 0)]);
+        soldier.Tick(2, enemy, 0.0, enemyAlive: true);
+
+        Assert.NotEqual(AiCombatPhase.Ended, soldier.CombatPhase);
     }
 
     // What the desktop's firing path does: a round out of the clip, and the clip back when it reloads.

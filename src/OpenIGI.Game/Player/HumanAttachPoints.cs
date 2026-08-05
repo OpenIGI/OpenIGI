@@ -54,6 +54,13 @@ public static class HumanAttachPoints
     /// </remarks>
     public const int ThirdPersonWeapon = 22;
 
+    /// <summary>The body-rig bone HumanAI snapshots as its eye transform.</summary>
+    /// <remarks>
+    /// IGI1 <c>0x44F410</c> reads palette offsets 684/696; with the 132-byte stride and the
+    /// position/rotation fields above, both resolve exactly to bone 5.
+    /// </remarks>
+    public const int AiEye = 5;
+
     /// <summary>A second attachment on the view rig, from <c>0x4601A0</c> — palette <c>+6888</c>.</summary>
     /// <remarks>
     /// <b>Unnamed.</b> What asks for it has not been traced, so calling it a muzzle or a shell port

@@ -60,8 +60,6 @@ public sealed class AiScriptHost
     // Faults already reported, so a per-tick failure is logged once rather than for ever.
     private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
     private readonly List<AiProducedAction> _produced = [];
-    private readonly Dictionary<int, int> _scriptIntegers = [];
-    private readonly Dictionary<int, float> _scriptReals = [];
     private AiSoldier? _current;
     private AiEvent _currentEvent;
     private int _slot;
@@ -262,19 +260,19 @@ public sealed class AiScriptHost
                 ai.Vision.Secondary = ai.Vision.Secondary.WithGammaInDegrees(call.GetSingle(0));
                 return QvmValue.Zero;
 
-            case "AIFunction_SetScriptIntegerValue":
-                _scriptIntegers[call.GetInt32(0)] = call.GetInt32(1);
+            case "AIFunction_SetScriptIntegerValue" when ai is not null:
+                ai.SetScriptInteger(call.GetInt32(0), call.GetInt32(1));
                 return QvmValue.Zero;
 
-            case "AIFunction_GetScriptIntegerValue":
-                return QvmValue.FromInt32(_scriptIntegers.GetValueOrDefault(call.GetInt32(0)));
+            case "AIFunction_GetScriptIntegerValue" when ai is not null:
+                return QvmValue.FromInt32(ai.GetScriptInteger(call.GetInt32(0)));
 
-            case "AIFunction_SetScriptRealValue":
-                _scriptReals[call.GetInt32(0)] = call.GetSingle(1);
+            case "AIFunction_SetScriptRealValue" when ai is not null:
+                ai.SetScriptReal(call.GetInt32(0), call.GetSingle(1));
                 return QvmValue.Zero;
 
-            case "AIFunction_GetScriptRealValue":
-                return QvmValue.FromSingle(_scriptReals.GetValueOrDefault(call.GetInt32(0)));
+            case "AIFunction_GetScriptRealValue" when ai is not null:
+                return QvmValue.FromSingle(ai.GetScriptReal(call.GetInt32(0)));
 
             case "AIFunction_GetEventDistance" when ai is not null:
                 return QvmValue.FromSingle((float)ai.LastEventDistance);
@@ -283,13 +281,12 @@ public sealed class AiScriptHost
                 return QvmValue.FromInt32(ai.IsEnemyBehind() ? 1 : 0);
 
             case "AIFunction_GetAlarmControlStatus" when ai is not null:
-                // 0x44E4F0 returns the referenced AlarmControl task's on-state; until the alarm chain is
-                // wired to soldiers the alert latch is the honest stand-in (recorded for the Phase B pass).
-                return QvmValue.FromInt32(ai.Alerted ? 1 : 0);
+                // 0x44E4F0 resolves HumanAI+15044 and calls AlarmControl_IsOn. Alerted is not a
+                // substitute: sight sets it before the guard script decides whether it must run to a panel.
+                return QvmValue.FromInt32(ai.GetAlarmControlStatus() ? 1 : 0);
 
-            case "AIFunction_GetAlarmTriggerDistance":
-                // 0x44E9B0 returns -1.0 for every failure mode, and no trigger is configured here.
-                return QvmValue.FromSingle(-1.0f);
+            case "AIFunction_GetAlarmTriggerDistance" when ai is not null:
+                return QvmValue.FromSingle((float)ai.GetAlarmTriggerDistance());
 
             // --- Damage flags (0x45D3C0 consumes both). Stored here, read by the damage path. ---
             case "AIFunction_SetInvulnerability" when ai is not null:
@@ -366,16 +363,12 @@ public sealed class AiScriptHost
                 // implemented as read, for the mission scripts that could.)
                 return QvmValue.FromInt32(ai?.PickAnimationToPlay() ?? -1);
 
-            case "AIFunction_RemoveAlarmActions":
-                // 0x44DBC0 removes queued alarm ACTIONS from the pending-action list. The port drives a
-                // soldier from its Activity/Route directly and queues no alarm actions, so there is nothing
-                // to remove — an honest no-op until the pending-action list is run for soldiers (Phase B).
+            case "AIFunction_RemoveAlarmActions" when ai is not null:
+                ai.RemoveAlarmActions();
                 return QvmValue.Zero;
 
-            case "AIFunction_SendResponse":
-                // 0x44EE40 posts AIEVENT_ALERT_RESPONSE back to the current event's SOURCE task. The port
-                // does not route events between soldiers yet, so there is no source to answer — a no-op
-                // until inter-soldier hearing/alarm events are wired (Phase B).
+            case "AIFunction_SendResponse" when ai is not null:
+                ai.SendResponse();
                 return QvmValue.Zero;
 
             default:

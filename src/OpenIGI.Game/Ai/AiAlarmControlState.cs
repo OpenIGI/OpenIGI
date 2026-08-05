@@ -76,7 +76,21 @@ public sealed class AiAlarmControlState
     /// </param>
     /// <param name="onCondition">The condition at <c>+764</c>, with the same absent-means-keep rule.</param>
     public void Update(int tick, bool disabled, bool enabled, bool? triggerCondition, bool? onCondition)
+        => UpdateWithAlarmExpression(tick, disabled, enabled, triggerCondition, () => onCondition);
+
+    /// <summary>
+    /// Advances one tick while deferring the alarm expression until after <see cref="IsTriggered"/> has
+    /// been written. Retail evaluates in that order, so an alarm expression may read this tick's trigger.
+    /// </summary>
+    public void UpdateWithAlarmExpression(
+        int tick,
+        bool disabled,
+        bool enabled,
+        bool? triggerCondition,
+        Func<bool?> onCondition)
     {
+        ArgumentNullException.ThrowIfNull(onCondition);
+
         // The shadow is taken FIRST, before the new state is computed.
         WasOn = IsOn;
 
@@ -97,7 +111,7 @@ public sealed class AiAlarmControlState
             LastTriggeredTick = tick;
         }
 
-        if (onCondition is bool on)
+        if (onCondition() is bool on)
         {
             IsOn = on;
         }

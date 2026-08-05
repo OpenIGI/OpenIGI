@@ -22,6 +22,7 @@ public sealed class AiHearingTests
 
         Assert.True(soldier.HearGunshot(Away(position, 10 * Metre), silenced: false));
         Assert.True(soldier.Events.PendingCount(AiEvent.Gunshot) > 0);
+        Assert.Equal(-1, soldier.Events.HeadOf(AiEvent.Gunshot)?.Source);
     }
 
     /// <summary>A shot forty metres off is out of earshot and queues nothing.</summary>
@@ -46,6 +47,14 @@ public sealed class AiHearingTests
         Assert.True(Soldier(out Vector3d c).HearGunshot(Away(c, 0.8 * Metre), silenced: true));
     }
 
+    /// <summary>The weapon row's exact radius, rather than a binary silenced flag, gates delivery.</summary>
+    [RequiresGameDataFact]
+    public void AWeaponSpecificDetectionRangeIsUsedExactly()
+    {
+        Assert.True(Soldier(out Vector3d a).HearGunshot(Away(a, 3 * Metre), 4 * Metre));
+        Assert.False(Soldier(out Vector3d b).HearGunshot(Away(b, 5 * Metre), 4 * Metre));
+    }
+
     /// <summary>A dead soldier hears nothing.</summary>
     [RequiresGameDataFact]
     public void ADeadSoldierHearsNothing()
@@ -54,6 +63,77 @@ public sealed class AiHearingTests
         soldier.Kill();
 
         Assert.False(soldier.HearGunshot(Away(position, 1 * Metre), silenced: false));
+    }
+
+    [Fact]
+    public void ABulletPassingInsideTwoMetresPostsGunshotMissAtItsClosestPoint()
+    {
+        Vector3d feet = new(10_000, 20_000, 30_000);
+        AiSoldier soldier = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Vector3d eye = soldier.EyePosition();
+        Vector3d start = new(eye.X - Metre, eye.Y + Metre, eye.Z);
+        Vector3d end = new(eye.X + Metre, eye.Y + Metre, eye.Z);
+
+        Assert.True(soldier.ReceiveGunshotMiss(start, end, new Vector3d(0, 0, 0)));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.GunshotMiss);
+        Assert.NotNull(queued);
+        AiEventRecord posted = queued.Value;
+        Assert.Equal(new Vector3d(eye.X, eye.Y + Metre, eye.Z), posted.Position);
+        Assert.Equal(-1, posted.Source);
+        Assert.Equal(Metre, soldier.LastEventDistance);
+    }
+
+    [Fact]
+    public void GunshotMissUsesTheOriginalStrictTwoMetreBoundary()
+    {
+        AiSoldier inside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d insideEye = inside.EyePosition();
+        Assert.True(inside.ReceiveGunshotMiss(
+            Away(insideEye, (2 * Metre) - 1),
+            Away(insideEye, (2 * Metre) - 1),
+            default));
+
+        AiSoldier boundary = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d boundaryEye = boundary.EyePosition();
+        Assert.False(boundary.ReceiveGunshotMiss(
+            Away(boundaryEye, 2 * Metre),
+            Away(boundaryEye, 2 * Metre),
+            default));
+        Assert.Equal(0, boundary.Events.PendingCount(AiEvent.GunshotMiss));
+    }
+
+    [Fact]
+    public void GroundImpactUsesTheCapturedInclusiveFiveMetreRadiusAndRealContact()
+    {
+        Vector3d feet = new(10_000, 20_000, 30_000);
+        Vector3d shooter = new(-1, -2, -3);
+        AiSoldier inside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Vector3d impact = Away(feet, 5 * Metre);
+
+        Assert.True(inside.ReceiveGroundImpact(impact, shooter));
+
+        AiEventRecord? queued = inside.Events.HeadOf(AiEvent.GroundImpact);
+        Assert.NotNull(queued);
+        Assert.Equal(impact, queued.Value.Position);
+        Assert.Equal(5 * Metre, queued.Value.Radius);
+        Assert.Equal((AiEventFilter)0x46, queued.Value.Filter);
+        Assert.Equal(-1, queued.Value.Source);
+        Assert.Equal(-1, queued.Value.Subject);
+
+        AiSoldier outside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveGroundImpact(Away(feet, (5 * Metre) + 1), shooter));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.GroundImpact));
+    }
+
+    [Fact]
+    public void ADeadSoldierIgnoresGroundImpact()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.Kill();
+
+        Assert.False(soldier.ReceiveGroundImpact(default, default));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.GroundImpact));
     }
 
     private static Vector3d Away(Vector3d from, double units) => new(from.X + units, from.Y, from.Z);

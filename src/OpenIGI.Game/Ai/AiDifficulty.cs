@@ -30,3 +30,28 @@ public enum AiDifficulty
     /// <summary>Hard — the script's <c>GD_3</c>.</summary>
     Hard = 2,
 }
+
+/// <summary>The difficulty names shown to a player, as distinct from the keys the scripts use.</summary>
+/// <remarks>
+/// <c>HumanAiConfigRegistry.NameOf</c> answers a different question: it returns <c>GD_1</c>, <c>GD_2</c>
+/// and <c>GD_3</c>, which are the row keys <c>common/ai/settings.qsc</c> is indexed by and are meaningless
+/// outside it. Putting one on screen is how the mission-entry caption came to read <c>GD_2</c>. These are
+/// the words for the same three settings, and both the campaign screen's dropdown and that caption take
+/// them from here so a player is never shown two names for the difficulty they picked.
+/// </remarks>
+public static class AiDifficultyNames
+{
+    /// <summary>The three names, indexed by <see cref="AiDifficulty"/>.</summary>
+    public static readonly string[] All = ["Easy", "Normal", "Hard"];
+
+    /// <summary>Gets the name shown for a difficulty.</summary>
+    /// <param name="difficulty">The difficulty.</param>
+    /// <returns>Its display name, or the normal one for a value outside the three.</returns>
+    public static string Of(AiDifficulty difficulty) =>
+        (int)difficulty >= 0 && (int)difficulty < All.Length ? All[(int)difficulty] : All[1];
+
+    /// <summary>Gets the name shown for a profile's stored difficulty index.</summary>
+    /// <param name="index">The index a player profile carries.</param>
+    /// <returns>Its display name, clamped into range.</returns>
+    public static string Of(int index) => All[Math.Clamp(index, 0, All.Length - 1)];
+}

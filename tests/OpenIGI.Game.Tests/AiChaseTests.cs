@@ -25,11 +25,12 @@ public sealed class AiChaseTests
     {
         GraphFile graph = Graph();
         Vector3d position = graph.Nodes[0].Position;
+        int clip = 30;
         AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
         soldier.SetCombat(
             AiType.PatrolAk,
             Parameters(trackingMetres: 15f),
-            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+            () => new AiCombatWeaponState(clip, 30, 30, WeaponCategory.Gun));
 
         // Five metres in front, in the cone: it is seen, and the soldier engages.
         Vector3d seen = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
@@ -52,6 +53,11 @@ public sealed class AiChaseTests
         for (int tick = 61; tick <= 600; tick++)
         {
             soldier.Tick(tick, gone, rootMotionThisTick: 178.0);
+            if (soldier.Combat.PullTrigger && clip > 0)
+            {
+                clip--;
+            }
+
             hunted |= soldier.PatrolAction is AiPatrolAction.Follow or AiPatrolAction.RePosition;
 
             // The flag the renderer reads to play the WALK clip (so root motion exists in-game). Without it,

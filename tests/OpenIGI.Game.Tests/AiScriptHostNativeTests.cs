@@ -201,6 +201,30 @@ public sealed class AiScriptHostNativeTests
         Assert.True(error <= 0.0349f, $"facing {soldier.Facing:F3}, wanted {wanted:F3} toward the shot");
     }
 
+    /// <summary>The shipped guard and patrol QVMs both turn an admitted ordinary gunshot into SetCombat.</summary>
+    [RequiresGameDataTheory]
+    [InlineData("guard")]
+    [InlineData("patrol")]
+    public void RetailArchetypeReactsToAQueuedGunshot(string archetype)
+    {
+        (AiScriptHost host, _) = Host();
+        AiSoldier soldier = Soldier();
+        QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath(archetype)));
+        soldier.SetScript(host, script);
+
+        Vector3d position = soldier.Position;
+        Vector3d enemyFarAway = new(position.X, position.Y + (500 * 4096.0), position.Z);
+        Vector3d shot = new(position.X + (10 * 4096.0), position.Y, position.Z);
+
+        soldier.Tick(1, enemyFarAway, rootMotionThisTick: 0.0); // CREATE
+        Assert.True(soldier.HearGunshot(shot, silenced: false));
+        soldier.Tick(2, enemyFarAway, rootMotionThisTick: 0.0);
+
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+        Assert.Contains(soldier.LastActions, action => action.Name == "AIAction_SetCombat");
+        Assert.Equal(10 * 4096.0, soldier.LastEventDistance, precision: 3);
+    }
+
     private static readonly int[] LookAtEventArgs = [2, 0];
 
     private static (AiScriptHost Host, Recorder Log) Host()

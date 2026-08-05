@@ -13,10 +13,9 @@ namespace OpenIGI.Game.Ai;
 /// two <see cref="AiAlarmAccess"/> values, and two bare distances.
 /// </para>
 /// <para>
-/// This is a vocabulary, not an implementation — the natives' bodies and the event pump
-/// (<c>HumanAI</c>'s per-tick, <c>0x44F410</c>) are not built yet. It exists on its own because it is what
-/// every retail AI script is checked against: 884 shipped <c>.qvm</c> files, and every AI name any of them
-/// mentions has to be in here.
+/// This table is the authoritative vocabulary, separate from the native bodies and the event pump
+/// (<c>HumanAI</c>'s per-tick, <c>0x44F410</c>). Keeping it independent lets every retail AI script be checked
+/// against it: 884 shipped <c>.qvm</c> files, and every AI name any of them mentions has to be in here.
 /// </para>
 /// </remarks>
 public static class AiScriptApi
