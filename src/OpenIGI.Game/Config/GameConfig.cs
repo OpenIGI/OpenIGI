@@ -122,7 +122,10 @@ public sealed class GameConfig
 
     /// <summary>Builds the configuration the original starts from when there is no save file.</summary>
     /// <returns>A configuration holding one default profile.</returns>
-    /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>): one profile named Joe, difficulty 1.</remarks>
+    /// <remarks>
+    /// <c>Config_ResetToDefaults</c> (<c>0x405300</c>): one profile named Joe, difficulty 1, with
+    /// <c>GOActiveMission</c> initialized to mission 1.
+    /// </remarks>
     public static GameConfig CreateDefault()
     {
         GameConfig config = new();

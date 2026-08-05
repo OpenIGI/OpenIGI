@@ -38,7 +38,7 @@ public sealed class PlayerProfile
 
     /// <summary>The mission the player has reached.</summary>
     /// <remarks><c>GOActiveMission</c> in the save file; read by <c>Config_PlayerGetActiveMission</c>.</remarks>
-    public int ActiveMission { get; set; }
+    public int ActiveMission { get; set; } = 1;
 
     /// <summary>Whether the mouse's vertical axis is inverted.</summary>
     /// <remarks>
