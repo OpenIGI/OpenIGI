@@ -1,4 +1,6 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Audio;
+using OpenIGI.Audio.OpenAL;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
@@ -51,6 +53,9 @@ internal sealed partial class DesktopGame : IDisposable
 
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
+
+    // Silent until the console has read settings.cfg, so nothing can open a device on stale defaults.
+    private IAudioDevice _audio = new NullAudioDevice();
 
     // The archives that belong to the session rather than to a level, kept as bytes so a preview built on
     // a worker can register them into its own registry without reading through this one.
@@ -280,6 +285,10 @@ internal sealed partial class DesktopGame : IDisposable
         {
             RenderCVars.VSync.Value = false;
         }
+
+        // Audio comes up here, after settings.cfg and the +statements, for the same reason the renderer's
+        // settings do: the voice count and the output rate are read once, when the device opens.
+        OpenAudioDevice();
 
         // Set before anything uploads a texture: mip generation happens at upload, so a level loaded
         // before this would keep the unfiltered tiles it started with.
@@ -1434,6 +1443,11 @@ internal sealed partial class DesktopGame : IDisposable
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
+
+            // Retire finished voices and refill streaming buffers. This sits ABOVE the pause check on
+            // purpose: a paused game still has to feed the music, and a stream that goes unfed for a few
+            // frames does not pause, it runs dry and stops.
+            _audio.Update();
 
             // The retail in-game menu pauses the game task. Once LevelFlow failure has opened that menu --
             // or the player has opened the pause menu -- do not advance the desktop-owned player/AI
@@ -2962,5 +2976,6 @@ internal sealed partial class DesktopGame : IDisposable
         _renderer?.Dispose();
         _arms?.Dispose();
         _detailMaps?.Dispose();
+        _audio.Dispose();
     }
 }
