@@ -5,11 +5,12 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
 
-/// <summary>Draws the in-game HUD: the crosshair, and the weapon readout in the bottom right.</summary>
+/// <summary>Draws the in-game HUD, including the retail action icons.</summary>
 /// <remarks>
 /// <para>
 /// The original splits this in two, and so does this. <c>StatusScreen</c> (<c>0x486900</c>) owns the
@@ -22,9 +23,7 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// <see cref="StatusScreenLayout"/> holds the arithmetic; this holds the resources and the drawing.
 /// </para>
-/// <para><b>Not built</b>: the health and power bars, the map computer, the action icons and the
-/// mission timer. Their sprites are loaded by the same constructor but where they are drawn is a child
-/// task of the status screen and has not been read. See <c>TODO.md</c>.</para>
+/// <para><b>Not built</b>: the health and power bars, the map computer and mission timer.</para>
 /// </remarks>
 public sealed class StatusScreenRenderer : IDisposable
 {
@@ -53,6 +52,7 @@ public sealed class StatusScreenRenderer : IDisposable
     private IresArchive? _archive;
     private IresArchive? _fontArchive;
     private BitmapTextRenderer? _font;
+    private float _actionPulsePhase;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="StatusScreenRenderer"/> class.</summary>
@@ -68,6 +68,16 @@ public sealed class StatusScreenRenderer : IDisposable
 
     /// <summary>Gets whether the HUD has its archive and can draw.</summary>
     public bool IsReady => _archive is not null;
+
+    /// <summary>Advances <c>StatusScreen+1256</c> once on the fixed 30 Hz simulation tick.</summary>
+    public void Tick()
+    {
+        _actionPulsePhase += StatusScreenLayout.ActionPulseStep;
+        if (_actionPulsePhase > 2f)
+        {
+            _actionPulsePhase = 0f;
+        }
+    }
 
     /// <summary>Reads the HUD's archive.</summary>
     /// <param name="fileSystem">Where to read it from.</param>
@@ -258,25 +268,31 @@ public sealed class StatusScreenRenderer : IDisposable
         _ => "stationary.spr",
     };
 
-    /// <summary>Draws a centred interaction prompt in the lower third of the screen.</summary>
-    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
-    /// <param name="text">The prompt, e.g. "Press E to climb".</param>
-    /// <param name="screenWidth">The framebuffer width, in pixels.</param>
-    /// <param name="screenHeight">The framebuffer height, in pixels.</param>
-    /// <param name="scale">The UI scale.</param>
+    /// <summary>Draws activate type 10 exactly as the ladder status-display handler does.</summary>
+    /// <param name="batch">The active 2D batch.</param>
+    /// <param name="screenWidth">The framebuffer width.</param>
+    /// <param name="screenHeight">The framebuffer height.</param>
     /// <exception cref="ArgumentNullException"><paramref name="batch"/> is <see langword="null"/>.</exception>
-    public void DrawPrompt(SpriteBatch batch, string text, int screenWidth, int screenHeight, float scale = 1f)
+    public void DrawLadderAction(SpriteBatch batch, int screenWidth, int screenHeight)
+        => DrawAction(batch, StatusScreenLayout.LadderActionSprite, screenWidth, screenHeight);
+
+    /// <summary>Draws the native action sprite selected by a retail activatable task.</summary>
+    public void DrawAction(SpriteBatch batch, string spriteName, int screenWidth, int screenHeight)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        if (Font() is not { } font || string.IsNullOrEmpty(text))
+        ArgumentException.ThrowIfNullOrEmpty(spriteName);
+        if (Sprite(spriteName) is not { } icon
+            || icon.Asset.Frames.Count == 0)
         {
             return;
         }
 
-        (float width, _) = font.Measure(text, scale, scale);
-        float x = (screenWidth - width) * 0.5f;
-        float y = screenHeight * 0.72f;
-        font.Draw(batch, text, x, y, BitmapTextRenderer.NeutralColor, scale, scale);
+        SpriteFrame frame = icon.Asset.Frames[0];
+        (float x, float y) = StatusScreenLayout.ActionIcon(
+            screenWidth, screenHeight, frame.Width, frame.Height);
+        float alpha = StatusScreenLayout.ActionIconAlpha(_actionPulsePhase);
+        byte alphaByte = (byte)Math.Clamp((int)(alpha * byte.MaxValue), 0, byte.MaxValue);
+        icon.DrawFrame(batch, frame, x, y, 1f, 1f, new Bgra32(128, 128, 128, alphaByte));
     }
 
     /// <summary>Draws a stack of debug lines down the top-left corner, readable over any background.</summary>
@@ -324,6 +340,180 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         DrawDebugPanel(batch, lines, right - widest, top, scale);
+    }
+
+    /// <summary>Draws the status messages the mission has sent, as the original places them.</summary>
+    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
+    /// <param name="messages">The messages on screen, in slot order.</param>
+    /// <param name="screenWidth">The back buffer's width.</param>
+    /// <param name="screenHeight">The back buffer's height.</param>
+    /// <param name="scale">The UI scale.</param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// <c>StatusMessageScreen</c>'s draw slot, <c>0x486020</c>. Ordinary messages stack down the left of
+    /// the screen from a tenth of the way in; a cutscene message leaves the column and takes a single
+    /// subtitle line low on the screen instead, which is why the two are separated here rather than
+    /// merged into one list with a flag.
+    /// </para>
+    /// <para>
+    /// The step between messages is applied per message <em>drawn</em>, so when one in the middle of the
+    /// column finishes the ones below it close the gap on the next frame. That is the original's own
+    /// behaviour and it is why the loop advances its own cursor rather than indexing by slot.
+    /// </para>
+    /// </remarks>
+    public void DrawStatusMessages(
+        SpriteBatch batch,
+        IEnumerable<StatusMessageDisplay> messages,
+        int screenWidth,
+        int screenHeight,
+        float scale = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(messages);
+        if (Font() is not { } font)
+        {
+            return;
+        }
+
+        float left = StatusScreenLayout.MessageLeft(screenWidth);
+        float y = StatusScreenLayout.MessageTop(screenHeight);
+
+        foreach (StatusMessageDisplay message in messages)
+        {
+            if (message.IsCutscene)
+            {
+                DrawSubtitle(batch, font, message, screenWidth, screenHeight, scale);
+                continue;
+            }
+
+            DrawStatusMessage(batch, font, message, left, y, scale);
+            y += StatusScreenLayout.MessageStep * scale;
+        }
+    }
+
+    private static void DrawStatusMessage(
+        SpriteBatch batch,
+        BitmapTextRenderer font,
+        in StatusMessageDisplay message,
+        float x,
+        float y,
+        float scale)
+    {
+        // The panel, drawn open from its own centre. Its width and height are independent factors that
+        // finish at different times, so for the first couple of ticks this is a zero-width line and
+        // nothing shows at all -- see StatusScreenLayout.MessageHeightScale.
+        float halfWidth = StatusScreenLayout.MessagePanelHalfWidth * scale;
+        float centreX = x + halfWidth;
+        float halfHeight = StatusScreenLayout.MessagePanelHeight * 0.5f * scale;
+        float centreY = y + halfHeight;
+        float openWidth = halfWidth * StatusScreenLayout.MessageWidthScale(message.DisplayFrame);
+        float openHeight = halfHeight * StatusScreenLayout.MessageHeightScale(message.DisplayFrame);
+
+        if (openWidth > 0f && openHeight > 0f)
+        {
+            byte alpha = (byte)Math.Clamp(
+                StatusScreenLayout.MessagePanelAlpha(message.DisplayFrame) * 255f, 0f, 255f);
+            Bgra32 panel = new(0, 0, 0, alpha);
+            batch.DrawQuad(
+                TextureHandle.None,
+                new Vertex2D(centreX - openWidth, centreY - openHeight, 0f, 0f, panel),
+                new Vertex2D(centreX + openWidth, centreY - openHeight, 1f, 0f, panel),
+                new Vertex2D(centreX + openWidth, centreY + openHeight, 1f, 1f, panel),
+                new Vertex2D(centreX - openWidth, centreY + openHeight, 0f, 1f, panel));
+        }
+
+        // Nothing is typed until the panel has finished opening, so there is never text over a panel that
+        // is still narrower than it is.
+        if (message.RevealedCharacters <= 0)
+        {
+            return;
+        }
+
+        DrawWrapped(
+            batch,
+            font,
+            message.Text.AsSpan(0, message.RevealedCharacters),
+            x + (StatusScreenLayout.MessageTextInset * scale),
+            y + (StatusScreenLayout.MessageTextDrop * scale),
+            StatusScreenLayout.MessageWrapWidth * scale,
+            scale);
+    }
+
+    private static void DrawSubtitle(
+        SpriteBatch batch,
+        BitmapTextRenderer font,
+        in StatusMessageDisplay message,
+        int screenWidth,
+        int screenHeight,
+        float scale)
+    {
+        if (message.RevealedCharacters <= 0)
+        {
+            return;
+        }
+
+        // No panel and no reveal: a cutscene line is whole from its first frame and runs nearly the full
+        // width of the screen, because it is a subtitle rather than a readout.
+        DrawWrapped(
+            batch,
+            font,
+            message.Text.AsSpan(0, message.RevealedCharacters),
+            StatusScreenLayout.MessageLeft(screenWidth),
+            StatusScreenLayout.SubtitleY(screenHeight),
+            screenWidth * StatusScreenLayout.SubtitleWrapFraction,
+            scale);
+    }
+
+    /// <summary>Draws text broken at spaces to a maximum width, in the message colour.</summary>
+    /// <remarks>
+    /// Greedy, and measured against the same font the line is drawn with, which is what the original's
+    /// re-layout amounts to. A word longer than the limit overhangs rather than being split.
+    /// </remarks>
+    private static void DrawWrapped(
+        SpriteBatch batch,
+        BitmapTextRenderer font,
+        ReadOnlySpan<char> text,
+        float x,
+        float y,
+        float maxWidth,
+        float scale)
+    {
+        (float R, float G, float B) colour = StatusScreenLayout.MessageColour;
+        Bgra32 ink = new((byte)colour.B, (byte)colour.G, (byte)colour.R, 255);
+        Bgra32 shadow = new(0, 0, 0, 190);
+        float step = font.LineHeight * scale;
+
+        int lineStart = 0;
+        int lastBreak = -1;
+        for (int i = 0; i <= text.Length; i++)
+        {
+            bool end = i == text.Length;
+            if (!end && text[i] != ' ')
+            {
+                continue;
+            }
+
+            // Measured from the start of the line to here; if that no longer fits, the previous space is
+            // where the line ends.
+            if (font.Measure(text[lineStart..i], scale, scale).Width > maxWidth && lastBreak > lineStart)
+            {
+                ReadOnlySpan<char> line = text[lineStart..lastBreak];
+                font.Draw(batch, line, x + scale, y + scale, shadow, scale, scale);
+                font.Draw(batch, line, x, y, ink, scale, scale);
+                y += step;
+                lineStart = lastBreak + 1;
+            }
+
+            lastBreak = i;
+        }
+
+        if (lineStart < text.Length)
+        {
+            ReadOnlySpan<char> tail = text[lineStart..];
+            font.Draw(batch, tail, x + scale, y + scale, shadow, scale, scale);
+            font.Draw(batch, tail, x, y, ink, scale, scale);
+        }
     }
 
     private void DrawDebugPanel(SpriteBatch batch, IReadOnlyList<string> lines, float x, float y, float scale)

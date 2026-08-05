@@ -75,4 +75,96 @@ public sealed class StatusScreenLayoutTests
         Assert.Equal("120 ", StatusScreenLayout.AmmoText(120));
         Assert.Equal("1200", StatusScreenLayout.AmmoText(1200));
     }
+
+    [Fact]
+    public void TheLadderIconIsCentredAtSevenEighthsHeight()
+    {
+        (float x, float y) = StatusScreenLayout.ActionIcon(640, 480, 31, 21);
+
+        Assert.Equal(305f, x, 3); // integer half-width: 31 / 2 = 15
+        Assert.Equal(410f, y, 3); // 480 * .875 - (21 / 2)
+    }
+
+    [Theory]
+    [InlineData(0f, 0.3f)]
+    [InlineData(1f, 1f)]
+    [InlineData(2f, 0.3f)]
+    public void TheActionIconUsesTheRetailTriangularPulse(float phase, float expected)
+    {
+        Assert.Equal(expected, StatusScreenLayout.ActionIconAlpha(phase), 3);
+    }
+
+    [Fact]
+    public void TheMessageColumnStartsTenPixelsInAndTenDownAtTheAuthoredSize()
+    {
+        // width/64 and height/48, from StatusMessageScreen's draw slot at 0x486020.
+        Assert.Equal(10f, StatusScreenLayout.MessageLeft(640), 3);
+        Assert.Equal(10f, StatusScreenLayout.MessageTop(480), 3);
+    }
+
+    [Fact]
+    public void TheSubtitleSitsWhereTheOriginalPutsIt()
+    {
+        // 415 of 480 -- low on the screen and clear of the weapon readout at 430.
+        Assert.Equal(415f, StatusScreenLayout.SubtitleY(480), 3);
+        Assert.True(
+            StatusScreenLayout.SubtitleY(480) < StatusScreenLayout.Baseline(480),
+            "the subtitle line must stay above the weapon readout's baseline");
+    }
+
+    [Fact]
+    public void TheMessagePanelFlashesForExactlyOneTick()
+    {
+        // The original divides two ints -- (9 - frame) / 9 -- so this is 1 on the first tick and 0 from
+        // the second. It is a single-frame flash, not a nine-tick ramp, and a "tidied" smooth fade here
+        // would be a different effect built from the same numbers.
+        Assert.Equal(0.75f, StatusScreenLayout.MessagePanelAlpha(0), 3);
+        Assert.Equal(0.15f, StatusScreenLayout.MessagePanelAlpha(1), 3);
+        Assert.Equal(0.15f, StatusScreenLayout.MessagePanelAlpha(8), 3);
+        Assert.Equal(0.15f, StatusScreenLayout.MessagePanelAlpha(9), 3);
+    }
+
+    [Fact]
+    public void TheMessagePanelNeverGoesTransparentHoweverLongItIsUp()
+    {
+        // (9 - frame) is negative past the ninth tick, and without the clamp the alpha would fall
+        // through zero and the panel would invert into a bright block.
+        Assert.Equal(0.15f, StatusScreenLayout.MessagePanelAlpha(100), 3);
+        Assert.Equal(0.15f, StatusScreenLayout.MessagePanelAlpha(10000), 3);
+    }
+
+    [Fact]
+    public void TheMessagePanelOpensItsHeightFirstAndItsWidthSecond()
+    {
+        // Two ticks of height at half a step each, then seven of width at a seventh each: for the first
+        // two ticks the panel is a full-height line of no width, so nothing is on screen at all.
+        Assert.Equal(0f, StatusScreenLayout.MessageHeightScale(0), 3);
+        Assert.Equal(0.5f, StatusScreenLayout.MessageHeightScale(1), 3);
+        Assert.Equal(1f, StatusScreenLayout.MessageHeightScale(2), 3);
+
+        Assert.Equal(0f, StatusScreenLayout.MessageWidthScale(0), 3);
+        Assert.Equal(0f, StatusScreenLayout.MessageWidthScale(2), 3);
+        Assert.Equal(1f, StatusScreenLayout.MessageWidthScale(9), 3);
+    }
+
+    [Fact]
+    public void ThePanelIsFullyOpenBeforeTheFirstCharacterIsTyped()
+    {
+        // The reveal starts on the ninth tick and the width finishes on the ninth, so text never appears
+        // over a panel that is still narrower than it is. The two are sequenced, not concurrent.
+        Assert.Equal(1f, StatusScreenLayout.MessageWidthScale(StatusScreenLayout.MessageOpenTicks), 3);
+        Assert.Equal(1f, StatusScreenLayout.MessageHeightScale(StatusScreenLayout.MessageOpenTicks), 3);
+    }
+
+    [Fact]
+    public void TheTextWrapsInsideThePanelRatherThanOverItsEdges()
+    {
+        // 229 against a 235-wide panel: the three-pixel inset at each side, and the reason a message
+        // never reads as though it has outgrown the box behind it.
+        float panelWidth = StatusScreenLayout.MessagePanelHalfWidth * 2f;
+        Assert.Equal(
+            StatusScreenLayout.MessageWrapWidth,
+            panelWidth - (StatusScreenLayout.MessageTextInset * 2f),
+            3);
+    }
 }

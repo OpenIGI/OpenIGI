@@ -4,6 +4,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -19,10 +20,11 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// The original draws it the same way and in the same order — <c>0x4644A0</c> poses the view, draws
 /// <c>005_01_1</c>, then asks the human for the weapon's transform (<c>0x4600C0</c>) and hands it to the
-/// weapon's own <c>RigidDynCubeObj</c> render (<c>0x4A01B0</c>), which is an ordinary rigid model draw
-/// at a position and a 3×3. The arms are missing here, not the weapon: <c>005_01_1</c> is a
-/// <b>skinned</b> model and CPU skinning is not built, whereas a gun model is rigid and draws through
-/// the path the world already uses.
+/// weapon's own <c>RigidDynCubeObj</c> render (<c>0x4A01B0</c>). That render walks the object's child
+/// list, so a weapon is not necessarily one mesh: the Glock's body attaches a transient gun-flame
+/// effect, its slide and its magazine, while the MP5 attaches two further parts. Persistent children
+/// keep the position, orientation and material slots from the same magic-object tree used by placed
+/// world objects. Effect tasks are driven separately by the weapon state and are not rigid parts.
 /// </para>
 /// <para>
 /// It draws into the ordinary depth buffer, as <c>0x4644A0</c> does — no clear, no separate near pass.
@@ -35,31 +37,48 @@ namespace OpenIGI.Desktop;
 public sealed class HeldWeaponRenderer : IDisposable
 {
     private const string LogCategory = "Weapon";
+    private const string GunFlameTaskType = "TASKTYPE_GUNFLAME";
+
+    private static readonly float[] GunFlameRolls = [0f, 4f, 7f];
+    private static readonly SurfaceMaterial GunFlameMaterial = new(
+        Roughness: 1f,
+        Metallic: 0f,
+        Emissive: 1f,
+        CastsOcclusion: false,
+        NoHistory: true);
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
+    private readonly MagicObjectRegistry _magic;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<Part> _parts = [];
 
     private string _modelName = string.Empty;
-    private MeshGeometry? _geometry;
-    private MeshHandle _mesh = MeshHandle.None;
-    private MtpInstance? _instance;
-    private LoadedPack? _pack;
+    private MaterialLibrary _materials = MaterialLibrary.Empty;
+    private Matrix3f _gunFlameRotation = Matrix3f.Identity;
+    private int _lastShotSequence = -1;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="HeldWeaponRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">Where texture bytes are read from.</param>
+    /// <param name="magic">The retail attachment-name table used to assemble multipart weapons.</param>
     /// <param name="logger">Where to report problems.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public HeldWeaponRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    public HeldWeaponRenderer(
+        IGraphicsDevice device,
+        ResourceRegistry resources,
+        MagicObjectRegistry magic,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(magic);
 
         _device = device;
         _resources = resources;
+        _magic = magic;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -67,7 +86,14 @@ public sealed class HeldWeaponRenderer : IDisposable
     public string ModelName => _modelName;
 
     /// <summary>Gets whether a model is loaded and ready to draw.</summary>
-    public bool IsReady => _geometry is not null;
+    public bool IsReady => _parts.Count > 0;
+
+    /// <summary>Gets or sets the modern-path surface descriptions used by weapon textures.</summary>
+    public MaterialLibrary Materials
+    {
+        get => _materials;
+        set => _materials = value ?? throw new ArgumentNullException(nameof(value));
+    }
 
     /// <summary>Loads the model a weapon's roster entry names.</summary>
     /// <param name="mission">The mission whose packs hold the model.</param>
@@ -88,28 +114,21 @@ public sealed class HeldWeaponRenderer : IDisposable
         Release();
         _modelName = gunModel;
 
-        if (!mission.TryGetModel(gunModel, out MefModel? model) || model is null)
+        if (!WorldObject.TryBuild(gunModel, mission.TryGetModel, _magic, out WorldObject? root)
+            || root is null)
         {
             _logger.Warning(LogCategory, $"The mission's packs do not hold the gun model '{gunModel}'.");
             return false;
         }
 
-        _geometry = MefMeshBuilder.Build(model, (float)(1.0 / WorldScene.UnitsPerMetre));
-        if (_geometry is null)
+        AddParts(mission, root, Vector3f.Zero, Matrix3f.Identity);
+        if (_parts.Count == 0)
         {
             _logger.Warning(LogCategory, $"Gun model '{gunModel}' has nothing to draw.");
             return false;
         }
 
-        // A draw record names a material slot in the *instance's* list, not the model's, so the textures
-        // come from whichever instance uses this model. A gun model that no instance places draws
-        // untextured rather than not at all.
-        (_pack, _instance) = FindInstance(mission, gunModel);
-        if (_instance is null)
-        {
-            _logger.Warning(LogCategory, $"No instance names gun model '{gunModel}'; it draws untextured.");
-        }
-
+        _logger.Information(LogCategory, $"Gun model '{gunModel}' draws as {_parts.Count} attached part(s).");
         return true;
     }
 
@@ -117,29 +136,22 @@ public sealed class HeldWeaponRenderer : IDisposable
     /// <param name="attachment">Where the bone puts it, in engine units.</param>
     /// <param name="camera">The eye the scene is drawn from.</param>
     /// <param name="projection">The view-to-clip transform.</param>
-    public void Draw(BoneAttachment attachment, in Camera3D camera, in Matrix4f projection)
+    /// <param name="firedThisTick">Whether the held gun fired on the current simulation tick.</param>
+    /// <param name="shotSequence">The serial of the last round fired.</param>
+    public void Draw(
+        BoneAttachment attachment,
+        in Camera3D camera,
+        in Matrix4f projection,
+        bool firedThisTick,
+        int shotSequence)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_geometry is null)
+        if (_parts.Count == 0)
         {
             return;
         }
 
-        if (!_mesh.IsValid)
-        {
-            try
-            {
-                _mesh = _device.CreateMesh(_geometry.Vertices, _geometry.Indices);
-            }
-            catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Gun model '{_modelName}' did not upload: {ex.Message}");
-                _geometry = null;
-                return;
-            }
-        }
-
-        Vector3d metres = new(
+        Vector3d attachmentMetres = new(
             attachment.Position.X / WorldScene.UnitsPerMetre,
             attachment.Position.Y / WorldScene.UnitsPerMetre,
             attachment.Position.Z / WorldScene.UnitsPerMetre);
@@ -148,33 +160,79 @@ public sealed class HeldWeaponRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        Matrix4f modelView = camera.CreateModelView(metres, attachment.Rotation);
-
-        foreach (MeshSubset subset in _geometry.Subsets)
+        if (firedThisTick && shotSequence != _lastShotSequence)
         {
-            if (subset.IndexCount == 0)
+            _lastShotSequence = shotSequence;
+            float degrees = GunFlameRolls[Random.Shared.Next(GunFlameRolls.Length)];
+            _gunFlameRotation = Matrix3f.RotationY(degrees * WeaponTaskParameters.DegreesToRadians)
+                * _gunFlameRotation;
+        }
+
+        foreach (Part part in _parts)
+        {
+            if (part.IsGunFlame && !firedThisTick)
             {
                 continue;
             }
 
-            TextureHandle diffuse = TextureHandle.None;
-            if (subset.HasMaterial
-                && _instance is { } instance
-                && _pack is { } pack
-                && pack.TryGetTextureName(instance, subset.MaterialSlot, out string texture))
+            if (!part.Mesh.IsValid)
             {
-                diffuse = GetTexture(texture);
+                try
+                {
+                    part.Mesh = _device.CreateMesh(part.Geometry.Vertices, part.Geometry.Indices);
+                }
+                catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+                {
+                    _logger.Warning(LogCategory, $"Gun part '{part.Name}' did not upload: {ex.Message}");
+                    continue;
+                }
             }
 
-            _device.DrawMesh(
-                _mesh,
-                subset.IndexOffset,
-                subset.IndexCount,
-                modelView,
-                diffuse,
-                TextureHandle.None,
-                BlendMode.Opaque);
+            Vector3f offset = attachment.Rotation.Transposed().Transform(part.PositionMetres);
+            Vector3d position = new(
+                attachmentMetres.X + offset.X,
+                attachmentMetres.Y + offset.Y,
+                attachmentMetres.Z + offset.Z);
+            Matrix3f partOrientation = part.IsGunFlame
+                ? _gunFlameRotation * part.Orientation
+                : part.Orientation;
+            Matrix4f modelView = camera.CreateModelView(position, attachment.Rotation * partOrientation);
+
+            _device.SetDepthState(part.IsGunFlame ? DepthState.TestOnly : DepthState.TestAndWrite);
+
+            foreach (MeshSubset subset in part.Geometry.Subsets)
+            {
+                if (subset.IndexCount == 0)
+                {
+                    continue;
+                }
+
+                TextureHandle diffuse = TextureHandle.None;
+                SurfaceMaterial material = part.IsGunFlame ? GunFlameMaterial : _materials.Default;
+                if (subset.HasMaterial
+                    && part.Pack.TryGetTextureName(part.Instance, subset.MaterialSlot, out string texture))
+                {
+                    diffuse = GetTexture(texture);
+                    if (!part.IsGunFlame)
+                    {
+                        material = _materials.For(texture);
+                    }
+                }
+
+                _device.SetMaterialOverride(material);
+                _device.DrawMesh(
+                    part.Mesh,
+                    subset.IndexOffset,
+                    subset.IndexCount,
+                    modelView,
+                    diffuse,
+                    TextureHandle.None,
+                    part.IsGunFlame ? BlendMode.Additive : BlendMode.Opaque);
+            }
         }
+
+        _device.SetDepthState(DepthState.TestAndWrite);
+        _device.SetMaterialOverride(SurfaceMaterial.Default);
     }
 
     /// <inheritdoc/>
@@ -196,35 +254,67 @@ public sealed class HeldWeaponRenderer : IDisposable
         _textures.Clear();
     }
 
-    private static (LoadedPack? Pack, MtpInstance? Instance) FindInstance(LoadedMission mission, string gunModel)
+    private void AddParts(LoadedMission mission, WorldObject node, Vector3f position, Matrix3f orientation)
+    {
+        bool isGunFlame = IsGunFlame(node.Name);
+        if (FindInstance(mission, node.Name) is { } bound
+            && MefMeshBuilder.Build(node.Models.Highest, (float)(1.0 / WorldScene.UnitsPerMetre)) is { } geometry)
+        {
+            _parts.Add(new Part(
+                node.Name,
+                geometry,
+                bound.Pack,
+                bound.Instance,
+                position / (float)WorldScene.UnitsPerMetre,
+                orientation,
+                isGunFlame));
+        }
+
+        foreach (WorldObject child in node.Children)
+        {
+            Vector3f offset = orientation.Transposed().Transform(child.Position);
+            AddParts(mission, child, position + offset, orientation * child.Orientation);
+        }
+    }
+
+    private bool IsGunFlame(string modelName) =>
+        _magic.TryGet(modelName, out MagicObjectDefinition definition)
+        && string.Equals(
+            _magic.TaskTypeName(definition.TaskType),
+            GunFlameTaskType,
+            StringComparison.Ordinal);
+
+    private static (LoadedPack Pack, MtpInstance Instance)? FindInstance(LoadedMission mission, string modelName)
     {
         foreach (LoadedPack pack in new[] { mission.LevelPack, mission.CommonPack })
         {
             foreach (MtpInstance instance in pack.Instances)
             {
                 if (pack.TryGetModel(instance, out MefModel? _)
-                    && string.Equals(instance.Name, gunModel, StringComparison.OrdinalIgnoreCase))
+                    && string.Equals(instance.Name, modelName, StringComparison.OrdinalIgnoreCase))
                 {
                     return (pack, instance);
                 }
             }
         }
 
-        return (null, null);
+        return null;
     }
 
     private void Release()
     {
-        if (_mesh.IsValid)
+        foreach (Part part in _parts)
         {
-            _device.DestroyMesh(_mesh);
+            if (part.Mesh.IsValid)
+            {
+                _device.DestroyMesh(part.Mesh);
+            }
         }
 
-        _mesh = MeshHandle.None;
-        _geometry = null;
-        _instance = null;
-        _pack = null;
+        _parts.Clear();
         _modelName = string.Empty;
+        _gunFlameRotation = Matrix3f.Identity;
+        _lastShotSequence = -1;
     }
 
     private TextureHandle GetTexture(string name)
@@ -257,5 +347,24 @@ public sealed class HeldWeaponRenderer : IDisposable
 
         _textures[name] = handle;
         return handle;
+    }
+
+    private sealed class Part(
+        string name,
+        MeshGeometry geometry,
+        LoadedPack pack,
+        MtpInstance instance,
+        Vector3f positionMetres,
+        Matrix3f orientation,
+        bool isGunFlame)
+    {
+        public string Name { get; } = name;
+        public MeshGeometry Geometry { get; } = geometry;
+        public LoadedPack Pack { get; } = pack;
+        public MtpInstance Instance { get; } = instance;
+        public Vector3f PositionMetres { get; } = positionMetres;
+        public Matrix3f Orientation { get; } = orientation;
+        public bool IsGunFlame { get; } = isGunFlame;
+        public MeshHandle Mesh { get; set; } = MeshHandle.None;
     }
 }

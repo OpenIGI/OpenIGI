@@ -103,6 +103,41 @@ public sealed class RetailWeaponTypeTests
     }
 
     [RequiresGameDataFact]
+    public void TheMp5SightTogglesAndEasesAtTheRetailTickRates()
+    {
+        WeaponTypeRegistry weapons = Load(out _, out _, out _);
+        WeaponType mp5 = weapons.Weapons.First(w => w.ScriptId == "WEAPON_ID_MP5SD");
+        WeaponType glock = weapons.Weapons.First(w => w.ScriptId == "WEAPON_ID_GLOCK");
+        Mp5SightZoom zoom = new();
+
+        SightZoomFrame frame = zoom.Tick(
+            mp5,
+            togglePressed: true,
+            HumanView.DefaultTanX,
+            HumanView.DefaultViewModelTanX);
+
+        Assert.True(zoom.IsActive);
+        Assert.Equal(HumanView.DefaultTanX * Mp5SightZoom.ZoomInFactor, frame.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX * Mp5SightZoom.ZoomInFactor, frame.ViewModelTanX);
+
+        // 0x473AF0 tests before multiplying, so the fourth step deliberately overshoots the authored
+        // tan(25 degrees) minimum and then stays there rather than clamping back to it.
+        for (int i = 0; i < 4; i++)
+        {
+            frame = zoom.Tick(mp5, togglePressed: false, frame.TanX, frame.ViewModelTanX);
+        }
+
+        Assert.True(frame.TanX <= mp5.Weapon.Values[0]);
+        SightZoomFrame settled = zoom.Tick(mp5, togglePressed: false, frame.TanX, frame.ViewModelTanX);
+        Assert.Equal(frame, settled);
+
+        SightZoomFrame reset = zoom.Tick(glock, togglePressed: false, frame.TanX, frame.ViewModelTanX);
+        Assert.False(zoom.IsActive);
+        Assert.Equal(HumanView.DefaultTanX, reset.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX, reset.ViewModelTanX);
+    }
+
+    [RequiresGameDataFact]
     public void TheBinocularsStoreTheirThreeAnglesOutOfOrder()
     {
         // 0x470CE0 writes slots 1, 2, 0 - so the script's "5, 90, 70" reads as minimum, maximum,

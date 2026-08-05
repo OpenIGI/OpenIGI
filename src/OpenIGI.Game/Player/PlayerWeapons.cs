@@ -76,6 +76,7 @@ public sealed class PlayerWeapons
     private int _heldIndex = -1;
     private bool _wantFire;
     private bool _firedThisTick;
+    private int _shotSequence;
     private bool _actionComplete;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
@@ -153,6 +154,13 @@ public sealed class PlayerWeapons
 
     /// <summary>Gets whether a round went off on the last <see cref="ResolveFire"/>.</summary>
     public bool FiredThisTick => _firedThisTick;
+
+    /// <summary>Gets a serial that advances once for every round that actually fires.</summary>
+    /// <remarks>
+    /// Presentation uses this to choose one muzzle-flash roll per shot rather than once per uncapped
+    /// render. It does not consume the gameplay random stream.
+    /// </remarks>
+    public int ShotSequence => _shotSequence;
 
     /// <summary>Gets the projectiles the last <see cref="ResolveFire"/> produced.</summary>
     /// <remarks>
@@ -254,6 +262,33 @@ public sealed class PlayerWeapons
     }
 
     /// <summary>
+    /// Synchronizes this weapon machine with the map-computer owner. The human state transition itself
+    /// is performed by <c>HumanPlayer</c>; this mirrors its state-11 half so no fire/reload state survives
+    /// behind the computer.
+    /// </summary>
+    public void SetMapComputerOpen(bool open)
+    {
+        if (open)
+        {
+            if (State == HumanWeaponState.Ready)
+            {
+                PreviousState = State;
+                State = HumanWeaponState.MapComputer;
+                Enter(State);
+            }
+
+            return;
+        }
+
+        if (State == HumanWeaponState.MapComputer)
+        {
+            PreviousState = State;
+            State = HumanWeaponState.Ready;
+            Enter(State);
+        }
+    }
+
+    /// <summary>
     /// Turns this tick's raised byte into a message to the gun — the original's <c>0x462E50</c>.
     /// </summary>
     /// <param name="eye">The muzzle, in engine units: the view's committed eye position.</param>
@@ -288,6 +323,11 @@ public sealed class PlayerWeapons
 
         if (result.Fired)
         {
+            unchecked
+            {
+                _shotSequence++;
+            }
+
             _shots.AddRange(result.Projectiles);
         }
 
