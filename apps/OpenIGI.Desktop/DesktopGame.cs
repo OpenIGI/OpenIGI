@@ -1530,6 +1530,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // as when it was pulled -- see WeaponSoundPlayer.
                     _weaponSounds?.Tick(_player.FiredThisTick, _player.HeldWeaponType);
 
+                    // And the player's own feet. Positional like anyone else's, and placed where the
+                    // foot landed rather than on the listener, because the sound belongs to the ground.
+                    if (_player.TakeFootstep() is { } step)
+                    {
+                        PlayFootstep(step);
+                    }
+
                     // The eye's tick pair, for drawing frames between ticks from a position that glides
                     // instead of stepping. Captured AFTER the body moved, so the pair is this tick's and
                     // the one before's.
@@ -1610,6 +1617,14 @@ internal sealed partial class DesktopGame : IDisposable
                 // The player's own body advances its death fall on the tick, the same as a soldier's corpse --
                 // it does nothing until the player has died and the body was posed.
                 _soldiers?.TickPlayerBody();
+
+                // A simulated corpse decides for itself where it ends up, so the death camera has to
+                // follow it. Retail needs no such thing: its fall is authored, and aiming at the spot
+                // you were shot frames the whole of it.
+                if (_playerDead && _soldiers?.PlayerRagdollCentre is { } corpseCentre)
+                {
+                    _deathCamera.Follow(corpseCentre);
+                }
 
                 // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
                 // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity

@@ -65,7 +65,7 @@ public sealed class SoldierRenderer : IDisposable
 
     // One prepared rig per skeleton, shared by every corpse wearing it. Building it walks the whole bone
     // graph twice, so it must not happen per death -- and it holds no live state, so it need not.
-    private readonly Dictionary<BoneSkeleton, RagdollSkeleton> _ragdollRigs = [];
+    private readonly Dictionary<BoneAnimationSet, RagdollSkeleton> _ragdollRigs = [];
     private RagdollWorld? _ragdollWorld;
 
     private TerrainData? _terrain;
@@ -113,7 +113,49 @@ public sealed class SoldierRenderer : IDisposable
     /// </remarks>
     public void SetDeathSound(Action<Vector3d>? report) => _deathSound = report;
 
+    /// <summary>Sounds a soldier's footstep, already resolved against the ground it landed on.</summary>
+    /// <param name="report">The sink, or <see langword="null"/> to make soldiers walk silently.</param>
+    public void SetFootstepSound(Action<Footstep>? report) => _footstepSound = report;
+
+    /// <summary>Gives the renderer the material table a footstep picks its sound from.</summary>
+    /// <param name="materials">The level's materials, or <see langword="null"/> for none.</param>
+    public void UseMaterials(GameMaterialRegistry? materials) => _materials = materials;
+
+    /// <summary>Resolves what a soldier's step landed on and hands the footstep out.</summary>
+    /// <remarks>
+    /// The material comes from its own short downward cast rather than from the ground query that moved
+    /// the body — the original probes separately, from 0.05 m above the ground point to 0.5 m below it,
+    /// which is short enough not to punch through a floor into whatever is beneath it.
+    /// </remarks>
+    private void ReportFootstep(SoldierView view)
+    {
+        if (_footstepSound is null || _materials is null || _cast is null)
+        {
+            return;
+        }
+
+        (Vector3d probeFrom, Vector3d probeTo) = FootstepSounds.Probe(view.Position);
+        if (!_cast(probeFrom, probeTo, out WorldRayHit hit)
+            || !_materials.TryGet(hit.Material, out GameMaterial material))
+        {
+            return;
+        }
+
+        // One cursor per soldier, so two guards walking abreast do not step in unison.
+        _footCursors.TryGetValue(view, out int cursor);
+        string sound = FootstepSounds.Next(material, ref cursor);
+        _footCursors[view] = cursor;
+
+        if (sound.Length > 0)
+        {
+            _footstepSound(new Footstep(sound, hit.Position, FootstepSounds.HearingRadiusInUnits(material)));
+        }
+    }
+
     private Action<Vector3d>? _deathSound;
+    private Action<Footstep>? _footstepSound;
+    private GameMaterialRegistry? _materials;
+    private readonly Dictionary<SoldierView, int> _footCursors = [];
     private readonly HashSet<string> _reportedChannels = new(StringComparer.Ordinal);
     private int _deathsSoFar;
     private int _walkAnimation = -1;
@@ -1346,27 +1388,33 @@ public sealed class SoldierRenderer : IDisposable
         return program;
     }
 
-    /// <summary>The prepared rig for a skeleton, built once and shared by every corpse wearing it.</summary>
-    private RagdollSkeleton? RagdollRigFor(BoneSkeleton skeleton)
+    /// <summary>The prepared rig for an animation set, built once and shared by every corpse wearing it.</summary>
+    /// <remarks>
+    /// Keyed by the SET rather than the skeleton, because the joint limits are measured from the set's
+    /// own clips — the animators' demonstration of how far each joint is meant to move, which is what
+    /// gives a knee a hinge without any bone being named. Building it sweeps every rotation key in the
+    /// set twice, so it must happen once per mission and not once per death.
+    /// </remarks>
+    private RagdollSkeleton? RagdollRigFor(BoneAnimationSet set)
     {
-        if (_ragdollRigs.TryGetValue(skeleton, out RagdollSkeleton? rig))
+        if (_ragdollRigs.TryGetValue(set, out RagdollSkeleton? rig))
         {
             return rig;
         }
 
         try
         {
-            rig = RagdollSkeleton.Build(skeleton);
+            rig = RagdollSkeleton.Build(set.Skeleton, RagdollLimits.Measure(set));
         }
         catch (ArgumentException ex)
         {
             // A rig the solver cannot use is not fatal: the retail death clip is still playing
             // underneath, so the body falls the way it always did and only the remaster is skipped.
-            _logger.Warning(LogCategory, $"Skeleton {skeleton.Id} cannot drive a ragdoll: {ex.Message}");
+            _logger.Warning(LogCategory, $"Skeleton {set.Skeleton.Id} cannot drive a ragdoll: {ex.Message}");
             return null;
         }
 
-        _ragdollRigs[skeleton] = rig;
+        _ragdollRigs[set] = rig;
         return rig;
     }
 
@@ -1403,7 +1451,7 @@ public sealed class SoldierRenderer : IDisposable
         WeaponCategory category,
         Vector3d carriedVelocity)
     {
-        if (!GameplayCVars.Ragdoll.Value || RagdollRigFor(view.Bones.Set.Skeleton) is not { } rig)
+        if (!GameplayCVars.Ragdoll.Value || RagdollRigFor(view.Bones.Set) is not { } rig)
         {
             return null;
         }
@@ -1546,6 +1594,14 @@ public sealed class SoldierRenderer : IDisposable
         foreach ((SoldierView view, AiSoldier _) in _brains)
         {
             view.Tick();
+
+            // Read here, not after the clip selection below: the event belongs to the interval this
+            // Tick just advanced, and SetMoving may replace the clip further down. A fresh BoneClip has
+            // no interval yet, so asking afterwards would quietly swallow the step.
+            if (!view.IsDead && view.Bones.SourceOf(0)?.CrossedEvent(FootstepSounds.EventId) == true)
+            {
+                ReportFootstep(view);
+            }
         }
 
         // The doors advance with the task pass, before the AIs read their state. A door that is not
@@ -1703,7 +1759,21 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (Member member in group.Soldiers)
                 {
-                    member.Ragdoll?.Step(corpses, substeps);
+                    if (member.Ragdoll is not { } corpse)
+                    {
+                        continue;
+                    }
+
+                    corpse.Step(corpses, substeps);
+
+                    // A corpse whose solver has gone wrong is dropped rather than drawn: the retail
+                    // death clip has been running underneath the whole time, so what the player sees is
+                    // the original's own fall, not a body that vanished.
+                    if (!corpse.IsValid)
+                    {
+                        member.Ragdoll = null;
+                        _logger.Warning(LogCategory, "A ragdoll left its own level; falling back to the death clip.");
+                    }
                 }
             }
         }
@@ -2284,7 +2354,15 @@ public sealed class SoldierRenderer : IDisposable
 
         // The corpse, when there is one. It is stepped after the retail move above rather than instead
         // of it: that move is what the rest of the game believes, and only the drawing changes here.
-        _playerRagdoll?.Step(RagdollWorldForCorpses(), GameplayCVars.RagdollSubsteps.Value);
+        if (_playerRagdoll is { } playerCorpse)
+        {
+            playerCorpse.Step(RagdollWorldForCorpses(), GameplayCVars.RagdollSubsteps.Value);
+            if (!playerCorpse.IsValid)
+            {
+                _playerRagdoll = null;
+                _logger.Warning(LogCategory, "The player's ragdoll left the level; falling back to the death clip.");
+            }
+        }
 
         ReskinPlayerBody(_playerBodyView, model);
         CapturePlayerBodyTickState(snap: false);
@@ -2565,6 +2643,52 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodySkinTick = _tick;
     }
 
+    /// <summary>Where the player's body is drawn, in metres, and which way it is turned.</summary>
+    /// <remarks>
+    /// <para>
+    /// A body is normally shifted by its clip's root height (<c>Human+1300</c>), which for a fall, stand
+    /// or wire interaction is part of the authored placement. A ladder position is different: IGI1 writes
+    /// the human task root itself (bottom + 3915.776 vertically), and clip 168's lowest foot is authored
+    /// at −4128.768. Those values put the foot at ground height already, so adding a pose-derived pelvis
+    /// lift there duplicates the mount offset and starts Jones a body-height above the first rung.
+    /// </para>
+    /// <para>
+    /// A simulated corpse answers with its own frozen origin and no turn at all: its pose is already in
+    /// world space relative to that origin, with the heading folded into the root bone's rotation.
+    /// </para>
+    /// </remarks>
+    private (Vector3d Where, Matrix3f Orientation) PlayerBodyPlacement()
+    {
+        if (_playerRagdoll is { } corpse)
+        {
+            return (corpse.Origin / WorldScene.UnitsPerMetre, Matrix3f.Identity);
+        }
+
+        if (_playerBodyView is not { } view)
+        {
+            return (default, Matrix3f.Identity);
+        }
+
+        double lift = (_playerBodySuppressRootHeight ? 0.0 : view.RootSample.Z) + _playerBodyVisualLift;
+        return (
+            new Vector3d(
+                view.Position.X / WorldScene.UnitsPerMetre,
+                view.Position.Y / WorldScene.UnitsPerMetre,
+                (view.Position.Z + lift) / WorldScene.UnitsPerMetre),
+            view.Orientation);
+    }
+
+    /// <summary>Gets where the player's corpse actually is, in engine units — what the death camera frames.</summary>
+    /// <value>
+    /// The body's centre of mass, or <see langword="null"/> when no ragdoll is running — in which case
+    /// the death camera's own fixed point off the authoritative body is still the right answer.
+    /// </value>
+    /// <remarks>
+    /// Without this the camera keeps looking at the point the retail clip moved the body to, which once
+    /// physics is drawing it somewhere else means framing an empty patch of floor.
+    /// </remarks>
+    public Vector3d? PlayerRagdollCentre => _playerRagdoll?.Centre;
+
     /// <summary>Records where the player's body stands this tick, keeping the tick before.</summary>
     /// <param name="snap">
     /// Whether this placement is a discontinuity — a death, a ladder mount — after which the pair
@@ -2643,7 +2767,7 @@ public sealed class SoldierRenderer : IDisposable
         member.NoHistoryThisFrame = !member.HasFrameState;
         member.HasFrameState = true;
 
-        Matrix4f modelView = camera.CreateModelView(where, view.Orientation);
+        Matrix4f modelView = camera.CreateModelView(where, orientation);
         bool reportMotion = _device.CurrentPass == ScenePass.Geometry;
 
         _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
@@ -2707,6 +2831,7 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyView = null;
         _playerBodyGroup = null;
         _playerBodyMember = null;
+        _playerRagdoll = null;
         _playerBodyActive = false;
         _playerBodyClimbing = false;
         _playerBodyShown = false;
@@ -2963,6 +3088,7 @@ public sealed class SoldierRenderer : IDisposable
         // every corpse it steps, so a hook there would restart the sound thirty times a second. This is
         // the alive-to-dead edge, and it happens once.
         _deathSound?.Invoke(view.Position);
+        _footCursors.Remove(view);
 
         // Everything above is the original's, and it stays that way whatever follows: the body's
         // authoritative position, the clip that moves it and what the guards around it are told are all

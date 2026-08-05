@@ -260,6 +260,26 @@ internal sealed partial class DesktopGame
         _sounds.PlayDefinition(name, positionInUnits, priority: 300);
     }
 
+    /// <summary>Plays a footstep where it landed.</summary>
+    /// <param name="step">The step, already resolved against the ground it landed on.</param>
+    /// <remarks>
+    /// Pitched between 0.8 and 1.3, which is the whole of why two steps on the same surface are never
+    /// quite the same sound. Low priority: a firefight is more worth a voice than a footfall.
+    /// </remarks>
+    private void PlayFootstep(in Footstep step)
+    {
+        if (_sounds is null || step.Sound.Length == 0)
+        {
+            return;
+        }
+
+        _sounds.PlayDefinition(
+            step.Sound,
+            step.PositionInUnits,
+            pitch: FootstepSounds.Pitch(_soundRandom),
+            priority: 40);
+    }
+
     /// <summary>Plays a door's sounds, and owns the one voice that has to be held and stopped.</summary>
     /// <param name="door">The door that made the noise.</param>
     /// <param name="what">Which of its four moments this is.</param>

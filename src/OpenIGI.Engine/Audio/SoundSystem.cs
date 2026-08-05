@@ -156,11 +156,13 @@ public sealed class SoundSystem : IDisposable
     /// yet depends on the rotation and it is not applied here.
     /// </para>
     /// </remarks>
+    /// <param name="pitch">The playback ratio; 1 is the sound's own rate.</param>
     public AudioVoiceHandle PlayDefinition(
         string name,
         Vector3d? positionInUnits = null,
         float gain = 1f,
-        int priority = 0)
+        int priority = 0,
+        float pitch = 1f)
     {
         if (Definitions is null || !Definitions.TryResolve(name, out SoundDefinition? definition) || definition is null)
         {
@@ -184,6 +186,7 @@ public sealed class SoundSystem : IDisposable
             Gain = definition.Volume * gain,
             Looping = definition.Loop,
             Priority = priority,
+            Pitch = pitch,
         };
 
         if (positionInUnits is { } emitter)

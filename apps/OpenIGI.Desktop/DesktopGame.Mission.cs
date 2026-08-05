@@ -188,6 +188,9 @@ internal sealed partial class DesktopGame
         _soldiers.SetDeathSound(position => PlayDeathSound(
             HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
+        // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
+        _soldiers.SetFootstepSound(step => PlayFootstep(step));
+
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
         _doors.SetSoundSink(PlayDoorSound);
         world.Doors = _doors;
@@ -438,7 +441,24 @@ internal sealed partial class DesktopGame
                         // the player's third-person body, posed with the clip the last zone struck chose.
                         // The camera hands itself to the death view and pulls back off the eye, so the fall
                         // is seen from the outside -- the original's death sequence.
-                        _soldiers?.KillPlayerBody(fall, _player.Body.Position, throwFacing);
+                        // The clip above is the original's and stays whatever g_ragdoll says. The four
+                        // extra arguments are the ragdoll's, and every one of them comes off the round
+                        // that actually killed you: the line it travelled, the bone it went through, the
+                        // weapon that fired it, and what you were doing when it landed.
+                        _soldiers?.KillPlayerBody(
+                            fall,
+                            _player.Body.Position,
+                            throwFacing,
+                            hit.Bone,
+                            new Vector3d(
+                                _player.Body.Position.X - from.X,
+                                _player.Body.Position.Y - from.Y,
+                                _player.Body.Position.Z - from.Z),
+                            weapon.Category,
+                            new Vector3d(
+                                _player.Body.Velocity.X,
+                                _player.Body.Velocity.Y,
+                                _player.Body.Velocity.Z));
                         WorldRayCast deathCaster = solids.Caster();
                         _deathCamera.Begin(
                             _player.Body.Position,
@@ -629,6 +649,7 @@ internal sealed partial class DesktopGame
 
                 int materialCount = materialTable.Load(_resources, _loop.Natives);
                 candidate.UseMaterials(materialTable);
+                _soldiers?.UseMaterials(materialTable);
                 _worldMaterials = materialTable;
                 _logger.Information("Material", $"Read {materialCount} game material(s).");
             }

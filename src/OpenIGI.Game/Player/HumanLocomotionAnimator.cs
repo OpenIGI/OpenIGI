@@ -30,6 +30,10 @@ public sealed class HumanLocomotionAnimator
     public const float TimePerTick = BoneAnimation.FrameStep;
 
     private readonly BoneAnimationSet _set;
+    private float _intervalStart;
+    private float _intervalEnd;
+    private bool _intervalWrapped;
+    private bool _hasInterval;
 
     /// <summary>Initializes a new instance of the <see cref="HumanLocomotionAnimator"/> class.</summary>
     /// <param name="set">The animation set the human's skeleton uses.</param>
@@ -108,6 +112,10 @@ public sealed class HumanLocomotionAnimator
         float previous = Time;
         float next = Time + TimePerTick;
         float duration = animation.Duration;
+        _intervalStart = previous;
+        _intervalEnd = next;
+        _intervalWrapped = false;
+        _hasInterval = true;
 
         Vector3f before = BoneTrackSampler.Sample(animation.Translation, previous);
 
@@ -120,6 +128,8 @@ public sealed class HumanLocomotionAnimator
             Vector3f afterWrap = BoneTrackSampler.Sample(animation.Translation, carried);
 
             Time = carried;
+            _intervalEnd = carried;
+            _intervalWrapped = true;
 
             return new Vector3f(
                 (atEnd.X - before.X) + (afterWrap.X - atStart.X),
@@ -130,12 +140,53 @@ public sealed class HumanLocomotionAnimator
         if (!Loops && duration > 0f && next > duration)
         {
             next = duration;
+            _intervalEnd = next;
         }
 
         Time = next;
         Vector3f after = BoneTrackSampler.Sample(animation.Translation, next);
 
         return new Vector3f(after.X - before.X, after.Y - before.Y, after.Z - before.Z);
+    }
+
+    /// <summary>Whether the last <see cref="Advance"/> stepped over an animation event.</summary>
+    /// <param name="eventId">The event id, such as <see cref="World.FootstepSounds.EventId"/>.</param>
+    /// <returns><see langword="true"/> when the tick just advanced crossed it.</returns>
+    /// <remarks>
+    /// The same rule <c>BoneClip</c> applies, and for the same reason: an event is dispatched over the
+    /// <b>interval a tick covers</b>, not at a point, so a clip running fast enough to step past a
+    /// footstep still fires it. The interval is open at the old clock and closed at the new one, and a
+    /// looping wrap is tested as two pieces so the seam neither drops an event nor fires it twice.
+    /// This rig only ever plays forwards, so the backwards arm <c>BoneClip</c> carries is not needed.
+    /// </remarks>
+    public bool CrossedEvent(int eventId)
+    {
+        if (!_hasInterval
+            || AnimationId == HumanLocomotionStates.NoAnimation
+            || !_set.TryGet(AnimationId, out BoneAnimation animation))
+        {
+            return false;
+        }
+
+        foreach (BoneAnimationEvent animationEvent in animation.Events)
+        {
+            if (animationEvent.EventId != eventId)
+            {
+                continue;
+            }
+
+            float time = animationEvent.Time;
+            bool crossed = _intervalWrapped
+                ? time > _intervalStart || time <= _intervalEnd
+                : time > _intervalStart && time <= _intervalEnd;
+
+            if (crossed)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Whether a one-shot animation has played out.</summary>

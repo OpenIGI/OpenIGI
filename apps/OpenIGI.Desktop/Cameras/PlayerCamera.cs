@@ -66,6 +66,7 @@ public sealed class PlayerCamera
     private PlayerWeapons? _weapons;
     private WeaponType? _drawnWeapon;
     private GameMaterialRegistry? _materials;
+    private int _footCursor;
     private bool _wasCapturing;
     private IReadOnlyList<LadderPlacement> _ladders = [];
     private LadderPlacement? _nearLadder;
@@ -419,6 +420,43 @@ public sealed class PlayerCamera
 
     /// <summary>Gets whether the player is standing on something.</summary>
     public bool IsGrounded => _body.IsGrounded;
+
+    /// <summary>The footstep the player's locomotion clip took this tick, if it took one.</summary>
+    /// <returns>The footstep, or <see langword="null"/> when no step landed.</returns>
+    /// <remarks>
+    /// <para>
+    /// The player's rig is <see cref="HumanLocomotionAnimator"/>, not the <c>BoneClip</c> a soldier
+    /// walks on, so the event has to be asked of the animator — but it is the same clip carrying the
+    /// same event 1010, and the animator now tests the same tick interval a <c>BoneClip</c> does.
+    /// </para>
+    /// <para>
+    /// The material comes from its own short downward cast, as the original's does, and a step taken in
+    /// mid-air is not a step at all.
+    /// </para>
+    /// </remarks>
+    public Footstep? TakeFootstep()
+    {
+        if (_animator is null
+            || _materials is null
+            || !_body.IsGrounded
+            || !_animator.CrossedEvent(FootstepSounds.EventId))
+        {
+            return null;
+        }
+
+        (Vector3d from, Vector3d to) = FootstepSounds.Probe(_body.Position);
+        if (_body.Walls is not { } walls
+            || !walls(from, to, out WorldRayHit hit)
+            || !_materials.TryGet(hit.Material, out GameMaterial material))
+        {
+            return null;
+        }
+
+        string sound = FootstepSounds.Next(material, ref _footCursor);
+        return sound.Length == 0
+            ? null
+            : new Footstep(sound, hit.Position, FootstepSounds.HearingRadiusInUnits(material));
+    }
 
     /// <summary>Gets whether the player is crouched.</summary>
     public bool IsCrouched => _body.IsCrouched;
