@@ -283,9 +283,11 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
                 // The whole remaster track off in one word: the retail menus instead of the cinematic
-                // shell, and the original's renderer and one-render-per-tick 30 Hz presentation.
+                // shell, the original's renderer and one-render-per-tick 30 Hz presentation, and its
+                // mix -- 32 voices at 22 kHz with the flat hand-computed pan instead of positioning.
                 vanillaMenu = true;
                 startupCommands.Add("gfx_preset vanilla");
+                startupCommands.Add("snd_preset vanilla");
             }
             else if (arg.Equals("vanillamenu", StringComparison.OrdinalIgnoreCase))
             {
@@ -541,8 +543,9 @@ public readonly record struct DesktopOptions(
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
           -vanilla         The whole remaster track off: the retail menu system and the original's
-                           picture and pacing (implies -vanillamenu and +gfx_preset vanilla,
-                           including the original's 30 Hz between-tick presentation).
+                           picture, pacing and mix (implies -vanillamenu, +gfx_preset vanilla and
+                           +snd_preset vanilla, including the original's 30 Hz between-tick
+                           presentation and its 32-voice flat-panned audio).
           -vanillamenu     The byte-for-byte retail menu system instead of the cinematic shell,
                            over the modern renderer.
           -shelltab <s>    Open the cinematic shell on a section instead of its landing page:

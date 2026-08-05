@@ -4,6 +4,7 @@ using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
+using OpenIGI.Game.World;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Rendering;
 
@@ -166,6 +167,25 @@ internal sealed partial class DesktopGame
         _sounds?.UnloadBuffers();
         _soundBank?.Clear();
         MountMenuSounds();
+    }
+
+    /// <summary>Mounts the sound directories a mission plays out of.</summary>
+    /// <remarks>
+    /// Called from <c>BringMissionUp</c>, which is the one place BOTH routes into a mission pass
+    /// through. A cold start has already had these mounted by the mission loader and this adds nothing
+    /// -- the first mount of a name wins. A mission PROMOTED from the menu's backdrop never went through
+    /// that loader at all, so without this its sounds and its score are simply absent, which is exactly
+    /// what pressing Play in the menu used to give: silence.
+    /// </remarks>
+    private void MountMissionSounds()
+    {
+        if (_soundBank is null)
+        {
+            return;
+        }
+
+        _soundBank.MountDirectory(MissionLoader.CommonSoundDirectory);
+        _soundBank.MountDirectory(MissionLoader.MissionSoundDirectory);
     }
 
     /// <summary>Mounts the menu system's sound archive, which belongs to no mission.</summary>

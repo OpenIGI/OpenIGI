@@ -595,9 +595,9 @@ public sealed class OpenAlAudioDevice : IAudioDevice
                 parameters.Velocity.X,
                 parameters.Velocity.Y,
                 parameters.Velocity.Z);
-            al.SetSourceProperty(voice.Source, SourceFloat.ReferenceDistance, Math.Max(0.0001f, parameters.MinimumDistance));
-            al.SetSourceProperty(voice.Source, SourceFloat.MaxDistance, Math.Max(0.0002f, parameters.MaximumDistance));
-            al.SetSourceProperty(voice.Source, SourceFloat.RolloffFactor, 1f);
+            // The linear model divides by (max - reference). They must never be equal, or the gain is
+            // 0/0 and the voice comes out silent rather than loud -- see SetDistances.
+            SetDistances(al, voice.Source, parameters.MinimumDistance, parameters.MaximumDistance, rolloff: 1f);
             al.SetSourceProperty(voice.Source, SourceFloat.Gain, Gain(parameters.Gain, categoryGain));
             return;
         }
@@ -615,10 +615,28 @@ public sealed class OpenAlAudioDevice : IAudioDevice
         al.SetSourceProperty(voice.Source, SourceBoolean.SourceRelative, true);
         al.SetSourceProperty(voice.Source, SourceVector3.Position, MathF.Sin(angle), 0f, -MathF.Cos(angle));
         al.SetSourceProperty(voice.Source, SourceVector3.Velocity, 0f, 0f, 0f);
-        al.SetSourceProperty(voice.Source, SourceFloat.ReferenceDistance, 1f);
-        al.SetSourceProperty(voice.Source, SourceFloat.MaxDistance, 1f);
-        al.SetSourceProperty(voice.Source, SourceFloat.RolloffFactor, 0f);
+        SetDistances(al, voice.Source, minimum: 1f, maximum: 2f, rolloff: 0f);
         al.SetSourceProperty(voice.Source, SourceFloat.Gain, Gain(gain, categoryGain));
+    }
+
+    /// <summary>Sets a source's distance range, keeping the two distances apart.</summary>
+    /// <remarks>
+    /// <b>The two must never be equal.</b> The distance model in force is
+    /// <see cref="DistanceModel.LinearDistanceClamped"/>, whose gain is
+    /// <c>1 - rolloff * (d - reference) / (max - reference)</c>. An equal pair makes that a division by
+    /// zero: the result is a NaN gain, and a NaN gain is silence, not loudness. A flat voice wants no
+    /// attenuation at all and the obvious way to ask for it -- reference and max both one, rolloff zero
+    /// -- is exactly the case that breaks, because the zero rolloff multiplies a NaN rather than
+    /// replacing it. Separating the two and leaving the rolloff at zero asks for the same thing safely.
+    /// </remarks>
+    private static void SetDistances(AL al, uint source, float minimum, float maximum, float rolloff)
+    {
+        float reference = Math.Max(0.0001f, minimum);
+        float far = Math.Max(maximum, reference * 1.0001f);
+
+        al.SetSourceProperty(source, SourceFloat.ReferenceDistance, reference);
+        al.SetSourceProperty(source, SourceFloat.MaxDistance, far);
+        al.SetSourceProperty(source, SourceFloat.RolloffFactor, rolloff);
     }
 
     /// <summary>Puts a gain through the original's curve, then applies the bus and master gains.</summary>

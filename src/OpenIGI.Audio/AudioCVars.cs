@@ -21,6 +21,25 @@ namespace OpenIGI.Audio;
 [CVarContainer]
 public static class AudioCVars
 {
+    /// <summary>Which named profile the audio settings correspond to.</summary>
+    /// <remarks>
+    /// <para>
+    /// Setting this writes the profile's values over the variables it names, which is how
+    /// <c>-vanilla</c> reaches the audio system: the flag emits <c>snd_preset vanilla</c> as a start-up
+    /// statement, exactly as it emits <c>gfx_preset vanilla</c> for the renderer.
+    /// </para>
+    /// <para>
+    /// It has to be set before the device opens to take full effect. The voice count and the output rate
+    /// are read once, when the device is created; the panning model is read per voice and so does follow
+    /// a change immediately.
+    /// </para>
+    /// </remarks>
+    public static readonly EnumCVar<AudioProfile> Preset = CVar.Choice(
+        "snd_preset",
+        AudioProfile.Enhanced,
+        CVarOptions.Archive,
+        "Audio profile: vanilla reproduces the original's 32-voice, 22 kHz, flat-pan mix.");
+
     /// <summary>Whether the audio backend is opened at all.</summary>
     public static readonly BoolCVar Enabled = CVar.Bool(
         "snd_enabled",
@@ -119,4 +138,38 @@ public static class AudioCVars
         192000,
         CVarOptions.Archive,
         "Output sample rate. The original mixes at 22050.");
+
+    /// <summary>Wires the profile variable to the values it stands for.</summary>
+    /// <remarks>
+    /// A static constructor rather than a registry, because the audio layer may reference only
+    /// <c>OpenIGI.Core</c> and the graphics preset registry lives in the renderer. The profile is not
+    /// recomputed when one of its variables is changed by hand: it says what was asked for, and a
+    /// player who then moves a single slider is not silently switched to "custom" mid-session.
+    /// </remarks>
+    static AudioCVars() => Preset.Changed += (_, _) => Apply(Preset.Value);
+
+    /// <summary>Writes a profile's values over the variables it names.</summary>
+    /// <param name="profile">The profile to apply. <see cref="AudioProfile.Custom"/> changes nothing.</param>
+    public static void Apply(AudioProfile profile)
+    {
+        switch (profile)
+        {
+            case AudioProfile.Vanilla:
+                // The original's own three numbers: a 32-voice pool (0x4952F0), a 22050 Hz primary
+                // buffer, and no positioning -- its sample buffers carry no CTRL3D at all.
+                Spatial.Value = false;
+                Voices.Value = 32;
+                SampleRate.Value = 22050;
+                break;
+
+            case AudioProfile.Enhanced:
+                Spatial.Value = true;
+                Voices.Value = 64;
+                SampleRate.Value = 48000;
+                break;
+
+            default:
+                break;
+        }
+    }
 }
