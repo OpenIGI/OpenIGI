@@ -70,6 +70,31 @@ internal sealed partial class DesktopGame
             ? new TerrainRenderer(_device, surface, _logger, _detailMaps, preview.GroundDetail)
             : null;
 
+        // The mission's soldiers, built while the player is still reading the briefing. They are not drawn
+        // -- a backdrop shows a place, not the guards standing in it -- but they ARE given to the shadow
+        // pass, and that is the point.
+        //
+        // Measured: the first frame that shows a skinned mesh to a device which has spent the menu drawing
+        // nothing but static geometry costs about three hundred milliseconds, almost all of it inside the
+        // shadow pass. It is not the cost of the soldiers -- a cold `-mission 1` start, where they are
+        // there from the first frame, peaks at three milliseconds. It is the driver re-specialising a
+        // pipeline it had already settled on for one vertex layout when a second layout arrives late.
+        // Nothing about loading them earlier avoids that; only DRAWING them earlier does. The shadow map
+        // is an offscreen target that is overwritten every frame, so a cast nobody can see pays the cost
+        // where nobody can feel it.
+        _backdropSoldiers?.Dispose();
+        _backdropSoldiers = new SoldierRenderer(_device, preview.Resources, _logger) { DetailMaps = _detailMaps };
+        _backdropSoldiers.Load(
+            preview.Mission,
+            preview.LevelRoot,
+            preview.Mission.Terrain is { IsUsable: true } standing ? standing : null,
+            preview.Solids.Caster());
+
+        // And the level's own residency, walked a little at a time on the frames that follow. The orbit
+        // resolves only what it happens to look at, so without this the frame that moves the camera to the
+        // player's spawn uploads everything else at once.
+        _arming = new MissionArming(preview.MissionId, preview.Scene, _world, _logger);
+
         _sky?.Dispose();
         _sky = new SkyRenderer(_device, preview.FileSystem, preview.LevelRoot, FarPlane, _logger);
         _shadowPass ??= new ShadowCasterPass(_device);
@@ -110,7 +135,8 @@ internal sealed partial class DesktopGame
         MenuCameraLibrary cameras = MenuCameraLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
-        using var loader = new MissionPreviewLoader(_gamePath, _missions, _magic, cameras, _logger);
+        using var loader = new MissionPreviewLoader(
+            _gamePath, _missions, _magic, cameras, _previewContext, _logger);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())

@@ -97,6 +97,8 @@ public readonly record struct DesktopOptions(
         int startMission = 0;
         bool vanillaMenu = false;
         string? shellTab = null;
+        int entryCamMission = 0;
+        int computerCamFrame = 0;
         string? showcasePointDump = null;
 
         List<string> startupCommands = [];
@@ -303,6 +305,28 @@ public readonly record struct DesktopOptions(
                 // click their way there first.
                 shellTab = Next(args, ref i, "shelltab");
             }
+            else if (arg.Equals("entrycam", StringComparison.OrdinalIgnoreCase))
+            {
+                // Boot the shell, wait for the mission's backdrop, then press Play by hand -- so the
+                // menu-to-mission entry can be measured and captured without somebody clicking at an
+                // unrepeatable moment. A development flag, like -shelltab and -screen, not a game mode.
+                string value = Next(args, ref i, "entrycam");
+                if (!int.TryParse(value, out entryCamMission) || entryCamMission <= 0)
+                {
+                    throw new ArgumentException($"-entrycam expects a mission id, got '{value}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("computercam", StringComparison.OrdinalIgnoreCase))
+            {
+                // Press C by hand once the mission is up, for the same reason -entrycam presses Play:
+                // the computer's transition is a second and a half of camera move and display boot, and
+                // there is no other way to capture it starting from a frame anybody can repeat.
+                string value = Next(args, ref i, "computercam");
+                if (!int.TryParse(value, out computerCamFrame) || computerCamFrame < 0)
+                {
+                    throw new ArgumentException($"-computercam expects a frame number, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
             {
                 // Just the renderer: the cinematic shell over the original's render path.
@@ -376,9 +400,34 @@ public readonly record struct DesktopOptions(
             StartupCommands = startupCommands,
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
+            EntryCamMission = entryCamMission,
+            ComputerCamFrame = computerCamFrame,
             ShowcasePointDump = showcasePointDump,
         };
     }
+
+    /// <summary>
+    /// Gets the mission whose menu-to-mission entry runs by itself, or <c>0</c> for none. Set by
+    /// <c>-entrycam</c>.
+    /// </summary>
+    /// <remarks>
+    /// The shell boots on the campaign with this mission selected, waits for its backdrop to finish
+    /// building and arming, and then presses Play as though a player had. A development shortcut, not a
+    /// game feature: the entry is the one sequence whose cost and appearance cannot be checked without
+    /// somebody clicking at a moment nobody can repeat, and a capture of it has to start on a known frame.
+    /// </remarks>
+    public int EntryCamMission { get; init; }
+
+    /// <summary>
+    /// Gets the frame the map computer opens itself on, or <c>0</c> for never. Set by <c>-computercam</c>.
+    /// </summary>
+    /// <remarks>
+    /// The computer's counterpart to <see cref="EntryCamMission"/>, and a development shortcut for the
+    /// same reason: opening it runs a second and a half of camera move and display boot, and a capture of
+    /// that has to begin on a frame somebody can ask for again. Paired with <c>-frames</c> and
+    /// <c>-screenshot</c> it writes the whole transition as a numbered sequence.
+    /// </remarks>
+    public int ComputerCamFrame { get; init; }
 
     /// <summary>
     /// Gets the cinematic shell's section to open on — <c>campaign</c>, <c>settings</c>, <c>profile</c> or
@@ -495,6 +544,12 @@ public readonly record struct DesktopOptions(
                            over the modern renderer.
           -shelltab <s>    Open the cinematic shell on a section instead of its landing page:
                            campaign, settings, profile or extras. The shell's -screen.
+          -entrycam <n>    Boot the shell on mission <n>, wait for its backdrop, then press Play by
+                           itself, so the menu-to-mission entry can be measured and captured from a
+                           known frame rather than from whenever somebody clicked.
+          -computercam <n> Open the map computer by itself on frame <n> of a mission, so its camera
+                           move and display boot can be captured from a known frame. Pair with
+                           -frames and -screenshot for the whole transition as a sequence.
           -poidump <f>     Find the places each mission's menu backdrop should circle, write them
                            to <f> as menu-cameras.json, and quit. Run once; the file it writes is
                            then edited by hand. Without it the places are found at load instead.

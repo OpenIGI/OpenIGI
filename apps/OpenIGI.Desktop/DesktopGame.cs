@@ -13,6 +13,7 @@ using OpenIGI.UI.Widgets;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
@@ -50,8 +51,21 @@ internal sealed partial class DesktopGame : IDisposable
 
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
+
+    // The archives that belong to the session rather than to a level, kept as bytes so a preview built on
+    // a worker can register them into its own registry without reading through this one.
+    private readonly Dictionary<string, byte[]> _sessionArchives = [];
+
+    // What a menu backdrop needs to become the played mission: the session's clock, flow host, render
+    // scheduler and archives. See MissionPreviewContext.
+    private MissionPreviewContext _previewContext = null!;
     private GameConfig _configuration = null!;
     private DesktopRenderScheduler _scheduler = null!;
+
+    // The one wall clock every loop reads. A mission promoted out of the menu's backdrop brings its own
+    // GameLoop with it, and both loops have to measure milliseconds from the same origin — see
+    // GameClock.AdoptScheduleFrom.
+    private ITimeSource _timeSource = null!;
     private GameLoop _loop = null!;
     private MissionRegistry _missions = null!;
     private MagicObjectRegistry _magic = null!;
@@ -87,6 +101,17 @@ internal sealed partial class DesktopGame : IDisposable
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
     private ShadowCasterPass? _shadowPass;
+
+    // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
+    // has already met a skinned vertex layout by the time Play is pressed. Handed straight over to
+    // `_soldiers` when the backdrop is promoted, so the played mission never builds them at all.
+    private SoldierRenderer? _backdropSoldiers;
+
+    // Makes the backdrop playable a couple of milliseconds at a time while the menu is idle.
+    private MissionArming? _arming;
+
+    // The shot that carries the player out of the menu and into their own eyes.
+    private readonly MissionEntryCamera _entry = new();
     private DirectionalLightSettings? _sun;
     private FreeCamera? _camera;
 
@@ -94,6 +119,34 @@ internal sealed partial class DesktopGame : IDisposable
     private PlayerCamera? _player;
     private HeldWeaponRenderer? _heldWeapon;
     private StatusScreenRenderer? _hud;
+    private MapComputerRenderer? _mapComputer;
+    private MapComputerDeviceRenderer? _mapComputerDevice;
+    private TacticalComputerRenderer? _tacticalComputer;
+    private StatusMessageRenderer? _messages;
+    private readonly MapComputerCamera _computerFlight = new();
+    private ComputerHighlightCatalog? _computerHighlights;
+    private MissionObjectiveRuntime? _missionObjectives;
+    private MissionDescriptor? _activeMission;
+    private LevelTask? _activeLevelRoot;
+    private bool _computerOpen;
+    private bool _computerCamFired;
+
+    /// <summary>How much longer than the original the remaster holds a status message, in seconds.</summary>
+    private const float RemasteredMessageHoldSeconds = 3f;
+
+    /// <summary>Gets the tactical interface when the preset asks for it and it built its faces.</summary>
+    /// <remarks>
+    /// Read per frame rather than latched at mission bring-up, so <c>r_computer_tactical</c> can be
+    /// thrown from the console between one frame and the next — which is the only practical way to
+    /// compare the redesign against the original it replaces. Both renderers are therefore built for
+    /// every mission; each costs an archive or a cached atlas, and neither is worth a restart.
+    /// </remarks>
+    private TacticalComputerRenderer? TacticalComputer =>
+        RenderCVars.TacticalComputer.Value && _tacticalComputer is { IsReady: true } ready ? ready : null;
+
+    private bool _missionResultHandled;
+    private int _missionFailureTicks;
+    private bool _missionFailedMenu;
     private BulletMarkRenderer? _marks;
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
@@ -102,6 +155,8 @@ internal sealed partial class DesktopGame : IDisposable
     private GameMaterialRegistry? _worldMaterials;
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
+    private DoorRegistry? _doors;
+    private WorldInteractionRegistry? _interactions;
 
     // --- The menus and the cinematic shell ---
     private MenuRenderer? _renderer;
@@ -157,11 +212,27 @@ internal sealed partial class DesktopGame : IDisposable
 
         // menusystem.res holds the menu's own labels; missions.res holds the mission names and briefings,
         // because a descriptor's "Mission 1 Name" is a key into it rather than the title itself.
-        foreach (string archive in new[] { MenuStringTable.GetArchiveName(), MenuStringTable.GetMissionArchiveName() })
+        //
+        // Kept as bytes as well as registered, because these are the session's archives rather than any
+        // one level's: a mission previewed for the menu builds into its own private ResourceRegistry, and
+        // that registry becomes the game's own if the preview is promoted into the played mission. Without
+        // the bytes to hand, the promoted registry would be missing every string the menus, the mission
+        // briefings and the handheld computer resolve through. Bytes rather than a shared registry read,
+        // so a worker never touches this one.
+        foreach (string archive in new[]
+        {
+            MenuStringTable.GetArchiveName(),
+            MenuStringTable.GetMissionArchiveName(),
+            MapComputerRenderer.ComputerStringsArchive,
+            MapComputerRenderer.ObjectiveStringsArchive,
+            MapComputerRenderer.MessageStringsArchive,
+        })
         {
             if (_fileSystem.Exists(archive))
             {
-                _resources.Register(archive, _fileSystem.ReadAllBytes(archive));
+                byte[] bytes = _fileSystem.ReadAllBytes(archive);
+                _sessionArchives[archive] = bytes;
+                _resources.Register(archive, bytes);
             }
         }
 
@@ -249,7 +320,14 @@ internal sealed partial class DesktopGame : IDisposable
         // else in the simulation is already deterministic (IgiRandom is seeded, not time-seeded), so this
         // is the whole of what a reference capture needs.
         ManualTimeSource? lockstepClock = _options.Lockstep ? new ManualTimeSource() : null;
-        _loop = new(time: lockstepClock, host: menuHost, renderer: _scheduler, logger: _logger);
+
+        // Held as a field, and built here rather than left to GameLoop's own default, because a second
+        // loop is created for every mission the menu previews and one of those eventually takes the
+        // session over. Two loops that each defaulted to their own SystemTimeSource would read
+        // milliseconds from different origins, and every `last*Milliseconds` delta in the frame loop
+        // would jump the moment the swap happened. One source, shared, keeps the handover invisible.
+        _timeSource = lockstepClock is not null ? lockstepClock : new SystemTimeSource();
+        _loop = new(time: _timeSource, host: menuHost, renderer: _scheduler, logger: _logger);
 
         // The mission table is built the way the original builds it: walk LOCAL:missions and run every
         // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
@@ -258,6 +336,12 @@ internal sealed partial class DesktopGame : IDisposable
         _missions.Register(_loop.Natives);
         GameMissionState missionState = new();
         missionState.Register(_loop.Natives);
+
+        // What a menu backdrop needs to be promotable into the played mission rather than thrown away.
+        // Built here because every part of it is finished being written by this point and none of it is
+        // mutated afterwards, which is what makes it safe to hand to a worker.
+        _previewContext = new MissionPreviewContext(
+            _timeSource, menuHost, _scheduler, missionState, _sessionArchives);
 
         // The magic-object table is what turns a level's few hundred scripted objects into its full
         // contents: every model's attachments name an entry here. Loading it is a startup step, like the
@@ -340,6 +424,7 @@ internal sealed partial class DesktopGame : IDisposable
         _deathCamera = new();
         InteractionCamera interactionCamera = new();
         bool climbActive = false;
+        bool worldInteractionActive = false;
         int temporalFrame = 0;
 
         // A scripted free-camera flight (-camend), if one was asked for. The opening pose is captured on
@@ -384,8 +469,18 @@ internal sealed partial class DesktopGame : IDisposable
         // across missions and the maps are the textures' own property rather than a level's.
         _detailMaps = new(_device, RenderCVars.MaterialPack.Value, _logger);
 
+        // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
+        // They live under common/, so they are the same 2.4 MB of IFF for every mission, and parsing
+        // them was the single largest thing standing a player up used to do on the render thread. Doing
+        // it at start-up costs a moment nobody is looking at instead of a moment everybody is.
+        ReadSharedAnimations();
 
-        RenderCVars.ColourLookupTable.Changed += (_, _) => ApplyColourLookup(_options.StartMission);
+
+        // Re-graded for whatever is actually on screen: the mission being played, else the menu's
+        // backdrop, else whatever -mission asked for. Reading `_options.StartMission` unconditionally
+        // meant changing the table from the console while browsing the campaign re-graded to mission 0.
+        RenderCVars.ColourLookupTable.Changed += (_, _) =>
+            ApplyColourLookup(_activeMission?.Id ?? _backdrop?.MissionId ?? _options.StartMission);
 
         // The level's own sun, read from its Dirlight task -- section 12.
         // Null until a level is loaded, and for a level that declares none.
@@ -458,8 +553,30 @@ internal sealed partial class DesktopGame : IDisposable
         _menuCameras = MenuCameraLibrary.Empty;
         UiFont? shellBodyFont = null;
         UiFont? shellHeadingFont = null;
+
+        // What the mission-entry shot types over its vantage. Filled when the shot begins.
+        string entryTitle = string.Empty;
+        string entrySubtitle = string.Empty;
+
+        // Where the shot's character stands, in engine units, and which way it faces.
+        Vector3d entrySpawnPosition = default;
+        float entrySpawnGamma = 0f;
         bool menuMode = false;
+
+        // The shell is up over a LIVE mission -- the pause menu -- rather than over the showcase. It always
+        // implies menuMode; what it adds is that the backdrop is already the right picture. So nothing is
+        // streamed in behind the menu, the showcase orbit does not take the camera off the player, and the
+        // world is frozen instead of advanced. Escape opens it and Escape closes it again.
+        bool pauseMenu = false;
         bool showcasePending = false;
+
+        // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
+        bool entryCamPending = false;
+        DesktopShellHost? shellHostForEntryCam = null;
+
+        // When the mission-entry shot last read the clock.
+        int lastEntryMilliseconds = 0;
+        int lastComputerMilliseconds = 0;
         const int ShowcaseMissionId = 1;
         int currentShowcaseMissionId = ShowcaseMissionId;
         int? pendingPreviewMissionId = null;
@@ -485,11 +602,11 @@ internal sealed partial class DesktopGame : IDisposable
         const int PreviewSettleMs = 260;
 
 
-        if (_options.StartMission > 0)
-        {
-            StartMission(_options.StartMission);
-        }
-        else if (_options.VanillaMenu)
+        // -vanillamenu reaches the retail menus, which carry their own in-game menu; everything else runs
+        // the cinematic shell. -mission still opens straight into a level — what it no longer does is leave
+        // the shell unbuilt, because the pause menu IS the shell and Escape has to reach it from a mission
+        // the menus were skipped into.
+        if (_options.VanillaMenu && _options.StartMission <= 0)
         {
             _loop.Flow.Request(FlowEvent.MainMenu);
         }
@@ -498,12 +615,17 @@ internal sealed partial class DesktopGame : IDisposable
             _menuCameras = MenuCameraLibrary.Load(
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
             missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
-            previewLoader = new MissionPreviewLoader(_gamePath, _missions, _magic, _menuCameras, _logger);
+            previewLoader = new MissionPreviewLoader(
+                _gamePath, _missions, _magic, _menuCameras, _previewContext, _logger);
 
             // Saira for body, Saira Condensed as a distance field for the headings the shell sets large.
             shellBodyFont = UiFontLibrary.Load(_device, UiFontLibrary.Body, 48f);
             shellHeadingFont = UiFontLibrary.Load(_device, UiFontLibrary.Heading, 64f, FontAtlasKind.SignedDistanceField);
             var shellTheme = new UiTheme(shellBodyFont, shellHeadingFont);
+
+            // Held so the mission-entry shot can typeset its title with the same faces the shell uses.
+            _shellBodyFont = shellBodyFont;
+            _shellHeadingFont = shellHeadingFont;
 
             // The real DefineMission data, resolved to display strings through the language table, in the
             // order the CAMPAIGN CHAIN gives — each descriptor names its successor. The registry's own
@@ -532,12 +654,100 @@ internal sealed partial class DesktopGame : IDisposable
                         activeProfile.Difficulty = difficulty;
                     }
 
+                    // Reachable from the pause menu as well as from the front end — the campaign is in the
+                    // bar either way — so the shell is told it is no longer over a mission it was paused on.
+                    shell?.ClosePauseMenu();
                     menuMode = false;
+                    pauseMenu = false;
+                    ApplyGameplayDepthOfField();
+
+                    // The menu has been drawing this very level for as long as the player has been
+                    // reading the briefing, built on a worker and complete. When it is the mission they
+                    // picked, the shot begins here and the level is PROMOTED partway through it rather
+                    // than loaded a second time — see MissionEntryCamera and PromoteBackdrop. `_backdrop`
+                    // is null over a played mission, so this cannot fire from the pause menu.
+                    //
+                    // -lockstep is excluded: the shot runs on wall-clock time, and a reference capture
+                    // has to land on the same frame every run.
+                    if (_backdrop is { } backdrop
+                        && backdrop.MissionId == id
+                        && !_options.Lockstep
+                        && _showcaseCamera is { } orbit
+                        && PlayerSpawn.TryFind(backdrop.LevelRoot, out PlayerSpawnPoint entrySpawn))
+                    {
+                        BeginWatchingFramePasses($"Entering mission {id}");
+                        lastEntryMilliseconds = _loop.TimeSource.Milliseconds;
+                        entrySpawnPosition = entrySpawn.Position;
+                        entrySpawnGamma = entrySpawn.Gamma;
+
+                        MissionInfo? entering = shellMissions.FirstOrDefault(m => m.Id == id);
+                        entryTitle = entering is null
+                            ? string.Empty
+                            : $"{entering.Number:00}  {entering.Name}".ToUpperInvariant();
+                        // The player's word for it, not the settings.qsc row key -- NameOf answers with
+                        // GD_2, which is what this caption used to put on screen.
+                        entrySubtitle = AiDifficultyNames.Of(difficulty).ToUpperInvariant();
+
+                        _entry.Begin(
+                            CameraPose.FromCamera(orbit.Update(0f)),
+                            entrySpawn.Position,
+                            backdrop.Scene.GroundHeight);
+                        _window.CursorVisible = false;
+                        return;
+                    }
+
+                    BeginWatchingFramePasses($"Loading mission {id}");
                     StartMission(id);
+                    ReportWatchedFramePassesIn(5);
+                },
+                resumeMission: () =>
+                {
+                    // Nothing is reloaded and nobody is placed again: the level was never torn down, only
+                    // left un-ticked, so resuming is this loop putting the menu away.
+                    shell?.ClosePauseMenu();
+                    menuMode = false;
+                    pauseMenu = false;
+                    _window.CursorVisible = false;
+                },
+                restartMission: () =>
+                {
+                    if (_activeMission is { } mission)
+                    {
+                        shell?.ClosePauseMenu();
+                        menuMode = false;
+                        pauseMenu = false;
+                        ApplyGameplayDepthOfField();
+                        StartMission(mission.Id);
+                        _window.CursorVisible = false;
+                    }
+                },
+                abandonMission: () =>
+                {
+                    ReleasePlayedMission();
+                    shell?.ClosePauseMenu();
+                    shell?.OpenOn("campaign");
+                    menuMode = true;
+
+                    // The shell is over the showcase again from here, so the backdrop has to be streamed:
+                    // the level it was drawing over has just been released, and it is framed as a
+                    // backdrop again rather than as something being played through.
+                    pauseMenu = false;
+                    showcasePending = true;
+                    ApplyMenuDepthOfField();
+                    _window.CursorVisible = true;
                 },
                 quit: () => running = false,
                 previewMission: id =>
                 {
+                    // Never over a live mission. Adopting a preview disposes the world renderer and drops
+                    // the player, which from the pause menu would be the shell demolishing the mission it
+                    // is drawn over. The screens already know not to ask (ShellContext.InGame); this is the
+                    // guarantee rather than the manners.
+                    if (pauseMenu)
+                    {
+                        return;
+                    }
+
                     int wanted = id ?? ShowcaseMissionId;
                     if (wanted != currentShowcaseMissionId)
                     {
@@ -564,6 +774,8 @@ internal sealed partial class DesktopGame : IDisposable
                     return pixels;
                 });
 
+            shellHostForEntryCam = shellHost;
+
             shell = new Shell(new ShellContext(
                 shellTheme,
                 shellHost,
@@ -582,18 +794,48 @@ internal sealed partial class DesktopGame : IDisposable
                 _logger.Warning("Menu", $"-shelltab '{openOn}' is not a section; opening on the main menu.");
             }
 
-            // The showcase level is loaded a couple of frames into the loop, not here: loading it now would
-            // block for a few seconds before the window ever showed the menu (the "blue screen" that is just
-            // the frame's clear). Deferring it lets the menu draw first over a dark backdrop, then the
-            // showcase streams in behind it.
-            menuMode = true;
-            showcasePending = true;
+            if (_options.StartMission > 0)
+            {
+                // Straight into the level, with the shell built and waiting behind Escape rather than shown.
+                StartMission(_options.StartMission);
+            }
+            else
+            {
+                // The showcase level is loaded a couple of frames into the loop, not here: loading it now
+                // would block for a few seconds before the window ever showed the menu (the "blue screen"
+                // that is just the frame's clear). Deferring it lets the menu draw first over a dark
+                // backdrop, then the showcase streams in behind it.
+                menuMode = true;
+                showcasePending = true;
 
-            // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
-            RenderCVars.FocalDistance.Value = 40f;
-            RenderCVars.FocalRange.Value = 18f;
-            RenderCVars.FocalBlur.Value = 1f;
+                // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
+                // Through a helper because what it displaces has to be given back: these are Archive
+                // variables, so leaving the menu's framing in place meant the first save wrote it out as
+                // the player's own setting.
+                ApplyMenuDepthOfField();
+
+                // -entrycam: open on the campaign and remember that Play is to be pressed as soon as this
+                // mission's backdrop is up. The backdrop itself is requested through the ordinary showcase
+                // path below, so what gets measured is the real thing rather than a special case.
+                if (_options.EntryCamMission > 0)
+                {
+                    shell.OpenOn("campaign");
+                    entryCamPending = true;
+                }
+            }
         }
+
+        // Watch every pass from here on, so a hitch is attributed to the frame it happened on rather than
+        // only reported as a run-wide peak. The stage profiler's peaks say a stage was once expensive
+        // without saying when, and "when" is the whole question: a cost paid behind the menu is free and
+        // the same cost paid on the frame Play is pressed is the bug.
+        BeginWatchingFramePasses("Session");
+        long passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        _logger.Information(
+            "Render",
+            FormattableString.Invariant(
+                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}."));
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
@@ -640,6 +882,19 @@ internal sealed partial class DesktopGame : IDisposable
 
         while (running && _loop.IsRunning && !_window.IsClosing)
         {
+            // The whole point of promoting the backdrop instead of loading it is that no frame is ever
+            // blocked, and that is a claim about milliseconds rather than a matter of opinion. Every pass
+            // is timed, and the worst one seen since Play was pressed is reported when the entry finishes.
+            //
+            // Measured from the top of the NEXT pass rather than at the bottom of this one, because the
+            // loop body has `continue`s in it -- a pass that decides it has nothing to render leaves
+            // early -- and a measurement at the bottom silently skips every pass that took one. The
+            // promotion happens on a pass that does exactly that, so the first version of this timed
+            // everything except the one frame it existed to measure.
+            NoteFramePass(passStartedAt);
+            FlushWatchedFramePasses();
+            passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+
             _window.PumpEvents();
 
             // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
@@ -684,8 +939,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // Something wants the picture to change — a new backdrop has finished building, or the
                 // showcase camera has held a place long enough to move to the next one. Either way the
                 // frame on screen is held first, so the two can be blended rather than cut between.
-                bool changeWanted = previewLoader is { HasResult: true }
-                    || _showcaseCamera is { IsCutDue: true };
+                // None of it applies to the pause menu, whose picture is a level that is not going anywhere.
+                bool changeWanted = !pauseMenu
+                    && (previewLoader is { HasResult: true } || _showcaseCamera is { IsCutDue: true });
                 if (changeWanted && !holdFrameForDissolve && !heldFrameReady)
                 {
                     holdFrameForDissolve = true;
@@ -694,19 +950,304 @@ internal sealed partial class DesktopGame : IDisposable
                 dissolve.Update(shellElapsed);
             }
 
+            // The mission-entry shot. It runs on real elapsed time, like the menu's orbit and the
+            // interface's own animation, because it is presentation: it must look the same whatever rate
+            // the display is running at, and it must not be tied to the simulation's fixed tick.
+            if (_entry.IsRunning)
+            {
+                int entryNow = _loop.TimeSource.Milliseconds;
+                float entryElapsed = Math.Clamp((entryNow - lastEntryMilliseconds) / 1000f, 0f, 0.1f);
+                lastEntryMilliseconds = entryNow;
+
+                // The orbit keeps turning under the start of the shot so the rise can leave at the speed
+                // the menu was already moving at, rather than from a standstill.
+                CameraPose liveOrbit = _showcaseCamera is { } liveShowcase
+                    ? CameraPose.FromCamera(liveShowcase.Update(entryElapsed))
+                    : _entry.Pose;
+
+                _entry.Update(
+                    entryElapsed,
+                    liveOrbit,
+                    _player is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
+
+                // The hand-over, taken at the beat: the one moment in the shot where the camera is not
+                // travelling, so whatever it costs is spent against a picture that was holding anyway.
+                if (_entry.WantsPromotion)
+                {
+                    if (_backdrop is { } entering && PromoteBackdrop(entering))
+                    {
+                        _entry.NotifyPromoted();
+                    }
+                    else
+                    {
+                        // Nothing to promote. Rather than hold forever, let the shot finish and land on
+                        // whatever the view already is.
+                        _entry.NotifyPromoted();
+                        _logger.Warning("Menu", "The mission-entry shot had no backdrop left to promote.");
+                    }
+                }
+
+                // Nothing takes input for the length of the shot -- not the shell, not the player, not
+                // the free camera. The shell still ANIMATES, so its fade plays out; it just hears nothing.
+                if (_entry.IsCameraActive && !console.IsOpen)
+                {
+                    _window.Input.Captured = true;
+                }
+
+                // The character standing at the spawn, visible for the dive and taken away once the
+                // camera is close enough that its head fills the frame. Placed and re-skinned every frame
+                // it is shown rather than merely switched on: the body is uploaded as a rest mesh and has
+                // no pose until something puts one in it.
+                if (_soldiers is { } bodies)
+                {
+                    if (_entry.ShowPlayerBody)
+                    {
+                        bodies.StandPlayerBodyAt(entrySpawnPosition, entrySpawnGamma);
+                    }
+                    else
+                    {
+                        bodies.HidePlayerBody();
+                    }
+                }
+
+                // The shot's own framing: focused on what it is looking at rather than on the menu's fixed
+                // forty metres, and smeared by its own movement. Both hand back to the player's settings.
+                ApplyEntryFraming();
+
+                if (_entry.Phase == MissionEntryPhase.Done)
+                {
+                    _entry.Reset();
+                    _soldiers?.HidePlayerBody();
+                    ApplyGameplayDepthOfField();
+                    ReportWatchedFramePassesIn(1);
+
+                    // The eye is drawn between its last two ticks, and it has just been somewhere else
+                    // entirely; without dropping the pair the first gameplay frame interpolates across
+                    // the whole descent.
+                    playerEyeCaptured = false;
+                    _logger.Information("Menu", "The mission-entry shot has handed over.");
+                }
+            }
+
+            // Escape brings the shell up over the level as a pause menu. It goes AFTER the shell's own
+            // update, so the frame that opens the menu is not also the frame the menu reads a back press
+            // on -- and after it the shell has marked the frame captured, which is what stops the Escape
+            // that closed the menu from opening it again on the same pass.
+            //
+            // It also goes BEFORE the handheld computer below, which owns Escape while it is open: closing
+            // the computer clears the flag, so a check placed after it would see a closed computer and a
+            // still-pressed Escape and pause the game in the same breath.
+            if (!menuMode
+                && !console.IsOpen
+                && !_computerOpen
+                && !_missionFailedMenu
+                && shell is not null
+                && _activeMission is not null
+                && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
+            {
+                menuMode = true;
+                pauseMenu = true;
+                shell.OpenPauseMenu();
+
+                // The pointer belongs to the menu now. The look is what holds the cursor captive, so the
+                // player is told to let go of it rather than the lock being fought over each frame.
+                _player?.HoldStill();
+                _window.CursorLocked = false;
+
+                // The eye is drawn between its last two ticks and neither of them moves again until the
+                // menu closes, so the pair is dropped: without this the frozen picture rocked back and
+                // forth between two positions a tick apart as the blend swept on.
+                playerEyeCaptured = false;
+                _logger.Information("Menu", "Paused.");
+            }
+
+            // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
+            // freezes player/camera input while the world continues its fixed-tick simulation.
+            if (_missionFailedMenu && !menuMode && !console.IsOpen && _activeMission is { } failedMission)
+            {
+                if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Return)
+                    || _window.Input.Keyboard.WasPressed(Input.KeyCode.NumpadEnter))
+                {
+                    StartMission(failedMission.Id);
+                    _window.CursorVisible = false;
+                }
+                else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
+                {
+                    ReleasePlayedMission();
+                    if (shell is not null)
+                    {
+                        shell.OpenOn("campaign");
+                        menuMode = true;
+                        showcasePending = true;
+                        ApplyMenuDepthOfField();
+                    }
+                    _window.CursorVisible = true;
+                }
+                else
+                {
+                    _window.CursorVisible = true;
+                    _window.CursorLocked = false;
+                }
+                _window.Input.Captured = true;
+            }
+            else if (!menuMode && !console.IsOpen && _player is not null
+                && (TacticalComputer is not null || _mapComputer is { IsReady: true }))
+            {
+                // -computercam presses C on a named frame, so the transition can be captured from a
+                // moment somebody can ask for again. Latched, not held: it must open the computer once
+                // and then leave the key alone, or every frame past it would toggle.
+                bool automaticOpen = _options.ComputerCamFrame > 0
+                    && !_computerCamFired
+                    && _loop.Clock.FrameCount >= _options.ComputerCamFrame;
+                if (automaticOpen)
+                {
+                    _computerCamFired = true;
+                }
+
+                bool toggleComputer = _window.Input.Keyboard.WasPressed(Input.KeyCode.C) || automaticOpen;
+                bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
+
+                if (TacticalComputer is { } tacticalComputer)
+                {
+                    // Real elapsed time, on its own clock. The transition is presentation: it must take
+                    // the same wall-clock second whatever the frame rate, and it must keep running while
+                    // the simulation is paused behind it.
+                    int computerNow = _loop.TimeSource.Milliseconds;
+                    float computerElapsed = Math.Clamp((computerNow - lastComputerMilliseconds) / 1000f, 0f, 0.1f);
+                    lastComputerMilliseconds = computerNow;
+
+                    CameraPose eye = CameraPose.FromCamera(_player.Camera);
+
+                    // The field of view gameplay is being drawn at, which is where the climb leaves from.
+                    // Taken at the default rather than from the live sight: a player who opens the map
+                    // down a scope is the one case it differs, and inheriting a scoped field of view
+                    // there would start the shot already halfway zoomed in.
+                    float gameplayFieldOfView = VerticalFieldOfView(
+                        (float)_window.Width / Math.Max(1, _window.Height),
+                        HumanView.DefaultTanX);
+
+                    if (!_computerOpen && toggleComputer)
+                    {
+                        _computerOpen = true;
+                        tacticalComputer.Open(_player.Body.Position);
+                        _player.SetMapComputerOpen(true);
+                        _computerFlight.BeginOpen(
+                            eye,
+                            gameplayFieldOfView,
+                            tacticalComputer.Vantage(),
+                            tacticalComputer.FieldOfView);
+
+                        // The interface draws its own pointer, so the platform's would be a second,
+                        // unrelated cursor over it.
+                        _window.CursorVisible = false;
+                        _window.CursorLocked = false;
+                    }
+                    else if (_computerOpen && (toggleComputer || closeComputer) && _computerFlight.CanClose)
+                    {
+                        _computerFlight.BeginClose(
+                            tacticalComputer.Vantage(),
+                            tacticalComputer.FieldOfView,
+                            eye,
+                            gameplayFieldOfView);
+                    }
+
+                    if (_computerOpen)
+                    {
+                        _computerFlight.Update(
+                            computerElapsed,
+                            eye,
+                            tacticalComputer.Vantage(),
+                            tacticalComputer.FieldOfView);
+
+                        // Only once the display has settled. A drag or a page change that landed during
+                        // the climb would move a map the player cannot read yet.
+                        if (_computerFlight.IsInteractive)
+                        {
+                            tacticalComputer.Update(
+                                _window.Input,
+                                computerElapsed,
+                                _player.Body.Position,
+                                _window.Width,
+                                _window.Height);
+                        }
+
+                        // The computer keeps the view — and the player's input — until the fall has
+                        // finished landing, so the last frame of the shot is the first frame of play.
+                        if (_computerFlight.Phase == MapComputerPhase.Done)
+                        {
+                            _computerOpen = false;
+                            _computerFlight.Reset();
+                            _player.SetMapComputerOpen(false);
+                        }
+
+                        _window.Input.Captured = true;
+                    }
+                }
+                else if (_mapComputer is { IsReady: true } retailComputer)
+                {
+                    if (toggleComputer || closeComputer)
+                    {
+                        _computerOpen = toggleComputer ? !_computerOpen : false;
+                        if (_computerOpen)
+                        {
+                            retailComputer.Open(_player.Body.Position);
+                        }
+                        _player.SetMapComputerOpen(_computerOpen);
+                        // Retail draws COMPUTER:pointer.spr. Leaving the platform cursor visible put a
+                        // second, unrelated pointer over it.
+                        _window.CursorVisible = false;
+                        _window.CursorLocked = false;
+                    }
+
+                    if (_computerOpen)
+                    {
+                        retailComputer.Update(_window.Input, _window.Width, _window.Height);
+                        _window.Input.Captured = true;
+                    }
+                }
+            }
+
             // The showcase's first backdrop, asked for a couple of menu frames in so the shell is already on
             // screen. It is built on a worker like every other one; until it arrives the menu sits over its
             // dark backdrop rather than over a blank blue clear.
-            if (menuMode && showcasePending && _loop.Clock.FrameCount >= 2)
+            if (menuMode && !pauseMenu && showcasePending && _loop.Clock.FrameCount >= 2)
             {
                 showcasePending = false;
-                previewLoader?.Request(ShowcaseMissionId);
+
+                // -entrycam's mission stands in for the default showcase, so the backdrop it presses Play
+                // over is built through exactly the path a player's selection would have built it through.
+                int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
+                currentShowcaseMissionId = firstShowcase;
+                previewLoader?.Request(firstShowcase);
+            }
+
+            // The backdrop is made playable here, on the frames where nothing is happening but a menu.
+            // A couple of milliseconds is invisible at the uncapped rate the menu runs at, and the work
+            // is finished long before anybody has finished reading a briefing.
+            if (menuMode && !pauseMenu && _arming is { IsArmed: false })
+            {
+                _arming.Step(IdleArmingBudgetMilliseconds);
+            }
+
+            // -entrycam presses Play the moment the backdrop it was pointed at is armed, which is the
+            // state a player's press would find it in after a second of reading. Waiting for the arming
+            // rather than only for the backdrop is what keeps the measurement honest.
+            if (entryCamPending && menuMode && !pauseMenu && _backdrop is { } entryBackdrop
+                && entryBackdrop.MissionId == _options.EntryCamMission
+                && _arming is { IsArmed: true })
+            {
+                entryCamPending = false;
+                _logger.Information("Menu", $"-entrycam is pressing Play on mission {entryBackdrop.MissionId}.");
+                shellHostForEntryCam?.StartMission(
+                    entryBackdrop.MissionId,
+                    _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
             }
 
             // The build request, once the campaign selection has held still for a moment. The debounce is
             // only there to stop a run down the list queueing fourteen builds; it costs the render thread
             // nothing either way, because the build happens on a worker.
             if (menuMode
+                && !pauseMenu
                 && pendingPreviewMissionId is { } previewMissionId
                 && _loop.TimeSource.Milliseconds - previewRequestedAtMs > PreviewSettleMs)
             {
@@ -718,7 +1259,7 @@ internal sealed partial class DesktopGame : IDisposable
             // is the part that cannot be — a GL texture belongs to the context that made it — so the
             // renderers are constructed here, on the frame after the outgoing picture was held. Same shape
             // as the probe and distance-field bakes above.
-            if (menuMode && heldFrameReady)
+            if (menuMode && !pauseMenu && heldFrameReady)
             {
                 bool changed = false;
                 if (previewLoader is { } loader
@@ -797,7 +1338,17 @@ internal sealed partial class DesktopGame : IDisposable
                 float rawY = _window.Input.Mouse.DeltaY;
                 bool right = _window.Input.Mouse.IsDown(Input.MouseButton.Right);
 
-                if (_playerDead && _deathCamera.IsActive)
+                if (pauseMenu)
+                {
+                    // A paused view does not turn, and the cursor has to be free to reach the menu. The
+                    // release is repeated every pass rather than done once on the way in, so nothing can
+                    // quietly take the pointer back while the menu is up; it also re-arms the look's
+                    // settling frame, so the warp that re-capturing the cursor produces on resume is not
+                    // read as a movement the player made.
+                    _player?.HoldStill();
+                    _window.CursorLocked = false;
+                }
+                else if (_playerDead && _deathCamera.IsActive)
                 {
                     // Dead: the mouse orbits the death camera around the body rather than turning a head that
                     // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
@@ -805,13 +1356,17 @@ internal sealed partial class DesktopGame : IDisposable
                     _deathCamera.Control(rawX, rawY);
                     _window.CursorLocked = !captureMode;
                 }
-                else if (_player is { IsOnLadder: true })
+                else if (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                 {
                     // On a ladder the mouse orbits the third-person interaction camera around the climbing
                     // body, as the original's mode-3 camera does -- HumanCamera_ThirdPersonControlInput -- so
                     // you can look around while you climb rather than being locked behind the character.
                     interactionCamera.Control(rawX, rawY);
                     _window.CursorLocked = !captureMode;
+                }
+                else if (_computerOpen)
+                {
+                    _window.CursorLocked = false;
                 }
                 else if (_playerMode && _player is not null)
                 {
@@ -849,7 +1404,27 @@ internal sealed partial class DesktopGame : IDisposable
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
             _loop.Clock.UncappedRenders = menuMode || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
 
+            // The level's own half of the pause, and the reason the frozen picture behind the menu really is
+            // frozen: with this set the level task forwards nothing to its subtree, so the scripts, the
+            // doors and the level clock all stand still. The scheduler is left alone -- ticks keep arriving
+            // and finding nothing to do -- which is what stops a menu held open for a minute from being
+            // followed by a minute's worth of catch-up.
+            if (_activeLevelRoot is { } pausableLevel)
+            {
+                pausableLevel.IsPaused = pauseMenu;
+            }
+
+            BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
+            EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
+
+            // The retail in-game menu pauses the game task. Once LevelFlow failure has opened that menu --
+            // or the player has opened the pause menu -- do not advance the desktop-owned player/AI
+            // simulation until they choose an action.
+            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || pauseMenu))
+            {
+                continue;
+            }
 
             // The body advances on the simulation tick and ONLY on it. Tick and Render are mutually
             // exclusive outcomes - a render is not a tick - so including Render here stepped the player
@@ -861,9 +1436,25 @@ internal sealed partial class DesktopGame : IDisposable
                 // A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the
                 // body stops being stepped rather than being stepped with no input. Without this a corpse
                 // walks around.
-                if (!_playerDead)
+                if (!_playerDead && !_missionFailedMenu)
                 {
-                    _player.Tick(_window.Input, _playerTerrain);
+                    if (_computerOpen)
+                    {
+                        _player.TickMapComputer();
+                    }
+                    else
+                    {
+                        _player.Tick(_window.Input, _playerTerrain);
+                    }
+
+                    // Hearing is emitted once per round, not once per projectile intersection. The weapon
+                    // row carries the exact retail radius (for example 4096 for suppressed fire and
+                    // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
+                    // silenced weapons no longer wake the whole 30-metre neighbourhood.
+                    if (_player.FiredThisTick && _player.HeldWeaponType is { } audibleWeapon)
+                    {
+                        _soldiers?.NotifyGunshot(_player.Body.Eye, audibleWeapon.AiDetectionRange);
+                    }
 
                     // The eye's tick pair, for drawing frames between ticks from a position that glides
                     // instead of stepping. Captured AFTER the body moved, so the pair is this tick's and
@@ -916,6 +1507,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
                 // fixed tick, for the same determinism reason the bodies are.
                 _damageFlash.Tick();
+                _hud?.Tick();
 
                 // The player's eye is what the guards' view cones are tested against -- and in the
                 // fly-through it is the CAMERA's, not the body's. The body stops being stepped the moment
@@ -945,26 +1537,32 @@ internal sealed partial class DesktopGame : IDisposable
                 // it does nothing until the player has died and the body was posed.
                 _soldiers?.TickPlayerBody();
 
-                // On a ladder the same third-person body climbs (locomotion state 37, animation 168): it is
-                // placed on the rungs and its climb clip advances while up or down is held, so the player sees
-                // their character climb rather than a first-person slide. Hidden again on leaving the ladder.
+                // The complete IGI1 ladder graph: 37 pauses animation 168 at authored event 8, 38/39 play
+                // animation 170 backwards/forwards at the top, and 40 loops 169 while its damped velocity
+                // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
                 if (_player is not null && _player.IsOnLadder)
                 {
-                    // Rung-by-rung climbing (state 37). Input is taken only at a rung boundary, so a rung once
-                    // begun plays to completion (you cannot cancel mid-step); holding up or down begins the next
-                    // rung the instant the last one's clip ends -- one rung per clip cycle, alternating hands.
                     Input.KeyboardState climbKeys = _window.Input.Keyboard;
                     bool climbUp = climbKeys.IsDown(Input.KeyCode.W);
                     bool climbDown = climbKeys.IsDown(Input.KeyCode.S);
                     bool climbUse = climbKeys.IsDown(Input.KeyCode.E);
 
-                    // On mounting: start the climb clip as one continuous loop and arm the slide only after the
-                    // mount key (also E) is released, so mounting does not immediately slide.
+                    // Mount and use share E. The release gate is a shell detail that prevents the mounting press
+                    // from becoming state 40 on the immediately following tick.
                     if (!climbActive)
                     {
                         climbActive = true;
                         climbSlideArmed = false;
-                        _soldiers?.StartPlayerClimbLoop(PlayerCamera.LadderClimbAnimation);
+                        if (_player.LadderPhase == LadderTraversalPhase.GettingOnTop)
+                        {
+                            _soldiers?.StartPlayerLadderAnimation(
+                                PlayerCamera.LadderTopAnimation, loops: false, backwards: true);
+                        }
+                        else
+                        {
+                            _soldiers?.StartPlayerLadderAnimation(
+                                PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                        }
                     }
 
                     if (!climbUse)
@@ -973,46 +1571,226 @@ internal sealed partial class DesktopGame : IDisposable
                     }
 
                     bool climbSlide = climbUse && climbSlideArmed;
-
-                    // Input is taken only at a rung boundary; a rung once begun runs to the clip's next wrap.
-                    if (_player.LadderAtBoundary)
+                    LadderStepResult decision = _player.DecideLadderStep(
+                        climbUp, climbDown, climbSlide, _playerTerrain!);
+                    switch (decision)
                     {
-                        _player.DecideLadderStep(climbUp, climbDown, climbSlide);
+                        case LadderStepResult.SteppingUp:
+                        case LadderStepResult.SteppingDown:
+                            _soldiers?.SetPlayerLadderPlaybackDirection(_player.LadderDirection);
+                            break;
+
+                        case LadderStepResult.ReachedTop:
+                            _soldiers?.StartPlayerLadderAnimation(
+                                PlayerCamera.LadderTopAnimation, loops: false);
+                            break;
+
+                        case LadderStepResult.Sliding:
+                            _soldiers?.StartPlayerLadderAnimation(
+                                PlayerCamera.LadderSlideAnimation, loops: true);
+                            break;
                     }
 
-                    if (_player.IsOnLadder && !_player.LadderAtBoundary && _soldiers is not null)
+                    if (_player.IsOnLadder && _soldiers is not null)
                     {
-                        // Mid-rung: move the body by the climb clip's OWN root motion -- the same way a walking
-                        // guard is moved -- so it sways and climbs exactly as the retail game does (read from the
-                        // Ladder_ClimbTick probe). The rung commits when the clip completes a cycle.
-                        _soldiers.AdvancePlayerClimbStep(_player.LadderFacing, out Vector3d rootDelta, out _);
-                        if (_player.MoveLadder(rootDelta))
+                        switch (_player.LadderPhase)
                         {
-                            _player.CompleteLadderStep();
+                            case LadderTraversalPhase.Climbing when _player.LadderDirection != 0:
+                                _soldiers.AdvancePlayerLadderAnimation(
+                                    _player.LadderFacing,
+                                    out Vector3d climbDelta,
+                                    out bool rungBoundary,
+                                    out _);
+                                _player.MoveLadder(climbDelta);
+                                if (rungBoundary)
+                                {
+                                    _player.CompleteLadderStep();
+                                    _soldiers.SetPlayerLadderPlaybackDirection(0);
+                                }
+
+                                break;
+
+                            case LadderTraversalPhase.GettingOnTop:
+                            case LadderTraversalPhase.GettingOffTop:
+                                _soldiers.AdvancePlayerLadderAnimation(
+                                    _player.LadderFacing,
+                                    out Vector3d topDelta,
+                                    out _,
+                                    out bool topAnimationEnded);
+                                _player.MoveLadder(topDelta);
+                                if (topAnimationEnded)
+                                {
+                                    _player.CompleteLadderTopTransition(_playerTerrain!);
+                                    if (_player.LadderPhase == LadderTraversalPhase.Climbing)
+                                    {
+                                        _soldiers.StartPlayerLadderAnimation(
+                                            PlayerCamera.LadderClimbAnimation, loops: true, paused: true);
+                                    }
+                                }
+
+                                break;
+
+                            case LadderTraversalPhase.SlidingDown:
+                                _soldiers.AdvancePlayerLadderAnimation(
+                                    _player.LadderFacing,
+                                    out Vector3d slideDelta,
+                                    out _,
+                                    out _);
+                                // State 40's entry only installs animation 169 and the sound. Its damped
+                                // velocity function first runs on the following tick.
+                                if (decision != LadderStepResult.Sliding)
+                                {
+                                    _player.TickLadderSlide(slideDelta, _playerTerrain!);
+                                }
+
+                                break;
                         }
                     }
 
-                    // The third-person camera takes over on mounting and follows the body up the rungs; the
-                    // body is placed at this tick's feet (the clip advance above set the pose).
+                    // All four states stay in third person until their actual deinitialization signal.
                     if (_player.IsOnLadder)
                     {
                         _soldiers?.PlacePlayerBodyClimbing(_player.LadderFeet, _player.LadderFacing);
                         if (!interactionCamera.IsActive)
                         {
-                            interactionCamera.Begin(_player.LadderFeet, _player.LadderFacing);
+                            WorldRayCast? cameraCast = _worldSolids?.Caster();
+                            interactionCamera.Begin(
+                                _player.LadderFeet,
+                                _player.LadderFacing,
+                                cameraCast is null
+                                    ? null
+                                    : (Vector3d from, Vector3d to, out Vector3d hit) =>
+                                    {
+                                        bool blocked = cameraCast(from, to, out WorldRayHit wall);
+                                        hit = blocked ? wall.Position : default;
+                                        return blocked;
+                                    });
                         }
                         else
                         {
                             interactionCamera.Follow(_player.LadderFeet);
                         }
+
+                        interactionCamera.Tick();
                     }
                 }
 
-                if ((_player is null || !_player.IsOnLadder) && (climbActive || interactionCamera.IsActive))
+                if (_player is { IsInWorldInteraction: true } interacting)
+                {
+                    if (!worldInteractionActive)
+                    {
+                        worldInteractionActive = true;
+                        if (interacting.InteractionAnimation >= 0)
+                        {
+                            _soldiers?.StartPlayerInteractionAnimation(
+                                interacting.InteractionAnimation,
+                                loops: interacting.InteractionLocomotionState is 31 or 32 or 33 or 35 or 36 or 42 or 43);
+                        }
+                    }
+
+                    if (_soldiers is not null)
+                    {
+                        _soldiers.AdvancePlayerLadderAnimation(
+                            interacting.InteractionFacing,
+                            out _, out _, out _);
+                        _soldiers.PlacePlayerBodyClimbing(
+                            interacting.InteractionFeet, interacting.InteractionFacing);
+                    }
+
+                    if (!interactionCamera.IsActive)
+                    {
+                        WorldRayCast? cameraCast = _worldSolids?.Caster();
+                        interactionCamera.Begin(
+                            interacting.InteractionFeet,
+                            interacting.InteractionFacing,
+                            cameraCast is null
+                                ? null
+                                : (Vector3d from, Vector3d to, out Vector3d hit) =>
+                                {
+                                    bool blocked = cameraCast(from, to, out WorldRayHit wall);
+                                    hit = blocked ? wall.Position : default;
+                                    return blocked;
+                                });
+                    }
+                    else
+                    {
+                        interactionCamera.Follow(interacting.InteractionFeet);
+                    }
+                    interactionCamera.Tick();
+                }
+
+                if ((_player is null || (!_player.IsOnLadder && !_player.IsInWorldInteraction))
+                    && (climbActive || worldInteractionActive || interactionCamera.IsActive))
                 {
                     _soldiers?.HidePlayerBodyClimbing();
                     interactionCamera.Reset();
                     climbActive = false;
+                    worldInteractionActive = false;
+                }
+
+                if (_missionObjectives is { } objectiveTick)
+                {
+                    // The remaster holds a message three seconds longer than the original does, because
+                    // the authored durations are short and the hold only starts once the last character
+                    // has been typed. Tied to the same switch as the comms cards, so the vanilla path
+                    // keeps the original's timing exactly -- and with it the moment every script that
+                    // waits on isFinishedDisplay sees the message end.
+                    objectiveTick.ExtraMessageHoldSeconds =
+                        RenderCVars.TacticalMessages.Value ? RemasteredMessageHoldSeconds : 0f;
+                }
+
+                _missionObjectives?.Tick(_player?.Body.Position);
+                if (_missionObjectives is { IsFailed: true })
+                {
+                    // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
+                    // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
+                    if (!_missionFailedMenu && ++_missionFailureTicks > 151)
+                    {
+                        _missionFailedMenu = true;
+                        _computerOpen = false;
+                        _computerFlight.Reset();
+                        _player?.SetMapComputerOpen(false);
+                        _window.CursorVisible = true;
+                        _window.CursorLocked = false;
+                    }
+                }
+                else
+                {
+                    _missionFailureTicks = 0;
+                }
+                if (!_missionResultHandled
+                    && _missionObjectives is { IsComplete: true }
+                    && _activeMission is { } completedMission)
+                {
+                    _missionResultHandled = true;
+                    int nextMissionId = completedMission.NextMissionId;
+                    if (nextMissionId != MissionDescriptor.NextMissionUndefined)
+                    {
+                        if (_configuration.Active is { } activeProfile)
+                        {
+                            MissionProgression.UnlockNext(activeProfile, _missions, nextMissionId);
+                            // Retail writes LOCAL:config.qsc after every non-final completion, even when
+                            // replaying an earlier mission leaves the frontier unchanged.
+                            DesktopConfiguration.Save(_gamePath, _configuration, _logger);
+                        }
+
+                        _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
+                        StartMission(nextMissionId);
+                    }
+                    else
+                    {
+                        _logger.Information("Mission", $"Completed final mission {completedMission.Id}; campaign complete.");
+                        ReleasePlayedMission();
+                        if (shell is not null)
+                        {
+                            // Event 7 is the retail outro-screen path. Cinematic playback is not yet a
+                            // renderer feature, so the modern shell's credits/extras page is its visible
+                            // campaign-complete destination rather than silently returning to selection.
+                            shell.OpenOn("extras");
+                            menuMode = true;
+                            showcasePending = true;
+                        }
+                    }
                 }
             }
 
@@ -1056,8 +1834,61 @@ internal sealed partial class DesktopGame : IDisposable
                         flightStartPitch + ((endPitch - flightStartPitch) * t));
                 }
 
+                // How far this frame sits between the last two simulation ticks. Compute it before
+                // either projection: MP5 sight zoom changes the world and view-model FOV on those ticks,
+                // and both need the same presentation blend to remain welded together at uncapped rates.
+                //
+                // Off entirely while the pause menu is up, and this is what makes a paused frame actually
+                // still. Nothing is stepping, so the last two ticks stay where they are — while the blend
+                // between them keeps sweeping 0 to 1 with real time, which rocked the eye, the arms and
+                // every guard back and forth between two poses a thirtieth of a second apart. At blend 1
+                // every one of those readings is simply the tick that was last run.
+                bool smoothPresentation = !pauseMenu && !_options.Lockstep && RenderCVars.SmoothPresentation.Value;
+                float tickBlend = smoothPresentation ? _loop.Clock.TickFraction(_loop.TimeSource.Milliseconds) : 1f;
+                SightZoomFrame sight = _playerMode && _player is not null
+                    ? _player.SmoothedSightZoom(tickBlend)
+                    : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
-                float verticalFieldOfView = VerticalFieldOfView(aspectRatio);
+                float horizontalTangent = sight.TanX;
+                float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
+                // The map's own view of the level, when the computer owns the frame. Under the tactical
+                // interface the transition owns it for as long as it is flying — same viewport, but its
+                // camera and its field of view, which is what makes the climb and the fall a move of the
+                // player's own eye rather than a cut to a second one.
+                MapSceneView? mapScene = null;
+                if (_computerOpen && _player is { } mapPlayer)
+                {
+                    if (TacticalComputer is { } tacticalView)
+                    {
+                        MapSceneView steady = tacticalView.SceneView(
+                            mapPlayer.Body.Position, _window.Width, _window.Height);
+                        mapScene = _computerFlight.IsFlying
+                            ? steady with
+                            {
+                                Camera = _computerFlight.Camera,
+                                FieldOfView = _computerFlight.FieldOfView,
+                            }
+                            : steady;
+                    }
+                    else if (_mapComputer is { IsReady: true, ShowsMap: true } computerView)
+                    {
+                        mapScene = computerView.SceneView(
+                            mapPlayer.Body.Position, _window.Width, _window.Height);
+                    }
+                }
+
+                // What the tube is doing this frame, and how hard the shot is smearing. Read here, next
+                // to the camera they belong to, rather than at the resolve five hundred lines below,
+                // where the transition would be a name with no visible source.
+                bool tacticalUp = _computerOpen && TacticalComputer is not null;
+                TacticalDisplaySettings computerDisplay = tacticalUp ? _computerFlight.Display : default;
+                float computerFlightBlur = tacticalUp ? _computerFlight.MotionBlur : 0f;
+                if (mapScene is { } mapView)
+                {
+                    aspectRatio = (float)mapView.Viewport.Width / Math.Max(1, mapView.Viewport.Height);
+                    verticalFieldOfView = mapView.FieldOfView;
+                }
                 // The near plane is the original's default: 0x493580 initialises it to 409.6 units, which
                 // is 0.1 m. (Scripts can move it through the SetNearClippingPlane native, 0x497D00.) At
                 // 0.2 the plane reached twice as far as retail's and cut into any wall the sweep lets the
@@ -1106,27 +1937,32 @@ internal sealed partial class DesktopGame : IDisposable
                 // shot of the body -- rather than from the frozen first-person view.
                 // On a ladder the eye pulls back to a third-person interaction view (camera mode 3), so you
                 // see your character on the rungs rather than the back of your hands.
-                // How far this frame sits between the last two simulation ticks. Everything the
-                // simulation stepped -- the player's own position, the soldiers, their poses -- is drawn
-                // blended between its last two tick states by this amount, which is what makes an
-                // uncapped frame rate look uncapped while the simulation stays at exactly 30 Hz.
-                bool smoothPresentation = !_options.Lockstep && RenderCVars.SmoothPresentation.Value;
-                float tickBlend = smoothPresentation ? _loop.Clock.TickFraction(_loop.TimeSource.Milliseconds) : 1f;
+                // The ladder and world-interaction view is a third-person orbit whose ANGLES are already
+                // this frame's own -- Control runs per frame -- but whose pivot follows the climbing body
+                // and whose distance eases out, both on the 30 Hz tick. The body itself is drawn
+                // interpolated between its tick pair, so leaving the camera on the tick made a smoothly
+                // climbing Jones judder against a camera that stepped thirty times a second. This is the
+                // other half of that smoothing, and it must run BEFORE the eye is read below.
+                if (interactionCamera.IsActive)
+                {
+                    interactionCamera.Present(smoothPresentation ? tickBlend : 1f);
+                }
 
                 Camera3D eye = _playerDead && _deathCamera.IsActive
                     ? _deathCamera.Camera
-                    : _player is { IsOnLadder: true } && interactionCamera.IsActive
+                    : (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
+                        && interactionCamera.IsActive
                         ? interactionCamera.Camera
                         : _playerMode && _player is not null ? _player.Camera : _camera.Camera;
 
                 // The walking eye glides between its tick pair, and so does the recoil kick inside its
-                // orientation; the mouse half of the look is this frame's own. The fly, death and ladder
-                // cameras move per frame on their own and need nothing.
+                // orientation; the mouse half of the look is this frame's own. The fly and death cameras
+                // move per frame on their own and need nothing.
                 if (smoothPresentation
                     && _playerMode
                     && !_playerDead
                     && playerEyeCaptured
-                    && _player is { IsOnLadder: false })
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false })
                 {
                     eye = new Camera3D(
                         new Vector3d(
@@ -1137,18 +1973,36 @@ internal sealed partial class DesktopGame : IDisposable
                 }
 
                 // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
-                // camera the scene would otherwise have used.
-                if (menuMode && _showcaseCamera is not null)
+                // camera the scene would otherwise have used. Not behind the pause menu: the camera the
+                // scene would otherwise have used is the player's own, and orbiting away from where they
+                // were standing is the one thing a pause must not do. The showcase camera outlives the menu
+                // it was built for -- starting a mission does not clear it -- so this has to say so.
+                if (menuMode && !pauseMenu && _showcaseCamera is not null)
                 {
                     int menuCameraNow = _loop.TimeSource.Milliseconds;
                     float menuCameraElapsed = Math.Clamp((menuCameraNow - lastMenuCameraMilliseconds) / 1000f, 0f, 0.1f);
                     lastMenuCameraMilliseconds = menuCameraNow;
                     eye = _showcaseCamera.Update(menuCameraElapsed);
                 }
+                else if (mapScene is { } liveMap)
+                {
+                    eye = liveMap.Camera;
+                }
+
+                // The mission-entry shot owns the view outright while it runs, over the menu's orbit and
+                // over the player's own eye alike -- it begins at one and ends exactly at the other.
+                if (_entry.IsCameraActive)
+                {
+                    eye = _entry.Camera;
+                }
 
                 // Everything soldier-shaped resolves its own frame state once, here, so the shadow
                 // cascades and the geometry pass draw identical bodies in identical places.
-                _soldiers?.BeginFrame(tickBlend, smoothPresentation);
+                // The backdrop's soldiers resolve their frame state too, because the shadow pass below is
+                // about to read their poses. Only one of the two is ever live: `_soldiers` belongs to a
+                // played mission, `_backdropSoldiers` to the menu's.
+                SoldierRenderer? shadowCasters = _soldiers ?? _backdropSoldiers;
+                shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
 
                 // The modern path renders the scene offscreen so that it still exists, with its depth, once
                 // it has been drawn -- which is what every effect from stage R3 on needs. With r_hdr off,
@@ -1291,10 +2145,12 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
                 // beginning a capture first would leave the shell holding two render targets at once.
+                BeginStage();
                 if (cascadeCount > 0 && _shadowPass is not null)
                 {
-                    _shadowPass.Render(cascadeStorage, cascadeCount, eye, _scene, _world, _soldiers);
+                    _shadowPass.Render(cascadeStorage, cascadeCount, eye, _scene, _world, shadowCasters);
                 }
+                EndStageIfSlow("the shadow cascades");
 
                 bool captured = RenderCVars.OffscreenScene.Value && _device.BeginSceneCapture(sceneTarget);
                 if (captured)
@@ -1322,7 +2178,27 @@ internal sealed partial class DesktopGame : IDisposable
                     _device.SetMaterialOverride(new SurfaceMaterial(Emissive: 1f));
                 }
 
-                _sky?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                if (mapScene is { } insetMap)
+                {
+                    float renderScale = captured ? RenderCVars.RenderScale.Value : 1f;
+                    _device.SetViewport(new Viewport(
+                        (int)(insetMap.Viewport.X * renderScale),
+                        (int)((_window.Height - insetMap.Viewport.Y - insetMap.Viewport.Height) * renderScale),
+                        Math.Max(1, (int)(insetMap.Viewport.Width * renderScale)),
+                        Math.Max(1, (int)(insetMap.Viewport.Height * renderScale))));
+                }
+
+                // The SIMOTECH map is the live terrain/object pass, not a view of the sky dome from
+                // directly above. The green CRT wash is applied in the 2D computer pass below.
+                //
+                // The exception is the tactical transition. Its climb starts at eye height with the
+                // horizon across the middle of the frame and only reaches straight down at the top, so
+                // dropping the sky for the whole of it would leave the first half of the shot rising out
+                // of a black void.
+                if (mapScene is null || _computerFlight.IsFlying)
+                {
+                    _sky?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                }
 
                 if (captured)
                 {
@@ -1337,7 +2213,9 @@ internal sealed partial class DesktopGame : IDisposable
                     // -viewdist still wins when it is given, so an existing diagnostic command line keeps
                     // meaning what it did; otherwise the setting decides.
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value);
+                EndStageIfSlow("the sky and the terrain");
                 _world.Draw(_scene, eye, projection);
+                EndStageIfSlow("the world's objects");
 
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
                 // never swaps in the view-model block for them (player.md section 15.3).
@@ -1346,6 +2224,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // The player's own body, once it has fallen -- drawn only under the death camera, so it never
                 // appears in front of the first-person view during normal play.
                 _soldiers?.DrawPlayerBody(eye, projection);
+                EndStageIfSlow("the soldiers");
 
                 // The marks rounds have left, over the world and under the first-person rig.
                 if (_marks is not null && _player is not null)
@@ -1353,10 +2232,21 @@ internal sealed partial class DesktopGame : IDisposable
                     _marks.Draw(_player.Marks, eye, projection);
                 }
 
+                if (mapScene is not null)
+                {
+                    _device.SetViewport(new Viewport(
+                        0,
+                        0,
+                        captured ? sceneTarget.Width : _window.Width,
+                        captured ? sceneTarget.Height : _window.Height));
+                }
+
 
                 // The view model and anything translucent belong to the forward pass: it is drawn with its
                 // own narrower projection, so its depth must not end up in the buffer the fog and the
                 // reflections read.
+                EndStageIfSlow("the deferred lighting, occlusion, reflections and fog");
+
                 if (captured)
                 {
                     _device.EndPass();
@@ -1368,7 +2258,12 @@ internal sealed partial class DesktopGame : IDisposable
                 // original draws it out of the human's own render and the free camera is not a human -- and
                 // NOT once the player is dead, when the death camera is watching the body from the outside
                 // and a pair of arms hanging in front of it would be exactly wrong.
-                if (_playerMode && !(_playerDead && _deathCamera.IsActive) && _player is { IsOnLadder: false, View: { } rig })
+                // Not while the entry shot is running: the camera is somewhere over the level, and a pair
+                // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
+                // moment the view is handed over, which is also the moment the player can use them.
+                if (_playerMode && !_computerOpen && !_entry.IsCameraActive
+                    && !(_playerDead && _deathCamera.IsActive)
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false, View: { } rig })
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                     // than the frame.
@@ -1397,7 +2292,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // aspect-invariant. Dividing the tangent by the aspect instead (the world's widescreen
                     // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
                     // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
-                    float viewModelFieldOfView = 2f * MathF.Atan(0.75f * rig.ViewModelTanX);
+                    float viewModelFieldOfView = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
                     Matrix4f viewModelProjection = Matrix4f.CreatePerspective(
                         viewModelFieldOfView,
                         aspectRatio,
@@ -1435,26 +2330,18 @@ internal sealed partial class DesktopGame : IDisposable
 
                     if (weaponAttachment is { } attachment && _heldWeapon is { IsReady: true })
                     {
-                        // The weapon in hand is the one object on screen at all times, so it is the one
-                        // worth giving a material to first. Steel: fully metallic, and smooth enough for
-                        // the blade to catch a highlight as it moves.
-                        if (captured)
-                        {
-                            _device.SetMaterialOverride(new SurfaceMaterial(Roughness: 0.28f, Metallic: 1f));
-                        }
-
-                        _heldWeapon.Draw(attachment, eye, viewModelProjection);
-
-                        if (captured)
-                        {
-                            _device.SetMaterialOverride(SurfaceMaterial.Default);
-                        }
+                        _heldWeapon.Draw(
+                            attachment,
+                            eye,
+                            viewModelProjection,
+                            _player.FiredThisTick,
+                            _player.ShotSequence);
                     }
 
                     // The HUD goes over everything, in 2D. StatusScreen's render sends one message to the
                     // weapon in hand and the weapon draws its own readout -- so what appears is the roster
                     // record's own SightDisplayType and AmmoDisplayType, not a choice made here.
-                    if (_hud is { IsReady: true } && _player.Weapons is { } carried)
+                    if (!_computerOpen && _hud is { IsReady: true } && _player.Weapons is { } carried)
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
@@ -1469,17 +2356,41 @@ internal sealed partial class DesktopGame : IDisposable
                         batch.End();
                     }
 
-                    // The interaction prompt, when something is in reach — the original's "use" hint.
-                    if (_hud is { IsReady: true } && _player.ShowInteractPrompt)
+                    // The task-specific status icon. A ladder's handler selects a_ladder.spr; there is no
+                    // text prompt in the retail game and the sprite remains at its native pixel size.
+                    if (!_computerOpen && _hud is { IsReady: true } && _player.ActionSprite is { } actionSprite)
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
-                        _hud.DrawPrompt(
-                            batch,
-                            _player.InteractPromptText,
-                            _window.Width,
-                            _window.Height,
-                            UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                        _hud.DrawAction(batch, actionSprite, _window.Width, _window.Height);
+                        batch.End();
+                    }
+
+                    // The mission's status messages. Kept off screen while the computer is up, as the rest
+                    // of the HUD is: the map is a full-screen readout of the same mission and a comms card
+                    // over it would be the same information twice.
+                    if (!_computerOpen && _missionObjectives is { } messageRuntime)
+                    {
+                        _device.Set2DProjection(_window.Width, _window.Height);
+                        batch.Begin();
+                        if (RenderCVars.TacticalMessages.Value && _messages is { IsReady: true } cards)
+                        {
+                            cards.Draw(
+                                batch,
+                                messageRuntime.DisplayedMessages,
+                                _window.Width,
+                                _window.Height);
+                        }
+                        else if (_hud is { IsReady: true } retailMessages)
+                        {
+                            retailMessages.DrawStatusMessages(
+                                batch,
+                                messageRuntime.DisplayedMessages,
+                                _window.Width,
+                                _window.Height,
+                                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                        }
+
                         batch.End();
                     }
                 }
@@ -1508,25 +2419,136 @@ internal sealed partial class DesktopGame : IDisposable
                         FocalDistance: RenderCVars.FocalDistance.Value,
                         FocalRange: RenderCVars.FocalRange.Value,
                         FocalBlur: RenderCVars.FocalBlur.Value,
-                        MotionBlur: RenderCVars.MotionBlur.Value,
+                        // The transition's own shutter, taken as the maximum against the player's setting
+                        // rather than replacing it: this camera covers a kilometre in about a second and
+                        // reads as a slideshow without one.
+                        MotionBlur: MathF.Max(RenderCVars.MotionBlur.Value, computerFlightBlur),
                         CameraTaps: RenderCVars.CameraTaps.Value,
                         SpatialAa: RenderCVars.SpatialAa.Value,
                         SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
                         ColourLookup: RenderCVars.ColourLookup.Value,
-                        AutoExposure: RenderCVars.AutoExposure.Value));
+                        AutoExposure: RenderCVars.AutoExposure.Value,
+
+                        // The retail tube, which is a switch, and the remaster's, which is a curve. Never
+                        // both: the tactical path answers for the whole presentation when it is on.
+                        GreenPhosphor: mapScene is not null && TacticalComputer is null,
+                        Tactical: computerDisplay));
                     captured = false;
+                    EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
+                }
+
+                // ComputerMap renders the terrain through its own top-down camera and turns only that
+                // captured view into green phosphor. The SIMOTECH casing is a separate retail panel that
+                // is drawn after the resolve, in its authored colours, before the HUD fills its aperture.
+                //
+                // The tactical interface has no casing at all — that is the point of it — so this whole
+                // block is the retail path's alone.
+                if (_computerOpen
+                    && TacticalComputer is null
+                    && _playerMode
+                    && !(_playerDead && _deathCamera.IsActive)
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false })
+                {
+                    Camera3D computerEye = _player.Camera;
+                    if (smoothPresentation && _player.HasViewTickPair)
+                    {
+                        computerEye = new Camera3D(
+                            new Vector3d(
+                                playerEyePrevTick.X + ((playerEyeTick.X - playerEyePrevTick.X) * tickBlend),
+                                playerEyePrevTick.Y + ((playerEyeTick.Y - playerEyePrevTick.Y) * tickBlend),
+                                playerEyePrevTick.Z + ((playerEyeTick.Z - playerEyePrevTick.Z) * tickBlend)),
+                            _player.SmoothedLookRotation(tickBlend));
+                    }
+
+                    float computerViewModelFov = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
+                    Matrix4f computerViewModelProjection = Matrix4f.CreatePerspective(
+                        computerViewModelFov,
+                        (float)_window.Width / Math.Max(1, _window.Height),
+                        near: 0.1f,
+                        far: FarPlane);
+
+                    if (_mapComputerDevice is { IsReady: true } deviceModel)
+                    {
+                        Viewport deviceViewport = MapComputerRenderer.DeviceViewport(_window.Width, _window.Height);
+                        float horizontalHalfTangent = MathF.Tan(computerViewModelFov * 0.5f)
+                            * _window.Width / Math.Max(1f, _window.Height);
+                        // The mapcomputer mesh is a close foreground prop. Its housing extends past the
+                        // view just as it does in retail; 2.50 is the retail asset's aperture-to-frame
+                        // calibration against the map task's 91% screen viewport. The casing is intentionally
+                        // cropped at the display edges: leaving its outside black behind the four corners
+                        // makes the computer look set back from the camera rather than held in the foreground.
+                        float horizontalCoverage = deviceViewport.Width / (float)Math.Max(1, _window.Width) * 2.50f;
+                        deviceModel.Draw(computerEye, computerViewModelProjection, horizontalHalfTangent, horizontalCoverage);
+                    }
+
+                    _device.SetDepthState(DepthState.Disabled);
+                }
+
+                if (_computerOpen
+                    && _missionObjectives is { } objectiveRuntime
+                    && _player is { } computerPlayer)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    if (TacticalComputer is { } tacticalChrome)
+                    {
+                        tacticalChrome.Draw(
+                            batch,
+                            objectiveRuntime,
+                            computerPlayer.Body.Position,
+                            _soldiers?.MapContacts() ?? [],
+                            _computerHighlights?.Visible() ?? [],
+                            _window.Width,
+                            _window.Height,
+                            _computerFlight.ChromeOpacity);
+                    }
+                    else if (_mapComputer is { IsReady: true } computer)
+                    {
+                        computer.Draw(
+                            batch,
+                            objectiveRuntime,
+                            computerPlayer.Body.Position,
+                            _soldiers?.MapContacts() ?? [],
+                            _computerHighlights?.Visible() ?? [],
+                            _window.Width,
+                            _window.Height);
+                    }
+
+                    batch.End();
+                }
+
+                if (_missionFailedMenu)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    if (TacticalComputer is { } tacticalFailed)
+                    {
+                        tacticalFailed.DrawMissionFailed(batch, _window.Width, _window.Height);
+                    }
+                    else if (_mapComputer is { IsReady: true } failedComputer)
+                    {
+                        failedComputer.DrawMissionFailed(batch, _window.Width, _window.Height);
+                    }
+
+                    batch.End();
                 }
 
                 // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
                 // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
                 // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
                 // when the arms and the HUD are gone but the last thing the screen showed is still red.
-                if (_damageFlash.IsActive)
+                float flashStrength = Math.Clamp(RenderCVars.DamageFlash.Value, 0f, 1f);
+                if (_damageFlash.IsActive && flashStrength > 0f)
                 {
                     float flashWidth = _window.Width;
                     float flashHeight = _window.Height;
-                    static Bgra32 Red(float alpha) =>
-                        new(0, 0, 255, (byte)Math.Clamp((int)(alpha * 255f), 0, 255));
+
+                    // The strength scales the alpha only. The four corners still carry their own values
+                    // and still decay on the original's schedule, so a hit from the left is still redder
+                    // on the left and still fades over the same number of ticks -- it is the peak that
+                    // comes down, not the cue.
+                    Bgra32 Red(float alpha) =>
+                        new(0, 0, 255, (byte)Math.Clamp((int)(alpha * flashStrength * 255f), 0, 255));
 
                     _device.Set2DProjection(_window.Width, _window.Height);
                     batch.Begin();
@@ -1712,45 +2734,70 @@ internal sealed partial class DesktopGame : IDisposable
 
             // The cinematic shell draws over the resolved showcase scene, in 2D on the back buffer, before
             // the console (which goes over even the shell).
-            if (menuMode && shell is not null)
+            // The shell keeps being DRAWN through the mission-entry shot even though the menu is over, so
+            // that it can fade rather than vanish. It hears nothing while it does.
+            if ((menuMode || _entry.IsRunning) && shell is not null)
             {
                 _device.Set2DProjection(_window.Width, _window.Height);
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
                 batch.Begin();
 
-                // Before the showcase level has loaded there is no scene to draw, so fill a dark backdrop
-                // rather than leaving the frame's blue clear behind the menu.
-                if (_scene is null)
+                // None of the backdrop machinery applies to the pause menu: its backdrop is the mission,
+                // already drawn on this very frame, and there is no swap for it to dissolve between.
+                if (!pauseMenu)
                 {
-                    shellPainter.FillRect(new UiRect(0f, 0f, _window.Width, _window.Height), Bgra32.FromRgb(12, 14, 18));
-
-                    // Nothing on screen to dissolve from, so the hold is a no-op and the first backdrop is
-                    // simply revealed. Without this the swap would wait forever on a hold that never came.
-                    if (holdFrameForDissolve)
+                    // Before the showcase level has loaded there is no scene to draw, so fill a dark backdrop
+                    // rather than leaving the frame's blue clear behind the menu.
+                    if (_scene is null)
                     {
-                        holdFrameForDissolve = false;
-                        heldFrameReady = true;
-                        heldFrameIsPicture = false;
+                        shellPainter.FillRect(new UiRect(0f, 0f, _window.Width, _window.Height), Bgra32.FromRgb(12, 14, 18));
+
+                        // Nothing on screen to dissolve from, so the hold is a no-op and the first backdrop is
+                        // simply revealed. Without this the swap would wait forever on a hold that never came.
+                        if (holdFrameForDissolve)
+                        {
+                            holdFrameForDissolve = false;
+                            heldFrameReady = true;
+                            heldFrameIsPicture = false;
+                        }
+                    }
+                    else
+                    {
+                        // The outgoing level, caught here: after the 3D pass, before any of the menu is drawn
+                        // over it, so what is held is the picture alone.
+                        if (holdFrameForDissolve)
+                        {
+                            HoldFrameForDissolve();
+                            holdFrameForDissolve = false;
+                            heldFrameReady = true;
+                            heldFrameIsPicture = true;
+                        }
+
+                        // The dissolve, over the resolved scene and UNDER the shell: the two levels blend into
+                        // each other while the menu stays lit and responsive on top of both.
+                        DrawDissolve(shellPainter, dissolve.Value);
                     }
                 }
-                else
-                {
-                    // The outgoing level, caught here: after the 3D pass, before any of the menu is drawn
-                    // over it, so what is held is the picture alone.
-                    if (holdFrameForDissolve)
-                    {
-                        HoldFrameForDissolve();
-                        holdFrameForDissolve = false;
-                        heldFrameReady = true;
-                        heldFrameIsPicture = true;
-                    }
 
-                    // The dissolve, over the resolved scene and UNDER the shell: the two levels blend into
-                    // each other while the menu stays lit and responsive on top of both.
-                    DrawDissolve(shellPainter, dissolve.Value);
+                // The whole interface behind one opacity. It has to be pushed HERE rather than left to
+                // each screen's own transition, because a screen deliberately draws its top bar outside
+                // that fade and the stack draws the pointer outside every screen — so only a push around
+                // the whole draw takes all of it, chrome and cursor included.
+                float shellOpacity = _entry.IsRunning ? _entry.ShellOpacity : 1f;
+                if (shellOpacity > 0.001f)
+                {
+                    shellPainter.PushOpacity(shellOpacity);
+                    shell.Draw(shellPainter);
+                    shellPainter.PopOpacity();
                 }
 
-                shell.Draw(shellPainter);
+                // The shot's own framing goes over the interface at full strength: the bars and the title
+                // belong to the cinematic, not to the menu, and they must not fade out with it.
+                if (_entry.IsRunning)
+                {
+                    DrawEntryFraming(shellPainter, entryTitle, entrySubtitle);
+                }
+
                 batch.End();
             }
 
@@ -1766,7 +2813,10 @@ internal sealed partial class DesktopGame : IDisposable
             // A flight writes one numbered frame per rendered frame -- stem.NNNN.ext beside the given
             // screenshot path -- so the sequence shows the temporal filters resolving under motion. Written
             // here, after everything 2D is on the back buffer, exactly where the single still is captured.
-            if (_options.HasFlight
+            // -entrycam writes its frames the same way, so the shot can be flipped through afterwards.
+            // A camera move is the one thing a single still cannot show, and the entry is the one camera
+            // move nobody can trigger at a repeatable moment by hand.
+            if ((_options.HasFlight || (_options.EntryCamMission > 0 && _entry.IsRunning))
                 && _options.ScreenshotPath is { } flightPath
                 && _scene is not null)
             {
@@ -1801,6 +2851,7 @@ internal sealed partial class DesktopGame : IDisposable
                 _soldiers?.LogAiSummary();
                 running = false;
             }
+
         }
 
         // The measurement, written down. The overlay answers "is it fast right now" for somebody watching
@@ -1870,8 +2921,8 @@ internal sealed partial class DesktopGame : IDisposable
     // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
     // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
     // vertical one follows from the window's aspect, rather than the other way round.
-    private static float VerticalFieldOfView(float aspectRatio) =>
-        2f * MathF.Atan(HumanView.DefaultTanX / MathF.Max(aspectRatio, 0.0001f));
+    private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
+        2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
 
     /// <summary>
     /// Releases the GPU-backed resources the game owns. The window, device and developer console are owned
@@ -1883,8 +2934,13 @@ internal sealed partial class DesktopGame : IDisposable
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
+        _backdropSoldiers?.Dispose();
         _heldWeapon?.Dispose();
         _hud?.Dispose();
+        _mapComputer?.Dispose();
+        _mapComputerDevice?.Dispose();
+        _tacticalComputer?.Dispose();
+        _messages?.Dispose();
         _marks?.Dispose();
         _renderer?.Dispose();
         _arms?.Dispose();

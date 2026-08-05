@@ -2,9 +2,11 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -22,8 +24,15 @@ internal sealed partial class DesktopGame
             return;
         }
 
+        ReleasePlayedMission();
+
         _logger.Information("Mission", $"Starting {chosen}.");
         LevelTask levelRoot = (LevelTask)_loop.Tasks.New(_loop.Tasks.Root, _loop.Types.Get(EngineTaskTypes.Level));
+        _activeLevelRoot = levelRoot;
+        _activeMission = chosen;
+        _missionResultHandled = false;
+        _computerOpen = false;
+        _computerFlight.Reset();
         LevelLoader levelLoader = new(levelRoot, _loop.TaskCommands, _loop.Natives, _resources, _logger);
         TerrainLoader terrainLoader = new(_resources, _loop.Natives, _logger);
         MissionLoader missionLoader = new(_missions, _fileSystem, _resources, levelLoader, _logger, terrainLoader);
@@ -35,26 +44,136 @@ internal sealed partial class DesktopGame
         // and before anything walks it.
         new ConditionalContainerGate(_loop.Variables, _logger).Prepare(levelRoot);
 
-        _scene = WorldScene.Build(loaded, levelRoot, _magic, _logger);
-        _world = new WorldRenderer(_device, _resources, _logger) { Materials = _materials, DetailMaps = _detailMaps };
+        BringMissionUp(loaded, levelRoot, id, promoted: false);
+    }
+
+    /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
+    /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
+    /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
+    /// <param name="id">The mission id, for the colour grade and the log.</param>
+    /// <param name="promoted">
+    /// <see langword="true"/> when the level arrived as the menu's backdrop and is being promoted rather
+    /// than loaded. The backdrop is already drawn — its scene, collision index, terrain, sky, sun, grade
+    /// and camera were all built by <see cref="AdoptPreview"/> off the render thread — so the steps that
+    /// would rebuild them are skipped and the rest runs exactly as it does for a cold start. The order of
+    /// everything else is deliberately untouched between the two paths: the AI's ray cast closes over
+    /// <c>_playerTerrain</c>, the interactions have to exist before the brains are animated, and the
+    /// weapon rosters have to load before <c>humanplayer.qvm</c> runs (weapons.md section 8).
+    /// </param>
+    private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
+    {
+        BeginStage();
+        MenuStringTable missionStrings = new(_resources);
+
+        // Mission text is addressed by its own key, not by the menu table's LOCAL:<language>/<key> —
+        // see MissionStringResolver. Everything that resolves mission data goes through this one.
+        MissionStringResolver missionText = new(_resources, missionStrings);
+        _missionObjectives = new MissionObjectiveRuntime(levelRoot, _loop.Variables, missionText.Get);
+        _computerHighlights = new ComputerHighlightCatalog(levelRoot, _loop.Variables);
+        _mapComputer = new MapComputerRenderer(_device, _resources, _logger, missionText.Get);
+        if (!_mapComputer.Load(_fileSystem))
+        {
+            _mapComputer.Dispose();
+            _mapComputer = null;
+        }
+        _mapComputerDevice = new MapComputerDeviceRenderer(_device, _resources, _logger);
+        if (!_mapComputerDevice.Load(loaded))
+        {
+            _mapComputerDevice.Dispose();
+            _mapComputerDevice = null;
+        }
+
+        // Both presentations are built, and r_computer_tactical decides which is drawn — see
+        // DesktopGame.TacticalComputer. The retail pair above needs the installation's own archives; this
+        // one needs only the shipped faces, so a mission whose computer.res is missing still has a map.
+        _tacticalComputer = new TacticalComputerRenderer(_device, _resources, _logger, missionText.Get);
+        if (!_tacticalComputer.Load())
+        {
+            _tacticalComputer.Dispose();
+            _tacticalComputer = null;
+        }
+
+        // The comms cards. Built here rather than beside the HUD below, because the messages belong to the
+        // mission rather than to the loadout: a level whose player carries nothing still sends them.
+        _messages?.Dispose();
+        _messages = new StatusMessageRenderer(_device, _logger);
+        if (!_messages.Load())
+        {
+            _messages.Dispose();
+            _messages = null;
+        }
 
         // The walls. Built here because two consumers want it: the player's collision, and the
         // soldiers' ground probe - a guard's declared Position is only where it starts, and without
         // the settle the retail integrator performs, floor-authored spawns bury the body to the waist.
-        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(_scene.Placements);
-        _worldSolids = solids;
+        //
+        // A promoted backdrop arrives with all three already built on a worker: the scene walk, the
+        // world renderer and the collision index are exactly what AdoptPreview put up to draw the menu
+        // over, and they are the same level.
+        EndStage("objectives, highlights and the map computer");
+
+        ObjectCollisionIndex solids;
+        WorldRenderer world;
+        WorldScene scene;
+        if (promoted)
+        {
+            solids = _worldSolids ?? throw new InvalidOperationException(
+                "A promoted mission must arrive with the backdrop's collision index already built.");
+            world = _world ?? throw new InvalidOperationException(
+                "A promoted mission must arrive with the backdrop's world renderer already built.");
+            scene = _scene ?? throw new InvalidOperationException(
+                "A promoted mission must arrive with the backdrop's scene already walked.");
+        }
+        else
+        {
+            scene = WorldScene.Build(loaded, levelRoot, _magic, _logger);
+            _scene = scene;
+            world = new WorldRenderer(_device, _resources, _logger) { Materials = _materials, DetailMaps = _detailMaps };
+            _world = world;
+            solids = ObjectCollisionIndex.Build(scene.Placements);
+            _worldSolids = solids;
+            EndStage("the scene walk, the world renderer and the collision index");
+        }
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
         // WorldScene placements - a human task is a typed task, and the original draws it through the
         // bone path, not the static one.
-        _soldiers?.Dispose();
-        _soldiers = new SoldierRenderer(_device, _resources, _logger) { DetailMaps = _detailMaps };
-        _soldiers.Load(
-            loaded,
-            levelRoot,
-            loaded.Terrain is { IsUsable: true } standing ? standing : null,
-            solids.Caster());
+        // A promoted backdrop has already built these, behind the menu and against the very same level
+        // and collision index, so it hands them over rather than uploading a second copy of every
+        // soldier's mesh. Taking the reference is also what stops the backdrop disposing them.
+        if (promoted && _backdropSoldiers is { } armedSoldiers)
+        {
+            _soldiers?.Dispose();
+            _soldiers = armedSoldiers;
+            _backdropSoldiers = null;
+        }
+        else
+        {
+            _soldiers?.Dispose();
+            _soldiers = new SoldierRenderer(_device, _resources, _logger) { DetailMaps = _detailMaps };
+            _soldiers.Load(
+                loaded,
+                levelRoot,
+                loaded.Terrain is { IsUsable: true } standing ? standing : null,
+                solids.Caster());
+        }
+
+        EndStage("the soldiers' meshes and textures");
+
+        // Interactions are level systems, not AI systems: build them even when a mission has no usable
+        // navigation graph. The same door objects are shared by player use, AI door hops and collision.
+        _doors = DoorRegistry.Build(levelRoot);
+        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
+        _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
+        _soldiers.SetDoors(_doors, solids);
+        world.Doors = _doors;
+        if (_doors.Doors.Count > 0)
+        {
+            _logger.Information("World", $"{_doors.Doors.Count} door(s) available to players and AI.");
+        }
+
+        EndStage("the doors and the world interactions");
 
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
@@ -136,21 +255,17 @@ internal sealed partial class DesktopGame
                     blockedAt = onObject;
                     return hitObject;
                 };
-                ApplyColourLookup(_options.StartMission);
 
                 // The level's doors, before the brains: a walker asks the registry for the nearest door
                 // on a door hop, and an open door is switched out of the collision index so the
                 // doorway is walkable. Both have to exist before Animate hands each brain its query.
 
-                DoorRegistry levelDoors = DoorRegistry.Build(levelRoot);
-                _soldiers.SetDoors(levelDoors, solids);
-                if (levelDoors.Doors.Count > 0)
-                {
-                    _logger.Information("World", $"{levelDoors.Doors.Count} door(s) the AI can open.");
-                }
+                EndStage("reading the nav graphs");
 
                 _soldiers.Animate(
-                    graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty);
+                    graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
+                    _loop.Variables);
+                EndStage("animating the soldiers' brains");
 
                 // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
                 // where it becomes a cast. The AI's hit probability decides whether the round is on
@@ -333,57 +448,74 @@ internal sealed partial class DesktopGame
             _logger.Warning("Ai", $"The nav graph could not be read: {ex.Message}");
         }
 
-        // A level whose terrain files are not live data — level 14 is exactly that — draws its objects
-        // over nothing rather than following offsets into whatever the geometry blob happens to hold.
-        // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
-        _terrain?.Dispose();
-        _terrain = loaded.Terrain is { IsUsable: true } usable
-            ? new TerrainRenderer(_device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps)
-            : null;
-
-        // The sky is script data on the level's task tree; its fog colour is also what the frame
-        // clears to, so the horizon meets sky-coloured backing rather than black.
-        _sky?.Dispose();
-        _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
-        _shadowPass = new ShadowCasterPass(_device);
-
-        if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
+        // Everything from here to the free camera is what makes the level a PICTURE, and a promoted
+        // backdrop is already that picture -- AdoptPreview built the terrain (with its ground detail
+        // derived on the worker, which is most of the cost), the sky, the shadow pass, the clear colour,
+        // the grade and the camera, and the menu has been drawing them for as long as the player has been
+        // reading the briefing. Rebuilding them here would throw away the one thing this whole path
+        // exists to reuse, and would do it on the render thread.
+        if (!promoted)
         {
-            _sun = readSun;
-            _logger.Information(
-                "Light",
-                FormattableString.Invariant(
-                    $"Sun at {MathF.Asin(Math.Clamp(readSun.Direction.Z, -1f, 1f)) * 180f / MathF.PI:F1} degrees ")
-                + FormattableString.Invariant(
-                    $"elevation, time {readSun.TimeOfDay:F0}, colour ({readSun.Colour.X:F2}, {readSun.Colour.Y:F2}, {readSun.Colour.Z:F2}), ")
-                + FormattableString.Invariant(
-                    $"ambient ({readSun.Ambient.X:F2}, {readSun.Ambient.Y:F2}, {readSun.Ambient.Z:F2})."));
+            // A level whose terrain files are not live data — level 14 is exactly that — draws its objects
+            // over nothing rather than following offsets into whatever the geometry blob happens to hold.
+            // The surface comes from the level's own TextureModifier tasks, so it needs the loaded tree.
+            _terrain?.Dispose();
+            _terrain = loaded.Terrain is { IsUsable: true } usable
+                ? new TerrainRenderer(_device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps)
+                : null;
 
-            if (readSun.IsBelowHorizon)
+            // The sky is script data on the level's task tree; its fog colour is also what the frame
+            // clears to, so the horizon meets sky-coloured backing rather than black.
+            _sky?.Dispose();
+            _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
+            _shadowPass = new ShadowCasterPass(_device);
+
+            if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
-                _logger.Warning("Light", "This level's authored sun is below the horizon; see rendering.md section 12.");
+                _sun = readSun;
+                _logger.Information(
+                    "Light",
+                    FormattableString.Invariant(
+                        $"Sun at {MathF.Asin(Math.Clamp(readSun.Direction.Z, -1f, 1f)) * 180f / MathF.PI:F1} degrees ")
+                    + FormattableString.Invariant(
+                        $"elevation, time {readSun.TimeOfDay:F0}, colour ({readSun.Colour.X:F2}, {readSun.Colour.Y:F2}, {readSun.Colour.Z:F2}), ")
+                    + FormattableString.Invariant(
+                        $"ambient ({readSun.Ambient.X:F2}, {readSun.Ambient.Y:F2}, {readSun.Ambient.Z:F2})."));
+
+                if (readSun.IsBelowHorizon)
+                {
+                    _logger.Warning("Light", "This level's authored sun is below the horizon; see rendering.md section 12.");
+                }
             }
-        }
-        else
-        {
-            _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
-        }
+            else
+            {
+                _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
+            }
 
-        if (_sky.HasSky)
-        {
-            _scheduler.ClearColour = new Bgra32(
-                (byte)Math.Clamp((int)(_sky.FogColour.Z * 255f), 0, 255),
-                (byte)Math.Clamp((int)(_sky.FogColour.Y * 255f), 0, 255),
-                (byte)Math.Clamp((int)(_sky.FogColour.X * 255f), 0, 255),
-                255);
-        }
+            if (_sky.HasSky)
+            {
+                _scheduler.ClearColour = new Bgra32(
+                    (byte)Math.Clamp((int)(_sky.FogColour.Z * 255f), 0, 255),
+                    (byte)Math.Clamp((int)(_sky.FogColour.Y * 255f), 0, 255),
+                    (byte)Math.Clamp((int)(_sky.FogColour.X * 255f), 0, 255),
+                    255);
+            }
 
-        // Open on the middle of what was placed, backed off and looking down slightly, so the first
-        // frame shows the level rather than the inside of whichever object happens to be at the origin.
-        // -campos overrides that with an exact spot, which is how a bug at a known position is looked at.
-        _camera = _options.CameraPosition is { } at
-            ? new FreeCamera(new Vector3d(at.X, at.Y, at.Z), _options.CameraYaw, _options.CameraPitch)
-            : FreeCameraFactory.Create(_scene, _options.CameraYaw, _options.CameraPitch, _options.CameraHeight);
+            // The mission's own grade. It used to be applied with `_options.StartMission` from inside the
+            // nav-graph block, which was wrong twice over: -mission happens to set that option so the grade
+            // looked right under the flag that was being tested with, but a mission started from the shell
+            // leaves it 0 and got mission 0's grade, and a level shipping no nav graph got no grade at all.
+            // The backdrop always applied the right one (AdoptPreview passes the preview's id), so the two
+            // disagreed and the picture changed colour the instant Play was pressed.
+            ApplyColourLookup(id);
+
+            // Open on the middle of what was placed, backed off and looking down slightly, so the first
+            // frame shows the level rather than the inside of whichever object happens to be at the origin.
+            // -campos overrides that with an exact spot, which is how a bug at a known position is looked at.
+            _camera = _options.CameraPosition is { } at
+                ? new FreeCamera(new Vector3d(at.X, at.Y, at.Z), _options.CameraYaw, _options.CameraPitch)
+                : FreeCameraFactory.Create(scene, _options.CameraYaw, _options.CameraPitch, _options.CameraHeight);
+        }
 
         // The player stands where the camera looks from, dropped onto whatever is under it. A level
         // whose terrain is not live data has nothing to stand on, so the player stays unavailable and
@@ -402,32 +534,24 @@ internal sealed partial class DesktopGame
         _damageFlash = new();
         _deathCamera.Reset();
 
+        EndStage("the terrain, sky, sun, grade and camera");
+
         if (_playerTerrain is not null)
         {
             PlayerCamera candidate = new();
 
             // 000.iff, kept so the player's third-person body can be built from the same set it walks on
-            // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set).
-            Formats.Animation.BoneAnimationSet? playerBodySet = null;
-
-            // Walking is the animation's own root motion, so without a set the player can stand and
-            // fall but not walk. 000.iff is the set the player's skeleton indexes.
-            try
+            // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
+            // animation's own root motion, so without it the player can stand and fall but not walk.
+            //
+            // Read once for the session rather than per mission: it lives under common/, so it is the
+            // same 1.5 MB of IFF for all fourteen, and parsing it again on the render thread every time
+            // a mission started was most of that step's cost.
+            ReadSharedAnimations();
+            Formats.Animation.BoneAnimationSet? playerBodySet = _playerBodyAnimations;
+            if (playerBodySet is not null)
             {
-                string animations = Path.Combine(_gamePath, "common", "anims", "000.iff");
-                if (File.Exists(animations))
-                {
-                    playerBodySet = Formats.Animation.BoneAnimationSet.Read(File.ReadAllBytes(animations));
-                    candidate.UseAnimations(playerBodySet);
-                }
-                else
-                {
-                    _logger.Warning("Player", $"No animation set at {animations}; the player cannot walk.");
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException)
-            {
-                _logger.Warning("Player", $"Could not read the player's animations: {ex.Message}");
+                candidate.UseAnimations(playerBodySet);
             }
 
             // The walls. Terrain alone gives the player ground to stand on but nothing to stop it
@@ -444,6 +568,12 @@ internal sealed partial class DesktopGame
             {
                 candidate.UseLadders(_scene.Ladders);
                 _logger.Information("Player", $"{_scene.Ladders.Count} ladder(s) to climb.");
+            }
+            if (_interactions is { } interactions)
+            {
+                candidate.UseInteractions(interactions);
+                candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
+                _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
             }
 
             // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
@@ -483,9 +613,12 @@ internal sealed partial class DesktopGame
                 _logger.Warning("Weapon", $"Could not read the weapon or ammunition tables: {ex.Message}");
             }
 
+            EndStage("the player's animation sets, walls, ladders and the weapon tables");
+
             // The guards' weapons, which have to wait for the roster: a soldier's gun is an authored
             // Gun child task naming a WEAPON_ID_*, and only the table knows which model that draws.
             _soldiers?.Arm(loaded, weaponRoster);
+            EndStage("the guards' weapon models");
 
             // The player's tuning is not in the executable: humanplayer.qvm is the whole of it, and it
             // is what says how high a jump goes and how far a step travels.
@@ -534,36 +667,27 @@ internal sealed partial class DesktopGame
                 _logger.Warning("Player", $"Could not run humanplayer.qvm: {ex.Message}");
             }
 
+            EndStage("humanplayer.qvm");
+
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
             // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
             // without it there is nothing to draw a gun on.
-            try
+            if (_viewRigAnimations is { } viewRigSet)
             {
-                string viewRig = Path.Combine(_gamePath, "common", "anims", "005.iff");
-                if (File.Exists(viewRig))
-                {
-                    candidate.UseViewRig(
-                        Formats.Animation.BoneAnimationSet.Read(File.ReadAllBytes(viewRig)));
+                candidate.UseViewRig(viewRigSet);
 
-                    // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
-                    // skinning: 005_01_1 is mesh format 1.
-                    _arms?.Dispose();
-                    _arms = new ViewModelRenderer(_device, _resources, _logger);
-                    if (!_arms.Load(loaded))
-                    {
-                        _arms.Dispose();
-                        _arms = null;
-                    }
-                }
-                else
+                // The arms are the other half of what 0x4644A0 draws, and the half that needs CPU
+                // skinning: 005_01_1 is mesh format 1.
+                _arms?.Dispose();
+                _arms = new ViewModelRenderer(_device, _resources, _logger);
+                if (!_arms.Load(loaded))
                 {
-                    _logger.Warning("Player", $"No view rig at {viewRig}; no weapon can be held.");
+                    _arms.Dispose();
+                    _arms = null;
                 }
             }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException)
-            {
-                _logger.Warning("Player", $"Could not read the first-person rig: {ex.Message}");
-            }
+
+            EndStage("the first-person rig and the arms");
 
             // What the mission arms you with is declared, not computed: weapon tasks hang off the
             // level's own HumanPlayer, and every WEAPON_ID_* resolves to a roster entry naming a
@@ -583,6 +707,7 @@ internal sealed partial class DesktopGame
                 if (_soldiers is { } guards)
                 {
                     candidate.Humans = guards.Shooter();
+                    candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
                 }
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
@@ -598,11 +723,16 @@ internal sealed partial class DesktopGame
                 }
             }
 
+            EndStage("the loadout, the bullet marks and the HUD");
+
             // The level places its own player: every mission's objects.qvm declares a HumanPlayer task
             // with a Position and a Gamma. Standing there is standing where the game starts you.
+            // Without a declared spawn the player is stood where the opening camera looks from, so that
+            // fallback needs a camera to read; a level with neither is simply not placed, which the
+            // warning below already covers.
             bool placed = PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn)
                 ? candidate.PlaceAt(_playerTerrain, spawn)
-                : candidate.Place(_playerTerrain, _camera.Position, _options.CameraYaw);
+                : _camera is { } opening && candidate.Place(_playerTerrain, opening.Position, _options.CameraYaw);
 
             if (placed)
             {
@@ -618,6 +748,8 @@ internal sealed partial class DesktopGame
                 {
                     bodies.LoadPlayerBody(loaded, spawn.Model, bodySet, spawn.Position, spawn.Gamma);
                 }
+
+                EndStage("standing the player up and building its third-person body");
 
                 // Walking is what starting a mission means. The free camera is the debugging tool, so
                 // it is the thing you switch to rather than the thing you start in.
@@ -640,10 +772,143 @@ internal sealed partial class DesktopGame
         // the world.
         _renderer = null;
 
-        // The menu's backdrop, and with it the private resource context a preview was built in, is not
-        // needed once a real mission is up; letting it go releases that level's packs.
+        // The menu's backdrop is not needed once a real mission is up. On a cold start that releases the
+        // previewed level's packs outright. On a promotion it releases nothing: the preview IS this
+        // mission now, and its registry and file system are reachable through `_resources` and through
+        // the renderers that were built against them — dropping this reference only says the level has
+        // stopped being scenery.
         _backdrop = null;
-        _logger.Information("Mission", $"Loaded {loaded}.");
+        _arming = null;
+        _logger.Information("Mission", $"{(promoted ? "Promoted" : "Loaded")} {loaded}.");
+    }
+
+    /// <summary>Turns the menu's backdrop into the mission being played, without loading anything.</summary>
+    /// <param name="preview">The backdrop, which must be the mission the player asked for.</param>
+    /// <returns><see langword="true"/> when the mission is up and the player is standing in it.</returns>
+    /// <remarks>
+    /// <para>
+    /// The level under the menu is not a picture of the mission — it <em>is</em> the mission, built by
+    /// <see cref="MissionPreviewLoader"/> on a worker thread while the player was reading the briefing.
+    /// The only reason it was not playable is that it was built into its own private
+    /// <see cref="GameLoop"/>, which is exactly what made building it off the render thread safe: its
+    /// task tree, its script namespace and its variables are unreachable from the running game, so
+    /// nothing in it could ever be ticked. Promotion is the game changing which loop it advances.
+    /// </para>
+    /// <para>
+    /// What that buys is the whole of the load: the packs are parsed, the scene walked, the collision
+    /// index built, the terrain surface built and — the single largest cost — every ground tile's detail
+    /// map derived, all of it already done and none of it on this thread. What is left is the part that
+    /// genuinely cannot leave the render thread, which is the GL uploads, and those are the subject of
+    /// the arming that runs while the menu is idle.
+    /// </para>
+    /// <para>
+    /// The outgoing loop and its resource registry are dropped here. That is not housekeeping: a
+    /// resource registry holds a level's worth of packs, and <see cref="AdoptPreview"/>
+    /// already carries the scar of a leak in the same shape — a world renderer dropped without being
+    /// disposed leaked a level's textures per row of the mission list.
+    /// </para>
+    /// </remarks>
+    private bool PromoteBackdrop(MissionPreview preview)
+    {
+        ArgumentNullException.ThrowIfNull(preview);
+
+        if (!_missions.TryGet(preview.MissionId, out MissionDescriptor? chosen))
+        {
+            _logger.Warning("Mission", $"Asked to promote mission {preview.MissionId}, which is not registered.");
+            return false;
+        }
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        // The schedule moves across before the incoming loop runs a single frame. A fresh GameLoop builds
+        // its own GameClock starting at tick zero, and -lockstep derives its synthetic milliseconds FROM
+        // the frame count, so letting the counters restart would make wall-clock time jump backwards.
+        GameLoop outgoing = _loop;
+        preview.Loop.Clock.AdoptScheduleFrom(outgoing.Clock);
+
+        _loop = preview.Loop;
+        _resources = preview.Resources;
+        _activeLevelRoot = preview.LevelRoot;
+        _activeMission = chosen;
+        _missionResultHandled = false;
+        _computerOpen = false;
+        _computerFlight.Reset();
+
+        // The outgoing loop's level tasks, if it had any. Coming from the front end it has none — the
+        // shell is drawn over a backdrop, not over a played mission — but a promotion reached from
+        // anywhere else must not leave the previous level's tree alive in a loop nobody advances.
+        if (outgoing.Tasks.Root is { } outgoingRoot)
+        {
+            foreach (GameTask child in outgoingRoot.Children.ToArray())
+            {
+                if (child is LevelTask level && !level.IsDeleted)
+                {
+                    outgoing.Tasks.Delete(level);
+                }
+            }
+        }
+
+        BringMissionUp(preview.Mission, preview.LevelRoot, preview.MissionId, promoted: true);
+
+        _logger.Information(
+            "Mission",
+            $"Promoted the backdrop for mission {preview.MissionId} in {clock.Elapsed.TotalMilliseconds:F1} ms "
+                + "on the render thread.");
+        return true;
+    }
+
+    private void ReleasePlayedMission()
+    {
+        _computerOpen = false;
+        _computerFlight.Reset();
+        _missionFailureTicks = 0;
+        _missionFailedMenu = false;
+        _missionResultHandled = false;
+        _mapComputer?.Dispose();
+        _mapComputer = null;
+        _mapComputerDevice?.Dispose();
+        _mapComputerDevice = null;
+        _tacticalComputer?.Dispose();
+        _tacticalComputer = null;
+        _messages?.Dispose();
+        _messages = null;
+        _computerHighlights = null;
+        _missionObjectives = null;
+        _activeMission = null;
+
+        _sky?.Dispose();
+        _terrain?.Dispose();
+        _world?.Dispose();
+        _soldiers?.Dispose();
+        _backdropSoldiers?.Dispose();
+        _heldWeapon?.Dispose();
+        _hud?.Dispose();
+        _marks?.Dispose();
+        _arms?.Dispose();
+        _sky = null;
+        _terrain = null;
+        _world = null;
+        _soldiers = null;
+        _backdropSoldiers = null;
+        _heldWeapon = null;
+        _hud = null;
+        _marks = null;
+        _arms = null;
+        _player = null;
+        _playerMode = false;
+        _scene = null;
+        _playerTerrain = null;
+        _worldSolids = null;
+        _worldMaterials = null;
+        _doors = null;
+        _interactions = null;
+        _loadedMissionForWeapon = null;
+
+        if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)
+        {
+            _loop.Tasks.Delete(_activeLevelRoot);
+        }
+        _activeLevelRoot = null;
     }
 
     // Puts a weapon in the player's hands and loads the model its roster entry names.
@@ -690,7 +955,7 @@ internal sealed partial class DesktopGame
             }
         }
 
-        return new HeldWeaponRenderer(_device, _resources, _logger);
+        return new HeldWeaponRenderer(_device, _resources, _magic, _logger) { Materials = _materials };
     }
 
     // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
