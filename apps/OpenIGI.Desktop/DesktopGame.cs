@@ -349,6 +349,12 @@ internal sealed partial class DesktopGame : IDisposable
         GameMissionState missionState = new();
         missionState.Register(_loop.Natives);
 
+        // Game_EnableMusic / Game_DisableMusic / Game_SetMusicVolume. Without these the options menu's
+        // music slider -- whose script is literally Game_SetMusicVolume(this.vValue) -- moves and does
+        // nothing.
+        GameMusicNatives musicNatives = new(_music!);
+        musicNatives.Register(_loop.Natives);
+
         // What a menu backdrop needs to be promotable into the played mission rather than thrown away.
         // Built here because every part of it is finished being written by this point and none of it is
         // mutated afterwards, which is what makes it safe to hand to a worker.
@@ -562,7 +568,11 @@ internal sealed partial class DesktopGame : IDisposable
             // Game_SetMission belongs to the game, not the menu system, and a menu expression is evaluated
             // by the menu's own evaluator rather than by the script VM — so registering it with the VM is
             // not enough to make the Select Mission screen's OK button work.
-            menu.Manager.ExternalNatives = missionState.TryInvokeFromMenu;
+            // Both of these are game natives rather than menu-system ones, and a menu expression is
+            // evaluated by the menu's own evaluator rather than by the script VM -- so registering them
+            // with the VM is not enough to make the Select Mission button or the music slider work.
+            menu.Manager.ExternalNatives = (name, arguments) =>
+                missionState.TryInvokeFromMenu(name, arguments) ?? musicNatives.TryInvokeFromMenu(name, arguments);
             menu.Manager.Initialize(menu, menuHost, _logger);
         };
 
@@ -1468,10 +1478,10 @@ internal sealed partial class DesktopGame : IDisposable
             FrameOutcome outcome = _loop.RunFrame();
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
 
-            // Retire finished voices and refill streaming buffers. This sits ABOVE the pause check on
-            // purpose: a paused game still has to feed the music, and a stream that goes unfed for a few
-            // frames does not pause, it runs dry and stops.
-            _audio.Update();
+            // Retire finished voices, refill streaming buffers and advance any crossfade. This sits
+            // ABOVE the pause check on purpose: a paused game still has to feed the music, and a stream
+            // that goes unfed for a few frames does not pause, it runs dry and stops.
+            AdvanceAudio();
 
             // The retail in-game menu pauses the game task. Once LevelFlow failure has opened that menu --
             // or the player has opened the pause menu -- do not advance the desktop-owned player/AI

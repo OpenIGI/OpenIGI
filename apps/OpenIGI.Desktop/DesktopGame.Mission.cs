@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
+using OpenIGI.Engine.Audio;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -69,6 +70,11 @@ internal sealed partial class DesktopGame
     private void BringMissionUp(LoadedMission loaded, LevelTask levelRoot, int id, bool promoted)
     {
         BeginStage();
+
+        // The mission's own score. Every level ships one as sounds/game_music.wav, so this is the
+        // level's data rather than a track substituted for CD audio -- see MusicPlayer.
+        _music?.Play(MusicPlayer.GameMusic);
+
         MenuStringTable missionStrings = new(_resources);
 
         // Mission text is addressed by its own key, not by the menu table's LOCAL:<language>/<key> —
@@ -915,6 +921,11 @@ internal sealed partial class DesktopGame
             _loop.Tasks.Delete(_activeLevelRoot);
         }
         _activeLevelRoot = null;
+
+        // Back to the front end, so back to the menu theme. Every voice the level started goes with it:
+        // an ambience bed outliving its level would follow the player into the menus.
+        _sounds?.StopAll();
+        _music?.Play(MusicPlayer.MenuMusic);
     }
 
     // Puts a weapon in the player's hands and loads the model its roster entry names.

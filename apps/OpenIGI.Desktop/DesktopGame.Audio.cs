@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
@@ -17,6 +18,12 @@ internal sealed partial class DesktopGame
 
     /// <summary>Plays sounds by name. Null until the device is open.</summary>
     private SoundSystem? _sounds;
+
+    /// <summary>The score. Null until the device is open.</summary>
+    private MusicPlayer? _music;
+
+    /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
+    private long _audioTimestamp;
 
     /// <summary>Opens the audio backend and binds the volume variables to it.</summary>
     /// <remarks>
@@ -43,7 +50,22 @@ internal sealed partial class DesktopGame
         _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
         MountMenuSounds();
 
+        // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
+        // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
+        _music = new MusicPlayer(_sounds, _logger)
+        {
+            FadeSeconds = AudioCVars.Spatial.Value ? 1.5f : 0f,
+            Volume = 1f,
+        };
+
         ApplyCategoryGains();
+
+        // Only when the front end is where we are going. Launching straight into a mission would
+        // otherwise start the menu theme and replace it a second later.
+        if (_options.StartMission <= 0)
+        {
+            _music.Play(MusicPlayer.MenuMusic);
+        }
 
         foreach (ICVar variable in (ICVar[])
                  [
@@ -56,6 +78,24 @@ internal sealed partial class DesktopGame
         {
             variable.Changed += (_, _) => ApplyCategoryGains();
         }
+    }
+
+    /// <summary>Advances the device and the score, once a frame.</summary>
+    /// <remarks>
+    /// The fade is driven from the wall clock rather than from ticks. A fade is presentation, and tying
+    /// it to the simulation would make it lurch whenever the loop catches up on a backlog of ticks.
+    /// </remarks>
+    private void AdvanceAudio()
+    {
+        _audio.Update();
+
+        long now = Stopwatch.GetTimestamp();
+        float delta = _audioTimestamp == 0
+            ? 0f
+            : (float)Stopwatch.GetElapsedTime(_audioTimestamp, now).TotalSeconds;
+
+        _audioTimestamp = now;
+        _music?.Update(delta);
     }
 
     /// <summary>Pushes the volume variables onto the device's buses.</summary>
