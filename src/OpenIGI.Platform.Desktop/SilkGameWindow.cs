@@ -90,7 +90,15 @@ public sealed class SilkGameWindow : IGameWindow
                 ? new VideoMode(display.Size, display.RefreshRate)
                 : WindowOptions.Default.VideoMode,
             VSync = settings.VSync,
-            IsVisible = false,
+
+            // Created hidden so nothing sees a half-initialised window -- except in exclusive
+            // fullscreen, which cannot be created hidden at all. The platform grants the fullscreen
+            // state against a monitor and will not grant one to an invisible window, so a hidden
+            // exclusive window comes up decorated and is never corrected. That matters beyond how it
+            // looks: the caller reads Width and Height straight after construction to size the
+            // graphics device, so a window still pretending to be 2560x1421 when the framebuffer is
+            // really 2560x1440 leaves a strip along one edge that nothing ever renders into.
+            IsVisible = settings.Mode == WindowMode.ExclusiveFullscreen,
             ShouldSwapAutomatically = false,
         };
 
@@ -154,6 +162,15 @@ public sealed class SilkGameWindow : IGameWindow
 
         _input = _window.CreateInput();
         _cursorVisible = settings.CursorVisible;
+
+        // Asked for again now the window exists and is on screen. Creating it with the state set is not
+        // enough on its own: the backend reports it back as Normal with a border and a title bar, and
+        // the size that comes with that is the one the device would be built against.
+        if (_mode == WindowMode.ExclusiveFullscreen)
+        {
+            ApplyMode();
+            _window.DoEvents();
+        }
 
         HookEvents();
         ApplyCursorMode();
@@ -273,6 +290,20 @@ public sealed class SilkGameWindow : IGameWindow
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _window.IsVisible = true;
+
+        // Exclusive fullscreen has to be asked for again now that the window is on screen.
+        //
+        // The window is created hidden, and the other two modes survive that because they are not
+        // states: borderless is a size, a position and a dropped border, and windowed is a size --
+        // all of which a hidden window holds perfectly well and carries into being shown. Fullscreen
+        // is a state the platform grants against a monitor, and it will not grant one to a window
+        // that is not visible. Asked for at creation it was quietly dropped, and because nothing
+        // re-asserted it afterwards -- ApplyMode runs only from the Mode setter, which early-returns
+        // when the mode has not changed -- -fullscreen came up as an ordinary window every time.
+        if (_mode == WindowMode.ExclusiveFullscreen)
+        {
+            ApplyMode();
+        }
     }
 
     /// <inheritdoc/>
