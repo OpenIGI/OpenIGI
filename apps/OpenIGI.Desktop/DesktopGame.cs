@@ -1537,6 +1537,10 @@ internal sealed partial class DesktopGame : IDisposable
                         PlayFootstep(step);
                     }
 
+                    // The level's ambience, which is keyed off where the ear is rather than where the
+                    // body stands: an area is a box you listen from the inside of.
+                    TickAmbience(_player.EyeUnits);
+
                     // The eye's tick pair, for drawing frames between ticks from a position that glides
                     // instead of stepping. Captured AFTER the body moved, so the pair is this tick's and
                     // the one before's.

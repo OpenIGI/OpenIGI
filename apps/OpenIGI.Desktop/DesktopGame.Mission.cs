@@ -188,6 +188,14 @@ internal sealed partial class DesktopGame
         _soldiers.SetDeathSound(position => PlayDeathSound(
             HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
 
+        // The level's authored ambience -- the AmbientArea boxes that bed a sound in around the player.
+        _ambience = AmbientAreaRegistry.Build(levelRoot, _soundRandom);
+        _ambientVoices.Clear();
+        if (_ambience.Areas.Count > 0)
+        {
+            _logger.Information("Audio", $"{_ambience.Areas.Count} ambient area(s).");
+        }
+
         // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
         _soldiers.SetFootstepSound(step => PlayFootstep(step));
 

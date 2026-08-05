@@ -38,6 +38,12 @@ internal sealed partial class DesktopGame
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
 
+    /// <summary>The level's authored ambience boxes. Null until a mission is up.</summary>
+    private AmbientAreaRegistry? _ambience;
+
+    /// <summary>The bed each sounding ambient area is playing.</summary>
+    private readonly Dictionary<PlacedAmbientArea, AudioVoiceHandle> _ambientVoices = [];
+
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
 
@@ -258,6 +264,64 @@ internal sealed partial class DesktopGame
 
         // Above an ordinary effect but below the score: a firefight must not drop the death that ends it.
         _sounds.PlayDefinition(name, positionInUnits, priority: 300);
+    }
+
+    /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
+    /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
+    /// <remarks>
+    /// The beds are played <b>flat</b>, not positionally, because that is what the original does with
+    /// them: it sets the sound's position to the listener's every tick, which is a wash around the
+    /// player rather than a source in the world. Gain is the area's fade, so walking into a machine
+    /// room brings its hum up over twenty ticks instead of switching it on at the doorway.
+    /// </remarks>
+    private void TickAmbience(Vector3d listenerInUnits)
+    {
+        if (_ambience is not { } ambience || _sounds is null)
+        {
+            return;
+        }
+
+        ambience.Tick(listenerInUnits);
+
+        foreach (PlacedAmbientArea area in ambience.Areas)
+        {
+            if (area.WantsStop)
+            {
+                if (_ambientVoices.Remove(area, out AudioVoiceHandle running))
+                {
+                    _sounds.Stop(running);
+                }
+
+                area.IsSounding = false;
+                continue;
+            }
+
+            if (area.PendingSound.Length > 0)
+            {
+                AudioVoiceHandle started = _sounds.PlayDefinition(
+                    area.PendingSound, gain: (float)area.Fade, priority: 60);
+
+                if (started != AudioVoiceHandle.None)
+                {
+                    _ambientVoices[area] = started;
+                    area.IsSounding = true;
+                }
+            }
+            else if (area.IsSounding && _ambientVoices.TryGetValue(area, out AudioVoiceHandle voice))
+            {
+                if (_sounds.IsPlaying(voice))
+                {
+                    _sounds.SetVoiceParameters(voice, VoiceParameters.Default with { Gain = (float)area.Fade });
+                }
+                else
+                {
+                    // A one-shot bed that has run out. Letting go of it here is what allows the gap to
+                    // rearm and the area to speak again.
+                    _ambientVoices.Remove(area);
+                    area.IsSounding = false;
+                }
+            }
+        }
     }
 
     /// <summary>Plays a footstep where it landed.</summary>
