@@ -1525,7 +1525,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // And the sound of it. Driven every tick rather than only on the ones that fire,
                     // because an automatic's loop has to be told when the trigger was RELEASED as much
                     // as when it was pulled -- see WeaponSoundPlayer.
-                    _weaponSounds?.Tick(_player.FiredThisTick, _player.HeldWeaponType, _player.Body.Eye);
+                    _weaponSounds?.Tick(_player.FiredThisTick, _player.HeldWeaponType);
 
                     // The eye's tick pair, for drawing frames between ticks from a position that glides
                     // instead of stepping. Captured AFTER the body moved, so the pair is this tick's and

@@ -1,5 +1,4 @@
 using OpenIGI.Audio;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.Weapons;
 
@@ -49,14 +48,13 @@ internal sealed class WeaponSoundPlayer
     /// <summary>Advances one tick of a weapon's fire sound.</summary>
     /// <param name="firedThisTick">Whether a round left the barrel this tick.</param>
     /// <param name="weapon">The weapon in hand, or <see langword="null"/> when there is none.</param>
-    /// <param name="positionInUnits">Where the shot came from, in engine units.</param>
-    public void Tick(bool firedThisTick, WeaponType? weapon, Vector3d positionInUnits)
+    public void Tick(bool firedThisTick, WeaponType? weapon)
     {
         // A weapon change mid-burst has to take its loop with it, or an AK's loop keeps running under a
         // drawn knife.
         if (_looping is not null && !ReferenceEquals(_looping, weapon))
         {
-            EndLoop(positionInUnits);
+            EndLoop();
         }
 
         if (weapon is null)
@@ -68,7 +66,7 @@ internal sealed class WeaponSoundPlayer
         {
             if (firedThisTick)
             {
-                Play(weapon.FireSound, positionInUnits);
+                Play(weapon.FireSound);
             }
 
             return;
@@ -79,14 +77,14 @@ internal sealed class WeaponSoundPlayer
             _quietTicks = 0;
             if (_looping is null)
             {
-                _loop = Play(weapon.FireSound, positionInUnits, looping: true);
+                _loop = Play(weapon.FireSound, looping: true);
                 _looping = weapon;
             }
             else
             {
-                // Follow the shooter: the player's own gun is at the player's own ear, but the same code
-                // serves a soldier's, and a firing soldier walks.
-                _sounds.SetVoiceParameters(_loop, Parameters(positionInUnits, looping: true));
+                // Nothing to re-aim -- the gun is in the listener's own hands. A soldier's weapon will
+                // want a positional voice that follows the shooter, and that is a different caller.
+                _sounds.SetVoiceParameters(_loop, Parameters(looping: true));
             }
 
             return;
@@ -94,7 +92,7 @@ internal sealed class WeaponSoundPlayer
 
         if (_looping is not null && ++_quietTicks >= TicksBeforeLoopEnds)
         {
-            EndLoop(positionInUnits);
+            EndLoop();
         }
     }
 
@@ -112,7 +110,7 @@ internal sealed class WeaponSoundPlayer
         _quietTicks = 0;
     }
 
-    private void EndLoop(Vector3d positionInUnits)
+    private void EndLoop()
     {
         WeaponType? weapon = _looping;
         if (_loop.IsValidHandle)
@@ -126,23 +124,40 @@ internal sealed class WeaponSoundPlayer
 
         if (weapon is not null)
         {
-            Play(weapon.FireLoopEndSound, positionInUnits);
+            Play(weapon.FireLoopEndSound);
         }
     }
 
-    private AudioVoiceHandle Play(string name, Vector3d positionInUnits, bool looping = false) =>
+    private AudioVoiceHandle Play(string name, bool looping = false) =>
         string.IsNullOrEmpty(name)
             ? AudioVoiceHandle.None
-            : _sounds.Play(name, Parameters(positionInUnits, looping));
+            : _sounds.Play(name, Parameters(looping));
 
-    private static VoiceParameters Parameters(Vector3d positionInUnits, bool looping) =>
-        (VoiceParameters.Default with
+    /// <summary>The voice a shot is played on.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The player's own weapon is NOT positional, and making it so was wrong.</b> The gun is held in
+    /// the player's own hands: its position relative to the head does not change, however much the
+    /// camera turns. Placing it in the world and letting the listener rotate around it made the shot
+    /// slide across the stereo image as the mouse moved, which is exactly the thing that cannot happen
+    /// in reality — the camera moved, the gun did not.
+    /// </para>
+    /// <para>
+    /// It is also what the original does, though by accident rather than intent: it plays the shot at
+    /// the player's own position, and its pan is the lateral offset from the listener, which for a
+    /// source sitting on the listener is zero. A flat centred voice reaches the same place directly.
+    /// </para>
+    /// </remarks>
+    private static VoiceParameters Parameters(bool looping) =>
+        VoiceParameters.Default with
         {
             Category = SoundCategory.Effects,
             Looping = looping,
+            IsPositional = false,
+            Pan = 0f,
 
             // Well above ambience and footsteps. The player's own weapon going silent because a busy
             // level filled the pool is the single most noticeable way a mix can fail.
             Priority = 200,
-        }).At(SoundSystem.ToMetres(positionInUnits), 4f, 120f);
+        };
 }

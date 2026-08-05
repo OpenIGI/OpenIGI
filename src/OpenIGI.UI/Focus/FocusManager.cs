@@ -51,9 +51,18 @@ public sealed class FocusManager
             return;
         }
 
+        bool moved = Focused is not null && target is not null;
+
         Focused?.SetFocused(false);
         Focused = target;
         Focused?.SetFocused(true);
+
+        // Only when focus MOVES between two widgets. Taking focus for the first time, or dropping it on
+        // the way out of a screen, is not the player moving a selection and should not click.
+        if (moved)
+        {
+            UiSounds.Moved();
+        }
     }
 
     /// <summary>Focuses the first focusable widget in tree order, if focus is not already set.</summary>

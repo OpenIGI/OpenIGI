@@ -128,6 +128,7 @@ public abstract class Control : UiElement, IFocusable
     {
         if (IsEnabled)
         {
+            UiSounds.Chosen();
             OnActivate();
             Activated?.Invoke(this);
         }
@@ -143,6 +144,7 @@ public abstract class Control : UiElement, IFocusable
     {
         if (IsEnabled)
         {
+            UiSounds.Chosen();
             Activated?.Invoke(this);
         }
     }

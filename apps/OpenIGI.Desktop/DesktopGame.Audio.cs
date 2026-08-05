@@ -8,6 +8,7 @@ using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Rendering;
+using OpenIGI.UI;
 
 namespace OpenIGI.Desktop;
 
@@ -60,6 +61,13 @@ internal sealed partial class DesktopGame
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
         // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
         _weaponSounds = new WeaponSoundPlayer(_sounds);
+
+        // The cinematic shell's own feedback. The retail menu system reaches the same two sounds
+        // through IMenuHost.PlaySound; the shell's widgets have no host, so they go through a sink.
+        SoundSystem shellSounds = _sounds;
+        UiSounds.Play = name => shellSounds.Play(
+            name,
+            VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
         _music = new MusicPlayer(_sounds, _logger)
         {
             FadeSeconds = AudioCVars.Spatial.Value ? 1.5f : 0f,
