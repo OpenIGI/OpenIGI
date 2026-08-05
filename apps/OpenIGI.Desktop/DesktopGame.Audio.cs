@@ -4,6 +4,8 @@ using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
+using OpenIGI.Desktop.Audio;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
 
@@ -21,6 +23,9 @@ internal sealed partial class DesktopGame
 
     /// <summary>The score. Null until the device is open.</summary>
     private MusicPlayer? _music;
+
+    /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
+    private WeaponSoundPlayer? _weaponSounds;
 
     /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
     private long _audioTimestamp;
@@ -52,6 +57,7 @@ internal sealed partial class DesktopGame
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
         // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
+        _weaponSounds = new WeaponSoundPlayer(_sounds);
         _music = new MusicPlayer(_sounds, _logger)
         {
             FadeSeconds = AudioCVars.Spatial.Value ? 1.5f : 0f,
@@ -87,6 +93,7 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private void AdvanceAudio()
     {
+        UpdateListener();
         _audio.Update();
 
         long now = Stopwatch.GetTimestamp();
@@ -96,6 +103,39 @@ internal sealed partial class DesktopGame
 
         _audioTimestamp = now;
         _music?.Update(delta);
+    }
+
+    /// <summary>Puts the listener where the player's eye is.</summary>
+    /// <remarks>
+    /// <para>
+    /// Every frame rather than every tick, and from the same blended pose the view model uses, so a
+    /// source does not step across the stereo image at 30 Hz under a camera that glides. The camera
+    /// already reports metres — it divides the body's engine units by 4096 — which is the unit the
+    /// device works in, so nothing is converted here.
+    /// </para>
+    /// <para>
+    /// Without this, every positional sound in the game would be placed relative to a listener sitting
+    /// at the world origin: distance attenuation would key off the corner of the map and the stereo
+    /// image would never move.
+    /// </para>
+    /// </remarks>
+    private void UpdateListener()
+    {
+        if (_player is not { } player)
+        {
+            return;
+        }
+
+        // The same blend the presentation uses, so the ear and the eye agree about where the head is.
+        float alpha = RenderCVars.SmoothPresentation.Value
+            ? _loop.Clock.TickFraction(_loop.TimeSource.Milliseconds)
+            : 1f;
+
+        _audio.Listener = new AudioListenerState
+        {
+            Position = player.Position,
+            Orientation = player.SmoothedLookRotation(alpha),
+        };
     }
 
     /// <summary>Pushes the volume variables onto the device's buses.</summary>
@@ -122,6 +162,7 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private void ResetSoundsForMission()
     {
+        _weaponSounds?.Reset();
         _sounds?.UnloadBuffers();
         _soundBank?.Clear();
         MountMenuSounds();
