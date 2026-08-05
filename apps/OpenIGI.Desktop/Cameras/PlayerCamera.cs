@@ -444,10 +444,21 @@ public sealed class PlayerCamera
             return null;
         }
 
+        // The probe answers only for OBJECTS. A step that finds nothing solid landed on open terrain,
+        // which the original resolves by asking the terrain's own task -- something this port has no
+        // equivalent of, so it takes the Ground row by name instead.
         (Vector3d from, Vector3d to) = FootstepSounds.Probe(_body.Position);
-        if (_body.Walls is not { } walls
-            || !walls(from, to, out WorldRayHit hit)
-            || !_materials.TryGet(hit.Material, out GameMaterial material))
+        Vector3d where = _body.Position;
+        GameMaterial material;
+
+        if (_body.Walls is { } walls
+            && walls(from, to, out WorldRayHit hit)
+            && _materials.TryGet(hit.Material, out GameMaterial struck))
+        {
+            material = struck;
+            where = hit.Position;
+        }
+        else if (!_materials.TryGetByName(FootstepSounds.TerrainMaterialName, out material))
         {
             return null;
         }
@@ -455,7 +466,7 @@ public sealed class PlayerCamera
         string sound = FootstepSounds.Next(material, ref _footCursor);
         return sound.Length == 0
             ? null
-            : new Footstep(sound, hit.Position, FootstepSounds.HearingRadiusInUnits(material));
+            : new Footstep(sound, where, FootstepSounds.HearingRadiusInUnits(material));
     }
 
     /// <summary>Gets whether the player is crouched.</summary>

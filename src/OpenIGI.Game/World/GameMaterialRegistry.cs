@@ -137,6 +137,33 @@ public sealed class GameMaterialRegistry
     /// <returns><see langword="false"/> when no row was declared at that index.</returns>
     public bool TryGet(int index, out GameMaterial material) => _byIndex.TryGetValue(index, out material!);
 
+    /// <summary>Finds a material by the name the script declared it under.</summary>
+    /// <param name="name">The row's name, such as <c>Ground</c> or <c>Wood</c>.</param>
+    /// <param name="material">The material.</param>
+    /// <returns><see langword="false"/> when no row carries that name.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Rows are addressed by index everywhere a collision face names one; this exists for the places
+    /// that have no face to read an index off — a step on bare terrain, which has to reach the
+    /// <c>Ground</c> row by name because nothing hands it a number.
+    /// </remarks>
+    public bool TryGetByName(string name, out GameMaterial material)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        foreach (GameMaterial candidate in _byIndex.Values)
+        {
+            if (string.Equals(candidate.Name, name, StringComparison.Ordinal))
+            {
+                material = candidate;
+                return true;
+            }
+        }
+
+        material = null!;
+        return false;
+    }
+
     private QvmValue SetActive(QvmCallContext call)
     {
         _active = call.GetInt32(0);

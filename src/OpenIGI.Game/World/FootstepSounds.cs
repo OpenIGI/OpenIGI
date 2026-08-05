@@ -18,6 +18,29 @@ public static class FootstepSounds
     /// <summary>The animation event a footstep is.</summary>
     public const int EventId = 1010;
 
+    /// <summary>The material a step on bare terrain lands on.</summary>
+    /// <remarks>
+    /// <para>
+    /// The ground query <c>0x462390</c> does not read a material out of the ray hit. It <b>asks the task
+    /// that was hit</b> — <c>dword_A9A6E0[hitTask.Type]</c> dispatches a probe message, and the answer
+    /// lands at offset 76 of the cached hit block, which is <c>Human+1772</c>, the field the footstep
+    /// handler reads. So the material is a property of the thing underfoot, not of the geometry.
+    /// </para>
+    /// <para>
+    /// This port has no terrain <i>task</i> to ask, so a step taken on open ground finds nothing and
+    /// would be silent. The retail material table settles what the answer should be: it carries a row
+    /// named <c>Ground</c> whose six walk sounds are <c>walk_ground_1</c>…<c>walk_ground_6</c>, whose
+    /// land sound is <c>land_ground_1</c> and whose bullet marks are <c>bul_dirt_*</c>. That row exists
+    /// for exactly this and nothing else can reach it.
+    /// </para>
+    /// <para>
+    /// <b>What is not modelled:</b> whether the original's terrain answers with one material for the
+    /// whole map or varies it per tile. Nothing read so far says, so every step on open ground takes the
+    /// same row.
+    /// </para>
+    /// </remarks>
+    public const string TerrainMaterialName = "Ground";
+
     /// <summary>How far above the ground the material probe starts, in engine units.</summary>
     public const double ProbeAboveInUnits = 204.8;
 

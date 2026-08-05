@@ -162,11 +162,26 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
+        // The probe answers only for OBJECTS -- the original asks the hit task for its material, and
+        // open terrain is no task in this port. A step that finds nothing solid landed on the ground,
+        // so it takes the Ground row; see FootstepSounds.TerrainMaterialName.
         (Vector3d probeFrom, Vector3d probeTo) = FootstepSounds.Probe(view.Position);
-        if (!_cast(probeFrom, probeTo, out WorldRayHit hit)
-            || !_materials.TryGet(hit.Material, out GameMaterial material))
+        Vector3d where = view.Position;
+        GameMaterial? material;
+
+        if (_cast(probeFrom, probeTo, out WorldRayHit hit)
+            && _materials.TryGet(hit.Material, out GameMaterial struck))
+        {
+            material = struck;
+            where = hit.Position;
+        }
+        else if (!_materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
         {
             return;
+        }
+        else
+        {
+            material = ground;
         }
 
         // One cursor per soldier, so two guards walking abreast do not step in unison.
@@ -176,7 +191,7 @@ public sealed class SoldierRenderer : IDisposable
 
         if (sound.Length > 0)
         {
-            _footstepSound(new Footstep(sound, hit.Position, FootstepSounds.HearingRadiusInUnits(material)));
+            _footstepSound(new Footstep(sound, where, FootstepSounds.HearingRadiusInUnits(material)));
         }
     }
 
@@ -1236,6 +1251,54 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>The body a soldier's held weapon becomes once its hand is dead.</summary>
+    /// <remarks>
+    /// Measured from the weapon's own drawn geometry, so a pistol gets a pistol's capsule and a rifle a
+    /// rifle's with nothing named. The vertices are in metres, because that is what the mesh builder
+    /// scaled them to; the solver works in engine units.
+    /// </remarks>
+    private static RagdollBone? WeaponBody(HeldWeapon? weapon)
+    {
+        if (weapon is null || weapon.Geometry.Vertices.Length == 0)
+        {
+            return null;
+        }
+
+        Vector3f low = new(float.MaxValue);
+        Vector3f high = new(float.MinValue);
+        foreach (Vertex3D vertex in weapon.Geometry.Vertices)
+        {
+            low = new Vector3f(
+                MathF.Min(low.X, vertex.Position.X),
+                MathF.Min(low.Y, vertex.Position.Y),
+                MathF.Min(low.Z, vertex.Position.Z));
+            high = new Vector3f(
+                MathF.Max(high.X, vertex.Position.X),
+                MathF.Max(high.Y, vertex.Position.Y),
+                MathF.Max(high.Z, vertex.Position.Z));
+        }
+
+        float scale = (float)WorldScene.UnitsPerMetre;
+        return RagdollWeapon.FromBounds(low * scale, high * scale);
+    }
+
+    /// <summary>The skinned model a soldier wears, so its ragdoll can be sized from its own geometry.</summary>
+    private MefModel? FindModel(SoldierView view)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (ReferenceEquals(member.View, view))
+                {
+                    return group.Model;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private Member? FindMember(SoldierView view)
     {
         foreach (Group group in _groups)
@@ -1426,7 +1489,7 @@ public sealed class SoldierRenderer : IDisposable
     /// gives a knee a hinge without any bone being named. Building it sweeps every rotation key in the
     /// set twice, so it must happen once per mission and not once per death.
     /// </remarks>
-    private RagdollSkeleton? RagdollRigFor(BoneAnimationSet set)
+    private RagdollSkeleton? RagdollRigFor(BoneAnimationSet set, MefModel? model)
     {
         if (_ragdollRigs.TryGetValue(set, out RagdollSkeleton? rig))
         {
@@ -1435,7 +1498,7 @@ public sealed class SoldierRenderer : IDisposable
 
         try
         {
-            rig = RagdollSkeleton.Build(set.Skeleton, RagdollLimits.Measure(set));
+            rig = RagdollSkeleton.Build(set.Skeleton, RagdollLimits.Measure(set), model);
         }
         catch (ArgumentException ex)
         {
@@ -1480,9 +1543,11 @@ public sealed class SoldierRenderer : IDisposable
         int bone,
         Vector3d travel,
         WeaponCategory category,
-        Vector3d carriedVelocity)
+        Vector3d carriedVelocity,
+        MefModel? model,
+        HeldWeapon? weapon)
     {
-        if (!GameplayCVars.Ragdoll.Value || RagdollRigFor(view.Bones.Set) is not { } rig)
+        if (!GameplayCVars.Ragdoll.Value || RagdollRigFor(view.Bones.Set, model) is not { } rig)
         {
             return null;
         }
@@ -1490,7 +1555,13 @@ public sealed class SoldierRenderer : IDisposable
         RagdollBody body;
         try
         {
-            body = RagdollBody.Seed(rig, view.UnrotatedPose(), originInUnits, orientation);
+            body = RagdollBody.Seed(
+                rig,
+                view.UnrotatedPose(),
+                originInUnits,
+                orientation,
+                WeaponBody(weapon),
+                HumanAttachPoints.ThirdPersonWeapon);
         }
         catch (ArgumentException ex)
         {
@@ -1786,6 +1857,7 @@ public sealed class SoldierRenderer : IDisposable
         {
             RagdollWorld corpses = RagdollWorldForCorpses();
             int substeps = GameplayCVars.RagdollSubsteps.Value;
+            double fall = GameplayCVars.RagdollGravity.Value;
             foreach (Group group in _groups)
             {
                 foreach (Member member in group.Soldiers)
@@ -1795,7 +1867,7 @@ public sealed class SoldierRenderer : IDisposable
                         continue;
                     }
 
-                    corpse.Step(corpses, substeps);
+                    corpse.Step(corpses, substeps, fall);
 
                     // A corpse whose solver has gone wrong is dropped rather than drawn: the retail
                     // death clip has been running underneath the whole time, so what the player sees is
@@ -1833,13 +1905,16 @@ public sealed class SoldierRenderer : IDisposable
                     member.View.Tick();
                 }
 
+                BonePose drawn = PoseToDraw(member);
+                member.DrawnPose = drawn;
+
                 Vertex3D[] skinned = member.SkinScratch ??= new Vertex3D[group.Geometry.Vertices.Length];
                 group.Geometry.Vertices.CopyTo(skinned, 0);
                 try
                 {
                     MefSkinner.Skin(
                         group.Model,
-                        PoseToDraw(member),
+                        drawn,
                         (float)(1.0 / WorldScene.UnitsPerMetre),
                         skinned);
                 }
@@ -1892,11 +1967,24 @@ public sealed class SoldierRenderer : IDisposable
 
         if (member.Weapon is not null)
         {
-            BonePose pose = member.View.UnrotatedPose();
+            // The pose the BODY was drawn from, which for a corpse is the ragdoll's rather than the
+            // rig's -- otherwise the weapon rides a hand that is no longer where the hand is drawn, and
+            // hangs in the air over the body.
+            BonePose pose = member.DrawnPose ?? member.View.UnrotatedPose();
             if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
             {
                 Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
                 Matrix3f rotation = pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
+
+                // Once the weapon is a body of its own it stops riding the hand and starts being placed
+                // by the solver, which is what lets it come to rest on the floor rather than through it.
+                // It is written into the same pair the hand fills, so the draw path, the interpolation
+                // and the motion vectors all carry on unchanged.
+                if (member.Ragdoll is { HasAttachment: true } armed)
+                {
+                    hand = armed.AttachmentPosition;
+                    rotation = armed.AttachmentRotation;
+                }
                 member.PrevTickHandPosition = member.HasHandState ? member.TickHandPosition : hand;
                 member.PrevTickHandRotation = member.HasHandState ? member.TickHandRotation : rotation;
                 member.TickHandPosition = hand;
@@ -2322,7 +2410,9 @@ public sealed class SoldierRenderer : IDisposable
             bone,
             travel,
             category,
-            velocity);
+            velocity,
+            _playerBodyGroup?.Model,
+            weapon: null);
 
         // A death is a cut, not a movement: the body appears where the player fell, and nothing on
         // screen is its history. Snap the interpolation pair and start the frame bookkeeping over.
@@ -2387,7 +2477,10 @@ public sealed class SoldierRenderer : IDisposable
         // of it: that move is what the rest of the game believes, and only the drawing changes here.
         if (_playerRagdoll is { } playerCorpse)
         {
-            playerCorpse.Step(RagdollWorldForCorpses(), GameplayCVars.RagdollSubsteps.Value);
+            playerCorpse.Step(
+                RagdollWorldForCorpses(),
+                GameplayCVars.RagdollSubsteps.Value,
+                GameplayCVars.RagdollGravity.Value);
             if (!playerCorpse.IsValid)
             {
                 _playerRagdoll = null;
@@ -3147,7 +3240,9 @@ public sealed class SoldierRenderer : IDisposable
                 // What the body was already doing. A soldier's clip root motion is its only velocity --
                 // the port gives one nothing else -- and it is a per-tick delta already, so it goes in
                 // as it stands, turned out of body space by the heading.
-                SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing));
+                SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing),
+                FindModel(view),
+                member.Weapon);
         }
     }
 
@@ -3443,6 +3538,17 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>The persistent buffer this soldier's pose is skinned into, allocated once.</summary>
         public Vertex3D[]? SkinScratch { get; set; }
+
+        /// <summary>
+        /// The pose this soldier was skinned from this tick — its rig's, or its corpse's.
+        /// </summary>
+        /// <remarks>
+        /// Kept because <b>anything attached to the body has to be placed from the same pose the body was
+        /// drawn from</b>, and for a corpse that is not the pose its rig is playing. Reading the rig
+        /// directly is what left a dead guard's rifle hanging in the air where the death animation would
+        /// have put his hand.
+        /// </remarks>
+        public BonePose? DrawnPose { get; set; }
 
         /// <summary>
         /// The simulated corpse this soldier is drawn as once it has been killed, or

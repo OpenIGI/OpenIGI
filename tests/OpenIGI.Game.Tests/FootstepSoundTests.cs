@@ -115,4 +115,40 @@ public sealed class FootstepSoundTests
         Assert.All(missing, entry => Assert.EndsWith(":Walk0", entry, StringComparison.Ordinal));
         Assert.Equal(4, missing.Count);
     }
+
+    [RequiresGameDataFact]
+    public void BareTerrainHasAMaterialOfItsOwnAndItsWalkSoundsAreDefined()
+    {
+        // A step on open ground hits no object, so it has no collision face to read a material index
+        // off. The retail table answers by name: a row called Ground whose six walk sounds exist for
+        // exactly this. If this row ever stops being named that, footsteps on terrain go silent again.
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        fileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/location0/level1/");
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+
+        GameMaterialRegistry materials = new();
+        materials.Register(loop.Natives);
+        materials.Load(resources, loop.Natives);
+
+        Assert.True(
+            materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground),
+            $"the material table has no row named '{FootstepSounds.TerrainMaterialName}'");
+
+        SoundDefinitionRegistry sounds = new();
+        sounds.Register(loop.Natives);
+        sounds.LoadForMission(resources, loop.Natives);
+
+        Assert.Equal(GameMaterialRegistry.WalkSoundCount, ground.WalkSounds.Count);
+        Assert.All(ground.WalkSounds, sound =>
+        {
+            Assert.NotEqual(string.Empty, sound);
+            Assert.True(sounds.TryResolve(sound, out _), $"'{sound}' is not a defined sound");
+        });
+
+        // And it is a real surface rather than one of the four Walk0 placeholders.
+        Assert.DoesNotContain("Walk0", ground.WalkSounds);
+    }
+
 }
