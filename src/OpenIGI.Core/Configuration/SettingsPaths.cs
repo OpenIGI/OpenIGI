@@ -47,9 +47,24 @@ public static class SettingsPaths
 
     /// <summary>Gets the settings file that should be read, preferring a portable one.</summary>
     /// <returns>The full path of the settings file. The file need not exist.</returns>
-    public static string GetSettingsPath()
+    public static string GetSettingsPath() => GetFilePath(SettingsFileName);
+
+    /// <summary>Gets where a per-user file should be read from and written to.</summary>
+    /// <param name="fileName">The file's name, without a directory.</param>
+    /// <returns>The full path. The file need not exist.</returns>
+    /// <exception cref="ArgumentException"><paramref name="fileName"/> is blank.</exception>
+    /// <remarks>
+    /// The same rule <see cref="GetSettingsPath"/> follows, for everything else the player accumulates:
+    /// a copy beside the executable wins, so a folder on a stick stays self-contained, and otherwise it
+    /// is the per-user directory, which is writable when the game's own is not. Nothing the player owns
+    /// belongs in the installation — it may sit in Program Files, on a read-only mount, or be shared
+    /// between people.
+    /// </remarks>
+    public static string GetFilePath(string fileName)
     {
-        string portable = Path.Combine(PortableDirectory, SettingsFileName);
-        return File.Exists(portable) ? portable : Path.Combine(GetUserDirectory(), SettingsFileName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+
+        string portable = Path.Combine(PortableDirectory, fileName);
+        return File.Exists(portable) ? portable : Path.Combine(GetUserDirectory(), fileName);
     }
 }

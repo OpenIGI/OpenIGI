@@ -1788,7 +1788,7 @@ internal sealed partial class DesktopGame : IDisposable
                             MissionProgression.UnlockNext(activeProfile, _missions, nextMissionId);
                             // Retail writes LOCAL:config.qsc after every non-final completion, even when
                             // replaying an earlier mission leaves the frontier unchanged.
-                            DesktopConfiguration.Save(_gamePath, _configuration, _logger);
+                            DesktopConfiguration.Save(_configuration, _logger);
                         }
 
                         _logger.Information("Mission", $"Completed mission {completedMission.Id}; loading {nextMissionId}.");
@@ -2911,7 +2911,7 @@ internal sealed partial class DesktopGame : IDisposable
             }
         }
 
-        DesktopConfiguration.Save(_gamePath, _configuration, _logger);
+        DesktopConfiguration.Save(_configuration, _logger);
         console.SaveSettings();
         missionWarmer?.Dispose();
         previewLoader?.Dispose();
