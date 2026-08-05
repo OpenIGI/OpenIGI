@@ -74,7 +74,7 @@ internal sealed partial class DesktopGame
         // The mission's sounds and its score. Both routes into a mission come through here -- a cold
         // start and a backdrop being promoted -- and only the cold one passes the mission loader, so
         // the mount has to happen on this side or a promoted mission plays nothing at all.
-        MountMissionSounds();
+        MountMissionSounds(loaded);
         _music?.Play(MusicPlayer.GameMusic);
 
         MenuStringTable missionStrings = new(_resources);

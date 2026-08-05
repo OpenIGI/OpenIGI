@@ -83,14 +83,25 @@ public sealed class SoundBank
         ArgumentNullException.ThrowIfNull(directory);
 
         int added = 0;
-        foreach (string path in _fileSystem.EnumerateFiles(directory, "*.wav"))
+        try
         {
-            added += AddFile(path) ? 1 : 0;
-        }
+            foreach (string path in _fileSystem.EnumerateFiles(directory, "*.wav"))
+            {
+                added += AddFile(path) ? 1 : 0;
+            }
 
-        foreach (string path in _fileSystem.EnumerateFiles(directory, "*.res"))
+            foreach (string path in _fileSystem.EnumerateFiles(directory, "*.res"))
+            {
+                added += MountArchive(path);
+            }
+        }
+        catch (EngineFatalException error)
         {
-            added += MountArchive(path);
+            // An unbound alias or an unregistered device. Fatal when the game asks for a file it needs,
+            // but a sound directory that cannot be resolved just means no sounds -- and taking the
+            // process down over it would make an audio gap into a crash.
+            _logger.Warning(LogCategory, $"Sound directory '{directory}' did not resolve: {error.Message}");
+            return added;
         }
 
         _mounted.Add(directory);
@@ -105,17 +116,17 @@ public sealed class SoundBank
     {
         ArgumentNullException.ThrowIfNull(path);
 
-        if (!_fileSystem.Exists(path))
-        {
-            return 0;
-        }
-
         IresArchive archive;
         try
         {
+            if (!_fileSystem.Exists(path))
+            {
+                return 0;
+            }
+
             archive = IresArchive.Read(_fileSystem.ReadAllBytes(path));
         }
-        catch (Exception error) when (error is IlffFormatException or IOException)
+        catch (Exception error) when (error is IlffFormatException or IOException or EngineFatalException)
         {
             _logger.Warning(LogCategory, $"Sound archive '{path}' would not open: {error.Message}");
             return 0;

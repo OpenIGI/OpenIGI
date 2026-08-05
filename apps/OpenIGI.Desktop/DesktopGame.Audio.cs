@@ -4,6 +4,7 @@ using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Audio;
+using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Rendering;
@@ -177,12 +178,17 @@ internal sealed partial class DesktopGame
     /// that loader at all, so without this its sounds and its score are simply absent, which is exactly
     /// what pressing Play in the menu used to give: silence.
     /// </remarks>
-    private void MountMissionSounds()
+    private void MountMissionSounds(LoadedMission loaded)
     {
         if (_soundBank is null)
         {
             return;
         }
+
+        // Bind MISSION: first. A cold start had the mission loader do it; a PROMOTED backdrop was loaded
+        // on a worker against its own file system, so this one has never been pointed at the level and
+        // "MISSION:sounds" would not resolve at all.
+        _fileSystem.SetAlias(VirtualFileSystem.MissionAlias, loaded.Descriptor.MissionAliasTarget);
 
         _soundBank.MountDirectory(MissionLoader.CommonSoundDirectory);
         _soundBank.MountDirectory(MissionLoader.MissionSoundDirectory);
