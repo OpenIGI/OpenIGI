@@ -369,6 +369,63 @@ public sealed class GameClockTests
         Assert.Equal(FrameAction.Tick, clock.Decide(34));
     }
 
+    [Fact]
+    public void AdoptingASchedulePutsTheIncomingClockExactlyWhereTheOutgoingOneWas()
+    {
+        // A mission started from the menu's backdrop is promoted rather than reloaded, and the loop that
+        // owns it takes the session over mid-run. Its clock starts at tick zero, and a schedule that
+        // restarts under a running session is not cosmetic: -lockstep derives its synthetic milliseconds
+        // from FrameCount, so a reset makes wall-clock time jump backwards.
+        var time = new ManualTimeSource();
+        var outgoing = new GameClock(time);
+        outgoing.SetTickRate(30);
+
+        time.Milliseconds = 500;
+        for (int i = 0; i < 7; i++)
+        {
+            outgoing.CompleteTick();
+        }
+
+        outgoing.CompleteRender();
+        outgoing.TimeAdjustMilliseconds = 3;
+
+        var incoming = new GameClock(time);
+        incoming.AdoptScheduleFrom(outgoing);
+
+        Assert.Equal(outgoing.TickRate, incoming.TickRate);
+        Assert.Equal(outgoing.TickCount, incoming.TickCount);
+        Assert.Equal(outgoing.FrameCount, incoming.FrameCount);
+        Assert.Equal(outgoing.CatchUpCount, incoming.CatchUpCount);
+        Assert.Equal(outgoing.HasRendered, incoming.HasRendered);
+        Assert.Equal(outgoing.TimeBaseMilliseconds, incoming.TimeBaseMilliseconds);
+        Assert.Equal(outgoing.ExcludedMilliseconds, incoming.ExcludedMilliseconds);
+        Assert.Equal(outgoing.TimeAdjustMilliseconds, incoming.TimeAdjustMilliseconds);
+
+        // The whole point: the next deadline is the one the outgoing clock was about to meet, not tick
+        // zero's. Sharing the time source is what makes the adopted time base mean the same thing.
+        Assert.Equal(outgoing.DueMilliseconds, incoming.DueMilliseconds);
+    }
+
+    [Fact]
+    public void AdoptingAScheduleLeavesTheClockItWasTakenFromAlone()
+    {
+        var time = new ManualTimeSource();
+        var outgoing = new GameClock(time);
+        outgoing.SetTickRate(30);
+        outgoing.CompleteTick();
+        outgoing.CompleteTick();
+
+        int ticks = outgoing.TickCount;
+        int frames = outgoing.FrameCount;
+        int timeBase = outgoing.TimeBaseMilliseconds;
+
+        new GameClock(time).AdoptScheduleFrom(outgoing);
+
+        Assert.Equal(ticks, outgoing.TickCount);
+        Assert.Equal(frames, outgoing.FrameCount);
+        Assert.Equal(timeBase, outgoing.TimeBaseMilliseconds);
+    }
+
     private static GameClock Create(out ManualTimeSource time)
     {
         time = new ManualTimeSource();

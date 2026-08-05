@@ -54,17 +54,23 @@ namespace OpenIGI.Desktop;
 /// <param name="missions">The mission table, complete and read-only after the start-up scan.</param>
 /// <param name="magic">The magic-object table, likewise read-only after start-up.</param>
 /// <param name="cameras">The authored orbit styles each mission's showcase points are based on.</param>
+/// <param name="context">What a built preview needs to be promotable into the played mission.</param>
 /// <param name="logger">The logger.</param>
 public sealed class MissionPreviewLoader(
     string gamePath,
     MissionRegistry missions,
     MagicObjectRegistry magic,
     MenuCameraLibrary cameras,
+    MissionPreviewContext context,
     IIgiLogger logger) : IDisposable
 {
     private const string LogCategory = "Preview";
 
     /// <summary>How many places in a mission the backdrop cycles between.</summary>
+    /// <remarks>
+    /// Three of them are the corners of the triangle <see cref="MissionShowcasePoints"/> spreads across the
+    /// level; the remaining two are filled from inside it when the level is big enough to have an inside.
+    /// </remarks>
     private const int ShowcasePointCount = 5;
 
     private readonly Lock _gate = new();
@@ -218,11 +224,30 @@ public sealed class MissionPreviewLoader(
 
         // The private context. Its own alias table, its own resource registry, its own task tree: none of
         // it is reachable from the running game, which is the whole reason this can run off the render
-        // thread. The loop is a container for the tree and the namespace and is never advanced.
+        // thread.
+        //
+        // The loop is built the way the SESSION's loop is built — same wall clock, same flow host, same
+        // render scheduler — rather than with a throwaway ManualTimeSource, because a backdrop is no
+        // longer only looked at. Pressing Play promotes this loop into the game's own, and a loop that
+        // measured time from its own origin would make every elapsed reading in the frame loop jump at
+        // the moment of the swap. None of the three is called here; the loop's constructor only stores
+        // them, and a preview that is never promoted is still never advanced.
         var fileSystem = new VirtualFileSystem(logger);
         fileSystem.RegisterDevice(new LocalFileDevice(gamePath));
         var resources = new ResourceRegistry(fileSystem, logger);
-        var loop = new GameLoop(time: new ManualTimeSource(), logger: logger);
+        var loop = new GameLoop(
+            time: context.TimeSource,
+            host: context.Host,
+            renderer: context.Scheduler,
+            logger: logger);
+
+        // The archives that belong to the session rather than to this level. Registered from bytes the
+        // composition root read at start-up: once promoted, this registry is the one the menus, the
+        // mission briefings and the handheld computer resolve their strings through.
+        foreach (KeyValuePair<string, byte[]> archive in context.SessionArchives)
+        {
+            resources.Register(archive.Key, archive.Value);
+        }
 
         // The same task types the composition root registers, so the tree comes out shaped the way the
         // scene walk expects rather than as untyped declared tasks.
@@ -232,6 +257,12 @@ public sealed class MissionPreviewLoader(
         loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
         loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
         magic.Register(loop.Natives);
+
+        // The two natives the composition root installs at boot and a look-only preview never needed.
+        // DefineMission's table is already scanned and lives on the shared registry, so this is the hook
+        // and nothing more; Game_SetMission likewise. Both write only into this loop's own namespace.
+        missions.Register(loop.Natives);
+        context.MissionState.Register(loop.Natives);
 
         var levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         var levelLoader = new LevelLoader(levelRoot, loop.TaskCommands, loop.Natives, resources, logger);
@@ -279,6 +310,7 @@ public sealed class MissionPreviewLoader(
         return new MissionPreview(
             missionId,
             loaded,
+            loop,
             levelRoot,
             scene,
             solids,

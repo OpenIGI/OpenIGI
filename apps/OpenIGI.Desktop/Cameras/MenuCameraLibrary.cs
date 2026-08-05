@@ -17,7 +17,14 @@ public readonly record struct MenuCameraSpec(
     float PitchBiasRadians)
 {
     /// <summary>Gets a sensible default orbit for a level with no authored entry.</summary>
-    public static MenuCameraSpec Default => new(140.0, 55.0, 0.06, 0.0, 0f);
+    /// <remarks>
+    /// The speed is what makes it read as an orbit at all. At 0.06 rad/s a shot held for
+    /// <see cref="MenuShowcaseCamera.DwellSeconds"/> swept sixty-nine degrees before cutting away, which
+    /// looks like the camera sliding sideways past a building rather than going round it; 0.12 carries it
+    /// through about a hundred and forty, far enough that two different faces of the subject come into view
+    /// and the motion is legible as a circle.
+    /// </remarks>
+    public static MenuCameraSpec Default => new(140.0, 55.0, 0.12, 0.0, 0f);
 }
 
 /// <summary>

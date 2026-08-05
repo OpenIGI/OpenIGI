@@ -67,6 +67,69 @@ public sealed class WorldRenderer : IDisposable
     /// </remarks>
     public int LastLightmappedCount { get; private set; }
 
+    /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
+    public DoorRegistry? Doors { get; set; }
+
+    /// <summary>Resolves one placement's mesh, textures and lightmap pages without drawing it.</summary>
+    /// <param name="scene">The scene the placement belongs to.</param>
+    /// <param name="index">Which placement to make resident.</param>
+    /// <returns><see langword="true"/> when <paramref name="index"/> named a placement.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="scene"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// Everything this renderer draws with is resolved the first time it is <em>drawn</em> and cached by
+    /// name from then on: the geometry, the mesh upload, each texture, each lightmap page. That is the
+    /// right behaviour for a level being walked through, where the cost is spread over the walk and
+    /// nothing pays for a room it never enters. It is the wrong behaviour when the camera moves a long
+    /// way in one frame — every model on the far side becomes visible at once, and the whole level's
+    /// residency is paid for on a single frame.
+    /// </para>
+    /// <para>
+    /// The menu's backdrop makes that concrete: a slow orbit over one corner of the level leaves most of
+    /// it unresolved, and pressing Play puts the camera at the player's spawn. Measured on mission 1,
+    /// that one frame spent about 260 ms inside <see cref="Draw"/> — not drawing, but uploading.
+    /// </para>
+    /// <para>
+    /// So this exists to pay that cost early and a little at a time, while the menu is idle. It resolves
+    /// exactly what <see cref="Draw"/> would resolve for the same placement and in the same order, which
+    /// is the property that matters: anything it missed would simply be paid for later, on the frame that
+    /// first drew it, and the point is that no frame pays.
+    /// </para>
+    /// </remarks>
+    public bool MakeResident(WorldScene scene, int index)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (index < 0 || index >= scene.Placements.Count)
+        {
+            return false;
+        }
+
+        WorldPlacement placement = scene.Placements[index];
+
+        MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
+        if (geometry is null)
+        {
+            return true;
+        }
+
+        GetMesh(placement.BentGeometry is null ? placement.Instance.Name : placement.TaskName, geometry);
+        GetLightmapPages(scene, placement);
+
+        foreach (MeshSubset subset in geometry.Subsets)
+        {
+            if (subset.IndexCount > 0
+                && subset.HasMaterial
+                && placement.Pack.TryGetTextureName(placement.Instance, subset.MaterialSlot, out string texture))
+            {
+                GetTexture(texture);
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>Draws a scene from a camera.</summary>
     /// <param name="scene">The scene to draw.</param>
     /// <param name="camera">The camera to draw from.</param>
@@ -107,7 +170,14 @@ public sealed class WorldRenderer : IDisposable
                 continue;
             }
 
-            Matrix4f modelView = camera.CreateModelView(placement.Position, placement.Orientation);
+            Vector3d drawPosition = placement.Position;
+            Matrix3f drawOrientation = placement.Orientation;
+            if (Doors?.TryGetDrawTransform(placement.Owner, out Vector3d doorPosition, out Matrix3f doorOrientation) == true)
+            {
+                drawPosition = doorPosition;
+                drawOrientation = doorOrientation;
+            }
+            Matrix4f modelView = camera.CreateModelView(drawPosition, drawOrientation);
             TextureHandle[] pages = GetLightmapPages(scene, placement);
 
             foreach (MeshSubset subset in geometry.Subsets)

@@ -292,6 +292,46 @@ public sealed class GameClock
         ExcludedMilliseconds = 0;
     }
 
+    /// <summary>Takes over another clock's whole schedule, counters and all.</summary>
+    /// <param name="other">The clock whose schedule to continue.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="other"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// For handing the session from one <see cref="Flow.GameLoop"/> to another mid-run, which is what
+    /// starting a mission from the menu's already-built backdrop does: the level is promoted rather than
+    /// reloaded, and the loop that owns it takes over. A fresh loop builds its own clock starting at tick
+    /// zero, and a schedule that restarts underneath a running session is not a cosmetic problem —
+    /// <c>-lockstep</c> derives its synthetic milliseconds from <see cref="FrameCount"/>, so a reset makes
+    /// wall-clock time jump backwards and byte-identical capture stops being possible.
+    /// </para>
+    /// <para>
+    /// Every field that describes where the schedule <em>is</em> moves across, including
+    /// <see cref="HasRendered"/> and <see cref="CatchUpCount"/> — the one-render-per-tick latch and the
+    /// catch-up budget are mid-frame state, and dropping either would let the incoming loop render twice
+    /// on one tick or spend a catch-up burst it had not earned. What deliberately does not move is
+    /// <see cref="UncappedRenders"/>: that is a presentation setting the host owns and re-asserts every
+    /// frame, not part of the schedule.
+    /// </para>
+    /// <para>
+    /// The two clocks must share an <see cref="ITimeSource"/> for this to mean anything; the time base is
+    /// a reading of that source, so adopting it across two different sources would carry over a number
+    /// measured against a different origin.
+    /// </para>
+    /// </remarks>
+    public void AdoptScheduleFrom(GameClock other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        TickRate = other.TickRate;
+        TickCount = other.TickCount;
+        FrameCount = other.FrameCount;
+        CatchUpCount = other.CatchUpCount;
+        HasRendered = other.HasRendered;
+        TimeBaseMilliseconds = other.TimeBaseMilliseconds;
+        ExcludedMilliseconds = other.ExcludedMilliseconds;
+        TimeAdjustMilliseconds = other.TimeAdjustMilliseconds;
+    }
+
     /// <summary>Applies <see cref="TimeAdjustMilliseconds"/> to the time base, as the end of a frame does.</summary>
     public void AdvanceTimeBase() =>
         TimeBaseMilliseconds = unchecked(TimeBaseMilliseconds + TimeAdjustMilliseconds);

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The desktop app's own logic: the cameras, and the arithmetic the mission-entry shot is made of.
+         None of it touches a graphics device, which is the whole reason it can be tested at all. -->
+    <ProjectReference Include="..\..\apps\OpenIGI.Desktop\OpenIGI.Desktop.csproj" />
+    <ProjectReference Include="..\OpenIGI.TestSupport\OpenIGI.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

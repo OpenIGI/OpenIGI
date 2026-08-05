@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
@@ -13,95 +13,149 @@ namespace OpenIGI.Desktop;
 public readonly record struct ShowcasePoint(Vector3d Centre, MenuCameraSpec Orbit);
 
 /// <summary>
-/// Picks the handful of places in a mission worth looking at: its largest structures, framed closely and
-/// spread across the level.
+/// Picks the handful of buildings in a mission worth looking at: three spread into a triangle across the
+/// level, and one or two more standing inside it, each framed close enough to read as a shot of that
+/// building.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>A place is a building, not a neighbourhood.</b> The first attempt at this clustered placements by
-/// density and orbited each cluster's centroid, and it produced four near-identical wide shots: the points
-/// it found on mission 1 spanned 138 metres while the orbits it sized for them were 99 to 166 metres
-/// across, so every shot took in the whole area and the camera never actually looked at anything. Density
-/// tells you where a lot of objects are, which in this game is "the base" — one answer, found four times.
+/// <b>A place is a building.</b> Not a crate, not a tree, not a parked helicopter — the level itself says
+/// which is which. Level scripts name their placing tasks, and a structure is placed by a task called
+/// <c>Building_1112</c> where a prop is an <c>EditRigidObj</c> or a <c>Heli_353</c>. That is a statement of
+/// intent by whoever built the level and no heuristic over triangle counts is going to beat it, so it is
+/// read directly and everything else is thrown away. The size and detail tests survive underneath it,
+/// because a level names a doorway a building too. A level that uses no such names — a mod's, most likely —
+/// falls back to judging the geometry alone, which is what the tests were doing on their own before.
 /// </para>
 /// <para>
-/// What a point of interest actually is here is a <em>structure</em>: a hangar, a control tower, a radar
-/// dish. Those are found directly — the placements are ranked by triangle count, which separates a
-/// building from a barrel by orders of magnitude, and each one's own mesh gives the size to frame it at.
-/// The orbit is then derived from the object rather than from a cluster's statistics, so it sits close
-/// enough to read as a shot of that building.
+/// <b>Three shots in a triangle, not five in a compound.</b> Ranking buildings and walking down the list
+/// with an exclusion radius, which is what this used to do, gives whatever the ranking likes best and then
+/// its nearest permitted neighbours: on mission 1 that was four shots inside a hundred and fifty metres of
+/// each other, four views of one yard. Spread is not something a greedy walk arrives at, so it is
+/// <em>solved for</em> instead: every triple of candidates is scored on how far apart its three corners
+/// are and how close to equilateral they sit, and the best one wins. What comes out is three establishing
+/// shots taken from three different parts of the map, which is what a menu backdrop is for.
 /// </para>
 /// <para>
-/// <b>Spread is enforced, not hoped for.</b> Taking a structure strikes out everything within an exclusion
-/// radius, which is derived from how big the level actually is so a compact trainyard and a sprawling
-/// airbase both end up with their shots spaced across the whole of themselves. Without it the top five
-/// structures are usually five parts of the same compound.
+/// <b>Then the middle, if there is a middle.</b> A triangle drawn across a sprawling airbase has a great
+/// deal of level inside it and the shots should visit some of it; one drawn across a level barely bigger
+/// than the triangle itself has nothing in the middle but the three corners seen again. So the interior
+/// shots are conditional on the room being there — measured as the triangle's inradius — and on a building
+/// standing well clear of all three edges. A mission that does not earn them gets three shots, which is the
+/// honest answer.
 /// </para>
 /// <para>
-/// The player's own spawn leads the set when the level declares one. It is the one location in a mission
-/// that is not a spoiler by definition — it is where the player is about to be standing.
+/// <b>Close, not wide.</b> The orbit comes from the building's own mesh and sits a little over it, so the
+/// subject fills the frame while the camera turns. Sizing shots from a cluster's statistics, as the first
+/// attempt did, produced orbits wider than the distance between them — every shot took in the whole area
+/// and the camera never actually looked at anything.
 /// </para>
 /// <para>
-/// Everything here is deterministic — a ranking and a greedy walk, no seeding and no iteration — so a level
-/// always shows the same places in the same order. A menu that framed a different corner each time it
-/// opened would read as a bug.
+/// A level with no buildings at all falls back to the player's spawn, which is the one location in a mission
+/// that is not a spoiler by definition — it is where the player is about to be standing. Mission 14 is the
+/// only one that needs it: its scene holds a single object.
+/// </para>
+/// <para>
+/// Everything here is deterministic — a ranking, an exhaustive search over a bounded shortlist, no seeding
+/// and no iteration — so a level always shows the same places in the same order. A menu that framed a
+/// different corner each time it opened would read as a bug.
 /// </para>
 /// </remarks>
 public static class MissionShowcasePoints
 {
     private const string LogCategory = "Preview";
 
+    /// <summary>The task-name prefix a level uses for the structures it places.</summary>
+    private const string BuildingTaskPrefix = "Building_";
+
+    /// <summary>How many declared buildings a level needs before its own naming is trusted over the geometry.</summary>
+    /// <remarks>
+    /// Enough to draw the triangle out of. Below that the level either does not follow the convention or has
+    /// almost nothing in it, and in both cases judging the meshes is the better answer than obeying two
+    /// names.
+    /// </remarks>
+    private const int FewestDeclaredBuildings = 3;
+
     /// <summary>The smallest a model may be, in metres, before it is scenery rather than a structure.</summary>
     private const double MinimumStructureRadius = 6.0;
 
     /// <summary>The largest a model may be, in metres; past this it is a compound, not a building.</summary>
     /// <remarks>
-    /// A 45-metre radius is a 90-metre building, which is already a hangar. Letting it go higher is what
-    /// put three of mission 1's five shots on meshes big enough that the orbit clamped at its maximum and
-    /// every one of them was another wide view — the very thing circling a place was meant to replace.
+    /// A 45-metre radius is a 90-metre building, which is already a hangar. Letting it go higher puts the
+    /// orbit at its clamp and gives back the wide view that circling a place was meant to replace.
     /// </remarks>
     private const double MaximumStructureRadius = 45.0;
-
-    /// <summary>How far around a structure counts as its neighbourhood, in metres.</summary>
-    private const double NeighbourhoodMetres = 60.0;
-
-    /// <summary>The task-name prefix a level uses for the structures it places.</summary>
-    private const string BuildingTaskPrefix = "Building_";
-
-    /// <summary>How much more a structure the level declared as a building is worth than anything else.</summary>
-    private const double DeclaredBuildingBonus = 4.0;
-
-    /// <summary>How much has to stand within a structure's neighbourhood before it counts as somewhere.</summary>
-    /// <remarks>
-    /// A big object on its own in a field is not a location, and one slipped through on a relaxation pass
-    /// with three things near it. Somewhere has stuff around it.
-    /// </remarks>
-    private const int MinimumNeighbours = 8;
 
     /// <summary>The fewest triangles a structure may have, so a big flat plane is not mistaken for one.</summary>
     private const int MinimumTriangles = 120;
 
-    /// <summary>The closest two shots may ever be, in metres, however small the level is.</summary>
-    private const double MinimumSeparation = 130.0;
+    /// <summary>How far around a structure counts as its neighbourhood, in metres.</summary>
+    private const double NeighbourhoodMetres = 60.0;
 
-    /// <summary>The floor the relaxation passes never go below, in metres.</summary>
+    /// <summary>How much has to stand within a structure's neighbourhood before it counts as somewhere.</summary>
     /// <remarks>
-    /// Twice the tightest orbit the framing will produce, so two shots can never take in each other's
-    /// subject however cramped the level is. A level that cannot place its shots this far apart gets fewer
-    /// of them — SAM Base ends up with three, which is the honest answer for a base that small.
+    /// A building alone in a field is a building but it is not a location. Low, because the corners of the
+    /// triangle are by definition at the edges of the built-up area and a strict count would pull all three
+    /// back into the middle of the base — which is the shot this was written to stop producing.
     /// </remarks>
-    private const double AbsoluteMinimumGap = 72.0;
+    private const int MinimumNeighbours = 5;
 
-    /// <summary>The furthest apart the exclusion is ever pushed, in metres, however large the level is.</summary>
-    private const double MaximumSeparation = 520.0;
+    /// <summary>How many cells across the level's candidates are bucketed for the triangle search.</summary>
+    /// <remarks>
+    /// The search is exhaustive over triples, so its input has to be bounded: one candidate per cell of an
+    /// 8×8 grid caps it at 64 corners and around forty thousand triples, which is nothing. Bucketing by
+    /// PLACE rather than taking the top 64 by rank is the point — the highest-ranked buildings in a level
+    /// are all in the same compound, so a rank-based shortlist would hand the search the very clustering it
+    /// exists to undo.
+    /// </remarks>
+    private const int ShortlistCellsAcross = 8;
+
+    /// <summary>How much a triple is discounted for showing the same kind of building twice.</summary>
+    /// <remarks>
+    /// A level places one prefab a dozen times, and a search that only wanted distance happily picked three
+    /// copies of the same hut standing far apart: three corners, one building, which is what made the whole
+    /// thing look broken. A discount rather than a ban, so a level built out of one prefab still gets its
+    /// three shots.
+    /// </remarks>
+    private const double FamilyRepeatPenalty = 0.4;
+
+    /// <summary>The side length, in metres, below which the best triangle is really one compound.</summary>
+    /// <remarks>Reported, not enforced: a small level still gets the best triple it has.</remarks>
+    private const double CompactTriangleSide = 110.0;
+
+    /// <summary>How much room the triangle needs inside it, as an inradius in metres, to be worth filling.</summary>
+    /// <remarks>
+    /// The largest circle that fits between the three corners, which is the honest measure of whether the
+    /// middle is somewhere else or just the corners seen again — a long thin triangle has plenty of area
+    /// and no middle at all. A little under twice the tightest orbit, so a shot placed in there is looking
+    /// at its own subject rather than at the ones on either side of it.
+    /// </remarks>
+    private const double InteriorInradiusMetres = 55.0;
+
+    /// <summary>How far off every edge an interior building must stand, in barycentric terms.</summary>
+    /// <remarks>
+    /// A barycentric coordinate is the fraction of the way across the triangle from the opposite edge, so
+    /// requiring all three above this keeps an interior shot clear of the edges and out of the corners —
+    /// a building just inside one edge is a fourth view of the corner shot next to it.
+    /// </remarks>
+    private const double InteriorMargin = 0.14;
+
+    /// <summary>How far an interior shot must stand from the corners, as a fraction of the shortest side.</summary>
+    private const double InteriorGapFraction = 0.28;
+
+    /// <summary>The closest an interior shot may ever come to another shot, in metres.</summary>
+    private const double InteriorMinimumGap = 70.0;
+
+    /// <summary>The most shots taken from inside the triangle.</summary>
+    private const int MaximumInteriorPoints = 2;
 
     /// <summary>Finds the places in a mission worth showing.</summary>
     /// <param name="scene">The built scene, for its placements.</param>
     /// <param name="levelRoot">The level's task tree, for the player's spawn; may be <see langword="null"/>.</param>
-    /// <param name="count">How many places to return.</param>
+    /// <param name="count">The most places to return; three of them are the triangle's corners.</param>
     /// <param name="fallback">The orbit style each place's own orbit is based on.</param>
     /// <param name="logger">Where to report what was found.</param>
-    /// <returns>Up to <paramref name="count"/> places, the spawn first when there is one.</returns>
+    /// <returns>Up to <paramref name="count"/> places: the triangle first, then its interior.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="scene"/> is <see langword="null"/>.</exception>
     public static IReadOnlyList<ShowcasePoint> Extract(
         WorldScene scene,
@@ -116,24 +170,42 @@ public static class MissionShowcasePoints
             return [];
         }
 
-        var points = new List<ShowcasePoint>(count);
-
-        // The spawn leads, when the level declares one. Its position comes off the task tree in ENGINE
-        // UNITS -- an ObjectPos parameter is read raw, where WorldScene divides placements down as it
-        // builds them -- so it has to be converted or the camera ends up four thousand times too far out.
-        if (levelRoot is not null && PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn))
+        List<Structure> candidates = FindBuildings(scene, logger);
+        if (candidates.Count == 0)
         {
-            points.Add(new ShowcasePoint(
-                new Vector3d(
-                    spawn.Position.X / WorldScene.UnitsPerMetre,
-                    spawn.Position.Y / WorldScene.UnitsPerMetre,
-                    (spawn.Position.Z / WorldScene.UnitsPerMetre) + 4.0),
-                fallback with { Radius = 34.0, Height = 14.0, StartAngleRadians = 0.0 }));
+            logger?.Information(LogCategory, "Nothing in this level reads as a building; showing the spawn instead.");
+            return SpawnOnly(levelRoot, fallback);
         }
 
-        foreach (Structure structure in FindStructures(scene, count - points.Count, points, logger))
+        var chosen = new List<Structure>(count);
+        if (candidates.Count < 3)
+        {
+            // One or two buildings is not a triangle. Show what there is rather than nothing.
+            chosen.AddRange(candidates.Take(count));
+            logger?.Information(
+                LogCategory,
+                $"Only {candidates.Count} building(s) to show; no triangle to draw between them.");
+        }
+        else
+        {
+            Structure[] triangle = PickTriangle(candidates, logger);
+            chosen.AddRange(triangle);
+
+            int room = Math.Min(count - chosen.Count, MaximumInteriorPoints);
+            if (room > 0)
+            {
+                chosen.AddRange(PickInside(triangle, candidates, room, logger));
+            }
+        }
+
+        var points = new List<ShowcasePoint>(chosen.Count);
+        foreach (Structure structure in chosen)
         {
             points.Add(structure.ToPoint(fallback));
+            logger?.Information(
+                LogCategory,
+                $"  {structure.Task} ({structure.Model}), {structure.Radius * 2:0} m across, "
+                + $"{structure.Neighbours} object(s) around it.");
         }
 
         TightenOverlappingShots(points);
@@ -145,14 +217,386 @@ public static class MissionShowcasePoints
         return points;
     }
 
+    /// <summary>The player's spawn, orbited close, for a level with nothing standing in it to circle.</summary>
+    /// <remarks>
+    /// A last resort, not a shot anyone chose. Mission 14 puts a single object in its scene, so there is no
+    /// building to find and no triangle to draw; without this the backdrop falls back to a wide orbit around
+    /// the median of every placement, which on a level with one placement is a survey of empty ground. The
+    /// spawn at least frames where the player is about to be standing.
+    /// </remarks>
+    private static IReadOnlyList<ShowcasePoint> SpawnOnly(GameTask? levelRoot, MenuCameraSpec fallback)
+    {
+        // The spawn's position comes off the task tree in ENGINE UNITS -- an ObjectPos parameter is read
+        // raw, where WorldScene divides placements down as it builds them -- so it has to be converted or
+        // the camera ends up four thousand times too far out.
+        if (levelRoot is null || !PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn))
+        {
+            return [];
+        }
+
+        return
+        [
+            new ShowcasePoint(
+                new Vector3d(
+                    spawn.Position.X / WorldScene.UnitsPerMetre,
+                    spawn.Position.Y / WorldScene.UnitsPerMetre,
+                    (spawn.Position.Z / WorldScene.UnitsPerMetre) + 4.0),
+                fallback with { Radius = 30.0, Height = 13.0, StartAngleRadians = 0.0 }),
+        ];
+    }
+
+    /// <summary>Every placement in a level that is a building, measured and scored.</summary>
+    private static List<Structure> FindBuildings(WorldScene scene, IIgiLogger? logger)
+    {
+        // Measured once per distinct model: a level places the same hangar a dozen times and walking every
+        // vertex of each copy is the same answer paid for repeatedly.
+        var measured = new Dictionary<string, double>(StringComparer.Ordinal);
+        var declared = new List<Structure>();
+        var anyShape = new List<Structure>();
+
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (placement.Model.IsEmpty || placement.Model.TriangleCount < MinimumTriangles)
+            {
+                continue;
+            }
+
+            string key = placement.Instance.Name;
+            if (!measured.TryGetValue(key, out double radius))
+            {
+                radius = ModelRadiusMetres(placement.Model);
+                measured[key] = radius;
+            }
+
+            if (radius is < MinimumStructureRadius or > MaximumStructureRadius)
+            {
+                continue;
+            }
+
+            var structure = new Structure(
+                placement.Position,
+                radius,
+                placement.Model.TriangleCount,
+                0,
+                placement.Instance.Name,
+                placement.TaskName);
+
+            anyShape.Add(structure);
+            if (structure.IsDeclaredBuilding)
+            {
+                declared.Add(structure);
+            }
+        }
+
+        // The level's own word for it, whenever the level gives one. This is what keeps helicopters, spline
+        // segments and loose rigid objects — all of them big and detailed enough to pass every geometric
+        // test there is — out of a set of shots that is supposed to be of buildings.
+        List<Structure> pool = declared.Count >= FewestDeclaredBuildings ? declared : anyShape;
+        if (declared.Count < FewestDeclaredBuildings && anyShape.Count > 0)
+        {
+            logger?.Information(
+                LogCategory,
+                "This level declares no buildings by name; falling back to judging the geometry.");
+        }
+
+        // A building standing among other things is somewhere; the same building alone in a field is not.
+        for (int i = 0; i < pool.Count; i++)
+        {
+            int neighbours = 0;
+            double reachSquared = NeighbourhoodMetres * NeighbourhoodMetres;
+            foreach (WorldPlacement placement in scene.Placements)
+            {
+                if (FlatDistanceSquared(placement.Position, pool[i].Position) <= reachSquared)
+                {
+                    neighbours++;
+                }
+            }
+
+            pool[i] = pool[i] with { Neighbours = neighbours };
+        }
+
+        // Relaxed rather than enforced when it would empty the level out: three shots of lonely buildings
+        // beat no backdrop at all.
+        List<Structure> populated = pool.FindAll(s => s.Neighbours >= MinimumNeighbours);
+        List<Structure> chosen = populated.Count >= 3 ? populated : pool;
+
+        // Best first, ties broken on position so the order never depends on how the level happened to
+        // enumerate its placements.
+        chosen.Sort((a, b) =>
+        {
+            int byScore = b.Score.CompareTo(a.Score);
+            return byScore != 0 ? byScore
+                : a.Position.X != b.Position.X ? a.Position.X.CompareTo(b.Position.X)
+                : a.Position.Y.CompareTo(b.Position.Y);
+        });
+
+        logger?.Information(
+            LogCategory,
+            $"{chosen.Count} building(s) to choose from ({declared.Count} declared by the level), "
+            + $"spread over {Extent(chosen):0} m.");
+
+        return chosen;
+    }
+
+    /// <summary>Solves for the three buildings that spread widest and sit most evenly around the level.</summary>
+    /// <remarks>
+    /// Exhaustive over the shortlist rather than greedy. A greedy walk takes the best-ranked building and
+    /// then whatever else it is allowed, which on every retail level is the rest of the same compound; only
+    /// looking at the triple as a whole can trade a slightly duller building for one that is four hundred
+    /// metres away.
+    /// </remarks>
+    private static Structure[] PickTriangle(List<Structure> candidates, IIgiLogger? logger)
+    {
+        List<Structure> corners = Shortlist(candidates);
+        double best = candidates[0].Score;
+        double bestValue = double.NegativeInfinity;
+        (int A, int B, int C) pick = (0, 1, 2);
+
+        for (int a = 0; a < corners.Count - 2; a++)
+        {
+            for (int b = a + 1; b < corners.Count - 1; b++)
+            {
+                double ab = FlatDistance(corners[a].Position, corners[b].Position);
+                for (int c = b + 1; c < corners.Count; c++)
+                {
+                    double bc = FlatDistance(corners[b].Position, corners[c].Position);
+                    double ca = FlatDistance(corners[c].Position, corners[a].Position);
+                    double shortest = Math.Min(ab, Math.Min(bc, ca));
+                    double perimeter = ab + bc + ca;
+                    if (perimeter <= 0.0)
+                    {
+                        continue;
+                    }
+
+                    // How close to equilateral, 1 for a perfect triangle and 0 for three points in a line.
+                    // Without it the widest triple is almost always three buildings strung along the
+                    // longest axis of the level, which is a line of shots rather than a tour of the map.
+                    double shape = 12.0 * Math.Sqrt(3.0)
+                        * TriangleArea(corners[a].Position, corners[b].Position, corners[c].Position)
+                        / (perimeter * perimeter);
+
+                    double quality = Math.Cbrt(
+                        (corners[a].Score / best) * (corners[b].Score / best) * (corners[c].Score / best));
+
+                    bool repeats = corners[a].Family == corners[b].Family
+                        || corners[b].Family == corners[c].Family
+                        || corners[c].Family == corners[a].Family;
+
+                    // How far apart the three are, as the geometric mean of the shortest side and the
+                    // average one. The shortest side alone is what a "no two shots may overlap" rule
+                    // measures, and optimising it hands back a small, tidy triangle in the middle of a
+                    // large level — mission 4's buildings stand over 389 metres and it picked a 160-metre
+                    // one. Folding the average in lets a triangle that covers twice the ground win even
+                    // though one of its corners is closer than it might be.
+                    double spread = Math.Sqrt(shortest * (perimeter / 3.0));
+
+                    // Distance leads; how even the triangle is and how good the three buildings are only
+                    // modulate it. Spread is what was missing, so spread is what decides.
+                    double value = spread
+                        * (0.35 + (0.65 * shape))
+                        * (0.45 + (0.55 * quality))
+                        * (repeats ? FamilyRepeatPenalty : 1.0);
+
+                    if (value > bestValue)
+                    {
+                        bestValue = value;
+                        pick = (a, b, c);
+                    }
+                }
+            }
+        }
+
+        Structure[] triangle = [corners[pick.A], corners[pick.B], corners[pick.C]];
+        double sideA = FlatDistance(triangle[0].Position, triangle[1].Position);
+        double sideB = FlatDistance(triangle[1].Position, triangle[2].Position);
+        double sideC = FlatDistance(triangle[2].Position, triangle[0].Position);
+
+        logger?.Information(
+            LogCategory,
+            $"Triangle of {corners.Count} corner(s): sides {sideA:0} / {sideB:0} / {sideC:0} m.");
+
+        if (Math.Min(sideA, Math.Min(sideB, sideC)) < CompactTriangleSide)
+        {
+            logger?.Information(
+                LogCategory,
+                "This level is barely wider than one compound; its three shots are as far apart as it gets.");
+        }
+
+        return triangle;
+    }
+
+    /// <summary>Keeps the best building in each cell of a grid over the level, so the search stays bounded.</summary>
+    private static List<Structure> Shortlist(List<Structure> candidates)
+    {
+        int cap = ShortlistCellsAcross * ShortlistCellsAcross;
+        if (candidates.Count <= cap)
+        {
+            return candidates;
+        }
+
+        double minX = double.MaxValue;
+        double minY = double.MaxValue;
+        double maxX = double.MinValue;
+        double maxY = double.MinValue;
+        foreach (Structure candidate in candidates)
+        {
+            minX = Math.Min(minX, candidate.Position.X);
+            minY = Math.Min(minY, candidate.Position.Y);
+            maxX = Math.Max(maxX, candidate.Position.X);
+            maxY = Math.Max(maxY, candidate.Position.Y);
+        }
+
+        double cell = Math.Max(1.0, Math.Max(maxX - minX, maxY - minY) / ShortlistCellsAcross);
+        var bestInCell = new Dictionary<(int X, int Y), Structure>();
+
+        // The candidates arrive best first, so the first one to reach a cell is the best one in it.
+        foreach (Structure candidate in candidates)
+        {
+            (int, int) key = ((int)((candidate.Position.X - minX) / cell), (int)((candidate.Position.Y - minY) / cell));
+            if (!bestInCell.ContainsKey(key))
+            {
+                bestInCell[key] = candidate;
+            }
+        }
+
+        var shortlist = new List<Structure>(bestInCell.Values);
+        shortlist.Sort((a, b) =>
+        {
+            int byScore = b.Score.CompareTo(a.Score);
+            return byScore != 0 ? byScore
+                : a.Position.X != b.Position.X ? a.Position.X.CompareTo(b.Position.X)
+                : a.Position.Y.CompareTo(b.Position.Y);
+        });
+
+        return shortlist;
+    }
+
+    /// <summary>Takes the best buildings standing well inside the triangle, when there is room for any.</summary>
+    private static List<Structure> PickInside(
+        Structure[] triangle,
+        List<Structure> candidates,
+        int wanted,
+        IIgiLogger? logger)
+    {
+        var inside = new List<Structure>(wanted);
+
+        Vector3d a = triangle[0].Position;
+        Vector3d b = triangle[1].Position;
+        Vector3d c = triangle[2].Position;
+        double ab = FlatDistance(a, b);
+        double bc = FlatDistance(b, c);
+        double ca = FlatDistance(c, a);
+        double perimeter = ab + bc + ca;
+        if (perimeter <= 0.0)
+        {
+            return inside;
+        }
+
+        // The radius of the largest circle that fits inside, which is the honest measure of whether there
+        // is any level in there to look at — a long thin triangle has area without having a middle.
+        double inradius = 2.0 * TriangleArea(a, b, c) / perimeter;
+        if (inradius < InteriorInradiusMetres)
+        {
+            logger?.Information(
+                LogCategory,
+                $"The triangle's middle is only {inradius:0} m across; nothing to show inside it.");
+            return inside;
+        }
+
+        double gap = Math.Max(InteriorMinimumGap, Math.Min(ab, Math.Min(bc, ca)) * InteriorGapFraction);
+        var families = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            triangle[0].Family,
+            triangle[1].Family,
+            triangle[2].Family,
+        };
+
+        int within = 0;
+        int sameFamily = 0;
+        int crowded = 0;
+        foreach (Structure candidate in candidates)
+        {
+            if (!IsWellInside(candidate.Position, a, b, c))
+            {
+                continue;
+            }
+
+            within++;
+            if (families.Contains(candidate.Family))
+            {
+                sameFamily++;
+                continue;
+            }
+
+            if (IsCrowded(candidate.Position, triangle, inside, gap))
+            {
+                crowded++;
+                continue;
+            }
+
+            if (inside.Count < wanted)
+            {
+                inside.Add(candidate);
+                families.Add(candidate.Family);
+            }
+        }
+
+        logger?.Information(
+            LogCategory,
+            $"{inside.Count} shot(s) inside a triangle {inradius:0} m across at its widest, "
+            + $"of {within} building(s) standing in it ({sameFamily} a corner's kind, {crowded} too close).");
+
+        return inside;
+    }
+
+    /// <summary>Whether a point sits clear of all three of the triangle's edges.</summary>
+    private static bool IsWellInside(Vector3d point, Vector3d a, Vector3d b, Vector3d c)
+    {
+        double denominator = ((b.Y - c.Y) * (a.X - c.X)) + ((c.X - b.X) * (a.Y - c.Y));
+        if (Math.Abs(denominator) < 1e-6)
+        {
+            return false;
+        }
+
+        double u = (((b.Y - c.Y) * (point.X - c.X)) + ((c.X - b.X) * (point.Y - c.Y))) / denominator;
+        double v = (((c.Y - a.Y) * (point.X - c.X)) + ((a.X - c.X) * (point.Y - c.Y))) / denominator;
+        double w = 1.0 - u - v;
+        return u >= InteriorMargin && v >= InteriorMargin && w >= InteriorMargin;
+    }
+
+    private static bool IsCrowded(
+        Vector3d position,
+        IReadOnlyList<Structure> triangle,
+        IReadOnlyList<Structure> inside,
+        double gap)
+    {
+        double squared = gap * gap;
+        foreach (Structure corner in triangle)
+        {
+            if (FlatDistanceSquared(position, corner.Position) < squared)
+            {
+                return true;
+            }
+        }
+
+        foreach (Structure other in inside)
+        {
+            if (FlatDistanceSquared(position, other.Position) < squared)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Pulls each orbit in until it cannot take in the subject of another shot.</summary>
     /// <param name="points">The chosen places; their orbits are narrowed in place.</param>
     /// <remarks>
-    /// A level only has so much room in it. On a compact one the places end up closer together than the
-    /// orbits sized for them, and two shots that overlap are one shot shown twice — which is exactly what
-    /// made the first attempt at this worthless. Rather than drop a place for being too near its
-    /// neighbour, its orbit is pulled in to just under half the distance between them: the shots stay
-    /// distinct, and a cramped level simply gets tighter framing than a sprawling one.
+    /// A backstop rather than the normal path, now that the shots are solved for spread: two of them can
+    /// still end up close on a level with nowhere else to put them, and two orbits that overlap are one
+    /// shot shown twice. Rather than drop a place for being too near its neighbour, its orbit is pulled in
+    /// to just under half the distance between them.
     /// </remarks>
     private static void TightenOverlappingShots(List<ShowcasePoint> points)
     {
@@ -186,202 +630,11 @@ public static class MissionShowcasePoints
             {
                 Orbit = orbit with
                 {
-                    Radius = Math.Max(24.0, orbit.Radius * scale),
-                    Height = Math.Max(10.0, orbit.Height * scale),
+                    Radius = Math.Max(Structure.ClosestOrbitMetres, orbit.Radius * scale),
+                    Height = Math.Max(Structure.LowestOrbitMetres, orbit.Height * scale),
                 },
             };
         }
-    }
-
-    /// <summary>Takes the biggest structures in a level, spread out, largest first.</summary>
-    private static List<Structure> FindStructures(
-        WorldScene scene,
-        int wanted,
-        IReadOnlyList<ShowcasePoint> taken,
-        IIgiLogger? logger)
-    {
-        var chosen = new List<Structure>(Math.Max(0, wanted));
-        if (wanted <= 0)
-        {
-            return chosen;
-        }
-
-        // Every placement that is a building rather than a prop or a piece of landscape, measured by its
-        // own mesh. The size is what frames the shot, so it has to come from the model, not from a guess.
-        var candidates = new List<Structure>();
-        var seen = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (WorldPlacement placement in scene.Placements)
-        {
-            if (placement.Model.IsEmpty || placement.Model.TriangleCount < MinimumTriangles)
-            {
-                continue;
-            }
-
-            // Measured once per distinct model: a level places the same hangar a dozen times and walking
-            // every vertex of each copy is the same answer paid for repeatedly.
-            string key = placement.Instance.Name;
-            if (!seen.TryGetValue(key, out double radius))
-            {
-                radius = ModelRadiusMetres(placement.Model);
-                seen[key] = radius;
-            }
-
-            if (radius is < MinimumStructureRadius or > MaximumStructureRadius)
-            {
-                continue;
-            }
-
-            candidates.Add(new Structure(
-                placement.Position,
-                radius,
-                placement.Model.TriangleCount,
-                0,
-                placement.Instance.Name,
-                placement.TaskName));
-        }
-
-        // A building standing among other things is somewhere; the same building alone in a field is not.
-        // Scoring on detail alone picked the latter often enough to matter, so the count of what stands
-        // around each candidate is folded in — the two signals together are what a location actually is.
-        for (int i = 0; i < candidates.Count; i++)
-        {
-            int neighbours = 0;
-            double reachSquared = NeighbourhoodMetres * NeighbourhoodMetres;
-            foreach (WorldPlacement placement in scene.Placements)
-            {
-                if (FlatDistanceSquared(placement.Position, candidates[i].Position) <= reachSquared)
-                {
-                    neighbours++;
-                }
-            }
-
-            candidates[i] = candidates[i] with { Neighbours = neighbours };
-        }
-
-        candidates.RemoveAll(c => c.Neighbours < MinimumNeighbours);
-        if (candidates.Count == 0)
-        {
-            logger?.Information(LogCategory, "Every structure in this level stands on its own; none is a place.");
-            return chosen;
-        }
-
-        if (candidates.Count == 0)
-        {
-            logger?.Information(LogCategory, "No structure in this level is big enough to circle.");
-            return chosen;
-        }
-
-        // Best first, ties broken on position so the order never depends on how the level happened to
-        // enumerate. Detail rather than size — a detailed building beats a big empty shed — multiplied by
-        // how much stands around it.
-        candidates.Sort((a, b) =>
-        {
-            int byScore = b.Score.CompareTo(a.Score);
-            return byScore != 0 ? byScore
-                : a.Position.X != b.Position.X ? a.Position.X.CompareTo(b.Position.X)
-                : a.Position.Y.CompareTo(b.Position.Y);
-        });
-
-        // How far apart the shots should be, from how big the level actually is: the five best structures
-        // in a level are otherwise five corners of the same compound.
-        double separation = Separation(candidates, wanted);
-
-        // Passes of decreasing separation, so a level too small to spread its shots gets them closer
-        // together rather than getting fewer of them.
-        //
-        // What never relaxes is that no two shots may be of the same KIND of building. A level places one
-        // prefab a dozen times, and the first version of this happily picked three of them: the same hut,
-        // three times, which is what made the whole thing look broken. A mission with only two distinct
-        // structures worth showing gets two shots and cycles between two — fewer places, honestly shown,
-        // beats five that are the same place.
-        double[] reaches =
-        [
-            separation,
-            Math.Max(separation * 0.5, AbsoluteMinimumGap),
-            AbsoluteMinimumGap,
-        ];
-
-        var usedFamilies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (double reach in reaches)
-        {
-            if (chosen.Count >= wanted)
-            {
-                break;
-            }
-
-            foreach (Structure candidate in candidates)
-            {
-                if (chosen.Count >= wanted)
-                {
-                    break;
-                }
-
-                if (!usedFamilies.Contains(candidate.Family) && IsClear(candidate, reach, taken, chosen))
-                {
-                    chosen.Add(candidate);
-                    usedFamilies.Add(candidate.Family);
-                }
-            }
-        }
-
-        logger?.Information(
-            LogCategory,
-            $"Chose {chosen.Count} structure(s) of {candidates.Count} candidate(s), {separation:0} m apart.");
-
-        foreach (Structure c in chosen)
-        {
-            logger?.Information(
-                LogCategory,
-                $"  {c.Task} ({c.Model}), {c.Radius * 2:0} m across, {c.Neighbours} object(s) around it.");
-        }
-
-        return chosen;
-    }
-
-    /// <summary>How far apart the shots are pushed, from the spread of the level's own structures.</summary>
-    private static double Separation(List<Structure> candidates, int wanted)
-    {
-        double minX = double.MaxValue;
-        double minY = double.MaxValue;
-        double maxX = double.MinValue;
-        double maxY = double.MinValue;
-        foreach (Structure candidate in candidates)
-        {
-            minX = Math.Min(minX, candidate.Position.X);
-            minY = Math.Min(minY, candidate.Position.Y);
-            maxX = Math.Max(maxX, candidate.Position.X);
-            maxY = Math.Max(maxY, candidate.Position.Y);
-        }
-
-        // Roughly the level's extent divided between the shots, so they land across the whole of it.
-        double extent = Math.Max(maxX - minX, maxY - minY);
-        return Math.Clamp(extent / Math.Max(2, wanted), MinimumSeparation, MaximumSeparation);
-    }
-
-    private static bool IsClear(
-        Structure candidate,
-        double separation,
-        IReadOnlyList<ShowcasePoint> taken,
-        List<Structure> chosen)
-    {
-        double squared = separation * separation;
-        foreach (ShowcasePoint point in taken)
-        {
-            if (FlatDistanceSquared(candidate.Position, point.Centre) < squared)
-            {
-                return false;
-            }
-        }
-
-        foreach (Structure other in chosen)
-        {
-            if (FlatDistanceSquared(candidate.Position, other.Position) < squared)
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /// <summary>The radius of a model's own mesh, in metres.</summary>
@@ -415,6 +668,30 @@ public static class MissionShowcasePoints
         return Math.Sqrt((halfWidth * halfWidth) + (halfDepth * halfDepth));
     }
 
+    /// <summary>How far across the level its buildings stand, in metres, along its longer axis.</summary>
+    private static double Extent(IReadOnlyList<Structure> candidates)
+    {
+        double minX = double.MaxValue;
+        double minY = double.MaxValue;
+        double maxX = double.MinValue;
+        double maxY = double.MinValue;
+        foreach (Structure candidate in candidates)
+        {
+            minX = Math.Min(minX, candidate.Position.X);
+            minY = Math.Min(minY, candidate.Position.Y);
+            maxX = Math.Max(maxX, candidate.Position.X);
+            maxY = Math.Max(maxY, candidate.Position.Y);
+        }
+
+        return candidates.Count == 0 ? 0.0 : Math.Max(maxX - minX, maxY - minY);
+    }
+
+    /// <summary>Twice the area of the triangle three points make on the ground, halved.</summary>
+    private static double TriangleArea(Vector3d a, Vector3d b, Vector3d c) =>
+        Math.Abs(((b.X - a.X) * (c.Y - a.Y)) - ((c.X - a.X) * (b.Y - a.Y))) * 0.5;
+
+    private static double FlatDistance(Vector3d a, Vector3d b) => Math.Sqrt(FlatDistanceSquared(a, b));
+
     private static double FlatDistanceSquared(Vector3d a, Vector3d b)
     {
         double dx = a.X - b.X;
@@ -422,7 +699,7 @@ public static class MissionShowcasePoints
         return (dx * dx) + (dy * dy);
     }
 
-    /// <summary>One structure worth circling: where it stands, how wide it is, how detailed, how busy.</summary>
+    /// <summary>One building worth circling: where it stands, how wide it is, how detailed, how busy.</summary>
     private readonly record struct Structure(
         Vector3d Position,
         double Radius,
@@ -431,21 +708,21 @@ public static class MissionShowcasePoints
         string Model,
         string Task)
     {
+        /// <summary>The tightest the orbit is ever pulled, in metres.</summary>
+        public const double ClosestOrbitMetres = 20.0;
+
+        /// <summary>The lowest the camera is ever brought, in metres above the subject's middle.</summary>
+        public const double LowestOrbitMetres = 8.0;
+
         /// <summary>Gets a value indicating whether the level itself called this a building.</summary>
-        /// <remarks>
-        /// Level scripts name their placing tasks, and the name is authored: a structure is placed by a
-        /// task called <c>Building_1112</c> where a crate or a truck is an <c>EditRigidObj</c>. That is a
-        /// statement of intent by whoever built the level, and no heuristic over triangle counts is going
-        /// to beat it — so it is read directly and weighs more than anything derived.
-        /// </remarks>
         public bool IsDeclaredBuilding =>
             Task.StartsWith(BuildingTaskPrefix, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>Gets the model's family — everything before the first underscore of its name.</summary>
         /// <remarks>
-        /// A pack names a model <c>418_01_1</c> and <c>418_02_1</c>, which are two pieces or two variants
-        /// of one structure. Keeping the shots distinct by full model name let both through and put what
-        /// is visibly the same building on screen twice; the family is what actually has to differ.
+        /// A pack names a model <c>418_01_1</c> and <c>418_02_1</c>, which are two pieces or two variants of
+        /// one structure. Keeping the shots distinct by full model name lets both through and puts what is
+        /// visibly the same building on screen twice; the family is what actually has to differ.
         /// </remarks>
         public string Family
         {
@@ -456,27 +733,38 @@ public static class MissionShowcasePoints
             }
         }
 
-        /// <summary>How good a subject this is: what it is, how big, how detailed, and how busy around it.</summary>
+        /// <summary>How good a subject this is: how detailed, how big, and how busy around it.</summary>
         public double Score =>
             Triangles
             * (1.0 + Math.Sqrt(Neighbours))
-            * (IsDeclaredBuilding ? DeclaredBuildingBonus : 1.0)
 
             // Size counts for something on its own: between two equally detailed buildings the bigger one
             // is the landmark, and a landmark is what a shot wants to be of.
             * (1.0 + (Radius / 20.0));
 
+        /// <summary>Turns the building into a shot of itself: an orbit sized to the mesh, close in.</summary>
+        /// <remarks>
+        /// <para>
+        /// The distance is a multiple of the building's own radius plus a fixed margin, never a flat number:
+        /// a fixed one either stands a shed off at a hundred metres or drives the camera through a hangar's
+        /// wall. At 1.3× plus nine metres a small building is watched from a dozen metres off its wall and
+        /// a large one from around twenty — close enough to read as a shot of that building rather than of
+        /// the area it stands in, and still outside anything the level puts against it.
+        /// </para>
+        /// <para>
+        /// The height is deliberately low against the radius. A tall orbit looks down at a roof, and what
+        /// makes a building read is its elevation; a third of the radius keeps the camera tilted about
+        /// twenty degrees down, which sees the front of a wall and the ground it stands on at once.
+        /// </para>
+        /// </remarks>
         public ShowcasePoint ToPoint(MenuCameraSpec fallback)
         {
-            // Close enough that the building fills the frame. The old sizing put the camera further out
-            // than the distance between two shots, which is why every shot looked the same; this keeps the
-            // orbit to a little over the object it is circling.
-            double radius = Math.Clamp((Radius * 2.2) + 16.0, 30.0, 80.0);
-            double height = Math.Clamp((Radius * 0.7) + 9.0, 12.0, 34.0);
+            double radius = Math.Clamp((Radius * 1.3) + 9.0, ClosestOrbitMetres, 70.0);
+            double height = Math.Clamp((Radius * 0.35) + 6.0, LowestOrbitMetres, 20.0);
 
             // Look at the middle of the structure rather than the ground it stands on.
             return new ShowcasePoint(
-                new Vector3d(Position.X, Position.Y, Position.Z + (Radius * 0.35)),
+                new Vector3d(Position.X, Position.Y, Position.Z + Math.Clamp(Radius * 0.4, 3.0, 16.0)),
                 fallback with { Radius = radius, Height = height });
         }
     }

@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Resources;
@@ -28,6 +29,12 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 /// <param name="MissionId">The mission this was built for.</param>
 /// <param name="Mission">The loaded mission: its descriptor, packs and terrain.</param>
+/// <param name="Loop">
+/// The private loop the level was built into: its task tree, its script namespace, its variables. Held
+/// because a preview is not only looked at — pressing Play <em>promotes</em> the backdrop into the played
+/// mission, and promotion is this loop becoming the game's own rather than the level being loaded a second
+/// time. A preview that is never promoted simply never has it advanced, which is what it was before.
+/// </param>
 /// <param name="LevelRoot">The level's task tree, in the preview's own private tree.</param>
 /// <param name="Scene">The placements the world renderer draws.</param>
 /// <param name="Solids">The collision index built from those placements.</param>
@@ -46,6 +53,7 @@ namespace OpenIGI.Desktop;
 public sealed record MissionPreview(
     int MissionId,
     LoadedMission Mission,
+    GameLoop Loop,
     LevelTask LevelRoot,
     WorldScene Scene,
     ObjectCollisionIndex Solids,
