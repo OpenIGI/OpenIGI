@@ -1,8 +1,10 @@
 using System.Globalization;
 using OpenIGI.Core;
+using OpenIGI.Core.Audio;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Legacy;
+using OpenIGI.Formats.Sound;
 using OpenIGI.Formats.Textures;
 
 return Run(args);
@@ -23,11 +25,12 @@ static int Run(string[] args)
             "EXTRACT" => Extract(args),
             "IMAGES" => Images(args),
             "MAPS" => Maps(args),
+            "SOUNDS" => Sounds(args),
             _ => Fail($"Unknown command '{args[0]}'."),
         };
     }
     catch (Exception error) when (error is IlffFormatException or FlatResourceFormatException
-        or IOException or UnauthorizedAccessException)
+        or IlsfFormatException or IOException or UnauthorizedAccessException)
     {
         Console.Error.WriteLine($"error: {error.Message}");
         return ExitCode.Failure;
@@ -175,6 +178,129 @@ static int Images(string[] args)
         $"{duplicates} repeat(s), {notTextures} non-texture entr(ies), {failed} failure(s)."));
 
     return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
+}
+
+// Decodes every ILSF sound found below a path and writes each one out as an ordinary WAV.
+//
+// The game's ".wav" files are not WAVs -- they are ILSF, and about half of them are ADPCM. This exists
+// so the decoder can be LISTENED to: a byte count can be right while the samples are noise, and the
+// ADPCM tables were read out of the binary rather than taken from a spec, so hearing them is the check
+// that actually counts.
+//
+// Walks loose files and archives alike, because the streamed forms only ever exist loose on disk and
+// the resident forms only ever inside sounds.res -- so covering one and not the other tests half the
+// decoder.
+static int Sounds(string[] args)
+{
+    if (args.Length != 3)
+    {
+        return Fail("usage: ResExtract sounds <archive|file|dir> <outdir>");
+    }
+
+    string outputRoot = Path.GetFullPath(args[2]);
+    Directory.CreateDirectory(outputRoot);
+
+    HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+    int written = 0;
+    int duplicates = 0;
+    int failed = 0;
+    var census = new SortedDictionary<string, int>(StringComparer.Ordinal);
+
+    foreach ((string origin, ReadOnlyMemory<byte> data) in EnumerateSoundSources(args[1]))
+    {
+        string stem = Path.GetFileNameWithoutExtension(ToRelativePath(new ArchiveItem(origin, string.Empty, data)) ?? origin);
+        if (stem.Length == 0 || !seen.Add(stem))
+        {
+            duplicates++;
+            continue;
+        }
+
+        try
+        {
+            IlsfFile sound = IlsfFile.Read(data);
+            WaveWriter.Write(
+                Path.Combine(outputRoot, stem + ".wav"),
+                sound.DecodePcm().Span,
+                sound.SampleRate,
+                sound.Channels,
+                sound.BitsPerSample);
+
+            string key = string.Create(CultureInfo.InvariantCulture, $"{sound.Format} {sound.SampleRate}Hz {sound.Channels}ch");
+            census[key] = census.TryGetValue(key, out int count) ? count + 1 : 1;
+            written++;
+        }
+        catch (Exception error) when (error is IlsfFormatException or IOException)
+        {
+            Console.Error.WriteLine($"warning: '{stem}' did not decode: {error.Message}");
+            failed++;
+        }
+    }
+
+    foreach ((string key, int count) in census)
+    {
+        Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"{count,6}  {key}"));
+    }
+
+    Console.WriteLine(string.Create(
+        CultureInfo.InvariantCulture,
+        $"Wrote {written} sound(s) to {outputRoot}; {duplicates} repeat(s), {failed} failure(s)."));
+
+    return failed > 0 && written == 0 ? ExitCode.Failure : ExitCode.Ok;
+}
+
+// Yields every ILSF sound below a path: loose files first, then the bodies inside every archive.
+static IEnumerable<(string Origin, ReadOnlyMemory<byte> Data)> EnumerateSoundSources(string path)
+{
+    if (!Directory.Exists(path))
+    {
+        byte[] bytes = File.ReadAllBytes(path);
+        if (IlsfFile.IsIlsf(bytes))
+        {
+            yield return (path, bytes);
+            yield break;
+        }
+
+        foreach (ArchiveItem item in ReadArchive(path))
+        {
+            if (IlsfFile.IsIlsf(item.Data.Span))
+            {
+                yield return (item.Name, item.Data);
+            }
+        }
+
+        yield break;
+    }
+
+    foreach (string file in Directory.EnumerateFiles(path, "*.wav", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase))
+    {
+        byte[] bytes = File.ReadAllBytes(file);
+        if (IlsfFile.IsIlsf(bytes))
+        {
+            yield return (file, bytes);
+        }
+    }
+
+    foreach (string archive in Directory.EnumerateFiles(path, "*.res", SearchOption.AllDirectories).Order(StringComparer.OrdinalIgnoreCase))
+    {
+        IReadOnlyList<ArchiveItem> items;
+        try
+        {
+            items = ReadArchive(archive);
+        }
+        catch (Exception error) when (error is IlffFormatException or FlatResourceFormatException)
+        {
+            Console.Error.WriteLine($"warning: skipping '{archive}': {error.Message}");
+            continue;
+        }
+
+        foreach (ArchiveItem item in items)
+        {
+            if (IlsfFile.IsIlsf(item.Data.Span))
+            {
+                yield return (item.Name, item.Data);
+            }
+        }
+    }
 }
 
 // Derives the surface maps this game's textures never had, for every PNG in a directory.
@@ -338,6 +464,7 @@ static void PrintUsage() =>
           ResExtract list    <archive>
           ResExtract extract <archive> <outdir>
           ResExtract images  <archive|dir> <outdir>
+          ResExtract sounds  <archive|file|dir> <outdir>
 
         Reads ILFF archives (.res), model and font containers (.mef, .fnt) and the legacy
         "RESOURCE" flat archive. Extracted entries keep their layout below <outdir>, with the
@@ -346,6 +473,10 @@ static void PrintUsage() =>
         "images" decodes every texture it finds to an 8-bit RGBA PNG, named after the texture and
         flattened into one directory. Given a directory it walks every .res below it and writes
         each distinct texture once, however many levels pack a copy of it.
+
+        "sounds" decodes every ILSF sound it finds -- expanding the ADPCM forms -- to an ordinary
+        PCM WAV. The game's own ".wav" files are ILSF, not WAV, so nothing else will open them.
+        Given a directory it walks the loose files and every .res below it.
         """);
 
 internal sealed record ArchiveItem(string Name, string Kind, ReadOnlyMemory<byte> Data);
