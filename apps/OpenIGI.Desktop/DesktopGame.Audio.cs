@@ -152,11 +152,12 @@ internal sealed partial class DesktopGame
             ? _loop.Clock.TickFraction(_loop.TimeSource.Milliseconds)
             : 1f;
 
-        _audio.Listener = new AudioListenerState
-        {
-            Position = player.Position,
-            Orientation = player.SmoothedLookRotation(alpha),
-        };
+        // The EYE, not the feet: an ear 1.8 m below the head is a metre and a half of error against
+        // sounds whose whole audible range is fifty. And through FromViewRotation, because what the
+        // camera hands back is a world-to-view rotation with its axes in its rows -- the listener wants
+        // the engine eye basis, which keeps them in its columns and in a different order.
+        _audio.Listener = AudioListenerState.FromViewRotation(
+            player.SmoothedEyeMetres(alpha), player.SmoothedLookRotation(alpha));
     }
 
     /// <summary>Pushes the volume variables onto the device's buses.</summary>

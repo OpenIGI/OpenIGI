@@ -44,4 +44,32 @@ public readonly record struct AudioListenerState
 
     /// <summary>Gets the listener's right direction, which is the axis a pan is measured along.</summary>
     public Vector3f Right => Orientation.Column1;
+
+    /// <summary>Builds a listener from a camera's world-to-view rotation.</summary>
+    /// <param name="positionMetres">Where the ear is, in metres.</param>
+    /// <param name="worldToView">
+    /// A world-to-view rotation whose <b>rows</b> are the view axes in the order right, up, forward —
+    /// the shape <c>Camera3D.LookRotation</c> returns.
+    /// </param>
+    /// <returns>A listener whose orientation is the engine eye basis this type expects.</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>These are two different matrices and confusing them is silent, not loud.</b> A camera's
+    /// world-to-view rotation carries its axes in its rows, in the order right, <i>up</i>, forward; the
+    /// engine's eye basis carries them in its columns, in the order right, <i>forward</i>, up. Handing
+    /// the first straight to <see cref="Orientation"/> reads column 2 as forward when column 2 is not
+    /// even an axis of the frame — at an unrotated pose it yields forward <c>+Z</c> and up <c>+Y</c>,
+    /// so the listener faces <i>straight up</i>.
+    /// </para>
+    /// <para>
+    /// What that sounds like is a source above the player arriving dead ahead: centred, unpanned and
+    /// seemingly right on top of the listener however far away it really is. Transposing moves the
+    /// rows into the columns; the swap puts forward ahead of up.
+    /// </para>
+    /// </remarks>
+    public static AudioListenerState FromViewRotation(Vector3d positionMetres, Matrix3f worldToView) => new()
+    {
+        Position = positionMetres,
+        Orientation = Matrix3f.FromRows(worldToView.Row1, worldToView.Row3, worldToView.Row2).Transposed(),
+    };
 }

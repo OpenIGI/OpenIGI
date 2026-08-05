@@ -1048,6 +1048,17 @@ public sealed class PlayerCamera
     public Matrix3f SmoothedLookRotation(float alpha) =>
         Camera3D.LookRotation(_body.Yaw, SmoothedAimPitch(alpha));
 
+    /// <summary>Where the ear is for a frame between two ticks, in metres.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <returns>The blended eye position in metres.</returns>
+    /// <remarks>
+    /// The eye rather than <see cref="Position"/>, which is the feet: the listener belongs in the head,
+    /// and blended from the same tick pair the view uses so a source does not step across the stereo
+    /// image at 30 Hz under a camera that glides.
+    /// </remarks>
+    public Vector3d SmoothedEyeMetres(float alpha) => ToMetres(
+        HasViewTickPair ? PresentationBlend.Lerp(_prevTickEye, _tickEye, alpha) : _body.Eye);
+
     /// <summary>Gets the two FOV tangents blended for an uncapped presentation frame.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
     /// <remarks>
