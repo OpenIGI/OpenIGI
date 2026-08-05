@@ -179,6 +179,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private Vector3f _temporalCamera;
     private Matrix3f _temporalViewToWorldValue = Matrix3f.Identity;
     private Matrix4f _previousViewProjection = Matrix4f.Identity;
+
+    // The same three, frozen at the head of the frame for the camera gather. The temporal resolve
+    // advances the fields above from inside the forward pass, so by the time the gather runs they
+    // describe the frame being drawn rather than the one before it.
+    private Matrix4f _motionPreviousViewProjection = Matrix4f.Identity;
+    private Vector3f _motionPreviousCamera;
+    private bool _motionHasPreviousFrame;
     private Vector3f _previousCamera;
     private Matrix3f _previousViewToWorld = Matrix3f.Identity;
     private bool _hasPreviousFrame;
@@ -1150,6 +1157,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _captureActive = true;
         _temporalResolved = false;
+
+        // Where the camera was on the frame BEFORE this one, taken here because this is the only moment
+        // it is still true. The temporal resolve ends by calling RememberFrame, and it runs from the
+        // forward pass -- long before the camera gather that needs the previous frame -- so by the time
+        // the gather asks, the "previous" state is the current one. It reprojected every pixel onto
+        // itself and produced a velocity of exactly zero, which is why r_motion_blur has never done
+        // anything at any value or any preset.
+        _motionPreviousViewProjection = _previousViewProjection;
+        _motionPreviousCamera = _previousCamera;
+        _motionHasPreviousFrame = _hasPreviousFrame;
+
         _sceneTarget.BeginFrame();
         _sceneTarget.BindForGeometry();
         return true;
@@ -1523,7 +1541,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         // Before the bloom, so that a defocused highlight blooms as the wide soft thing it has become
         // rather than as the point it was: the lens spreads what actually reaches it.
-        uint scene = RunCameraEffects(target, post);
+        uint scene = RunCameraEffects(
+            target, post, _motionPreviousViewProjection, _motionPreviousCamera, _motionHasPreviousFrame);
         bool bloomed = RunBloom(target, post, scene);
 
         // With anti-aliasing on, the tone map lands in a buffer rather than on the screen, so the
@@ -1648,13 +1667,26 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     /// <summary>Defocuses what is off the focal plane and smears what moved.</summary>
     /// <param name="target">The scene target holding the finished frame, its depth and its motion.</param>
     /// <param name="post">The frame's settings.</param>
+    /// <param name="previousViewProjection">
+    /// The view-projection of the frame BEFORE this one. Passed in rather than read from the field,
+    /// because the temporal resolve that runs immediately before this has already advanced the field to
+    /// the current frame — reading it here reprojected every pixel onto itself and produced no motion at
+    /// all, at any <c>r_motion_blur</c> setting.
+    /// </param>
+    /// <param name="previousCamera">Where the camera was on that frame, for the same reason.</param>
+    /// <param name="hasPreviousFrame">Whether there is a previous frame to reproject against at all.</param>
     /// <returns>The texture holding the frame afterwards, which is unchanged when nothing ran.</returns>
     /// <remarks>
     /// Into a buffer of its own rather than the scene ping-pong, because by this point the frame may
     /// be at the output resolution — the temporal upsample has already happened — while the scene pair
     /// is sized for the render resolution.
     /// </remarks>
-    private uint RunCameraEffects(GLSceneTarget target, in PostProcessSettings post)
+    private uint RunCameraEffects(
+        GLSceneTarget target,
+        in PostProcessSettings post,
+        in Matrix4f previousViewProjection,
+        Vector3f previousCamera,
+        bool hasPreviousFrame)
     {
         if (!post.WantsCameraEffects
             || !target.HasScratch
@@ -1683,19 +1715,22 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _cameraFrame = (_cameraFrame + 1) & 63;
         _cameraProgram.SetVector3(
             _cameraMotionBlur,
-            Math.Clamp(post.MotionBlur, 0f, 1f),
+
+            // Nothing to reproject against on the very first frame, and a reprojection against an
+            // identity matrix would smear the whole picture in one direction.
+            hasPreviousFrame ? Math.Clamp(post.MotionBlur, 0f, 1f) : 0f,
 
             // A hard ceiling in pixels, so one very fast object cannot smear across the frame -- and
             // cannot cost a thousand taps doing it.
             48f,
             _cameraFrame * 0.61803399f);
 
-        _cameraProgram.SetMatrix4(_cameraPrevViewProjection, _previousViewProjection);
+        _cameraProgram.SetMatrix4(_cameraPrevViewProjection, previousViewProjection);
         _cameraProgram.SetVector3(
             _cameraDelta,
-            _temporalCamera.X - _previousCamera.X,
-            _temporalCamera.Y - _previousCamera.Y,
-            _temporalCamera.Z - _previousCamera.Z);
+            _temporalCamera.X - previousCamera.X,
+            _temporalCamera.Y - previousCamera.Y,
+            _temporalCamera.Z - previousCamera.Z);
         _cameraProgram.SetMatrix3(_cameraViewToWorld, _temporalViewToWorldValue);
         _cameraProgram.SetVector2(
             _cameraTexelSize,
