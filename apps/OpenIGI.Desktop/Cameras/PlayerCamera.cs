@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -55,12 +56,10 @@ public sealed class PlayerCamera
     /// </remarks>
     public const double UnitsPerMetre = 4096.0;
 
-    /// <summary>How far past the head the get-off step places the player, onto the ledge, in world units.</summary>
-    public const double GetOffReachUnits = 2048.0;
-
     private readonly PlayerBody _body = new();
     private readonly PlayerInputState _input = new();
     private readonly IgiRandom _random = new();
+    private readonly Mp5SightZoom _sightZoom = new();
     private readonly List<GunImpact> _impacts = [];
     private readonly HumanLadderClimb _climb = new();
     private HumanLocomotionAnimator? _animator;
@@ -73,8 +72,17 @@ public sealed class PlayerCamera
     private bool _wasCapturing;
     private IReadOnlyList<LadderPlacement> _ladders = [];
     private LadderPlacement? _nearLadder;
-    private LadderPlacement? _mountedLadder;
     private bool _nearLadderAtTop;
+    private double _nearLadderAngle = double.MaxValue;
+    private WorldInteractionRegistry? _interactions;
+    private WorldInteraction? _nearInteraction;
+    private WorldInteraction? _activeInteraction;
+    private int _interactionTick;
+    private bool _interactionUseArmed;
+    private Vector3d _interactionStartPosition;
+    private Vector3d _wireDirection;
+    private double _wireSpeed;
+    private bool _mapComputerOpen;
 
     // The first-person rig's last two tick states, captured at the end of Tick() — what the
     // presentation draws between when r_smooth is on. All of it is kept in bone/eye space WITHOUT the
@@ -95,6 +103,10 @@ public sealed class PlayerCamera
     private float _tickSwayYaw;
     private float _prevTickRecoilPitch;
     private float _tickRecoilPitch;
+    private float _prevTickTanX = HumanView.DefaultTanX;
+    private float _tickTanX = HumanView.DefaultTanX;
+    private float _prevTickViewModelTanX = HumanView.DefaultViewModelTanX;
+    private float _tickViewModelTanX = HumanView.DefaultViewModelTanX;
 
     /// <summary>Gets the body being driven.</summary>
     public PlayerBody Body => _body;
@@ -118,6 +130,13 @@ public sealed class PlayerCamera
     /// <b>nearer</b>, so a guard standing in front of a wall is hit and the wall is not marked.
     /// </remarks>
     public HumanShot? Humans { get; set; }
+
+    /// <summary>Gets or sets where actual projectile contacts are offered to the AI event broadcaster.</summary>
+    /// <remarks>
+    /// This is invoked only when the world surface is the nearest hit. A human in front of that surface
+    /// receives damage instead and does not also manufacture a ground-impact event behind itself.
+    /// </remarks>
+    public Action<Vector3d>? GroundImpact { get; set; }
 
     /// <summary>Gets how many of this player's rounds have struck a human.</summary>
     public int HumanHits { get; private set; }
@@ -150,6 +169,9 @@ public sealed class PlayerCamera
 
     /// <summary>Gets whether the weapon in hand fired on the last tick.</summary>
     public bool FiredThisTick => _weapons?.FiredThisTick ?? false;
+
+    /// <summary>Gets the serial of the last round fired.</summary>
+    public int ShotSequence => _weapons?.ShotSequence ?? 0;
 
     /// <summary>Gets the weapon in hand, or <see langword="null"/> when there is none.</summary>
     public WeaponType? HeldWeaponType => _weapons?.InHand?.Weapon;
@@ -298,6 +320,62 @@ public sealed class PlayerCamera
     /// <summary>Gets whether the cursor should be held while the view is being turned.</summary>
     public bool IsCapturingMouse { get; private set; }
 
+    /// <summary>Gets whether the human is held in retail locomotion state 45 for the map computer.</summary>
+    public bool IsMapComputerOpen => _mapComputerOpen;
+
+    /// <summary>
+    /// Enters or leaves the map-computer state without letting the normal movement tick consume the
+    /// opening key. Retail weapon state 11 immediately installs human locomotion state 45
+    /// (<c>0x40FDA0</c>), whose declared weapon action is the crouched hold pose.
+    /// </summary>
+    public void SetMapComputerOpen(bool open)
+    {
+        if (_mapComputerOpen == open)
+        {
+            return;
+        }
+
+        _mapComputerOpen = open;
+        _weapons?.SetMapComputerOpen(open);
+        _animator?.Enter(open ? 45 : HumanLocomotionStates.Idle);
+
+        if (open && _weapons?.InHand is { } held)
+        {
+            // State 45 requests Crouch in HumanLocomotionWeaponActions. Play it before the first
+            // frozen computer tick so the first-person rig leaves the previous gun pose immediately.
+            PlayWeaponAction(held.Weapon, WeaponAction.Crouch);
+        }
+
+        PoseChanged = true;
+    }
+
+    /// <summary>Lets the pointer go and drops the presentation's tick pairs, for a frozen frame.</summary>
+    /// <remarks>
+    /// <para>
+    /// What the pause menu needs of the player, and only that: the body is not moved, nothing is placed
+    /// again, and the mission is left exactly where it stood.
+    /// </para>
+    /// <para>
+    /// The mouse is released because <see cref="Look"/> claims the cursor unconditionally — a first-person
+    /// view looks wherever the mouse goes — so a menu drawn over it would be unreachable. Clearing the
+    /// capture also re-arms the settling frame, which is what stops the warp that re-capturing produces on
+    /// resume from arriving as a movement the player never made.
+    /// </para>
+    /// <para>
+    /// The tick pairs go with it, because a pair kept across the menu is a pair whose two halves are on
+    /// either side of it: the first frame after resuming would draw the view somewhere between the tick
+    /// before the pause and the tick after it. Dropping them makes the next tick build a fresh pair from
+    /// where the player still is, at the cost of one tick drawn unsmoothed.
+    /// </para>
+    /// </remarks>
+    public void HoldStill()
+    {
+        IsCapturingMouse = false;
+        _wasCapturing = false;
+        HasViewTickPair = false;
+        _hasWeaponBonePair = false;
+    }
+
     /// <summary>Gets the eye the scene is drawn from, in the renderer's metres.</summary>
     public Camera3D Camera => new(ToMetres(_body.Eye), Camera3D.LookRotation(_body.Yaw, AimPitch));
 
@@ -396,6 +474,59 @@ public sealed class PlayerCamera
         _ladders = ladders;
     }
 
+    /// <summary>Gives the player the level's direct activatable tasks.</summary>
+    public void UseInteractions(WorldInteractionRegistry interactions)
+    {
+        ArgumentNullException.ThrowIfNull(interactions);
+        _interactions = interactions;
+    }
+
+    /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
+    public event Action<int>? TaskActivated;
+
+    /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
+    public bool IsInWorldInteraction => _activeInteraction is not null;
+
+    /// <summary>Gets the active interaction's retail locomotion state, or -1.</summary>
+    public int InteractionLocomotionState => _activeInteraction is null
+        ? -1
+        : HumanInteractionDispatch.Dispatch(
+            _activeInteraction.Type,
+            DoorNeedsPicking(_activeInteraction)).LocomotionState;
+
+    /// <summary>Gets where the third-person interaction body is placed.</summary>
+    public Vector3d InteractionFeet => _body.Position;
+
+    /// <summary>Gets the interaction body's facing in the engine/model gamma convention.</summary>
+    /// <remarks>
+    /// The walking camera's yaw is horizontally mirrored relative to IGI's <c>Z(gamma)</c> body frame
+    /// (the same conversion <see cref="LadderPlacement.PlayerYaw"/> documents). The animated body and
+    /// mode-3 camera consume the original gamma, so feeding them the camera yaw turns the cable pose
+    /// the wrong way and leaves the authored hand contact laterally off the wire.
+    /// </remarks>
+    public float InteractionFacing => -_body.Yaw;
+
+    /// <summary>Gets the retail full-body animation selected by the active state.</summary>
+    public int InteractionAnimation => _activeInteraction?.Type switch
+    {
+        InteractionActivateType.Door => 89,
+        InteractionActivateType.Cabinet => 84,
+        InteractionActivateType.Terminal => 90,
+        InteractionActivateType.StationaryGun => 198,
+        InteractionActivateType.Fence => HumanLocomotionStates.For(41).AnimationId,
+        InteractionActivateType.Wire => Math.Abs(_wireDirection.Z) > Math.Sin(0.034906585)
+            ? HumanLocomotionStates.For(43).AnimationId
+            : HumanLocomotionStates.For(42).AnimationId,
+        InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
+            ActiveAnimationParameter(_activeInteraction.Task),
+        _ => -1,
+    };
+
+    /// <summary>Gets the retail action sprite selected by the current task.</summary>
+    public string? ActionSprite => _nearInteraction is { } interaction
+        ? DoorNeedsPicking(interaction) ? "action_picklock.spr" : interaction.ActionSprite
+        : ShowLadderAction ? StatusScreenLayout.LadderActionSprite : null;
+
     /// <summary>Gets whether the player is on a ladder.</summary>
     public bool IsOnLadder => _climb.IsOnLadder;
 
@@ -405,17 +536,23 @@ public sealed class PlayerCamera
     /// <summary>Gets the yaw the climbing body faces — into the ladder, in radians.</summary>
     public float LadderFacing => _climb.Facing;
 
-    /// <summary>Gets whether the climb is at a rung boundary, ready to take up/down input.</summary>
-    public bool LadderAtBoundary => _climb.AtBoundary;
+    /// <summary>Gets the active retail ladder locomotion phase.</summary>
+    public LadderTraversalPhase LadderPhase => _climb.Phase;
+
+    /// <summary>Gets animation 168's current playback direction.</summary>
+    public int LadderDirection => _climb.Direction;
 
     /// <summary>Gets the climb animation — state 37's binding, animation 168 in the player's set.</summary>
     public static int LadderClimbAnimation => HumanLocomotionStates.For(37).AnimationId;
 
-    /// <summary>Gets whether a ladder is in reach and the use prompt should be shown.</summary>
-    public bool ShowInteractPrompt => _nearLadder is not null && !_climb.IsOnLadder;
+    /// <summary>Gets state 40's slide animation, 169 in the retail player set.</summary>
+    public static int LadderSlideAnimation => HumanLocomotionStates.For(40).AnimationId;
 
-    /// <summary>Gets the prompt to show when something is in reach.</summary>
-    public string InteractPromptText => _nearLadder is not null ? "Press E to climb" : string.Empty;
+    /// <summary>Gets states 38/39's shared top transition animation, 170 in the retail player set.</summary>
+    public static int LadderTopAnimation => HumanLocomotionStates.For(38).AnimationId;
+
+    /// <summary>Gets whether a ladder is in reach and its retail action icon should be shown.</summary>
+    public bool ShowLadderAction => _nearLadder is not null && !_climb.IsOnLadder;
 
     /// <summary>Puts the player at a spawn the level declared.</summary>
     /// <param name="terrain">The level's terrain.</param>
@@ -502,22 +639,46 @@ public sealed class PlayerCamera
         ArgumentNullException.ThrowIfNull(terrain);
 
         _input.Accept(SampleFrame(input));
+        _interactions?.Tick();
 
         // On a ladder the ordinary walk, gravity and collision do not run. The rung-by-rung climb (state
-        // 37) is driven by the host once per tick through DecideLadderStep / AdvanceLadderPhase, because
+        // 37) is driven by the host once per tick through DecideLadderStep and the body clip, because
         // it is coupled to the third-person body's animation; nothing to do here.
         if (_climb.IsOnLadder)
         {
             return;
         }
 
-        // Which ladder, if any, is in reach — for the prompt and for mounting.
+        if (_activeInteraction is not null)
+        {
+            TickInteraction(input, terrain);
+            return;
+        }
+
+        // Which ladder, if any, is in reach — for the action icon and for mounting.
         UpdateNearLadder();
+        double interactionAngle = double.MaxValue;
+        _nearInteraction = _interactions?.Resolve(
+            _body.Eye, _body.Yaw, _body.Pitch, out interactionAngle);
+        if (_nearLadder is not null && _nearLadderAngle <= interactionAngle)
+        {
+            _nearInteraction = null;
+        }
+        else if (_nearInteraction is not null)
+        {
+            _nearLadder = null;
+        }
 
         KeyboardState keys = input.Keyboard;
 
         // The use key mounts the ladder in reach. Taken on the rising edge so holding it does not remount
         // the instant the climb ends.
+        if (_input.IsRisingEdge(PlayerInputSlot.Activate) && _nearInteraction is not null)
+        {
+            Activate(_nearInteraction);
+            return;
+        }
+
         if (_nearLadder is not null && _input.IsRisingEdge(PlayerInputSlot.Activate))
         {
             MountLadder();
@@ -571,6 +732,216 @@ public sealed class PlayerCamera
         CaptureViewTickState();
     }
 
+    /// <summary>
+    /// Advances only the presentation while the map computer is open. The player remains grounded and
+    /// motionless, but the first-person rig keeps advancing exactly as the retail state-45 handler does.
+    /// </summary>
+    public void TickMapComputer()
+    {
+        if (!_mapComputerOpen)
+        {
+            return;
+        }
+
+        // Map controls are consumed by ComputerMap, not HumanPlayer. Feeding an empty frame prevents a
+        // held movement/fire key from leaking into the dormant weapon machine while preserving its clock.
+        _input.Accept(default);
+        _animator?.Enter(45);
+        TickWeapons();
+        _view?.Tick();
+        _weapons?.Sway.Advance();
+        PoseChanged = true;
+        SyncView();
+        CaptureViewTickState();
+    }
+
+    private void Activate(WorldInteraction interaction)
+    {
+        InteractionDispatchResult dispatch = HumanInteractionDispatch.Dispatch(
+            interaction.Type, DoorNeedsPicking(interaction));
+        switch (dispatch.Action)
+        {
+            case InteractionAction.PressSwitch:
+                interaction.Press();
+                TaskActivated?.Invoke(interaction.Task.Id);
+                break;
+            case InteractionAction.OpenDoor:
+                interaction.Door?.Toggle();
+                TaskActivated?.Invoke(interaction.Task.Id);
+                break;
+            case InteractionAction.MountWire:
+                BeginWire(interaction);
+                return;
+            case InteractionAction.ClimbFence:
+            case InteractionAction.PickLock:
+            case InteractionAction.EnterState:
+                _activeInteraction = interaction;
+                _interactionTick = 0;
+                _interactionUseArmed = false;
+                _interactionStartPosition = _body.Position;
+                interaction.BeginUse();
+                break;
+        }
+
+        _nearInteraction = null;
+    }
+
+    private void BeginWire(WorldInteraction wire)
+    {
+        Vector3d segment = wire.End - wire.Anchor;
+        if (segment.LengthSquared == 0.0)
+        {
+            return;
+        }
+
+        // sub_411F20 projects onto the wire but never mounts on a raw endpoint: both ends reserve
+        // exactly 3072 units. Mounting on the endpoint made the next state-42/43 tick read "at end"
+        // and immediately hand the body back to the ground mover.
+        Vector3d bodyPoint = wire.WireBodyPoint(_body.Eye);
+        _wireDirection = segment.Normalized();
+        if (_wireDirection.Z > 0.0)
+        {
+            _wireDirection = -_wireDirection;
+        }
+
+        _wireSpeed = 0.0;
+        _body.BeginLadderTraversal();
+        _body.Position = bodyPoint;
+        _body.Yaw = (float)Math.Atan2(_wireDirection.X, _wireDirection.Y);
+        _activeInteraction = wire;
+        _interactionTick = 0;
+        _interactionUseArmed = false;
+        _interactionStartPosition = _body.Position;
+        wire.BeginUse();
+        _nearInteraction = null;
+    }
+
+    private void TickInteraction(InputState input, TerrainData terrain)
+    {
+        WorldInteraction interaction = _activeInteraction!;
+        bool use = input.Keyboard.IsDown(KeyCode.E);
+        if (!use)
+        {
+            _interactionUseArmed = true;
+        }
+
+        if (interaction.Type == InteractionActivateType.StationaryGun)
+        {
+            if (use && _interactionUseArmed)
+            {
+                EndInteraction(completed: false, terrain);
+            }
+            return;
+        }
+
+        if (interaction.Type == InteractionActivateType.Wire)
+        {
+            TickWire(input, terrain, use);
+            return;
+        }
+
+        // All timed retail states are cancelled as soon as Use is released. Fence climbing is a
+        // committed traversal, so it is the sole exception.
+        if (!use && interaction.Type != InteractionActivateType.Fence)
+        {
+            EndInteraction(completed: false, terrain);
+            return;
+        }
+
+        _interactionTick++;
+        if (interaction.Type == InteractionActivateType.Fence)
+        {
+            TickFence(interaction, terrain);
+            return;
+        }
+
+        if (_interactionTick >= interaction.DurationTicks)
+        {
+            EndInteraction(completed: true, terrain);
+        }
+    }
+
+    private void TickWire(InputState input, TerrainData terrain, bool use)
+    {
+        WorldInteraction wire = _activeInteraction!;
+        bool sliding = Math.Abs(_wireDirection.Z) > Math.Sin(0.034906585);
+        if (sliding)
+        {
+            _wireSpeed = (-_wireDirection.Z * 88.309761) + (_wireSpeed * 0.99000001);
+            _body.Position += _wireDirection * _wireSpeed;
+        }
+        else
+        {
+            float along = Axis(input.Keyboard, KeyCode.W, KeyCode.S);
+            _body.Position += _wireDirection * (along * 512.0);
+        }
+
+        Vector3d segment = wire.End - wire.Anchor;
+        // The body-to-cable offset is perpendicular to the cable, so projecting the body itself gives
+        // the same along-wire coordinate. Adding world Z here is wrong for a sloped wire frame.
+        double coordinate = Vector3d.Dot(_body.Position - wire.Anchor, segment) / segment.LengthSquared;
+        double margin = Math.Min(0.49, 3072.0 / segment.Length);
+        if ((use && _interactionUseArmed) || coordinate < margin || coordinate > 1.0 - margin)
+        {
+            EndInteraction(completed: false, terrain);
+        }
+    }
+
+    private void TickFence(WorldInteraction fence, TerrainData terrain)
+    {
+        const int traversalTicks = 30;
+        double t = Math.Clamp(_interactionTick / (double)traversalTicks, 0.0, 1.0);
+        Vector3d forward = new(Math.Sin(fence.Facing), Math.Cos(fence.Facing), 0.0);
+        if (Vector3d.Dot(_interactionStartPosition - fence.Anchor, forward) > 0.0)
+        {
+            forward = -forward;
+        }
+        _body.Position = _interactionStartPosition
+            + (forward * (8192.0 * t))
+            + (Vector3d.UnitZ * (4096.0 * Math.Sin(Math.PI * t)));
+        _body.Yaw = (float)Math.Atan2(forward.X, forward.Y);
+        if (_interactionTick >= traversalTicks)
+        {
+            EndInteraction(completed: false, terrain);
+        }
+    }
+
+    private void EndInteraction(bool completed, TerrainData terrain)
+    {
+        WorldInteraction interaction = _activeInteraction!;
+        if (completed)
+        {
+            interaction.CompleteUse();
+            TaskActivated?.Invoke(interaction.Task.Id);
+        }
+        else
+        {
+            interaction.CancelUse();
+        }
+        _activeInteraction = null;
+        _interactionTick = 0;
+        if (interaction.Type == InteractionActivateType.Wire)
+        {
+            // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
+            // release/end look like an instant teleport to ground instead of a drop from the cable.
+            _body.EndLadderTraversal(terrain, placeOnGround: false);
+        }
+        else
+        {
+            _body.PlaceOnGround(terrain);
+        }
+        PoseChanged = true;
+        SyncView();
+    }
+
+    private static bool DoorNeedsPicking(WorldInteraction interaction)
+    {
+        return interaction.Type == InteractionActivateType.Door && interaction.IsLocked;
+    }
+
+    private static int ActiveAnimationParameter(DeclaredTask task) =>
+        task.TryGetValue("Activate Anim", out object? raw) && raw is int animation ? animation : -1;
+
     /// <summary>Gets whether the rig has two tick states for the presentation to draw between.</summary>
     public bool HasViewTickPair { get; private set; }
 
@@ -605,6 +976,14 @@ public sealed class PlayerCamera
         float recoilPitch = _weapons?.RecoilPitch ?? 0f;
         _prevTickRecoilPitch = HasViewTickPair ? _tickRecoilPitch : recoilPitch;
         _tickRecoilPitch = recoilPitch;
+
+        // GunMP5SD changes both FOV tangents on the fixed tick. Preserve that exact retail state
+        // transition, but keep the pair so an uncapped presentation can draw the space between the
+        // two values instead of exposing the original game's 30 Hz steps.
+        _prevTickTanX = HasViewTickPair ? _tickTanX : view.TanX;
+        _prevTickViewModelTanX = HasViewTickPair ? _tickViewModelTanX : view.ViewModelTanX;
+        _tickTanX = view.TanX;
+        _tickViewModelTanX = view.ViewModelTanX;
 
         // The weapon bone out of the UNROTATED pose — the identity-root one — so the look can be
         // applied per frame at draw. Equivalent by the same argument the third-person draw leans on:
@@ -643,6 +1022,31 @@ public sealed class PlayerCamera
     /// </remarks>
     public Matrix3f SmoothedLookRotation(float alpha) =>
         Camera3D.LookRotation(_body.Yaw, SmoothedAimPitch(alpha));
+
+    /// <summary>Gets the two FOV tangents blended for an uncapped presentation frame.</summary>
+    /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+    /// <remarks>
+    /// This changes only presentation. <see cref="Mp5SightZoom"/> still advances by the original
+    /// fixed-tick multipliers, so the sight reaches and leaves its limits in exactly the same number
+    /// of simulation ticks at every render frame rate.
+    /// </remarks>
+    public SightZoomFrame SmoothedSightZoom(float alpha)
+    {
+        if (_view is not { } view)
+        {
+            return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        }
+
+        if (!HasViewTickPair)
+        {
+            return new SightZoomFrame(view.TanX, view.ViewModelTanX);
+        }
+
+        float t = Math.Clamp(alpha, 0f, 1f);
+        return new SightZoomFrame(
+            _prevTickTanX + ((_tickTanX - _prevTickTanX) * t),
+            _prevTickViewModelTanX + ((_tickViewModelTanX - _prevTickViewModelTanX) * t));
+    }
 
     /// <summary>The rig's transform and held-weapon attachment for a frame between two ticks.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
@@ -769,23 +1173,25 @@ public sealed class PlayerCamera
     {
         _nearLadder = null;
         _nearLadderAtTop = false;
+        _nearLadderAngle = double.MaxValue;
         double best = double.MaxValue;
 
         foreach (LadderPlacement ladder in _ladders)
         {
-            if (!ladder.CanActivate(_body.Position, _body.Yaw, out bool atTop))
+            // Human_UpdateActivate evaluates tasks from the HumanView position, not the task's feet.
+            // Using the feet makes the strict ladder-origin height test fail until the player jumps.
+            if (!ladder.CanActivate(_body.Eye, _body.Yaw, out bool atTop, out double angle))
             {
                 continue;
             }
 
-            double dx = ladder.Bottom.X - _body.Position.X;
-            double dy = ladder.Bottom.Y - _body.Position.Y;
-            double distance = (dx * dx) + (dy * dy);
-            if (distance < best)
+            // The shared resolver keeps the most head-on task, not the nearest one.
+            if (angle < best)
             {
-                best = distance;
+                best = angle;
                 _nearLadder = ladder;
                 _nearLadderAtTop = atTop;
+                _nearLadderAngle = angle;
             }
         }
     }
@@ -795,15 +1201,10 @@ public sealed class PlayerCamera
     {
         LadderPlacement ladder = _nearLadder!;
 
-        // Face the LADDER'S OWN heading, not the approach direction. Verified against the running game
-        // (Ladder_ClimbTick fwd=): the body's gamma is fixed by the ladder's orientation
-        // (LadderPlacement.Facing = atan2(M21, M11)), so it always faces the wall square-on however you
-        // walked up to it -- the approach-based angle drifted a few degrees and swung the stand-off with it.
-        float facing = ladder.Facing;
-
-        _climb.Mount(ladder.ClimbLine, facing, _nearLadderAtTop);
-        _mountedLadder = ladder;
-        _body.Yaw = facing;
+        // sub_4113E0 takes the task's gamma, adds PI and commits both exact column-based mount offsets.
+        _body.BeginLadderTraversal();
+        _climb.Mount(ladder, _nearLadderAtTop);
+        _body.Yaw = ladder.PlayerYaw;
         _body.Position = _climb.Position;
         _nearLadder = null;
         PoseChanged = true;
@@ -814,37 +1215,25 @@ public sealed class PlayerCamera
     /// <param name="up">Whether up (W) is held.</param>
     /// <param name="down">Whether down (S) is held.</param>
     /// <param name="slide">Whether slide (use) is held.</param>
+    /// <param name="terrain">The level terrain for a foot dismount.</param>
     /// <returns>The decision; a stepping result means the host should start the rung's clip.</returns>
-    /// <remarks>Only acts at a rung boundary; a rung in progress cannot be cancelled (<c>sub_40D6B0</c>).</remarks>
-    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide)
+    /// <remarks>
+    /// Up/down only act at a rung boundary. Use is checked independently and may enter the retail slide
+    /// state during a rung (<c>sub_40D6B0</c>).
+    /// </remarks>
+    public LadderStepResult DecideLadderStep(bool up, bool down, bool slide, TerrainData terrain)
     {
+        ArgumentNullException.ThrowIfNull(terrain);
+
         LadderStepResult result = _climb.Decide(up, down, slide);
-        switch (result)
+        if (result == LadderStepResult.Dismounted)
         {
-            case LadderStepResult.ReachedTop when _mountedLadder is { } topped:
-                // Step off the head onto the ledge, forward along the body's own facing (-sin, cos).
-                double fx = -Math.Sin(_body.Yaw);
-                double fy = Math.Cos(_body.Yaw);
-                _body.Position = new Vector3d(
-                    topped.Top.X + (fx * GetOffReachUnits),
-                    topped.Top.Y + (fy * GetOffReachUnits),
-                    topped.Top.Z);
-                _mountedLadder = null;
-                break;
-
-            case LadderStepResult.Sliding:
-            case LadderStepResult.Dismounted:
-                if (_mountedLadder is { } footed)
-                {
-                    _body.Position = footed.Bottom;
-                }
-
-                _mountedLadder = null;
-                break;
-
-            default:
-                _body.Position = _climb.Position;
-                break;
+            _body.Position = _climb.Position;
+            _body.EndLadderTraversal(terrain, placeOnGround: true);
+        }
+        else
+        {
+            _body.Position = _climb.Position;
         }
 
         return result;
@@ -852,12 +1241,10 @@ public sealed class PlayerCamera
 
     /// <summary>Moves the climbing body by the climb clip's root-motion delta for this tick.</summary>
     /// <param name="rootDelta">The clip's root motion, rotated into the facing frame, in world units.</param>
-    /// <returns><see langword="true"/> when this move completed a rung.</returns>
-    public bool MoveLadder(Vector3d rootDelta)
+    public void MoveLadder(Vector3d rootDelta)
     {
-        bool rungDone = _climb.Move(rootDelta);
+        _climb.Move(rootDelta);
         _body.Position = _climb.Position;
-        return rungDone;
     }
 
     /// <summary>Commits the rung whose clip has just completed, returning the climb to a boundary.</summary>
@@ -865,6 +1252,51 @@ public sealed class PlayerCamera
     {
         _climb.CompleteStep();
         _body.Position = _climb.Position;
+    }
+
+    /// <summary>Consumes animation 170's endpoint and resolves the roof when state 39 detaches.</summary>
+    /// <param name="terrain">The level terrain used by the final ground placement.</param>
+    public void CompleteLadderTopTransition(TerrainData terrain)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+
+        LadderTraversalPhase previous = _climb.Phase;
+        if (!_climb.CompleteTopTransition())
+        {
+            return;
+        }
+
+        _body.Position = _climb.Position;
+        if (previous == LadderTraversalPhase.GettingOffTop)
+        {
+            // The clip endpoint is authored on the roof. Resolve the highest object/terrain surface below
+            // it once before restoring normal gravity, preventing a fractional endpoint from tunnelling.
+            _body.EndLadderTraversal(terrain, placeOnGround: true);
+        }
+    }
+
+    /// <summary>Advances state 40 and detaches when the normal mover reports ground contact.</summary>
+    /// <param name="rootDelta">Animation 169's world-space root delta.</param>
+    /// <param name="terrain">The level terrain.</param>
+    /// <returns><see langword="true"/> when the slide ended this tick.</returns>
+    public bool TickLadderSlide(Vector3d rootDelta, TerrainData terrain)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+        if (_climb.Phase != LadderTraversalPhase.SlidingDown)
+        {
+            return false;
+        }
+
+        bool grounded = _body.TickLadderSlide(terrain, rootDelta);
+        _climb.UpdateSlidePosition(_body.Position);
+        if (!grounded)
+        {
+            return false;
+        }
+
+        _climb.CompleteSlide();
+        _body.EndLadderTraversal(terrain, placeOnGround: false);
+        return true;
     }
 
     private void TickWeapons()
@@ -891,6 +1323,17 @@ public sealed class PlayerCamera
     private void ResolveFire()
     {
         _impacts.Clear();
+
+        if (_view is not null)
+        {
+            SightZoomFrame zoom = _sightZoom.Tick(
+                _weapons?.InHand?.Weapon,
+                _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
+                _view.TanX,
+                _view.ViewModelTanX);
+            _view.TanX = zoom.TanX;
+            _view.ViewModelTanX = zoom.ViewModelTanX;
+        }
 
         if (_weapons is null || _view is null)
         {
@@ -949,6 +1392,8 @@ public sealed class PlayerCamera
 
         if (struckWall)
         {
+            GroundImpact?.Invoke(hit.Position);
+
             // The surface decides what the hit looks like, out of the material its own face names.
             if (_materials is { } materials)
             {
@@ -974,13 +1419,16 @@ public sealed class PlayerCamera
         Set(ref frame, PlayerInputSlot.MoveUp, keys.IsDown(KeyCode.W));
         Set(ref frame, PlayerInputSlot.MoveDown, keys.IsDown(KeyCode.S));
         Set(ref frame, PlayerInputSlot.Fire, input.Mouse.IsDown(MouseButton.Left));
-        Set(ref frame, PlayerInputSlot.AlternateFire, input.Mouse.IsDown(MouseButton.Right));
+        // The retail default profile binds AlternateFire to KEY_BACKSPACE. GunMP5SD consumes its
+        // rising edge as the sight toggle; the M16A2 consumes the same action for the M203.
+        Set(ref frame, PlayerInputSlot.AlternateFire, keys.IsDown(KeyCode.Backspace));
         Set(ref frame, PlayerInputSlot.Reload, keys.IsDown(KeyCode.R));
         Set(ref frame, PlayerInputSlot.Activate, keys.IsDown(KeyCode.E));
         Set(ref frame, PlayerInputSlot.Crouch, keys.IsDown(KeyCode.LeftControl) || keys.IsDown(KeyCode.RightControl));
         Set(ref frame, PlayerInputSlot.Jump, keys.IsDown(KeyCode.Space));
         Set(ref frame, PlayerInputSlot.NextWeapon, keys.IsDown(KeyCode.Q));
         Set(ref frame, PlayerInputSlot.PreviousWeapon, keys.IsDown(KeyCode.Z));
+        Set(ref frame, PlayerInputSlot.MapComputer, keys.IsDown(KeyCode.C));
 
         // 1 to 9, as the original binds them: nine weapon CATEGORIES, not nine weapons. Pressing the
         // same one again steps to the next weapon of that category you are carrying.

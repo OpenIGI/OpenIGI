@@ -72,7 +72,9 @@ public sealed class SoldierRenderer : IDisposable
     // for the control's two authored condition expressions, which the port does not evaluate yet.
     private readonly AiActivationClaims _activationClaims = new();
     private readonly HashSet<int> _activatedTasks = [];
-    private readonly Dictionary<int, AiAlarmControlState> _alarmStates = [];
+    private AiAlarmControlRegistry? _alarmControls;
+    private AiCombatTarget _playerTarget = new("HumanPlayer");
+    private Action<int>? _aiTaskActivator;
     private GameTask? _levelRoot;
 
     // The level's doors: ticked here (their update runs on the task pass, before the AIs), queried by
@@ -88,6 +90,12 @@ public sealed class SoldierRenderer : IDisposable
         _doors = doors;
         _solids = solids;
     }
+
+    /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
+    public void ActivateTask(int taskId) => _activatedTasks.Add(taskId);
+
+    /// <summary>Connects an AI's input-channel activation to the live world interaction task.</summary>
+    public void SetAiTaskActivator(Action<int>? activator) => _aiTaskActivator = activator;
     private readonly HashSet<string> _reportedChannels = new(StringComparer.Ordinal);
     private int _deathsSoFar;
     private int _walkAnimation = -1;
@@ -108,6 +116,9 @@ public sealed class SoldierRenderer : IDisposable
     private Member? _playerBodyMember;
     private bool _playerBodyActive;
     private bool _playerBodyClimbing;
+    private bool _playerBodyShown;
+    private bool _playerBodySuppressRootHeight;
+    private double _playerBodyVisualLift;
     private float _playerBodyFacing;
     private AiSoldier.GroundQuery? _playerBodyGround;
 
@@ -117,6 +128,7 @@ public sealed class SoldierRenderer : IDisposable
     private Vector3d _playerBodyPrevTickWhere;
     private bool _playerBodyHasTickState;
     private int _playerBodyCaptureTick = -1;
+    private int _playerBodySkinTick = -1;
 
     // The frame alpha BeginFrame resolved, kept for DrawPlayerBody which runs once per frame.
     private float _frameAlpha = 1f;
@@ -139,6 +151,21 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Gets the number of soldiers that resolved and will draw.</summary>
     public int Count { get; private set; }
+
+    /// <summary>Gets the living soldiers the retail map computer plots as guard contacts.</summary>
+    public IReadOnlyList<Vector3d> MapContacts()
+    {
+        List<Vector3d> contacts = [];
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (_health.TryGetValue(view, out HumanHealth? health) && !health.IsDead)
+            {
+                contacts.Add(brain.Position);
+            }
+        }
+
+        return contacts;
+    }
 
     /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
     /// <remarks>Owned by the shell: one pack serves every renderer that loads a texture.</remarks>
@@ -328,6 +355,7 @@ public sealed class SoldierRenderer : IDisposable
 
         Vector3d dir = new(direction.X / length, direction.Y / length, direction.Z / length);
         AiSoldier? nearest = null;
+        SoldierView? nearestView = null;
         double nearestT = double.MaxValue;
 
         foreach ((SoldierView view, AiSoldier brain) in _brains)
@@ -338,6 +366,7 @@ public sealed class SoldierRenderer : IDisposable
             {
                 nearestT = t;
                 nearest = brain;
+                nearestView = view;
             }
         }
 
@@ -351,8 +380,18 @@ public sealed class SoldierRenderer : IDisposable
         string clear = los ? "clear" : "BLOCKED";
         string alert = alerted ? "yes" : "no";
         string seen = visible ? "YES" : "no";
-        info = FormattableString.Invariant(
-            $"detect: dist={distU / WorldScene.UnitsPerMetre:F1}m cone={cone} los={clear} alert={alert} seen={seen} {nearest.Activity}");
+        Member? member = nearestView is null ? null : FindMember(nearestView);
+        string task = nearestView?.Soldier.Name ?? "?";
+        string weapon = member?.WeaponType?.ScriptId ?? "NONE";
+        string aim = nearest.Target?.ModeOf(nearest).ToString() ?? "None";
+        int aimers = nearest.Target?.Count(AiAimMode.Aiming) ?? 0;
+        string patrol = nearest.Arm == AiCombatArm.Patrol ? $"/{nearest.PatrolAction}" : string.Empty;
+        string distance = (distU / WorldScene.UnitsPerMetre).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+        info =
+            $"detect: dist={distance}m cone={cone} los={clear} alert={alert} "
+            + $"seen={seen} {nearest.Activity} task={task} ai={nearest.Type}/{nearest.Arm} script={(nearest.HasScript ? 1 : 0)} "
+            + $"phase={nearest.CombatPhase}{patrol} aim={aim}:{aimers} weapon={weapon} "
+            + $"ammo={member?.AmmoInClip ?? 0} trig={(nearest.Combat.PullTrigger ? 1 : 0)}";
         return true;
     }
 
@@ -475,6 +514,7 @@ public sealed class SoldierRenderer : IDisposable
     /// soldier on the constructor's defaults.
     /// </param>
     /// <param name="difficulty">Which of the table's three columns to read.</param>
+    /// <param name="variables">The live level variables used by AlarmControl expressions.</param>
     /// <returns>How many soldiers got a brain.</returns>
     /// <remarks>
     /// The phase is the soldier's index modulo four, which is what staggers the level's detection sweeps
@@ -487,7 +527,8 @@ public sealed class SoldierRenderer : IDisposable
         NativeRegistry? natives = null,
         GameTask? levelRoot = null,
         HumanAiConfigRegistry? config = null,
-        AiDifficulty difficulty = AiDifficulty.Normal)
+        AiDifficulty difficulty = AiDifficulty.Normal,
+        ScriptVarRegistry? variables = null)
     {
         ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -496,8 +537,11 @@ public sealed class SoldierRenderer : IDisposable
         _combat.Clear();
         _health.Clear();
         _activatedTasks.Clear();
-        _alarmStates.Clear();
+        _playerTarget = new AiCombatTarget("HumanPlayer");
         _levelRoot = levelRoot;
+        _alarmControls = levelRoot is not null && variables is not null
+            ? AiAlarmControlRegistry.Build(levelRoot, variables)
+            : null;
         if (graphs.Count == 0)
         {
             // No graphs means no patrolling -- but a brain does not need a node to see or to shoot, so
@@ -530,6 +574,7 @@ public sealed class SoldierRenderer : IDisposable
         int perTask = 0;
         int unroutable = 0;
         Dictionary<int, int> graphUse = [];
+        Dictionary<int, AiSoldier> brainsByRuntimeId = [];
         foreach (Group group in _groups)
         {
             foreach (Member member in group.Soldiers)
@@ -553,6 +598,41 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index);
+                brain.SetEyeTransform(
+                    () =>
+                    {
+                        BonePose pose = view.Pose();
+                        if (HumanAttachPoints.AiEye >= pose.BoneCount)
+                        {
+                            return new Vector3d(
+                                view.Position.X,
+                                view.Position.Y,
+                                view.Position.Z + AiSoldier.HumanSeparationEyeHeight);
+                        }
+
+                        Vector3f eye = pose.Positions[HumanAttachPoints.AiEye];
+                        return new Vector3d(
+                            view.Position.X + eye.X,
+                            view.Position.Y + eye.Y,
+                            view.Position.Z + eye.Z);
+                    },
+                    () =>
+                    {
+                        BonePose pose = view.Pose();
+                        return HumanAttachPoints.AiEye < pose.BoneCount
+                            ? pose.Rotations[HumanAttachPoints.AiEye]
+                            : brain.Orientation;
+                    });
+                brain.RuntimeId = index + 1;
+                brain.SetResponseRouter(source =>
+                {
+                    if (brainsByRuntimeId.TryGetValue(source, out AiSoldier? recipient))
+                    {
+                        recipient.ReceiveAlertResponse();
+                    }
+                });
+                brain.SetDefaultTarget(_playerTarget);
+                brain.SetAlarmStatusResolver(_alarmControls is { } controls ? controls.IsOn : null);
                 brain.SetPatrolPaths(paths);
                 brain.SetGroundQuery(MakeGroundQuery());
                 if (_doors is { } levelDoors)
@@ -566,10 +646,13 @@ public sealed class SoldierRenderer : IDisposable
                         _activationClaims,
                         (id, out position) =>
                         {
-                            position = TaskPositionOf(taskRoot, id);
-                            return position != default;
+                            return TryGetTaskPosition(taskRoot, id, out position);
                         },
-                        id => _activatedTasks.Add(id));
+                        id =>
+                        {
+                            _activatedTasks.Add(id);
+                            _aiTaskActivator?.Invoke(id);
+                        });
                 }
                 if (graph is not null)
                 {
@@ -624,6 +707,7 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 _brains[view] = brain;
+                brainsByRuntimeId[brain.RuntimeId] = brain;
                 index++;
             }
         }
@@ -708,6 +792,12 @@ public sealed class SoldierRenderer : IDisposable
                     continue;
                 }
 
+                // The Human's held Weapon task exists independently of the third-person mesh. Combat
+                // reads that task directly (IGI1 0x48D8E0; IGI2 HumanAIContent_RunFire), so a missing or
+                // unrenderable model must not turn an armed guard into an unarmed AI that only stares.
+                member.WeaponType = weapon;
+                member.AmmoInClip = weapon.RoundsPerClip;
+
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
                 {
                     held = BuildWeapon(mission, weapon.GunModel);
@@ -720,8 +810,6 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 member.Weapon = held;
-                member.WeaponType = weapon;
-                member.AmmoInClip = weapon.RoundsPerClip;
                 armed++;
             }
         }
@@ -959,7 +1047,7 @@ public sealed class SoldierRenderer : IDisposable
         _onRound?.Invoke(brain.EyePosition(), aim, brain.HitProbability, weapon);
 
         // Every other soldier near the shot hears it -- the same AIEVENT_GUNSHOT a player's shot raises.
-        NotifyGunshot(brain.EyePosition(), silenced: false, except: view);
+        NotifyGunshot(brain.EyePosition(), weapon.AiDetectionRange, except: view);
     }
 
     /// <summary>Where a follow-firing patrol's round goes: along its own facing, at the aim point's height.</summary>
@@ -995,11 +1083,19 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="silenced">Whether the weapon is silenced (cuts the range to a thirtieth).</param>
     /// <param name="except">A soldier not to notify — the shooter, which does not hear its own shot as news.</param>
     /// <remarks>
-    /// The range gate (30 m, or 1 m silenced) is applied per soldier in <see cref="AiSoldier.HearGunshot"/>.
+    /// The range gate (30 m, or 1 m silenced) is applied per soldier in
+    /// <see cref="AiSoldier.HearGunshot(Vector3d, bool)"/>.
     /// The event is queued and pumped on the soldier's next tick; what it does about it is its archetype
     /// script's business.
     /// </remarks>
     public void NotifyGunshot(Vector3d origin, bool silenced, SoldierView? except = null)
+        => NotifyGunshot(
+            origin,
+            silenced ? AiScriptApi.SilencedGunshotRange : AiScriptApi.GunshotRange,
+            except);
+
+    /// <summary>Delivers a gunshot using the firing weapon's exact AI detection range.</summary>
+    public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
         foreach (AiSoldier brain in _brains.Values)
         {
@@ -1008,7 +1104,40 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            brain.HearGunshot(origin, silenced);
+            brain.HearGunshot(origin, range);
+        }
+    }
+
+    /// <summary>Delivers a player's world-impact event to every guard inside IGI1's five-metre radius.</summary>
+    /// <param name="impact">The selected nearest world contact.</param>
+    /// <param name="shooterPosition">The player's live position for source-based script actions.</param>
+    public void NotifyGroundImpact(Vector3d impact, Vector3d shooterPosition)
+    {
+        foreach (AiSoldier brain in _brains.Values)
+        {
+            brain.ReceiveGroundImpact(impact, shooterPosition);
+        }
+    }
+
+    /// <summary>
+    /// Delivers the original's separate near-miss event to every guard whose live eye lies within two
+    /// metres of this projectile segment.
+    /// </summary>
+    private void NotifyGunshotMiss(
+        Vector3d origin,
+        Vector3d end,
+        SoldierView? struck,
+        Vector3d shooterPosition)
+    {
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            // A body the round actually damaged receives TAKINGDAMAGE, not the avoidance event for a miss.
+            if (struck is not null && ReferenceEquals(struck, view))
+            {
+                continue;
+            }
+
+            brain.ReceiveGunshotMiss(origin, end, shooterPosition);
         }
     }
 
@@ -1128,8 +1257,9 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>A level task's position by id — what the activate walk aims at.</summary>
     /// <param name="task">The subtree to search.</param>
     /// <param name="id">The task id the script named.</param>
+    /// <param name="position">Receives the task position when present.</param>
     /// <returns>The position, or default when the id names nothing with one.</returns>
-    private static Vector3d TaskPositionOf(GameTask task, int id)
+    private static bool TryGetTaskPosition(GameTask task, int id, out Vector3d position)
     {
         if (task.Id == id)
         {
@@ -1137,22 +1267,24 @@ public sealed class SoldierRenderer : IDisposable
                 && declared.TryGetValue("Position", out object? pos)
                 && pos is Vector3d p)
             {
-                return p;
+                position = p;
+                return true;
             }
 
-            return default;
+            position = default;
+            return false;
         }
 
         foreach (GameTask child in task.Children)
         {
-            Vector3d found = TaskPositionOf(child, id);
-            if (found != default)
+            if (TryGetTaskPosition(child, id, out position))
             {
-                return found;
+                return true;
             }
         }
 
-        return default;
+        position = default;
+        return false;
     }
 
     private static HumanAiTask? FindMind(SoldierView view)
@@ -1321,7 +1453,7 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (PlacedDoor door in doors.Doors)
                 {
-                    solids.SetPassable(door.TaskName, !door.State.IsFullyClosed);
+                    solids.SetPassable(door.Task, !door.State.IsFullyClosed);
                 }
             }
         }
@@ -1329,22 +1461,7 @@ public sealed class SoldierRenderer : IDisposable
         // The alarm controls advance first, so this tick's AIEVENT_ALARMON reflects this tick's state
         // -- 0x4408A0's update runs on the task pass, before the AIs. The on condition stands in for
         // the control's authored expression: any named trigger pressed turns it on, and it stays on.
-        foreach ((int controlId, AiAlarmControlState alarm) in _alarmStates)
-        {
-            bool triggered = false;
-            foreach (AiSoldier owner in _brains.Values)
-            {
-                if (owner.AlarmControlId == controlId
-                    && owner.AlarmTriggerId != -1
-                    && _activatedTasks.Contains(owner.AlarmTriggerId))
-                {
-                    triggered = true;
-                    break;
-                }
-            }
-
-            alarm.Update(_tick, disabled: false, enabled: true, triggerCondition: triggered, onCondition: triggered);
-        }
+        _alarmControls?.Tick(_tick);
 
         // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
         foreach ((SoldierView view, AiSoldier brain) in _brains)
@@ -1376,20 +1493,19 @@ public sealed class SoldierRenderer : IDisposable
             // retail per-tick resolves the control task each tick. First sight of an id lazily makes
             // the state, since the ids arrive only once the CREATE dispatch has run the script.
             bool alarmOn = false;
+            bool alarmWasOn = false;
             if (brain.AlarmControlId != -1)
             {
-                if (!_alarmStates.TryGetValue(brain.AlarmControlId, out AiAlarmControlState? watched))
+                if (_alarmControls?.TryGet(brain.AlarmControlId, out AiAlarmControlState? watched) == true)
                 {
-                    watched = new AiAlarmControlState();
-                    _alarmStates[brain.AlarmControlId] = watched;
+                    alarmOn = watched!.IsOn;
+                    alarmWasOn = watched.WasOn;
                 }
-
-                alarmOn = watched.IsOn;
             }
 
             Vector3d before = brain.Position;
             brain.Tick(
-                _tick, enemy, travel, alarmOn: alarmOn, enemyAlive: enemyAlive,
+                _tick, enemy, travel, alarmOn: alarmOn, alarmWasOn: alarmWasOn, enemyAlive: enemyAlive,
                 enemyFeet: feet, enemyCrouching: enemyCrouching);
             SeparateFromOtherSoldiers(brain, before);
             FireIfAsked(view, brain, feet, enemyCrouching);
@@ -1403,7 +1519,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     if (!ReferenceEquals(neighbour, brain))
                     {
-                        neighbour.ReceiveAlert(brain.Position);
+                        neighbour.ReceiveAlert(brain.Position, brain.RuntimeId);
                     }
                 }
             }
@@ -1417,7 +1533,8 @@ public sealed class SoldierRenderer : IDisposable
             {
                 view.SetMoving(true, brain.RequestedAnimation);
             }
-            else if (brain.Activity == AiSoldierActivity.Engaging && brain.IsMovingInCombat)
+            else if (brain.Activity == AiSoldierActivity.Panicking
+                || (brain.Activity == AiSoldierActivity.Engaging && brain.IsMovingInCombat))
             {
                 // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
                 // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
@@ -1428,7 +1545,7 @@ public sealed class SoldierRenderer : IDisposable
                     view.SetMoving(true, _walkAnimation);
                 }
             }
-            else if (brain.Activity == AiSoldierActivity.Engaging)
+            else if (brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
             {
                 // Stationary combat: run the real off_53EC10 machine instead of inferring the state each
                 // tick. It is fed the clip-finished signal (BoneClip.EndedThisTick = the machine's 0x1 bit)
@@ -1452,6 +1569,15 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     view.SetMoving(false, _walkAnimation);
                     _combatClipMissing.Add(view);
+                }
+            }
+            else if (brain.Activity == AiSoldierActivity.FallenFlat)
+            {
+                int state = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Prone);
+                int animation = HumanSoldierStates.AnimationOf(state);
+                if (animation < 0 || !view.SetMoving(true, animation))
+                {
+                    view.SetMoving(false, _walkAnimation);
                 }
             }
             else
@@ -1907,6 +2033,7 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyActive = false;
         _playerBodyHasTickState = false;
         _playerBodyCaptureTick = -1;
+        _playerBodySkinTick = -1;
         _logger.Information(LogCategory, $"Loaded the player's third-person body '{model}' on skeleton {set.Skeleton.Id}.");
         return true;
     }
@@ -1926,6 +2053,8 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _playerBodyFacing = gamma;
+        _playerBodySuppressRootHeight = false;
+        _playerBodyVisualLift = 0.0;
         _playerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
         _playerBodyView.Kill(deathAnimation);
         _playerBodyActive = true;
@@ -1995,10 +2124,30 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Gets whether the player's third-person body is being shown climbing a ladder.</summary>
     public bool IsPlayerBodyClimbing => _playerBodyClimbing;
 
-    /// <summary>Starts the third-person body climbing — one continuous clip loop (state 37).</summary>
-    /// <param name="animation">The climb clip, animation 168 in the player's set (state 37's binding).</param>
-    /// <remarks>Called once on mounting; the clip loops and is never restarted, so the pose never snaps.</remarks>
-    public void StartPlayerClimbLoop(int animation)
+    /// <summary>Stands the player's body at a place and draws it, outside death and outside climbing.</summary>
+    /// <param name="feetUnits">Where the body stands, in engine units — the level's own spawn.</param>
+    /// <param name="facing">Which way it faces, as the spawn's gamma.</param>
+    /// <remarks>
+    /// <para>
+    /// A third reason to draw the body, and deliberately a separate flag rather than a reuse of either
+    /// existing one. The mission-entry shot dives onto the character standing at their spawn and seats
+    /// the view inside their head, so it needs the body visible for a second — but it must not touch
+    /// <c>_playerBodyActive</c>, which is the death latch and also drives the fall's per-tick re-skin and
+    /// the knock-back, nor the climbing latch, which the ladder code clears on its own schedule.
+    /// </para>
+    /// <para>
+    /// <b>It has to place and re-skin, not merely make visible.</b> <see cref="LoadPlayerBody"/> uploads
+    /// the model's REST mesh and leaves the body unplaced — the death path places and poses it, the
+    /// climbing path places and poses it, and until one of them runs there is no pose in the vertex
+    /// buffer at all. Drawing it in that state put enormous black shards across the middle of the descent,
+    /// which is exactly what an unskinned rig looks like when its vertices are still at the origin.
+    /// </para>
+    /// <para>
+    /// Cleared by <see cref="HidePlayerBody"/> and by <see cref="Release"/>, so a mission that ends
+    /// mid-shot does not leave a body standing in the next one.
+    /// </para>
+    /// </remarks>
+    public void StandPlayerBodyAt(Vector3d feetUnits, float facing)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_playerBodyView is not { } view)
@@ -2006,32 +2155,161 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        _playerBodyClimbing = true;
-        view.StartClimbLoop(animation);
+        bool appearing = !_playerBodyShown;
+        _playerBodyFacing = facing;
+        _playerBodySuppressRootHeight = false;
+        _playerBodyVisualLift = 0.0;
+        view.PlaceAt(feetUnits, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
+
+        // Its own stand clip, advanced so the body breathes rather than being a statue -- and re-skinned
+        // at most once per simulation tick, which is the same rate the climbing path uploads at and the
+        // rate the previous-pose stream expects.
+        //
+        // ON THE FRAME IT APPEARS THE SKIN IS NOT OPTIONAL. The mesh was uploaded from the model's REST
+        // geometry and holds no pose until something puts one in it, so if the per-tick guard happened to
+        // skip that first frame the body was drawn once from its rest pose -- which is a rig splayed
+        // across the world and, from the camera, a flash over the whole screen. The visibility flag is
+        // therefore only raised AFTER a successful skin: until the body has a pose it is not drawn.
+        bool posed = !appearing;
+        if ((appearing || _playerBodySkinTick != _tick) && _playerBodyGroup?.Model is { } model)
+        {
+            view.Tick();
+            ReskinPlayerBody(view, model);
+            posed = true;
+        }
+
+        if (!posed)
+        {
+            return;
+        }
+
+        _playerBodyShown = true;
+
+        // Appearing is a cut: nothing on screen is this body's history, so neither the interpolation pair
+        // nor the temporal history may bridge from wherever it last stood.
+        CapturePlayerBodyTickState(snap: appearing);
+        if (appearing && _playerBodyMember is { } fresh)
+        {
+            fresh.HasFrameState = false;
+        }
+    }
+
+    /// <summary>Stops drawing the standing body — the view has reached the head.</summary>
+    public void HidePlayerBody()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _playerBodyShown = false;
+    }
+
+    /// <summary>Starts the third-person body in one of IGI1's ladder animation states.</summary>
+    /// <param name="animation">The state's authored clip.</param>
+    /// <param name="loops">Whether the clip loops.</param>
+    /// <param name="backwards">Whether it starts at its end and runs backwards.</param>
+    /// <param name="paused">Whether its playback rate starts at zero.</param>
+    public void StartPlayerLadderAnimation(
+        int animation,
+        bool loops,
+        bool backwards = false,
+        bool paused = false)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_playerBodyView is not { } view)
+        {
+            return;
+        }
+
+        StartPlayerTraversalAnimation(
+            view, animation, loops, backwards, paused, suppressRootHeight: true, visualLift: 0.0);
 
         // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
         // temporal history may bridge from wherever it stood before.
+        ResetPlayerTraversalHistory();
+    }
+
+    /// <summary>Starts a non-ladder interaction clip with its authored root height intact.</summary>
+    /// <remarks>
+    /// Wire animations 172/173 carry a non-zero root-height track. IGI1 adds that sample when locating
+    /// the body; suppressing it as if the wire were a ladder leaves both hands visibly off the cable.
+    /// </remarks>
+    public void StartPlayerInteractionAnimation(int animation, bool loops)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_playerBodyView is not { } view)
+        {
+            return;
+        }
+
+        StartPlayerTraversalAnimation(
+            view,
+            animation,
+            loops,
+            backwards: false,
+            paused: false,
+            suppressRootHeight: false,
+
+            // With the exact 3686.4-unit task anchor from sub_411F20, the posed wrist centres of both
+            // retail wire clips sit 375..567 units below the cable. Half a retail model grid cell puts
+            // the palms around the cable without moving the gameplay anchor, projection or end margins.
+            visualLift: IsWireAnimation(animation) ? 512.0 : 0.0);
+        ResetPlayerTraversalHistory();
+    }
+
+    private static bool IsWireAnimation(int animation) =>
+        animation == HumanLocomotionStates.For(42).AnimationId
+        || animation == HumanLocomotionStates.For(43).AnimationId;
+
+    private void StartPlayerTraversalAnimation(
+        SoldierView view,
+        int animation,
+        bool loops,
+        bool backwards,
+        bool paused,
+        bool suppressRootHeight,
+        double visualLift)
+    {
+        _playerBodyClimbing = true;
+        _playerBodySuppressRootHeight = suppressRootHeight;
+        _playerBodyVisualLift = visualLift;
+        view.StartLadderAnimation(animation, loops, backwards, paused);
+    }
+
+    private void ResetPlayerTraversalHistory()
+    {
+        // Mounting is a cut: the body appears on the rungs, so neither the interpolation pair nor the
+        // temporal history may bridge from wherever it stood before.
         _playerBodyHasTickState = false;
+        _playerBodySkinTick = -1;
         if (_playerBodyMember is { } member)
         {
             member.HasFrameState = false;
         }
     }
 
-    /// <summary>Advances the climb clip one tick and returns how far its root motion moved the body.</summary>
+    /// <summary>Changes animation 168's playback direction without restarting or snapping its pose.</summary>
+    /// <param name="direction">−1 down, 0 paused at a boundary, or +1 up.</param>
+    public void SetPlayerLadderPlaybackDirection(int direction) =>
+        _playerBodyView?.SetLadderPlaybackDirection(direction);
+
+    /// <summary>Advances the current ladder clip and returns its movement and state signals.</summary>
     /// <param name="facing">Which way the body faces — into the ladder.</param>
     /// <param name="rootDelta">
     /// Receives the clip's root-motion delta for this tick, already rotated into the facing frame (world
     /// units) — the same transform a walking guard's motion gets. The caller applies it to the position.
     /// </param>
-    /// <param name="cycled">Receives whether the clip completed a cycle this tick — one rung done.</param>
+    /// <param name="rungBoundary">Receives whether animation 168 crossed authored event 8.</param>
+    /// <param name="ended">Receives whether a non-looping top transition reached its endpoint.</param>
     /// <remarks>Ticks and re-skins the body but does not move it; placement is the caller's, via
     /// <see cref="PlacePlayerBodyClimbing"/>.</remarks>
-    public void AdvancePlayerClimbStep(float facing, out Vector3d rootDelta, out bool cycled)
+    public void AdvancePlayerLadderAnimation(
+        float facing,
+        out Vector3d rootDelta,
+        out bool rungBoundary,
+        out bool ended)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         rootDelta = default;
-        cycled = false;
+        rungBoundary = false;
+        ended = false;
         if (_playerBodyView is not { } view || _playerBodyGroup?.Model is not { } model)
         {
             return;
@@ -2043,7 +2321,8 @@ public sealed class SoldierRenderer : IDisposable
 
         Vector3f rm = view.RootMotion();
         rootDelta = SoldierDeathFall.RotateAboutZ(new Vector3d(rm.X, rm.Y, rm.Z), facing);
-        cycled = view.ClipEndedThisTick;
+        rungBoundary = view.CrossedLadderBoundary;
+        ended = view.ClipEndedThisTick;
         ReskinPlayerBody(view, model);
 
         // The caller places the body with the delta straight after; the placement call captures the
@@ -2051,9 +2330,9 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     /// <summary>Places the climbing body without advancing its clip — holds the pose at a rung boundary.</summary>
-    /// <param name="feet">Where the body is on the ladder, in engine units.</param>
+    /// <param name="taskPosition">Where IGI1 places the human task root, in engine units.</param>
     /// <param name="facing">Which way it faces — into the ladder.</param>
-    public void PlacePlayerBodyClimbing(Vector3d feet, float facing)
+    public void PlacePlayerBodyClimbing(Vector3d taskPosition, float facing)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_playerBodyView is not { } view)
@@ -2063,12 +2342,13 @@ public sealed class SoldierRenderer : IDisposable
 
         _playerBodyClimbing = true;
         _playerBodyFacing = facing;
-        view.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
+        view.PlaceAt(taskPosition, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
 
-        // Skin at least once so the body hangs in the climb pose even before the first rung advances
-        // -- the animated mesh otherwise still holds the rest pose it was created with. The scratch
-        // buffer doubles as the has-ever-been-skinned marker.
-        if (_playerBodyMember is { SkinScratch: null } && _playerBodyGroup?.Model is { } model)
+        // A paused rung still has to upload once per simulation tick. The animated-mesh upload rotates
+        // current -> previous pose streams; skipping it leaves an old moving pose in the previous stream,
+        // so uncapped presentation alpha repeatedly blends the held pose against stale limbs and jitters.
+        // AdvancePlayerLadderAnimation already uploads moving ticks, hence the per-tick guard.
+        if (_playerBodySkinTick != _tick && _playerBodyGroup?.Model is { } model)
         {
             ReskinPlayerBody(view, model);
         }
@@ -2077,7 +2357,11 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     /// <summary>Stops showing the climbing body — the player has left the ladder.</summary>
-    public void HidePlayerBodyClimbing() => _playerBodyClimbing = false;
+    public void HidePlayerBodyClimbing()
+    {
+        _playerBodyClimbing = false;
+        _playerBodyVisualLift = 0.0;
+    }
 
     // Re-poses the player body's animated mesh in place. Shared by the death fall and the ladder climb.
     private void ReskinPlayerBody(SoldierView view, MefModel model)
@@ -2108,6 +2392,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         member.PoseFlippedSinceFrame = true;
+        _playerBodySkinTick = _tick;
     }
 
     /// <summary>Records where the player's body stands this tick, keeping the tick before.</summary>
@@ -2122,7 +2407,7 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        double lift = _playerBodyClimbing ? FootToPelvis(view.UnrotatedPose()) : view.RootSample.Z;
+        double lift = (_playerBodySuppressRootHeight ? 0.0 : view.RootSample.Z) + _playerBodyVisualLift;
         Vector3d where = new(
             view.Position.X / WorldScene.UnitsPerMetre,
             view.Position.Y / WorldScene.UnitsPerMetre,
@@ -2143,20 +2428,6 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyHasTickState = true;
     }
 
-    // How far the pose's lowest bone (the feet) sits below the root, in world units — the lift that puts
-    // the feet at the body's position. A Z-only facing rotation leaves Z alone, so the pose's local Z is
-    // its world Z.
-    private static double FootToPelvis(BonePose pose)
-    {
-        float minZ = 0f;
-        foreach (Vector3f p in pose.Positions)
-        {
-            minZ = Math.Min(minZ, p.Z);
-        }
-
-        return -minZ;
-    }
-
     /// <summary>Draws the player's third-person body, when it is active — what the death camera looks at.</summary>
     /// <param name="camera">The eye, which by now is the death camera pulled back off the body.</param>
     /// <param name="projection">The projection to draw with.</param>
@@ -2168,7 +2439,7 @@ public sealed class SoldierRenderer : IDisposable
     public void DrawPlayerBody(in Camera3D camera, in Matrix4f projection)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (!(_playerBodyActive || _playerBodyClimbing)
+        if (!(_playerBodyActive || _playerBodyClimbing || _playerBodyShown)
             || _playerBodyView is not { } view
             || _playerBodyMember is not { } member
             || _playerBodyGroup is not { } group)
@@ -2180,17 +2451,15 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        // A body is normally lifted by its clip's root height (Human+1300), which for a fall or a stand IS
-        // the pelvis height above the feet. But the LADDER climb clip's root track is the CLIMB itself
-        // (it rises ~3000 units a cycle and RESETS -- verified against the game: pos+rootSample drops
-        // ~2383 at the wrap, yet the game never teleports, so it does NOT lift by rootSample). The vertical
-        // is already carried in the body's position; the lift is the pose's own foot-to-pelvis so the feet
-        // land on that position and track it as the clip animates. (For a stand or fall this equals
-        // RootSample.Z anyway, which is why the corpse still sits on the ground.)
+        // A body is normally shifted by its clip's root height (Human+1300), which for a fall, stand or
+        // wire interaction is part of the authored placement. A ladder position is different: IGI1 writes the human task
+        // root itself (bottom + 3915.776 vertically), and clip 168's lowest foot is authored at -4128.768.
+        // Those values put the foot at ground height already. Adding a pose-derived pelvis lift here
+        // duplicates the mount offset and starts Jones roughly one body-height above the first rung.
         //
         // The tick capture (CapturePlayerBodyTickState) computes exactly this per tick; frames between
         // ticks draw between the last two captures, the same smoothing a soldier gets.
-        double lift = _playerBodyClimbing ? FootToPelvis(view.UnrotatedPose()) : view.RootSample.Z;
+        double lift = (_playerBodySuppressRootHeight ? 0.0 : view.RootSample.Z) + _playerBodyVisualLift;
         Vector3d where = new(
             view.Position.X / WorldScene.UnitsPerMetre,
             view.Position.Y / WorldScene.UnitsPerMetre,
@@ -2277,6 +2546,12 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyGroup = null;
         _playerBodyMember = null;
         _playerBodyActive = false;
+        _playerBodyClimbing = false;
+        _playerBodyShown = false;
+        _playerBodyVisualLift = 0.0;
+        _playerBodyHasTickState = false;
+        _playerBodyCaptureTick = -1;
+        _playerBodySkinTick = -1;
     }
 
     /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
@@ -2370,10 +2645,6 @@ public sealed class SoldierRenderer : IDisposable
     {
         hit = default;
 
-        // Every soldier in earshot hears the shot, whether or not it hits anyone -- this is the fix for
-        // "they hear nothing when I shoot". The range gate lives in AiSoldier.HearGunshot.
-        NotifyGunshot(origin, silenced: false);
-
         HumanHealth? struck = null;
         SoldierView? struckView = null;
 
@@ -2432,6 +2703,11 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        // Human_EvaluateGunShotHandler evaluates each live projectile segment independently of ordinary
+        // shot audibility. Do this after choosing the nearest collision so the struck guard gets the
+        // TAKINGDAMAGE path while nearby guards get GUNSHOTMISS.
+        NotifyGunshotMiss(origin, end, struckView, origin);
+
         if (struck is null)
         {
             return false;
@@ -2451,6 +2727,10 @@ public sealed class SoldierRenderer : IDisposable
             if (struck.IsDead && struckView is not null)
             {
                 Die(struckView, hit, origin, end, category);
+            }
+            else
+            {
+                brain?.ReceiveDamage(origin);
             }
         }
 
@@ -2475,11 +2755,6 @@ public sealed class SoldierRenderer : IDisposable
     /// fans its nine rays and returns the corrective velocity (<see cref="SoldierDeathFall"/>); and the
     /// brain is told, so it steps the body every tick from then on instead of freezing it.
     /// </para>
-    /// <para>
-    /// The soldier's own <c>AIFunction_SetDeathAnimation</c> override is not wired: no shipped script in
-    /// level 1 calls it, and the port has nowhere to keep <c>HumanAI+15056</c> yet. Recorded in
-    /// <c>TODO.md</c> rather than guessed at.
-    /// </para>
     /// </remarks>
     private void Die(SoldierView view, HumanHit hit, Vector3d origin, Vector3d end, WeaponCategory category)
     {
@@ -2493,12 +2768,14 @@ public sealed class SoldierRenderer : IDisposable
         // The engine's own rand(2). Alternating is not the same distribution, but the two retail head-row
         // entries are equal and the two crumple clips are a pair, so what the flip has to do is vary them.
         int flip = _deathsSoFar++ & 1;
+        _brains.TryGetValue(view, out AiSoldier? brain);
         int animation = SoldierDeath.Choose(
             SoldierDeath.ModeFor(category),
             hit.Zone,
             HumanHitZoneTable.Soldier,
             front,
-            flip);
+            flip,
+            brain?.DeathAnimationOverride ?? -1);
 
         Vector3d fall = default;
         if (animation >= 0 && view.Bones.Set.TryGet(animation, out BoneAnimation clip) && _cast is { } cast)
@@ -2515,7 +2792,7 @@ public sealed class SoldierRenderer : IDisposable
         view.PlaceAt(view.Position, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
         view.Kill(animation);
 
-        if (_brains.TryGetValue(view, out AiSoldier? brain))
+        if (brain is not null)
         {
             brain.Kill(fall, facing);
         }
