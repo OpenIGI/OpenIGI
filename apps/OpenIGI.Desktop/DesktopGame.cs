@@ -1364,6 +1364,17 @@ internal sealed partial class DesktopGame : IDisposable
                 float rawY = _window.Input.Mouse.DeltaY;
                 bool right = _window.Input.Mouse.IsDown(Input.MouseButton.Right);
 
+                // Resolved per frame rather than cached, so the options menu's sensitivity slider takes
+                // effect on the next frame instead of the next launch. It is two multiplies and a Pow.
+                MouseLookSettings look = MouseLookSettings.FromProfile(_configuration.Active);
+                if (_player is not null)
+                {
+                    _player.LookSettings = look;
+                }
+
+                _deathCamera.LookSettings = look;
+                interactionCamera.LookSettings = look;
+
                 if (pauseMenu)
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
@@ -1381,6 +1392,11 @@ internal sealed partial class DesktopGame : IDisposable
                     // so the orbit keeps turning however far the mouse is moved.
                     _deathCamera.Control(rawX, rawY);
                     _window.CursorLocked = !captureMode;
+
+                    // The look is not driving the view this frame, so it must not consider itself
+                    // capturing: whenever the orbit hands control back, the first frame of look is a
+                    // settling one and the re-lock's re-centring is absorbed rather than aimed with.
+                    _player?.ReleaseLook();
                 }
                 else if (_player is { IsOnLadder: true } or { IsInWorldInteraction: true })
                 {
@@ -1389,10 +1405,15 @@ internal sealed partial class DesktopGame : IDisposable
                     // you can look around while you climb rather than being locked behind the character.
                     interactionCamera.Control(rawX, rawY);
                     _window.CursorLocked = !captureMode;
+                    _player?.ReleaseLook();
                 }
                 else if (_computerOpen)
                 {
+                    // The computer takes the pointer outright. Re-arming the look here is what stops
+                    // closing it from throwing the view: dropping the lock restores the desktop pointer,
+                    // and taking it back re-centres the backend's virtual one.
                     _window.CursorLocked = false;
+                    _player?.ReleaseLook();
                 }
                 else if (_playerMode && _player is not null)
                 {

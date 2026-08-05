@@ -35,11 +35,6 @@ public sealed class DeathCamera
     // Where on the body the camera aims: a metre above the feet, roughly the chest.
     private const double ChestAboveFeetInUnits = UnitsPerMetre;
 
-    // Radians of orbit per pixel of mouse motion -- the player's own look sensitivity, so the death
-    // camera turns at the same rate the view did a moment before. The per-frame six-degree clamp is the
-    // original's; this only sets how much a given mouse motion asks for before that clamp.
-    private const float OrbitSensitivity = 0.0035f;
-
     private Camera3D _camera = Camera3D.Default;
     private Vector3d _pivot;
     private double _alpha;      // elevation, radians
@@ -49,6 +44,14 @@ public sealed class DeathCamera
 
     /// <summary>Gets a value indicating whether the death camera has taken over.</summary>
     public bool IsActive { get; private set; }
+
+    /// <summary>Gets or sets how far the mouse orbits — the player's own look settings.</summary>
+    /// <remarks>
+    /// The same rate the view turned at a moment before, so dying does not change how the mouse feels.
+    /// The per-frame six-degree clamp in <see cref="Control"/> is the original's and sits on top of
+    /// this; the rate only decides how much a given motion asks for before that clamp.
+    /// </remarks>
+    public MouseLookSettings LookSettings { get; set; } = MouseLookSettings.Default;
 
     /// <summary>Gets the eye to draw the world from while the death camera is active.</summary>
     public Camera3D Camera => _camera;
@@ -91,12 +94,13 @@ public sealed class DeathCamera
         }
 
         float limit = HumanPlayerBody.DeathCameraOrbitStepLimit;
-        double deltaGamma = Math.Clamp(mouseDeltaX * OrbitSensitivity, -limit, limit);
-        double deltaAlpha = Math.Clamp(mouseDeltaY * OrbitSensitivity, -limit, limit);
+        double deltaGamma = Math.Clamp(LookSettings.YawDelta(mouseDeltaX), -limit, limit);
+        double deltaAlpha = Math.Clamp(LookSettings.PitchDelta(mouseDeltaY), -limit, limit);
 
-        // Mouse up (a negative vertical delta) raises the camera, as the original's `alpha -= delta` does.
+        // Mouse up raises the camera, as the original's `alpha -= delta` does. The sign now lives in
+        // PitchDelta, which is also where the profile's invert is applied, so this adds.
         _alpha = Math.Clamp(
-            _alpha - deltaAlpha,
+            _alpha + deltaAlpha,
             HumanPlayerBody.DeathCameraElevationMin,
             HumanPlayerBody.DeathCameraElevationMax);
         _gamma += deltaGamma;

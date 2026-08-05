@@ -1,5 +1,7 @@
-﻿using OpenIGI.Core.Configuration;
+﻿using System.Globalization;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
+using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.UI;
@@ -466,16 +468,42 @@ public sealed class SettingsScreen : ShellScreen
     {
         UiTheme theme = Context.Theme;
         var profile = Context.Config.Active;
-        if (profile is null || profile.Bindings.Count == 0)
+        if (profile is null)
         {
             _tabRows.Add([]); // kept parallel to _tabPanels even when a category has no rows at all
             ScrollView empty = BuildScrollHost(theme);
             empty.SetContent(
-                new Label(theme.Body, "No control bindings in the active profile.", theme.BodyTextSize, theme.TextMuted));
+                new Label(theme.Body, "No active profile.", theme.BodyTextSize, theme.TextMuted));
             return new Panel().WithChild(empty);
         }
 
-        var rows = new List<Control>(profile.Bindings.Count);
+        var rows = new List<Control>(profile.Bindings.Count + 2);
+
+        // The mouse comes first, above the bindings: it is the setting a player reaches for on the way
+        // into their first mission, and unlike a binding it has no default anyone is happy with.
+        var sensitivity = new Slider(theme, "Mouse Sensitivity", 0f, 1f, profile.MouseSensitivity, 0.05f)
+        {
+            // The slider position means nothing on its own. What a player is actually choosing is how far
+            // the mouse travels for a full turn, so that is what the readout says — in centimetres at a
+            // stated DPI, which is the number every sensitivity guide and every friend's config is in.
+            Format = v => string.Create(
+                CultureInfo.InvariantCulture,
+                $"{MouseLookSettings.FromSensitivity(v, invertPitch: false).TurnDistanceCentimetres():0} cm/360° @ 800 DPI"),
+            Tooltip = "How far the mouse turns the view.\n\nThe readout is how much desk a full turn "
+                + "takes on an 800 DPI mouse — halve it for 1600 DPI. Lower is slower and more precise.",
+        };
+
+        sensitivity.ValueChanged += value => profile.MouseSensitivity = value;
+        rows.Add(sensitivity);
+
+        var invert = new Toggle(theme, "Invert Mouse", profile.InvertMouse)
+        {
+            Tooltip = "Pushing the mouse forward looks down instead of up.",
+        };
+
+        invert.ValueChanged += value => profile.InvertMouse = value;
+        rows.Add(invert);
+
         for (int i = 0; i < profile.Bindings.Count; i++)
         {
             int index = i;

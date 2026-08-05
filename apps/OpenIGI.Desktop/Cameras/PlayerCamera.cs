@@ -27,9 +27,6 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 public sealed class PlayerCamera
 {
-    /// <summary>How far the mouse turns the view, in radians per unit of motion.</summary>
-    public const float MouseSensitivity = 0.0035f;
-
     /// <summary>How fast the arrow keys turn, in radians a second.</summary>
     public const float KeyTurnRate = 1.8f;
 
@@ -320,6 +317,13 @@ public sealed class PlayerCamera
     /// <summary>Gets whether the cursor should be held while the view is being turned.</summary>
     public bool IsCapturingMouse { get; private set; }
 
+    /// <summary>Gets or sets how far the mouse turns the view, and which way its vertical axis runs.</summary>
+    /// <remarks>
+    /// The host resolves this from the active profile every frame, so a change made in the options menu
+    /// takes effect on the next one. See <see cref="MouseLookSettings"/> for why the rate is what it is.
+    /// </remarks>
+    public MouseLookSettings LookSettings { get; set; } = MouseLookSettings.Default;
+
     /// <summary>Gets whether the human is held in retail locomotion state 45 for the map computer.</summary>
     public bool IsMapComputerOpen => _mapComputerOpen;
 
@@ -370,10 +374,29 @@ public sealed class PlayerCamera
     /// </remarks>
     public void HoldStill()
     {
-        IsCapturingMouse = false;
-        _wasCapturing = false;
+        ReleaseLook();
         HasViewTickPair = false;
         _hasWeaponBonePair = false;
+    }
+
+    /// <summary>Gives the pointer up without disturbing the presentation, and re-arms the settling frame.</summary>
+    /// <remarks>
+    /// <para>
+    /// For everything that takes the mouse away from the look but leaves the player standing where they
+    /// were: the death camera's orbit, the third-person interaction camera, the map computer. Each of
+    /// those drops the cursor lock, and dropping the lock makes the backend re-centre its virtual pointer
+    /// — so the first motion after the lock comes back is a jump that has nothing to do with the player's
+    /// hand. <see cref="Look"/> skips exactly one frame after this, which is what absorbs it.
+    /// </para>
+    /// <para>
+    /// Unlike <see cref="HoldStill"/> the rig's tick pair is kept, because the player is still being
+    /// drawn: dropping it here would cost a visibly unsmoothed frame every time the map computer closed.
+    /// </para>
+    /// </remarks>
+    public void ReleaseLook()
+    {
+        IsCapturingMouse = false;
+        _wasCapturing = false;
     }
 
     /// <summary>Gets the eye the scene is drawn from, in the renderer's metres.</summary>
@@ -604,10 +627,12 @@ public sealed class PlayerCamera
         if (!settling)
         {
             // Mouse right turns right. The camera's forward is (sin yaw, cos yaw), so turning right -
-            // from +Y toward +X - means yaw increases.
-            _body.Yaw += mouse.DeltaX * MouseSensitivity;
+            // from +Y toward +X - means yaw increases. Both deltas are in mouse COUNTS, not pixels: the
+            // cursor is locked in raw motion mode, so no pointer ballistics stand between the sensor and
+            // this line. PitchDelta carries the profile's invert, so it is added rather than subtracted.
+            _body.Yaw += LookSettings.YawDelta(mouse.DeltaX);
             _body.Pitch = Math.Clamp(
-                _body.Pitch - (mouse.DeltaY * MouseSensitivity),
+                _body.Pitch + LookSettings.PitchDelta(mouse.DeltaY),
                 -PlayerBody.PitchLimit,
                 PlayerBody.PitchLimit);
         }

@@ -35,9 +35,6 @@ public sealed class InteractionCamera
     /// <summary>How far the collision result pulls the eye away from a wall.</summary>
     public const double CollisionPullInUnits = 204.8;
 
-    /// <summary>Radians of orbit per pixel of mouse motion — the player's own look sensitivity.</summary>
-    private const float OrbitSensitivity = 0.0035f;
-
     /// <summary>The mode-3 elevation limit, 75 degrees.</summary>
     public const double ElevationLimit = 1.3089969;
 
@@ -60,6 +57,11 @@ public sealed class InteractionCamera
 
     /// <summary>Gets whether the interaction camera is active.</summary>
     public bool IsActive { get; private set; }
+
+    /// <summary>Gets or sets how far the mouse orbits — the player's own look settings.</summary>
+    /// <remarks>Climbing a ladder should not change how the mouse feels, so this is the same rate the
+    /// first-person view turns at, taken from the active profile.</remarks>
+    public MouseLookSettings LookSettings { get; set; } = MouseLookSettings.Default;
 
     /// <summary>Gets the eye to draw the world from.</summary>
     public Camera3D Camera => _camera;
@@ -159,10 +161,10 @@ public sealed class InteractionCamera
             return;
         }
 
-        _gamma += mouseDeltaX * OrbitSensitivity;
+        _gamma += LookSettings.YawDelta(mouseDeltaX);
 
-        // Mouse up (a negative vertical delta) raises the camera.
-        _alpha = Math.Clamp(_alpha - (mouseDeltaY * OrbitSensitivity), -ElevationLimit, ElevationLimit);
+        // Mouse up raises the camera; the sign, and the profile's invert, live in PitchDelta.
+        _alpha = Math.Clamp(_alpha + LookSettings.PitchDelta(mouseDeltaY), -ElevationLimit, ElevationLimit);
 
         // Rebuilt where the last frame put it, not where the last tick did, so an orbit made mid-tick
         // does not snap the camera back to the tick's pivot for the rest of the frame.

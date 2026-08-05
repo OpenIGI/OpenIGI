@@ -8,8 +8,16 @@ namespace OpenIGI.Input;
 /// <para>
 /// Position is in client pixels with the origin at the top-left. <see cref="DeltaX"/> and
 /// <see cref="DeltaY"/> are the motion accumulated since the last <see cref="BeginFrame"/> and are what
-/// look control reads — they are not the difference between two clamped positions, so they stay
-/// correct when the pointer is held at the edge of the window.
+/// look control reads. They are <em>not</em> derived from this type's own position: the host measures
+/// each step against its own baseline and drops that baseline whenever the pointer is moved by
+/// something other than the player, so a cursor lock re-centring the pointer does not arrive here as a
+/// movement. Position, which a shell needs to keep tracking across the same event, is left alone.
+/// </para>
+/// <para>
+/// While the cursor is locked the host reports raw device counts, so motion is unbounded and unaffected
+/// by the pointer sitting at the edge of the window. While it is <em>not</em> locked the backend clamps
+/// the pointer to the window, and motion past the edge is genuinely lost — which is correct for a menu,
+/// and the reason look control locks the cursor.
 /// </para>
 /// <para>
 /// <see cref="BeginFrame"/> must run <em>before</em> the host dispatches the frame's input events: it

@@ -1,3 +1,4 @@
+using System.Numerics;
 using OpenIGI.Input;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Input;
@@ -50,6 +51,13 @@ public sealed class SilkGameWindow : IGameWindow
     private bool _cursorVisible;
     private bool _cursorLocked;
     private bool _disposed;
+
+    // What the last pointer report said, and the baseline this frame's motion is measured from. It is
+    // deliberately NOT MouseState.X/Y: that is the position game code reads, and it must survive a
+    // discontinuity that the motion must not. Null means "no baseline" -- the next report establishes
+    // one and contributes no motion, which is how a pointer that has been moved out from under us
+    // arrives as a new starting point rather than as a movement the player never made.
+    private Vector2? _pointerBaseline;
 
     internal SilkGameWindow(in WindowSettings settings)
     {
@@ -217,7 +225,19 @@ public sealed class SilkGameWindow : IGameWindow
     /// </remarks>
     public string BackendState =>
         $"state {_window.WindowState}, border {_window.WindowBorder}, "
-            + $"position ({_window.Position.X},{_window.Position.Y}), size {_window.Size.X}x{_window.Size.Y}";
+            + $"position ({_window.Position.X},{_window.Position.Y}), size {_window.Size.X}x{_window.Size.Y}, "
+            + $"raw mouse motion {(SupportsRawMouseMotion ? "available" : "UNAVAILABLE")}";
+
+    /// <summary>Gets whether a locked cursor reports the sensor's own counts rather than accelerated ones.</summary>
+    /// <remarks>
+    /// This is what makes the look a fixed number of radians per mouse count. Without it the lock falls
+    /// back to an ordinary hidden-and-captured cursor, the desktop's pointer ballistics stay in the path,
+    /// and slow movements are scaled toward zero before they ever reach the game — which is the classic
+    /// "small movements do not register" of a mouse look. Reported rather than silently accepted,
+    /// because the difference is invisible from inside the game and impossible to guess from outside it.
+    /// </remarks>
+    public bool SupportsRawMouseMotion =>
+        _input.Mice.Count > 0 && _input.Mice[0].Cursor.IsSupported(CursorMode.Raw);
 
     /// <inheritdoc/>
     public WindowMode Mode
@@ -425,6 +445,10 @@ public sealed class SilkGameWindow : IGameWindow
         _window.FocusChanged += focused =>
         {
             IsFocused = focused;
+            // Losing focus releases a locked cursor and regaining it re-centres one, both of which move
+            // the pointer without the player touching it. Neither may be read as motion.
+            _pointerBaseline = null;
+
             if (!focused)
             {
                 // The original's device read fails when it loses focus and it zeroes the whole key
@@ -447,7 +471,17 @@ public sealed class SilkGameWindow : IGameWindow
             mouse.MouseUp += (_, button) => SetButton(button, down: false);
             mouse.MouseMove += (_, position) =>
             {
-                Input.Mouse.AddMotion(position.X - Input.Mouse.X, position.Y - Input.Mouse.Y);
+                // Motion is the step from the last report, not from MouseState's position. The two
+                // differ exactly when the backend moves the pointer itself: locking the cursor re-centres
+                // GLFW's virtual pointer, so measuring against a position carried across that reset turns
+                // the reset into a violent flick of the view. Dropping the baseline instead loses one
+                // report's worth of motion, which is nothing, and is what ApplyCursorMode does below.
+                if (_pointerBaseline is { } previous)
+                {
+                    Input.Mouse.AddMotion(position.X - previous.X, position.Y - previous.Y);
+                }
+
+                _pointerBaseline = position;
                 Input.Mouse.SetPosition(position.X, position.Y);
             };
             mouse.Scroll += (_, wheel) => Input.Mouse.AddWheel(wheel.Y);
@@ -483,6 +517,11 @@ public sealed class SilkGameWindow : IGameWindow
 
     private void ApplyCursorMode()
     {
+        // Every one of these transitions moves the pointer: locking it re-centres the backend's virtual
+        // position, unlocking it restores the pointer to where the desktop left it. The next report is a
+        // new starting point, not a movement.
+        _pointerBaseline = null;
+
         foreach (IMouse mouse in _input.Mice)
         {
             // Raw is the same lock as Disabled but without the desktop's pointer acceleration applied,
