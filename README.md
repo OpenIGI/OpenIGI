@@ -1,92 +1,128 @@
 # OpenIGI
 
-An open-source, cross-platform reimplementation of **Project I.G.I. — I'm Going In** (2000,
-Innerloop Studios), compatible with the original retail game data. Built on **.NET 10** and
-**Silk.NET**.
+An open-source reimplementation of **Project I.G.I. — I'm Going In** (2000, Innerloop Studios), built
+to run against the original retail game data. Written in C# on **.NET 10** with **Silk.NET** and an
+OpenGL renderer.
 
-> **You must own an original copy of the game.** OpenIGI ships **no** game assets or original code —
-> it reads the data files from your own legally obtained installation.
+> **You must own an original copy of the game.** OpenIGI ships **no** game assets and no original
+> code. It reads the data files from your own installation, and every texture, model, sound and script
+> it uses comes from there. Nothing in this repository is derived from Innerloop's art or binaries.
 
-## Status
-Early. **M1 (foundations) is done**: shared math with the original's truncation semantics, an ILFF
-archive reader that parses every `.res`, `.mef` and `.fnt` of a retail install, the virtual file system
-with its alias/device model, the resource registry, the config-variable registry, and the `ResExtract`
-CLI.
+This is a clean-room reimplementation. Behaviour is established by reverse-engineering the original
+executable and reproducing it in modern C# — a redesigned engine that behaves the same, not a
+function-by-function transliteration.
 
-**M2 (scripting) is done**: the QVM bytecode virtual machine — loader, disassembler and interpreter,
-including the deferred call-argument evaluation the original's natives depend on, plus the `QvmDisasm`
-CLI. All 997 `.qvm` scripts of a retail install load and disassemble, and `config.qvm` executes to the
-native-call sequence its bytecode describes.
+## What runs today
 
-**M3 (task system) is done**: the object model the entire game is built from — a task tree with the
-original's cursor-patching traversal (a task can delete itself, a sibling or a whole subtree from
-inside its own update), the type registry, a source-generated `[ScriptParam]` binder for all 34
-level-data value types, and the live named-variable registry mission scripts read and write through.
-All 14 retail `objects.qvm` files build their task trees headlessly, and `location0/level1` reproduces
-an independent third-party decompilation of the same bytecode exactly: 1360 tasks, ten levels deep,
-matching per-depth counts.
+A mission is playable end to end, without sound.
 
-**M4 (game loop) is done**: the engine now runs. A fixed 30 Hz schedule built on absolute per-tick
-deadlines rather than a delta accumulator, with the original's catch-up cap, one-render-per-tick latch
-and excluded-time stopwatch; the `Flow` state machine that moves the game between intro, menu, load and
-play, driven by the same `Flow_RequestEvent` command its scripts use; and the level load path. It boots,
-runs and loads a level headlessly — no window, no renderer — and the simulation is provably a function
-of the tick index alone: the same run against clocks of 1, 5, 16 and 100 ms granularity draws different
-numbers of frames and computes identical state.
+**Engine.** A fixed 30 Hz schedule built on absolute per-tick deadlines rather than a delta
+accumulator, with the original's catch-up cap, one-render-per-tick latch and excluded-time stopwatch.
+The simulation is a function of the tick index alone: the same run against clocks of 1, 5, 16 and
+100 ms granularity draws different numbers of frames and computes identical state. On top of it sit
+the QVM bytecode interpreter that runs the game's own scripts, the task tree the whole game is built
+from, and the ILFF archive readers for every `.res`, `.mef` and `.fnt` a retail install contains.
 
-Rendering, audio and gameplay behaviour are not implemented yet — work is tracked milestone by
-milestone in [`TODO.md`](TODO.md).
+**Gameplay.** The player walks, crouches, climbs ladders, rides wires, works doors and switches, and
+fires the retail weapon set with its own tuning data. Guards see through the original's two view cones,
+hear gunshots and impacts at the ranges the weapon tables declare, run their authored QVM behaviour
+scripts, and raise the alarm chain. Missions carry their objectives, complete or fail through
+`LevelFlow`, and unlock the next mission the way the original's campaign config does.
 
-## Goals
-- **1:1 game logic** with the original (timing, math, behaviour), rewritten as clean, modern C# —
-  redesigned systems, not a function-by-function translation.
-- **Renderer decoupled and swappable** behind abstraction interfaces.
-- **Cross-platform**: Windows, macOS, Linux, Web (WASM/WebGL2), Android, iOS.
-- **Moddable** via C# plugin assemblies and data-file overrides.
-- **Enterprise-grade**: SOLID/DRY, XML docs on every public member, zero warnings.
+**Presentation.** A deferred HDR renderer with cascaded shadow maps, volumetric fog, TAA and temporal
+upscaling, screen-space ambient occlusion, screen-space GI, screen-space reflections, bloom, colour
+grading, depth of field and motion blur. A cinematic front end — main menu, campaign, settings,
+profiles — drawn over a live mission backdrop, which is promoted into the mission itself when you press
+Play rather than being thrown away and reloaded. The C-key map computer is there in both forms: the
+retail handheld panel, and a full-screen tactical interface.
 
-## Platform matrix
-| Platform | Backend | Status |
-|---|---|---|
-| Windows / macOS / Linux | OpenGL 3.3 core (Silk.NET) | primary target |
-| Android | GLES 3.0 | planned (M14) |
-| iOS | GLES 3.0 (NativeAOT) | planned (M14) |
-| Web | WebGL2 (WASM) | planned (M14) |
+**Not yet.** There is **no audio** — the OpenAL backend is an empty project. Global illumination was
+removed for a clean-slate reimplementation, so interiors light from the game's own baked lightmaps and
+a flat ambient term. Only the desktop platforms are wired up; the mobile and web backends are planned
+but not started.
 
-## Repository layout
-```
-src/     OpenIGI.Core Engine Formats Scripting Game Modding
-         + Rendering/Audio/Input/Platform abstractions and their backends
-apps/    OpenIGI.Desktop        (composition root / executable)
-tools/   ResExtract, QvmDisasm  (CLI utilities)
-tests/   xUnit test projects
-docs/    architecture.md, formats/ (file-format specs)
-```
-See [`docs/architecture.md`](docs/architecture.md) for the layering rules and
-[`PLAN.md`](PLAN.md) for the full plan.
+## Quick start
 
-## Building
 Requires the **.NET 10 SDK**.
+
 ```sh
 dotnet build OpenIGI.slnx
 dotnet test  OpenIGI.slnx
 ```
 
-### Running against your game data
-Tests and tools that need real assets read the `IGI_GAME_PATH` environment variable (the folder
-containing `IGI.exe`, `common/`, `missions/`). Tests **skip** cleanly when it is unset.
+Point the game at your installation — the folder containing `IGI.exe`, `common/` and `missions/` —
+with either the environment variable or the `-game` switch:
+
 ```sh
 # Windows (PowerShell)
 $env:IGI_GAME_PATH = "C:\Games\Project IGI"
-# Linux/macOS
+# Linux / macOS
 export IGI_GAME_PATH="/path/to/Project IGI"
+
+dotnet run --project apps/OpenIGI.Desktop
 ```
 
+Tests that need real assets read the same variable and **skip** cleanly when it is unset, so a
+checkout with no game data still builds green.
+
+### Useful switches
+
+| Switch | What it does |
+|---|---|
+| `-game <dir>` | Installation to read data from, instead of `IGI_GAME_PATH`. |
+| `-mission <n>` | Load straight into a mission, skipping the front end. |
+| `-window`, `-size WxH` | Run windowed at a given client size. Borderless is the default. |
+| `-fullscreen` | Take over the monitor and switch its display mode. |
+| `-vanilla` | The whole remaster track off: retail menus and the original's render path. |
+| `-difficulty <d>` | `easy`, `normal` or `hard`. |
+| `-screenshot <f>` | Write a BMP of the rendered frame and quit. |
+
+Passing an option the parser does not recognise prints the full list, which includes the capture,
+camera-flight and menu-navigation options used for development.
+
+### Graphics presets
+
+Four presets — `vanilla`, `enhanced`, `high` and `ultra` — set the sixty-odd `r_*` variables together.
+`vanilla` reproduces the original's picture and is the regression gate; the others add modern
+rendering on top. Everything is reachable individually from the in-game console and from the settings
+pages. Settings are written to a `settings.cfg` beside the executable if one exists, and to your user
+profile otherwise, so a copied folder stays self-contained and an installed one stays writable.
+
+### Derived surface detail
+
+I.G.I. ships one diffuse texture per surface and nothing else, so the normal and roughness maps a
+physically-based shading model needs are derived from those textures. This happens automatically: a
+texture with no map derives one on a background thread the first time it is seen, and the result is
+cached under your user profile, so the first run fills the cache and later runs read it. Nothing needs
+to be downloaded and nothing is committed here — the maps come from your own installation's art.
+
+`ResExtract maps` pre-bakes them in one pass if you would rather not pay for it as you play, and
+`r_material_pack` points at the result.
+
+## Repository layout
+
+```
+src/     Core Engine Formats Scripting Game Modding UI Frontend
+         + Rendering/Audio/Input/Platform abstractions and their backends
+apps/    OpenIGI.Desktop            composition root and executable
+tools/   ResExtract, QvmDisasm      archive/texture extraction and QVM disassembly
+tests/   xUnit projects, one per source project
+```
+
+The layering rule is that `OpenIGI.Engine` and `OpenIGI.Game` may reference only the abstraction
+projects, never a concrete backend; backends are wired together in the desktop app.
+
 ## Contributing
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: match the determinism contract, document public
-members, keep the game core free of backend dependencies, and add golden tests for format readers.
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short: preserve the determinism contract, keep the game
+core free of backend dependencies, document every public member, and add golden tests for format
+readers.
 
 ## Legal
-Licensed under **GPL-3.0** ([`LICENSE`](LICENSE)). This is a clean-room reimplementation created for
-interoperability with data you already own. "Project I.G.I." and related trademarks belong to their
-respective owners; this project is not affiliated with or endorsed by them.
+
+Licensed under **GPL-3.0** — see [`LICENSE`](LICENSE).
+
+This is a clean-room reimplementation created for interoperability with data you already own. "Project
+I.G.I.", "I'm Going In" and related trademarks belong to their respective owners; this project is not
+affiliated with or endorsed by them. No game assets, decompiler output or original source are included
+in this repository, and contributions containing them will not be accepted.

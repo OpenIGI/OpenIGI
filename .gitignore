@@ -53,9 +53,10 @@ a probe of the running original
 
 
 # Working notes, design docs and reverse-engineering write-ups are kept locally rather than
-# carried in the repository. The top-level README is the exception.
+# carried in the repository. The two documents that address people reading it are the exception.
 *.md
 !/README.md
+!/CONTRIBUTING.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
