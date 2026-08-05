@@ -51,3 +51,15 @@ a probe of the running original
 # a filter over it, which is not this repository's to carry.
 .textures/
 
+
+# Working notes, design docs and reverse-engineering write-ups are kept locally rather than
+# carried in the repository. The top-level README is the exception.
+*.md
+!/README.md
+
+# Debug captures written next to the executable by the terrain/birdseye dumps.
+/out_*.bmp
+/out_*.png
+
+# Reference captures and generated format notes kept beside the code but not carried here.
+/docs/
