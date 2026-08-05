@@ -237,6 +237,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _resolveLens = -1;
     private int _resolveTexelSize = -1;
     private int _resolveLut = -1;
+    private int _resolveGreenPhosphor = -1;
+    private int _resolveTactical = -1;
+    private int _resolveTacticalTime = -1;
     private uint _lutTexture;
     private int _lutSize;
     private int _gradeFrame;
@@ -1595,6 +1598,19 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // being sampled at all.
         bool graded = post.WantsColourLookup && _lutTexture != 0;
         _resolveProgram.SetVector2(_resolveLut, graded ? Math.Clamp(post.ColourLookup, 0f, 1f) : 0f, _lutSize);
+        _resolveProgram.SetInt(_resolveGreenPhosphor, post.GreenPhosphor ? 1 : 0);
+
+        // Clamped here rather than trusted from the caller: the shader indexes an exponential and a
+        // handful of step edges off these, and a value outside the unit range does not degrade, it
+        // produces a black or a white screen.
+        TacticalDisplaySettings tactical = post.Tactical;
+        _resolveProgram.SetVector4(
+            _resolveTactical,
+            Math.Clamp(tactical.Amount, 0f, 1f),
+            Math.Clamp(tactical.Boot, 0f, 1f),
+            Math.Clamp(tactical.Sweep, 0f, 1f),
+            tactical.SweepPosition);
+        _resolveProgram.SetFloat(_resolveTacticalTime, tactical.Seconds);
 
         if (graded)
         {
@@ -2644,6 +2660,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _resolveLens = _resolveProgram.LocationOf("uLens");
         _resolveTexelSize = _resolveProgram.LocationOf("uTexelSize");
         _resolveLut = _resolveProgram.LocationOf("uLut");
+        _resolveGreenPhosphor = _resolveProgram.LocationOf("uGreenPhosphor");
+        _resolveTactical = _resolveProgram.LocationOf("uTactical");
+        _resolveTacticalTime = _resolveProgram.LocationOf("uTacticalTime");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
         _resolveProgram.SetInt("uDebugAlbedo", 6);

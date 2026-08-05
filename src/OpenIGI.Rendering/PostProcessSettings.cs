@@ -96,6 +96,15 @@ namespace OpenIGI.Rendering;
 /// <see cref="Exposure"/> becoming a bias on the result. Has no effect under the identity tone map: the
 /// vanilla path resolves as a straight copy and never applies exposure at all.
 /// </param>
+/// <param name="GreenPhosphor">
+/// Converts the resolved picture to the high-contrast green emission of the SIMOTECH map-computer CRT.
+/// This is a display transform, not a translucent overlay: the world must remain readable underneath it.
+/// </param>
+/// <param name="Tactical">
+/// The remaster's own map-computer display: the same idea as <paramref name="GreenPhosphor"/> carried
+/// on continuous parameters, so the tube can be brought up and taken down as part of a camera move
+/// rather than switched. The two are never on together — see <see cref="TacticalDisplaySettings"/>.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -118,7 +127,9 @@ public readonly record struct PostProcessSettings(
     float SpatialAa = 0f,
     float SpatialAaThreshold = 0.05f,
     float ColourLookup = 0f,
-    bool AutoExposure = false)
+    bool AutoExposure = false,
+    bool GreenPhosphor = false,
+    TacticalDisplaySettings Tactical = default)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -168,5 +179,7 @@ public readonly record struct PostProcessSettings(
         || Grain > 0f
         || ChromaticAberration > 0f
         || Sharpen > 0f
-        || WantsColourLookup;
+        || WantsColourLookup
+        || GreenPhosphor
+        || Tactical.IsActive;
 }

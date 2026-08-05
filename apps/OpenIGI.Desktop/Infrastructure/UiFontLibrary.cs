@@ -22,6 +22,13 @@ public static class UiFontLibrary
     /// <summary>The Saira condensed face used for headings and titles.</summary>
     public const string Heading = "SairaCondensed-SemiBold.ttf";
 
+    /// <summary>The Saira semibold face used for labels and letterspaced capitals.</summary>
+    /// <remarks>
+    /// A heavier weight of the body face rather than a different family, so a label reads as emphasis
+    /// rather than as a second voice. The tactical computer sets nearly all of its chrome in it.
+    /// </remarks>
+    public const string Emphasis = "Saira-SemiBold.ttf";
+
     /// <summary>Gets the directory the font files are read from.</summary>
     public static string FontsDirectory => Path.Combine(AppContext.BaseDirectory, "Assets", "fonts");
 

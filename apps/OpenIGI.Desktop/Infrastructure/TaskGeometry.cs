@@ -15,9 +15,15 @@ internal static class TaskGeometry
     /// <returns>The task's "Graph position" or "Position", or <see langword="default"/> when neither is present.</returns>
     public static Vector3d FindPosition(GameTask root, int taskId)
     {
-        return Find(root, taskId);
+        return TryFindPosition(root, taskId, out Vector3d position) ? position : default;
+    }
 
-        static Vector3d Find(GameTask task, int id)
+    /// <summary>Finds a task's authored position without treating the world origin as “not found”.</summary>
+    public static bool TryFindPosition(GameTask root, int taskId, out Vector3d position)
+    {
+        return Find(root, taskId, out position);
+
+        static bool Find(GameTask task, int id, out Vector3d found)
         {
             if (task.Id == id)
             {
@@ -25,28 +31,31 @@ internal static class TaskGeometry
                 {
                     if (declared.TryGetValue("Graph position", out object? graphPos) && graphPos is Vector3d gp)
                     {
-                        return gp;
+                        found = gp;
+                        return true;
                     }
 
                     if (declared.TryGetValue("Position", out object? pos) && pos is Vector3d p)
                     {
-                        return p;
+                        found = p;
+                        return true;
                     }
                 }
 
-                return default;
+                found = default;
+                return false;
             }
 
             foreach (GameTask child in task.Children)
             {
-                Vector3d found = Find(child, id);
-                if (found != default)
+                if (Find(child, id, out found))
                 {
-                    return found;
+                    return true;
                 }
             }
 
-            return default;
+            found = default;
+            return false;
         }
     }
 }

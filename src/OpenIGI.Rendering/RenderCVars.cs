@@ -924,6 +924,82 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the C-key map computer is the remaster's interface rather than the retail one.</summary>
+    /// <remarks>
+    /// <para>
+    /// Two entirely separate presentations of the same data. Off is the original's: a low-resolution
+    /// <c>mapcomputer.mef</c> panel held up in front of the camera, its aperture filled by a 4:3 screen
+    /// set in the game's own bitmap faces. On is a full-screen interface set in the shell's Saira,
+    /// reached through a camera move and a phosphor display transform, with no device model at all.
+    /// </para>
+    /// <para>
+    /// Off under vanilla for the reason everything else is: <c>-vanilla</c> and <c>-vanillarender</c>
+    /// exist to put the original's picture on screen, and a redesigned computer is not that. The retail
+    /// path is kept whole rather than emulated by the new one — it is the regression gate, and a gate
+    /// that shares an implementation with the thing it is gating is not a gate.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar TacticalComputer = Presets.Define(
+        CVar.Bool(
+            "r_computer_tactical",
+            true,
+            CVarOptions.Archive,
+            "Draw the map computer as the full-screen tactical interface. Off is the retail handheld panel."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the mission's status messages are drawn as the remaster's comms cards.</summary>
+    /// <remarks>
+    /// <para>
+    /// Presentation only. Both paths draw the same messages at the same moments, in the same order, with
+    /// the same typewriter: when a message arrives is decided by the simulation, and neither renderer can
+    /// reach that. Off is the original's placement and bitmap face; on is a card set in the shell's Saira.
+    /// </para>
+    /// <para>
+    /// Off under vanilla for the same reason as everything else here — <c>-vanilla</c> is the original's
+    /// picture, and a redesigned message block is not it.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar TacticalMessages = Presets.Define(
+        CVar.Bool(
+            "r_messages_tactical",
+            true,
+            CVarOptions.Archive,
+            "Draw mission status messages as the remaster's comms cards. Off is the retail message block."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How strongly the screen washes red when the player is hit.</summary>
+    /// <remarks>
+    /// <para>
+    /// A multiplier on the alpha of the full-screen quad <c>HumanPlayer_DrawDamageFlash</c>
+    /// (<c>0x4bb770</c>) paints, where 1 is the original's own strength and 0 removes it. The decay is
+    /// untouched either way: this changes how red the wash is, not how long it lasts, so the feedback
+    /// still tells the player which direction the hit came from and for exactly as long.
+    /// </para>
+    /// <para>
+    /// Below 1 by default outside vanilla. The original's full-strength wash was tuned for a 640x480
+    /// display a good distance from the player's face; the same alpha across a modern screen is enough
+    /// to hide the thing that is shooting at you, which turns a damage cue into a punishment.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> DamageFlash = Presets.Define(
+        CVar.Float(
+            "r_damage_flash",
+            0.55f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How red the screen goes when you are hit. 1 is the original's strength, 0 removes it."),
+        vanilla: "1",
+        enhanced: "0.55",
+        high: "0.55",
+        ultra: "0.55");
+
     /// <summary>The registry the renderer's own settings describe themselves to.</summary>
     private static GraphicsPresetRegistry Presets => GraphicsPresetRegistry.Default;
 }
