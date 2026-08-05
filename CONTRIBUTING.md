@@ -28,6 +28,40 @@ Confirm against the real thing before relying on it.
 Prefer confirming against **real game files** (`IGI_GAME_PATH`) over assumptions, and prefer measuring
 the running original over reading the decompiler when the two could disagree.
 
+### The binary the addresses refer to
+
+Comments throughout the code cite addresses in the original executable — `0x416260`, `sub_44F410`.
+An address means nothing without the build it belongs to, and this game shipped **no version
+resource**, so the hash is its identity:
+
+| | |
+|---|---|
+| File | `IGI.exe`, 1,384,448 bytes |
+| SHA-256 | `c74f390780e7ec23bd58e9915cdd94006e579c66083830c6908dbecb963bd0ce` |
+| Linked | 2000-11-23 19:49:26 UTC (`TimeDateStamp` `0x3A1D74C6`) |
+| Image base | `0x00400000`, PE32 / i386 |
+
+```sh
+# Windows
+Get-FileHash "IGI.exe" -Algorithm SHA256
+# Linux / macOS
+sha256sum IGI.exe
+```
+
+Addresses are written as virtual addresses at that image base, which is what a disassembler shows by
+default — no rebasing needed. The section layout tells you what kind of thing an address names:
+
+| Section | Range | Holds |
+|---|---|---|
+| `.text` | `0x00401000`–`0x00532510` | code — a function |
+| `.rdata` | `0x00533000`–`0x005358F6` | constants |
+| `.data` | `0x00536000`–`0x00C32558` | globals |
+| `.rsrc` | `0x00C33000`–`0x00C34E40` | resources |
+
+Every address currently cited in the codebase resolves inside this build: 721 functions, 59 globals
+and 4 constants. If your copy hashes differently, expect the addresses to land in the wrong place —
+say so in the PR rather than silently correcting them against a build nobody else has.
+
 Working notes, design documents and reverse-engineering write-ups are deliberately **not** kept in this
 repository — they are a running notebook that goes stale faster than the code it describes, and the
 reference captures that go with them are screenshots of a game we cannot redistribute. Keep yours
