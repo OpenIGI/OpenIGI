@@ -1,4 +1,6 @@
+using OpenIGI.Audio;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Menus;
@@ -180,9 +182,30 @@ public sealed class DesktopMenuHost : IFlowHost, IMenuHost
     public void DrawPointer(int x, int y) =>
         _renderer()?.DrawPointer(_batch, x, y, _screenWidth(), _screenHeight());
 
+    /// <summary>Gets or sets where menu sounds are played, or <see langword="null"/> to stay silent.</summary>
+    /// <remarks>
+    /// Set by the composition root once the device is open. A property rather than a constructor
+    /// argument because a host with no audio is a perfectly good host -- that is what every test uses.
+    /// </remarks>
+    public SoundSystem? Sounds { get; set; }
+
     /// <inheritdoc/>
-    /// <remarks>Audio is M7; the request is logged so the wiring is visible before there is a mixer.</remarks>
-    public void PlaySound(string name) => _logger.Debug(LogCategory, $"sound '{name}' (audio is M7)");
+    /// <remarks>
+    /// Menu sounds are flat and centred: they belong to the interface rather than to a place in the
+    /// world, so nothing about them is positional. They come from the menu system's own archive,
+    /// mounted apart from any mission.
+    /// </remarks>
+    public void PlaySound(string name)
+    {
+        if (Sounds is null || string.IsNullOrEmpty(name))
+        {
+            return;
+        }
+
+        // Priority above the default so a click is never the voice a busy pool decides to drop -- the
+        // interface going silent reads as the interface having stopped responding.
+        Sounds.Play(name, VoiceParameters.Default with { Category = SoundCategory.Effects, Priority = 100 });
+    }
 
     /// <inheritdoc/>
     /// <summary>Gets or sets what to do when the menus ask to start play.</summary>

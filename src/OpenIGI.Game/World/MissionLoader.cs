@@ -1,4 +1,5 @@
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Time;
@@ -36,11 +37,22 @@ public sealed class MissionLoader
     /// <summary>The texture archive mounted for every mission.</summary>
     public const string CommonTexturesArchive = "LOCAL:common/textures/textures.res";
 
+    /// <summary>The shared sound directory, walked by <c>0x4E68D0</c> for every mission.</summary>
+    public const string CommonSoundDirectory = "LOCAL:common/sounds";
+
+    /// <summary>The mission's own sound directory, walked after the shared one.</summary>
+    /// <remarks>
+    /// Order matters and is the original's: the first mount of a name wins, so a mission cannot shadow a
+    /// common sound by shipping one of the same name.
+    /// </remarks>
+    public const string MissionSoundDirectory = "MISSION:sounds";
+
     private readonly MissionRegistry _registry;
     private readonly VirtualFileSystem _fileSystem;
     private readonly ResourceRegistry _resources;
     private readonly LevelLoader _levelLoader;
     private readonly TerrainLoader? _terrainLoader;
+    private readonly SoundBank? _soundBank;
     private readonly IIgiLogger _logger;
 
     /// <summary>Initializes a new instance of the <see cref="MissionLoader"/> class.</summary>
@@ -54,6 +66,10 @@ public sealed class MissionLoader
     /// natives are registered into, which not every caller has; without one the mission loads without
     /// terrain and says so in <see cref="LoadedMission.PendingSteps"/>.
     /// </param>
+    /// <param name="soundBank">
+    /// The bank the mission's sound directories are mounted into. Optional for the same reason the
+    /// terrain loader is: a caller with no audio still loads missions, and says what it went without.
+    /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public MissionLoader(
         MissionRegistry registry,
@@ -61,7 +77,8 @@ public sealed class MissionLoader
         ResourceRegistry resources,
         LevelLoader levelLoader,
         IIgiLogger? logger = null,
-        TerrainLoader? terrainLoader = null)
+        TerrainLoader? terrainLoader = null,
+        SoundBank? soundBank = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(fileSystem);
@@ -73,6 +90,7 @@ public sealed class MissionLoader
         _resources = resources;
         _levelLoader = levelLoader;
         _terrainLoader = terrainLoader;
+        _soundBank = soundBank;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -158,8 +176,25 @@ public sealed class MissionLoader
             }
         }
 
-        // Sound banks are M7's; the directories the original mounts are recorded so the wiring is
-        // obvious when the audio backend lands.
-        pending.Add("sound banks (LOCAL:common/sounds, MISSION:sounds)");
+        // 9. Sound banks. The original walks both directories with 0x4E68D0, loading every .wav as an
+        //    ILSF sound and every .res as an archive of them. The shared directory goes first because
+        //    the first mount of a name is the one that answers to it.
+        if (_soundBank is null)
+        {
+            pending.Add($"sound banks ({CommonSoundDirectory}, {MissionSoundDirectory})");
+            return;
+        }
+
+        int sounds = _soundBank.MountDirectory(CommonSoundDirectory)
+            + _soundBank.MountDirectory(MissionSoundDirectory);
+
+        if (sounds == 0)
+        {
+            pending.Add($"sound banks ({CommonSoundDirectory}, {MissionSoundDirectory}) held no sounds");
+        }
+        else
+        {
+            _logger.Information(LogCategory, $"{sounds} sound(s) mounted.");
+        }
     }
 }

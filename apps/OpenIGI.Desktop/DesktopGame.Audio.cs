@@ -1,12 +1,23 @@
 using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Engine.Audio;
 
 namespace OpenIGI.Desktop;
 
 /// <summary>The audio half of the composition root: opening the device and keeping the buses levelled.</summary>
 internal sealed partial class DesktopGame
 {
+    /// <summary>The menu system's own sound archive, which the original mounts apart from any mission.</summary>
+    private const string MenuSoundArchive = "LOCAL:menusystem/sound/sounds.res";
+
+    /// <summary>Every sound the game can name. Rebuilt per mission, as the original rebuilds its table.</summary>
+    private SoundBank? _soundBank;
+
+    /// <summary>Plays sounds by name. Null until the device is open.</summary>
+    private SoundSystem? _sounds;
+
     /// <summary>Opens the audio backend and binds the volume variables to it.</summary>
     /// <remarks>
     /// <para>
@@ -26,6 +37,11 @@ internal sealed partial class DesktopGame
         _audio = AudioCVars.Enabled.Value
             ? new OpenAlAudioDevice(AudioDeviceOptions.FromCVars(), _logger)
             : new NullAudioDevice();
+
+        _soundBank = new SoundBank(_fileSystem, _logger);
+        _sounds?.Dispose();
+        _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
+        MountMenuSounds();
 
         ApplyCategoryGains();
 
@@ -56,5 +72,33 @@ internal sealed partial class DesktopGame
         _audio.SetCategoryGain(SoundCategory.Music, master * AudioCVars.MusicVolume.Value);
         _audio.SetCategoryGain(SoundCategory.Speech, master * AudioCVars.SpeechVolume.Value);
         _audio.SetCategoryGain(SoundCategory.Ambience, master * AudioCVars.AmbienceVolume.Value);
+    }
+
+    /// <summary>Empties the bank and re-mounts what does not belong to a mission.</summary>
+    /// <remarks>
+    /// Called before each mission load, so the mission's own directory is mounted into a bank holding
+    /// only the menu sounds. The original rebuilds its table the same way; leaving the previous level's
+    /// sounds in place would let a name resolve to a sound the new level never shipped.
+    /// </remarks>
+    private void ResetSoundsForMission()
+    {
+        _sounds?.UnloadBuffers();
+        _soundBank?.Clear();
+        MountMenuSounds();
+    }
+
+    /// <summary>Mounts the menu system's sound archive, which belongs to no mission.</summary>
+    private void MountMenuSounds()
+    {
+        if (_soundBank is null)
+        {
+            return;
+        }
+
+        int mounted = _soundBank.MountArchive(MenuSoundArchive);
+        if (mounted == 0)
+        {
+            _logger.Warning("Audio", $"No menu sounds in '{MenuSoundArchive}'.");
+        }
     }
 }

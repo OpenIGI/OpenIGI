@@ -316,6 +316,9 @@ internal sealed partial class DesktopGame : IDisposable
             // The menu and its hit-test have to agree about the magnification -- this is the inverse of
             // what MenuRenderer draws with. See UiScale for why the interface is scaled at all.
             Scale = _options.UiScale,
+
+            // Opened above, so the menu's own archive is already mounted by the time a screen appears.
+            Sounds = _sounds,
         };
 
         // The flow state machine owns the frame, and the menu is a task beneath it — so the frame walk

@@ -35,7 +35,13 @@ internal sealed partial class DesktopGame
         _computerFlight.Reset();
         LevelLoader levelLoader = new(levelRoot, _loop.TaskCommands, _loop.Natives, _resources, _logger);
         TerrainLoader terrainLoader = new(_resources, _loop.Natives, _logger);
-        MissionLoader missionLoader = new(_missions, _fileSystem, _resources, levelLoader, _logger, terrainLoader);
+
+        // The bank is rebuilt per mission, so the mission's own sounds mount into one holding only the
+        // menu's. MISSION: has already been re-pointed by the loader below, in the same step order the
+        // original uses.
+        ResetSoundsForMission();
+        MissionLoader missionLoader = new(
+            _missions, _fileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank);
         LoadedMission loaded = missionLoader.Load(id);
 
         // Evaluate the level's ConditionalContainer conditions against the initial playable state, so the
