@@ -1,6 +1,7 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Profiles;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
@@ -22,13 +23,43 @@ catch (ArgumentException ex)
 
 IIgiLogger logger = new ConsoleLogger();
 
-string? gamePath = options.GamePath ?? @"S:\I'm Going In\pc";
-if (string.IsNullOrWhiteSpace(gamePath) || !Directory.Exists(gamePath))
+// Where the executable is, then where it was run from. Dropping the port into the game's own folder
+// is then the whole of the installation procedure, which is how somebody expects to install an add-on
+// for a game of this age -- and it is the only route that works with no environment to set up.
+string[] searched = [AppContext.BaseDirectory, Environment.CurrentDirectory];
+
+// -game, then IGI_GAME_PATH, then whatever is lying around the executable.
+string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched);
+
+if (string.IsNullOrWhiteSpace(gamePath))
+{
+    Console.Error.WriteLine("No Project I.G.I. installation found.");
+    Console.Error.WriteLine();
+    Console.Error.WriteLine("Put OpenIGI in the folder that holds IGI.exe, or point it at one:");
+    Console.Error.WriteLine("  -game <dir>");
+    Console.Error.WriteLine($"  {DesktopOptions.GamePathVariable}=<dir>");
+    Console.Error.WriteLine();
+    Console.Error.WriteLine("Looked in:");
+
+    foreach (string candidate in searched)
+    {
+        Console.Error.WriteLine($"  {candidate}");
+    }
+
+    return 2;
+}
+
+// Reported apart from the search, because a path somebody typed being wrong is a different mistake
+// from there being nothing to find, and telling them the file that is missing is what makes a
+// mistyped path or a half-copied installation obvious rather than mysterious.
+GameProfile profile = new(GameTitle.Igi1, gamePath);
+
+if (!profile.IsInstalled)
 {
     Console.Error.WriteLine(
-        gamePath is null
-            ? $"No original installation configured. Pass -game <dir> or set {DesktopOptions.GamePathVariable}."
-            : $"'{gamePath}' does not exist. Pass -game <dir> or set {DesktopOptions.GamePathVariable}.");
+        Directory.Exists(gamePath)
+            ? $"'{gamePath}' is not a Project I.G.I. installation -- no {GameTitle.Igi1.SignatureFile} in it."
+            : $"'{gamePath}' does not exist.");
     return 2;
 }
 

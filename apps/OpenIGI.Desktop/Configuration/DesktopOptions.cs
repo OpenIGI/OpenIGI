@@ -507,8 +507,11 @@ public readonly record struct DesktopOptions(
           OpenIGI.Desktop [options]
 
         options:
-          -game <dir>      Original installation to read data from.
-                           Defaults to the IGI_GAME_PATH environment variable.
+          -game <dir>      Original installation to read data from. Defaults to the
+                           IGI_GAME_PATH environment variable, and failing that to an
+                           installation found beside the executable or in the working
+                           directory -- so putting OpenIGI in the game's own folder is
+                           enough on its own.
           -borderless      Cover the screen with an undecorated window at the monitor's
                            own resolution and refresh rate. This is the default.
           -window          Run windowed. Implied by -size.

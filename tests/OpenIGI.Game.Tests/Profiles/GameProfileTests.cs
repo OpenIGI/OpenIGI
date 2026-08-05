@@ -27,6 +27,63 @@ public sealed class GameProfileTests
         Assert.Equal(expected, GameProfileResolver.ResolvePath(explicitPath, environmentPath, fallbackPath));
     }
 
+    /// <summary>A directory that looks like an installation, because the signature file is in it.</summary>
+    private static string MakeInstall(string root)
+    {
+        Directory.CreateDirectory(root);
+        File.WriteAllBytes(Path.Combine(root, GameTitle.Igi1.SignatureFile), [0]);
+        return root;
+    }
+
+    [Fact]
+    public void Discovery_takes_the_first_candidate_that_holds_an_installation()
+    {
+        string temp = Path.Combine(Path.GetTempPath(), "openigi-discover-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            string empty = Path.Combine(temp, "empty");
+            string beside = MakeInstall(Path.Combine(temp, "beside-the-exe"));
+            string working = MakeInstall(Path.Combine(temp, "working-dir"));
+            Directory.CreateDirectory(empty);
+
+            // A directory that merely exists is not an installation, so the search walks past it.
+            Assert.Equal(beside, GameProfileResolver.DiscoverDataRoot([empty, beside, working]));
+
+            // Order is preference: the same set, asked in the other order, answers the other one.
+            Assert.Equal(working, GameProfileResolver.DiscoverDataRoot([empty, working, beside]));
+        }
+        finally
+        {
+            Directory.Delete(temp, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Discovery_answers_null_when_nothing_around_is_an_installation()
+    {
+        string temp = Path.Combine(Path.GetTempPath(), "openigi-discover-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(temp);
+
+        try
+        {
+            // A blank entry, a directory with nothing in it, and one that is not there at all.
+            Assert.Null(GameProfileResolver.DiscoverDataRoot(
+                [null, "  ", temp, Path.Combine(temp, "missing")]));
+        }
+        finally
+        {
+            Directory.Delete(temp, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Discovery_over_no_candidates_is_not_an_error()
+    {
+        Assert.Null(GameProfileResolver.DiscoverDataRoot([]));
+        Assert.Throws<ArgumentNullException>(() => GameProfileResolver.DiscoverDataRoot(null!));
+    }
+
     [Fact]
     public void Catalogue_binds_the_active_title_to_the_resolved_path_and_leaves_the_rest_unavailable()
     {

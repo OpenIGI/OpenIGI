@@ -50,8 +50,11 @@ dotnet build OpenIGI.slnx
 dotnet test  OpenIGI.slnx
 ```
 
-Point the game at your installation — the folder containing `IGI.exe`, `common/` and `missions/` —
-with either the environment variable or the `-game` switch:
+**Put the build in your game folder** — the one holding `IGI.exe`, `common/` and `missions/` — and it
+will find the data on its own, with nothing to configure. That is the whole installation procedure.
+
+To run it from anywhere else, point it at the installation with the environment variable or the
+`-game` switch:
 
 ```sh
 # Windows (PowerShell)
@@ -69,7 +72,7 @@ checkout with no game data still builds green.
 
 | Switch | What it does |
 |---|---|
-| `-game <dir>` | Installation to read data from, instead of `IGI_GAME_PATH`. |
+| `-game <dir>` | Installation to read data from, ahead of `IGI_GAME_PATH` and of what is found beside the executable. |
 | `-mission <n>` | Load straight into a mission, skipping the front end. |
 | `-window`, `-size WxH` | Run windowed at a given client size. Borderless is the default. |
 | `-fullscreen` | Take over the monitor and switch its display mode. |
