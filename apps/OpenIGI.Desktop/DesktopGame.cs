@@ -467,7 +467,17 @@ internal sealed partial class DesktopGame : IDisposable
         //
         // Constructed once for the whole session rather than per level, because a texture pack is shared
         // across missions and the maps are the textures' own property rather than a level's.
-        _detailMaps = new(_device, RenderCVars.MaterialPack.Value, _logger);
+        //
+        // The cache is what makes the tool optional. A texture with no map derives one on a worker the
+        // first time it is seen and the result is written here, so a player who never runs ResExtract
+        // still gets the maps -- from their OWN installation's art, which is the only place this
+        // repository can get it from. Under %APPDATA% rather than in the checkout because it is derived
+        // per-user data, and because the game's art with a filter over it is not ours to redistribute.
+        _detailMaps = new(
+            _device,
+            RenderCVars.MaterialPack.Value,
+            _logger,
+            Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
 
         // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
         // They live under common/, so they are the same 2.4 MB of IFF for every mission, and parsing
@@ -896,6 +906,13 @@ internal sealed partial class DesktopGame : IDisposable
             passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             _window.PumpEvents();
+
+            // Whatever the detail-map workers finished since the last pass, uploaded a few at a time.
+            // The setting is read here rather than captured at construction so that turning
+            // r_material_detail up mid-session starts deriving for whatever loads next -- it is zero
+            // under vanilla and enhanced, and deriving maps the shader multiplies by nothing is waste.
+            _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
+            _detailMaps.PumpDerived();
 
             // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
             // an accumulated step so the schedule cannot drift. Per loop pass would be wrong: the loop

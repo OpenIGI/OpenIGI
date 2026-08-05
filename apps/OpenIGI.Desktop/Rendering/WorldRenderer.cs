@@ -423,8 +423,9 @@ public sealed class WorldRenderer : IDisposable
 
                 // The derived normal and roughness this game never shipped, if a pack has been built.
                 // Registered against the texture rather than carried through the draw, so nothing below
-                // this line knows the maps exist.
-                DetailMaps?.Attach(name, handle);
+                // this line knows the maps exist. The top level goes with it so a texture the pack has
+                // never seen can derive its own map instead of staying flat forever.
+                DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
             }
             catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
             {

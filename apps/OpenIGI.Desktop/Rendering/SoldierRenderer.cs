@@ -2996,7 +2996,7 @@ public sealed class SoldierRenderer : IDisposable
                         TextureAddressMode.Repeat),
                     image.Pixels);
 
-                DetailMaps?.Attach(name, handle);
+                DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
             }
             catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
             {
