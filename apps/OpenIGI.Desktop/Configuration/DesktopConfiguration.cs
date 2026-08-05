@@ -44,7 +44,7 @@ internal static class DesktopConfiguration
         {
             try
             {
-                return ConfigScript.Load(File.ReadAllBytes(userPath), logger);
+                return ConfigScript.Load(File.ReadAllBytes(userPath), logger, userPath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or QvmFormatException)
             {
@@ -64,7 +64,7 @@ internal static class DesktopConfiguration
 
             try
             {
-                GameConfig loaded = ConfigScript.Load(fileSystem.ReadAllBytes(path), logger);
+                GameConfig loaded = ConfigScript.Load(fileSystem.ReadAllBytes(path), logger, path);
 
                 if (path == ConfigScript.OpenIgiPath)
                 {

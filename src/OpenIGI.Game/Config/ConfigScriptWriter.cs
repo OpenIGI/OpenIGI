@@ -81,6 +81,14 @@ public static class ConfigScriptWriter
             builder.Call("GOSoundFX", Real(profile.SoundEffectsVolume));
         }
 
+        // The script has to end with one, and a retail file does (its last two instructions are POP then
+        // BRK). BRK is the only thing that stops the interpreter: the loop reads code[pc] with no bounds
+        // check of any kind -- the original's is `code_base[pc]` straight into a dispatch table
+        // (0x4BCFD0) -- so a script that merely runs out of instructions does not end, it carries on into
+        // whatever follows the code section. Ours stopped at the last POP and faulted with an illegal
+        // instruction on the byte after it; the original would have read past its own allocation.
+        builder.End();
+
         return builder.Finish();
     }
 
@@ -144,6 +152,9 @@ public static class ConfigScriptWriter
             PatchInt32(braOffset + 1, _code.Count - blocksStart);
             _code.Add(Pop);
         }
+
+        /// <summary>Writes the terminating instruction, after the last statement.</summary>
+        public void End() => _code.Add(Brk);
 
         public byte[] Finish()
         {

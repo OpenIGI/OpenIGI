@@ -1,6 +1,7 @@
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Scripting.Expressions;
+using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -80,6 +81,54 @@ public sealed class ConfigTests
 
         Assert.Equal("Joe", reloaded.Profiles[0].Name);
         Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"), reloaded.Profiles[0].Bindings[0]);
+    }
+
+    [Fact]
+    public void AWrittenFileEndsWithTheTerminatingBreak()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+
+        byte[] bytes = ConfigScriptWriter.Write(config);
+        QvmProgram program = QvmProgram.Read(bytes);
+
+        // BRK is opcode 0 and the only thing that stops the interpreter: the original reads code[pc]
+        // straight into its dispatch table with no bounds check (0x4BCFD0), so a script that just runs
+        // out of instructions carries on into whatever follows the code section. A retail config.qvm
+        // ends POP, BRK; ours used to stop at the POP.
+        Assert.Equal((byte)QvmOpcode.Brk, program.Code.Span[^1]);
+    }
+
+    [Fact]
+    public void AWrittenFileRunsToCompletionWithoutFaulting()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        config.Active!.Bindings.Add(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"));
+
+        byte[] bytes = ConfigScriptWriter.Write(config);
+        QvmProgram program = QvmProgram.Read(bytes);
+
+        // Interpreted directly rather than through ConfigScript.Load, which reports a fault and carries
+        // on -- by design, since a corrupt file should cost the settings rather than the session. That
+        // tolerance is exactly what let a script with no terminator look fine for so long: everything
+        // had already run by the time it fell off the end.
+        NativeRegistry natives = new();
+        foreach (string name in ConfigScript.NativeNames)
+        {
+            natives.RegisterFunction(name, _ => QvmValue.FromInt32(0));
+        }
+
+        foreach (string? symbol in program.SymbolNames)
+        {
+            if (symbol is not null && !natives.Contains(symbol))
+            {
+                natives.RegisterConstant(symbol, 0);
+            }
+        }
+
+        QvmInterpreter interpreter = new(program, natives);
+
+        Assert.Equal(QvmError.None, interpreter.Run());
+        Assert.Equal(QvmError.None, interpreter.Error);
     }
 
     [Fact]

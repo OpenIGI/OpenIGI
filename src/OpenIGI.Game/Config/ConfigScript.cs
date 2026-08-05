@@ -49,7 +49,15 @@ public sealed class ConfigScript
     /// A faulted script yields whatever was loaded before the fault rather than throwing: a corrupt
     /// save file should cost the settings, not the session.
     /// </remarks>
-    public static GameConfig Load(ReadOnlyMemory<byte> script, IIgiLogger? logger = null)
+    /// <param name="source">
+    /// What to call the script in a diagnostic, for when it is not the retail file. Reported rather than
+    /// assumed because this loads OpenIGI's own file far more often than the original's, and a fault
+    /// blamed on the wrong one sends you reading a file that turns out to be perfectly good.
+    /// </param>
+    public static GameConfig Load(
+        ReadOnlyMemory<byte> script,
+        IIgiLogger? logger = null,
+        string? source = null)
     {
         IIgiLogger log = logger ?? NullLogger.Instance;
         GameConfig config = new();
@@ -75,7 +83,10 @@ public sealed class ConfigScript
         QvmError error = interpreter.Run();
         if (error != QvmError.None)
         {
-            log.Warning(LogCategory, $"{RetailPath} faulted with {error}: {interpreter.ErrorMessage}");
+            log.Warning(
+                LogCategory,
+                $"{source ?? RetailPath} faulted with {error} at offset {interpreter.ErrorOffset}: "
+                    + interpreter.ErrorMessage);
         }
 
         loader.Finish();
