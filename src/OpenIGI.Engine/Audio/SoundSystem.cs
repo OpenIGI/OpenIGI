@@ -127,6 +127,76 @@ public sealed class SoundSystem : IDisposable
         return Play(name, parameters);
     }
 
+    /// <summary>Gets or sets the definitions names are resolved through.</summary>
+    /// <remarks>
+    /// Until this is set, <see cref="PlayDefinition"/> can find nothing: game code names definitions,
+    /// never bank keys.
+    /// </remarks>
+    public SoundDefinitionRegistry? Definitions { get; set; }
+
+    /// <summary>Plays a sound the way game code names it — through the definition layer.</summary>
+    /// <param name="name">The definition name, such as <c>ai_death_1</c> or <c>jump_1</c>.</param>
+    /// <param name="positionInUnits">
+    /// Where the emitter is, in engine units, or <see langword="null"/> for a sound with no place in
+    /// the world — the player's own weapon, an interface click.
+    /// </param>
+    /// <param name="gain">A further gain on top of the definition's own.</param>
+    /// <param name="priority">Its importance when the voice pool is full.</param>
+    /// <returns>The voice, or <see cref="AudioVoiceHandle.None"/>.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the port's <c>0x4E7200</c>: resolve the name, refuse anything but a plain sound, then
+    /// play the definition's bank key with the definition's own distances, gain and loop flag. The
+    /// distances are <b>authored in metres</b> and used as such.
+    /// </para>
+    /// <para>
+    /// The definition's <see cref="SoundDefinition.Offset"/> is added to the emitter position, because
+    /// that is what it is — an offset in the emitter's frame, not a world position. The original also
+    /// rotates it by the emitter's orientation; every retail offset read so far is zero, so nothing
+    /// yet depends on the rotation and it is not applied here.
+    /// </para>
+    /// </remarks>
+    public AudioVoiceHandle PlayDefinition(
+        string name,
+        Vector3d? positionInUnits = null,
+        float gain = 1f,
+        int priority = 0)
+    {
+        if (Definitions is null || !Definitions.TryResolve(name, out SoundDefinition? definition) || definition is null)
+        {
+            if (_reportedMissing.Add(name ?? string.Empty))
+            {
+                _logger.Debug(LogCategory, $"No sound definition named '{name}'.");
+            }
+
+            return AudioVoiceHandle.None;
+        }
+
+        if (!definition.IsPlayable)
+        {
+            // 0x4E7200 rejects a group, a graph and a trigger outright rather than playing something
+            // arbitrary from inside them.
+            return AudioVoiceHandle.None;
+        }
+
+        VoiceParameters parameters = VoiceParameters.Default with
+        {
+            Gain = definition.Volume * gain,
+            Looping = definition.Loop,
+            Priority = priority,
+        };
+
+        if (positionInUnits is { } emitter)
+        {
+            parameters = parameters.At(
+                ToMetres(emitter + definition.Offset),
+                definition.MinimumDistanceMetres,
+                definition.MaximumDistanceMetres);
+        }
+
+        return Play(definition.BankKey, parameters);
+    }
+
     /// <summary>Determines whether a voice is still sounding.</summary>
     /// <param name="voice">The voice.</param>
     /// <returns><see langword="true"/> while it sounds.</returns>

@@ -24,6 +24,13 @@ internal sealed partial class DesktopGame
     /// <summary>Plays sounds by name. Null until the device is open.</summary>
     private SoundSystem? _sounds;
 
+    /// <summary>
+    /// What every name game code says resolves to. Built once the script namespace exists, and
+    /// reloaded per mission because a mission ships its own <c>sounds/sounds.qvm</c> on top of the
+    /// shared one.
+    /// </summary>
+    private SoundDefinitionRegistry? _soundDefinitions;
+
     /// <summary>The score. Null until the device is open.</summary>
     private MusicPlayer? _music;
 
@@ -200,6 +207,24 @@ internal sealed partial class DesktopGame
 
         _soundBank.MountDirectory(MissionLoader.CommonSoundDirectory);
         _soundBank.MountDirectory(MissionLoader.MissionSoundDirectory);
+
+        // And the definitions that give those banked sounds their names. Game code says `ai_death_1`,
+        // which is a definition; the bank holds `AI_DEATH_01`. Without this every game-side sound
+        // resolves to nothing at all.
+        //
+        // Registered here, per mission, and not once at start-up: a second GameLoop is built for every
+        // mission the menu previews and one of them takes the session over, so `_loop.Natives` at
+        // start-up is NOT the namespace a promoted mission's scripts resolve against. The weapon,
+        // ammo and material tables are registered per mission for exactly this reason; re-registering
+        // a name rebinds it rather than failing.
+        _soundDefinitions ??= new SoundDefinitionRegistry(_logger);
+        _soundDefinitions.Register(_loop.Natives);
+        _soundDefinitions.LoadForMission(_resources, _loop.Natives);
+
+        if (_sounds is not null)
+        {
+            _sounds.Definitions = _soundDefinitions;
+        }
     }
 
     /// <summary>Mounts the menu system's sound archive, which belongs to no mission.</summary>
