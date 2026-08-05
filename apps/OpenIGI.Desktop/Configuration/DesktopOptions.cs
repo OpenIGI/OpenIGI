@@ -283,11 +283,13 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
                 // The whole remaster track off in one word: the retail menus instead of the cinematic
-                // shell, the original's renderer and one-render-per-tick 30 Hz presentation, and its
-                // mix -- 32 voices at 22 kHz with the flat hand-computed pan instead of positioning.
+                // shell, the original's renderer and one-render-per-tick 30 Hz presentation, its mix --
+                // 32 voices at 22 kHz with the flat hand-computed pan instead of positioning -- and its
+                // canned death animations instead of simulated bodies.
                 vanillaMenu = true;
                 startupCommands.Add("gfx_preset vanilla");
                 startupCommands.Add("snd_preset vanilla");
+                startupCommands.Add("g_preset vanilla");
             }
             else if (arg.Equals("vanillamenu", StringComparison.OrdinalIgnoreCase))
             {

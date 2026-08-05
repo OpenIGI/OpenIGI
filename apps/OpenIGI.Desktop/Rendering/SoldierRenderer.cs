@@ -9,6 +9,8 @@ using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Ai;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
+using OpenIGI.Game;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -60,6 +62,12 @@ public sealed class SoldierRenderer : IDisposable
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
+
+    // One prepared rig per skeleton, shared by every corpse wearing it. Building it walks the whole bone
+    // graph twice, so it must not happen per death -- and it holds no live state, so it need not.
+    private readonly Dictionary<BoneSkeleton, RagdollSkeleton> _ragdollRigs = [];
+    private RagdollWorld? _ragdollWorld;
+
     private TerrainData? _terrain;
     private WorldRayCast? _cast;
     private SoldierRound? _onRound;
@@ -96,6 +104,16 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Connects an AI's input-channel activation to the live world interaction task.</summary>
     public void SetAiTaskActivator(Action<int>? activator) => _aiTaskActivator = activator;
+    /// <summary>Sounds a soldier's death cry, at the position the body fell from.</summary>
+    /// <param name="report">The sink, or <see langword="null"/> to make deaths silent.</param>
+    /// <remarks>
+    /// A callback rather than a <c>SoundSystem</c> reference, for the reason every other seam on this
+    /// class is one: the renderer knows when a soldier dies and should not also know how a sound is
+    /// played. The argument is the body's position in <b>engine units</b>.
+    /// </remarks>
+    public void SetDeathSound(Action<Vector3d>? report) => _deathSound = report;
+
+    private Action<Vector3d>? _deathSound;
     private readonly HashSet<string> _reportedChannels = new(StringComparer.Ordinal);
     private int _deathsSoFar;
     private int _walkAnimation = -1;
@@ -111,6 +129,10 @@ public sealed class SoldierRenderer : IDisposable
     // with the level (LoadPlayerBody), stands invisibly until the player dies, then poses the death clip
     // (KillPlayerBody) and is drawn (DrawPlayerBody) once the death camera has pulled back off the eye.
     // Reuses the same BuildGroup / re-skin / draw machinery a soldier's body does. See HumanPlayerBody.
+    // The player's own corpse, when g_ragdoll is on. Exactly the soldier arrangement: the retail death
+    // clip keeps running underneath and keeps moving the authoritative body, and this replaces only the
+    // pose and the placement that are drawn.
+    private RagdollBody? _playerRagdoll;
     private SoldierView? _playerBodyView;
     private Group? _playerBodyGroup;
     private Member? _playerBodyMember;
@@ -1324,6 +1346,88 @@ public sealed class SoldierRenderer : IDisposable
         return program;
     }
 
+    /// <summary>The prepared rig for a skeleton, built once and shared by every corpse wearing it.</summary>
+    private RagdollSkeleton? RagdollRigFor(BoneSkeleton skeleton)
+    {
+        if (_ragdollRigs.TryGetValue(skeleton, out RagdollSkeleton? rig))
+        {
+            return rig;
+        }
+
+        try
+        {
+            rig = RagdollSkeleton.Build(skeleton);
+        }
+        catch (ArgumentException ex)
+        {
+            // A rig the solver cannot use is not fatal: the retail death clip is still playing
+            // underneath, so the body falls the way it always did and only the remaster is skipped.
+            _logger.Warning(LogCategory, $"Skeleton {skeleton.Id} cannot drive a ragdoll: {ex.Message}");
+            return null;
+        }
+
+        _ragdollRigs[skeleton] = rig;
+        return rig;
+    }
+
+    /// <summary>What corpses collide against — the same two queries a living body uses.</summary>
+    private RagdollWorld RagdollWorldForCorpses()
+    {
+        if (_ragdollWorld is { } world)
+        {
+            return world;
+        }
+
+        AiSoldier.GroundQuery? ground = MakeGroundQuery();
+        _ragdollWorld = new RagdollWorld(
+            _cast,
+            ground is null ? null : (double x, double y, double z, out double groundZ) => ground(x, y, z, out groundZ));
+        return _ragdollWorld;
+    }
+
+    /// <summary>
+    /// Starts a simulated corpse from the pose a body was last drawn in, and pushes it with the round.
+    /// </summary>
+    /// <returns>The body, or <see langword="null"/> when ragdolls are off or the rig cannot drive one.</returns>
+    /// <remarks>
+    /// The origin has to be the placement the body was being drawn at — position, ground snap and the
+    /// clip's own root height — or the corpse jumps at the instant the physics takes over. That is the
+    /// same triple <see cref="TickPlacementOf"/> builds, in units rather than metres.
+    /// </remarks>
+    private RagdollBody? SeedRagdoll(
+        SoldierView view,
+        Vector3d originInUnits,
+        Matrix3f orientation,
+        int bone,
+        Vector3d travel,
+        WeaponCategory category,
+        Vector3d carriedVelocity)
+    {
+        if (!GameplayCVars.Ragdoll.Value || RagdollRigFor(view.Bones.Set.Skeleton) is not { } rig)
+        {
+            return null;
+        }
+
+        RagdollBody body;
+        try
+        {
+            body = RagdollBody.Seed(rig, view.UnrotatedPose(), originInUnits, orientation);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.Warning(LogCategory, $"Could not seed a ragdoll: {ex.Message}");
+            return null;
+        }
+
+        body.AddVelocity(carriedVelocity);
+        RagdollImpulse.Apply(
+            body,
+            bone,
+            travel,
+            RagdollImpulse.MomentumOf(rig, category, GameplayCVars.RagdollForce.Value));
+        return body;
+    }
+
     private AiSoldier.GroundQuery? MakeGroundQuery()
     {
         TerrainData? terrain = _terrain;
@@ -1588,6 +1692,22 @@ public sealed class SoldierRenderer : IDisposable
             view.PlaceAt(brain.Position, brain.Orientation);
         }
 
+        // Simulated corpses advance on the tick, alongside the rigs they replaced -- and only until they
+        // settle, because nothing in this game ever removes a body and a corpse that kept stepping would
+        // be a cost paid for the rest of the mission.
+        if (GameplayCVars.Ragdoll.Value)
+        {
+            RagdollWorld corpses = RagdollWorldForCorpses();
+            int substeps = GameplayCVars.RagdollSubsteps.Value;
+            foreach (Group group in _groups)
+            {
+                foreach (Member member in group.Soldiers)
+                {
+                    member.Ragdoll?.Step(corpses, substeps);
+                }
+            }
+        }
+
         // Each soldier is skinned from ITS OWN rig, which is what the original does (0x49F700 is called
         // through a stack descriptor about once per soldier per frame). Sharing one skinned mesh per group
         // made every soldier wear the first one's pose, so once guards diverged onto real patrol paths
@@ -1618,7 +1738,7 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     MefSkinner.Skin(
                         group.Model,
-                        member.View.UnrotatedPose(),
+                        PoseToDraw(member),
                         (float)(1.0 / WorldScene.UnitsPerMetre),
                         skinned);
                 }
@@ -1697,6 +1817,15 @@ public sealed class SoldierRenderer : IDisposable
     {
         SoldierView soldier = member.View;
 
+        // A simulated corpse carries its own placement. Its pose is built in world space relative to the
+        // origin frozen at the moment it died, with the body's heading folded into the root bone's own
+        // rotation, so it is drawn there with no turn applied. Reporting the same pair every tick is
+        // also what makes the between-tick blend a no-op for it -- the motion is all in the pose.
+        if (member.Ragdoll is { } corpse)
+        {
+            return (corpse.Origin / WorldScene.UnitsPerMetre, Matrix3f.Identity);
+        }
+
         // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT HEIGHT.
         // That is the original's Human+1300 (see SoldierView.RootSample): every retail skeleton's
         // bone 0 rest translation is zero, so the pose puts the pelvis at the object origin and the
@@ -1726,6 +1855,15 @@ public sealed class SoldierRenderer : IDisposable
 
         return (member.Position, soldier.Orientation);
     }
+
+    /// <summary>The pose a body is skinned from this tick — its rig's, or its corpse's.</summary>
+    /// <remarks>
+    /// The single branch the whole feature costs the render path. A ragdoll's pose comes back out of
+    /// <c>BonePose.Evaluate</c> like any other, so the skinner, the shaders and the previous-pose stream
+    /// that feeds the temporal resolve are all untouched by it.
+    /// </remarks>
+    private static BonePose PoseToDraw(Member member) =>
+        member.Ragdoll is { } corpse ? corpse.Pose() : member.View.UnrotatedPose();
 
     /// <summary>A body's heading out of its world 3×3 — the inverse of <c>Z(facing)</c>.</summary>
     /// <remarks>
@@ -2044,8 +2182,23 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="deathAnimation">The fall clip the death state chose, from the player's hit-zone row.</param>
     /// <param name="feet">Where the body falls, in engine units — the player's own position.</param>
     /// <param name="gamma">Which way the body faces as it goes down.</param>
-    /// <remarks>Does nothing when no body was loaded; the death still happens, just without a body to show.</remarks>
-    public void KillPlayerBody(int deathAnimation, Vector3d feet, float gamma)
+    /// <param name="bone">The bone the killing round went through, or <c>-1</c> when none was named.</param>
+    /// <param name="travel">The killing round's own line, from the muzzle towards where it ended.</param>
+    /// <param name="category">What fired it, which is where the impulse's magnitude comes from.</param>
+    /// <param name="velocity">What the player was doing at the moment of death, in units per tick.</param>
+    /// <remarks>
+    /// Does nothing when no body was loaded; the death still happens, just without a body to show. The
+    /// last four arguments are the ragdoll's, and are ignored entirely when <c>g_ragdoll</c> is off —
+    /// the retail clip above them runs either way.
+    /// </remarks>
+    public void KillPlayerBody(
+        int deathAnimation,
+        Vector3d feet,
+        float gamma,
+        int bone = -1,
+        Vector3d travel = default,
+        WeaponCategory category = WeaponCategory.Gun,
+        Vector3d velocity = default)
     {
         if (_playerBodyView is null)
         {
@@ -2058,6 +2211,17 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyView.PlaceAt(feet, Matrix3f.FromEngineEulerAngles(0f, 0f, gamma));
         _playerBodyView.Kill(deathAnimation);
         _playerBodyActive = true;
+
+        // Seeded before the tick state is captured, so the very first capture is already the corpse's
+        // own placement rather than the clip's -- a death is a cut and there is nothing to blend from.
+        _playerRagdoll = SeedRagdoll(
+            _playerBodyView,
+            new Vector3d(feet.X, feet.Y, feet.Z + _playerBodyView.RootSample.Z),
+            _playerBodyView.Orientation,
+            bone,
+            travel,
+            category,
+            velocity);
 
         // A death is a cut, not a movement: the body appears where the player fell, and nothing on
         // screen is its history. Snap the interpolation pair and start the frame bookkeeping over.
@@ -2117,6 +2281,11 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _playerBodyView.PlaceAt(new Vector3d(px, py, pz), _playerBodyView.Orientation);
+
+        // The corpse, when there is one. It is stepped after the retail move above rather than instead
+        // of it: that move is what the rest of the game believes, and only the drawing changes here.
+        _playerRagdoll?.Step(RagdollWorldForCorpses(), GameplayCVars.RagdollSubsteps.Value);
+
         ReskinPlayerBody(_playerBodyView, model);
         CapturePlayerBodyTickState(snap: false);
     }
@@ -2375,7 +2544,8 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyGroup.Geometry.Vertices.CopyTo(skinned, 0);
         try
         {
-            MefSkinner.Skin(model, view.UnrotatedPose(), (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
+            BonePose pose = _playerRagdoll is { } corpse ? corpse.Pose() : view.UnrotatedPose();
+            MefSkinner.Skin(model, pose, (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
         }
         catch (ArgumentException)
         {
@@ -2407,11 +2577,7 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        double lift = (_playerBodySuppressRootHeight ? 0.0 : view.RootSample.Z) + _playerBodyVisualLift;
-        Vector3d where = new(
-            view.Position.X / WorldScene.UnitsPerMetre,
-            view.Position.Y / WorldScene.UnitsPerMetre,
-            (view.Position.Z + lift) / WorldScene.UnitsPerMetre);
+        Vector3d where = PlayerBodyPlacement().Where;
 
         if (snap || !_playerBodyHasTickState)
         {
@@ -2459,11 +2625,7 @@ public sealed class SoldierRenderer : IDisposable
         //
         // The tick capture (CapturePlayerBodyTickState) computes exactly this per tick; frames between
         // ticks draw between the last two captures, the same smoothing a soldier gets.
-        double lift = (_playerBodySuppressRootHeight ? 0.0 : view.RootSample.Z) + _playerBodyVisualLift;
-        Vector3d where = new(
-            view.Position.X / WorldScene.UnitsPerMetre,
-            view.Position.Y / WorldScene.UnitsPerMetre,
-            (view.Position.Z + lift) / WorldScene.UnitsPerMetre);
+        (Vector3d where, Matrix3f orientation) = PlayerBodyPlacement();
 
         if (_frameSmooth && _playerBodyHasTickState)
         {
@@ -2474,7 +2636,7 @@ public sealed class SoldierRenderer : IDisposable
         // body draws once per frame and in no other pass.
         member.PreviousDrawn = member.HasFrameState ? (member.DrawnWhere, member.DrawnOrientation) : null;
         member.DrawnWhere = where;
-        member.DrawnOrientation = view.Orientation;
+        member.DrawnOrientation = orientation;
         member.PreviousPoseBlend = member.PoseFlippedSinceFrame ? 1f : member.PoseBlend;
         member.PoseBlend = _frameSmooth ? 1f - _frameAlpha : 0f;
         member.PoseFlippedSinceFrame = false;
@@ -2796,6 +2958,32 @@ public sealed class SoldierRenderer : IDisposable
         {
             brain.Kill(fall, facing);
         }
+
+        // And the death cry, from here rather than from AiSoldier.Kill: the per-tick loop calls Kill on
+        // every corpse it steps, so a hook there would restart the sound thirty times a second. This is
+        // the alive-to-dead edge, and it happens once.
+        _deathSound?.Invoke(view.Position);
+
+        // Everything above is the original's, and it stays that way whatever follows: the body's
+        // authoritative position, the clip that moves it and what the guards around it are told are all
+        // exactly what they were. The ragdoll replaces THE POSE THAT IS DRAWN, and nothing else.
+        if (FindMember(view) is { } member)
+        {
+            Vector3f carried = view.RootMotion();
+            double grounded = SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
+            member.Ragdoll = SeedRagdoll(
+                view,
+                new Vector3d(view.Position.X, view.Position.Y, grounded + view.RootSample.Z),
+                view.Orientation,
+                hit.Bone,
+                travel,
+                category,
+
+                // What the body was already doing. A soldier's clip root motion is its only velocity --
+                // the port gives one nothing else -- and it is a per-tick delta already, so it goes in
+                // as it stands, turned out of body space by the heading.
+                SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing));
+        }
     }
 
     /// <summary>Gets a delegate that offers rounds to these soldiers.</summary>
@@ -3090,6 +3278,17 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>The persistent buffer this soldier's pose is skinned into, allocated once.</summary>
         public Vertex3D[]? SkinScratch { get; set; }
+
+        /// <summary>
+        /// The simulated corpse this soldier is drawn as once it has been killed, or
+        /// <see langword="null"/> while it is alive or when <c>g_ragdoll</c> is off.
+        /// </summary>
+        /// <remarks>
+        /// Presentation only. The soldier's brain still runs its retail death — same tick, same
+        /// authoritative position, same consequences for the guards around it — and this replaces
+        /// nothing but the pose that reaches the skinner.
+        /// </remarks>
+        public RagdollBody? Ragdoll { get; set; }
 
         /// <summary>Whether the animated mesh took a new pose since the last frame's bookkeeping.</summary>
         /// <remarks>

@@ -90,6 +90,9 @@ internal sealed partial class DesktopGame : IDisposable
     private int _guardHits;
     private Random _shotRandom = null!;
 
+    /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
+    private readonly IgiRandom _soundRandom = new();
+
 
     // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
     // incoming one. Sized to the window and re-made when that changes.

@@ -3,6 +3,7 @@ using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
@@ -33,6 +34,9 @@ internal sealed partial class DesktopGame
 
     /// <summary>The score. Null until the device is open.</summary>
     private MusicPlayer? _music;
+
+    /// <summary>The travelling voice of each door currently in motion.</summary>
+    private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
 
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
@@ -224,6 +228,74 @@ internal sealed partial class DesktopGame
         if (_sounds is not null)
         {
             _sounds.Definitions = _soundDefinitions;
+        }
+    }
+
+    /// <summary>
+    /// Plays one of a human's numbered death variants, the way <c>0x4638A0</c> names them.
+    /// </summary>
+    /// <param name="prefix">The prefix the death state passes.</param>
+    /// <param name="variants">How many variants that state draws between.</param>
+    /// <param name="positionInUnits">
+    /// Where the body is, in engine units, or <see langword="null"/> for the player's own death.
+    /// </param>
+    /// <remarks>
+    /// The player's own death is deliberately <b>not</b> positional. The original attaches the sound to
+    /// the human it belongs to, and for the player that is the listener itself — distance zero, so full
+    /// gain and no pan. Placing it in the world instead would swing the player's own dying breath
+    /// around the stereo image as the death camera turned. Same reasoning as the player's weapon.
+    /// </remarks>
+    private void PlayDeathSound(string prefix, int variants, Vector3d? positionInUnits)
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        bool faithful = AudioCVars.Preset.Value == AudioProfile.Vanilla;
+        string name = HumanVariantSound.Choose(prefix, variants, _soundRandom, faithful);
+
+        // Above an ordinary effect but below the score: a firefight must not drop the death that ends it.
+        _sounds.PlayDefinition(name, positionInUnits, priority: 300);
+    }
+
+    /// <summary>Plays a door's sounds, and owns the one voice that has to be held and stopped.</summary>
+    /// <param name="door">The door that made the noise.</param>
+    /// <param name="what">Which of its four moments this is.</param>
+    private void PlayDoorSound(PlacedDoor door, DoorSoundEvent what)
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        if (what == DoorSoundEvent.StoppedMoving)
+        {
+            if (_doorVoices.Remove(door, out AudioVoiceHandle running))
+            {
+                _sounds.Stop(running);
+            }
+
+            return;
+        }
+
+        string name = what switch
+        {
+            DoorSoundEvent.Opened => door.OpenSound,
+            DoorSoundEvent.Closed => door.CloseSound,
+            _ => door.MoveSound,
+        };
+
+        if (name.Length == 0)
+        {
+            return;
+        }
+
+        AudioVoiceHandle voice = _sounds.PlayDefinition(name, door.Position, priority: 120);
+
+        if (what == DoorSoundEvent.StartedMoving && voice != AudioVoiceHandle.None)
+        {
+            _doorVoices[door] = voice;
         }
     }
 

@@ -11,6 +11,9 @@ namespace OpenIGI.Game.World;
 /// <param name="StopY">Authored local Y translation at fully open, in metres.</param>
 /// <param name="StopZ">Authored slider translation at fully open, in metres.</param>
 /// <param name="State">Its state machine.</param>
+/// <param name="OpenSound">The definition played when the door reaches fully open.</param>
+/// <param name="CloseSound">The definition played when it reaches fully closed.</param>
+/// <param name="MoveSound">The definition played while it travels.</param>
 public sealed record PlacedDoor(
     GameTask Task,
     Vector3d Position,
@@ -18,8 +21,19 @@ public sealed record PlacedDoor(
     float StopX,
     float StopY,
     float StopZ,
-    DoorState State)
+    DoorState State,
+    string OpenSound = "",
+    string CloseSound = "",
+    string MoveSound = "")
 {
+    /// <summary>Gets or sets whether the door's travelling sound is running.</summary>
+    /// <remarks>
+    /// The original keeps the travelling sound's task handle in the door itself, at <c>+736</c>, which
+    /// is what tells it the sound is already going. This is that slot, reduced to the one bit the port
+    /// needs — the voice itself belongs to whoever took <see cref="DoorRegistry.SetSoundSink"/>.
+    /// </remarks>
+    public bool IsSounding { get; set; }
+
     /// <summary>Gets the door's current drawable position in metres.</summary>
     public Vector3d DrawPosition
     {
@@ -56,6 +70,7 @@ public sealed record PlacedDoor(
 public sealed class DoorRegistry
 {
     private readonly List<PlacedDoor> _doors = [];
+    private Action<PlacedDoor, DoorSoundEvent>? _sounds;
 
     /// <summary>Gets the level's doors.</summary>
     public IReadOnlyList<PlacedDoor> Doors => _doors;
@@ -106,7 +121,10 @@ public sealed class DoorRegistry
                 stopX,
                 stopY,
                 stopZ,
-                new DoorState(maxAngle, openTime <= 0f ? 1f : openTime, slides)));
+                new DoorState(maxAngle, openTime <= 0f ? 1f : openTime, slides),
+                ReadSound(declared, "Open sound"),
+                ReadSound(declared, "Close sound"),
+                ReadSound(declared, "Move sound")));
         }
 
         foreach (GameTask child in task.Children)
@@ -115,12 +133,59 @@ public sealed class DoorRegistry
         }
     }
 
+    /// <summary>Reads one of the door's three sound parameters.</summary>
+    /// <remarks>
+    /// All three are declared <c>String16</c> — the 16-byte parameter type the registrar's last three
+    /// declarations use — and they hold a <b>definition</b> name, not a bank key.
+    /// </remarks>
+    private static string ReadSound(DeclaredTask declared, string parameter) =>
+        declared.TryGetValue(parameter, out object? value) && value is string name ? name : string.Empty;
+
+    /// <summary>Sets where a door's sounds are reported, or <see langword="null"/> to make them silent.</summary>
+    /// <param name="sink">Called during <see cref="Tick"/> for each moment a door makes a noise.</param>
+    /// <remarks>
+    /// A callback because <c>OpenIGI.Game</c> may not reach an audio backend. Whoever takes it owns the
+    /// travelling voice: <see cref="DoorSoundEvent.StartedMoving"/> and
+    /// <see cref="DoorSoundEvent.StoppedMoving"/> come in pairs, one pair per journey.
+    /// </remarks>
+    public void SetSoundSink(Action<PlacedDoor, DoorSoundEvent>? sink) => _sounds = sink;
+
     /// <summary>Advances every door one tick.</summary>
     public void Tick()
     {
         foreach (PlacedDoor door in _doors)
         {
             door.State.Tick();
+
+            if (_sounds is null)
+            {
+                continue;
+            }
+
+            DoorState state = door.State;
+
+            // The two rising edges the original tests, in its order: fully open first, then fully
+            // closed (0x446D10 at 0x4473F5 and 0x447422).
+            if (state.IsFullyOpen && !state.WasFullyOpen)
+            {
+                _sounds(door, DoorSoundEvent.Opened);
+            }
+
+            if (state.IsFullyClosed && !state.WasFullyClosed)
+            {
+                _sounds(door, DoorSoundEvent.Closed);
+            }
+
+            // And the travelling sound, which is a level rather than an edge: the original starts it
+            // whenever the door is at neither end and its handle slot is empty.
+            bool moving = !state.IsFullyOpen && !state.IsFullyClosed;
+            if (moving == door.IsSounding)
+            {
+                continue;
+            }
+
+            door.IsSounding = moving;
+            _sounds(door, moving ? DoorSoundEvent.StartedMoving : DoorSoundEvent.StoppedMoving);
         }
     }
 

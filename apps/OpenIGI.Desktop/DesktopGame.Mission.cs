@@ -181,6 +181,15 @@ internal sealed partial class DesktopGame
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
         _soldiers.SetDoors(_doors, solids);
+
+        // The first genuinely world-positioned sound in the port. Its distances are the definition's
+        // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
+        // without anything here choosing a range.
+        _soldiers.SetDeathSound(position => PlayDeathSound(
+            HumanVariantSound.AiDeathPrefix, HumanVariantSound.AiDeathVariants, position));
+
+        // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
+        _doors.SetSoundSink(PlayDoorSound);
         world.Doors = _doors;
         if (_doors.Doors.Count > 0)
         {
@@ -441,14 +450,15 @@ internal sealed partial class DesktopGame
                                 return blocked;
                             });
 
-                        // The death SOUND is still not played -- there is no audio subsystem yet, so the
-                        // three 'player_death_' variants have nothing to play through. Reported, not faked.
+                        // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
+                        PlayDeathSound(
+                            HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
+
                         _logger.Information(
                             "Weapon",
                             $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
                                 + $"struck in zone {hit.Zone}. Falling with animation {fall}; the death "
-                                + $"camera has pulled back. One of {HumanPlayerDeath.SoundVariants} "
-                                + $"'{HumanPlayerDeath.SoundPrefix}' sounds is NOT PLAYED (no audio yet).");
+                                + "camera has pulled back.");
                     }
                 });
             }
