@@ -3,203 +3,233 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Player;
 
-/// <summary>What deciding the next rung resolves to at a rung boundary.</summary>
+/// <summary>The active IGI1 ladder locomotion state.</summary>
+public enum LadderTraversalPhase
+{
+    /// <summary>The human is using ordinary locomotion.</summary>
+    Inactive,
+
+    /// <summary>State 37, animation 168: paused at or moving between authored rung events.</summary>
+    Climbing,
+
+    /// <summary>State 38, animation 170 backwards: entering the ladder from its top.</summary>
+    GettingOnTop,
+
+    /// <summary>State 39, animation 170 forwards: moving from the top rung onto the roof.</summary>
+    GettingOffTop,
+
+    /// <summary>State 40, animation 169: gravity-driven slide until ground contact.</summary>
+    SlidingDown,
+}
+
+/// <summary>What state 37 resolved from this tick's input.</summary>
 public enum LadderStepResult
 {
-    /// <summary>No input — hold at the current rung.</summary>
+    /// <summary>No transition was requested.</summary>
     Idle,
 
-    /// <summary>A step up has begun; its clip runs until the cycle completes.</summary>
+    /// <summary>Animation 168 began moving forwards toward its next event.</summary>
     SteppingUp,
 
-    /// <summary>A step down has begun.</summary>
+    /// <summary>Animation 168 began moving backwards toward its previous event.</summary>
     SteppingDown,
 
-    /// <summary>At the top — hand off to getting off the head, then to standing.</summary>
+    /// <summary>State 39 began; animation 170 must play forwards before detaching.</summary>
     ReachedTop,
 
-    /// <summary>Stepped off the foot — dismount and return to standing.</summary>
+    /// <summary>State 37 stepped below rung zero and detached at the foot.</summary>
     Dismounted,
 
-    /// <summary>The player asked to slide down — drop to the foot.</summary>
+    /// <summary>State 40 began and remains attached until a ground collision.</summary>
     Sliding,
 }
 
-/// <summary>
-/// Drives a human up and down a ladder — the running half of locomotion state 37 (<c>sub_40D6B0</c>),
-/// <b>moved by the climb animation's own root motion</b>, which is how the retail game does it.
-/// </summary>
+/// <summary>IGI1's four-state player ladder machine, driven by authored animation root motion.</summary>
 /// <remarks>
-/// <para>
-/// Read out of the running game with <c>a probe of the running original</c> (the <c>Ladder_ClimbTick</c> hook): the body
-/// is <b>not</b> slid along a synthetic vertical line — every tick it is moved by the <c>walk_ladder</c>
-/// clip's root motion, so it sways side to side (the logged X swings ±50 units a rung) while it climbs,
-/// exactly as a walking guard is moved by its walk clip. A rung is one clip cycle (~10 ticks, ~1228 units
-/// of height), the rung counter (<c>human+3456</c>) ticks up when the cycle completes, and <b>input is
-/// taken only at a rung boundary</b> (<c>human+3460</c> direction is zero there), so a rung once begun
-/// cannot be cancelled.
-/// </para>
-/// <para>
-/// The position is owned here but <i>advanced from the outside</i>: the host samples the body's clip root
-/// motion each tick and calls <see cref="Move"/> with it. This keeps the movement the animation's and the
-/// discrete rung logic this class's.
-/// </para>
+/// <c>sub_40D6B0</c> pauses animation 168 whenever authored event 8 changes time, commits
+/// <c>nCurrentStep += nStepChange</c>, and only then accepts another up/down rung. Use is different:
+/// it can enter the slide state even halfway through a rung. States 38 and 39 keep the human attached
+/// while animation 170 supplies the complete top-mount path.
 /// </remarks>
 public sealed class HumanLadderClimb
 {
-    /// <summary>The height of one rung, in world units — the ~1228.8 the retail rung counter ticks by.</summary>
-    /// <remarks>
-    /// Animation 168 is a two-rung stride, so a rung is measured by height climbed, not by the clip's own
-    /// loop: the probe shows the rung counter ticking every ~1228 units, twice per clip cycle.
-    /// </remarks>
-    public const double RungHeightUnits = LadderClimbLine.StepLengthUnits;
-
     private Vector3d _position;
     private double _bottomZ;
     private double _topZ;
-    private double _rungStartZ;
     private int _topStep;
-
     private int _step;
-    private int _direction; // 0 at a rung boundary, +1 up, -1 down (human+3460)
+    private int _direction;
 
-    /// <summary>Gets whether the human is currently on a ladder.</summary>
-    public bool IsOnLadder { get; private set; }
+    /// <summary>Gets the active traversal phase.</summary>
+    public LadderTraversalPhase Phase { get; private set; }
 
-    /// <summary>Gets the ladder yaw the human faces while climbing, in radians.</summary>
+    /// <summary>Gets whether ordinary first-person locomotion is currently disabled by a ladder state.</summary>
+    public bool IsOnLadder => Phase != LadderTraversalPhase.Inactive;
+
+    /// <summary>Gets the ladder yaw committed by the mount handler.</summary>
     public float Facing { get; private set; }
 
-    /// <summary>Gets whether the climb is at a rung boundary, ready to take input.</summary>
-    public bool AtBoundary => _direction == 0;
+    /// <summary>Gets whether state 37 is paused at an authored rung event.</summary>
+    public bool AtBoundary => Phase == LadderTraversalPhase.Climbing && _direction == 0;
 
-    /// <summary>Gets the direction the current rung is going: 0 at a boundary, +1 up, −1 down.</summary>
+    /// <summary>Gets animation 168's playback direction: zero while paused, +1 up and −1 down.</summary>
     public int Direction => _direction;
 
-    /// <summary>Gets the current whole rung, 0 at the foot.</summary>
+    /// <summary>Gets the current whole rung, zero at the foot.</summary>
     public int Step => _step;
 
-    /// <summary>Gets the human's world position on the ladder, in engine units.</summary>
+    /// <summary>Gets the human task position in world units.</summary>
     public Vector3d Position => _position;
 
-    /// <summary>Puts the human on a ladder.</summary>
-    /// <param name="line">The ladder's climb geometry.</param>
-    /// <param name="facing">The yaw the human faces — into the ladder.</param>
-    /// <param name="atTop">
-    /// <see langword="true"/> to mount at the head (approached from above); <see langword="false"/> at the foot.
-    /// </param>
-    public void Mount(LadderClimbLine line, float facing, bool atTop)
+    /// <summary>Mounts the human using <c>sub_4113E0</c>'s exact authored offsets.</summary>
+    /// <param name="ladder">The resolved ladder task.</param>
+    /// <param name="atTop">Whether activation resolved through magic vertex 1.</param>
+    public void Mount(LadderPlacement ladder, bool atTop)
     {
-        _bottomZ = line.Bottom.Z;
-        _topZ = line.Top.Z;
-        _topStep = line.TopStep;
-        Facing = facing;
-        IsOnLadder = true;
+        ArgumentNullException.ThrowIfNull(ladder);
 
-        // The retail mount stands the body OFF the magic vertex (sub_4113E0): about 1515.52 units back
-        // from the ladder -- along the body's own backward direction, since it faces the ladder as
-        // (-sin f, cos f) so back is (sin f, -cos f) -- so its hands reach forward onto the rungs, and
-        // about 3915.776 units up it, so a foot mount starts a couple of rungs off the ground. Confirmed
-        // against the running game: it climbs ~1515 units in front of the ladder model, not on it.
-        Vector3d at = atTop ? line.Top : line.Bottom;
-        _position = new Vector3d(
-            at.X + (Math.Sin(facing) * HorizontalStandoffUnits),
-            at.Y - (Math.Cos(facing) * HorizontalStandoffUnits),
-            at.Z + (atTop ? 0.0 : FootMountLiftUnits));
-        _rungStartZ = _position.Z;
+        _bottomZ = ladder.Bottom.Z;
+        _topZ = ladder.Top.Z;
+        _topStep = ladder.ClimbLine.TopStep;
+        Facing = ladder.Facing;
+        _position = atTop ? ladder.TopMount : ladder.BottomMount;
         _step = atTop ? _topStep : 0;
         _direction = 0;
+        Phase = atTop ? LadderTraversalPhase.GettingOnTop : LadderTraversalPhase.Climbing;
     }
 
-    /// <summary>How far back from the ladder the body stands, in world units — the retail mount's horizontal offset.</summary>
-    /// <remarks>The <c>col116 · 1515.52</c> term of <c>sub_4113E0</c>'s stand-off; the body reaches its hands forward onto the rungs.</remarks>
-    public const double HorizontalStandoffUnits = 1515.52;
-
-    /// <summary>How far up the ladder a foot mount starts, in world units — the ~0.96 m the retail mount lifts by.</summary>
-    /// <remarks>From the probe: the mount snaps the body about 3915 units (<c>3915.776</c>) up the ladder.</remarks>
-    public const double FootMountLiftUnits = 3915.776;
-
-    /// <summary>Decides what to do at a rung boundary — begin a rung, hand off, or hold.</summary>
-    /// <param name="up">Whether up (forward) is held.</param>
-    /// <param name="down">Whether down (back) is held.</param>
-    /// <param name="slide">Whether slide (use) is held.</param>
-    /// <returns>The decision; a stepping result begins a rung.</returns>
-    /// <remarks>Does nothing unless <see cref="AtBoundary"/> — a rung in progress cannot be interrupted.</remarks>
+    /// <summary>Resolves state 37 input without advancing its animation.</summary>
+    /// <param name="up">Whether MoveUp is held.</param>
+    /// <param name="down">Whether MoveDown is held.</param>
+    /// <param name="slide">Whether Activate is held after the mount press was released.</param>
+    /// <returns>The transition or playback change selected this tick.</returns>
     public LadderStepResult Decide(bool up, bool down, bool slide)
     {
-        if (!IsOnLadder || !AtBoundary)
+        if (Phase != LadderTraversalPhase.Climbing)
         {
             return LadderStepResult.Idle;
         }
 
+        // sub_40D6B0 checks Activate after the rung-direction block, but does not require direction zero:
+        // unlike changing direction, a slide is allowed to interrupt a rung in progress.
         if (slide)
         {
-            IsOnLadder = false;
+            _direction = 0;
+            Phase = LadderTraversalPhase.SlidingDown;
             return LadderStepResult.Sliding;
+        }
+
+        if (_direction != 0)
+        {
+            return LadderStepResult.Idle;
         }
 
         if (up)
         {
-            if (_step >= _topStep)
+            if (_step == _topStep)
             {
-                IsOnLadder = false;
+                Phase = LadderTraversalPhase.GettingOffTop;
                 return LadderStepResult.ReachedTop;
             }
 
             _direction = 1;
-            _rungStartZ = _position.Z;
             return LadderStepResult.SteppingUp;
         }
 
         if (down)
         {
-            if (_step <= 0)
+            if (_step == 0)
             {
-                IsOnLadder = false;
+                Phase = LadderTraversalPhase.Inactive;
                 return LadderStepResult.Dismounted;
             }
 
             _direction = -1;
-            _rungStartZ = _position.Z;
             return LadderStepResult.SteppingDown;
         }
 
         return LadderStepResult.Idle;
     }
 
-    /// <summary>Moves the body by the climb clip's root motion for this tick.</summary>
-    /// <param name="delta">
-    /// The clip's forward root-motion delta, already rotated into the facing frame (world units); the
-    /// climb direction is applied here, so pass the same delta whether going up or down.
-    /// </param>
-    /// <returns><see langword="true"/> when this move completed the rung (climbed a whole rung's height).</returns>
-    /// <remarks>Only moves while a rung is in progress; the height is clamped to the ladder's extent.</remarks>
-    public bool Move(Vector3d delta)
+    /// <summary>Applies this tick's already-rotated animation root motion.</summary>
+    /// <param name="delta">The authored delta in world units.</param>
+    /// <remarks>
+    /// Ladder mounting sets <c>isDisableDeltaTranslationScale</c>, so this delta is deliberately not
+    /// multiplied by the ordinary player's 1.75 locomotion scale.
+    /// </remarks>
+    public void Move(Vector3d delta)
     {
-        if (_direction == 0)
+        bool moves = (Phase == LadderTraversalPhase.Climbing && _direction != 0)
+            || Phase is LadderTraversalPhase.GettingOnTop or LadderTraversalPhase.GettingOffTop;
+        if (!moves)
         {
-            return false;
+            return;
         }
 
-        _position = new Vector3d(
-            _position.X + (delta.X * _direction),
-            _position.Y + (delta.Y * _direction),
-            Math.Clamp(_position.Z + (delta.Z * _direction), _bottomZ, _topZ));
+        double z = _position.Z + delta.Z;
+        if (Phase == LadderTraversalPhase.Climbing)
+        {
+            z = Math.Clamp(z, _bottomZ, _topZ);
+        }
 
-        // A rung is one rung's worth of height climbed, twice per two-rung clip cycle.
-        return Math.Abs(_position.Z - _rungStartZ) >= RungHeightUnits;
+        _position = new Vector3d(_position.X + delta.X, _position.Y + delta.Y, z);
     }
 
-    /// <summary>Commits the rung in progress — the clip cycle has completed — returning to a boundary.</summary>
-    /// <returns><see langword="true"/> when a rung was in progress and is now committed.</returns>
+    /// <summary>Commits the rung when animation 168 crosses authored event 8.</summary>
+    /// <returns><see langword="true"/> when a moving rung was committed.</returns>
     public bool CompleteStep()
     {
-        if (_direction == 0)
+        if (Phase != LadderTraversalPhase.Climbing || _direction == 0)
         {
             return false;
         }
 
         _step += _direction;
         _direction = 0;
+        return true;
+    }
+
+    /// <summary>Finishes animation 170 and advances state 38 or 39.</summary>
+    /// <returns><see langword="true"/> when a top transition was active.</returns>
+    public bool CompleteTopTransition()
+    {
+        if (Phase == LadderTraversalPhase.GettingOnTop)
+        {
+            Phase = LadderTraversalPhase.Climbing;
+            _direction = 0;
+            return true;
+        }
+
+        if (Phase == LadderTraversalPhase.GettingOffTop)
+        {
+            Phase = LadderTraversalPhase.Inactive;
+            _direction = 0;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Copies the collision-resolved slide position back into the traversal state.</summary>
+    /// <param name="position">The body position after its slide movement and collision pass.</param>
+    public void UpdateSlidePosition(Vector3d position)
+    {
+        if (Phase == LadderTraversalPhase.SlidingDown)
+        {
+            _position = position;
+        }
+    }
+
+    /// <summary>Detaches state 40 after its ground-collision signal.</summary>
+    /// <returns><see langword="true"/> when a slide was active.</returns>
+    public bool CompleteSlide()
+    {
+        if (Phase != LadderTraversalPhase.SlidingDown)
+        {
+            return false;
+        }
+
+        Phase = LadderTraversalPhase.Inactive;
         return true;
     }
 }

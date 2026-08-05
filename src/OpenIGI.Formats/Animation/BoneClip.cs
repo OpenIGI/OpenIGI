@@ -87,7 +87,11 @@ public sealed class BoneClip
     /// </remarks>
     public Vector3f RootDelta { get; private set; }
 
-    private Vector3f _lastGoodDelta;
+    private float _eventIntervalStart;
+    private float _eventIntervalEnd;
+    private bool _eventIntervalBackwards;
+    private bool _eventIntervalWrapped;
+    private bool _hasEventInterval;
 
     /// <summary>Advances the clock by one tick.</summary>
     /// <remarks>
@@ -96,58 +100,108 @@ public sealed class BoneClip
     /// time += rate;
     /// if (time >= duration || (backwards &amp;&amp; time &lt;= 0)) {
     ///     ended = true;
-    ///     if (looping) time -= duration; else time = backwards ? 0 : duration;
+    ///     if (looping) time += backwards ? duration : -duration;
+    ///     else time = backwards ? 0 : duration;
     /// }
     /// </code>
     /// <para>
-    /// A looping clip subtracts the duration rather than taking a remainder, so a rate longer than the
-    /// clip leaves the clock past the end — the original does not guard that and neither does this.
-    /// Event dispatch, which the original does over the interval the tick covers, is not implemented
-    /// here; <see cref="BoneAnimation.Events"/> carries the data and nothing consumes it yet.
+    /// A looping clip adjusts by one duration rather than taking a remainder, so a rate longer than the
+    /// clip can leave the clock beyond the other end — the original does not guard that and neither does
+    /// this. <see cref="CrossedEvent"/> exposes the same interval-based event crossing used by the retail
+    /// ladder state machine.
     /// </para>
     /// </remarks>
     public void Tick()
     {
         float duration = _animation.Duration;
-        Vector3f before = SampleRoot();
+        float beforeTime = Time;
+        Vector3f before = SampleRoot(beforeTime);
+        bool playingBackwards = Rate < 0f || (Rate == 0f && Backwards);
 
         Time += Rate;
         EndedThisTick = false;
         bool wrapped = false;
 
-        if (Time >= duration || (Backwards && Time <= 0f))
+        if ((!playingBackwards && Time >= duration) || (playingBackwards && Time <= 0f))
         {
             Ended = true;
             EndedThisTick = true;
             if (Loops)
             {
-                Time -= duration;
+                Time += playingBackwards ? duration : -duration;
                 wrapped = true;
             }
             else
             {
-                Time = Backwards ? 0f : duration;
+                Time = playingBackwards ? 0f : duration;
             }
         }
+
+        _eventIntervalStart = beforeTime;
+        _eventIntervalEnd = Time;
+        _eventIntervalBackwards = playingBackwards;
+        _eventIntervalWrapped = wrapped;
+        _hasEventInterval = Rate != 0f;
 
         // The engine keeps BOTH the sampled root (+16) and the per-tick delta (+28) on a clip instance, and
         // it is the DELTA that moves the body -- the sampled value is an absolute position along the clip's
         // own root track. Treating the absolute value as a step makes a walk cycle play on the spot, because
         // a walk's root starts at nearly zero.
-        Vector3f after = SampleRoot();
-        RootDelta = new Vector3f(after.X - before.X, after.Y - before.Y, after.Z - before.Z);
+        Vector3f after = SampleRoot(Time);
+        RootDelta = Subtract(after, before);
 
         if (wrapped)
         {
-            // Across a loop seam the sampled root jumps back to the start, which would read as a large step
-            // backwards. The distance actually covered over the seam is the tail of the clip plus the head,
-            // so the honest per-tick value is the step the clip was making before it wrapped.
-            RootDelta = _lastGoodDelta;
+            // Across a loop seam the sampled root jumps between the two ends. Add the tail and head of
+            // the interval instead of treating that jump as motion. This also keeps the sign correct when
+            // the ladder clip reverses at its time-zero boundary.
+            Vector3f start = SampleRoot(0f);
+            Vector3f end = SampleRoot(duration);
+            RootDelta = playingBackwards
+                ? Add(Subtract(start, before), Subtract(after, end))
+                : Add(Subtract(end, before), Subtract(after, start));
         }
-        else
+
+    }
+
+    /// <summary>Tests whether the last tick crossed an authored event of the requested type.</summary>
+    /// <param name="eventId">The event id stored in the animation.</param>
+    /// <returns><see langword="true"/> when the event lies in the interval advanced last tick.</returns>
+    /// <remarks>
+    /// The interval is open at the old clock and closed at the new one. Consequently a ladder clip
+    /// held at its time-zero boundary does not repeatedly fire that boundary, while wrapping through
+    /// zero does fire it once. Reverse playback uses the mirrored rule.
+    /// </remarks>
+    public bool CrossedEvent(int eventId)
+    {
+        if (!_hasEventInterval)
         {
-            _lastGoodDelta = RootDelta;
+            return false;
         }
+
+        foreach (BoneAnimationEvent animationEvent in _animation.Events)
+        {
+            if (animationEvent.EventId != eventId)
+            {
+                continue;
+            }
+
+            float eventTime = animationEvent.Time;
+            bool crossed = _eventIntervalBackwards
+                ? _eventIntervalWrapped
+                    ? eventTime < _eventIntervalStart || eventTime >= _eventIntervalEnd
+                    : eventTime < _eventIntervalStart && eventTime >= _eventIntervalEnd
+                : _eventIntervalWrapped
+                    ? eventTime > _eventIntervalStart || eventTime <= _eventIntervalEnd
+                    : eventTime > _eventIntervalStart && eventTime <= _eventIntervalEnd;
+
+            if (crossed)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Moves the clock, without advancing it.</summary>
@@ -185,8 +239,16 @@ public sealed class BoneClip
 
     /// <summary>Samples the root-motion translation track at the current time.</summary>
     /// <returns>The root's position, or zero when the clip has no translation track.</returns>
-    public Vector3f SampleRoot() =>
+    public Vector3f SampleRoot() => SampleRoot(Time);
+
+    private Vector3f SampleRoot(float time) =>
         _animation.Translation.Count == 0
             ? default
-            : BoneTrackSampler.Sample(_animation.Translation, Time);
+            : BoneTrackSampler.Sample(_animation.Translation, time);
+
+    private static Vector3f Add(Vector3f left, Vector3f right) =>
+        new(left.X + right.X, left.Y + right.Y, left.Z + right.Z);
+
+    private static Vector3f Subtract(Vector3f left, Vector3f right) =>
+        new(left.X - right.X, left.Y - right.Y, left.Z - right.Z);
 }

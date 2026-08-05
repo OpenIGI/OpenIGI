@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -15,6 +16,7 @@ namespace OpenIGI.Game.World;
 /// <param name="Pack">The pack the instance belongs to.</param>
 /// <param name="Model">The model's geometry.</param>
 /// <param name="TaskName">The placing task's name, for diagnostics.</param>
+/// <param name="Owner">The exact task instance that owns this placement.</param>
 /// <param name="LightmapSet">
 /// The baked-lightmap set this object belongs to — a <c>LightmapInfo</c> task's <c>Filename</c> — or an
 /// empty string when nothing bakes it.
@@ -30,6 +32,7 @@ public sealed record WorldPlacement(
     LoadedPack Pack,
     MefModel Model,
     string TaskName,
+    GameTask Owner,
     string LightmapSet = "",
     int LightmapIndex = -1)
 {

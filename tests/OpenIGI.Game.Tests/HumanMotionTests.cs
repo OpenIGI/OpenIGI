@@ -20,13 +20,13 @@ public sealed class HumanMotionTests
     }
 
     [Fact]
-    public void TheWireSlideHasItsOwnGravityAndIsTheOneThatLooksOrdinary()
+    public void TheLadderSlideHasItsOwnGravityAndIsTheOneThatLooksOrdinary()
     {
         // The trap this pair exists to mark: 44.600887 is exactly 9.8 m/s² and sits in an integrator
-        // that looks airborne, but it belongs to the wire slide. Taking it for gravity makes a jump
+        // that looks airborne, but it belongs to the ladder slide. Taking it for gravity makes a jump
         // hang in the air for twice as long.
-        Assert.Equal(9.8, HumanMotion.WireSlideGravityPerTick * 900.0 / 4096.0, 1e-6);
-        Assert.NotEqual(HumanMotion.WireSlideGravityPerTick, HumanMotion.GravityPerTick);
+        Assert.Equal(9.8, HumanMotion.LadderSlideGravityPerTick * 900.0 / 4096.0, 1e-6);
+        Assert.NotEqual(HumanMotion.LadderSlideGravityPerTick, HumanMotion.GravityPerTick);
     }
 
     [Fact]
@@ -50,16 +50,16 @@ public sealed class HumanMotionTests
     }
 
     [Fact]
-    public void TheWireSlideDampsAndSoHasATerminalSpeed()
+    public void TheLadderSlideDampsAndSoHasATerminalSpeed()
     {
         Vector3f velocity = default;
         for (int i = 0; i < 4000; i++)
         {
-            velocity = HumanMotion.IntegrateWireSlide(velocity);
+            velocity = HumanMotion.IntegrateLadderSlide(velocity);
         }
 
-        double terminal = -HumanMotion.WireSlideGravityPerTick * HumanMotion.WireSlideDragPerTick
-            / (1f - HumanMotion.WireSlideDragPerTick);
+        double terminal = -HumanMotion.LadderSlideGravityPerTick * HumanMotion.LadderSlideDragPerTick
+            / (1f - HumanMotion.LadderSlideDragPerTick);
 
         Assert.Equal(terminal, velocity.Z, 1e-2);
     }

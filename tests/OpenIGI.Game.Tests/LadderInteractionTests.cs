@@ -5,13 +5,10 @@ using Xunit;
 
 namespace OpenIGI.Game.Tests;
 
-/// <summary>
-/// Pins the ladder climb geometry, the climb state machine and the interaction dispatcher against the
-/// IGI1 handlers.
-/// </summary>
+/// <summary>Pins ladder geometry and all four IGI1 player ladder states.</summary>
 public sealed class LadderInteractionTests
 {
-    // A 3 m ladder: 12288 units tall, which the constructor divides by 1228.8 into exactly ten steps.
+    private static readonly Vector3d Origin = new(1000.0, 2000.0, -100.0);
     private static readonly Vector3d Foot = new(1000.0, 2000.0, 0.0);
     private static readonly Vector3d Head = new(1000.0, 2000.0, 12288.0);
 
@@ -20,14 +17,15 @@ public sealed class LadderInteractionTests
     {
         LadderClimbLine line = new(Foot, Head);
         Assert.Equal(10, line.StepCount);
-        Assert.Equal(4, line.TopStep); // 10 - TopStepMargin(6)
+        Assert.Equal(4, line.TopStep);
     }
 
     [Fact]
     public void StepCountTruncatesRatherThanRounds()
     {
-        // 11.9 steps' worth of height is eleven whole steps, not twelve — the constructor uses fistp.
-        LadderClimbLine line = new(Foot, new Vector3d(Foot.X, Foot.Y, LadderClimbLine.StepLengthUnits * 11.9));
+        LadderClimbLine line = new(
+            Foot,
+            new Vector3d(Foot.X, Foot.Y, LadderClimbLine.StepLengthUnits * 11.9));
         Assert.Equal(11, line.StepCount);
     }
 
@@ -37,102 +35,105 @@ public sealed class LadderInteractionTests
         LadderClimbLine line = new(Foot, Head);
         Assert.Equal(Foot, line.PositionAtStep(0));
         Assert.Equal(Head, line.PositionAtStep(line.StepCount));
-
-        Vector3d mid = line.PositionAtStep(5);
-        Assert.Equal(6144.0, mid.Z, 3); // halfway up
+        Assert.Equal(6144.0, line.PositionAtStep(5).Z, 3);
     }
 
     [Fact]
-    public void MountingAtTheFootStartsAtStepZero()
+    public void MountPositionsUseTheTwoExactOrientationColumnExpressions()
     {
+        LadderPlacement ladder = Ladder();
         HumanLadderClimb climb = new();
-        climb.Mount(new LadderClimbLine(Foot, Head), facing: 0f, atTop: false);
 
-        Assert.True(climb.IsOnLadder);
-        Assert.Equal(0, climb.Step);
-
-        // Stood back from the ladder (facing 0 → back is −Y) and lifted up it — the retail foot mount (probe).
+        climb.Mount(ladder, atTop: false);
         Assert.Equal(Foot.X, climb.Position.X, 3);
-        Assert.Equal(Foot.Y - HumanLadderClimb.HorizontalStandoffUnits, climb.Position.Y, 3);
-        Assert.Equal(Foot.Z + HumanLadderClimb.FootMountLiftUnits, climb.Position.Z, 3);
+        Assert.Equal(Foot.Y + LadderPlacement.BottomStandoffUnits, climb.Position.Y, 3);
+        Assert.Equal(Foot.Z + LadderPlacement.BottomVerticalOffsetUnits, climb.Position.Z, 3);
+        Assert.Equal(MathF.PI, climb.Facing, 4);
+        Assert.Equal(-MathF.PI, ladder.PlayerYaw, 4);
+        Assert.Equal(LadderTraversalPhase.Climbing, climb.Phase);
+
+        climb.Mount(ladder, atTop: true);
+        Assert.Equal(Head.X, climb.Position.X, 3);
+        Assert.Equal(Head.Y - LadderPlacement.TopStandoffUnits, climb.Position.Y, 3);
+        Assert.Equal(Head.Z + LadderPlacement.TopVerticalOffsetUnits, climb.Position.Z, 3);
+        Assert.Equal(LadderTraversalPhase.GettingOnTop, climb.Phase);
     }
 
     [Fact]
-    public void MountingAtTheTopStartsAtTheTopStep()
+    public void TopMountPlaysItsTransitionBeforeStateThirtySeven()
     {
         HumanLadderClimb climb = new();
-        LadderClimbLine line = new(Foot, Head);
-        climb.Mount(line, facing: 0f, atTop: true);
+        LadderPlacement ladder = Ladder();
+        climb.Mount(ladder, atTop: true);
 
         Assert.True(climb.IsOnLadder);
+        Assert.False(climb.AtBoundary);
+        Assert.Equal(ladder.ClimbLine.TopStep, climb.Step);
+
+        Assert.True(climb.CompleteTopTransition());
+        Assert.Equal(LadderTraversalPhase.Climbing, climb.Phase);
         Assert.True(climb.AtBoundary);
-        Assert.Equal(line.TopStep, climb.Step);
     }
 
     [Fact]
-    public void AtTheTopStepUpHandsOff()
+    public void GettingOffTheTopStaysAttachedUntilAnimationOneSeventyEnds()
     {
         HumanLadderClimb climb = new();
-        LadderClimbLine line = new(Foot, Head);
-        climb.Mount(line, facing: 0f, atTop: true);
+        climb.Mount(Ladder(), atTop: true);
+        climb.CompleteTopTransition();
 
-        // At the top step, pressing up hands off to getting off the head.
         Assert.Equal(LadderStepResult.ReachedTop, climb.Decide(up: true, down: false, slide: false));
+        Assert.Equal(LadderTraversalPhase.GettingOffTop, climb.Phase);
+        Assert.True(climb.IsOnLadder);
+
+        Assert.True(climb.CompleteTopTransition());
         Assert.False(climb.IsOnLadder);
     }
 
     [Fact]
-    public void SteppingOffTheFootDismounts()
+    public void SteppingOffTheFootDismountsImmediately()
     {
-        HumanLadderClimb climb = new();
-        climb.Mount(new LadderClimbLine(Foot, Head), facing: 0f, atTop: false);
+        HumanLadderClimb climb = MountedAtFoot();
 
         Assert.Equal(LadderStepResult.Dismounted, climb.Decide(up: false, down: true, slide: false));
         Assert.False(climb.IsOnLadder);
     }
 
     [Fact]
-    public void HoldingUseSlides()
+    public void UseCanEnterTheSlideHalfwayThroughARung()
     {
-        HumanLadderClimb climb = new();
-        climb.Mount(new LadderClimbLine(Foot, Head), facing: 0f, atTop: false);
+        HumanLadderClimb climb = MountedAtFoot();
+        Assert.Equal(LadderStepResult.SteppingUp, climb.Decide(up: true, down: false, slide: false));
 
         Assert.Equal(LadderStepResult.Sliding, climb.Decide(up: false, down: false, slide: true));
+        Assert.Equal(LadderTraversalPhase.SlidingDown, climb.Phase);
+        Assert.True(climb.IsOnLadder);
+
+        Assert.True(climb.CompleteSlide());
+        Assert.False(climb.IsOnLadder);
     }
 
     [Fact]
-    public void ARungCannotBeCancelledMidStep()
+    public void AStepDirectionCannotBeCancelledBeforeItsAuthoredBoundary()
     {
-        HumanLadderClimb climb = new();
-        climb.Mount(new LadderClimbLine(Foot, Head), facing: 0f, atTop: false);
-
-        // Begin a rung up: now mid-step, no longer at a boundary.
+        HumanLadderClimb climb = MountedAtFoot();
         Assert.Equal(LadderStepResult.SteppingUp, climb.Decide(up: true, down: false, slide: false));
         Assert.False(climb.AtBoundary);
-        Assert.Equal(0, climb.Step);
-
-        // Pressing down mid-rung is ignored — the rung plays to completion.
         Assert.Equal(LadderStepResult.Idle, climb.Decide(up: false, down: true, slide: false));
 
-        // The clip's root motion moves the body up (the direction is applied inside Move).
         double startZ = climb.Position.Z;
         climb.Move(new Vector3d(0.0, 0.0, 150.0));
         Assert.Equal(startZ + 150.0, climb.Position.Z, 3);
 
-        // The clip completes: the rung commits and we are back at a boundary on rung 1.
         Assert.True(climb.CompleteStep());
         Assert.True(climb.AtBoundary);
         Assert.Equal(1, climb.Step);
     }
 
     [Fact]
-    public void HoldingUpClimbsOneRungPerCompletedClip()
+    public void HoldingUpCommitsOneStepPerAuthoredBoundary()
     {
-        HumanLadderClimb climb = new();
-        LadderClimbLine line = new(Foot, Head);
-        climb.Mount(line, facing: 0f, atTop: false);
-
-        // Holding up: each completed clip advances exactly one rung, until the top step hands off.
+        HumanLadderClimb climb = MountedAtFoot();
         int rungs = 0;
         while (rungs < 100)
         {
@@ -143,44 +144,110 @@ public sealed class LadderInteractionTests
             }
 
             Assert.Equal(LadderStepResult.SteppingUp, result);
-            climb.CompleteStep();
+            Assert.True(climb.CompleteStep());
             rungs++;
         }
 
-        Assert.Equal(line.TopStep, rungs);
+        Assert.Equal(Ladder().ClimbLine.TopStep, rungs);
+    }
+
+    [Fact]
+    public void BottomActivationUsesTheLadderPlaneWidthFacingAndHeight()
+    {
+        LadderPlacement ladder = Ladder();
+        Vector3d player = new(Foot.X, Foot.Y + 2048.0, Foot.Z + 100.0);
+
+        Assert.True(ladder.CanActivate(player, MathF.PI, out bool atTop));
+        Assert.False(atTop);
+
+        Vector3d tooWide = new(Foot.X + 3000.0, player.Y, player.Z);
+        Assert.False(ladder.CanActivate(tooWide, MathF.PI, out _));
+        Assert.False(ladder.CanActivate(player, 0f, out _));
+    }
+
+    [Fact]
+    public void BottomActivationUsesTheViewPositionRatherThanGroundedFeet()
+    {
+        LadderPlacement ladder = new(
+            Foot,
+            Head,
+            Foot,
+            Head,
+            Matrix3f.Identity);
+        Vector3d groundedFeet = new(Foot.X, Foot.Y + 2048.0, Foot.Z);
+        Vector3d standingView = new(
+            groundedFeet.X,
+            groundedFeet.Y,
+            groundedFeet.Z + PlayerBody.StandingEyeHeight);
+
+        Assert.False(ladder.CanActivate(groundedFeet, MathF.PI, out _));
+        Assert.True(ladder.CanActivate(standingView, MathF.PI, out bool atTop));
+        Assert.False(atTop);
+    }
+
+    [Fact]
+    public void TopActivationUsesMagicVertexOneInFrontOfThePlayer()
+    {
+        LadderPlacement ladder = Ladder();
+        Vector3d player = new(Head.X, Head.Y - 2048.0, Head.Z);
+
+        Assert.True(ladder.CanActivate(player, 0f, out bool atTop));
+        Assert.True(atTop);
     }
 
     [Fact]
     public void LadderReportsActivateTypeTen()
     {
-        // The ladder's GetActivate handler (sub_4406C0) writes 10.
         Assert.Equal(10, (int)InteractionActivateType.Ladder);
-        Assert.Equal(InteractionAction.ClimbLadder, HumanInteractionDispatch.Dispatch(InteractionActivateType.Ladder).Action);
+        Assert.Equal(
+            InteractionAction.ClimbLadder,
+            HumanInteractionDispatch.Dispatch(InteractionActivateType.Ladder).Action);
     }
 
     [Fact]
     public void ALockedDoorPicksItsLockAndAnUnlockedOneOpens()
     {
-        InteractionDispatchResult locked = HumanInteractionDispatch.Dispatch(InteractionActivateType.Door, doorLocked: true);
+        InteractionDispatchResult locked = HumanInteractionDispatch.Dispatch(
+            InteractionActivateType.Door, doorLocked: true);
         Assert.Equal(InteractionAction.PickLock, locked.Action);
-        Assert.Equal(30, locked.LocomotionState); // picklock_loop
+        Assert.Equal(30, locked.LocomotionState);
 
-        InteractionDispatchResult open = HumanInteractionDispatch.Dispatch(InteractionActivateType.Door, doorLocked: false);
+        InteractionDispatchResult open = HumanInteractionDispatch.Dispatch(
+            InteractionActivateType.Door, doorLocked: false);
         Assert.Equal(InteractionAction.OpenDoor, open.Action);
     }
 
     [Fact]
     public void TheComputerEntersTheTypecompState()
     {
-        InteractionDispatchResult result = HumanInteractionDispatch.Dispatch(InteractionActivateType.Computer);
+        InteractionDispatchResult result = HumanInteractionDispatch.Dispatch(InteractionActivateType.Terminal);
         Assert.Equal(InteractionAction.EnterState, result.Action);
-        Assert.Equal(32, result.LocomotionState); // typecomp_loop
+        Assert.Equal(32, result.LocomotionState);
     }
 
     [Fact]
-    public void FenceAndDrawerTakeTheirOwnActions()
+    public void FenceWireAndSwitchTakeTheirOwnActions()
     {
-        Assert.Equal(InteractionAction.VaultFence, HumanInteractionDispatch.Dispatch(InteractionActivateType.Fence).Action);
-        Assert.Equal(InteractionAction.OpenDrawer, HumanInteractionDispatch.Dispatch(InteractionActivateType.Drawer).Action);
+        Assert.Equal(
+            InteractionAction.ClimbFence,
+            HumanInteractionDispatch.Dispatch(InteractionActivateType.Fence).Action);
+        Assert.Equal(
+            InteractionAction.MountWire,
+            HumanInteractionDispatch.Dispatch(InteractionActivateType.Wire).Action);
+        Assert.Equal(
+            InteractionAction.PressSwitch,
+            HumanInteractionDispatch.Dispatch(InteractionActivateType.Switch).Action);
+        Assert.Equal(11, (int)InteractionActivateType.Fence);
+        Assert.Equal(9, (int)InteractionActivateType.Wire);
+    }
+
+    private static LadderPlacement Ladder() =>
+        new(Origin, Head, Foot, Head, Matrix3f.Identity);
+
+    private static HumanLadderClimb MountedAtFoot()
+    {
+        HumanLadderClimb climb = new();
+        climb.Mount(Ladder(), atTop: false);
+        return climb;
     }
 }

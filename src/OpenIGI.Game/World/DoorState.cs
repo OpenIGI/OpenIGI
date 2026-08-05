@@ -20,13 +20,11 @@ namespace OpenIGI.Game.World;
 /// (<c>"Waiting for door to open"</c>).
 /// </para>
 /// <para>
-/// The task's three authored condition expressions (<c>Locked/Open door/Close door expression</c>)
-/// are evaluated by the original each tick; the shipped doors' open/close expressions are empty, and
-/// an absent expression leaves the latch alone — so a door somebody opened <b>stays open</b>, which
-/// this reproduces without evaluating expressions (a recorded stand-in). The ticks-open counter
-/// (<c>+664</c>) is kept for the close expressions that would read it. Not modelled: the mid-swing
-/// doorway ray that re-opens a closing door off a human standing in it, the three sounds, and the
-/// lockpick path (<c>Pickable</c>) — each recorded in the original.
+/// The registry evaluates the task's authored conditions around this state machine: the open
+/// expression only while fully closed, the close expression only while fully open, and the locked
+/// expression every tick. The ticks-open counter (<c>+664</c>) is exposed for those conditions.
+/// Not modelled: the mid-swing doorway ray that re-opens a closing door off a human standing in it
+/// and the three sounds — each recorded in the original.
 /// </para>
 /// </remarks>
 public sealed class DoorState
@@ -63,6 +61,12 @@ public sealed class DoorState
     /// <summary>Gets whether the door sits fully closed — <c>+410</c>.</summary>
     public bool IsFullyClosed { get; private set; }
 
+    /// <summary>Whether the door was fully open at the end of the previous tick.</summary>
+    public bool WasFullyOpen { get; private set; }
+
+    /// <summary>Whether the door was fully closed at the end of the previous tick.</summary>
+    public bool WasFullyClosed { get; private set; } = true;
+
     /// <summary>Gets how many ticks the door has been fully open — <c>+664</c>.</summary>
     public int TicksOpen { get; private set; }
 
@@ -97,9 +101,14 @@ public sealed class DoorState
     /// </remarks>
     public void CommandOpen() => _latch = true;
 
+    /// <summary>Commands the door closed, however it stands.</summary>
+    public void CommandClosed() => _latch = false;
+
     /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>.</summary>
     public void Tick()
     {
+        WasFullyOpen = IsFullyOpen;
+        WasFullyClosed = IsFullyClosed;
         float ticks = _openTimeSeconds * 30f;
 
         // The swing: target = latch ? maxAngle : 0, stepped |maxAngle|/(time x 30) a tick and clamped

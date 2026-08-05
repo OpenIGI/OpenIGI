@@ -188,6 +188,74 @@ public sealed class PlayerBody
     /// <summary>Gets the eye's world position — where the view is taken from.</summary>
     public Vector3d Eye => new(Position.X, Position.Y, Position.Z + EyeHeight);
 
+    /// <summary>Detaches the ordinary ground mover before a ladder mount is committed.</summary>
+    /// <remarks>
+    /// <c>sub_4113E0</c> zeroes all six velocity accumulators and snaps the human off its ground task.
+    /// Keeping a pre-mount fall or slope velocity would otherwise throw the body off the ladder later.
+    /// </remarks>
+    public void BeginLadderTraversal()
+    {
+        Velocity = default;
+        InheritedVelocity = default;
+        SlopeSlide = default;
+        GroundNormal = null;
+        IsGrounded = false;
+        TouchedWall = false;
+    }
+
+    /// <summary>Runs state 40's damped slide velocity through the normal wall and ground collision pass.</summary>
+    /// <param name="terrain">The level terrain.</param>
+    /// <param name="animationDelta">Animation 169's world-space root delta for this tick.</param>
+    /// <returns><see langword="true"/> when the slide generated the ground-collision signal.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
+    public bool TickLadderSlide(TerrainData terrain, Vector3d animationDelta)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+
+        Velocity = HumanMotion.IntegrateLadderSlide(Velocity);
+        Vector3d next = new(
+            Position.X + animationDelta.X + Velocity.X,
+            Position.Y + animationDelta.Y + Velocity.Y,
+            Position.Z + animationDelta.Z + Velocity.Z);
+
+        if (Walls is not null)
+        {
+            HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, false, IsCrouched, Walls);
+            next = swept.Destination;
+            TouchedWall = swept.TouchedWall;
+        }
+        else
+        {
+            TouchedWall = false;
+        }
+
+        Settle(ref next, terrain);
+        Position = next;
+        return IsGrounded;
+    }
+
+    /// <summary>Restores ordinary movement after the ladder's deinitialization flag is consumed.</summary>
+    /// <param name="terrain">The level terrain.</param>
+    /// <param name="placeOnGround">
+    /// Whether to resolve the highest surface below the authored endpoint. Top animation 170 uses this
+    /// to commit onto the roof instead of allowing numerical drift to fall through it.
+    /// </param>
+    public void EndLadderTraversal(TerrainData terrain, bool placeOnGround)
+    {
+        ArgumentNullException.ThrowIfNull(terrain);
+
+        Velocity = default;
+        InheritedVelocity = default;
+        SlopeSlide = default;
+        TouchedWall = false;
+        if (placeOnGround)
+        {
+            IsGrounded = false;
+            GroundNormal = null;
+            PlaceOnGround(terrain);
+        }
+    }
+
     /// <summary>Advances the player by one tick.</summary>
     /// <param name="command">What the player asked for.</param>
     /// <param name="terrain">The level's terrain, for the ground query.</param>

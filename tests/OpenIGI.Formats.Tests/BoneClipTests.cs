@@ -65,6 +65,36 @@ public sealed class BoneClipTests
     }
 
     [Fact]
+    public void ALoopingClipReportsAuthoredEventsInBothDirections()
+    {
+        BoneAnimation animation = BoneAnimation.Create(
+            2,
+            320f,
+            [[Key(0f, 0f), Key(320f, 0f)]],
+            events:
+            [
+                new BoneAnimationEvent(8, BoneAnimationEvent.NoBone, 0f, default),
+                new BoneAnimationEvent(8, BoneAnimationEvent.NoBone, 160f, default),
+            ]);
+        BoneClip clip = new(animation, bone: 0, loops: true);
+
+        clip.Rate = 0f;
+        clip.Tick();
+        Assert.False(clip.CrossedEvent(8));
+
+        clip.Rate = BoneAnimation.FrameStep;
+        clip.Tick();
+        Assert.True(clip.CrossedEvent(8));
+
+        clip.Tick();
+        Assert.True(clip.CrossedEvent(8)); // wrapped through the event at time zero
+
+        clip.Rate = -BoneAnimation.FrameStep;
+        clip.Tick();
+        Assert.True(clip.CrossedEvent(8)); // reverse-wrapped through time zero
+    }
+
+    [Fact]
     public void EveryBoneSamplesItsOwnTrack()
     {
         // One clip drives a whole rig because the sampler indexes by the ASKING bone, not by the bone

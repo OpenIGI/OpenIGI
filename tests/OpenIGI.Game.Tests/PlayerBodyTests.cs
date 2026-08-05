@@ -268,6 +268,32 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
+    public void ALadderSlideUsesItsOwnDampedGravityAndStopsOnGround()
+    {
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        double floor = player.Position.Z;
+        player.Position = new Vector3d(player.Position.X, player.Position.Y, floor + UnitsPerMetre);
+        player.BeginLadderTraversal();
+
+        Assert.False(player.TickLadderSlide(terrain, default));
+        Assert.Equal(
+            -HumanMotion.LadderSlideGravityPerTick * HumanMotion.LadderSlideDragPerTick,
+            player.Velocity.Z,
+            1e-3f);
+
+        int ticks = 1;
+        while (!player.IsGrounded && ticks < 300)
+        {
+            player.TickLadderSlide(terrain, default);
+            ticks++;
+        }
+
+        Assert.True(player.IsGrounded);
+        Assert.Equal(floor, player.Position.Z, 1e-6);
+        Assert.Equal(0f, player.Velocity.Z);
+    }
+
+    [RequiresGameDataFact]
     public void ARunningJumpCarriesTheDirectionItTookOffIn()
     {
         // The original takes the direction you are already moving, normalises it, and gives it a fixed

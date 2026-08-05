@@ -17,11 +17,14 @@ public enum InteractionAction
     /// <summary>Pick a locked door's lock — enter the <c>picklock_loop</c> state (case 3, locked branch).</summary>
     PickLock,
 
-    /// <summary>Vault or mantle a fence (dispatcher case 9).</summary>
-    VaultFence,
+    /// <summary>Climb a fence (dispatcher case 11).</summary>
+    ClimbFence,
 
-    /// <summary>Pull a drawer open (dispatcher case 2).</summary>
-    OpenDrawer,
+    /// <summary>Press a switch or alarm/gate button (dispatcher case 2).</summary>
+    PressSwitch,
+
+    /// <summary>Mount a wire for a hand-over-hand traverse or downhill slide (case 9).</summary>
+    MountWire,
 
     /// <summary>Enter a self-driving interactive locomotion state (cases 4–7, 12, 13).</summary>
     EnterState,
@@ -49,6 +52,17 @@ public static class HumanInteractionDispatch
     /// <summary>The <c>typecomp_loop</c> state a computer / keypad enters.</summary>
     public const int ComputerState = 32;
 
+    /// <summary>The cabinet-search state.</summary>
+    public const int CabinetState = 31;
+    /// <summary>The stationary-gun state.</summary>
+    public const int StationaryGunState = 33;
+    /// <summary>The mounted-gun transition state.</summary>
+    public const int MountedGunTransitionState = 34;
+    /// <summary>The authored generic interaction state.</summary>
+    public const int GenericState = 35;
+    /// <summary>The explosive-placement state.</summary>
+    public const int PlaceExplosiveState = 36;
+
     /// <summary>Dispatches a resolved activatable by its type.</summary>
     /// <param name="type">The activatable's <c>GetActivate</c> type.</param>
     /// <param name="doorLocked">Whether a <see cref="InteractionActivateType.Door"/> is locked.</param>
@@ -68,18 +82,19 @@ public static class HumanInteractionDispatch
                 ? new InteractionDispatchResult(InteractionAction.PickLock, PickLockState)
                 : new InteractionDispatchResult(InteractionAction.OpenDoor, -1),
 
-        // case 10: a ladder requests a climb; case 9: a fence vaults; case 2: a drawer opens.
+        // Immediate and traversal cases.
         (int)InteractionActivateType.Ladder => new(InteractionAction.ClimbLadder, -1),
-        (int)InteractionActivateType.Fence => new(InteractionAction.VaultFence, -1),
-        (int)InteractionActivateType.Drawer => new(InteractionAction.OpenDrawer, -1),
+        (int)InteractionActivateType.Fence => new(InteractionAction.ClimbFence, 41),
+        (int)InteractionActivateType.Wire => new(InteractionAction.MountWire, -1),
+        (int)InteractionActivateType.Switch => new(InteractionAction.PressSwitch, -1),
 
-        // cases 4-7, 12, 13: the self-driving interactive states. Case 5 is the computer/keypad.
-        4 => new(InteractionAction.EnterState, 31),
-        5 => new(InteractionAction.EnterState, ComputerState),
-        6 => new(InteractionAction.EnterState, 33),
-        7 => new(InteractionAction.EnterState, 34),
-        12 => new(InteractionAction.EnterState, 35),
-        13 => new(InteractionAction.EnterState, 36),
+        // The self-driving interactive states.
+        (int)InteractionActivateType.Cabinet => new(InteractionAction.EnterState, CabinetState),
+        (int)InteractionActivateType.Terminal => new(InteractionAction.EnterState, ComputerState),
+        (int)InteractionActivateType.StationaryGun => new(InteractionAction.EnterState, StationaryGunState),
+        (int)InteractionActivateType.MountedGunTransition => new(InteractionAction.EnterState, MountedGunTransitionState),
+        (int)InteractionActivateType.Generic => new(InteractionAction.EnterState, GenericState),
+        (int)InteractionActivateType.PlaceExplosive => new(InteractionAction.EnterState, PlaceExplosiveState),
 
         _ => new(InteractionAction.None, -1),
     };

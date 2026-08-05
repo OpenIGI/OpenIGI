@@ -2,98 +2,195 @@ using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
 
-/// <summary>
-/// A ladder placed in a level: the world-space climb line the player can mount, the direction a climber
-/// faces on it, and the proximity test that decides when it is offered.
-/// </summary>
+/// <summary>A placed IGI1 ladder, including its activation and authored mount geometry.</summary>
 /// <remarks>
-/// Built from a <c>TASKTYPE_LADDER</c> magic object's world transform and its model's magic vertices 2
-/// (foot) and 3 (head). The activation test stands in for the ladder's <c>EvaluateActivate</c> handler
-/// (<c>sub_4404C0</c>); the facing is the ladder's own heading plus π (<c>sub_4113E0</c> / IGI2
-/// <c>HumanPlayer_ClimbLadder</c>).
+/// The three points are magic vertices 1 (top activation reference), 2 (foot) and 3 (head), transformed
+/// by the ladder task. <c>sub_4404C0</c> evaluates activation and <c>sub_4113E0</c> computes both mount
+/// positions directly from those points and the task's orientation.
 /// </remarks>
 public sealed class LadderPlacement
 {
-    /// <summary>How near the climb line the player must be, horizontally, in world units (about 1.5 m).</summary>
-    public const double ActivateRadiusUnits = 6144.0;
+    /// <summary>The activation radius at <c>HumanPlayer</c>'s evaluate context <c>+120</c>, two metres.</summary>
+    public const double ActivateRadiusUnits = 8192.0;
 
-    /// <summary>How far below the foot and above the head the ladder is still offered, in world units.</summary>
-    public const double HeightMarginUnits = 4096.0;
+    /// <summary>The half-width accepted across the face of the ladder.</summary>
+    /// <remarks>The strict <c>−2867.2 &lt; localX &lt; 2867.2</c> test in <c>sub_4404C0</c>.</remarks>
+    public const double ActivateHalfWidthUnits = 2867.2;
 
-    /// <summary>The cosine of the facing tolerance — the player must face within 45° of the ladder.</summary>
-    /// <remarks><c>cos(0.785398) ≈ 0.7071</c>, the <c>&lt; 0.78539819</c> the handler tests.</remarks>
+    /// <summary>The cosine of the 45-degree facing tolerance.</summary>
     public const double FacingCosine = 0.70710678;
 
-    /// <summary>Initializes a new instance of the <see cref="LadderPlacement"/> class.</summary>
-    /// <param name="bottom">The foot of the climb, in world units (magic vertex 2).</param>
-    /// <param name="top">The head of the climb, in world units (magic vertex 3).</param>
-    /// <param name="orientation">The ladder's world orientation, for the facing.</param>
-    public LadderPlacement(Vector3d bottom, Vector3d top, Matrix3f orientation)
-    {
-        // The lower point is always the foot, whichever magic vertex it came from.
-        (Vector3d low, Vector3d high) = bottom.Z <= top.Z ? (bottom, top) : (top, bottom);
-        ClimbLine = new LadderClimbLine(low, high);
+    /// <summary>The bottom mount's stand-off along raw matrix column one (<see cref="Matrix3f.Column2"/>).</summary>
+    public const double BottomStandoffUnits = 1515.52;
 
+    /// <summary>The bottom mount's lift along raw matrix column two (<see cref="Matrix3f.Column3"/>).</summary>
+    public const double BottomVerticalOffsetUnits = 3915.776;
+
+    /// <summary>The top mount's lift along raw matrix column two (<see cref="Matrix3f.Column3"/>).</summary>
+    public const double TopVerticalOffsetUnits = 3481.6;
+
+    /// <summary>The top mount's reverse stand-off along raw matrix column one (<see cref="Matrix3f.Column2"/>).</summary>
+    public const double TopStandoffUnits = 1638.4;
+
+    /// <summary>Initializes a placed ladder from its task and three retail magic vertices.</summary>
+    /// <param name="origin">The ladder task's world position.</param>
+    /// <param name="activationTop">Magic vertex 1 in world space.</param>
+    /// <param name="bottom">Magic vertex 2 in world space.</param>
+    /// <param name="top">Magic vertex 3 in world space.</param>
+    /// <param name="orientation">The ladder task's world orientation.</param>
+    public LadderPlacement(
+        Vector3d origin,
+        Vector3d activationTop,
+        Vector3d bottom,
+        Vector3d top,
+        Matrix3f orientation)
+    {
+        Origin = origin;
+        ActivationTop = activationTop;
         Orientation = orientation;
 
-        // sub_4113E0: the human faces the ladder's own heading. Verified against the running game
-        // (Ladder_ClimbTick fwd=): the body's gamma equals the ladder's Z-heading, which inverts
-        // FromEngineEulerAngles' RotationZ (M21 = sin, M11 = cos) -- with NO extra π (an earlier +π faced
-        // the body away from the wall).
-        Facing = (float)Math.Atan2(orientation.M21, orientation.M11);
+        ClimbLine = new LadderClimbLine(bottom, top);
+
+        // Real32x9_GetAngles(..., &gamma), followed by gamma += PI in sub_4113E0.
+        Facing = (float)Math.Atan2(orientation.M21, orientation.M11) + MathF.PI;
+        PlayerYaw = -Facing;
+
+        // The retail Real32x9 reads are zero-based columns: +116/+128/+140 is raw column one and
+        // +120/+132/+144 is raw column two. Matrix3f's public names are one-based, hence Column2/3.
+        Vector3f standoffAxis = orientation.Column2;
+        Vector3f verticalAxis = orientation.Column3;
+        BottomMount = Offset(
+            Bottom,
+            standoffAxis,
+            BottomStandoffUnits,
+            verticalAxis,
+            BottomVerticalOffsetUnits);
+        TopMount = Offset(
+            Top,
+            verticalAxis,
+            TopVerticalOffsetUnits,
+            standoffAxis,
+            -TopStandoffUnits);
     }
 
-    /// <summary>Gets the ladder's climb geometry.</summary>
+    /// <summary>Gets the task origin used by the bottom height test.</summary>
+    public Vector3d Origin { get; }
+
+    /// <summary>Gets magic vertex 1, used to resolve both activation height and top approach.</summary>
+    public Vector3d ActivationTop { get; }
+
+    /// <summary>Gets the ladder's climb line between magic vertices 2 and 3.</summary>
     public LadderClimbLine ClimbLine { get; }
 
-    /// <summary>Gets the ladder's world orientation, whose axes the mount stand-off is applied along.</summary>
+    /// <summary>Gets the ladder task's orientation.</summary>
     public Matrix3f Orientation { get; }
 
-    /// <summary>Gets the ladder's foot, in world units.</summary>
+    /// <summary>Gets magic vertex 2, the foot of the climb.</summary>
     public Vector3d Bottom => ClimbLine.Bottom;
 
-    /// <summary>Gets the ladder's head, in world units.</summary>
+    /// <summary>Gets magic vertex 3, the head of the climb.</summary>
     public Vector3d Top => ClimbLine.Top;
 
-    /// <summary>Gets the yaw a climber faces on this ladder — into it, in radians.</summary>
+    /// <summary>Gets the exact bottom position committed by <c>sub_4113E0</c>.</summary>
+    public Vector3d BottomMount { get; }
+
+    /// <summary>Gets the exact top position committed by <c>sub_4113E0</c>.</summary>
+    public Vector3d TopMount { get; }
+
+    /// <summary>Gets the yaw committed on mounting, including the original's added π.</summary>
     public float Facing { get; }
 
-    /// <summary>Tests whether the player may mount this ladder from where it stands.</summary>
-    /// <param name="playerPosition">The player's feet, in world units.</param>
-    /// <param name="playerYaw">Which way the player faces, in radians.</param>
-    /// <param name="atTop">Receives whether the mount is at the head (approached from above).</param>
-    /// <returns><see langword="true"/> when the ladder is close enough, faced and within height.</returns>
-    public bool CanActivate(Vector3d playerPosition, float playerYaw, out bool atTop)
+    /// <summary>Gets the equivalent yaw in the port camera's mirrored horizontal convention.</summary>
+    /// <remarks>
+    /// IGI1's human orientation sends local +Y to <c>(−sin gamma, cos gamma)</c>; the current player
+    /// camera sends its forward to <c>(sin yaw, cos yaw)</c>. Negation represents the same direction
+    /// until that pre-existing global camera/body convention is unified.
+    /// </remarks>
+    public float PlayerYaw { get; }
+
+    /// <summary>Tests whether this ladder wins the IGI1 ladder activation geometry.</summary>
+    /// <param name="playerPosition">The human view position from the activation context.</param>
+    /// <param name="playerYaw">The human's gamma.</param>
+    /// <param name="atTop">Receives whether magic vertex 1 resolved as a top mount.</param>
+    /// <returns><see langword="true"/> when either the bottom or top path accepts the human.</returns>
+    public bool CanActivate(Vector3d playerPosition, float playerYaw, out bool atTop) =>
+        CanActivate(playerPosition, playerYaw, out atTop, out _);
+
+    /// <summary>Tests activation and returns its head-on score for candidate selection.</summary>
+    /// <param name="playerPosition">The human view position from the activation context.</param>
+    /// <param name="playerYaw">The human's gamma.</param>
+    /// <param name="atTop">Receives whether this is a top mount.</param>
+    /// <param name="angle">Receives the angular error in radians; smaller is more head-on.</param>
+    /// <returns><see langword="true"/> when the ladder is activatable.</returns>
+    public bool CanActivate(Vector3d playerPosition, float playerYaw, out bool atTop, out double angle)
     {
         atTop = false;
+        angle = double.MaxValue;
 
-        double dx = Bottom.X - playerPosition.X;
-        double dy = Bottom.Y - playerPosition.Y;
-        double horizontal = Math.Sqrt((dx * dx) + (dy * dy));
-        if (horizontal > ActivateRadiusUnits)
+        Vector3d fromOrigin = Subtract(playerPosition, Origin);
+        Vector3f columnOne = Orientation.Column1;
+        Vector3f columnTwo = Orientation.Column2;
+        double across = Dot(fromOrigin, columnOne);
+        double normalDistance = Dot(fromOrigin, columnTwo);
+
+        double forwardX = Math.Sin(playerYaw);
+        double forwardY = Math.Cos(playerYaw);
+        double targetX = normalDistance > 0.0 ? -columnTwo.X : columnTwo.X;
+        double targetY = normalDistance > 0.0 ? -columnTwo.Y : columnTwo.Y;
+        double targetLength = Math.Sqrt((targetX * targetX) + (targetY * targetY));
+        double facingDot = targetLength > 0.0
+            ? ((forwardX * targetX) + (forwardY * targetY)) / targetLength
+            : -1.0;
+
+        bool bottomCandidate = Math.Abs(normalDistance) < ActivateRadiusUnits
+            && across > -ActivateHalfWidthUnits
+            && across < ActivateHalfWidthUnits
+            && facingDot > FacingCosine
+            && playerPosition.Z > Origin.Z
+            && playerPosition.Z < ActivationTop.Z;
+
+        if (bottomCandidate)
         {
-            return false;
+            angle = Math.Acos(Math.Clamp(facingDot, -1.0, 1.0));
         }
 
-        if (playerPosition.Z < Bottom.Z - HeightMarginUnits || playerPosition.Z > Top.Z + HeightMarginUnits)
+        // The top branch then calls the generic resolver on magic vertex 1. That resolver requires the
+        // point within the same radius and in front of the human, and chooses the most head-on result.
+        Vector3d fromTop = Subtract(playerPosition, ActivationTop);
+        Vector3d toTop = Subtract(ActivationTop, playerPosition);
+        double topDistance = Length(toTop);
+        double topForward = (forwardX * toTop.X) + (forwardY * toTop.Y);
+        bool topCandidate = Dot(fromTop, columnTwo) < 0.0
+            && topDistance < ActivateRadiusUnits
+            && topForward > 0.0;
+
+        if (topCandidate)
         {
-            return false;
+            atTop = true;
+            angle = Math.Acos(Math.Clamp(topForward / topDistance, -1.0, 1.0));
+            return true;
         }
 
-        // Facing the ladder: the player's forward (sin yaw, cos yaw) within 45° of the direction to it.
-        if (horizontal > 1e-6)
-        {
-            double forwardX = Math.Sin(playerYaw);
-            double forwardY = Math.Cos(playerYaw);
-            double dot = ((forwardX * dx) + (forwardY * dy)) / horizontal;
-            if (dot < FacingCosine)
-            {
-                return false;
-            }
-        }
-
-        // Approaching level with the head (from a roof) mounts at the top; otherwise at the foot.
-        atTop = playerPosition.Z >= Top.Z - HeightMarginUnits;
-        return true;
+        return bottomCandidate;
     }
+
+    private static Vector3d Offset(
+        Vector3d origin,
+        Vector3f first,
+        double firstScale,
+        Vector3f second,
+        double secondScale) =>
+        new(
+            origin.X + (first.X * firstScale) + (second.X * secondScale),
+            origin.Y + (first.Y * firstScale) + (second.Y * secondScale),
+            origin.Z + (first.Z * firstScale) + (second.Z * secondScale));
+
+    private static Vector3d Subtract(Vector3d left, Vector3d right) =>
+        new(left.X - right.X, left.Y - right.Y, left.Z - right.Z);
+
+    private static double Dot(Vector3d value, Vector3f axis) =>
+        (value.X * axis.X) + (value.Y * axis.Y) + (value.Z * axis.Z);
+
+    private static double Length(Vector3d value) =>
+        Math.Sqrt((value.X * value.X) + (value.Y * value.Y) + (value.Z * value.Z));
 }

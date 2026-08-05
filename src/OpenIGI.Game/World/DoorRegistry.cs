@@ -4,11 +4,42 @@ using OpenIGI.Engine.Tasks;
 namespace OpenIGI.Game.World;
 
 /// <summary>One placed door — its state machine, where it stands and which placement it draws through.</summary>
-/// <param name="TaskId">The <c>Door</c> task's own id.</param>
-/// <param name="TaskName">The placing task's name, which the collision index keys on.</param>
+/// <param name="Task">The exact <c>Door</c> task instance.</param>
 /// <param name="Position">Where it is, in world units.</param>
+/// <param name="Orientation">Its closed orientation.</param>
+/// <param name="StopX">Authored local X translation at fully open, in metres.</param>
+/// <param name="StopY">Authored local Y translation at fully open, in metres.</param>
+/// <param name="StopZ">Authored slider translation at fully open, in metres.</param>
 /// <param name="State">Its state machine.</param>
-public sealed record PlacedDoor(int TaskId, string TaskName, Vector3d Position, DoorState State);
+public sealed record PlacedDoor(
+    GameTask Task,
+    Vector3d Position,
+    Matrix3f Orientation,
+    float StopX,
+    float StopY,
+    float StopZ,
+    DoorState State)
+{
+    /// <summary>Gets the door's current drawable position in metres.</summary>
+    public Vector3d DrawPosition
+    {
+        get
+        {
+            Vector3f local = new(StopX * State.SlideFraction, StopY * State.SlideFraction, StopZ * State.SlideFraction);
+            // The renderer applies placements as column vectors (M·v); Matrix3f.Transform is v·M,
+            // so transpose once to move a sliding door along its authored local axes.
+            Vector3f offset = Orientation.Transposed().Transform(local);
+            return new Vector3d(
+                (Position.X / WorldScene.UnitsPerMetre) + offset.X,
+                (Position.Y / WorldScene.UnitsPerMetre) + offset.Y,
+                (Position.Z / WorldScene.UnitsPerMetre) + offset.Z);
+        }
+    }
+
+    /// <summary>Gets the door's current drawable swing orientation.</summary>
+    public Matrix3f DrawOrientation =>
+        Orientation * Matrix3f.RotationZ(State.AngleDegrees * (MathF.PI / 180f));
+}
 
 /// <summary>
 /// The level's doors — collected from the task tree, ticked together, and answering the AI walker's
@@ -53,14 +84,28 @@ public sealed class DoorRegistry
 
             float maxAngle = declared.TryGetValue("Max angle", out object? angle) && angle is float a ? a : 0f;
             float openTime = declared.TryGetValue("Open time", out object? time) && time is float t ? t : 1f;
-            bool slides =
-                (declared.TryGetValue("Position stop X", out object? sx) && sx is float x && x != 0f)
-                || (declared.TryGetValue("Position stop Y", out object? sy) && sy is float y && y != 0f);
+            float stopX = declared.TryGetValue("Position stop X", out object? rawX) && rawX is float xValue ? xValue : 0f;
+            float stopY = declared.TryGetValue("Position stop Y", out object? rawY) && rawY is float yValue ? yValue : 0f;
+            float stopZ = declared.TryGetValue("Position slider", out object? rawZ) && rawZ is float zValue ? zValue : 0f;
+            bool slides = stopX != 0f || stopY != 0f || stopZ != 0f;
+            Matrix3f orientation = Matrix3f.Identity;
+            if (declared.TryGetValue("Orientation", out object? rawOrientation))
+            {
+                orientation = rawOrientation switch
+                {
+                    Vector3f angles => WorldScene.ToOrientation(angles),
+                    float gamma => Matrix3f.RotationZ(gamma),
+                    _ => Matrix3f.Identity,
+                };
+            }
 
             registry._doors.Add(new PlacedDoor(
-                task.Id,
-                task.Name,
+                declared,
                 position,
+                orientation,
+                stopX,
+                stopY,
+                stopZ,
                 new DoorState(maxAngle, openTime <= 0f ? 1f : openTime, slides)));
         }
 
@@ -103,5 +148,22 @@ public sealed class DoorRegistry
         }
 
         return best;
+    }
+
+    /// <summary>Gets the live draw transform for a door placement.</summary>
+    public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation)
+    {
+        foreach (PlacedDoor door in _doors)
+        {
+            if (ReferenceEquals(door.Task, task))
+            {
+                position = door.DrawPosition;
+                orientation = door.DrawOrientation;
+                return true;
+            }
+        }
+        position = default;
+        orientation = default;
+        return false;
     }
 }

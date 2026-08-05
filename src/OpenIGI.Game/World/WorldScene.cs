@@ -305,6 +305,34 @@ public sealed class WorldScene
                     continue;
                 }
 
+                // A Wire is a dynamic model rather than a regular point placement. Its update handler
+                // puts the model at the Start/Stop midpoint, builds an orientation whose local Y follows
+                // the span, and stretches only that axis by length / WORLD_METER. Treating it as an
+                // ordinary task skipped it entirely because it has no parameter literally named Position.
+                if (string.Equals(declared.Type.Name, "Wire", StringComparison.Ordinal)
+                    && WireTransform.TryCreate(declared, bound.Model, out WireTransform wire))
+                {
+                    MeshGeometry? geometry = wire.Stretch(bound.Model);
+                    if (geometry is null)
+                    {
+                        unplaced++;
+                        continue;
+                    }
+
+                    placements.Add(new WorldPlacement(
+                        wire.PositionMetres,
+                        wire.Orientation,
+                        bound.Instance,
+                        bound.Pack,
+                        bound.Model,
+                        $"wire:{task.Id}:{placements.Count}",
+                        task)
+                    {
+                        BentGeometry = geometry,
+                    });
+                    continue;
+                }
+
                 if (!TryGetPosition(declared, out Vector3d position))
                 {
                     unplaced++;
@@ -325,6 +353,7 @@ public sealed class WorldScene
                     bound.Pack,
                     bound.Model,
                     task.Name,
+                    task,
                     bake.Set ?? string.Empty,
                     bake.Root?.LightmapIndex ?? -1));
 
@@ -333,13 +362,17 @@ public sealed class WorldScene
                 // shells and none of their contents.
                 if (bake.Root is not null)
                 {
-                    attached += AddAttached(bake.Root, position, orientation, bake.Set ?? string.Empty, task.Name, byName, magic, placements, ladders);
+                    attached += AddAttached(
+                        bake.Root, position, orientation, orientation, bake.Set ?? string.Empty, task.Name, task,
+                        byName, magic, placements, ladders);
                 }
                 else if (magic is not null
                     && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
                     && loose is not null)
                 {
-                    attached += AddAttached(loose, position, orientation, string.Empty, task.Name, byName, magic, placements, ladders);
+                    attached += AddAttached(
+                        loose, position, orientation, orientation, string.Empty, task.Name, task,
+                        byName, magic, placements, ladders);
                 }
             }
         }
@@ -435,6 +468,7 @@ public sealed class WorldScene
                     bound.Pack,
                     bound.Model,
                     $"spline:{chain}:{i}",
+                    waypoint,
                     string.Empty,
                     -1)
                 {
@@ -686,9 +720,11 @@ public sealed class WorldScene
     private static int AddAttached(
         WorldObject node,
         Vector3d position,
-        Matrix3f orientation,
+        Matrix3f drawOrientation,
+        Matrix3f taskOrientation,
         string set,
         string taskName,
+        GameTask owner,
         Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
         MagicObjectRegistry? magic,
         List<WorldPlacement> placements,
@@ -701,16 +737,30 @@ public sealed class WorldScene
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
             // composition below is already the column-vector convention's parent∘child order.
-            Vector3f offset = orientation.Transposed().Transform(child.Position);
+            Vector3f offset = drawOrientation.Transposed().Transform(child.Position);
             Vector3d childPosition = new(
                 position.X + (offset.X / UnitsPerMetre),
                 position.Y + (offset.Y / UnitsPerMetre),
                 position.Z + (offset.Z / UnitsPerMetre));
-            Matrix3f childOrientation = orientation * child.Orientation;
+            Matrix3f childDrawOrientation = drawOrientation * child.Orientation;
+
+            // sub_4DFA50 does not copy an ATTA matrix into the spawned magic task. It rebuilds a
+            // right-handed basis from the attachment's first two axes before composing it with its
+            // parent. After the model-to-world axis conversion used by this port, that rebuilt local
+            // frame is exactly the ATTA orientation's transpose. Keeping the task frame separate from
+            // the draw frame matters for quarter-turn attachments: the old blanket 180-degree fix made
+            // the first building ladder look right but pointed WaterTower's 435_02_1 ladder inward.
+            Matrix3f childTaskOrientation = taskOrientation * child.Orientation.Transposed();
 
             // A ladder is a TASKTYPE_LADDER magic object whose model carries the climb line as its magic
             // vertices 2 (foot) and 3 (head). Collected here, where its world transform is known.
-            TryCollectLadder(child, childPosition, childOrientation, magic, ladders);
+            TryCollectLadder(
+                child,
+                childPosition,
+                childDrawOrientation,
+                childTaskOrientation,
+                magic,
+                ladders);
 
             // A child draws only if its model is also a pack instance, because the textures a sub-mesh
             // uses are named by the instance, not by the model. Its subtree is walked either way: the
@@ -719,17 +769,20 @@ public sealed class WorldScene
             {
                 placements.Add(new WorldPlacement(
                     childPosition,
-                    childOrientation,
+                    childDrawOrientation,
                     bound.Instance,
                     bound.Pack,
                     bound.Model,
                     taskName,
+                    owner,
                     set,
                     set.Length > 0 ? child.LightmapIndex : -1));
                 added++;
             }
 
-            added += AddAttached(child, childPosition, childOrientation, set, taskName, byName, magic, placements, ladders);
+            added += AddAttached(
+                child, childPosition, childDrawOrientation, childTaskOrientation, set, taskName, owner,
+                byName, magic, placements, ladders);
         }
 
         return added;
@@ -742,7 +795,8 @@ public sealed class WorldScene
     private static void TryCollectLadder(
         WorldObject child,
         Vector3d positionMetres,
-        Matrix3f orientation,
+        Matrix3f drawOrientation,
+        Matrix3f taskOrientation,
         MagicObjectRegistry? magic,
         List<LadderPlacement> ladders)
     {
@@ -754,7 +808,9 @@ public sealed class WorldScene
         }
 
         MefModel model = child.Models.Highest;
-        if (!model.TryGetMagicVertex(2, out Vector3f foot) || !model.TryGetMagicVertex(3, out Vector3f head))
+        if (!model.TryGetMagicVertex(1, out Vector3f activationTop)
+            || !model.TryGetMagicVertex(2, out Vector3f foot)
+            || !model.TryGetMagicVertex(3, out Vector3f head))
         {
             return;
         }
@@ -765,7 +821,11 @@ public sealed class WorldScene
             positionMetres.Z * UnitsPerMetre);
 
         ladders.Add(new LadderPlacement(
-            ToWorldUnits(origin, orientation, foot), ToWorldUnits(origin, orientation, head), orientation));
+            origin,
+            ToWorldUnits(origin, drawOrientation, activationTop),
+            ToWorldUnits(origin, drawOrientation, foot),
+            ToWorldUnits(origin, drawOrientation, head),
+            taskOrientation));
     }
 
     /// <summary>Places a model-space magic vertex in the world, in engine units.</summary>

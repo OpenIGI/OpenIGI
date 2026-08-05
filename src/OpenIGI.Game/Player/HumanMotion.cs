@@ -28,26 +28,27 @@ public static class HumanMotion
     /// </para>
     /// <para>
     /// <b>Correction.</b> An earlier pass took <c>44.600887</c> for gravity because it sits in an
-    /// integrator that looks like the airborne one. It is not: <c>0x40DBF0</c> is the <b>wire slide</b>
-    /// state's per-tick — its entry plays <c>wire_slide_1</c> — and that constant, along with the 0.99
-    /// drag beside it, belongs to sliding down a wire. See <see cref="WireSlideGravityPerTick"/>.
+    /// integrator that looks like the airborne one. It is not: <c>0x40DBF0</c> is the <b>ladder-slide</b>
+    /// state's per-tick — its entry plays the <c>wire_slide_1</c> sound — and that
+    /// constant, along with the 0.99 drag beside it, belongs to state 40. See
+    /// <see cref="LadderSlideGravityPerTick"/>.
     /// </para>
     /// </remarks>
     public const float GravityPerTick = 84.741692f;
 
-    /// <summary>The wire slide's own gravity, which is not the airborne one.</summary>
+    /// <summary>The ladder slide's own gravity, which is not the airborne one.</summary>
     /// <remarks>
     /// <c>44.600887</c> — exactly 9.8 m/s². Kept named so the next reader does not mistake it for
     /// gravity again, since it is the more ordinary-looking of the two.
     /// </remarks>
-    public const float WireSlideGravityPerTick = 44.600887f;
+    public const float LadderSlideGravityPerTick = 44.600887f;
 
-    /// <summary>The wire slide's per-tick damping, applied to all three axes.</summary>
+    /// <summary>The ladder slide's per-tick damping, applied to all three axes.</summary>
     /// <remarks>
     /// <c>0.99000001</c>, and on the vertical it is applied <i>after</i> its gravity. <b>The airborne
     /// integrator has no damping at all</b> — a falling body simply accelerates.
     /// </remarks>
-    public const float WireSlideDragPerTick = 0.99000001f;
+    public const float LadderSlideDragPerTick = 0.99000001f;
 
     /// <summary>Advances an airborne velocity by one tick.</summary>
     /// <param name="velocity">The current velocity, in world units per tick.</param>
@@ -59,7 +60,7 @@ public static class HumanMotion
     public static Vector3f Integrate(Vector3f velocity) =>
         new(velocity.X, velocity.Y, velocity.Z - GravityPerTick);
 
-    /// <summary>Advances a wire slide's velocity by one tick.</summary>
+    /// <summary>Advances a ladder slide's velocity by one tick.</summary>
     /// <param name="velocity">The current velocity.</param>
     /// <returns>The velocity after the slide's own gravity and damping.</returns>
     /// <remarks>
@@ -67,10 +68,10 @@ public static class HumanMotion
     /// the damping applied to the result, which is what gives the slide a terminal speed the ordinary
     /// fall does not have.
     /// </remarks>
-    public static Vector3f IntegrateWireSlide(Vector3f velocity) => new(
-        velocity.X * WireSlideDragPerTick,
-        velocity.Y * WireSlideDragPerTick,
-        (velocity.Z - WireSlideGravityPerTick) * WireSlideDragPerTick);
+    public static Vector3f IntegrateLadderSlide(Vector3f velocity) => new(
+        velocity.X * LadderSlideDragPerTick,
+        velocity.Y * LadderSlideDragPerTick,
+        (velocity.Z - LadderSlideGravityPerTick) * LadderSlideDragPerTick);
 
     /// <summary>The air control one tick adds to an airborne velocity.</summary>
     /// <param name="forward">Forward intent, −1, 0 or 1 — the movement slots, not an analogue axis.</param>

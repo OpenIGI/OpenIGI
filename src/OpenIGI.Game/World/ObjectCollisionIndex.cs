@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 
 namespace OpenIGI.Game.World;
@@ -36,22 +37,22 @@ public sealed class ObjectCollisionIndex
     // meshes, so a door that is not fully closed stops colliding instead (a recorded stand-in: rounds,
     // sight and walkers pass an open doorway, but a half-open door does not block at its half-open
     // angle).
-    private readonly HashSet<string> _passable = new(StringComparer.Ordinal);
+    private readonly HashSet<GameTask> _passable = [];
 
     private ObjectCollisionIndex(Entry[] entries) => _entries = entries;
 
     /// <summary>Switches a placing task's collision off or back on — an opening or closing door.</summary>
-    /// <param name="taskName">The placing task's <see cref="OpenIGI.Engine.Tasks.GameTask.Name"/>.</param>
+    /// <param name="owner">The exact placing task instance.</param>
     /// <param name="passable">Whether rays should now pass through it.</param>
-    public void SetPassable(string taskName, bool passable)
+    public void SetPassable(GameTask owner, bool passable)
     {
         if (passable)
         {
-            _passable.Add(taskName);
+            _passable.Add(owner);
         }
         else
         {
-            _passable.Remove(taskName);
+            _passable.Remove(owner);
         }
     }
 
@@ -110,7 +111,8 @@ public sealed class ObjectCollisionIndex
                 ? placement.Instance.Name
                 : $"{placement.Instance.Name} [{placement.TaskName}]";
 
-            entries.Add(Entry.Create(mesh, origin, placement.Orientation, label, placement.TaskName));
+            entries.Add(Entry.Create(
+                mesh, origin, placement.Orientation, label, placement.TaskName, placement.Owner));
         }
 
         return new ObjectCollisionIndex([.. entries]);
@@ -163,7 +165,7 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (honourPassable && entry.TaskName.Length > 0 && _passable.Contains(entry.TaskName))
+            if (honourPassable && _passable.Contains(entry.Owner))
             {
                 continue;
             }
@@ -304,7 +306,13 @@ public sealed class ObjectCollisionIndex
         private readonly Vector3d[] _vertices;
 
         private Entry(
-            MefCollisionMesh mesh, Vector3d[] vertices, Vector3d centre, double radius, string label, string taskName)
+            MefCollisionMesh mesh,
+            Vector3d[] vertices,
+            Vector3d centre,
+            double radius,
+            string label,
+            string taskName,
+            GameTask owner)
         {
             Mesh = mesh;
             _vertices = vertices;
@@ -312,6 +320,7 @@ public sealed class ObjectCollisionIndex
             Radius = radius;
             Label = label;
             TaskName = taskName;
+            Owner = owner;
         }
 
         public MefCollisionMesh Mesh { get; }
@@ -324,8 +333,15 @@ public sealed class ObjectCollisionIndex
 
         public string TaskName { get; }
 
+        public GameTask Owner { get; }
+
         public static Entry Create(
-            MefCollisionMesh mesh, Vector3d origin, Matrix3f orientation, string label, string taskName)
+            MefCollisionMesh mesh,
+            Vector3d origin,
+            Matrix3f orientation,
+            string label,
+            string taskName,
+            GameTask owner)
         {
             // Local-to-world is the COLUMN-vector product M·v — the renderer's `uModelView * v`, and
             // the convention the original itself uses for a placement's Real32x9 (it reads elements
@@ -365,7 +381,7 @@ public sealed class ObjectCollisionIndex
                 }
             }
 
-            return new Entry(mesh, vertices, centre, radius, label, taskName);
+            return new Entry(mesh, vertices, centre, radius, label, taskName, owner);
         }
 
         public bool TryCast(Vector3d origin, Vector3d direction, ref double nearest, out WorldRayHit hit)

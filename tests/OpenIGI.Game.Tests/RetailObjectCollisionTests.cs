@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -117,7 +118,7 @@ public sealed class RetailObjectCollisionTests
         // The two casts differ on exactly one thing, and it is the thing the probe bake depends on: an
         // open door is a hole to the AI and a wall to the bake. Baking it as a hole would leave the hole
         // in the field after the door shut, because the field is static.
-        (ObjectCollisionIndex index, Vector3d centre, double radius, string taskName) = FirstSolidWithATask();
+        (ObjectCollisionIndex index, Vector3d centre, double radius, GameTask owner) = FirstSolidWithATask();
 
         double reach = (radius * 4.0) + UnitsPerMetre;
         Vector3d from = new(centre.X - reach, centre.Y, centre.Z);
@@ -126,7 +127,7 @@ public sealed class RetailObjectCollisionTests
         Assert.True(index.TryCast(from, to, out _), "the ray missed the only object in the index");
         Assert.True(index.TryCastWithDoorsShut(from, to, out _), "the shut cast missed the same object");
 
-        index.SetPassable(taskName, true);
+        index.SetPassable(owner, true);
 
         Assert.False(index.TryCast(from, to, out _), "switching the placement passable did not open it");
         Assert.True(
@@ -140,15 +141,10 @@ public sealed class RetailObjectCollisionTests
     /// object being switched passable — with the whole level in the index, opening one door proves
     /// nothing because a wall behind it still blocks.
     /// </remarks>
-    private static (ObjectCollisionIndex Index, Vector3d Centre, double Radius, string TaskName) FirstSolidWithATask()
+    private static (ObjectCollisionIndex Index, Vector3d Centre, double Radius, GameTask Owner) FirstSolidWithATask()
     {
         foreach (WorldPlacement placement in RetailLevelOneGround.Scene().Placements)
         {
-            if (placement.TaskName.Length == 0)
-            {
-                continue;
-            }
-
             ObjectCollisionIndex single = ObjectCollisionIndex.Build([placement]);
             if (single.Count == 0)
             {
@@ -158,11 +154,11 @@ public sealed class RetailObjectCollisionTests
             (Vector3d centre, double radius) = single.Bounds(0);
             if (radius > 0.0)
             {
-                return (single, centre, radius, placement.TaskName);
+                return (single, centre, radius, placement.Owner);
             }
         }
 
-        Assert.Fail("no placement in level 1 was both named by a task and solid");
+        Assert.Fail("no placement in level 1 was both owned by a task and solid");
         throw new InvalidOperationException("unreachable");
     }
 
