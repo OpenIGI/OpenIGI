@@ -93,6 +93,9 @@ internal sealed partial class DesktopGame : IDisposable
     /// <summary>The engine's own generator, for the sound-variant draws <c>0x4638A0</c> makes.</summary>
     private readonly IgiRandom _soundRandom = new();
 
+    /// <summary>The tick the player may grunt at being hit again — <c>0x4637C0</c>'s per-human gate.</summary>
+    private int _playerHitQuietUntil;
+
 
     // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
     // incoming one. Sized to the window and re-made when that changes.

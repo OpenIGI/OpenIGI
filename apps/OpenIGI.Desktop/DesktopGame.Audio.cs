@@ -266,6 +266,25 @@ internal sealed partial class DesktopGame
         _sounds.PlayDefinition(name, positionInUnits, priority: 300);
     }
 
+    /// <summary>Plays a human's grunt at being hit — the naming half of <c>0x4637C0</c>.</summary>
+    /// <param name="prefix">The prefix the damage handler passes.</param>
+    /// <param name="variants">How many variants it draws between.</param>
+    /// <param name="positionInUnits">Where the body is, or <see langword="null"/> for the player's own.</param>
+    /// <remarks>
+    /// Unlike the death cry this needs no vanilla gate: <c>0x4637C0</c> formats <c>n + 1</c>, so
+    /// <c>ai_hit_</c> builds <c>ai_hit_1</c>…<c>ai_hit_3</c> and matches its definitions exactly.
+    /// </remarks>
+    private void PlayHitSound(string prefix, int variants, Vector3d? positionInUnits)
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        string name = HumanVariantSound.ChooseHit(prefix, variants, _soundRandom);
+        _sounds.PlayDefinition(name, positionInUnits, priority: 250);
+    }
+
     /// <summary>Advances the level's authored ambience and keeps its beds sounding.</summary>
     /// <param name="listenerInUnits">Where the ear is, in engine units.</param>
     /// <remarks>

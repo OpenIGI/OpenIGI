@@ -196,6 +196,11 @@ internal sealed partial class DesktopGame
             _logger.Information("Audio", $"{_ambience.Areas.Count} ambient area(s).");
         }
 
+        // The grunt a soldier makes at a non-fatal hit, rate-limited per human.
+        _soldiers.SetHitSound(position => PlayHitSound(
+            HumanVariantSound.AiHitPrefix, HumanVariantSound.AiHitVariants, position));
+        _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+
         // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
         _soldiers.SetFootstepSound(step => PlayFootstep(step));
 
@@ -391,6 +396,16 @@ internal sealed partial class DesktopGame
                     // The screen goes red. A full wash per hit, so a burst holds it solid and it fades
                     // over a second and a half once the fire stops -- the retail decay (sub_411300).
                     _damageFlash.Hit();
+
+                    // And the grunt. 0x412440 plays it on the same branch and rate-limits it through
+                    // 0x4637C0, so sustained fire staggers the player without stuttering the sound.
+                    // Flat, not positional: the sound belongs to the player, who is the listener.
+                    if (!_playerHealth.IsDead && _loop.Clock.TickCount >= _playerHitQuietUntil)
+                    {
+                        _playerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
+                        PlayHitSound(
+                            HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
+                    }
 
                     // Every connecting round SHOVES the player 5 km/h along its travel -- the hit
                     // handler (0x412440) normalises the round's direction and adds x/y x 189.62962

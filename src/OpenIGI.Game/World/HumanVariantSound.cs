@@ -29,6 +29,59 @@ public static class HumanVariantSound
     /// <remarks>Literal at every one of the eight call sites, and the definitions run 1 to 4.</remarks>
     public const int AiDeathVariants = 4;
 
+    /// <summary>The prefix a soldier's non-fatal hit passes, and how many variants it draws between.</summary>
+    public const string AiHitPrefix = "ai_hit_";
+
+    /// <summary>How many variants a soldier's hit draws between.</summary>
+    public const int AiHitVariants = 3;
+
+    /// <summary>The prefix the player's non-fatal hit passes.</summary>
+    public const string PlayerHitPrefix = "player_hit_";
+
+    /// <summary>How many variants the player's hit draws between.</summary>
+    public const int PlayerHitVariants = 4;
+
+    /// <summary>The shortest gap between two grunts from the same human, in ticks.</summary>
+    public const int HitCooldownMinimumTicks = 30;
+
+    /// <summary>How many further ticks the gap may randomly extend by.</summary>
+    public const int HitCooldownSpanTicks = 30;
+
+    /// <summary>Builds a hit variant's name — the naming half of <c>0x4637C0</c>.</summary>
+    /// <param name="prefix">The prefix, such as <see cref="AiHitPrefix"/>.</param>
+    /// <param name="count">How many variants to draw between.</param>
+    /// <param name="random">The engine's generator.</param>
+    /// <returns>The definition name to play.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="random"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is not positive.</exception>
+    /// <remarks>
+    /// <b>This helper adds the one and the death helper does not</b>, from the same draw — which is the
+    /// clearest evidence that <see cref="Choose"/>'s zero-based name is a slip rather than a convention.
+    /// So <c>ai_hit_</c> builds <c>ai_hit_1</c>…<c>ai_hit_3</c> and matches the definitions exactly, and
+    /// nothing here needs gating.
+    /// </remarks>
+    public static string ChooseHit(string prefix, int count, IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
+
+        return prefix + (random.NextBounded((uint)count) + 1);
+    }
+
+    /// <summary>How long to wait before the same human may grunt again, in ticks.</summary>
+    /// <param name="random">The engine's generator.</param>
+    /// <returns>Between 30 and 60 ticks — one to two seconds.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="random"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <c>0x4637C0</c> computes <c>30 - trunc(rand01() * -30.0)</c> and stores <c>now + that</c>. Without
+    /// it a soldier caught in an automatic burst would grunt on every round that landed.
+    /// </remarks>
+    public static int HitCooldownTicks(IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+        return HitCooldownMinimumTicks + (int)(random.NextDouble() * HitCooldownSpanTicks);
+    }
+
     /// <summary>Builds the name one of the numbered variants is defined under.</summary>
     /// <param name="prefix">The prefix, such as <see cref="AiDeathPrefix"/>.</param>
     /// <param name="count">How many variants to draw between.</param>

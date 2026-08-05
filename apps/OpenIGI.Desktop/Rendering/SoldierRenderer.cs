@@ -121,6 +121,34 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="materials">The level's materials, or <see langword="null"/> for none.</param>
     public void UseMaterials(GameMaterialRegistry? materials) => _materials = materials;
 
+    /// <summary>Sounds a soldier's grunt at being hit, rate-limited the way the original is.</summary>
+    /// <param name="report">The sink, or <see langword="null"/> to make hits silent.</param>
+    /// <remarks>The argument is the body's position in engine units.</remarks>
+    public void SetHitSound(Action<Vector3d>? report) => _hitSound = report;
+
+    /// <summary>Sets how long a struck soldier stays quiet for, in ticks.</summary>
+    /// <param name="cooldown">Draws the gap; see <c>HumanVariantSound.HitCooldownTicks</c>.</param>
+    public void SetHitCooldown(Func<int>? cooldown) => _hitCooldown = cooldown;
+
+    /// <summary>Plays a struck soldier's grunt unless it is still inside its cooldown.</summary>
+    private void ReportHitSound(SoldierView view)
+    {
+        if (_hitSound is null || _hitCooldown is null)
+        {
+            return;
+        }
+
+        // now >= human[529], then human[529] = now + 30..60. Held per soldier, as the original holds
+        // it per human, so one guard's grunt does not silence another's.
+        if (_hitQuietUntil.TryGetValue(view, out int quietUntil) && _tick < quietUntil)
+        {
+            return;
+        }
+
+        _hitQuietUntil[view] = _tick + _hitCooldown();
+        _hitSound(view.Position);
+    }
+
     /// <summary>Resolves what a soldier's step landed on and hands the footstep out.</summary>
     /// <remarks>
     /// The material comes from its own short downward cast rather than from the ground query that moved
@@ -153,6 +181,9 @@ public sealed class SoldierRenderer : IDisposable
     }
 
     private Action<Vector3d>? _deathSound;
+    private Action<Vector3d>? _hitSound;
+    private Func<int>? _hitCooldown;
+    private readonly Dictionary<SoldierView, int> _hitQuietUntil = [];
     private Action<Footstep>? _footstepSound;
     private GameMaterialRegistry? _materials;
     private readonly Dictionary<SoldierView, int> _footCursors = [];
@@ -3018,6 +3049,14 @@ public sealed class SoldierRenderer : IDisposable
             else
             {
                 brain?.ReceiveDamage(origin);
+
+                // The grunt. 0x4553E0 plays it on the branch where the hit was NOT fatal -- a killing
+                // round goes to the death state, which has its own cry -- and 0x4637C0 rate-limits it
+                // per human, or a soldier caught in a burst would grunt on every round that landed.
+                if (struckView is not null)
+                {
+                    ReportHitSound(struckView);
+                }
             }
         }
 
