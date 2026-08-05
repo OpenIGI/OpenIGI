@@ -15,6 +15,16 @@ namespace OpenIGI.UI.Widgets;
 /// </remarks>
 public class Slider : Control
 {
+    // The row's metrics, in design units, in one place. They used to be spelled out separately in the
+    // measure, the arrange and the draw, and the three did not agree: the height was measured for the
+    // TRACK, while what is drawn on the track is a KNOB more than twice as tall and centred on it. The
+    // half that reaches upwards was space nobody had asked for, so it came out of the caption's line and
+    // the knob sat in the letters. Everything below is derived from these, so they cannot drift again.
+    private const float PaddingUnits = 8f;
+    private const float CaptionGapUnits = 5f;
+    private const float TrackHeightUnits = 6f;
+    private const float KnobUnits = 14f;
+
     private readonly Spring _display;
     private float _value;
     private UiRect _track;
@@ -118,12 +128,23 @@ public class Slider : Control
     {
         // The track is resolved here rather than in the draw so a click can be mapped onto it whether or
         // not the widget has been drawn yet.
-        float pad = context.Px(8f);
-        float trackH = context.Px(6f);
+        float pad = context.Px(PaddingUnits);
+        float knob = context.Px(KnobUnits);
+        float trackH = context.Px(TrackHeightUnits);
+
+        // The knob's band is the bottom of the row and the track is centred inside it, so the knob's reach
+        // above the track is room the measure has already claimed rather than room borrowed from the
+        // caption above.
+        float knobTop = contentRect.Bottom - pad - knob;
+
+        // Inset by half a knob at each end, so a value at either extreme puts the knob against the row's
+        // padding instead of hanging out past it — at 0 it used to overlap the left margin and at the
+        // maximum it reached into the gap to the next column.
+        float inset = pad + (knob * 0.5f);
         _track = new UiRect(
-            contentRect.X + pad,
-            contentRect.Bottom - pad - trackH,
-            MathF.Max(0f, contentRect.Width - (pad * 2f)),
+            contentRect.X + inset,
+            knobTop + ((knob - trackH) * 0.5f),
+            MathF.Max(0f, contentRect.Width - (inset * 2f)),
             trackH);
     }
 
@@ -138,7 +159,15 @@ public class Slider : Control
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         float sizePx = context.Px(Theme.BodyTextSize);
-        float height = Theme.Body.LineHeight(sizePx) + context.Px(20f);
+
+        // Padding, the caption's line, the gap under it, the knob's band, padding. The knob rather than
+        // the track, because the knob is what the row has to be tall enough to hold.
+        float height = context.Px(PaddingUnits)
+            + Theme.Body.LineHeight(sizePx)
+            + context.Px(CaptionGapUnits)
+            + context.Px(KnobUnits)
+            + context.Px(PaddingUnits);
+
         return new UiVec2(available.X, height);
     }
 
@@ -153,7 +182,7 @@ public class Slider : Control
 
         float sizePx = painter.Context.Px(Theme.BodyTextSize);
         Bgra32 textColor = IsEnabled ? Interpolate.Lerp(Theme.Text, Theme.Accent, focus) : Theme.TextDisabled;
-        float pad = painter.Context.Px(8f);
+        float pad = painter.Context.Px(PaddingUnits);
 
         painter.DrawText(Theme.Body, Label, new UiVec2(Bounds.X + pad, Bounds.Y + pad), sizePx, textColor);
 
@@ -168,7 +197,7 @@ public class Slider : Control
         float t = Math.Clamp(_display.Value, 0f, 1f);
         painter.FillRect(new UiRect(track.X, track.Y, track.Width * t, track.Height), Theme.Accent, BlendMode.AlphaBlend);
 
-        float knob = painter.Context.Px(14f);
+        float knob = painter.Context.Px(KnobUnits);
         float knobX = track.X + (track.Width * t) - (knob * 0.5f);
         painter.FillRect(new UiRect(knobX, track.Y + (track.Height * 0.5f) - (knob * 0.5f), knob, knob), Theme.Text, BlendMode.AlphaBlend);
     }

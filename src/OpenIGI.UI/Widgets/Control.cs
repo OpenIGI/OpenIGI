@@ -41,6 +41,15 @@ public abstract class Control : UiElement, IFocusable
     /// <summary>Gets or sets a value indicating whether the control responds to input.</summary>
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>Gets or sets what to explain when the pointer rests on the control; empty for nothing.</summary>
+    /// <remarks>
+    /// The control only carries the text. Where and when it appears belongs to the screen, which is the
+    /// only thing that knows the whole page — a tooltip has to be drawn over every other widget and must
+    /// not be clipped by the viewport its owner happens to be scrolling inside. Line feeds are honoured,
+    /// so a first line can state what the setting is and a later one can add a caveat.
+    /// </remarks>
+    public string Tooltip { get; set; } = string.Empty;
+
     /// <summary>Gets the visual state machine driving the control's animation.</summary>
     public WidgetVisualStateMachine Visual { get; } = new();
 

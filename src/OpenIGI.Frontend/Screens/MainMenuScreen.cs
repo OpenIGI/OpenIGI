@@ -23,5 +23,15 @@ public sealed class MainMenuScreen : ShellScreen
     protected override UiElement? BuildContent(LayoutContext context) => null;
 
     /// <inheritdoc/>
-    protected override void OnEnter() => Context.Host.PreviewMission(null); // the default showcase
+    /// <remarks>
+    /// Only out of game. Over a live mission the landing page is the <see cref="PauseScreen"/> and the
+    /// backdrop is the level being played, so there is nothing here to show off.
+    /// </remarks>
+    protected override void OnEnter()
+    {
+        if (!Context.InGame)
+        {
+            Context.Host.PreviewMission(null); // the default showcase
+        }
+    }
 }

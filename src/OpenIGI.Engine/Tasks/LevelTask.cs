@@ -33,6 +33,22 @@ public class LevelTask : GameTask
     /// <summary>Gets the number of ticks the level has run.</summary>
     public int TickCount { get; private set; }
 
+    /// <summary>Gets or sets a value indicating whether the level's subtree and clock are frozen.</summary>
+    /// <remarks>
+    /// <para>
+    /// The pause menu's half of the pause. The original's in-game task (<c>0x416260</c>) forwards the
+    /// update to its subtree only while the field at <c>+224</c> is clear, so opening the menu leaves
+    /// everything under it — the scripts, the doors, the timers — exactly where it was; see
+    /// the original. This port has no in-game task of its own, so the gate lives
+    /// on the level root, which is what that subtree hangs from (§9).
+    /// </para>
+    /// <para>
+    /// The frame schedule is deliberately untouched: ticks keep arriving and doing nothing, which is what
+    /// stops the clock building a backlog the first frame after the menu closes would have to catch up on.
+    /// </para>
+    /// </remarks>
+    public bool IsPaused { get; set; }
+
     /// <summary>Sets the level's tick rate and restarts its clock, as the end of a level load does.</summary>
     /// <param name="tickRate">The simulation rate in hertz.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="tickRate"/> is not positive.</exception>
@@ -53,6 +69,13 @@ public class LevelTask : GameTask
     /// </remarks>
     protected override void OnUpdate()
     {
+        if (IsPaused)
+        {
+            // Nothing is forwarded and the clock is not advanced, so a paused level is a level that is
+            // not being ticked at all rather than one being ticked with nothing to do.
+            return;
+        }
+
         ForwardToChildren(TaskMessage.Update);
 
         // The original writes through the global level-root pointer rather than through `self`, so a

@@ -16,6 +16,19 @@ public interface IShellHost
     /// <param name="difficulty">The difficulty index to start at.</param>
     void StartMission(int missionId, int difficulty);
 
+    /// <summary>Closes the pause menu and lets the mission underneath run on.</summary>
+    /// <remarks>
+    /// The pause menu is the shell drawn over a level that is still loaded and simply not being ticked, so
+    /// resuming is the app dropping the menu — nothing is reloaded and nothing is placed again.
+    /// </remarks>
+    void ResumeMission();
+
+    /// <summary>Restarts the mission the pause menu is open over, from its beginning.</summary>
+    void RestartMission();
+
+    /// <summary>Abandons the mission the pause menu is open over and returns the shell to the front end.</summary>
+    void AbandonMission();
+
     /// <summary>Closes the game.</summary>
     void Quit();
 

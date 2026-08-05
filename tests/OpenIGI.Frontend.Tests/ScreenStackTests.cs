@@ -2,6 +2,8 @@ using OpenIGI.Frontend;
 using OpenIGI.Input;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
+using OpenIGI.UI.Widgets;
 using Xunit;
 
 namespace OpenIGI.Frontend.Tests;
@@ -126,5 +128,82 @@ public sealed class ScreenStackTests
         stack.Push(new ProbeScreen(), animate: false);
         Pump(stack, 0.2f);
         Assert.True(below.Updates > before, "a covered screen should keep updating");
+    }
+
+    /// <summary>A screen holding one control, so the pointer has something to rest on.</summary>
+    private sealed class TooltipScreen : Screen
+    {
+        public TooltipScreen(UiTheme theme) => Row = new Button(theme, "Shadows") { Tooltip = "Sun shadows." };
+
+        public Button Row { get; }
+
+        protected override UiElement BuildRoot(LayoutContext context)
+        {
+            var panel = new Panel();
+            panel.AddChild(Row);
+            return panel;
+        }
+    }
+
+    private static UiTheme Theme()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "Saira-Regular.ttf");
+        return new UiTheme(UiFont.ForMeasurement(FontAtlasBuilder.Build(File.ReadAllBytes(path), 48f)));
+    }
+
+    // The pointer put somewhere and left there: position without motion, which is what resting is.
+    private static void Rest(ScreenStack stack, InputState input, UiVec2 at, float seconds)
+    {
+        for (float t = 0f; t < seconds; t += 1f / 60f)
+        {
+            input.BeginFrame();
+            input.Mouse.SetPosition(at.X, at.Y);
+            stack.Update(Context(), input, 1f / 60f);
+        }
+    }
+
+    [Fact]
+    public void A_tooltip_waits_for_the_pointer_to_rest_and_goes_again_when_it_moves()
+    {
+        var stack = new ScreenStack();
+        var screen = new TooltipScreen(Theme());
+        stack.Reset(screen, animate: false);
+        Pump(stack, 0.1f); // build and lay out, so the row has bounds to be over
+
+        var input = new InputState();
+        UiVec2 over = screen.Row.Bounds.Center;
+
+        // Arriving is not resting: the pointer moves onto the row and the page says nothing yet.
+        input.BeginFrame();
+        input.Mouse.SetPosition(over.X, over.Y);
+        input.Mouse.AddMotion(6f, 6f);
+        stack.Update(Context(), input, 1f / 60f);
+        Assert.Null(screen.TooltipControl);
+
+        Rest(stack, input, over, 0.3f);
+        Assert.Null(screen.TooltipControl); // still inside the wait
+
+        Rest(stack, input, over, 0.4f);
+        Assert.Same(screen.Row, screen.TooltipControl);
+
+        // And any movement takes it away again, so it never trails the pointer across the page.
+        input.BeginFrame();
+        input.Mouse.SetPosition(over.X + 40f, over.Y);
+        input.Mouse.AddMotion(40f, 0f);
+        stack.Update(Context(), input, 1f / 60f);
+        Assert.Null(screen.TooltipControl);
+    }
+
+    [Fact]
+    public void A_control_with_nothing_to_say_never_shows_a_tooltip()
+    {
+        var stack = new ScreenStack();
+        var screen = new TooltipScreen(Theme());
+        screen.Row.Tooltip = string.Empty;
+        stack.Reset(screen, animate: false);
+        Pump(stack, 0.1f);
+
+        Rest(stack, new InputState(), screen.Row.Bounds.Center, 1.5f);
+        Assert.Null(screen.TooltipControl);
     }
 }

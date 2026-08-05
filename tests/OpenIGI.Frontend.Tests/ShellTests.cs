@@ -31,15 +31,40 @@ public sealed class ShellTests
 
         public int SaveSettingsCalls { get; private set; }
 
+        public int ResumeCalls { get; private set; }
+
+        public int RestartCalls { get; private set; }
+
+        public int AbandonCalls { get; private set; }
+
         public void StartMission(int missionId, int difficulty)
         {
             StartedMission = missionId;
             StartedDifficulty = difficulty;
         }
 
+        public void ResumeMission() => ResumeCalls++;
+
+        public void RestartMission() => RestartCalls++;
+
+        public void AbandonMission() => AbandonCalls++;
+
         public void Quit() => Quit_Called = true;
 
-        public void PreviewMission(int? missionId) => Previewed = missionId;
+        public int PreviewCalls { get; private set; }
+
+        public void PreviewMission(int? missionId)
+        {
+            Previewed = missionId;
+            PreviewCalls++;
+        }
+
+        /// <summary>Forgets every preview asked for so far, so a test can assert about the ones after it.</summary>
+        public void ForgetPreview()
+        {
+            Previewed = null;
+            PreviewCalls = 0;
+        }
 
         public void SaveSettings() => SaveSettingsCalls++;
 
@@ -65,6 +90,12 @@ public sealed class ShellTests
             new(2, 2, "Mission Two", "The second briefing.", "mission2.spr"),
         };
 
+        GameConfig config = GameConfig.CreateDefault();
+        if (config.Active is { } active)
+        {
+            active.ActiveMission = 2;
+        }
+
         var context = new ShellContext(
             theme,
             host,
@@ -73,7 +104,7 @@ public sealed class ShellTests
             missions,
             new CVarRegistry(),
             GraphicsPresetRegistry.Default,
-            GameConfig.CreateDefault(),
+            config,
             new SaveSlotStore(savesDir));
 
         return (new Shell(context), host);
@@ -257,5 +288,248 @@ public sealed class ShellTests
                 Directory.Delete(dir, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public void The_pause_menu_opens_on_its_own_page_and_asks_for_no_preview()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            host.ForgetPreview();
+
+            shell.OpenPauseMenu();
+            Pump(shell, 0.6f);
+
+            Assert.IsType<PauseScreen>(shell.Stack.Top);
+
+            // The level being played is already the backdrop, so nothing is streamed in behind the menu.
+            Assert.Equal(0, host.PreviewCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void The_campaign_reached_from_the_pause_menu_previews_nothing()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            shell.OpenPauseMenu();
+            Pump(shell, 0.6f);
+            host.ForgetPreview();
+
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            // The rail is still a rail -- the missions are listed and selectable -- but selecting one must
+            // not tear the running mission's level out from under the menu.
+            var campaign = Assert.IsType<CampaignScreen>(shell.Stack.Top);
+            campaign.Root!.Descendants().OfType<ListCard>().ElementAt(1).Activate();
+            Assert.Equal(1, campaign.SelectedMission);
+            Assert.Equal(0, host.PreviewCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Back_from_a_section_inside_a_mission_returns_to_the_pause_menu()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            shell.OpenPauseMenu();
+            Pump(shell, 0.6f);
+
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Extras")!.Activate();
+            Pump(shell, 0.6f);
+            Assert.IsType<ExtrasScreen>(shell.Stack.Top);
+
+            Back(shell);
+            Pump(shell, 0.6f);
+
+            // Not the landing page: inside a mission the page every section hangs off is the pause menu.
+            Assert.IsType<PauseScreen>(shell.Stack.Top);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Back_on_the_pause_menu_resumes_the_mission()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            shell.OpenPauseMenu();
+            Pump(shell, 0.6f);
+
+            Back(shell);
+            Assert.Equal(1, host.ResumeCalls);
+
+            // And so does the button, for a pointer that never reaches for Escape.
+            Find<Button>(shell.Stack.Top!, b => b.Text == "RESUME")!.Activate();
+            Assert.Equal(2, host.ResumeCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void The_pause_menu_can_restart_or_abandon_the_mission()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            shell.OpenPauseMenu();
+            Pump(shell, 0.6f);
+
+            Find<Button>(shell.Stack.Top!, b => b.Text == "RESTART MISSION")!.Activate();
+            Find<Button>(shell.Stack.Top!, b => b.Text == "ABANDON MISSION")!.Activate();
+
+            Assert.Equal(1, host.RestartCalls);
+            Assert.Equal(1, host.AbandonCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Leaving_the_pause_menu_puts_the_showcase_back()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            shell.OpenPauseMenu();
+            Pump(shell, 0.6f);
+
+            // What the app does once the mission is released: the shell is over the showcase again, so the
+            // sections stream a backdrop behind themselves like they always did.
+            shell.ClosePauseMenu();
+            host.ForgetPreview();
+            shell.OpenOn("campaign");
+            Pump(shell, 0.6f);
+
+            Assert.IsType<CampaignScreen>(shell.Stack.Top);
+            Assert.Equal(1, host.Previewed);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Settings_open_on_the_basic_graphics_page_with_advanced_a_tab_away()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            var screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+
+            // Advanced is not a category beside Audio and Controls; it is the other half of Graphics.
+            Assert.Equal(["Graphics", "Display", "Audio", "Controls", "Gameplay"], tabs.Tabs);
+            Assert.Equal(0, tabs.SelectedIndex);
+
+            Button basic = Find<Button>(screen, b => b.Text == "Basic")!;
+            Button advanced = Find<Button>(screen, b => b.Text == "Advanced")!;
+            Assert.True(basic.Selected);
+            Assert.False(advanced.Selected);
+
+            // The preset is on the basic half — it is the one control that answers the whole question.
+            Assert.NotNull(screen.Root!.Descendants().OfType<Dropdown>().FirstOrDefault(d => d.Label == "Preset"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Every_settings_row_carries_something_to_explain_itself_with()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            // Every bound row on every tab, not just the visible one: a tooltip that only exists on the
+            // page someone happened to test is the kind that is missing everywhere else.
+            List<Control> rows = [.. shell.Stack.Top!.Root!.Descendants().OfType<Control>()
+                .Where(c => c is Slider or Toggle or Dropdown or KeyBindingRow)];
+
+            Assert.NotEmpty(rows);
+            Assert.All(rows, row => Assert.NotEmpty(row.Tooltip));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    // Escape, the way the shell reads it -- one frame with the key down against a frame without.
+    private static void Back(Shell shell)
+    {
+        var input = new InputState();
+        input.BeginFrame();
+        input.Keyboard.SetKey(KeyCode.Escape, true);
+        shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
     }
 }

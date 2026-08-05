@@ -3,6 +3,7 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
+using OpenIGI.Engine.Tests.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -151,6 +152,52 @@ public sealed class HeadlessBootTests
         Assert.True(game.Loop.Clock.TickCount > 0);
         Assert.Equal(game.Loop.Clock.TickCount, game.LevelRoot.TickCount);
         Assert.Equal(game.LevelRoot.TickCount * 33, game.LevelRoot.ElapsedMilliseconds);
+    }
+
+    [Fact]
+    public void APausedLevelFreezesItsSubtreeAndItsClockWhileTheArbiterKeepsItsSchedule()
+    {
+        Headless game = new();
+        game.WriteLevel();
+        game.Loop.Flow.Request(FlowEvent.RestartGame);
+        game.Loop.RunFrame();
+
+        game.Loop.Types.Register<WalkerTask>("Walker");
+        var world = (WalkerTask)game.Loop.Tasks.New(game.LevelRoot, game.Loop.Types.Get("Walker"));
+        world.Visited = [];
+
+        Run(game, frames: 200);
+        int visitsBeforePause = world.Visited.Count;
+        int levelTicksBeforePause = game.LevelRoot.TickCount;
+        int levelMsBeforePause = game.LevelRoot.ElapsedMilliseconds;
+        int arbiterTicksBeforePause = game.Loop.Clock.TickCount;
+        Assert.True(visitsBeforePause > 0);
+
+        game.LevelRoot.IsPaused = true;
+        Run(game, frames: 200);
+
+        // The arbiter is deliberately left on its schedule — ticks keep arriving — but nothing under the
+        // level sees them and the level's own clock stands still. That pairing is the whole point: a menu
+        // held open for a minute is not followed by a minute of catch-up.
+        Assert.True(game.Loop.Clock.TickCount > arbiterTicksBeforePause);
+        Assert.Equal(visitsBeforePause, world.Visited.Count);
+        Assert.Equal(levelTicksBeforePause, game.LevelRoot.TickCount);
+        Assert.Equal(levelMsBeforePause, game.LevelRoot.ElapsedMilliseconds);
+
+        game.LevelRoot.IsPaused = false;
+        Run(game, frames: 200);
+
+        Assert.True(world.Visited.Count > visitsBeforePause);
+        Assert.True(game.LevelRoot.TickCount > levelTicksBeforePause);
+    }
+
+    private static void Run(Headless game, int frames)
+    {
+        for (int frame = 0; frame < frames; frame++)
+        {
+            game.Loop.RunFrame();
+            game.Time.Advance(1);
+        }
     }
 
     [Fact]

@@ -108,6 +108,16 @@ public class Button : Control
         var origin = new UiVec2(
             Bounds.X + padding.Left,
             Bounds.Y + ((Bounds.Height - textHeight) * 0.5f) + pressNudge);
+        if (Accent == ButtonAccent.Solid)
+        {
+            // No shadow on a solid button. The shadow is there to lift a light caption off whatever
+            // happens to be behind it, and this caption is dark ON the accent — so the same dark offset
+            // under it is not a lift, it is a second copy of every letterform sitting a pixel below the
+            // first, which is what the doubled strokes were. The fill is opaque and carries the contrast.
+            painter.DrawText(Face, Text, origin, sizePx, color);
+            return;
+        }
+
         painter.DrawTextShadowed(
             Face,
             Text,

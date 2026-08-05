@@ -214,6 +214,36 @@ public sealed class LayoutSolverTests
     }
 
     [Fact]
+    public void Collapsing_a_subtree_empties_every_bounds_inside_it()
+    {
+        // The shape of a tab strip: two pages in one panel, one shown at a time. The page that is put away
+        // must take its whole subtree with it, because a row's OWN visibility is still Visible -- only its
+        // ancestor is collapsed -- so anything reading Bounds still finds it. Focus by point is exactly
+        // that: leaving the stale rectangles behind let a hidden tab answer a click meant for the visible
+        // one, and dragging a slider on one page moved whatever sat at the same place on the other.
+        var pages = new Panel();
+        var shown = new Panel();
+        var hiddenPage = new Panel();
+        var rowOnShownPage = new TestBox { ContentSize = new UiVec2(200f, 40f) };
+        var rowOnHiddenPage = new TestBox { ContentSize = new UiVec2(200f, 40f) };
+        shown.AddChild(rowOnShownPage);
+        hiddenPage.AddChild(rowOnHiddenPage);
+        pages.AddChild(shown);
+        pages.AddChild(hiddenPage);
+
+        LayoutContext context = Reference();
+        Layout(pages, context);
+        Assert.False(rowOnHiddenPage.Bounds.IsEmpty); // both pages were up for this pass
+
+        hiddenPage.Visibility = Visibility.Collapsed;
+        Layout(pages, context);
+
+        Assert.False(rowOnShownPage.Bounds.IsEmpty);
+        Assert.True(hiddenPage.Bounds.IsEmpty);
+        Assert.True(rowOnHiddenPage.Bounds.IsEmpty);
+    }
+
+    [Fact]
     public void A_grid_arranged_narrower_than_it_was_measured_resizes_its_star_tracks()
     {
         // The shape that caught this: an outer grid measures every child against the whole viewport and

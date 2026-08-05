@@ -129,7 +129,7 @@ public abstract class ShellScreen : Screen
 
         if (nav.Back && Tab != ShellTab.Home)
         {
-            Context.Stack.Reset(new MainMenuScreen(Context));
+            Context.Stack.Reset(CreateScreen(ShellTab.Home, Context));
             return false;
         }
 
@@ -259,12 +259,14 @@ public abstract class ShellScreen : Screen
         Context.Stack.Reset(CreateScreen(tab, Context));
     }
 
+    // Home is the landing page out of game and the pause menu in it: the tabs, the title and Back all lead
+    // to "the page this section hangs off", and inside a mission that page is the one holding Resume.
     private static Screen CreateScreen(ShellTab tab, ShellContext context) => tab switch
     {
         ShellTab.Campaign => new CampaignScreen(context),
         ShellTab.Settings => new SettingsScreen(context),
         ShellTab.Profile => new ProfilesScreen(context),
         ShellTab.Extras => new ExtrasScreen(context),
-        _ => new MainMenuScreen(context),
+        _ => context.InGame ? new PauseScreen(context) : new MainMenuScreen(context),
     };
 }

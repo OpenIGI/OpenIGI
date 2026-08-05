@@ -60,6 +60,27 @@ public sealed class Shell
         return true;
     }
 
+    /// <summary>Opens the shell over a live mission, as the pause menu.</summary>
+    /// <remarks>
+    /// The whole stack is replaced rather than pushed onto, because the pause menu is a front end in its
+    /// own right — the player left the shell when the mission started, and whatever page they were on then
+    /// is not somewhere Back should walk them to now. It carries the same top bar as every other page, so
+    /// the settings and the profile are reachable from inside a mission without a second set of screens.
+    /// </remarks>
+    public void OpenPauseMenu()
+    {
+        _context.InGame = true;
+        Stack.Reset(new PauseScreen(_context));
+    }
+
+    /// <summary>Tells the shell it is no longer over a live mission.</summary>
+    /// <remarks>
+    /// Called when the pause menu is left by any door — resuming, restarting, abandoning, or starting
+    /// another mission — so the next page the shell builds previews levels again instead of leaving the
+    /// backdrop alone.
+    /// </remarks>
+    public void ClosePauseMenu() => _context.InGame = false;
+
     /// <summary>Advances the shell for a frame.</summary>
     /// <param name="context">The layout context for this frame.</param>
     /// <param name="input">The frame's input.</param>

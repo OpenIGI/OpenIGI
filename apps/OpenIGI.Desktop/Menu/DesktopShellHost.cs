@@ -14,12 +14,18 @@ namespace OpenIGI.Desktop;
 /// <c>StartGame</c>/quit hooks, made into a full <see cref="IShellHost"/>.
 /// </remarks>
 /// <param name="startMission">Starts a mission at a difficulty and leaves the shell.</param>
+/// <param name="resumeMission">Closes the pause shell over the current mission.</param>
+/// <param name="restartMission">Reloads the current mission from its authored start.</param>
+/// <param name="abandonMission">Releases the current mission and returns to the campaign shell.</param>
 /// <param name="quit">Closes the game.</param>
 /// <param name="previewMission">Shows a mission's level behind the menu, or the default showcase when null.</param>
 /// <param name="saveSettings">Persists the current settings.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 public sealed class DesktopShellHost(
     Action<int, int> startMission,
+    Action resumeMission,
+    Action restartMission,
+    Action abandonMission,
     Action quit,
     Action<int?> previewMission,
     Action saveSettings,
@@ -27,6 +33,15 @@ public sealed class DesktopShellHost(
 {
     /// <inheritdoc/>
     public void StartMission(int missionId, int difficulty) => startMission(missionId, difficulty);
+
+    /// <inheritdoc/>
+    public void ResumeMission() => resumeMission();
+
+    /// <inheritdoc/>
+    public void RestartMission() => restartMission();
+
+    /// <inheritdoc/>
+    public void AbandonMission() => abandonMission();
 
     /// <inheritdoc/>
     public void Quit() => quit();

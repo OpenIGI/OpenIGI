@@ -2,6 +2,8 @@ using System.Globalization;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
 using OpenIGI.UI.Widgets;
+using OpenIGI.Game.Ai;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Frontend.Screens;
 
@@ -33,7 +35,7 @@ namespace OpenIGI.Frontend.Screens;
 /// </remarks>
 public sealed class CampaignScreen : ShellScreen
 {
-    private static readonly string[] Difficulties = ["Easy", "Normal", "Hard"];
+    private static readonly string[] Difficulties = AiDifficultyNames.All;
 
     private readonly List<ListCard> _cards = [];
 
@@ -41,6 +43,7 @@ public sealed class CampaignScreen : ShellScreen
     private Label? _missionName;
     private Label? _status;
     private Label? _briefing;
+    private Button? _play;
     private int _selected;
 
     /// <summary>Initializes a new instance of the <see cref="CampaignScreen"/> class.</summary>
@@ -93,10 +96,7 @@ public sealed class CampaignScreen : ShellScreen
     protected override void OnBuilt()
     {
         // Preview the current selection once the rail exists; OnEnter runs before the tree is built.
-        if (Context.Missions.Count > 0)
-        {
-            Context.Host.PreviewMission(Context.Missions[_selected].Id);
-        }
+        Preview();
     }
 
     /// <inheritdoc/>
@@ -241,7 +241,7 @@ public sealed class CampaignScreen : ShellScreen
         };
         actions.Add(difficulty);
 
-        var play = new Button(theme, "PLAY")
+        _play = new Button(theme, "PLAY")
         {
             TextSize = theme.BodyTextSize * 1.2f,
             Padding = new Thickness(56f, 14f),
@@ -249,12 +249,12 @@ public sealed class CampaignScreen : ShellScreen
             Accent = ButtonAccent.Solid,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        play.Activated += _ =>
+        _play.Activated += _ =>
         {
             MissionInfo mission = Context.Missions[_selected];
             Context.Host.StartMission(mission.Id, difficulty.SelectedIndex);
         };
-        actions.Add(play);
+        actions.Add(_play);
 
         column.Add(actions, 6, 0);
         return column;
@@ -274,7 +274,20 @@ public sealed class CampaignScreen : ShellScreen
         }
 
         Refresh();
-        Context.Host.PreviewMission(Context.Missions[index].Id);
+        Preview();
+    }
+
+    // Reached from the pause menu the campaign is a mission list and nothing else: the level behind it is
+    // the one being played, and streaming the hovered mission over it would tear down the running mission's
+    // scene. The briefing still follows the selection, which is the part that was worth having here.
+    private void Preview()
+    {
+        if (Context.InGame || Context.Missions.Count == 0)
+        {
+            return;
+        }
+
+        Context.Host.PreviewMission(Context.Missions[_selected].Id);
     }
 
     private void Refresh()
@@ -285,7 +298,19 @@ public sealed class CampaignScreen : ShellScreen
         }
 
         MissionInfo mission = Context.Missions[_selected];
-        int furthest = Context.Config.Active?.ActiveMission ?? 0;
+        int activeMission = Context.Config.Active?.ActiveMission ?? MissionRegistry.FirstMissionId;
+        int frontier = -1;
+        for (int i = 0; i < Context.Missions.Count; i++)
+        {
+            if (Context.Missions[i].Id == activeMission)
+            {
+                frontier = i;
+            }
+        }
+        if (frontier < 0)
+        {
+            frontier = 0;
+        }
 
         if (_missionNumber is not null)
         {
@@ -301,7 +326,7 @@ public sealed class CampaignScreen : ShellScreen
 
         if (_status is not null)
         {
-            _status.Text = StatusOf(mission, furthest);
+            _status.Text = StatusOf(_selected, frontier);
         }
 
         if (_briefing is not null)
@@ -311,18 +336,21 @@ public sealed class CampaignScreen : ShellScreen
 
         for (int i = 0; i < _cards.Count && i < Context.Missions.Count; i++)
         {
-            MissionInfo entry = Context.Missions[i];
-            _cards[i].Tag = StatusOf(entry, furthest);
-            _cards[i].TagColor = entry.Id <= furthest ? Context.Theme.Accent
-                : entry.Number == 1 || entry.Id <= furthest + 1 ? Context.Theme.TextMuted
-                : Context.Theme.TextDisabled;
+            _cards[i].Tag = StatusOf(i, frontier);
+            _cards[i].TagColor = i < frontier ? Context.Theme.Accent
+                : i == frontier ? Context.Theme.TextMuted : Context.Theme.TextDisabled;
+            _cards[i].IsEnabled = i <= frontier;
+        }
+
+        if (_play is not null)
+        {
+            _play.IsEnabled = _selected <= frontier;
         }
     }
 
-    private static string StatusOf(MissionInfo mission, int furthest) =>
-        mission.Id <= furthest ? "COMPLETED"
-            : mission.Number == 1 || mission.Id <= furthest + 1 ? "AVAILABLE"
-            : "LOCKED";
+    private static string StatusOf(int missionIndex, int frontierIndex) =>
+        missionIndex < frontierIndex ? "COMPLETED"
+            : missionIndex == frontierIndex ? "AVAILABLE" : "LOCKED";
 
     private int DefaultDifficultyIndex() => Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, Difficulties.Length - 1);
 }

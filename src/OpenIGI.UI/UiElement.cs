@@ -38,6 +38,7 @@ public enum Visibility
 public abstract class UiElement
 {
     private readonly List<UiElement> _children = [];
+    private Visibility _visibility = Visibility.Visible;
 
     /// <summary>Gets or sets a name used to find this element; need not be unique.</summary>
     public string? Id { get; set; }
@@ -70,7 +71,24 @@ public abstract class UiElement
     public VerticalAlignment VerticalAlignment { get; set; } = VerticalAlignment.Stretch;
 
     /// <summary>Gets or sets how the element takes part in layout and drawing.</summary>
-    public Visibility Visibility { get; set; } = Visibility.Visible;
+    /// <remarks>
+    /// Collapsing empties the subtree's bounds there and then, rather than at the next layout pass — see
+    /// <see cref="ClearBounds"/> for why it cannot wait. It cannot wait for the containers either: a
+    /// container skips a collapsed child instead of arranging it, so nothing downstream would ever visit
+    /// the subtree to clear it.
+    /// </remarks>
+    public Visibility Visibility
+    {
+        get => _visibility;
+        set
+        {
+            _visibility = value;
+            if (value == Visibility.Collapsed)
+            {
+                ClearBounds();
+            }
+        }
+    }
 
     /// <summary>Gets or sets a value indicating whether the element and its subtree can be hit by a pointer.</summary>
     public bool IsHitTestVisible { get; set; } = true;
@@ -272,7 +290,7 @@ public abstract class UiElement
     {
         if (Visibility == Visibility.Collapsed)
         {
-            Bounds = UiRect.Empty;
+            ClearBounds();
             return;
         }
 
@@ -313,6 +331,30 @@ public abstract class UiElement
 
         Bounds = new UiRect(x, y, width, height);
         ArrangeContent(context, Bounds);
+    }
+
+    /// <summary>Empties this element's bounds and every descendant's.</summary>
+    /// <remarks>
+    /// <para>
+    /// Collapsed means "as if it were not in the tree", and that has to hold for the whole subtree rather
+    /// than for the element the flag is on. Clearing only its own bounds and returning left every control
+    /// under it standing exactly where it was when the subtree was last laid out — invisible, undrawn, and
+    /// still occupying its old rectangle.
+    /// </para>
+    /// <para>
+    /// Which is not a cosmetic problem, because a control's <em>own</em> visibility is still Visible: it is
+    /// only an ancestor that is collapsed. So it still answers <c>CanFocus</c>, and focus-by-point still
+    /// finds it at those stale bounds. That is a hidden page taking clicks meant for the visible one —
+    /// dragging a slider on one tab moved the row that happened to sit at the same place on another.
+    /// </para>
+    /// </remarks>
+    private void ClearBounds()
+    {
+        Bounds = UiRect.Empty;
+        foreach (UiElement child in _children)
+        {
+            child.ClearBounds();
+        }
     }
 
     /// <summary>Draws the element and then its children.</summary>

@@ -88,7 +88,7 @@ public static class CVarBinding
 
     private static Toggle BindBool(UiTheme theme, string caption, ICVar cvar)
     {
-        var gate = new Gate();
+        var gate = new BindingGate();
         var toggle = new Toggle(theme, caption, cvar.ValueText == "1");
         toggle.ValueChanged += value =>
         {
@@ -107,7 +107,7 @@ public static class CVarBinding
         // uses, so it is the reliable option list to bind through the ICVar seam.
         string[] options = cvar.RangeText.Split(" | ", StringSplitOptions.RemoveEmptyEntries);
         int current = Math.Max(0, Array.IndexOf(options, cvar.ValueText));
-        var gate = new Gate();
+        var gate = new BindingGate();
         var dropdown = new Dropdown(theme, caption, options, current);
         dropdown.SelectionChanged += index =>
         {
@@ -133,7 +133,7 @@ public static class CVarBinding
             || cvar.ValueType == typeof(short) || cvar.ValueType == typeof(byte);
         float step = isInteger ? 1f : MathF.Max(0.01f, (max - min) / 20f);
         float value = ParseFloat(cvar.ValueText, min);
-        var gate = new Gate();
+        var gate = new BindingGate();
         var slider = new Slider(theme, caption, min, max, value, step)
         {
             Format = v => isInteger
@@ -175,28 +175,4 @@ public static class CVarBinding
 
     private static float ParseFloat(string text, float fallback) =>
         float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float value) ? value : fallback;
-
-    /// <summary>A re-entrancy guard so a value pushed one way does not echo back the other.</summary>
-    private sealed class Gate
-    {
-        public bool Busy { get; private set; }
-
-        public void Run(Action action)
-        {
-            if (Busy)
-            {
-                return;
-            }
-
-            Busy = true;
-            try
-            {
-                action();
-            }
-            finally
-            {
-                Busy = false;
-            }
-        }
-    }
 }

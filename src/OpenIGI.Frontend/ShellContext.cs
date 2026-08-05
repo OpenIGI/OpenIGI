@@ -63,6 +63,15 @@ public sealed class ShellContext
         Saves = saves;
     }
 
+    /// <summary>Gets or sets a value indicating whether the shell is open over a live mission.</summary>
+    /// <remarks>
+    /// Set while the shell is being used as the pause menu, and the one thing that tells the screens the
+    /// backdrop behind them is already the right picture: the level the player is standing in. They ask
+    /// for no preview while it is set — <see cref="IShellHost.PreviewMission"/> would stream a second
+    /// level over the one being played — and Back leads to the pause menu rather than to the landing page.
+    /// </remarks>
+    public bool InGame { get; set; }
+
     /// <summary>Gets the theme screens draw from.</summary>
     public UiTheme Theme { get; }
 

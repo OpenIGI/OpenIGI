@@ -204,14 +204,13 @@ public class TabStrip : Control
             Theme.Border.WithAlpha(70),
             BlendMode.AlphaBlend);
 
+        // The pointer answers in the CAPTION, not in a block behind it: a filled rectangle under a tab is
+        // as loud as the selection itself and turns a quiet row of words into a row of buttons. Lifting the
+        // hovered caption out of the muted colour says the same thing and says it in the tab's own terms —
+        // muted for the rest, bright for the one under the pointer, accent for the one you are on.
         for (int i = 0; i < _tabs.Count; i++)
         {
             bool isSelected = i == _selected;
-            if (_hovered == i && !isSelected)
-            {
-                painter.FillRect(_tabRects[i], Theme.FocusFill.WithAlpha((byte)(Theme.FocusFill.A * 0.6f)), BlendMode.AlphaBlend);
-            }
-
             Bgra32 color = isSelected
                 ? Interpolate.Lerp(Theme.Text, Theme.Accent, MathF.Max(0.4f, focus))
                 : _hovered == i ? Theme.Text

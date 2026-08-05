@@ -55,9 +55,22 @@ public abstract class Screen
     /// </remarks>
     public const float MaxEntranceDelay = 0.30f;
 
+    /// <summary>How long the pointer has to rest on a control before its tooltip appears, in seconds.</summary>
+    /// <remarks>
+    /// Long enough that running the pointer down a list of settings shows nothing, short enough that
+    /// stopping on one feels answered rather than waited on.
+    /// </remarks>
+    private const float TooltipDwellSeconds = 0.5f;
+
+    /// <summary>How long the tooltip takes to fade up once the wait is over, in seconds.</summary>
+    private const float TooltipFadeSeconds = 0.12f;
+
     private readonly Tween _transition = new(0f, duration: 0.35f, Ease.OutQuint);
     private UiVec2 _builtViewport = new(-1f, -1f);
     private Control? _hovered;
+    private Control? _tooltipTarget;
+    private UiVec2 _tooltipAnchor;
+    private float _tooltipDwell;
 
     /// <summary>Gets the root of the screen's widget tree, valid after the first <see cref="Prepare"/>.</summary>
     public UiElement? Root { get; private set; }
@@ -76,6 +89,14 @@ public abstract class Screen
 
     /// <summary>Gets or sets a title for diagnostics and tests.</summary>
     public string Name { get; init; } = string.Empty;
+
+    /// <summary>Gets the control whose tooltip is currently showing, or <see langword="null"/> for none.</summary>
+    /// <remarks>
+    /// Non-null only once the pointer has rested on a control carrying a tooltip for the dwell. Reading it
+    /// is how anything other than the draw can tell whether the page is currently explaining itself.
+    /// </remarks>
+    public Control? TooltipControl =>
+        _tooltipDwell >= TooltipDwellSeconds && _tooltipTarget is { Tooltip.Length: > 0 } target ? target : null;
 
     /// <summary>Builds the widget tree, then lays it out for the current viewport.</summary>
     /// <param name="context">The layout context for this frame.</param>
@@ -196,8 +217,35 @@ public abstract class Screen
             popRequested = HandleInput(nav, input);
         }
 
+        UpdateTooltip(elapsedSeconds, input);
         OnUpdate(elapsedSeconds);
         return popRequested;
+    }
+
+    /// <summary>Times how long the pointer has rested where it is, which is what a tooltip waits on.</summary>
+    /// <remarks>
+    /// Any movement at all restarts the wait, and moves the anchor with it: a tooltip is the answer to
+    /// stopping on something, not to passing over it, and it has to appear where the pointer came to rest
+    /// rather than where it entered the control. A covered or exiting screen stops counting, so the page
+    /// underneath a transition never explains itself.
+    /// </remarks>
+    private void UpdateTooltip(float elapsedSeconds, InputState input)
+    {
+        MouseState mouse = input.Mouse;
+        bool moved = mouse.DeltaX != 0f || mouse.DeltaY != 0f;
+
+        if (moved || !ReferenceEquals(_hovered, _tooltipTarget) || Phase != ScreenPhase.Active)
+        {
+            _tooltipTarget = Phase == ScreenPhase.Active ? _hovered : null;
+            _tooltipAnchor = new UiVec2(mouse.X, mouse.Y);
+            _tooltipDwell = 0f;
+            return;
+        }
+
+        if (_tooltipTarget is { Tooltip.Length: > 0 })
+        {
+            _tooltipDwell += elapsedSeconds;
+        }
     }
 
     /// <summary>Draws the screen through a painter.</summary>
@@ -230,6 +278,67 @@ public abstract class Screen
             chrome.Visibility = restore;
             chrome.Draw(painter);
         }
+
+        // Last, and outside the screen's fade: a tooltip is an overlay on the whole page. Drawn from
+        // inside the widget tree it would be clipped by whatever viewport its owner scrolls in, and would
+        // be painted over by every sibling that came after it.
+        DrawTooltip(painter);
+    }
+
+    /// <summary>Draws the resting control's tooltip near the pointer, once the wait is over.</summary>
+    private void DrawTooltip(UiPainter painter)
+    {
+        if (_tooltipDwell < TooltipDwellSeconds || _tooltipTarget is not { Tooltip.Length: > 0 } target)
+        {
+            return;
+        }
+
+        LayoutContext context = painter.Context;
+        UiTheme theme = target.Theme;
+        float sizePx = context.Px(theme.BodyTextSize * 0.9f);
+        float pad = context.Px(12f);
+
+        // Wrapped to a readable measure rather than to the pointer's room, so the box is the same shape
+        // wherever on the page it opens.
+        string text = theme.Body.WrapText(target.Tooltip, sizePx, context.Px(360f));
+        UiVec2 size = theme.Body.Measure(text, sizePx);
+        float width = size.X + (pad * 2f);
+        float height = size.Y + (pad * 2f);
+
+        // Clear of the ROW, not of the pointer. Offsetting from the pointer put the box inside the control
+        // whenever the pointer was in its upper half — a settings row is taller than any offset worth
+        // using — so the thing it was explaining was covered by the explanation, highlight and value and
+        // all. Vertically it clears the control's own box; horizontally it follows the pointer, which is
+        // what keeps it near what the eye is already on.
+        float gapX = context.Px(18f);
+        float gapY = context.Px(8f);
+        UiRect row = target.Bounds;
+        UiVec2 viewport = context.Viewport;
+
+        float x = _tooltipAnchor.X + gapX;
+        if (x + width > viewport.X)
+        {
+            x = MathF.Max(0f, _tooltipAnchor.X - gapX - width);
+        }
+
+        // Under the row, or over it when the page has run out of room below — never across it.
+        float y = row.Bottom + gapY;
+        if (y + height > viewport.Y)
+        {
+            y = MathF.Max(0f, row.Y - gapY - height);
+        }
+
+        var box = new UiRect(x, y, width, height);
+        float appear = Math.Clamp((_tooltipDwell - TooltipDwellSeconds) / TooltipFadeSeconds, 0f, 1f);
+
+        painter.PushOpacity(appear);
+
+        // Near-opaque, unlike the page's panels: this one is read at a glance over whatever it lands on,
+        // so it cannot afford to let the picture behind it through.
+        painter.FillRect(box, theme.Panel.WithAlpha(246));
+        painter.StrokeRect(box, context.Px(1f), theme.Accent.WithAlpha(110));
+        painter.DrawText(theme.Body, text, new UiVec2(x + pad, y + pad), sizePx, theme.Text);
+        painter.PopOpacity();
     }
 
     /// <summary>Gets the part of the tree that is shell chrome rather than page content.</summary>

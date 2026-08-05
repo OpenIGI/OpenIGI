@@ -287,6 +287,36 @@ public sealed class FocusTests
     }
 
     [Fact]
+    public void A_row_on_a_collapsed_page_does_not_answer_a_click_meant_for_the_visible_one()
+    {
+        // Two pages in one panel, one shown at a time — a tab strip, or the settings screen's basic and
+        // advanced halves. The rows line up one over the other, which is what made this visible: changing
+        // a row on the shown page also moved whatever the hidden page had at the same coordinates.
+        UiTheme theme = Theme();
+        var pages = new Panel();
+        var shown = new Panel();
+        var hidden = new Panel();
+        var visibleRow = new Button(theme, "Grain");
+        var hiddenRow = new Button(theme, "Debug View");
+        shown.AddChild(visibleRow);
+        hidden.AddChild(hiddenRow);
+        pages.AddChild(shown);
+        pages.AddChild(hidden);
+        Layout(pages);
+
+        // Both pages have been laid out at least once, which is the state that mattered: a page never
+        // shown has no bounds to go stale.
+        Assert.Equal(visibleRow.Bounds, hiddenRow.Bounds);
+
+        hidden.Visibility = Visibility.Collapsed;
+        Layout(pages);
+
+        var focus = new FocusManager(pages);
+        Assert.Same(visibleRow, focus.FocusAt(visibleRow.Bounds.Center));
+        Assert.False(hiddenRow.CanFocus);
+    }
+
+    [Fact]
     public void A_viewport_scrolls_a_newly_focused_row_back_into_view()
     {
         UiTheme theme = Theme();
