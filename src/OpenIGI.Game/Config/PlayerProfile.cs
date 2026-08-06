@@ -1,4 +1,5 @@
 using System.Globalization;
+using OpenIGI.Input;
 
 namespace OpenIGI.Game.Config;
 
@@ -23,6 +24,43 @@ public sealed class PlayerProfile
     /// <summary>The number of key bindings a profile carries.</summary>
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
     public const int BindingCount = 27;
+
+    /// <summary>The retail bindings a fresh profile starts with.</summary>
+    /// <remarks>
+    /// These are the 27 <c>GOInRemap</c> calls in the retail default profile. They must live in the
+    /// model rather than the Controls screen: a profile created before that page is opened still has to
+    /// serialize to a complete configuration and provide usable input to the game.
+    /// </remarks>
+    public static IReadOnlyList<InputBinding> DefaultBindings { get; } =
+    [
+        new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"),
+        new("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT"),
+        new("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_UP"),
+        new("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_DOWN"),
+        new("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"),
+        new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RETURN"),
+        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_SHIFT"),
+        new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_CTRL"),
+        new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD0"),
+        new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_2"),
+        new("PrevWeapon", "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
+        new("AlternateFire", "INPUTPORT_DEVICE_KEYBOARD", "KEY_BACKSPACE"),
+        new("Peek", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD1"),
+        new("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
+        new("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"),
+        new("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"),
+        new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEUP"),
+        new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEDOWN"),
+        new("WeaponCategory1", "INPUTPORT_DEVICE_KEYBOARD", "KEY_1"),
+        new("WeaponCategory2", "INPUTPORT_DEVICE_KEYBOARD", "KEY_2"),
+        new("WeaponCategory3", "INPUTPORT_DEVICE_KEYBOARD", "KEY_3"),
+        new("WeaponCategory4", "INPUTPORT_DEVICE_KEYBOARD", "KEY_4"),
+        new("WeaponCategory5", "INPUTPORT_DEVICE_KEYBOARD", "KEY_5"),
+        new("WeaponCategory6", "INPUTPORT_DEVICE_KEYBOARD", "KEY_6"),
+        new("WeaponCategory7", "INPUTPORT_DEVICE_KEYBOARD", "KEY_7"),
+        new("WeaponCategory8", "INPUTPORT_DEVICE_KEYBOARD", "KEY_8"),
+        new("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"),
+    ];
 
     /// <summary>The longest name the original stores, including the terminator.</summary>
     /// <remarks>The name field at <c>+1344</c> is 32 bytes and is filled by a bounded string read.</remarks>
@@ -121,6 +159,28 @@ public sealed class PlayerProfile
     /// </remarks>
     public List<InputBinding> Bindings { get; } = [];
 
+    /// <summary>Creates a profile with the retail input defaults.</summary>
+    public static PlayerProfile CreateDefault()
+    {
+        PlayerProfile profile = new();
+        profile.Bindings.AddRange(DefaultBindings);
+        return profile;
+    }
+
+    /// <summary>Restores the retail bindings when an older OpenIGI profile has none.</summary>
+    /// <remarks>
+    /// Early shell builds serialized a newly created profile before it had any bindings, which made the
+    /// Controls page look empty on every subsequent run. An empty list cannot represent a usable retail
+    /// profile, so it is safe to repair; a non-empty list is always left exactly as the player saved it.
+    /// </remarks>
+    public void RestoreDefaultBindingsWhenEmpty()
+    {
+        if (Bindings.Count == 0)
+        {
+            Bindings.AddRange(DefaultBindings);
+        }
+    }
+
     /// <summary>Makes an independent copy.</summary>
     /// <returns>The copy.</returns>
     /// <remarks>
@@ -171,3 +231,157 @@ public sealed class PlayerProfile
 /// saved binding survive a change to the engine's key numbering.
 /// </remarks>
 public readonly record struct InputBinding(string Action, string Device, string Key);
+
+/// <summary>Converts the retail config's input-constant names to the port's input names and back.</summary>
+/// <remarks>
+/// The original config stores symbols such as <c>KEY_RIGHT_CTRL</c> and <c>MOUSE_BUTTON_1</c>, while
+/// the input layer deliberately uses descriptive enum names such as <see cref="KeyCode.RightControl"/>.
+/// Translating at the config boundary keeps the file byte-compatible without leaking its spelling into UI.
+/// </remarks>
+public static class InputBindingKeyNames
+{
+    /// <summary>The original symbol for the keyboard input device.</summary>
+    public const string KeyboardDevice = "INPUTPORT_DEVICE_KEYBOARD";
+
+    /// <summary>The original symbol for the mouse input device.</summary>
+    public const string MouseDevice = "INPUTPORT_DEVICE_MOUSE";
+
+    /// <summary>Tries to turn a stored key name into a keyboard scan-code enum.</summary>
+    public static bool TryParseKeyboardKey(string? storedName, out KeyCode key)
+    {
+        key = KeyCode.None;
+        if (string.IsNullOrWhiteSpace(storedName))
+        {
+            return false;
+        }
+
+        // Compatibility with the early shell, which wrote KeyCode.ToString() directly.
+        if (Enum.TryParse(storedName, ignoreCase: true, out key))
+        {
+            return true;
+        }
+
+        key = storedName.ToUpperInvariant() switch
+        {
+            "KEY_LEFT" => KeyCode.Left,
+            "KEY_RIGHT" => KeyCode.Right,
+            "KEY_UP" => KeyCode.Up,
+            "KEY_DOWN" => KeyCode.Down,
+            "KEY_RETURN" => KeyCode.Return,
+            "KEY_BACKSPACE" => KeyCode.Backspace,
+            "KEY_SPACE" => KeyCode.Space,
+            "KEY_PAGEUP" => KeyCode.PageUp,
+            "KEY_PAGEDOWN" => KeyCode.PageDown,
+            "KEY_LEFT_SHIFT" => KeyCode.LeftShift,
+            "KEY_RIGHT_SHIFT" => KeyCode.RightShift,
+            "KEY_LEFT_CTRL" => KeyCode.LeftControl,
+            "KEY_RIGHT_CTRL" => KeyCode.RightControl,
+            "KEY_LEFT_ALT" => KeyCode.LeftAlt,
+            "KEY_RIGHT_ALT" => KeyCode.RightAlt,
+            "KEY_NUMPAD0" => KeyCode.Numpad0,
+            "KEY_NUMPAD1" => KeyCode.Numpad1,
+            "KEY_NUMPAD2" => KeyCode.Numpad2,
+            "KEY_NUMPAD3" => KeyCode.Numpad3,
+            "KEY_NUMPAD4" => KeyCode.Numpad4,
+            "KEY_NUMPAD5" => KeyCode.Numpad5,
+            "KEY_NUMPAD6" => KeyCode.Numpad6,
+            "KEY_NUMPAD7" => KeyCode.Numpad7,
+            "KEY_NUMPAD8" => KeyCode.Numpad8,
+            "KEY_NUMPAD9" => KeyCode.Numpad9,
+            "KEY_0" => KeyCode.D0,
+            "KEY_1" => KeyCode.D1,
+            "KEY_2" => KeyCode.D2,
+            "KEY_3" => KeyCode.D3,
+            "KEY_4" => KeyCode.D4,
+            "KEY_5" => KeyCode.D5,
+            "KEY_6" => KeyCode.D6,
+            "KEY_7" => KeyCode.D7,
+            "KEY_8" => KeyCode.D8,
+            "KEY_9" => KeyCode.D9,
+            _ => KeyFromSimpleRetailName(storedName),
+        };
+        return key != KeyCode.None;
+    }
+
+    /// <summary>Returns the original config symbol for a keyboard key.</summary>
+    public static string ToRetailKeyboardKey(KeyCode key) => key switch
+    {
+        KeyCode.Left => "KEY_LEFT",
+        KeyCode.Right => "KEY_RIGHT",
+        KeyCode.Up => "KEY_UP",
+        KeyCode.Down => "KEY_DOWN",
+        KeyCode.Return => "KEY_RETURN",
+        KeyCode.Backspace => "KEY_BACKSPACE",
+        KeyCode.Space => "KEY_SPACE",
+        KeyCode.PageUp => "KEY_PAGEUP",
+        KeyCode.PageDown => "KEY_PAGEDOWN",
+        KeyCode.LeftShift => "KEY_LEFT_SHIFT",
+        KeyCode.RightShift => "KEY_RIGHT_SHIFT",
+        KeyCode.LeftControl => "KEY_LEFT_CTRL",
+        KeyCode.RightControl => "KEY_RIGHT_CTRL",
+        KeyCode.LeftAlt => "KEY_LEFT_ALT",
+        KeyCode.RightAlt => "KEY_RIGHT_ALT",
+        KeyCode.Numpad0 => "KEY_NUMPAD0",
+        KeyCode.Numpad1 => "KEY_NUMPAD1",
+        KeyCode.Numpad2 => "KEY_NUMPAD2",
+        KeyCode.Numpad3 => "KEY_NUMPAD3",
+        KeyCode.Numpad4 => "KEY_NUMPAD4",
+        KeyCode.Numpad5 => "KEY_NUMPAD5",
+        KeyCode.Numpad6 => "KEY_NUMPAD6",
+        KeyCode.Numpad7 => "KEY_NUMPAD7",
+        KeyCode.Numpad8 => "KEY_NUMPAD8",
+        KeyCode.Numpad9 => "KEY_NUMPAD9",
+        KeyCode.D0 => "KEY_0",
+        KeyCode.D1 => "KEY_1",
+        KeyCode.D2 => "KEY_2",
+        KeyCode.D3 => "KEY_3",
+        KeyCode.D4 => "KEY_4",
+        KeyCode.D5 => "KEY_5",
+        KeyCode.D6 => "KEY_6",
+        KeyCode.D7 => "KEY_7",
+        KeyCode.D8 => "KEY_8",
+        KeyCode.D9 => "KEY_9",
+        _ => $"KEY_{ToScreamingSnake(key.ToString())}",
+    };
+
+    /// <summary>Returns a player-facing label for a stored binding without losing unrecognised values.</summary>
+    public static string DisplayName(InputBinding binding)
+    {
+        if (string.Equals(binding.Device, MouseDevice, StringComparison.OrdinalIgnoreCase)
+            && binding.Key.StartsWith("MOUSE_BUTTON_", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Mouse Button {binding.Key["MOUSE_BUTTON_".Length..]}";
+        }
+
+        return TryParseKeyboardKey(binding.Key, out KeyCode key) ? key.ToString() : binding.Key;
+    }
+
+    private static KeyCode KeyFromSimpleRetailName(string storedName)
+    {
+        const string prefix = "KEY_";
+        if (!storedName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return KeyCode.None;
+        }
+
+        string compact = storedName[prefix.Length..].Replace("_", string.Empty, StringComparison.Ordinal);
+        return Enum.TryParse(compact, ignoreCase: true, out KeyCode parsed) ? parsed : KeyCode.None;
+    }
+
+    private static string ToScreamingSnake(string value)
+    {
+        var builder = new System.Text.StringBuilder(value.Length + 4);
+        for (int i = 0; i < value.Length; i++)
+        {
+            char current = value[i];
+            if (i > 0 && char.IsUpper(current) && !char.IsDigit(value[i - 1]))
+            {
+                builder.Append('_');
+            }
+
+            builder.Append(char.ToUpperInvariant(current));
+        }
+
+        return builder.ToString();
+    }
+}

@@ -43,6 +43,9 @@ public interface IShellHost
     /// <summary>Persists the current settings (the CVar archive), e.g. on leaving the settings screen.</summary>
     void SaveSettings();
 
+    /// <summary>Persists player profiles and their profile-bound progress immediately.</summary>
+    void SaveProfiles();
+
     /// <summary>Captures the current frame for a save-slot thumbnail.</summary>
     /// <param name="width">Receives the capture width.</param>
     /// <param name="height">Receives the capture height.</param>

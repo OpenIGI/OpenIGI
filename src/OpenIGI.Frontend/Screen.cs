@@ -370,6 +370,21 @@ public abstract class Screen
             return nav.Back;
         }
 
+        // Text is decoded by the platform, not inferred from scan codes.  Only the focused field drains
+        // the queue, so opening a profile form cannot leak its name into another screen or the console.
+        if (focus.Focused is TextBox textBox)
+        {
+            while (input.Keyboard.TryDequeueCharacter(out char typed))
+            {
+                textBox.Append(typed);
+            }
+
+            if (input.Keyboard.WasPressed(KeyCode.Backspace))
+            {
+                textBox.Backspace();
+            }
+        }
+
         MouseState mouse = input.Mouse;
         var pointer = new UiVec2(mouse.X, mouse.Y);
 

@@ -4,14 +4,14 @@ using OpenIGI.Core.Graphics;
 namespace OpenIGI.Frontend.Saves;
 
 /// <summary>
-/// Reads and writes the port's save slots — a small JSON manifest beside a PNG screenshot per slot — in
-/// a directory of the port's own, never the game installation.
+/// Reads and writes the port's profile-scoped save slots — a small JSON manifest beside a PNG screenshot
+/// per slot — in a directory of the port's own, never the game installation.
 /// </summary>
 /// <remarks>
 /// <para>
 /// This is a new, self-contained format rather than an extension of the retail config: a JSON array of
-/// <see cref="SaveSlot"/> in <c>saves.json</c>, and <c>slot-N.png</c> next to it holding the frame the
-/// save was taken on. Keeping it separate means it can grow (more per-slot detail, a thumbnail size
+/// <see cref="SaveSlot"/> in <c>saves.json</c>, and a profile-qualified <c>slot-N-*.png</c> next to it
+/// holding the frame the save was taken on. Keeping it separate means it can grow (more per-slot detail, a thumbnail size
 /// change) without any risk to the byte-compatible <c>config.qvm</c> the profile system guards.
 /// </para>
 /// <para>
@@ -69,10 +69,19 @@ public sealed class SaveSlotStore
         }
     }
 
-    /// <summary>Finds a slot by index.</summary>
+    /// <summary>Finds the first slot by index.</summary>
+    /// <remarks>Kept for callers that predate profile-scoped slots; new UI code should include the profile.</remarks>
     /// <param name="slot">The slot index.</param>
     /// <returns>The slot, or <see langword="null"/> when it is empty.</returns>
     public SaveSlot? Find(int slot) => _slots.Find(s => s.Slot == slot);
+
+    /// <summary>Finds a slot belonging to a particular profile.</summary>
+    public SaveSlot? Find(string profileName, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(profileName);
+        return _slots.Find(s => s.Slot == slot
+            && string.Equals(s.ProfileName, profileName, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>Writes a slot, replacing any existing one at the same index, with its screenshot.</summary>
     /// <param name="slot">The slot index.</param>
@@ -97,6 +106,12 @@ public sealed class SaveSlotStore
     {
         System.IO.Directory.CreateDirectory(_directory);
 
+        SaveSlot? existing = Find(profileName, slot);
+        if (existing is not null)
+        {
+            DeleteScreenshot(existing);
+        }
+
         string? screenshotFile = null;
         if (!screenshot.IsEmpty)
         {
@@ -106,12 +121,13 @@ public sealed class SaveSlotStore
                     $"Screenshot is {screenshot.Length} pixels, need {width}×{height}.", nameof(screenshot));
             }
 
-            screenshotFile = $"slot-{slot}.png";
+            screenshotFile = ScreenshotFileName(slot, profileName);
             PngWriter.Write(Path.Combine(_directory, screenshotFile), screenshot[..(width * height)], width, height);
         }
 
         var record = new SaveSlot(slot, profileName, missionId, missionName, savedAt, screenshotFile);
-        _slots.RemoveAll(s => s.Slot == slot);
+        _slots.RemoveAll(s => s.Slot == slot
+            && string.Equals(s.ProfileName, profileName, StringComparison.OrdinalIgnoreCase));
         _slots.Add(record);
         _slots.Sort((a, b) => a.Slot.CompareTo(b.Slot));
         Flush();
@@ -129,25 +145,43 @@ public sealed class SaveSlotStore
             return false;
         }
 
-        _slots.RemoveAll(s => s.Slot == slot);
-        if (existing.ScreenshotFile is { } file)
+        return Delete(existing.ProfileName, slot);
+    }
+
+    /// <summary>Deletes a specific profile's slot and screenshot.</summary>
+    public bool Delete(string profileName, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(profileName);
+        SaveSlot? existing = Find(profileName, slot);
+        if (existing is null)
         {
-            string screenshotPath = Path.Combine(_directory, file);
-            if (File.Exists(screenshotPath))
-            {
-                try
-                {
-                    File.Delete(screenshotPath);
-                }
-                catch (IOException)
-                {
-                    // A screenshot we cannot delete does not stop the slot being forgotten.
-                }
-            }
+            return false;
         }
+
+        _slots.RemoveAll(s => s.Slot == slot
+            && string.Equals(s.ProfileName, profileName, StringComparison.OrdinalIgnoreCase));
+        DeleteScreenshot(existing);
 
         Flush();
         return true;
+    }
+
+    /// <summary>Deletes every slot belonging to a player profile, including their screenshots.</summary>
+    /// <param name="profileName">The profile name to remove saves for.</param>
+    /// <returns>The number of removed slots.</returns>
+    public int DeleteByProfile(string profileName)
+    {
+        ArgumentNullException.ThrowIfNull(profileName);
+
+        SaveSlot[] matches = _slots
+            .Where(slot => string.Equals(slot.ProfileName, profileName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        foreach (SaveSlot slot in matches)
+        {
+            Delete(slot.ProfileName, slot.Slot);
+        }
+
+        return matches.Length;
     }
 
     /// <summary>Gets the absolute path of a slot's screenshot, or null when it has none.</summary>
@@ -170,6 +204,32 @@ public sealed class SaveSlotStore
         catch (IOException)
         {
             // A read-only location must not crash a save; the slot stays in memory for this session.
+        }
+    }
+
+    private static string ScreenshotFileName(int slot, string profileName) =>
+        $"slot-{slot}-{Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(profileName))}.png";
+
+    private void DeleteScreenshot(SaveSlot slot)
+    {
+        if (slot.ScreenshotFile is not { } file)
+        {
+            return;
+        }
+
+        string screenshotPath = Path.Combine(_directory, file);
+        if (!File.Exists(screenshotPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(screenshotPath);
+        }
+        catch (IOException)
+        {
+            // A screenshot we cannot delete does not stop the slot being forgotten.
         }
     }
 }

@@ -42,7 +42,7 @@ public sealed class SaveSlotStoreTests
     }
 
     [Fact]
-    public void Saving_the_same_slot_replaces_it()
+    public void Different_profiles_can_use_the_same_slot_without_overwriting_each_other()
     {
         string dir = TempDir();
         try
@@ -51,9 +51,9 @@ public sealed class SaveSlotStoreTests
             store.Save(1, "A", 1, "First", DateTimeOffset.UnixEpoch, ReadOnlySpan<Bgra32>.Empty, 0, 0);
             store.Save(1, "B", 5, "Fifth", DateTimeOffset.UnixEpoch, ReadOnlySpan<Bgra32>.Empty, 0, 0);
 
-            Assert.Single(store.Slots);
-            Assert.Equal("B", store.Find(1)!.ProfileName);
-            Assert.Equal(5, store.Find(1)!.MissionId);
+            Assert.Equal(2, store.Slots.Count);
+            Assert.Equal(1, store.Find("A", 1)!.MissionId);
+            Assert.Equal(5, store.Find("B", 1)!.MissionId);
         }
         finally
         {
@@ -90,5 +90,31 @@ public sealed class SaveSlotStoreTests
         string dir = TempDir();
         var store = new SaveSlotStore(dir); // directory does not exist yet
         Assert.Empty(store.Slots);
+    }
+
+    [Fact]
+    public void Deleting_a_profile_removes_its_saves_and_screenshots_but_keeps_other_profiles()
+    {
+        string dir = TempDir();
+        try
+        {
+            var store = new SaveSlotStore(dir);
+            var pixels = new Bgra32[1];
+            SaveSlot joe = store.Save(0, "Joe", 1, "One", DateTimeOffset.UnixEpoch, pixels, 1, 1);
+            SaveSlot alex = store.Save(0, "Alex", 2, "Two", DateTimeOffset.UnixEpoch, pixels, 1, 1);
+            string joeScreenshot = store.ScreenshotPath(joe)!;
+            string alexScreenshot = store.ScreenshotPath(alex)!;
+
+            Assert.Equal(1, store.DeleteByProfile("jOe"));
+
+            Assert.Null(store.Find("Joe", 0));
+            Assert.NotNull(store.Find("Alex", 0));
+            Assert.False(File.Exists(joeScreenshot));
+            Assert.True(File.Exists(alexScreenshot));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }

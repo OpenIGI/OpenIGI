@@ -90,6 +90,7 @@ public sealed class ConfigScript
         }
 
         loader.Finish();
+        config.RestoreMissingProfileBindings();
         log.Information(LogCategory, $"Loaded {config.Profiles.Count} profile(s), active '{config.Active?.Name}'.");
         return config;
     }

@@ -31,6 +31,8 @@ public sealed class ShellTests
 
         public int SaveSettingsCalls { get; private set; }
 
+        public int SaveProfilesCalls { get; private set; }
+
         public int ResumeCalls { get; private set; }
 
         public int RestartCalls { get; private set; }
@@ -67,6 +69,8 @@ public sealed class ShellTests
         }
 
         public void SaveSettings() => SaveSettingsCalls++;
+
+        public void SaveProfiles() => SaveProfilesCalls++;
 
         public Bgra32[] CaptureThumbnail(out int width, out int height)
         {
@@ -124,6 +128,18 @@ public sealed class ShellTests
     private static T? Find<T>(Screen screen, Func<T, bool> predicate)
         where T : UiElement =>
         screen.Root?.Descendants().OfType<T>().FirstOrDefault(predicate);
+
+    private static void Type(Shell shell, string text)
+    {
+        var input = new InputState();
+        input.BeginFrame();
+        foreach (char character in text)
+        {
+            input.Keyboard.EnqueueCharacter(character);
+        }
+
+        shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+    }
 
     [Fact]
     public void The_shell_opens_on_the_main_menu()
@@ -514,6 +530,124 @@ public sealed class ShellTests
 
             Assert.NotEmpty(rows);
             Assert.All(rows, row => Assert.NotEmpty(row.Tooltip));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Controls_tab_lists_the_full_retail_binding_set_for_a_fresh_profile()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3; // Controls
+            Pump(shell, 0.1f);
+
+            Assert.Equal(PlayerProfile.BindingCount, screen.Root!.Descendants().OfType<KeyBindingRow>().Count());
+            KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "MoveLeft");
+            KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "Fire");
+            Assert.Equal(KeyCode.Left, moveLeft.BoundKey);
+            Assert.Equal("Left", moveLeft.BoundKeyName);
+            Assert.Equal("Mouse Button 1", fire.BoundKeyName);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Profile_workspace_shows_progress_and_creates_a_named_profile_at_the_selected_difficulty()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Assert.True(shell.OpenOn("profiles"));
+            Pump(shell, 0.1f);
+
+            var screen = Assert.IsType<ProfilesScreen>(shell.Stack.Top);
+            ProfileCard joe = screen.Root!.Descendants().OfType<ProfileCard>().Single(card => card.Visibility == Visibility.Visible);
+            Assert.True(joe.Active);
+            Assert.Equal("Joe", joe.Name);
+            Assert.Contains("UNLOCKED", joe.Progress);
+            Assert.Contains("Mission Two", joe.Mission);
+
+            Find<Button>(screen, button => button.Text == "NEW PROFILE")!.Activate();
+            Pump(shell, 0.1f); // lays out and focuses the form field
+            Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
+            Assert.NotNull(Find<Label>(screen, label => label.Text == "Enter a profile name to continue."));
+            Type(shell, "Alex");
+            Find<Dropdown>(screen, dropdown => dropdown.Label == "Difficulty")!.SelectedIndex = 2;
+            Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
+            Pump(shell, 0.1f);
+
+            ProfileCard alex = screen.Root!.Descendants().OfType<ProfileCard>().Single(card => card.Visibility == Visibility.Visible && card.Name == "Alex");
+            Assert.True(alex.Active);
+            Assert.Equal("Hard difficulty", alex.Difficulty);
+            Assert.Equal(1, host.SaveProfilesCalls);
+
+            Find<Button>(screen, button => button.Text == "NEW PROFILE")!.Activate();
+            Pump(shell, 0.1f);
+            Type(shell, "aLeX");
+            Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
+            Assert.NotNull(Find<Label>(screen, label => label.Text == "That profile name is already in use."));
+            Assert.Equal(1, host.SaveProfilesCalls);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Profile_deletion_requires_confirmation_removes_its_saves_and_keeps_the_last_profile()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Assert.True(shell.OpenOn("profiles"));
+            Pump(shell, 0.1f);
+            var screen = Assert.IsType<ProfilesScreen>(shell.Stack.Top);
+
+            Find<Button>(screen, button => button.Text == "NEW PROFILE")!.Activate();
+            Pump(shell, 0.1f);
+            Type(shell, "Alex");
+            Find<Button>(screen, button => button.Text == "CREATE PROFILE")!.Activate();
+            Pump(shell, 0.1f);
+            Find<Button>(screen, button => button.Text == "SAVE")!.Activate();
+
+            Find<Button>(screen, button => button.Text == "DELETE PROFILE")!.Activate();
+            Pump(shell, 0.1f);
+            Find<Button>(screen, button => button.Text == "DELETE PERMANENTLY")!.Activate();
+            Pump(shell, 0.1f);
+
+            List<ProfileCard> visible = [.. screen.Root!.Descendants().OfType<ProfileCard>().Where(card => card.Visibility == Visibility.Visible)];
+            Assert.Single(visible);
+            Assert.Equal("Joe", visible[0].Name);
+            Assert.All(Find<ListView>(screen, list => list.Id == "profile-saves")!.Items, item => Assert.Contains("EMPTY", item));
+            Assert.Equal(2, host.SaveProfilesCalls);
+            Assert.False(Find<Button>(screen, button => button.Text == "DELETE PROFILE")!.IsEnabled);
         }
         finally
         {

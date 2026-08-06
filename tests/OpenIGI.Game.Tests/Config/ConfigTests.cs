@@ -1,5 +1,6 @@
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
+using OpenIGI.Input;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -156,7 +157,50 @@ public sealed class ConfigTests
         Assert.Equal("Alex", config.Active!.Name);
         Assert.Equal(3, config.Active.Difficulty);
         Assert.Equal(0.25f, config.Active.MusicVolume);
-        Assert.Single(config.Active.Bindings);
+        Assert.Equal(PlayerProfile.BindingCount + 1, config.Active.Bindings.Count);
+        Assert.Contains(new InputBinding("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"), config.Active.Bindings);
+    }
+
+    [Fact]
+    public void ADefaultProfileHasTheRetailBindingsAndAnEmptyConfigurationUsesThemToo()
+    {
+        GameConfig defaults = GameConfig.CreateDefault();
+        PlayerProfile joe = defaults.Active!;
+
+        Assert.Equal(PlayerProfile.BindingCount, joe.Bindings.Count);
+        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"), joe.Bindings[0]);
+        Assert.Contains(new InputBinding("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"), joe.Bindings);
+        Assert.Contains(new InputBinding("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"), joe.Bindings);
+
+        GameConfig empty = new();
+        Assert.True(empty.CreateProfile("Alex", 1));
+        Assert.Equal(PlayerProfile.BindingCount, empty.Active!.Bindings.Count);
+    }
+
+    [Fact]
+    public void Loading_a_legacy_profile_with_no_bindings_repairs_the_retail_defaults()
+    {
+        GameConfig legacy = new();
+        legacy.Add(new PlayerProfile { Name = "Joe" });
+
+        GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(legacy));
+
+        Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
+        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"), loaded.Active.Bindings[0]);
+    }
+
+    [Fact]
+    public void Retail_binding_names_round_trip_through_the_port_key_names()
+    {
+        Assert.True(InputBindingKeyNames.TryParseKeyboardKey("KEY_RIGHT_CTRL", out KeyCode control));
+        Assert.Equal(KeyCode.RightControl, control);
+        Assert.True(InputBindingKeyNames.TryParseKeyboardKey("KEY_NUMPAD0", out KeyCode numpad));
+        Assert.Equal(KeyCode.Numpad0, numpad);
+        Assert.Equal("KEY_RIGHT_CTRL", InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.RightControl));
+        Assert.Equal("KEY_9", InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.D9));
+        Assert.Equal(
+            "Mouse Button 1",
+            InputBindingKeyNames.DisplayName(new InputBinding("Fire", InputBindingKeyNames.MouseDevice, "MOUSE_BUTTON_1")));
     }
 
     [Fact]

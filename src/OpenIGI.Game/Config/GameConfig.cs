@@ -96,7 +96,7 @@ public sealed class GameConfig
             return false;
         }
 
-        PlayerProfile created = Active?.Clone() ?? new PlayerProfile();
+        PlayerProfile created = Active?.Clone() ?? PlayerProfile.CreateDefault();
         created.Name = Truncate(trimmed);
         created.Difficulty = difficulty;
 
@@ -120,6 +120,15 @@ public sealed class GameConfig
         return true;
     }
 
+    /// <summary>Repairs profiles produced by older builds that omitted their default bindings.</summary>
+    public void RestoreMissingProfileBindings()
+    {
+        foreach (PlayerProfile profile in _profiles)
+        {
+            profile.RestoreDefaultBindingsWhenEmpty();
+        }
+    }
+
     /// <summary>Builds the configuration the original starts from when there is no save file.</summary>
     /// <returns>A configuration holding one default profile.</returns>
     /// <remarks>
@@ -129,7 +138,10 @@ public sealed class GameConfig
     public static GameConfig CreateDefault()
     {
         GameConfig config = new();
-        config.Add(new PlayerProfile { Name = DefaultProfileName, Difficulty = 1 });
+        PlayerProfile profile = PlayerProfile.CreateDefault();
+        profile.Name = DefaultProfileName;
+        profile.Difficulty = 1;
+        config.Add(profile);
         return config;
     }
 

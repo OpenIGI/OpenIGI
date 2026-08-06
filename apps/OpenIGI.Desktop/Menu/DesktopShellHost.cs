@@ -20,6 +20,7 @@ namespace OpenIGI.Desktop;
 /// <param name="quit">Closes the game.</param>
 /// <param name="previewMission">Shows a mission's level behind the menu, or the default showcase when null.</param>
 /// <param name="saveSettings">Persists the current settings.</param>
+/// <param name="saveProfiles">Persists player profiles and their progress.</param>
 /// <param name="captureThumbnail">Captures the current frame as save-thumbnail pixels.</param>
 public sealed class DesktopShellHost(
     Action<int, int> startMission,
@@ -29,6 +30,7 @@ public sealed class DesktopShellHost(
     Action quit,
     Action<int?> previewMission,
     Action saveSettings,
+    Action saveProfiles,
     CaptureThumbnail captureThumbnail) : IShellHost
 {
     /// <inheritdoc/>
@@ -51,6 +53,9 @@ public sealed class DesktopShellHost(
 
     /// <inheritdoc/>
     public void SaveSettings() => saveSettings();
+
+    /// <inheritdoc/>
+    public void SaveProfiles() => saveProfiles();
 
     /// <inheritdoc/>
     public Bgra32[] CaptureThumbnail(out int width, out int height) => captureThumbnail(out width, out height);

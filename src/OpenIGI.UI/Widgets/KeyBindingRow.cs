@@ -25,12 +25,14 @@ public class KeyBindingRow : Control
     /// <param name="theme">The theme to draw from.</param>
     /// <param name="action">The action name shown on the left.</param>
     /// <param name="boundKey">The initially bound key.</param>
+    /// <param name="displayName">The player-facing binding name, including a mouse button when applicable.</param>
     /// <exception cref="ArgumentNullException"><paramref name="theme"/> is <see langword="null"/>.</exception>
-    public KeyBindingRow(UiTheme theme, string action, KeyCode boundKey)
+    public KeyBindingRow(UiTheme theme, string action, KeyCode boundKey, string? displayName = null)
         : base(theme)
     {
         Action = action ?? string.Empty;
         BoundKey = boundKey;
+        BoundKeyName = displayName ?? KeyName(boundKey);
     }
 
     /// <summary>Raised when the bound key changes, with the new key.</summary>
@@ -41,6 +43,10 @@ public class KeyBindingRow : Control
 
     /// <summary>Gets the currently bound key.</summary>
     public KeyCode BoundKey { get; private set; }
+
+    /// <summary>Gets the player-facing name of the current binding.</summary>
+    /// <remarks>A retail mouse binding has no <see cref="KeyCode"/>, but still needs an honest label.</remarks>
+    public string BoundKeyName { get; private set; }
 
     /// <summary>Gets a value indicating whether the row is waiting for a key to bind.</summary>
     public bool IsListening { get; private set; }
@@ -64,6 +70,7 @@ public class KeyBindingRow : Control
         if (key != BoundKey)
         {
             BoundKey = key;
+            BoundKeyName = KeyName(key);
             BindingChanged?.Invoke(key);
         }
 
@@ -118,7 +125,7 @@ public class KeyBindingRow : Control
         Bgra32 labelColor = IsEnabled ? Interpolate.Lerp(Theme.Text, Theme.Accent, focus) : Theme.TextDisabled;
         painter.DrawText(Theme.Body, Action, new UiVec2(Bounds.X + pad, textY), sizePx, labelColor);
 
-        string value = IsListening ? "Press a key..." : KeyName(BoundKey);
+        string value = IsListening ? "Press a key..." : BoundKeyName;
         Bgra32 valueColor = IsListening
             ? Interpolate.Lerp(Theme.TextMuted, Theme.Accent, _pulse.Value)
             : Theme.Text;

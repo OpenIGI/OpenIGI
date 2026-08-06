@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Frontend.Settings;
+using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Input;
 using OpenIGI.Rendering.Presets;
@@ -508,13 +509,17 @@ public sealed class SettingsScreen : ShellScreen
         {
             int index = i;
             var binding = profile.Bindings[index];
-            KeyCode current = Enum.TryParse(binding.Key, ignoreCase: true, out KeyCode parsed) ? parsed : KeyCode.None;
-            var row = new KeyBindingRow(theme, binding.Action, current)
+            KeyCode current = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed) ? parsed : KeyCode.None;
+            var row = new KeyBindingRow(theme, binding.Action, current, InputBindingKeyNames.DisplayName(binding))
             {
                 Tooltip = $"Press this row, then a key, to rebind {binding.Action}.",
             };
 
-            row.BindingChanged += key => profile.Bindings[index] = binding with { Key = key.ToString() };
+            row.BindingChanged += key => profile.Bindings[index] = binding with
+            {
+                Device = InputBindingKeyNames.KeyboardDevice,
+                Key = InputBindingKeyNames.ToRetailKeyboardKey(key),
+            };
             rows.Add(row);
         }
 

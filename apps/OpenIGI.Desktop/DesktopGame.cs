@@ -804,6 +804,7 @@ internal sealed partial class DesktopGame : IDisposable
                     }
                 },
                 saveSettings: () => console.SaveSettings(),
+                saveProfiles: () => DesktopConfiguration.Save(_configuration, _logger),
                 captureThumbnail: (out captureWidth, out captureHeight) =>
                 {
                     captureWidth = _window.Width;
