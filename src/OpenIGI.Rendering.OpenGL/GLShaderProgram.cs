@@ -22,10 +22,23 @@ internal sealed class GLShaderProgram : IDisposable
     /// <param name="gl">The GL binding.</param>
     /// <param name="vertexSource">The vertex shader source.</param>
     /// <param name="fragmentSource">The fragment shader source.</param>
+    /// <param name="programCache">The driver-scoped program-binary cache.</param>
     /// <returns>The linked program.</returns>
     /// <exception cref="GraphicsDeviceException">A shader failed to compile, or the program failed to link.</exception>
-    public static GLShaderProgram Create(GL gl, string vertexSource, string fragmentSource)
+    public static GLShaderProgram Create(
+        GL gl,
+        string vertexSource,
+        string fragmentSource,
+        GLProgramBinaryCache programCache)
     {
+        ArgumentNullException.ThrowIfNull(programCache);
+
+        string? cacheKey = programCache.CreateKey("graphics", vertexSource, fragmentSource);
+        if (cacheKey is not null && programCache.TryLoad(cacheKey, out uint cachedProgram))
+        {
+            return new GLShaderProgram(gl, cachedProgram);
+        }
+
         uint vertex = Compile(gl, ShaderType.VertexShader, vertexSource);
         uint fragment;
         try
@@ -39,6 +52,7 @@ internal sealed class GLShaderProgram : IDisposable
         }
 
         uint program = gl.CreateProgram();
+        programCache.MakeBinaryRetrievable(program);
         gl.AttachShader(program, vertex);
         gl.AttachShader(program, fragment);
         gl.LinkProgram(program);
@@ -56,6 +70,7 @@ internal sealed class GLShaderProgram : IDisposable
             throw new GraphicsDeviceException($"Shader program failed to link: {log}");
         }
 
+        programCache.Store(cacheKey, program);
         return new GLShaderProgram(gl, program);
     }
 

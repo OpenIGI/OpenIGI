@@ -83,7 +83,7 @@ public sealed partial class GLGraphicsDevice : ISdfTextDevice
             return;
         }
 
-        _sdfProgram = GLShaderProgram.Create(_gl, Sprite2DShaders.Vertex, SdfTextShaders.Fragment);
+        _sdfProgram = GLShaderProgram.Create(_gl, Sprite2DShaders.Vertex, SdfTextShaders.Fragment, _programCache);
         _sdfProgram.Use();
         _sdfProgram.SetInt("uTexture", 0);
         _sdfInverseScreen = _sdfProgram.LocationOf("uInverseScreen");

@@ -40,6 +40,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private readonly GL _gl;
     private readonly Action _present;
     private readonly IIgiLogger _logger;
+    private readonly GLProgramBinaryCache _programCache;
     private readonly Dictionary<uint, GLTexture> _textures = [];
     private readonly Dictionary<uint, GLMesh> _meshes = [];
 
@@ -291,6 +292,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         Features = GLFeatureLevel.Detect(gl);
         Capabilities = ReadCapabilities();
+        _programCache = new(gl, Features);
         CreatePipeline();
         SetMode(mode);
     }
@@ -2625,8 +2627,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
     private unsafe void CreatePipeline()
     {
-        _program = GLShaderProgram.Create(_gl, Sprite2DShaders.Vertex, Sprite2DShaders.Fragment);
-        _meshProgram = GLShaderProgram.Create(_gl, Mesh3DShaders.Vertex, Mesh3DShaders.Fragment);
+        _program = GLShaderProgram.Create(_gl, Sprite2DShaders.Vertex, Sprite2DShaders.Fragment, _programCache);
+        _meshProgram = GLShaderProgram.Create(_gl, Mesh3DShaders.Vertex, Mesh3DShaders.Fragment, _programCache);
 
         // Resolved once, here, so no draw ever looks a uniform up by name again.
         _spriteInverseScreen = _program.LocationOf("uInverseScreen");
@@ -2649,7 +2651,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _meshProgram.SetInt("uDiffuse", 0);
         _meshProgram.SetInt("uLightmap", 1);
 
-        _resolveProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, PostProcessShaders.Fragment);
+        _resolveProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, PostProcessShaders.Fragment, _programCache);
         _resolveExposure = _resolveProgram.LocationOf("uExposure");
         _resolveToneMap = _resolveProgram.LocationOf("uToneMap");
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
@@ -2699,13 +2701,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         _bloomThresholdProgram = GLShaderProgram.Create(
-            _gl, PostProcessShaders.Vertex, BloomShaders.Threshold);
+            _gl, PostProcessShaders.Vertex, BloomShaders.Threshold, _programCache);
         _bloomThreshold = _bloomThresholdProgram.LocationOf("uThreshold");
         UseProgram(_bloomThresholdProgram);
         _bloomThresholdProgram.SetInt("uScene", 0);
 
         _cameraProgram = GLShaderProgram.Create(
-            _gl, PostProcessShaders.Vertex, CameraEffectShaders.Fragment);
+            _gl, PostProcessShaders.Vertex, CameraEffectShaders.Fragment, _programCache);
         _cameraUnproject = _cameraProgram.LocationOf("uUnproject");
         _cameraFocus = _cameraProgram.LocationOf("uFocus");
         _cameraMotionBlur = _cameraProgram.LocationOf("uMotionBlur");
@@ -2719,19 +2721,19 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _cameraProgram.SetInt("uMotion", 5);
 
         _spatialAaProgram = GLShaderProgram.Create(
-            _gl, PostProcessShaders.Vertex, SpatialAaShaders.Fragment);
+            _gl, PostProcessShaders.Vertex, SpatialAaShaders.Fragment, _programCache);
         _spatialAaTexelSize = _spatialAaProgram.LocationOf("uTexelSize");
         _spatialAaEdge = _spatialAaProgram.LocationOf("uEdge");
         UseProgram(_spatialAaProgram);
         _spatialAaProgram.SetInt("uScene", 0);
 
-        _bloomBlurProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, BloomShaders.Blur);
+        _bloomBlurProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, BloomShaders.Blur, _programCache);
         _bloomDirection = _bloomBlurProgram.LocationOf("uDirection");
         UseProgram(_bloomBlurProgram);
         _bloomBlurProgram.SetInt("uSource", 0);
         _resolveProgram.SetInt("uDebugDepth", 4);
 
-        _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment);
+        _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment, _programCache);
         _gbufferUniforms = new MeshUniforms(
             _gbufferProgram.LocationOf("uModelView"),
             _gbufferProgram.LocationOf("uProjection"),
@@ -2749,7 +2751,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _gbufferProgram.SetInt("uDetail", 2);
 
         _occlusionProgram = GLShaderProgram.Create(
-            _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment);
+            _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment, _programCache);
         _occlusionUnproject = _occlusionProgram.LocationOf("uUnproject");
         _occlusionSearch = _occlusionProgram.LocationOf("uSearch");
         _occlusionBounce = _occlusionProgram.LocationOf("uBounce");
@@ -2760,7 +2762,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _occlusionProgram.SetInt("uPreviousColour", 2);
         _occlusionProgram.SetInt("uMaterial", 3);
 
-        _lightingProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, DeferredLightingShaders.Fragment);
+        _lightingProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, DeferredLightingShaders.Fragment, _programCache);
         _lightingModelLocation = _lightingProgram.LocationOf("uLightingModel");
         _lightingSunDirection = _lightingProgram.LocationOf("uSunDirection");
         _lightingSunColour = _lightingProgram.LocationOf("uSunColour");
@@ -2785,7 +2787,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingProgram.SetInt("uDepth", 4);
         _lightingProgram.SetInt("uShadowMap", 5);
 
-        _shadowProgram = GLShaderProgram.Create(_gl, ShadowDepthShaders.Vertex, ShadowDepthShaders.Fragment);
+        _shadowProgram = GLShaderProgram.Create(_gl, ShadowDepthShaders.Vertex, ShadowDepthShaders.Fragment, _programCache);
         _shadowUniforms = new MeshUniforms(
             _shadowProgram.LocationOf("uModelView"),
             _shadowProgram.LocationOf("uProjection"),
@@ -2795,7 +2797,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         UseProgram(_shadowProgram);
         _shadowProgram.SetInt("uDiffuse", 0);
 
-        _temporalProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, TemporalAaShaders.Fragment);
+        _temporalProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, TemporalAaShaders.Fragment, _programCache);
         _temporalUnproject = _temporalProgram.LocationOf("uUnproject");
         _temporalViewToWorld = _temporalProgram.LocationOf("uViewToWorld");
         _temporalPrevViewProjection = _temporalProgram.LocationOf("uPrevViewProjection");
@@ -2812,7 +2814,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _temporalProgram.SetInt("uMotion", 5);
 
         _reflectionProgram = GLShaderProgram.Create(
-            _gl, PostProcessShaders.Vertex, ReflectionShaders.Fragment);
+            _gl, PostProcessShaders.Vertex, ReflectionShaders.Fragment, _programCache);
         _reflectionUnproject = _reflectionProgram.LocationOf("uUnproject");
         _reflectionMarch = _reflectionProgram.LocationOf("uMarch");
         _reflectionTexelSize = _reflectionProgram.LocationOf("uTexelSize");
@@ -2828,7 +2830,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _reflectionProgram.SetInt("uMaterial", 3);
         _reflectionProgram.SetInt("uDepth", 4);
 
-        _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment);
+        _fogProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, VolumetricFogShaders.Fragment, _programCache);
         _fogSunDirection = _fogProgram.LocationOf("uSunDirection");
         _fogSunColour = _fogProgram.LocationOf("uSunColour");
         _fogAmbient = _fogProgram.LocationOf("uAmbientColour");

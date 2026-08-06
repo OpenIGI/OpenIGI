@@ -27,6 +27,13 @@ internal readonly record struct GLFeatureLevel(int Major, int Minor)
     /// <summary>Gets a value indicating whether compute shaders are available.</summary>
     public bool SupportsCompute => AtLeast(4, 3);
 
+    /// <summary>Gets a value indicating whether linked shader programs can be persisted as binaries.</summary>
+    /// <remarks>
+    /// This is core from OpenGL 4.1. Older drivers can expose the ARB extension too, but the backend's
+    /// version-only feature model deliberately leaves that optional acceleration unused there.
+    /// </remarks>
+    public bool SupportsProgramBinary => AtLeast(4, 1);
+
     /// <summary>Gets a value indicating whether a shader can write to a texture through an image unit.</summary>
     /// <remarks>Arrives with compute, and is what a froxel volume is filled through.</remarks>
     public bool SupportsImageLoadStore => AtLeast(4, 2);

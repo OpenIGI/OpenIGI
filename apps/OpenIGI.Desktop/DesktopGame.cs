@@ -889,10 +889,14 @@ internal sealed partial class DesktopGame : IDisposable
             running = false;
         }
 
-        // Proved once, here, rather than discovered several stages later as a wrong picture. The compute
-        // path draws nothing until a good deal of it is in place -- so a driver that mis-binds a buffer or
-        // ignores a barrier would first show up as lighting that looks subtly wrong, a long way from its cause.
-        GLComputeSelfTest.Run(_device, _logger);
+        // Kept as an opt-in diagnostic rather than a player-facing boot step. It compiles temporary
+        // shaders and reads their results back, so on a cold driver it can make an otherwise ready window
+        // appear to hang for seconds. A developer can still ask for the exact same proof with
+        // +r_compute_selftest 1.
+        if (RenderCVars.ComputeSelfTest.Value)
+        {
+            GLComputeSelfTest.Run(_device, _logger);
+        }
 
         // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
         // probe showed put the sun 60 degrees up at noon, with the warm sun and cool ambient every retail

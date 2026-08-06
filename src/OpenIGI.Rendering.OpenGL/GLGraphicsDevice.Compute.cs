@@ -376,6 +376,14 @@ public sealed partial class GLGraphicsDevice
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
         RequireCompute();
 
+        string? cacheKey = _programCache.CreateKey("compute", source);
+        if (cacheKey is not null && _programCache.TryLoad(cacheKey, out uint cachedProgram))
+        {
+            _computePrograms[cachedProgram] = new GLComputeProgram(cachedProgram, name, []);
+            _logger.Debug(LogCategory, $"Compute program '{name}' restored from the shader cache.");
+            return new ComputeShaderHandle(cachedProgram);
+        }
+
         uint shader = _gl.CreateShader(ShaderType.ComputeShader);
         _gl.ShaderSource(shader, source);
         _gl.CompileShader(shader);
@@ -389,6 +397,7 @@ public sealed partial class GLGraphicsDevice
         }
 
         uint program = _gl.CreateProgram();
+        _programCache.MakeBinaryRetrievable(program);
         _gl.AttachShader(program, shader);
         _gl.LinkProgram(program);
         _gl.GetProgram(program, ProgramPropertyARB.LinkStatus, out int linked);
@@ -405,6 +414,7 @@ public sealed partial class GLGraphicsDevice
             throw new GraphicsDeviceException($"The compute shader '{name}' did not link: {log}");
         }
 
+        _programCache.Store(cacheKey, program);
         _computePrograms[program] = new GLComputeProgram(program, name, []);
         _logger.Debug(LogCategory, $"Compute program '{name}' linked as {program}.");
         return new ComputeShaderHandle(program);

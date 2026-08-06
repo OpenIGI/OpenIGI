@@ -782,6 +782,18 @@ public static class RenderCVars
         CVarOptions.Developer,
         "Time each stage of the frame on the GPU and show the result. Costs a little of what it measures.");
 
+    /// <summary>Whether the load-time GPU compute diagnostic is run.</summary>
+    /// <remarks>
+    /// The diagnostic compiles temporary shaders and reads their results back to the CPU, which makes it
+    /// useful when bringing up a driver but needlessly delays every ordinary launch. It therefore stays
+    /// available to developers without being part of the player's startup path.
+    /// </remarks>
+    public static readonly BoolCVar ComputeSelfTest = CVar.Bool(
+        "r_compute_selftest",
+        false,
+        CVarOptions.Developer,
+        "Run the load-time GPU compute diagnostic. Off avoids a blocking driver synchronization at startup.");
+
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(
         "r_debug_view",
