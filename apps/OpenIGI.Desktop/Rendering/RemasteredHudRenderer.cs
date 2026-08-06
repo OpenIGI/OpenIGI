@@ -200,23 +200,23 @@ internal sealed class RemasteredHudRenderer : IDisposable
     private static void DrawVitals(UiPainter painter, LayoutContext context, UiFont body, float health)
     {
         float width = context.Px(326f);
-        float height = context.Px(64f);
+        float height = context.Px(70f);
         float x = context.SafeRect.X + context.Px(34f);
         float y = context.SafeRect.Bottom - context.Px(38f) - height;
         float fraction = Math.Clamp(health, 0f, 1f);
         Bgra32 healthColour = RemasteredHudPresentation.HealthColour(fraction);
 
-        painter.DrawText(body, "HEALTH", new UiVec2(x, y), context.Px(14f), Muted);
+        painter.DrawText(body, "HEALTH", new UiVec2(x, y), context.Px(18f), Muted);
         painter.DrawText(
             body,
             $"{(int)MathF.Round(fraction * 100f):00}",
-            new UiVec2(x, y + context.Px(18f)),
-            context.Px(42f),
+            new UiVec2(x, y + context.Px(21f)),
+            context.Px(44f),
             healthColour);
 
-        float barX = x + context.Px(82f);
-        float barY = y + context.Px(49f);
-        float barWidth = width - context.Px(82f);
+        float barX = x + context.Px(92f);
+        float barY = y + context.Px(54f);
+        float barWidth = width - context.Px(92f);
         float barHeight = context.Px(5f);
         DrawMeter(painter, new UiRect(barX, barY, barWidth, barHeight), fraction, healthColour);
 
@@ -234,29 +234,45 @@ internal sealed class RemasteredHudRenderer : IDisposable
         }
 
         float right = context.SafeRect.Right - context.Px(34f);
-        float y = context.SafeRect.Bottom - context.Px(120f);
-        float detailsWidth = context.Px(280f);
-        float textX = right - detailsWidth;
-        painter.FillRect(new UiRect(textX, y + context.Px(4f), context.Px(3f), context.Px(45f)), Accent);
-        painter.DrawText(body, RemasteredHudPresentation.WeaponClass(weapon), new UiVec2(textX + context.Px(14f), y), context.Px(14f), Muted);
-        painter.DrawText(body, weapon.DisplayName.ToUpperInvariant(), new UiVec2(textX + context.Px(14f), y + context.Px(18f)), context.Px(28f), Text);
+        float y = context.SafeRect.Bottom - context.Px(114f);
+        float left = right - context.Px(360f);
+        float ammoGap = context.Px(26f);
+        float ammoAreaWidth = context.Px(176f);
+        float weaponRight = right - ammoAreaWidth - ammoGap;
+        float labelSize = context.Px(17f);
+
+        painter.DrawText(body, RemasteredHudPresentation.WeaponClass(weapon), new UiVec2(left, y), labelSize, Muted);
+        painter.DrawText(body, weapon.DisplayName.ToUpperInvariant(), new UiVec2(left, y + context.Px(17f)), context.Px(30f), Text);
+        painter.FillRect(
+            new UiRect(left, y + context.Px(55f), Math.Max(context.Px(42f), weaponRight - left), context.Px(2f)),
+            Accent.WithAlpha(185));
 
         string state = RemasteredHudPresentation.WeaponStateLabel(snapshot.WeaponState);
         if (state.Length > 0)
         {
-            painter.DrawText(body, state, new UiVec2(textX + context.Px(14f), y + context.Px(52f)), context.Px(14f), Accent);
+            painter.DrawText(body, state, new UiVec2(left, y + context.Px(65f)), context.Px(14f), Accent);
         }
 
         bool countsAmmo = weapon.AmmoDisplay != AmmoDisplayType.None;
         string magazine = countsAmmo ? snapshot.RoundsInClip.ToString("00", CultureInfo.InvariantCulture) : "--";
         string reserve = countsAmmo ? snapshot.ReserveAmmo.ToString("000", CultureInfo.InvariantCulture) : "--";
-        float ammoSize = context.Px(40f);
+        float ammoSize = context.Px(42f);
         UiVec2 reserveSize = body.Measure(reserve, ammoSize);
         float reserveX = right - reserveSize.X;
-        painter.DrawText(body, reserve, new UiVec2(reserveX, y + context.Px(73f)), ammoSize, Muted);
-        painter.DrawText(body, "/", new UiVec2(reserveX - context.Px(24f), y + context.Px(80f)), context.Px(21f), Muted);
+        string reserveLabel = "RESERVE";
+        UiVec2 reserveLabelSize = body.Measure(reserveLabel, labelSize);
+        painter.DrawText(body, reserveLabel, new UiVec2(right - reserveLabelSize.X, y), labelSize, Muted);
+        painter.DrawText(body, reserve, new UiVec2(reserveX, y + context.Px(18f)), ammoSize, Muted);
+
         UiVec2 magazineSize = body.Measure(magazine, ammoSize);
-        painter.DrawText(body, magazine, new UiVec2(reserveX - context.Px(36f) - magazineSize.X, y + context.Px(73f)), ammoSize, Text);
+        float magazineRight = reserveX - context.Px(30f);
+        string magazineLabel = "MAG";
+        UiVec2 magazineLabelSize = body.Measure(magazineLabel, labelSize);
+        painter.DrawText(body, magazineLabel, new UiVec2(magazineRight - magazineLabelSize.X, y), labelSize, Muted);
+        painter.DrawText(body, magazine, new UiVec2(magazineRight - magazineSize.X, y + context.Px(18f)), ammoSize, Text);
+        painter.FillRect(
+            new UiRect(reserveX - context.Px(15f), y + context.Px(20f), context.Px(1f), context.Px(36f)),
+            Muted.WithAlpha(115));
     }
 
     private static void DrawCrosshair(UiPainter painter, LayoutContext context, WeaponType? weapon)
