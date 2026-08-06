@@ -32,8 +32,6 @@ public static class RagdollImpulse
     /// <summary>Simulation ticks in a second.</summary>
     public const double TicksPerSecond = 30.0;
 
-    /// <summary>What a human body is taken to weigh, in kilograms.</summary>
-    public const double BodyMassInKilograms = 80.0;
 
     /// <summary>How much harder a round hits here than it does in the world.</summary>
     /// <remarks>See the class remarks: this is the one number that is not measured, and it is a choice.</remarks>
@@ -41,14 +39,31 @@ public static class RagdollImpulse
 
     /// <summary>How much of the impulse survives each hop away from the bone that was struck.</summary>
     /// <remarks>
-    /// The struck bone takes all of it and its neighbours take progressively less, so a body reacts as a
-    /// body. Giving the whole impulse to one bone snaps that limb off the torso; spreading it evenly
-    /// makes every hit read the same wherever it landed.
+    /// The struck bone takes the most of it and its neighbours progressively less, so a body reacts as a
+    /// body. Giving the whole impulse to one bone flails that limb about on the end of the torso;
+    /// spreading it evenly makes every hit read the same wherever it landed.
     /// </remarks>
     public const double SpreadPerHop = 0.55;
 
     /// <summary>Beyond how many hops a bone is left out of it entirely.</summary>
     public const int SpreadReach = 6;
+
+    /// <summary>How much of the momentum moves the whole body rather than the part that was hit.</summary>
+    /// <remarks>
+    /// <para>
+    /// Seven tenths. A round genuinely does two things to a body — it moves all of it, and it snaps the
+    /// bit it went through — and the split matters because the two behave completely differently under
+    /// the rig's masses. The body-wide share is applied as a <em>velocity</em>, so every particle gets
+    /// the same one and the corpse travels as a piece; the local share is applied as a
+    /// <em>momentum</em>, so a light limb takes far more of it than the trunk does.
+    /// </para>
+    /// <para>
+    /// Giving the whole thing to the local term is what makes a ragdoll look like a rag: a rifle round
+    /// carrying enough momentum to visibly throw eighty kilograms will throw a two-kilogram forearm at a
+    /// speed nothing about the shot justifies.
+    /// </para>
+    /// </remarks>
+    public const double BodyShare = 0.7;
 
     /// <summary>The momentum a weapon's projectile carries, in newton-seconds.</summary>
     /// <param name="category">The weapon type that fired.</param>
@@ -74,7 +89,7 @@ public static class RagdollImpulse
     /// <param name="rig">The rig being hit, whose masses the momentum is measured against.</param>
     /// <param name="category">The weapon that fired.</param>
     /// <param name="scale">The player's own multiplier — <c>g_ragdoll_force</c>.</param>
-    /// <returns>The momentum, in mass-units times engine-units per tick.</returns>
+    /// <returns>The momentum, in kilogram engine-units per tick.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="rig"/> is <see langword="null"/>.</exception>
     public static double MomentumOf(RagdollSkeleton rig, WeaponCategory category, double scale)
     {
@@ -82,7 +97,8 @@ public static class RagdollImpulse
 
         // Newton-seconds into a speed for a body of this weight, exaggerated, then into engine units per
         // tick, then back into a momentum against the rig's own total mass.
-        double metresPerSecond = NewtonSecondsOf(category) / BodyMassInKilograms * CinematicScale * scale;
+        double metresPerSecond =
+            NewtonSecondsOf(category) / RagdollSkeleton.BodyMassInKilograms * CinematicScale * scale;
         return metresPerSecond * UnitsPerMetre / TicksPerSecond * rig.TotalMass;
     }
 
@@ -93,9 +109,16 @@ public static class RagdollImpulse
     /// <param name="momentum">What <see cref="MomentumOf"/> returned.</param>
     /// <exception cref="ArgumentNullException"><paramref name="body"/> is <see langword="null"/>.</exception>
     /// <remarks>
+    /// <para>
     /// The direction is the round's, unchanged and un-flattened: a shot from above drives a body down
     /// into the floor and a shot from below lifts it, which is the whole difference between this and a
     /// canned fall that only ever knows front from back.
+    /// </para>
+    /// <para>
+    /// The local shares are <b>normalized</b>, so the momentum the body actually receives is the
+    /// momentum that was asked for however many bones the rig happens to have. Without that a
+    /// thirty-three-bone soldier is thrown three times as hard as a sixteen-bone one by the same round.
+    /// </para>
     /// </remarks>
     public static void Apply(RagdollBody body, int bone, Vector3d travel, double momentum)
     {
@@ -107,17 +130,34 @@ public static class RagdollImpulse
             return;
         }
 
+        // The throw: the same velocity for every particle, so the corpse travels as one piece.
+        body.AddVelocity(direction * (momentum * BodyShare / body.Rig.TotalMass));
+
         int struck = bone >= 0 && bone < body.BoneCount ? bone : 0;
+        double total = 0.0;
         for (int other = 0; other < body.BoneCount; other++)
         {
             int hops = body.Rig.HopsBetween(struck, other);
-            if (hops > SpreadReach)
+            if (hops <= SpreadReach)
             {
-                continue;
+                total += Math.Pow(SpreadPerHop, hops);
             }
+        }
 
-            double share = Math.Pow(SpreadPerHop, hops);
-            body.AddImpulse(other, direction * (momentum * share));
+        if (total <= 0.0)
+        {
+            return;
+        }
+
+        // And the snap, around the bone it went through.
+        double local = momentum * (1.0 - BodyShare) / total;
+        for (int other = 0; other < body.BoneCount; other++)
+        {
+            int hops = body.Rig.HopsBetween(struck, other);
+            if (hops <= SpreadReach)
+            {
+                body.AddImpulse(other, direction * (local * Math.Pow(SpreadPerHop, hops)));
+            }
         }
     }
 }

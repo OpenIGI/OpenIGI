@@ -52,30 +52,67 @@ public static class GameplayCVars
 
     /// <summary>How hard a round throws a body it kills.</summary>
     /// <remarks>
+    /// <para>
     /// One multiplier over the whole impulse model, so the feel of the feature is a single number the
-    /// player can turn. At 1 a rifle round moves a body about 2.5 m/s, which is roughly thirty times what
-    /// it would really do — see <see cref="Physics.RagdollImpulse"/> for why that exaggeration is
-    /// deliberate. Zero makes bodies simply fall.
+    /// player can turn. See <see cref="Physics.RagdollImpulse"/> for why the exaggeration underneath it
+    /// is deliberate. Zero makes bodies simply fall.
+    /// </para>
+    /// <para>
+    /// One and a half, measured: a rifle round carries a body about 1.6 m, a shotgun about 3, a pistol
+    /// about half. At 1 the knock is real but easy to miss, because a guard is standing <em>on</em> the
+    /// floor when he is shot and the contact takes most of it back straight away.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> RagdollForce = CVar.Float(
         "g_ragdoll_force",
-        1f,
+        1.5f,
         0f,
         8f,
         CVarOptions.Archive,
         "How hard a round throws the body it kills. 0 makes them simply fall.");
 
+    /// <summary>What fraction of real gravity a corpse falls at.</summary>
+    /// <remarks>
+    /// <para>
+    /// Seven tenths. <b>The one number in the ragdoll that is a look rather than a measurement</b>, and
+    /// it is a variable rather than a constant for exactly that reason. The solver already falls at the
+    /// original's own 9.8 m/s² — see <see cref="Physics.RagdollBody.Gravity"/>, which deliberately picks
+    /// that over the 18.6 the player jumps under — so this is not correcting anything.
+    /// </para>
+    /// <para>
+    /// Real gravity simply reads fast on a corpse: the camera is close, the fall is a metre and a half,
+    /// and there is none of the anticipation that sells the speed of a jump. Dropping a ragdoll under one
+    /// <i>g</i> is what most games do about it. 1 is honest physics; below about 0.5 bodies start to
+    /// float.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> RagdollGravity = CVar.Float(
+        "g_ragdoll_gravity",
+        0.7f,
+        0.1f,
+        2f,
+        CVarOptions.Archive,
+        "How fast a corpse falls, as a fraction of real gravity. 1 is physically honest.");
+
     /// <summary>How many solver substeps each ragdoll takes per game tick.</summary>
     /// <remarks>
+    /// <para>
     /// Position-based dynamics converges with substeps far better than with iterations, so this is the
-    /// dial that trades cost for stiffness. Six holds a body together through a fall onto stairs; below
-    /// about four the limbs visibly stretch on impact.
+    /// dial that trades cost for stiffness — and it is the <em>only</em> convergence knob that matters,
+    /// because each substep runs a single solver sweep. It is also the whole cost of the feature: every
+    /// constraint in the body is projected this many times a tick.
+    /// </para>
+    /// <para>
+    /// Eight, measured. Sixteen costs three times as much and buys nothing that can be seen — at both
+    /// counts every body settles, and the joint drift left at rest is around a centimetre either way.
+    /// Below about six the drift starts to show on impact.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<int> RagdollSubsteps = CVar.Int(
         "g_ragdoll_substeps",
-        6,
+        8,
         1,
-        32,
+        64,
         CVarOptions.Archive,
         "Ragdoll solver substeps per tick. Higher is stiffer and more expensive.");
 

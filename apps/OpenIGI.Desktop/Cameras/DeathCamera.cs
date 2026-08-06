@@ -78,6 +78,31 @@ public sealed class DeathCamera
         IsActive = true;
     }
 
+    /// <summary>Moves the point the camera orbits, following a body that is still going somewhere.</summary>
+    /// <param name="pivotUnits">Where to look, in engine units.</param>
+    /// <remarks>
+    /// <para>
+    /// Retail never needs this: its death clip is authored, so a fixed aim a metre above where you fell
+    /// frames the whole fall by construction. A simulated body decides for itself where it ends up — down
+    /// a stairwell, over a railing — and a camera left aiming at the spot you were shot would spend the
+    /// sequence looking at empty floor.
+    /// </para>
+    /// <para>
+    /// The elevation, azimuth and distance are untouched, so the shot the vantage search chose is kept
+    /// and only what it is pointed at moves.
+    /// </para>
+    /// </remarks>
+    public void Follow(Vector3d pivotUnits)
+    {
+        if (!IsActive)
+        {
+            return;
+        }
+
+        _pivot = pivotUnits;
+        BuildCamera();
+    }
+
     /// <summary>Orbits the camera around the body from a frame's mouse motion.</summary>
     /// <param name="mouseDeltaX">The horizontal mouse motion this frame, in pixels.</param>
     /// <param name="mouseDeltaY">The vertical mouse motion this frame, in pixels.</param>
