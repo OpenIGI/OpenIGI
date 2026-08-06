@@ -10,8 +10,8 @@ using OpenIGI.UI.Text;
 namespace OpenIGI.Desktop;
 
 /// <summary>
-/// The remaster's presentation of the mission's status messages: the comms cards that slide in at the top
-/// left when something happens, and the subtitle line that carries a spoken one.
+/// The remaster's presentation of the mission's status messages: a minimal comms feed at the top left when
+/// something happens, and the subtitle line that carries a spoken one.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -41,11 +41,16 @@ internal sealed class StatusMessageRenderer : IDisposable
 {
     private const string LogCategory = "Messages";
 
-    /// <summary>How long a card spends sliding in, in ticks, matching the original's panel open.</summary>
+    /// <summary>How long a feed item spends easing into place, matching the original's panel open.</summary>
     private const float OpenTicks = 9f;
+
+    /// <summary>How many rendered frames a feed item takes to leave the screen.</summary>
+    private const int ExitFrames = 12;
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
+    private readonly Dictionary<FeedKey, RetiringMessage> _retiring = [];
+    private List<FeedItem> _previousFeed = [];
     private UiFont? _body;
     private UiFont? _label;
     private bool _disposed;
@@ -65,7 +70,7 @@ internal sealed class StatusMessageRenderer : IDisposable
     /// <summary>Gets a value indicating whether the renderer has its faces and can draw.</summary>
     public bool IsReady => _body is not null;
 
-    /// <summary>Builds the faces the cards are set in.</summary>
+    /// <summary>Builds the faces the message feed is set in.</summary>
     /// <returns><see langword="false"/> when the fonts are missing.</returns>
     public bool Load()
     {
@@ -97,12 +102,14 @@ internal sealed class StatusMessageRenderer : IDisposable
     /// <param name="messages">The messages on screen, in slot order.</param>
     /// <param name="screenWidth">The back buffer's width.</param>
     /// <param name="screenHeight">The back buffer's height.</param>
+    /// <param name="topOffset">Extra vertical room reserved above the cards, in back-buffer pixels.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         SpriteBatch batch,
         IEnumerable<StatusMessageDisplay> messages,
         int screenWidth,
-        int screenHeight)
+        int screenHeight,
+        float topOffset = 0f)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(messages);
@@ -115,20 +122,48 @@ internal sealed class StatusMessageRenderer : IDisposable
         var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
         var painter = new UiPainter(batch, context);
 
+        List<FeedItem> currentFeed = BuildFeed(messages, out List<StatusMessageDisplay> subtitles);
+        BeginRetiring(currentFeed);
+
         float x = context.Px(34f);
-        float y = context.Px(34f);
-        float maxCardWidth = MathF.Min(context.Px(460f), screenWidth * 0.42f);
+        float y = context.Px(34f) + Math.Max(0f, topOffset);
+        float maxMessageWidth = MathF.Min(context.Px(520f), screenWidth * 0.42f);
 
-        foreach (StatusMessageDisplay message in messages)
+        foreach (FeedItem item in currentFeed)
         {
-            if (message.IsCutscene)
-            {
-                DrawSubtitle(painter, context, body, message, screenWidth, screenHeight);
-                continue;
-            }
-
-            y += DrawCard(painter, context, body, message, x, y, maxCardWidth) + context.Px(10f);
+            y += DrawMessage(painter, context, body, item.Message, x, y, maxMessageWidth, 1f) + context.Px(16f);
         }
+
+        // The original removes a slot on a tick boundary.  Preserve its final displayed text for a few
+        // rendered frames, moving it gently back toward the left as it dissolves instead of popping away.
+        FeedKey[] expired = [];
+        foreach ((FeedKey key, RetiringMessage retiring) in _retiring.OrderBy(entry => entry.Value.Order))
+        {
+            float exitOpacity = retiring.FramesRemaining / (float)ExitFrames;
+            y += DrawMessage(painter, context, body, retiring.Message, x, y, maxMessageWidth, exitOpacity)
+                + context.Px(16f);
+
+            if (retiring.FramesRemaining <= 1)
+            {
+                expired = [.. expired, key];
+            }
+            else
+            {
+                _retiring[key] = retiring with { FramesRemaining = retiring.FramesRemaining - 1 };
+            }
+        }
+
+        foreach (FeedKey key in expired)
+        {
+            _retiring.Remove(key);
+        }
+
+        foreach (StatusMessageDisplay subtitle in subtitles)
+        {
+            DrawSubtitle(painter, context, body, subtitle, screenWidth, screenHeight);
+        }
+
+        _previousFeed = currentFeed;
     }
 
     /// <inheritdoc/>
@@ -144,75 +179,57 @@ internal sealed class StatusMessageRenderer : IDisposable
         _body = null;
         _label?.Dispose();
         _label = null;
+        _retiring.Clear();
+        _previousFeed.Clear();
     }
 
-    /// <summary>Draws one comms card and returns how tall it was.</summary>
-    private float DrawCard(
+    /// <summary>Draws one comms-feed item and returns how tall it was.</summary>
+    private float DrawMessage(
         UiPainter painter,
         LayoutContext context,
         UiFont body,
         in StatusMessageDisplay message,
         float x,
         float y,
-        float maxWidth)
+        float maxWidth,
+        float lifecycleOpacity)
     {
         UiFont label = _label ?? body;
         float open = Math.Clamp(message.DisplayFrame / OpenTicks, 0f, 1f);
         float eased = 1f - MathF.Pow(1f - open, 3f);
 
-        float textSize = context.Px(19f);
-        float padX = context.Px(18f);
-        float padY = context.Px(14f);
-        float headerSize = context.Px(11f);
+        float textSize = context.Px(22f);
+        float headerSize = context.Px(14f);
+        float markerWidth = context.Px(3f);
+        float textX = x + context.Px(15f);
 
-        // Measured against the full text rather than the revealed part, so the card is its final size
-        // from the first frame and does not grow a line at a time as the message types itself out.
-        float wrapWidth = maxWidth - (padX * 2f);
+        // Measured against the full text rather than the revealed part, so an item keeps a stable layout
+        // from its first frame rather than growing a line at a time as the message types itself out.
+        float wrapWidth = maxWidth - (textX - x);
         string wrapped = body.WrapText(message.Text, textSize, wrapWidth);
         float textHeight = body.Measure(wrapped, textSize).Y;
-        float width = MathF.Min(maxWidth, body.Measure(wrapped, textSize).X + (padX * 2f));
-        float height = textHeight + (padY * 2f) + context.Px(18f);
+        float height = textHeight + context.Px(28f);
 
-        // The entrance: the card unfurls to its width and slides a little way in from the left, which is
-        // the direction the column reads from.
-        float drawnWidth = width * eased;
-        float slide = (1f - eased) * context.Px(22f);
-        var card = new UiRect(x - slide, y, drawnWidth, height);
-        if (drawnWidth <= 1f)
-        {
-            return height;
-        }
+        // A very short lateral ease gives a new item presence without putting a panel behind the view.
+        float slide = ((1f - eased) * context.Px(22f)) + ((1f - lifecycleOpacity) * context.Px(18f));
 
-        painter.PushOpacity(eased);
-        painter.FillRect(card, Panel);
-        painter.FillRect(new UiRect(card.X, card.Y, context.Px(3f), card.Height), Accent);
-        painter.StrokeRect(card, MathF.Max(1f, context.Px(1f)), Border);
-
-        // The accent sweep that replaces retail's single-frame flash: a bright band riding the card's
-        // opening edge, gone by the time the card is fully out.
-        if (open < 1f)
-        {
-            painter.FillRect(
-                new UiRect(card.Right - context.Px(2f), card.Y, context.Px(2f), card.Height),
-                Accent.WithAlpha(220));
-        }
-
-        painter.PushClip(card);
+        painter.PushOpacity(eased * lifecycleOpacity);
+        painter.FillRect(new UiRect(x - slide, y + context.Px(2f), markerWidth, height), Signal);
         DrawTracked(
             painter,
             label,
             "TRANSMISSION",
-            new UiVec2(card.X + padX, card.Y + context.Px(11f)),
+            new UiVec2(textX - slide, y),
             headerSize,
-            Accent.WithAlpha(200),
-            context.Px(2.2f));
+            Muted,
+            context.Px(1.8f));
 
         // The typewriter. Only what has been typed is laid out, re-wrapped from scratch each frame the
         // way the original re-lays its three lines on every revealed character -- so a word that no
         // longer fits moves down as its last letter lands, rather than the whole line being decided in
         // advance and letters appearing into a gap that was already reserved for them.
         int revealed = Math.Clamp(message.RevealedCharacters, 0, message.Text.Length);
-        var textAt = new UiVec2(card.X + padX, card.Y + padY + context.Px(18f));
+        var textAt = new UiVec2(textX - slide, y + context.Px(20f));
         if (revealed > 0)
         {
             string typed = body.WrapText(message.Text[..revealed], textSize, wrapWidth);
@@ -226,9 +243,54 @@ internal sealed class StatusMessageRenderer : IDisposable
             }
         }
 
-        painter.PopClip();
         painter.PopOpacity();
         return height;
+    }
+
+    private static List<FeedItem> BuildFeed(
+        IEnumerable<StatusMessageDisplay> messages,
+        out List<StatusMessageDisplay> subtitles)
+    {
+        var occurrences = new Dictionary<string, int>(StringComparer.Ordinal);
+        var feed = new List<FeedItem>();
+        subtitles = [];
+
+        foreach (StatusMessageDisplay message in messages)
+        {
+            if (message.IsCutscene)
+            {
+                subtitles.Add(message);
+                continue;
+            }
+
+            int occurrence = occurrences.GetValueOrDefault(message.Text);
+            occurrences[message.Text] = occurrence + 1;
+            feed.Add(new FeedItem(new FeedKey(message.Text, occurrence), message, feed.Count));
+        }
+
+        return feed;
+    }
+
+    private void BeginRetiring(IReadOnlyList<FeedItem> currentFeed)
+    {
+        var active = new HashSet<FeedKey>(currentFeed.Select(item => item.Key));
+        foreach (FeedItem previous in _previousFeed)
+        {
+            if (!active.Contains(previous.Key) && !_retiring.ContainsKey(previous.Key))
+            {
+                StatusMessageDisplay complete = previous.Message with
+                {
+                    DisplayFrame = (int)OpenTicks,
+                    RevealedCharacters = previous.Message.Text.Length,
+                };
+                _retiring.Add(previous.Key, new RetiringMessage(complete, ExitFrames, previous.Order));
+            }
+        }
+
+        foreach (FeedItem activeItem in currentFeed)
+        {
+            _retiring.Remove(activeItem.Key);
+        }
     }
 
     private static void DrawSubtitle(
@@ -244,7 +306,7 @@ internal sealed class StatusMessageRenderer : IDisposable
             return;
         }
 
-        float textSize = context.Px(24f);
+        float textSize = context.Px(27f);
         float maxWidth = MathF.Min(screenWidth * 0.72f, context.Px(1180f));
         string wrapped = body.WrapText(message.Text, textSize, maxWidth);
         UiVec2 size = body.Measure(wrapped, textSize);
@@ -254,18 +316,12 @@ internal sealed class StatusMessageRenderer : IDisposable
         float x = (screenWidth - size.X) * 0.5f;
         float y = (screenHeight * StatusScreenLayout.SubtitleYFraction) - (size.Y * 0.5f);
 
-        float padX = context.Px(20f);
-        float padY = context.Px(10f);
-        painter.FillRect(
-            new UiRect(x - padX, y - padY, size.X + (padX * 2f), size.Y + (padY * 2f)),
-            Bgra32.FromRgba(0, 0, 0, 150));
-
         painter.DrawTextShadowed(
             body,
             wrapped,
             new UiVec2(x, y),
             textSize,
-            Bgra32.FromRgb(238, 244, 248),
+            Bgra32.FromRgb(248, 250, 252),
             Bgra32.FromRgba(0, 0, 0, 200),
             new UiVec2(context.Px(1.5f), context.Px(1.5f)));
     }
@@ -299,7 +355,7 @@ internal sealed class StatusMessageRenderer : IDisposable
 
         float x = textAt.X + font.MeasureWidth(lastLine, size) + context.Px(2f);
         float y = textAt.Y + (line * font.LineHeight(size));
-        painter.FillRect(new UiRect(x, y + context.Px(3f), context.Px(2f), size * 0.82f), Accent);
+        painter.FillRect(new UiRect(x, y + context.Px(3f), context.Px(2f), size * 0.82f), Signal);
     }
 
     private static float DrawTracked(
@@ -323,8 +379,14 @@ internal sealed class StatusMessageRenderer : IDisposable
         return MathF.Max(0f, x - at.X - tracking);
     }
 
-    private static Bgra32 Panel => Bgra32.FromRgba(8, 12, 15, 214);
-    private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
-    private static Bgra32 Border => Bgra32.FromRgba(120, 134, 146, 70);
-    private static Bgra32 Text => Bgra32.FromRgb(226, 234, 240);
+    // Mission objectives reserve amber; the comms feed uses a quieter signal-blue accent of its own.
+    private static Bgra32 Signal => Bgra32.FromRgb(117, 202, 216);
+    private static Bgra32 Text => Bgra32.FromRgb(245, 248, 250);
+    private static Bgra32 Muted => Bgra32.FromRgb(202, 213, 220);
+
+    private readonly record struct FeedKey(string Text, int Occurrence);
+
+    private readonly record struct FeedItem(FeedKey Key, StatusMessageDisplay Message, int Order);
+
+    private readonly record struct RetiringMessage(StatusMessageDisplay Message, int FramesRemaining, int Order);
 }

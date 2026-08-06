@@ -266,7 +266,10 @@ public sealed class MissionObjectiveRuntime
                 Vector3d? position = slot.LinkTaskId >= 0 && _levelRoot.Tree.FromId(slot.LinkTaskId) is not null
                     ? FindPosition(_levelRoot.Tree.FromId(slot.LinkTaskId)!)
                     : null;
-                current.Add(new MissionObjective(slot.TextResource, slot.LinkTaskId, position, state));
+                current.Add(new MissionObjective(slot.TextResource, slot.LinkTaskId, position, state)
+                {
+                    Text = _resolveText(slot.TextResource),
+                });
             }
         }
 
@@ -613,7 +616,15 @@ public sealed record MissionObjective(
     string TextResource,
     int LinkTaskId,
     Vector3d? Position,
-    MissionObjectiveState State);
+    MissionObjectiveState State)
+{
+    /// <summary>Gets the localized text resolved when this snapshot was produced.</summary>
+    /// <remarks>
+    /// A renderer should consume this rather than owning another language-table lookup.  The resource key
+    /// remains available for the retail map computer and save/debug tooling that addresses it directly.
+    /// </remarks>
+    public string Text { get; init; } = string.Empty;
+}
 
 /// <summary>One localized StatusMessage captured by IGI1's map-computer log.</summary>
 public sealed record MissionComputerLogEntry(string TextResource);

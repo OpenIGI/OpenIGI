@@ -789,6 +789,18 @@ internal sealed partial class DesktopGame
                     _hud.Dispose();
                     _hud = null;
                 }
+
+                _remasteredHud?.Dispose();
+                _remasteredHud = null;
+                if (!_options.VanillaMenu)
+                {
+                    _remasteredHud = new RemasteredHudRenderer(_device, _logger);
+                    if (!_remasteredHud.Load())
+                    {
+                        _remasteredHud.Dispose();
+                        _remasteredHud = null;
+                    }
+                }
             }
 
             EndStage("the loadout, the bullet marks and the HUD");
@@ -951,6 +963,7 @@ internal sealed partial class DesktopGame
         _backdropSoldiers?.Dispose();
         _heldWeapon?.Dispose();
         _hud?.Dispose();
+        _remasteredHud?.Dispose();
         _marks?.Dispose();
         _arms?.Dispose();
         _sky = null;
@@ -960,6 +973,7 @@ internal sealed partial class DesktopGame
         _backdropSoldiers = null;
         _heldWeapon = null;
         _hud = null;
+        _remasteredHud = null;
         _marks = null;
         _arms = null;
         _player = null;

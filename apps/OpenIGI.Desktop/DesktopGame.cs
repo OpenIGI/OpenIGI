@@ -131,6 +131,7 @@ internal sealed partial class DesktopGame : IDisposable
     private PlayerCamera? _player;
     private HeldWeaponRenderer? _heldWeapon;
     private StatusScreenRenderer? _hud;
+    private RemasteredHudRenderer? _remasteredHud;
     private MapComputerRenderer? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
     private TacticalComputerRenderer? _tacticalComputer;
@@ -2362,6 +2363,10 @@ internal sealed partial class DesktopGame : IDisposable
                 // Not while the entry shot is running: the camera is somewhere over the level, and a pair
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
+                bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(_options.VanillaMenu);
+                bool showFirstPersonHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
+                    && !(_playerDead && _deathCamera.IsActive)
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false, View: not null };
                 if (_playerMode && !_computerOpen && !_entry.IsCameraActive
                     && !(_playerDead && _deathCamera.IsActive)
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false, View: { } rig })
@@ -2439,27 +2444,33 @@ internal sealed partial class DesktopGame : IDisposable
                             _player.ShotSequence);
                     }
 
-                    // The HUD goes over everything, in 2D. StatusScreen's render sends one message to the
-                    // weapon in hand and the weapon draws its own readout -- so what appears is the roster
-                    // record's own SightDisplayType and AmmoDisplayType, not a choice made here.
-                    if (!_computerOpen && _hud is { IsReady: true } && _player.Weapons is { } carried)
+                    // The retail HUD remains part of the forward presentation. The remaster HUD instead
+                    // draws after the scene has resolved, which guarantees it is above the hands and gun.
+                    if (!remasterHud && _player.Weapons is { } carried)
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
-                        _hud.Draw(
-                            batch,
-                            carried.InHand?.Weapon,
-                            carried.InHand?.Gun.RoundsInClip ?? 0,
-                            carried.InHand is { } inHand ? inHand.Gun.Reserve(carried.Ammunition) : 0,
-                            _window.Width,
-                            _window.Height,
-                            UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                        if (_hud is { IsReady: true } retailHud)
+                        {
+                            retailHud.Draw(
+                                batch,
+                                carried.InHand?.Weapon,
+                                carried.InHand?.Gun.RoundsInClip ?? 0,
+                                carried.InHand is { } held ? held.Gun.Reserve(carried.Ammunition) : 0,
+                                _window.Width,
+                                _window.Height,
+                                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                        }
+
                         batch.End();
                     }
 
-                    // The task-specific status icon. A ladder's handler selects a_ladder.spr; there is no
-                    // text prompt in the retail game and the sprite remains at its native pixel size.
-                    if (!_computerOpen && _hud is { IsReady: true } && _player.ActionSprite is { } actionSprite)
+                    // Retail action sprites are deliberately retained for the faithful UI. The remaster's
+                    // corresponding context label is part of the single modern HUD draw above.
+                    if (!_computerOpen
+                        && !remasterHud
+                        && _hud is { IsReady: true }
+                        && _player.ActionSprite is { } actionSprite)
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
@@ -2470,17 +2481,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // The mission's status messages. Kept off screen while the computer is up, as the rest
                     // of the HUD is: the map is a full-screen readout of the same mission and a comms card
                     // over it would be the same information twice.
-                    if (!_computerOpen && _missionObjectives is { } messageRuntime)
+                    if (!remasterHud && _missionObjectives is { } messageRuntime)
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
                         if (RenderCVars.TacticalMessages.Value && _messages is { IsReady: true } cards)
                         {
-                            cards.Draw(
-                                batch,
-                                messageRuntime.DisplayedMessages,
-                                _window.Width,
-                                _window.Height);
+                            cards.Draw(batch, messageRuntime.DisplayedMessages, _window.Width, _window.Height);
                         }
                         else if (_hud is { IsReady: true } retailMessages)
                         {
@@ -2659,6 +2666,47 @@ internal sealed partial class DesktopGame : IDisposable
                         new Vertex2D(flashWidth, 0f, 1f, 0f, Red(_damageFlash.TopRight)),
                         new Vertex2D(flashWidth, flashHeight, 1f, 1f, Red(_damageFlash.BottomRight)),
                         new Vertex2D(0f, flashHeight, 0f, 1f, Red(_damageFlash.BottomLeft)));
+                    batch.End();
+                }
+
+                // The modern HUD is intentionally the last gameplay overlay. Rendering it only after the
+                // scene resolve, close foreground device and damage wash means no hand, weapon, world mesh
+                // or post-process pass can cover it.
+                if (remasterHud
+                    && showFirstPersonHud
+                    && _player is { Weapons: { } modernCarried }
+                    && _remasteredHud is { IsReady: true } modernHud)
+                {
+                    CarriedWeapon? inHand = modernCarried.InHand;
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    modernHud.Draw(
+                        batch,
+                        new RemasteredHudSnapshot(
+                            _playerHealth.RemainingFraction,
+                            _player.Yaw,
+                            inHand?.Weapon,
+                            inHand?.Gun.RoundsInClip ?? 0,
+                            inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
+                            modernCarried.State,
+                            _player.ActionSprite,
+                            _missionObjectives?.Objectives ?? []),
+                        _window.Width,
+                        _window.Height);
+                    batch.End();
+                }
+
+                if (remasterHud
+                    && showFirstPersonHud
+                    && _missionObjectives is { } modernMessages
+                    && RenderCVars.TacticalMessages.Value
+                    && _messages is { IsReady: true } modernCards)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    float topOffset = new LayoutContext(_window.Width, _window.Height)
+                        .Px(RemasteredHudRenderer.MessageTopInsetDesign);
+                    modernCards.Draw(batch, modernMessages.DisplayedMessages, _window.Width, _window.Height, topOffset);
                     batch.End();
                 }
 
@@ -3038,6 +3086,7 @@ internal sealed partial class DesktopGame : IDisposable
         _backdropSoldiers?.Dispose();
         _heldWeapon?.Dispose();
         _hud?.Dispose();
+        _remasteredHud?.Dispose();
         _mapComputer?.Dispose();
         _mapComputerDevice?.Dispose();
         _tacticalComputer?.Dispose();
