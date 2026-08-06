@@ -73,6 +73,7 @@ public sealed class PlayerCamera
     private bool _nearLadderAtTop;
     private double _nearLadderAngle = double.MaxValue;
     private WorldInteractionRegistry? _interactions;
+    private GunPickupRegistry? _gunPickups;
     private WorldInteraction? _nearInteraction;
     private WorldInteraction? _activeInteraction;
     private int _interactionTick;
@@ -553,6 +554,16 @@ public sealed class PlayerCamera
         _interactions = interactions;
     }
 
+    /// <summary>Gives the player the level's automatic weapon pickups.</summary>
+    public void UseGunPickups(GunPickupRegistry pickups)
+    {
+        ArgumentNullException.ThrowIfNull(pickups);
+        _gunPickups = pickups;
+    }
+
+    /// <summary>Raised for each weapon collected from the world this tick.</summary>
+    public event Action<GunPickup>? GunPickedUp;
+
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
 
@@ -789,6 +800,14 @@ public sealed class PlayerCamera
         // Diagnostic: name whatever the wall sweep stopped the body against, so a doorway you cannot walk
         // through can be traced to the exact model and task blocking it. Only while trying to move.
         LogWallBlockIfAny(forward, strafe);
+
+        if (_weapons is not null && _gunPickups is not null)
+        {
+            foreach (GunPickup pickup in _gunPickups.CollectAt(_body.Position, _weapons))
+            {
+                GunPickedUp?.Invoke(pickup);
+            }
+        }
 
         _view?.Tick();
 

@@ -196,6 +196,16 @@ public sealed class HumanView
     /// </remarks>
     public bool ClipEnded => _bones.SourceOf(0)?.EndedThisTick ?? false;
 
+    /// <summary>Gets whether the first-person rig crossed an authored event on its last tick.</summary>
+    /// <param name="eventId">The event id stored in the active weapon animation.</param>
+    /// <returns><see langword="true"/> when the active whole-rig clip crossed the event this tick.</returns>
+    /// <remarks>
+    /// Weapon reload sounds are authored as events in this clip rather than as fields on the weapon
+    /// record. Exposing the clip's interval test here keeps callers from reaching through the view
+    /// object's animation implementation just to dispatch those events.
+    /// </remarks>
+    public bool CrossedEvent(int eventId) => _bones.SourceOf(0)?.CrossedEvent(eventId) ?? false;
+
     /// <summary>Skips a clip forward, as <c>sub_4D65B0</c> does by writing the clip's <c>+44</c>.</summary>
     /// <param name="time">Where to start, in the clip's own time.</param>
     /// <remarks>

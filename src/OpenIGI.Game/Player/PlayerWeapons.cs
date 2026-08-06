@@ -8,6 +8,11 @@ namespace OpenIGI.Game.Player;
 /// <param name="Gun">The magazine and the clock.</param>
 public readonly record struct CarriedWeapon(WeaponType Weapon, HeldGun Gun);
 
+/// <summary>What acquiring a world weapon changed in the player's inventory.</summary>
+/// <param name="AddedWeapon">Whether the pickup created a new carried gun.</param>
+/// <param name="AddedReserveRounds">The rounds added to an already-owned weapon's reserve.</param>
+public readonly record struct WeaponPickupResult(bool AddedWeapon, int AddedReserveRounds);
+
 /// <summary>
 /// The player's weapons: the state machine at <c>Human+3320</c>, the gun it talks to, and the cycle it
 /// switches through.
@@ -211,6 +216,40 @@ public sealed class PlayerWeapons
         HeldGun gun = new(weapon, ammo);
         _carried.Add(new CarriedWeapon(weapon, gun));
         return gun;
+    }
+
+    /// <summary>Applies a <c>GunPickup</c> to this inventory.</summary>
+    /// <param name="weapon">The roster weapon the world pickup names.</param>
+    /// <param name="ammo">Its resolved ammunition record, or <see langword="null"/> for weapons that consume none.</param>
+    /// <param name="rounds">The pickup's magazine payload.</param>
+    /// <returns>Whether a gun was added or reserve ammunition was added.</returns>
+    /// <remarks>
+    /// <para>This is <c>Human::GunPickup</c> at <c>0x45FFC0</c>. A weapon the human does not yet own is
+    /// added without selecting it, with the payload in its magazine. When the weapon already exists,
+    /// retail instead adds that payload to the matching loose-ammunition entry and never duplicates the
+    /// gun.</para>
+    /// <para><c>GunPickup::Update</c> supplies the weapon record's clip size as <paramref name="rounds"/>,
+    /// so authored pickups are one full magazine. Keeping the argument explicit preserves the native
+    /// message boundary and lets scripted pickups provide a different payload later.</para>
+    /// </remarks>
+    public WeaponPickupResult PickUp(WeaponType weapon, AmmoType? ammo, int rounds)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+
+        if (_carried.Any(carried => carried.Weapon.WeaponId == weapon.WeaponId))
+        {
+            if (ammo is null)
+            {
+                return default;
+            }
+
+            Ammunition.Add(ammo.AmmoId, rounds);
+            return new WeaponPickupResult(AddedWeapon: false, AddedReserveRounds: rounds);
+        }
+
+        HeldGun gun = Carry(weapon, ammo);
+        gun.State.RoundsInClip = rounds;
+        return new WeaponPickupResult(AddedWeapon: true, AddedReserveRounds: 0);
     }
 
     /// <summary>Advances the weapon machine by one tick.</summary>

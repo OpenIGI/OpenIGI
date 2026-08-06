@@ -83,6 +83,8 @@ public sealed class SoldierRenderer : IDisposable
     private AiAlarmControlRegistry? _alarmControls;
     private AiCombatTarget _playerTarget = new("HumanPlayer");
     private Action<int>? _aiTaskActivator;
+    private Action<WeaponType, Vector3d, Matrix3f>? _weaponDrop;
+    private GunPickupRegistry? _droppedWeaponPickups;
     private GameTask? _levelRoot;
 
     // The level's doors: ticked here (their update runs on the task pass, before the AIs), queried by
@@ -112,6 +114,12 @@ public sealed class SoldierRenderer : IDisposable
     /// played. The argument is the body's position in <b>engine units</b>.
     /// </remarks>
     public void SetDeathSound(Action<Vector3d>? report) => _deathSound = report;
+
+    /// <summary>Publishes a gun when a dead soldier's weapon becomes a world pickup.</summary>
+    public void SetWeaponDropSink(Action<WeaponType, Vector3d, Matrix3f>? report) => _weaponDrop = report;
+
+    /// <summary>Gives dropped weapons a collision world after they leave a dead soldier.</summary>
+    public void UseDroppedWeaponPickups(GunPickupRegistry? pickups) => _droppedWeaponPickups = pickups;
 
     /// <summary>Sounds a soldier's footstep, already resolved against the ground it landed on.</summary>
     /// <param name="report">The sink, or <see langword="null"/> to make soldiers walk silently.</param>
@@ -1881,6 +1889,11 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        // A GunPickup simulates independently after a dead human drops it, including when the optional
+        // visual corpse ragdoll is off. Sharing these probes keeps its walls and floor identical to the
+        // ones that stop the body.
+        _droppedWeaponPickups?.Tick(RagdollWorldForCorpses());
+
         // Each soldier is skinned from ITS OWN rig, which is what the original does (0x49F700 is called
         // through a stack descriptor about once per soldier per frame). Sharing one skinned mesh per group
         // made every soldier wear the first one's pose, so once guards diverged onto real patrol paths
@@ -3229,9 +3242,23 @@ public sealed class SoldierRenderer : IDisposable
         {
             Vector3f carried = view.RootMotion();
             double grounded = SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
+            Vector3d ragdollOrigin = new(view.Position.X, view.Position.Y, grounded + view.RootSample.Z);
+            Vector3d dropPosition = view.Position;
+            Matrix3f dropRotation = view.Orientation;
+            if (member.WeaponType is not null)
+            {
+                BonePose pose = view.UnrotatedPose();
+                if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
+                {
+                    Vector3f hand = pose.Positions[HumanAttachPoints.ThirdPersonWeapon];
+                    Vector3f offset = view.Orientation.Transposed().Transform(hand);
+                    dropPosition = ragdollOrigin + new Vector3d(offset.X, offset.Y, offset.Z);
+                    dropRotation = view.Orientation * pose.Rotations[HumanAttachPoints.ThirdPersonWeapon];
+                }
+            }
             member.Ragdoll = SeedRagdoll(
                 view,
-                new Vector3d(view.Position.X, view.Position.Y, grounded + view.RootSample.Z),
+                ragdollOrigin,
                 view.Orientation,
                 hit.Bone,
                 travel,
@@ -3242,7 +3269,13 @@ public sealed class SoldierRenderer : IDisposable
                 // as it stands, turned out of body space by the heading.
                 SoldierDeathFall.RotateAboutZ(new Vector3d(carried.X, carried.Y, carried.Z), facing),
                 FindModel(view),
-                member.Weapon);
+                weapon: null);
+
+            if (member.WeaponType is { } dropped)
+            {
+                member.Weapon = null;
+                _weaponDrop?.Invoke(dropped, dropPosition, dropRotation);
+            }
         }
     }
 

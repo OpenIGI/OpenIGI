@@ -76,6 +76,7 @@ internal sealed partial class DesktopGame : IDisposable
     private MissionRegistry _missions = null!;
     private MagicObjectRegistry _magic = null!;
     private HumanAiConfigRegistry _aiConfig = null!;
+    private AnimTriggerRegistry? _animationTriggers;
     private MaterialLibrary _materials = null!;
     private MaterialDetailPack _detailMaps = null!;
 
@@ -130,6 +131,7 @@ internal sealed partial class DesktopGame : IDisposable
     // --- The player, the held weapon, the HUD and the soldiers ---
     private PlayerCamera? _player;
     private HeldWeaponRenderer? _heldWeapon;
+    private GunPickupRenderer? _gunPickupRenderer;
     private StatusScreenRenderer? _hud;
     private RemasteredHudRenderer? _remasteredHud;
     private MapComputerRenderer? _mapComputer;
@@ -170,6 +172,7 @@ internal sealed partial class DesktopGame : IDisposable
     private ObjectCollisionIndex? _worldSolids;
     private DoorRegistry? _doors;
     private WorldInteractionRegistry? _interactions;
+    private GunPickupRegistry? _gunPickups;
 
     // --- The menus and the cinematic shell ---
     private MenuRenderer? _renderer;
@@ -373,6 +376,7 @@ internal sealed partial class DesktopGame : IDisposable
         // contents: every model's attachments name an entry here. Loading it is a startup step, like the
         // mission scan, because a level's own scripts never mention it.
         _magic = new(_logger);
+        _animationTriggers = new(_logger);
 
         // Without these the level's own HumanPlayer task is never built, and the spawn the mission
         // declares cannot be found - the tree loads perfectly well without it and simply has no player.
@@ -403,11 +407,13 @@ internal sealed partial class DesktopGame : IDisposable
         HumanAiConfigRegistry.RegisterTypes(_loop.Types);
         _aiConfig = new(_logger);
         _magic.Register(_loop.Natives);
+        _animationTriggers.Register(_loop.Natives);
 
         try
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
             _magic.Load(_resources, _loop.Natives);
+            _animationTriggers.Load(_resources, _loop.Natives);
             _aiConfig.Load(_resources, _loop.Natives, _loop.Tasks);
             configHost.Missions = _missions;
         }
@@ -1539,6 +1545,11 @@ internal sealed partial class DesktopGame : IDisposable
                     // as when it was pulled -- see WeaponSoundPlayer.
                     _weaponSounds?.Tick(_player.FiredThisTick, _player.HeldWeaponType);
 
+                    // Reloads and a few other weapon actions name their sounds through BOED animation
+                    // events rather than through the weapon record. The rig advanced inside Player.Tick,
+                    // so its crossed-event interval is ready to dispatch here.
+                    PlayPlayerAnimationSounds();
+
                     // And the player's own feet. Positional like anyone else's, and placed where the
                     // foot landed rather than on the listener, because the sound belongs to the ground.
                     if (_player.TakeFootstep() is { } step)
@@ -2105,6 +2116,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // played mission, `_backdropSoldiers` to the menu's.
                 SoldierRenderer? shadowCasters = _soldiers ?? _backdropSoldiers;
                 shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
+                _gunPickupRenderer?.BeginFrame(tickBlend, smoothPresentation);
 
                 // The modern path renders the scene offscreen so that it still exists, with its depth, once
                 // it has been drawn -- which is what every effect from stage R3 on needs. With r_hdr off,
@@ -2318,6 +2330,7 @@ internal sealed partial class DesktopGame : IDisposable
                 EndStageIfSlow("the sky and the terrain");
                 _world.Draw(_scene, eye, projection);
                 EndStageIfSlow("the world's objects");
+                _gunPickupRenderer?.Draw(eye, projection);
 
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
                 // never swaps in the view-model block for them (player.md section 15.3).
@@ -3085,6 +3098,7 @@ internal sealed partial class DesktopGame : IDisposable
         _soldiers?.Dispose();
         _backdropSoldiers?.Dispose();
         _heldWeapon?.Dispose();
+        _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _mapComputer?.Dispose();

@@ -12,6 +12,18 @@ namespace OpenIGI.Game.Tests;
 /// <summary>Checks objective/LevelFlow extraction against all fourteen retail mission scripts.</summary>
 public sealed class MissionObjectiveRuntimeTests
 {
+    [Fact]
+    public void TransientStatusMessageUsesTheMissionMessageSlotsWithoutWritingTheComputerLog()
+    {
+        GameLoop loop = new();
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+
+        Assert.True(runtime.ShowTransientMessage("PICKEDUPWEAPONAK-47"));
+        StatusMessageDisplay message = Assert.Single(runtime.DisplayedMessages);
+        Assert.Equal("PICKEDUPWEAPONAK-47", message.Text);
+        Assert.Empty(runtime.Log);
+    }
+
     [RequiresGameDataFact]
     public void EveryRetailMissionPublishesObjectivesAndLevelFlow()
     {

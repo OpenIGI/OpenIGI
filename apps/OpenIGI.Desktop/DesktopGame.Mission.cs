@@ -675,6 +675,26 @@ internal sealed partial class DesktopGame
                 _soldiers?.UseMaterials(materialTable);
                 _worldMaterials = materialTable;
                 _logger.Information("Material", $"Read {materialCount} game material(s).");
+
+                _gunPickups = GunPickupRegistry.Build(levelRoot, weaponRoster, ammoTable);
+                GunPickupRegistry gunPickups = _gunPickups;
+                candidate.UseGunPickups(gunPickups);
+                candidate.GunPickedUp += pickup =>
+                {
+                    PlayGunPickupSound(pickup);
+                    string key = $"PICKEDUPWEAPON{pickup.Weapon.DisplayName}";
+                    _missionObjectives?.ShowTransientMessage(missionText.Get(key));
+                };
+                _soldiers?.UseDroppedWeaponPickups(gunPickups);
+                _soldiers?.SetWeaponDropSink((weapon, position, orientation) =>
+                {
+                    GunPickup pickup = gunPickups.Spawn(position, orientation, weapon);
+                    _gunPickupRenderer?.Add(loaded, pickup);
+                });
+                if (_gunPickups.Items.Count > 0)
+                {
+                    _logger.Information("Weapon", $"{_gunPickups.Items.Count} gun pickup(s) available.");
+                }
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or KeyNotFoundException)
             {
@@ -760,6 +780,8 @@ internal sealed partial class DesktopGame
             // What the mission arms you with is declared, not computed: weapon tasks hang off the
             // level's own HumanPlayer, and every WEAPON_ID_* resolves to a roster entry naming a
             // Gun Model. With the rig in place that model can finally be put where the game puts it.
+            _gunPickupRenderer?.Dispose();
+            _gunPickupRenderer = null;
             _heldWeapon?.Dispose();
     _hud?.Dispose();
     _marks?.Dispose();
@@ -801,6 +823,15 @@ internal sealed partial class DesktopGame
                         _remasteredHud = null;
                     }
                 }
+            }
+
+            if (_gunPickups is { } pickups)
+            {
+                _gunPickupRenderer = new GunPickupRenderer(_device, _resources, _magic, _logger)
+                {
+                    Materials = _materials,
+                };
+                _gunPickupRenderer.Load(loaded, pickups);
             }
 
             EndStage("the loadout, the bullet marks and the HUD");
@@ -962,6 +993,7 @@ internal sealed partial class DesktopGame
         _soldiers?.Dispose();
         _backdropSoldiers?.Dispose();
         _heldWeapon?.Dispose();
+        _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _marks?.Dispose();
@@ -972,6 +1004,7 @@ internal sealed partial class DesktopGame
         _soldiers = null;
         _backdropSoldiers = null;
         _heldWeapon = null;
+        _gunPickupRenderer = null;
         _hud = null;
         _remasteredHud = null;
         _marks = null;
@@ -984,6 +1017,7 @@ internal sealed partial class DesktopGame
         _worldMaterials = null;
         _doors = null;
         _interactions = null;
+        _gunPickups = null;
         _loadedMissionForWeapon = null;
 
         if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)

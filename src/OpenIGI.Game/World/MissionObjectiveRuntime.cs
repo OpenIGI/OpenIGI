@@ -27,6 +27,7 @@ public sealed class MissionObjectiveRuntime
     private readonly List<EditVariable> _editVariables = [];
     private readonly List<OutroCutScene> _outroCutScenes = [];
     private readonly List<StatusMessage> _statusMessages = [];
+    private readonly List<StatusMessage> _transientMessages = [];
 
     /// <summary>The live message slots, exactly as many as <c>0x486650</c> searches.</summary>
     /// <remarks>
@@ -159,6 +160,42 @@ public sealed class MissionObjectiveRuntime
 
     /// <summary>Gets how many authored status-message tasks the mission contains.</summary>
     public int StatusMessageCount => _statusMessages.Count;
+
+    /// <summary>Shows a non-scripted retail-style status message in the next free top-left slot.</summary>
+    /// <param name="text">The already formatted text to draw.</param>
+    /// <param name="durationSeconds">How long the text holds after it has typed out.</param>
+    /// <returns><see langword="true"/> when a display slot was available.</returns>
+    /// <remarks>
+    /// <para>
+    /// Some game events create a <c>StatusMessageScreen</c> child directly instead of running an authored
+    /// <c>StatusMessage</c> task. GunPickup does exactly that at <c>0x46D3A7</c>, formatting
+    /// <c>PICKEDUPWEAPON%s</c> from the weapon's display name and posting it through <c>0x485970</c>.
+    /// These messages share the same twenty-four slots and display state as mission messages but do not
+    /// alter script variables or the map-computer log.
+    /// </para>
+    /// </remarks>
+    public bool ShowTransientMessage(string text, float durationSeconds = 2f)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(text);
+        if (!float.IsFinite(durationSeconds) || durationSeconds < 0f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(durationSeconds));
+        }
+
+        StatusMessage message = new(string.Empty, string.Empty, sendOnce: true, cutscene: false, durationSeconds)
+        {
+            IsSent = true,
+            SentTick = _tick,
+        };
+        if (!TryTakeMessageSlot(message))
+        {
+            return false;
+        }
+
+        message.BeginDisplay(text);
+        _transientMessages.Add(message);
+        return true;
+    }
 
     /// <summary>Gets the messages on screen now, in the slot order the original draws them in.</summary>
     /// <remarks>
@@ -314,6 +351,16 @@ public sealed class MissionObjectiveRuntime
                 message.FinishedDisplayTick = _tick;
                 message.TicksSinceFinishedDisplay = 0;
                 ReleaseMessageSlot(message);
+            }
+        }
+
+        for (int i = _transientMessages.Count - 1; i >= 0; i--)
+        {
+            StatusMessage message = _transientMessages[i];
+            if (message.IsDisplaying && message.AdvanceDisplay(ExtraMessageHoldSeconds))
+            {
+                ReleaseMessageSlot(message);
+                _transientMessages.RemoveAt(i);
             }
         }
 

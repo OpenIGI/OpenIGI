@@ -101,6 +101,49 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void GunPickupAddsANewWeaponWithoutChangingWhatIsHeld()
+    {
+        PlayerWeapons weapons = new([20, 1, 7]);
+        weapons.Carry(Knife);
+        Equip(weapons);
+
+        WeaponPickupResult result = weapons.PickUp(Glock, NineMillimetre, Glock.RoundsPerClip);
+
+        Assert.True(result.AddedWeapon);
+        Assert.Equal(0, result.AddedReserveRounds);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+        CarriedWeapon pickedUp = Assert.Single(weapons.Carried, carried => carried.Weapon.WeaponId == Glock.WeaponId);
+        Assert.Equal(Glock.RoundsPerClip, pickedUp.Gun.RoundsInClip);
+    }
+
+    [Fact]
+    public void GunPickupTurnsADuplicateWeaponIntoOneFullMagazineOfReserveAmmo()
+    {
+        PlayerWeapons weapons = new([1]);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 2);
+
+        WeaponPickupResult result = weapons.PickUp(Glock, NineMillimetre, Glock.RoundsPerClip);
+
+        Assert.False(result.AddedWeapon);
+        Assert.Equal(Glock.RoundsPerClip, result.AddedReserveRounds);
+        Assert.Single(weapons.Carried);
+        Assert.Equal(2 + Glock.RoundsPerClip, weapons.Ammunition.Count(NineMillimetre.AmmoId));
+    }
+
+    [Fact]
+    public void RuntimeAndAuthoredGunPickupsUseTheSameFullMagazinePayload()
+    {
+        PlayerWeapons weapons = new([1]);
+
+        WeaponPickupResult result = weapons.PickUp(Glock, NineMillimetre, Glock.RoundsPerClip);
+
+        CarriedWeapon gun = Assert.Single(weapons.Carried);
+        Assert.True(result.AddedWeapon);
+        Assert.Equal(Glock.RoundsPerClip, gun.Gun.RoundsInClip);
+    }
+
+    [Fact]
     public void TheCycleSkipsWhatIsNotCarried()
     {
         PlayerWeapons weapons = new(Cycle);

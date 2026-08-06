@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
@@ -87,6 +88,35 @@ public sealed class HeldWeaponRenderer : IDisposable
 
     /// <summary>Gets whether a model is loaded and ready to draw.</summary>
     public bool IsReady => _parts.Count > 0;
+
+    /// <summary>Builds collision vertices in the same attachment-local frame this renderer draws.</summary>
+    /// <remarks>
+    /// A multipart weapon's raw model vertices are not enough: child nodes apply both a local position
+    /// and rotation before the attachment's transform. This is the exact composition used by
+    /// <see cref="Draw"/>, without the camera transform, and is therefore safe for a world pickup's
+    /// terrain contact solver.
+    /// </remarks>
+    public DroppedGunCollider? CreatePickupCollider()
+    {
+        List<Vector3f> vertices = [];
+        float units = (float)WorldScene.UnitsPerMetre;
+        foreach (Part part in _parts)
+        {
+            if (part.IsGunFlame)
+            {
+                continue;
+            }
+
+            foreach (Vertex3D vertex in part.Geometry.Vertices)
+            {
+                Vector3f rotated = part.Orientation.Transposed().Transform(vertex.Position);
+                vertices.Add((part.PositionMetres + rotated) * units);
+            }
+
+        }
+
+        return vertices.Count == 0 ? null : new DroppedGunCollider(vertices);
+    }
 
     /// <summary>Gets or sets the modern-path surface descriptions used by weapon textures.</summary>
     public MaterialLibrary Materials

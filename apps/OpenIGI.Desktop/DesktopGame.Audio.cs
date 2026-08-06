@@ -6,6 +6,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Rendering;
@@ -46,6 +47,36 @@ internal sealed partial class DesktopGame
 
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
+
+    /// <summary>Dispatches the sounds authored as events in the player's current view-model clip.</summary>
+    /// <remarks>
+    /// Reload sounds live in <c>animtrigger/animtrigger.qvm</c>, keyed by BOED event ids in the
+    /// first-person weapon animations. They are therefore neither firing sounds nor weapon-record
+    /// fields, and have to be tested after <see cref="HumanView.Tick"/> advances the rig.
+    /// </remarks>
+    private void PlayPlayerAnimationSounds()
+    {
+        if (_sounds is null || _animationTriggers is null || _player?.View is not { } view)
+        {
+            return;
+        }
+
+        foreach (AnimTriggerDefinition trigger in _animationTriggers.Definitions.Values)
+        {
+            if (view.CrossedEvent(trigger.EventId))
+            {
+                // The player's view rig is at the listener, so this is deliberately non-positional.
+                _sounds.PlayDefinition(trigger.Resource, priority: 180);
+            }
+        }
+    }
+
+    /// <summary>Plays the retail world-weapon cue after a <c>GunPickup</c> reaches the player.</summary>
+    private void PlayGunPickupSound(GunPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        _sounds?.PlayDefinition("weaponpickup_1", priority: 180);
+    }
 
     /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
     private long _audioTimestamp;
