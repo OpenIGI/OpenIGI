@@ -1646,8 +1646,12 @@ public sealed class PlayerCamera
         Vector3d direction = new(shot.Direction.X, shot.Direction.Y, shot.Direction.Z);
         Vector3d end = shot.Origin + (direction * shot.RangeInUnits);
 
-        WorldRayHit hit = default;
-        bool struckWall = _body.Walls is { } cast && cast(shot.Origin, end, out hit);
+        WorldTraceHit richHit = default;
+        bool struckWall = _walls is not null
+            && _walls.TryTrace(
+                new WorldTraceRequest(shot.Origin, end, WorldTraceMask.World),
+                out richHit);
+        WorldRayHit hit = struckWall ? richHit.RayHit : default;
 
         // Both, then the nearer. A guard in front of a wall takes the round and the wall stays clean;
         // one behind it does not, and the wall is marked.
@@ -1673,7 +1677,7 @@ public sealed class PlayerCamera
                 Marks.TryAdd(hit, materials);
             }
 
-            return new GunImpact(hit.Position, true, shot.RangeInUnits);
+            return new GunImpact(hit.Position, true, shot.RangeInUnits, richHit.Owner);
         }
 
         return new GunImpact(end, false, shot.RangeInUnits);

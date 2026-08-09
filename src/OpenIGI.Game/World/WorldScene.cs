@@ -59,12 +59,21 @@ public sealed class WorldScene
     /// <summary>The security-camera task type, whose models are engine-supplied rather than declared.</summary>
     public const string SecurityCameraType = "SCamera";
 
+    /// <summary>The retail task that owns a visible, destructible alarm speaker.</summary>
+    public const string SirenType = "Siren";
+
     /// <summary>The two models an <c>SCamera</c> builds in — its constructor (<c>0x4423F0</c>) hard-codes both.</summary>
     /// <remarks>
     /// The camera head and its mount. They are placed and numbered like any script-declared model,
     /// which is why a level's lightmap archive has entries no <c>Model</c> parameter accounts for.
     /// </remarks>
     public static readonly IReadOnlyList<string> SecurityCameraModels = ["313_01_1", "313_02_1"];
+
+    /// <summary>The security camera's model parameters, in the order retail creates the two objects.</summary>
+    public static readonly IReadOnlyList<string> SecurityCameraModelParameters = ["Holder Model", "Camera Model"];
+
+    /// <summary>The replacement model parameter used after the camera head is destroyed.</summary>
+    public const string SecurityCameraDestroyedModelParameter = "Camera Destroyed Model";
 
     /// <summary>Lists the model names a task places, in the order the object walk counts them.</summary>
     /// <param name="task">The task to read.</param>
@@ -81,9 +90,20 @@ public sealed class WorldScene
 
         if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
         {
-            foreach (string model in SecurityCameraModels)
+            for (int i = 0; i < SecurityCameraModelParameters.Count; i++)
             {
-                yield return model;
+                string parameter = SecurityCameraModelParameters[i];
+                if (task.TryGetValue(parameter, out object? rawCameraModel)
+                    && rawCameraModel is string cameraModel
+                    && cameraModel.Length > 0)
+                {
+                    yield return cameraModel;
+                }
+                else
+                {
+                    // The constructor hard-codes these same names before level parameters overwrite them.
+                    yield return SecurityCameraModels[i];
+                }
             }
         }
 
@@ -139,7 +159,7 @@ public sealed class WorldScene
     /// origin — it is skipped and counted, since a stray object at (0,0,0) drags the level's bounds out
     /// by kilometres and takes the camera with it.
     /// </remarks>
-    public static readonly string[] PositionParameters = ["Position", "Position start"];
+    public static readonly string[] PositionParameters = ["Position", "Position start", "Holder Position"];
 
     /// <summary>The task parameter naming an object's orientation.</summary>
     public const string OrientationParameter = "Orientation";
@@ -339,14 +359,23 @@ public sealed class WorldScene
                     continue;
                 }
 
-                declared.TryGetValue(OrientationParameter, out object? rawOrientation);
-                Matrix3f orientation = rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
+                Matrix3f orientation = PlacementOrientation(declared, modelSlot);
+
+                // SCameraLens is not committed at the holder task's origin. Retail asks the holder
+                // model for magic vertex 0, rotates that mount through the holder's own orientation,
+                // and adds it to Holder Position (0x4420D0). A live Mission 1 probe verified all five
+                // resulting positions to sub-unit precision.
+                if (string.Equals(declared.Type.Name, SecurityCameraType, StringComparison.Ordinal)
+                    && modelSlot == 1)
+                {
+                    position = CameraLensPosition(declared, position, byName);
+                }
 
                 (string Set, WorldObject Root) bake = bakes is not null && modelSlot < bakes.Count
                     ? bakes[modelSlot]
                     : default;
 
-                placements.Add(new WorldPlacement(
+                WorldPlacement placement = new(
                     position,
                     orientation,
                     bound.Instance,
@@ -355,7 +384,27 @@ public sealed class WorldScene
                     task.Name,
                     task,
                     bake.Set ?? string.Empty,
-                    bake.Root?.LightmapIndex ?? -1));
+                    bake.Root?.LightmapIndex ?? -1);
+
+                // The original does not delete a shot camera head. SCameraLens's destruction branch
+                // (0x441770) swaps only that child to Camera Destroyed Model, leaving the holder intact.
+                if (string.Equals(declared.Type.Name, SecurityCameraType, StringComparison.Ordinal)
+                    && modelSlot == 1
+                    && declared.TryGetValue(SecurityCameraDestroyedModelParameter, out object? rawDestroyed)
+                    && rawDestroyed is string destroyedName
+                    && destroyedName.Length > 0
+                    && byName.TryGetValue(destroyedName, out var destroyed))
+                {
+                    placement = placement with
+                    {
+                        DestroyedReplacement = new WorldModelBinding(
+                            destroyed.Instance,
+                            destroyed.Pack,
+                            destroyed.Model),
+                    };
+                }
+
+                placements.Add(placement);
 
                 // Everything the model attaches, and everything those attach in turn. The tree is only
                 // available when a magic-object table was supplied; without one a level draws its
@@ -886,6 +935,57 @@ public sealed class WorldScene
     /// </remarks>
     public static Matrix3f ToOrientation(Vector3f angles) =>
         Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z);
+
+    private static Matrix3f PlacementOrientation(DeclaredTask task, int modelSlot)
+    {
+        if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
+        {
+            if (modelSlot == 0)
+            {
+                return CameraHolderOrientation(task);
+            }
+
+            float holderGamma = FloatValue(task, "Holder Gamma");
+            float cameraAlpha = FloatValue(task, "Camera Alpha");
+            float cameraGamma = FloatValue(task, "Camera Gamma");
+            return Matrix3f.FromEngineEulerAngles(cameraAlpha, 0f, holderGamma + cameraGamma);
+        }
+
+        task.TryGetValue(OrientationParameter, out object? rawOrientation);
+        return rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
+    }
+
+    private static Matrix3f CameraHolderOrientation(DeclaredTask task) =>
+        Matrix3f.RotationZ(FloatValue(task, "Holder Gamma"));
+
+    private static Vector3d CameraLensPosition(
+        DeclaredTask task,
+        Vector3d holderPosition,
+        Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName)
+    {
+        string holderName = task.TryGetValue(SecurityCameraModelParameters[0], out object? raw)
+            && raw is string declaredName
+            && declaredName.Length > 0
+                ? declaredName
+                : SecurityCameraModels[0];
+
+        if (!byName.TryGetValue(holderName, out var holder)
+            || !holder.Model.TryGetMagicVertex(0, out Vector3f mount))
+        {
+            return holderPosition;
+        }
+
+        // Matrix3f stores the engine's row-major basis, while the holder-to-world operation here is
+        // M*v. Transposing before the row-vector helper gives the same product as retail sub_414E20.
+        Vector3f offset = CameraHolderOrientation(task).Transposed().Transform(mount);
+        return new Vector3d(
+            holderPosition.X + (offset.X / UnitsPerMetre),
+            holderPosition.Y + (offset.Y / UnitsPerMetre),
+            holderPosition.Z + (offset.Z / UnitsPerMetre));
+    }
+
+    private static float FloatValue(DeclaredTask task, string parameter) =>
+        task.TryGetValue(parameter, out object? raw) && raw is float value ? value : 0f;
 
     private static IEnumerable<GameTask> Walk(GameTask root)
     {

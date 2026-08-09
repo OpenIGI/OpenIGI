@@ -4,26 +4,28 @@ using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Ai;
 
-/// <summary>One placed siren — an <c>AlarmLight</c> on a wall or a beeping <c>SCamera</c> on its pole.</summary>
+/// <summary>One placed alarm emitter: a <c>Siren</c>, <c>AlarmLight</c>, <c>SCamera</c>, or spatial <c>ConditionalSound</c>.</summary>
 /// <param name="Task">The placed task.</param>
 /// <param name="PositionUnits">Where it hangs, in world units.</param>
 /// <param name="AlarmExpression">The level expression that turns it on — usually a control's <c>isAlarm</c>.</param>
 /// <param name="SirenSound">The sound it loops while on — the first of its two sound parameters.</param>
 /// <param name="DestructionSound">The report it dies with — the second, which <c>0x43A5F0</c> hands its explosion.</param>
 /// <param name="FollowsAnyAlarm">Whether it sounds while any alarm control is on, instead of by expression.</param>
+/// <param name="CanBeDestroyed">Whether world damage can permanently silence this emitter.</param>
 public sealed class AlarmSpeaker(
     DeclaredTask Task,
     Vector3d PositionUnits,
     string AlarmExpression,
     string SirenSound,
     string DestructionSound,
-    bool FollowsAnyAlarm = false)
+    bool FollowsAnyAlarm = false,
+    bool CanBeDestroyed = true)
 {
     /// <summary>Gets the placed task.</summary>
     public DeclaredTask Task { get; } = Task;
 
     /// <summary>Gets where it hangs, in world units.</summary>
-    public Vector3d PositionUnits { get; } = PositionUnits;
+    public Vector3d PositionUnits { get; internal set; } = PositionUnits;
 
     /// <summary>Gets the level expression that turns it on.</summary>
     public string AlarmExpression { get; } = AlarmExpression;
@@ -41,12 +43,15 @@ public sealed class AlarmSpeaker(
     /// </remarks>
     public bool FollowsAnyAlarm { get; } = FollowsAnyAlarm;
 
+    /// <summary>Gets whether world damage can permanently silence this emitter.</summary>
+    public bool CanBeDestroyed { get; } = CanBeDestroyed;
+
     /// <summary>Gets or sets whether the speaker has been shot out — retail's <c>+417</c>.</summary>
     /// <remarks>Permanent: a destroyed speaker never sounds again, whatever its expression says.</remarks>
     public bool IsDestroyed { get; set; }
 }
 
-/// <summary>All placed sirens in one mission — <c>AlarmLight</c> speakers and beeping <c>SCamera</c>s — and whether each is sounding.</summary>
+/// <summary>All placed sirens in one mission and whether each is sounding.</summary>
 /// <remarks>
 /// <para>
 /// The retail task (<c>0x4397C0</c>, 504 bytes) is a speaker with a lamp: its update
@@ -54,8 +59,8 @@ public sealed class AlarmSpeaker(
 /// <b>spawns a looping sound child at its own position</b> — destroying that child the moment the
 /// expression clears. That is why every siren in a level starts on the same tick and stops
 /// together, and why each one is heard from where it hangs. A destroyed speaker (<c>+417</c>)
-/// silences itself for good — <see cref="TryDestroyAt"/> models that, standing proximity in for the
-/// per-object damage identity the port does not carry yet.
+/// silences itself for good. Rich world contacts use <see cref="TryDestroy"/> to preserve the struck
+/// task's identity; radius damage and legacy contacts use <see cref="TryDestroyAt"/>.
 /// </para>
 /// <para>
 /// The expression machinery is the same one <see cref="AiAlarmControlRegistry"/> evaluates the
@@ -66,6 +71,7 @@ public sealed class AlarmSpeaker(
 public sealed class AlarmSpeakerRegistry
 {
     private readonly List<AlarmSpeaker> _speakers = [];
+    private readonly Dictionary<GameTask, AlarmSpeaker> _byTask = [];
     private readonly LevelExpressionRuntime _expressions;
     private readonly Func<bool>? _anyAlarmOn;
 
@@ -78,7 +84,7 @@ public sealed class AlarmSpeakerRegistry
     /// <summary>Gets the speakers found under the level root.</summary>
     public IReadOnlyList<AlarmSpeaker> Speakers => _speakers;
 
-    /// <summary>Builds the registry from every <c>AlarmLight</c> and <c>SCamera</c> below <paramref name="root"/>.</summary>
+    /// <summary>Builds the registry from every spatial alarm emitter below <paramref name="root"/>.</summary>
     /// <param name="root">The level's task tree.</param>
     /// <param name="variables">The live level variables the expressions read.</param>
     /// <param name="anyAlarmOn">Whether any alarm control is sounding — what the cameras' beeps follow.</param>
@@ -99,8 +105,8 @@ public sealed class AlarmSpeakerRegistry
     /// <summary>How close a hit must land to count as striking the speaker, in world units.</summary>
     /// <remarks>
     /// 0.8 m. The retail speaker takes the ordinary damage message through its own collision mesh;
-    /// the port resolves hits against the world without naming the struck task, so nearness to the
-    /// placement stands in. The lamp is a ~30 cm box — this is forgiving without being magnetic.
+    /// legacy/ballistic contacts do not always retain the struck task, so nearness to the resolved
+    /// head placement stands in there. The lamp is a ~30 cm box — this is forgiving without being magnetic.
     /// </remarks>
     public const float HitRadiusUnits = 3276.8f;
 
@@ -124,6 +130,51 @@ public sealed class AlarmSpeakerRegistry
             && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false);
     }
 
+    /// <summary>Gets whether the placed destructible task has already been shot out.</summary>
+    public bool IsDestroyed(GameTask task) =>
+        _byTask.TryGetValue(task, out AlarmSpeaker? speaker) && speaker.IsDestroyed;
+
+    /// <summary>Binds emitter positions to their rendered scene objects.</summary>
+    /// <param name="placements">The mission's resolved placements.</param>
+    /// <remarks>
+    /// An SCamera's script position is the holder. Retail attaches its sound and damage-bearing lens at
+    /// the camera-head child placed at that holder transform. Using the resolved head placement keeps
+    /// the siren, bullet hit and explosion on the visible object if a level overrides its model layout.
+    /// </remarks>
+    public void BindScene(IEnumerable<WorldPlacement> placements)
+    {
+        ArgumentNullException.ThrowIfNull(placements);
+
+        foreach (WorldPlacement placement in placements)
+        {
+            if (!_byTask.TryGetValue(placement.Owner, out AlarmSpeaker? speaker)
+                || !string.Equals(speaker.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+                || !string.Equals(placement.Instance.Name, CameraModelName(speaker.Task), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            speaker.PositionUnits = placement.Position * WorldScene.UnitsPerMetre;
+        }
+    }
+
+    /// <summary>Destroys the exact alarm object named by a rich world trace.</summary>
+    /// <param name="owner">The placing task hit by the trace.</param>
+    /// <returns>The newly destroyed speaker, or <see langword="null"/>.</returns>
+    public AlarmSpeaker? TryDestroy(GameTask? owner)
+    {
+        if (owner is null
+            || !_byTask.TryGetValue(owner, out AlarmSpeaker? speaker)
+            || speaker.IsDestroyed
+            || !speaker.CanBeDestroyed)
+        {
+            return null;
+        }
+
+        speaker.IsDestroyed = true;
+        return speaker;
+    }
+
     /// <summary>Destroys whatever speaker an impact landed on, if it landed on one.</summary>
     /// <param name="impactUnits">Where the round or blast hit, in world units.</param>
     /// <param name="radiusUnits">How far the destruction reaches — a bullet's touch, a blast's radius.</param>
@@ -136,7 +187,7 @@ public sealed class AlarmSpeakerRegistry
 
         foreach (AlarmSpeaker speaker in _speakers)
         {
-            if (speaker.IsDestroyed)
+            if (speaker.IsDestroyed || !speaker.CanBeDestroyed)
             {
                 continue;
             }
@@ -157,9 +208,28 @@ public sealed class AlarmSpeakerRegistry
         return nearest;
     }
 
+    private void Add(AlarmSpeaker speaker)
+    {
+        _speakers.Add(speaker);
+        _byTask[speaker.Task] = speaker;
+    }
+
     private void Collect(GameTask task)
     {
-        if (task is DeclaredTask declared
+        if (task is DeclaredTask sirenTask
+            && string.Equals(task.Type.Name, WorldScene.SirenType, StringComparison.Ordinal))
+        {
+            // Retail Siren's QVM declaration supplies these explicitly. The visual comes from Model;
+            // its destruction path clears that model when Destroyed model is empty, plays Explosion
+            // sound, spawns the fireballs, and permanently suppresses both working/faulty loops.
+            Add(new AlarmSpeaker(
+                sirenTask,
+                FirstPosition(sirenTask),
+                FirstString(sirenTask, "on expression"),
+                FirstString(sirenTask, "working sound"),
+                FirstString(sirenTask, "explosion sound")));
+        }
+        else if (task is DeclaredTask declared
             && string.Equals(task.Type.Name, "AlarmLight", StringComparison.Ordinal))
         {
             // The parameter names are the level data's own declarations, so they are matched by
@@ -169,23 +239,40 @@ public sealed class AlarmSpeakerRegistry
             string expression = FirstString(declared, "expression");
             (string siren, string destruction) = SoundPair(declared);
 
-            _speakers.Add(new AlarmSpeaker(declared, FirstPosition(declared), expression, siren, destruction));
+            Add(new AlarmSpeaker(declared, FirstPosition(declared), expression, siren, destruction));
         }
         else if (task is DeclaredTask camera
             && string.Equals(task.Type.Name, "SCamera", StringComparison.Ordinal))
         {
-            // A security camera is the other siren the levels hang up -- the early missions have no
-            // AlarmLight at all and their alarm IS the cameras' beeping. While the alarm holds, each
-            // live camera loops "camera_beep_al" from where it sits (0x441AE0), and a shot camera
-            // dies with "explo_camera" and a small fireball (0x441770's destruction branch). The
-            // sound names are the retail update's own literals, not level parameters.
-            _speakers.Add(new AlarmSpeaker(
+            // Detection and movement loops belong to SecurityCameraRegistry's lens state machine.
+            // This entry remains as the exact-task damage/destruction proxy used by weapon traces.
+            Add(new AlarmSpeaker(
                 camera,
                 FirstPosition(camera),
                 AlarmExpression: string.Empty,
-                SirenSound: "camera_beep_al",
+                SirenSound: string.Empty,
                 DestructionSound: "explo_camera",
-                FollowsAnyAlarm: true));
+                FollowsAnyAlarm: false));
+        }
+        else if (task is DeclaredTask conditionalSound
+            && string.Equals(task.Type.Name, "ConditionalSound", StringComparison.Ordinal))
+        {
+            // ConditionalSound is an audio-only positional emitter. The live retail Mission 1 object
+            // commit log contains no loudspeaker or AlarmLight object for these tasks, so there is no
+            // collision object to shoot and no destruction effect to synthesize.
+            string condition = FirstString(conditionalSound, "condition");
+            string sound = FirstString(conditionalSound, "sound");
+            if (condition.Length > 0
+                && sound.Contains("alarm", StringComparison.OrdinalIgnoreCase))
+            {
+                Add(new AlarmSpeaker(
+                    conditionalSound,
+                    FirstPosition(conditionalSound),
+                    condition,
+                    sound,
+                    DestructionSound: string.Empty,
+                    CanBeDestroyed: false));
+            }
         }
 
         foreach (GameTask child in task.Children)
@@ -226,6 +313,13 @@ public sealed class AlarmSpeakerRegistry
 
         return string.Empty;
     }
+
+    private static string CameraModelName(DeclaredTask task) =>
+        task.TryGetValue(WorldScene.SecurityCameraModelParameters[1], out object? raw)
+            && raw is string name
+            && name.Length > 0
+            ? name
+            : WorldScene.SecurityCameraModels[1];
 
     // The two sound parameters, in declaration order: the siren first, the destruction report
     // second -- the order the retail ctor fills +352 and +384 in.

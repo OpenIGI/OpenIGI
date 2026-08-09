@@ -36,6 +36,13 @@ public sealed record WorldPlacement(
     string LightmapSet = "",
     int LightmapIndex = -1)
 {
+    /// <summary>Gets the model binding drawn after this object's destructible head is shot out.</summary>
+    /// <remarks>
+    /// Security cameras keep their holder but replace the live <c>313_02_1</c> head with the authored
+    /// <c>Camera Destroyed Model</c> (<c>313_03_1</c> in mission 1). Most placements have no replacement.
+    /// </remarks>
+    public WorldModelBinding? DestroyedReplacement { get; init; }
+
     /// <summary>Gets pre-deformed geometry that replaces the model's own, or <see langword="null"/>.</summary>
     /// <remarks>
     /// A spline segment's vertices are bent along its waypoints' curve, so the mesh is unique to the
@@ -56,3 +63,9 @@ public sealed record WorldPlacement(
     /// <inheritdoc/>
     public override string ToString() => $"{Instance.Name} at {Position}";
 }
+
+/// <summary>A pack instance and the geometry it binds, without a second world transform.</summary>
+/// <param name="Instance">The pack instance, including its texture bindings.</param>
+/// <param name="Pack">The pack that owns the instance.</param>
+/// <param name="Model">The instance's geometry.</param>
+public sealed record WorldModelBinding(MtpInstance Instance, LoadedPack Pack, MefModel Model);

@@ -81,6 +81,40 @@ public sealed class ObjectCollisionIndex
         return updated;
     }
 
+    /// <summary>Updates one model placement owned by a multi-model task.</summary>
+    /// <param name="owner">The task owning the placement.</param>
+    /// <param name="instanceName">The exact pack-instance name to move.</param>
+    /// <param name="positionMetres">Its current origin in metres.</param>
+    /// <param name="orientation">Its current orientation.</param>
+    /// <returns><see langword="true"/> when a matching collision mesh was indexed.</returns>
+    /// <remarks>
+    /// An <c>SCamera</c> owns a fixed holder and an articulated head. Updating by owner alone would
+    /// incorrectly move the holder onto the head, so camera ticks use this placement-specific form.
+    /// </remarks>
+    public bool UpdateTransform(
+        GameTask owner,
+        string instanceName,
+        Vector3d positionMetres,
+        Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        ArgumentException.ThrowIfNullOrEmpty(instanceName);
+        bool updated = false;
+        foreach (Entry entry in _entries)
+        {
+            if (!ReferenceEquals(entry.Owner, owner)
+                || !string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            entry.UpdateTransform(positionMetres, orientation);
+            updated = true;
+        }
+
+        return updated;
+    }
+
     /// <summary>Gets how many placed objects carry collision geometry.</summary>
     public int Count => _entries.Length;
 
@@ -137,7 +171,7 @@ public sealed class ObjectCollisionIndex
                 : $"{placement.Instance.Name} [{placement.TaskName}]";
 
             entries.Add(Entry.Create(
-                mesh, origin, placement.Orientation, label, placement.TaskName, placement.Owner));
+                mesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName, placement.Owner));
         }
 
         return new ObjectCollisionIndex([.. entries]);
@@ -391,6 +425,7 @@ public sealed class ObjectCollisionIndex
             Vector3d centre,
             double radius,
             Vector3f rootCentre,
+            string instanceName,
             string label,
             string taskName,
             GameTask owner)
@@ -403,6 +438,7 @@ public sealed class ObjectCollisionIndex
             Centre = centre;
             ClosedCentre = centre;
             Radius = radius;
+            InstanceName = instanceName;
             Label = label;
             TaskName = taskName;
             Owner = owner;
@@ -416,6 +452,8 @@ public sealed class ObjectCollisionIndex
 
         public double Radius { get; }
 
+        public string InstanceName { get; }
+
         public string Label { get; }
 
         public string TaskName { get; }
@@ -428,6 +466,7 @@ public sealed class ObjectCollisionIndex
             MefCollisionMesh mesh,
             Vector3d origin,
             Matrix3f orientation,
+            string instanceName,
             string label,
             string taskName,
             GameTask owner)
@@ -474,7 +513,8 @@ public sealed class ObjectCollisionIndex
                 }
             }
 
-            return new Entry(mesh, localVertices, vertices, centre, radius, rootCentre, label, taskName, owner);
+            return new Entry(
+                mesh, localVertices, vertices, centre, radius, rootCentre, instanceName, label, taskName, owner);
         }
 
         public void UpdateTransform(Vector3d positionMetres, Matrix3f orientation)

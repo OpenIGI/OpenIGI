@@ -39,6 +39,18 @@ public sealed class ScriptFlag
     /// <summary>Copies the current value into the shadow. Call at the end of the owner's update.</summary>
     public void CommitTick() => Last = Value;
 
+    /// <summary>Ends a held pulse and exposes its previous value through the shadow for one tick.</summary>
+    /// <remarks>
+    /// IGI1 switches keep <c>isLastPressed</c> false while <c>isPressed</c> is held. When the three-tick
+    /// press expires they clear <c>isPressed</c> and copy its old value to <c>isLastPressed</c>; the next
+    /// ordinary commit clears the shadow again.
+    /// </remarks>
+    public void EndPulse()
+    {
+        Last = Value;
+        Value = false;
+    }
+
     /// <inheritdoc/>
     public override string ToString() => $"{Value} (was {Last})";
 }

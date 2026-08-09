@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.Weapons;
 
@@ -8,6 +9,7 @@ namespace OpenIGI.Game.Weapons;
 /// </param>
 /// <param name="HitSomething">Whether a surface stopped it.</param>
 /// <param name="RangeInUnits">How far it was allowed to travel, from the weapon's effective range.</param>
+/// <param name="Owner">The exact placed task struck by a rich world trace, when available.</param>
 /// <remarks>
 /// <para>
 /// <b>This is one cast, not the original's loop.</b> <c>0x47B750</c> keeps casting while range is left,
@@ -18,4 +20,8 @@ namespace OpenIGI.Game.Weapons;
 /// </para>
 /// <para>See the original and the divergence in <c>TODO.md</c>.</para>
 /// </remarks>
-public readonly record struct GunImpact(Vector3d Position, bool HitSomething, float RangeInUnits);
+public readonly record struct GunImpact(
+    Vector3d Position,
+    bool HitSomething,
+    float RangeInUnits,
+    GameTask? Owner = null);

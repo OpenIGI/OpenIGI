@@ -1,5 +1,6 @@
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -60,6 +61,164 @@ public sealed class AiAlarmRuntimeTests
 
         soldier.SetAlarmStatusResolver(_ => false);
         Assert.False(soldier.GetAlarmControlStatus());
+    }
+
+    [Fact]
+    public void SecurityCameraDamageProxyDoesNotSynthesizeAnAlarmLoop()
+    {
+        NativeRegistry natives = new();
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("SCamera")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(12),
+                QvmExpression.Text("SCamera"),
+                QvmExpression.Text("Camera"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        bool alarmOn = false;
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables, () => alarmOn);
+        AlarmSpeaker camera = Assert.Single(speakers.Speakers);
+
+        Assert.False(speakers.IsOn(camera));
+        alarmOn = true;
+        Assert.False(speakers.IsOn(camera));
+        Assert.Equal(string.Empty, camera.SirenSound);
+        Assert.Equal("explo_camera", camera.DestructionSound);
+    }
+
+    [Fact]
+    public void ACameraTraceDestroysOnlyTheExactCameraTask()
+    {
+        NativeRegistry natives = new();
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call("Task_DeclareParameters", QvmExpression.Text("SCamera")),
+            QvmExpression.Call(
+                "Task_New", QvmExpression.Int(12), QvmExpression.Text("SCamera"), QvmExpression.Text("Left")),
+            QvmExpression.Call(
+                "Task_New", QvmExpression.Int(13), QvmExpression.Text("SCamera"), QvmExpression.Text("Right"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        GameTask left = Assert.IsType<DeclaredTask>(tree.FromId(12));
+        AlarmSpeaker destroyed = Assert.IsType<AlarmSpeaker>(speakers.TryDestroy(left));
+
+        Assert.Same(left, destroyed.Task);
+        Assert.True(destroyed.IsDestroyed);
+        Assert.False(speakers.Speakers.Single(speaker => speaker.Task.Id == 13).IsDestroyed);
+        Assert.Null(speakers.TryDestroy(left));
+    }
+
+    [Fact]
+    public void ConditionalSoundBecomesAPositionalAlarmEmitter()
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        TaskTypeRegistry types = new();
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("ConditionalSound"),
+                QvmExpression.Text("Condition"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("SoundDef"), QvmExpression.Text("String32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(96),
+                QvmExpression.Text("ConditionalSound"),
+                QvmExpression.Text("Alarm speaker"),
+                QvmExpression.Text("TRUE"),
+                QvmExpression.Text("alarmsystem_working"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        AlarmSpeaker alarm = Assert.Single(speakers.Speakers);
+
+        Assert.True(speakers.IsOn(alarm));
+        Assert.Equal("alarmsystem_working", alarm.SirenSound);
+        Assert.Equal(string.Empty, alarm.DestructionSound);
+        Assert.False(alarm.CanBeDestroyed);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneUsesTwoConditionalSoundsAsItsAlarmSpeakers()
+    {
+        NativeRegistry natives = new();
+        natives.RegisterConstant("TRUE", 1);
+        natives.RegisterConstant("FALSE", 0);
+        TaskTypeRegistry types = new();
+        EngineTaskTypes.Register(types);
+        TaskTree tree = new(types);
+        ScriptVarRegistry variables = new(natives);
+        TaskScriptCommands commands = new(tree, variables);
+        commands.Register(natives);
+
+        QvmProgram level = QvmProgram.Read(File.ReadAllBytes(
+            GameData.Resolve("missions/location0/level1/objects.qvm")));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, natives).Run());
+
+        AlarmSpeakerRegistry speakers = AlarmSpeakerRegistry.Build(tree.Root, variables);
+        AlarmSpeaker[] alarmSounds = speakers.Speakers
+            .Where(speaker => speaker.Task.Type.Name == "ConditionalSound")
+            .ToArray();
+
+        Assert.Equal(7, speakers.Speakers.Count);
+        Assert.Equal(2, alarmSounds.Length);
+        Assert.All(alarmSounds, speaker => Assert.Equal("alarmsystem_working", speaker.SirenSound));
+
+        // Mission 1 latches EditVariable_97 from the switch pulse, then AlarmControl_98 reads it.
+        // Running those phases in retail order must leave the alarm on after the press has ended.
+        MissionObjectiveRuntime objectives = new(tree.Root, variables);
+        AiAlarmControlRegistry alarms = AiAlarmControlRegistry.Build(tree.Root, variables);
+        DeclaredTask alarmSwitch = Assert.IsType<DeclaredTask>(tree.FromId(94));
+        ScriptFlag pressed = new();
+        variables.BindFlag(alarmSwitch, "isPressed", pressed);
+
+        // The switch holds isPressed for three ticks while isLastPressed remains false.
+        pressed.Value = true;
+        for (int tick = 1; tick <= 3; tick++)
+        {
+            objectives.TickLevelState();
+            alarms.Tick(tick);
+            objectives.TickAfterLevelState();
+        }
+
+        // On expiry IGI1 emits isLastPressed for one tick. The control sees the trigger now; on the
+        // following tick EditVariable_97 latches and the alarm turns on after the pulse has cleared.
+        pressed.EndPulse();
+        objectives.TickLevelState();
+        alarms.Tick(4);
+        objectives.TickAfterLevelState();
+        pressed.CommitTick();
+
+        objectives.TickLevelState();
+        alarms.Tick(5);
+        objectives.TickAfterLevelState();
+
+        Assert.True(alarms.IsOn(98));
+
+        objectives.TickLevelState();
+        alarms.Tick(6);
+        objectives.TickAfterLevelState();
+        Assert.True(alarms.IsOn(98));
     }
 
     [Fact]

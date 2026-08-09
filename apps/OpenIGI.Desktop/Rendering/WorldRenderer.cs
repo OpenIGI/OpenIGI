@@ -6,6 +6,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -70,6 +71,12 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
     public DoorRegistry? Doors { get; set; }
 
+    /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
+    public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
+
+    /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
+    public SecurityCameraRegistry? SecurityCameras { get; set; }
+
     /// <summary>Resolves one placement's mesh, textures and lightmap pages without drawing it.</summary>
     /// <param name="scene">The scene the placement belongs to.</param>
     /// <param name="index">Which placement to make resident.</param>
@@ -106,7 +113,7 @@ public sealed class WorldRenderer : IDisposable
             return false;
         }
 
-        WorldPlacement placement = scene.Placements[index];
+        WorldPlacement placement = DisplayedPlacement(scene.Placements[index]);
 
         MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
         if (geometry is null)
@@ -152,8 +159,9 @@ public sealed class WorldRenderer : IDisposable
         int triangles = 0;
         int lit = 0;
 
-        foreach (WorldPlacement placement in scene.Placements)
+        foreach (WorldPlacement authoredPlacement in scene.Placements)
         {
+            WorldPlacement placement = DisplayedPlacement(authoredPlacement);
             // Bent geometry is unique to its placement — a spline segment shaped to its own span — so
             // it is cached under the placement's task name rather than the shared model name.
             MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
@@ -229,6 +237,28 @@ public sealed class WorldRenderer : IDisposable
         LastDrawCount = draws;
         LastTriangleCount = triangles;
         LastLightmappedCount = lit;
+    }
+
+    private WorldPlacement DisplayedPlacement(WorldPlacement placement)
+    {
+        WorldPlacement displayed = placement;
+        if (placement.DestroyedReplacement is { } replacement
+            && AlarmSpeakers?.IsDestroyed(placement.Owner) == true)
+        {
+            displayed = placement with
+            {
+                Instance = replacement.Instance,
+                Pack = replacement.Pack,
+                Model = replacement.Model,
+            };
+        }
+
+        if (SecurityCameras?.TryGetHeadOrientation(placement, out Matrix3f orientation) == true)
+        {
+            displayed = displayed with { Orientation = orientation };
+        }
+
+        return displayed;
     }
 
     /// <inheritdoc/>

@@ -217,10 +217,19 @@ public sealed class WorldInteraction
         }
         CompletedThisTick = false;
         InUse.CommitTick();
-        Pressed.CommitTick();
-        if (_pressedTicks > 0 && --_pressedTicks == 0)
+        if (_pressedTicks > 0)
         {
-            Pressed.Value = false;
+            if (--_pressedTicks == 0)
+            {
+                // IGI1 Switch::Run leaves isLastPressed false throughout the hold, then publishes
+                // exactly one falling-edge tick when the three-tick press expires. Mission 1 uses
+                // that pulse to toggle its alarm latch; shadowing every held tick toggles it off again.
+                Pressed.EndPulse();
+            }
+        }
+        else
+        {
+            Pressed.CommitTick();
         }
     }
 

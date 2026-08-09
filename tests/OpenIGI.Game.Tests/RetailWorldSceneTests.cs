@@ -35,6 +35,69 @@ public sealed class RetailWorldSceneTests
     }
 
     [RequiresGameDataFact]
+    public void SecurityCamerasUseTheirHolderTransformAndCarryTheDestroyedHead()
+    {
+        (WorldScene scene, _) = Build();
+        WorldPlacement[] cameras = scene.Placements
+            .Where(placement => placement.Owner.Type.Name == WorldScene.SecurityCameraType)
+            .ToArray();
+
+        Vector3d[] retailHeadPositions =
+        [
+            new(24652964.083, -56288034.612, 174436146.125),
+            new(24811765.286, -56258174.683, 174429586.125),
+            new(24471017.438, -56423954.263, 174429666.125),
+            new(24596161.464, -56270227.708, 174427890.125),
+            new(24441183.806, -56257203.768, 174432514.125),
+        ];
+
+        // Mission 1 authors five cameras. Retail creates a holder and an articulated head for each.
+        Assert.Equal(10, cameras.Length);
+        IGrouping<GameTask, WorldPlacement>[] grouped = cameras.GroupBy(placement => placement.Owner).ToArray();
+        Assert.Equal(retailHeadPositions.Length, grouped.Length);
+        for (int i = 0; i < grouped.Length; i++)
+        {
+            IGrouping<GameTask, WorldPlacement> camera = grouped[i];
+            Assert.Equal(2, camera.Count());
+            WorldPlacement holder = Assert.Single(camera, placement => placement.Instance.Name == "313_01_1");
+            WorldPlacement head = Assert.Single(camera, placement => placement.Instance.Name == "313_02_1");
+
+            Assert.NotEqual(default, holder.Position);
+            Assert.NotEqual(holder.Position, head.Position);
+            AssertEnginePosition(retailHeadPositions[i], head.Position);
+            Assert.Null(holder.DestroyedReplacement);
+            Assert.Equal("313_03_1", Assert.IsType<WorldModelBinding>(head.DestroyedReplacement).Instance.Name);
+            Assert.True(
+                ObjectCollisionIndex.Build(camera).Count > 0,
+                $"{camera.Key.Name} has no shootable collision mesh");
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneDoesNotSynthesizeModelsForAudioOnlyConditionalSounds()
+    {
+        (WorldScene scene, _) = Build();
+
+        // The injected retail commit hook records the two ConditionalSound tasks as audio voices only:
+        // Mission 1 creates no 309/310 loudspeaker and no AlarmLight world object for them.
+        Assert.DoesNotContain(scene.Placements, placement => placement.Owner.Type.Name == "ConditionalSound");
+
+        Assert.Equal(5, scene.Placements
+            .Where(placement => placement.Owner.Type.Name == WorldScene.SecurityCameraType)
+            .Select(placement => placement.Owner)
+            .Distinct()
+            .Count());
+    }
+
+    private static void AssertEnginePosition(Vector3d expectedUnits, Vector3d actualMetres)
+    {
+        const double toleranceUnits = 0.75;
+        Assert.InRange(Math.Abs((actualMetres.X * WorldScene.UnitsPerMetre) - expectedUnits.X), 0, toleranceUnits);
+        Assert.InRange(Math.Abs((actualMetres.Y * WorldScene.UnitsPerMetre) - expectedUnits.Y), 0, toleranceUnits);
+        Assert.InRange(Math.Abs((actualMetres.Z * WorldScene.UnitsPerMetre) - expectedUnits.Z), 0, toleranceUnits);
+    }
+
+    [RequiresGameDataFact]
     public void ATaskWithNoPositionIsSkippedRatherThanLeftAtTheOrigin()
     {
         (WorldScene scene, _) = Build();

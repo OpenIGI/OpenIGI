@@ -97,6 +97,10 @@ public sealed class SoldierRenderer : IDisposable
     private DoorRegistry? _doors;
     private ObjectCollisionIndex? _solids;
 
+    /// <summary>Gets whether any authored alarm control is sounding on the current simulation tick.</summary>
+    /// <remarks>Used by placed security cameras, whose alarm loop follows the mission-wide alarm state.</remarks>
+    public bool AnyAlarmOn => _alarmControls?.AnyOn ?? false;
+
     /// <summary>Gives the renderer the level's doors and the index their collision is switched in.</summary>
     /// <param name="doors">The door registry, or <see langword="null"/> for a level with none.</param>
     /// <param name="solids">The placed-object collision index.</param>
@@ -1939,7 +1943,18 @@ public sealed class SoldierRenderer : IDisposable
         // The alarm controls advance first, so this tick's AIEVENT_ALARMON reflects this tick's state
         // -- 0x4408A0's update runs on the task pass, before the AIs. The on condition stands in for
         // the control's authored expression: any named trigger pressed turns it on, and it stays on.
-        _alarmControls?.Tick(_tick);
+        if (_alarmControls is { } alarmControls)
+        {
+            bool alarmWasOn = alarmControls.AnyOn;
+            alarmControls.Tick(_tick);
+            bool alarmIsOn = alarmControls.AnyOn;
+            if (alarmWasOn != alarmIsOn)
+            {
+                _logger.Information(
+                    LogCategory,
+                    $"[alarm] mission alarm {(alarmIsOn ? "ON" : "OFF")} at tick {_tick}.");
+            }
+        }
 
         // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
         foreach ((SoldierView view, AiSoldier brain) in _brains)

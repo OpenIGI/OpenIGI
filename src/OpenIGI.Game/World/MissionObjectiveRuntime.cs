@@ -243,6 +243,19 @@ public sealed class MissionObjectiveRuntime
     /// <summary>Evaluates the authored definitions once, after the rest of the mission's tick.</summary>
     public void Tick(Vector3d? playerPosition = null)
     {
+        TickLevelState(playerPosition);
+        TickAfterLevelState();
+    }
+
+    /// <summary>Advances area and edit-variable tasks before dependent alarm controls run.</summary>
+    /// <param name="playerPosition">The player's current world position, when one exists.</param>
+    /// <remarks>
+    /// These tasks precede the mission's <c>AlarmControl</c>s in retail update order. Keeping this phase
+    /// separate lets the desktop host preserve that ordering while evaluating the remaining objectives
+    /// and messages after the rest of the simulation tick.
+    /// </remarks>
+    public void TickLevelState(Vector3d? playerPosition = null)
+    {
         // AreaActivate::Update (0x5048A0) clears nActive, queries the authored oriented volume and
         // sums matching occupants. The current world exposes the player as the sole mission-query
         // occupant; the criteria filter is retained so explicitly non-player areas do not fire.
@@ -263,7 +276,11 @@ public sealed class MissionObjectiveRuntime
                 edit.Value -= _expressions.EvaluateInt32(edit.SubExpression);
             }
         }
+    }
 
+    /// <summary>Evaluates objectives, messages, cutscenes, and level flow after live level state has advanced.</summary>
+    public void TickAfterLevelState()
+    {
         // With no cinematic player, entering an outro completes it immediately; the trigger is still the
         // retail ConditionalContainer expression, so gameplay must perform the real authored action first.
         foreach (OutroCutScene outro in _outroCutScenes)

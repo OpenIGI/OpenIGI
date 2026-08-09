@@ -5,6 +5,7 @@ using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
+using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game;
 using OpenIGI.Game.Ai;
@@ -683,15 +684,27 @@ internal sealed partial class DesktopGame
     /// <summary>Shoots out whatever alarm speaker an impact landed on.</summary>
     /// <param name="impactUnits">Where the round or blast hit, in world units.</param>
     /// <param name="radiusUnits">The destruction's reach — a bullet's touch by default.</param>
+    /// <param name="owner">The exact placed task struck by a rich trace, when available.</param>
     /// <remarks>
-    /// The retail speaker takes the ordinary damage message and dies with a small fit
-    /// (<c>0x43A5F0</c>): a five-burst spark explosion, its own report — the second of its two
-    /// sound parameters — and permanent silence, its <c>+417</c> byte set for good. The port plays
-    /// the same scene through its own pieces; the destroyed-model swap remains an open item.
+    /// Retail routes a weapon hit to the exact task. AlarmLight_Explode (<c>0x43A5F0</c>) and the
+    /// SCameraLens destruction branch (<c>0x441770</c>) permanently silence it, play its report,
+    /// spawn the <c>1009_01_1</c> fireball and swap in the destroyed model. A rich trace preserves
+    /// that identity; explosion radii and legacy projectile contacts use the nearest placed head.
     /// </remarks>
-    private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits)
+    private void DamageAlarmSpeakers(
+        Vector3d impactUnits,
+        float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits,
+        GameTask? owner = null)
     {
-        if (_alarmSpeakers?.TryDestroyAt(impactUnits, radiusUnits) is not { } destroyed)
+        if (_alarmSpeakers is not { } speakers)
+        {
+            return;
+        }
+
+        AlarmSpeaker? destroyed = owner is not null
+            ? speakers.TryDestroy(owner)
+            : speakers.TryDestroyAt(impactUnits, radiusUnits);
+        if (destroyed is null)
         {
             return;
         }
@@ -707,8 +720,27 @@ internal sealed partial class DesktopGame
             _sounds?.PlayDefinition(destroyed.DestructionSound, destroyed.PositionUnits, priority: 60);
         }
 
-        _impactParticles?.SpawnExplosion(destroyed.PositionUnits, 0.6f);
-        _logger.Information("Ai", "An alarm speaker was shot out.");
+        if (_securityCameras?.Destroy(destroyed.Task) == true
+            && _securityCameras.TryGetCamera(destroyed.Task, out SecurityCamera? camera)
+            && camera is not null)
+        {
+            if (_cameraBeepVoices.Remove(camera, out var beep))
+            {
+                _sounds?.Stop(beep.Voice);
+            }
+            if (_cameraMoveVoices.Remove(camera, out AudioVoiceHandle motor))
+            {
+                _sounds?.Stop(motor);
+            }
+        }
+
+        // SCameraLens uses the same 1009_01_1 fireball as the grenade path and plays explo_camera
+        // (0x441770). AlarmLight_Explode uses that fireball too, at a slightly smaller 2048-unit size.
+        float intensity = string.Equals(destroyed.Task.Type.Name, WorldScene.SecurityCameraType, StringComparison.Ordinal)
+            ? 1f
+            : 0.6f;
+        _impactParticles?.SpawnExplosion(destroyed.PositionUnits, intensity);
+        _logger.Information("Ai", $"{destroyed.Task.Name} was shot out.");
     }
 
     /// <summary>Keeps every alarm speaker's siren matched to its own expression, positionally.</summary>
@@ -720,7 +752,7 @@ internal sealed partial class DesktopGame
     /// the port's voice pool: one held voice per sounding speaker, restarted if the bank's
     /// definition happens not to loop, stopped on the falling edge.
     /// </para>
-    /// <para>Destroying a speaker to silence it is not modelled yet; recorded as an open item.</para>
+    /// <para>A destroyed task is removed immediately and its renderer selects the authored wreck model.</para>
     /// </remarks>
     private void TickAlarmSpeakers()
     {
@@ -733,18 +765,97 @@ internal sealed partial class DesktopGame
         {
             bool on = _alarmSpeakers.IsOn(speaker) && speaker.SirenSound.Length > 0;
             bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
+            bool playing = sounding && _sounds.IsPlaying(voice);
 
-            if (on && (!sounding || !_sounds.IsPlaying(voice)))
+            if (on && (!sounding || !playing))
             {
-                _sirenVoices[speaker] = _sounds.PlayDefinition(
+                if (sounding && _reportedSirenFailures.Add(speaker))
+                {
+                    _logger.Warning(
+                        "Audio",
+                        $"[alarm] voice {voice.Value} for {speaker.Task.Name} ended while its condition remained true; restarting.");
+                }
+
+                AudioVoiceHandle started = _sounds.PlayDefinition(
                     speaker.SirenSound,
                     speaker.PositionUnits,
                     priority: 70);
+                _sirenVoices[speaker] = started;
+
+                if (!sounding)
+                {
+                    _logger.Information(
+                        "Audio",
+                        $"[alarm] start {speaker.Task.Name}: sound='{speaker.SirenSound}', voice={started.Value}, "
+                            + $"playing={_sounds.IsPlaying(started)}, position={speaker.PositionUnits}, "
+                            + $"condition='{speaker.AlarmExpression}'.");
+                }
+
+                if ((!started.IsValidHandle || !_sounds.IsPlaying(started))
+                    && _reportedSirenFailures.Add(speaker))
+                {
+                    _logger.Warning(
+                        "Audio",
+                        $"[alarm] '{speaker.SirenSound}' failed to produce a playing voice for {speaker.Task.Name}.");
+                }
             }
             else if (!on && sounding)
             {
                 _sounds.Stop(voice);
                 _sirenVoices.Remove(speaker);
+                _reportedSirenFailures.Remove(speaker);
+                _logger.Information(
+                    "Audio",
+                    $"[alarm] stop {speaker.Task.Name}: voice={voice.Value}, condition='{speaker.AlarmExpression}'.");
+            }
+        }
+    }
+
+    /// <summary>Keeps the detection and motor loops owned by each <c>SCameraLens</c> in sync.</summary>
+    private void TickSecurityCameraSounds()
+    {
+        if (_securityCameras is not { } cameras || _sounds is null)
+        {
+            return;
+        }
+
+        foreach (SecurityCamera camera in cameras.Cameras)
+        {
+            string beep = camera.Beep switch
+            {
+                SecurityCameraBeep.Suspicious => "camera_beep_s",
+                SecurityCameraBeep.Detected => "camera_beep_l",
+                _ => string.Empty,
+            };
+
+            if (_cameraBeepVoices.TryGetValue(camera, out var sounding)
+                && (beep.Length == 0
+                    || !string.Equals(sounding.Sound, beep, StringComparison.Ordinal)
+                    || !_sounds.IsPlaying(sounding.Voice)))
+            {
+                _sounds.Stop(sounding.Voice);
+                _cameraBeepVoices.Remove(camera);
+            }
+
+            if (beep.Length > 0 && !_cameraBeepVoices.ContainsKey(camera))
+            {
+                AudioVoiceHandle voice = _sounds.PlayDefinition(beep, camera.HeadPositionUnits, priority: 72);
+                _cameraBeepVoices[camera] = (beep, voice);
+            }
+
+            if (_cameraMoveVoices.TryGetValue(camera, out AudioVoiceHandle moving)
+                && (!camera.IsMoving || !_sounds.IsPlaying(moving)))
+            {
+                _sounds.Stop(moving);
+                _cameraMoveVoices.Remove(camera);
+            }
+
+            if (camera.IsMoving && !_cameraMoveVoices.ContainsKey(camera))
+            {
+                _cameraMoveVoices[camera] = _sounds.PlayDefinition(
+                    "camera_move",
+                    camera.HeadPositionUnits,
+                    priority: 55);
             }
         }
     }

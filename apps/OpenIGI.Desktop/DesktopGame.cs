@@ -106,6 +106,10 @@ internal sealed partial class DesktopGame : IDisposable
 
     private AlarmSpeakerRegistry? _alarmSpeakers;
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
+    private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
+    private SecurityCameraRegistry? _securityCameras;
+    private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
+    private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
 
     /// <summary>The flashbang's whiteout, 0–2, decaying towards zero every tick.</summary>
     /// <remarks>
@@ -185,6 +189,7 @@ internal sealed partial class DesktopGame : IDisposable
     private BulletMarkRenderer? _marks;
     private TracerTrailRenderer? _tracers;
     private ImpactParticleRenderer? _impactParticles;
+    private CameraStatusLightRenderer? _cameraStatusLights;
     private GrenadeRenderer? _grenadeRenderer;
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
@@ -562,6 +567,7 @@ internal sealed partial class DesktopGame : IDisposable
         _marks = null;
         _tracers = null;
         _impactParticles = null;
+        _cameraStatusLights = null;
         _grenadeRenderer = null;
         _loadedMissionForWeapon = null;
         _arms = null;
@@ -1616,6 +1622,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // The alarm speakers, following their own level expressions -- the siren the
                     // room hears when a guard reaches a switch.
                     TickAlarmSpeakers();
+                    TickSecurityCameraSounds();
 
                     // And whether one of this tick's rounds landed ON a speaker. The impact list
                     // carries both the instant rays and the ballistic arrivals, so either mode can
@@ -1624,7 +1631,7 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         if (playerImpact.HitSomething)
                         {
-                            DamageAlarmSpeakers(playerImpact.Position);
+                            DamageAlarmSpeakers(playerImpact.Position, owner: playerImpact.Owner);
                         }
                     }
 
@@ -1703,6 +1710,32 @@ internal sealed partial class DesktopGame : IDisposable
                 Vector3d watchedFeet = _playerMode && _player is not null
                     ? _player.Body.Position
                     : watched;
+
+                // Retail's EditVariable tasks run before the AlarmControls that consume them. Mission 1's
+                // alarm latch depends on that order: reversing it sets and clears the latch during the
+                // same multi-tick switch pulse, cutting the siren off almost as soon as it starts.
+                _missionObjectives?.TickLevelState(_player?.Body.Position);
+                if (_securityCameras is { } cameras)
+                {
+                    bool crouching = _playerMode && _player is not null && _player.IsCrouched;
+                    cameras.Tick(watchedFeet, crouching, targetAlive: !_playerDead);
+                    if (_worldSolids is { } cameraSolids)
+                    {
+                        foreach (SecurityCamera camera in cameras.Cameras)
+                        {
+                            Vector3d headMetres = new(
+                                camera.HeadPositionUnits.X / WorldScene.UnitsPerMetre,
+                                camera.HeadPositionUnits.Y / WorldScene.UnitsPerMetre,
+                                camera.HeadPositionUnits.Z / WorldScene.UnitsPerMetre);
+                            cameraSolids.UpdateTransform(
+                                camera.Task,
+                                camera.HeadModelName,
+                                headMetres,
+                                camera.Orientation);
+                        }
+                    }
+                }
+
                 _soldiers?.Tick(
                     watched,
                     enemyAlive: !_playerDead,
@@ -1923,7 +1956,7 @@ internal sealed partial class DesktopGame : IDisposable
                         RenderCVars.TacticalMessages.Value ? RemasteredMessageHoldSeconds : 0f;
                 }
 
-                _missionObjectives?.Tick(_player?.Body.Position);
+                _missionObjectives?.TickAfterLevelState();
                 if (_missionObjectives is { IsFailed: true })
                 {
                     // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
@@ -2481,6 +2514,13 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // The impact bursts: dust hazes over the scene, spark light over the haze.
                 _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
+
+                // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
+                // red while confirming/detecting, and attached to the head as it pans.
+                if (_securityCameras is { } statusCameras)
+                {
+                    _cameraStatusLights?.Draw(statusCameras.Cameras, eye, projection);
+                }
 
                 // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
                 // then ask the human where the weapon is and draw that. Only in player mode, because the
@@ -3262,6 +3302,7 @@ internal sealed partial class DesktopGame : IDisposable
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
         _renderer?.Dispose();
         _arms?.Dispose();

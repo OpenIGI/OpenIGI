@@ -235,6 +235,29 @@ internal sealed partial class DesktopGame
 
         EndStage("the doors and the world interactions");
 
+        // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
+        // objects, not navigation actors, so construct them independently of whether this mission
+        // happens to ship any AI graphs.
+        WorldTraceCast worldTrace = _playerTerrain is { } ground
+            ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
+            : solids.Tracer();
+        _cameraBeepVoices.Clear();
+        _cameraMoveVoices.Clear();
+        _securityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
+        _securityCameras.BindScene(scene.Placements);
+        world.SecurityCameras = _securityCameras;
+        _cameraStatusLights?.Dispose();
+        _cameraStatusLights = new CameraStatusLightRenderer(_device, _logger);
+        if (!_cameraStatusLights.Load(_fileSystem))
+        {
+            _cameraStatusLights.Dispose();
+            _cameraStatusLights = null;
+        }
+        _logger.Information(
+            "Ai",
+            $"{_securityCameras.Cameras.Count} security camera(s), "
+                + $"{_securityCameras.ControlCount} camera control(s) placed.");
+
         // The level's nav graphs. A level ships ONE PER AIGraph TASK, named by that task's id (ai.md 1.1),
         // and every HumanAI names the one it walks through its own "Graph ID" parameter (ai.md 7.6).
         //
@@ -300,9 +323,6 @@ internal sealed partial class DesktopGame
                 // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
                 // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
                 // hills. Nearest contact wins.
-                WorldTraceCast worldTrace = _playerTerrain is { } ground
-                    ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
-                    : solids.Tracer();
                 WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace);
 
                 // The level's doors, before the brains: a walker asks the registry for the nearest door
@@ -319,7 +339,13 @@ internal sealed partial class DesktopGame
                 // The level's alarm speakers, for the sirens: each follows its own expression over
                 // the same live variables the controls export through.
                 _sirenVoices.Clear();
-                _alarmSpeakers = AlarmSpeakerRegistry.Build(levelRoot, _loop.Variables);
+                _reportedSirenFailures.Clear();
+                _alarmSpeakers = AlarmSpeakerRegistry.Build(
+                    levelRoot,
+                    _loop.Variables,
+                    () => _soldiers.AnyAlarmOn);
+                _alarmSpeakers.BindScene(scene.Placements);
+                world.AlarmSpeakers = _alarmSpeakers;
                 _logger.Information("Ai", $"{_alarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
                 // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
@@ -408,7 +434,7 @@ internal sealed partial class DesktopGame
 
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
-                        DamageAlarmSpeakers(worldHit.Position);
+                        DamageAlarmSpeakers(worldHit.Position, owner: blocker.Owner);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.
@@ -1032,6 +1058,9 @@ internal sealed partial class DesktopGame
         _messages = null;
         _computerHighlights = null;
         _missionObjectives = null;
+        _securityCameras = null;
+        _cameraBeepVoices.Clear();
+        _cameraMoveVoices.Clear();
         _activeMission = null;
 
         _sky?.Dispose();
@@ -1046,6 +1075,7 @@ internal sealed partial class DesktopGame
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
         _arms?.Dispose();
         _sky = null;
@@ -1058,6 +1088,7 @@ internal sealed partial class DesktopGame
         _hud = null;
         _remasteredHud = null;
         _marks = null;
+        _cameraStatusLights = null;
         _arms = null;
         _player = null;
         _playerMode = false;
