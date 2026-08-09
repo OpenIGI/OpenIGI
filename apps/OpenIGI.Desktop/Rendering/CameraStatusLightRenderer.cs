@@ -101,11 +101,13 @@ public sealed class CameraStatusLightRenderer : IDisposable
                 return false;
             }
 
-            var texture = asset.GetTexture(_frame);
-            _u0 = _frame.U0 / texture.Width;
-            _v0 = _frame.V0 / texture.Height;
-            _u1 = _frame.U1 / texture.Width;
-            _v1 = _frame.V1 / texture.Height;
+            // SpriteFrame carries normalized texture coordinates already. alarmlight.spr is a 16x16
+            // texture with a 0..1 frame; dividing those values by the dimensions samples only its
+            // transparent top-left corner and makes every camera lamp disappear.
+            _u0 = _frame.U0;
+            _v0 = _frame.V0;
+            _u1 = _frame.U1;
+            _v1 = _frame.V1;
             _sprite = SpriteResource.Upload(_device, asset, TextureFilter.Linear);
             return true;
         }
