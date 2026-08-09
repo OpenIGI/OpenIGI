@@ -164,6 +164,18 @@ public sealed class AiGuardCombat
         _firstFire = true;
     }
 
+    /// <summary>Cancels the currently installed fire/reload child without restarting the engagement.</summary>
+    /// <remarks>
+    /// A standing roll replaces action slot <c>+36</c> in <c>0x48BC00</c>. That discards the child but
+    /// does not rerun <c>0x48D000</c>, so completed-burst count and the first-fire flag must survive.
+    /// </remarks>
+    public void CancelChild()
+    {
+        Phase = AiCombatPhase.Stand;
+        _roundsLeft = 0;
+        _shotDelayTicks = 0;
+    }
+
     /// <summary>Gets whether the next burst is the first of this engagement, and so half as accurate.</summary>
     /// <remarks>
     /// The engagement's argument block carries a byte that <c>sub_48B9C0</c> takes as its second

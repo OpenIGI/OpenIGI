@@ -17,13 +17,13 @@ public enum AiCombatArm
     /// <summary>Move and fight — <c>0x48ABA0</c>. Every <c>PATROL_*</c> type, and most soldiers in the game.</summary>
     Patrol = 2,
 
-    /// <summary>The RPG soldier — <c>0x48CB40</c>. Not built.</summary>
+    /// <summary>The RPG soldier — <c>0x48CB40</c>.</summary>
     Rpg = 3,
 
-    /// <summary>An emplacement gunner — <c>0x48D2C0</c>. Not built.</summary>
+    /// <summary>An emplacement gunner — <c>0x48D2C0</c>.</summary>
     Gunner = 4,
 
-    /// <summary>Anya and Ekk, the named characters — <c>0x48AC60</c>. Not built.</summary>
+    /// <summary>Anya and Ekk, the named characters — <c>0x48AC60</c>.</summary>
     NamedCharacter = 5,
 }
 

@@ -1,4 +1,7 @@
 using OpenIGI.Game.Ai;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Formats.Ai;
+using OpenIGI.Game.Weapons;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -8,6 +11,23 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class AiCombatArmTests
 {
+    [Fact]
+    public void StandingOnNodeUsesTheAuthoredOrientedSquare()
+    {
+        const float gamma = MathF.PI / 4.0f;
+        GraphNode node = new(1, Vector3d.Zero, gamma, 1.0f, -1, string.Empty, GraphNodeCriteria.None);
+
+        // Local (1.2 m, 1.2 m) is inside the radius+0.3 square. Rotating it into world space puts it
+        // about 1.70 m from the centre, proving this is not the old circular approximation.
+        double coordinate = 1.2 * GraphNode.MetreInUnits;
+        Vector3d inside = new(0.0, Math.Sqrt(2.0) * coordinate, 0.0);
+        Assert.True(AiSoldier.IsInsideNodeBox(inside, node, devianceMetres: 0.3));
+
+        double outsideCoordinate = 1.31 * GraphNode.MetreInUnits;
+        Vector3d outside = new(0.0, Math.Sqrt(2.0) * outsideCoordinate, 0.0);
+        Assert.False(AiSoldier.IsInsideNodeBox(outside, node, devianceMetres: 0.3));
+    }
+
     [Theory]
     [InlineData(AiType.Sniper)]
     [InlineData(AiType.Priboi)]
@@ -53,6 +73,26 @@ public sealed class AiCombatArmTests
         Assert.Equal(AiCombatArm.NamedCharacter, AiCombatArms.For(AiType.Ekk));
     }
 
+    [Fact]
+    public void CivilianCombatActionInstallsNoGenericGuardMachine()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+        AiSoldier civilian = Soldier(AiType.Civilian, position);
+        civilian.ApplyActions([new AiProducedAction("AIAction_Combat", [0], 0)]);
+
+        Assert.Equal(AiCombatArm.None, civilian.Arm);
+        Assert.Equal(AiSoldierActivity.Idle, civilian.Activity);
+    }
+
+    [Theory]
+    [InlineData(AiType.Anya)]
+    [InlineData(AiType.Ekk)]
+    public void NamedCharactersUseThePatrolDecisionMachine(AiType type)
+    {
+        AiSoldier named = Soldier(type, new Vector3d(1000, 2000, 3000));
+        Assert.NotNull(named.Patrol);
+    }
+
     /// <summary>The faction prefix means nothing; GUARD against PATROL is what decides.</summary>
     [Fact]
     public void TheFactionPrefixDoesNotChangeTheArm()
@@ -86,5 +126,15 @@ public sealed class AiCombatArmTests
 
         // Every one of those patrol types used to be given the guard arm.
         Assert.True(patrol > 0);
+    }
+
+    private static AiSoldier Soldier(AiType type, Vector3d position)
+    {
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            type,
+            new AiCombatParameters(new HumanAiConfigItemTask()),
+            () => new AiCombatWeaponState(30, 30, 3, WeaponCategory.Gun));
+        return soldier;
     }
 }

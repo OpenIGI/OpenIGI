@@ -89,6 +89,14 @@ public sealed class AiPendingActionList
     /// <summary>Removes every action.</summary>
     public void Clear() => _actions.Clear();
 
+    /// <summary>Removes one exact action node.</summary>
+    /// <returns><see langword="true"/> when the node was pending.</returns>
+    public bool Remove(AiPendingAction action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        return _actions.Remove(action);
+    }
+
     /// <summary>Runs one tick of the list.</summary>
     /// <returns>The action that ran, or <see langword="null"/> when only delays were ticked.</returns>
     public AiPendingAction? Tick()

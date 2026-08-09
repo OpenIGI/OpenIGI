@@ -78,8 +78,8 @@ public enum AiRollSpace
 /// </param>
 /// <param name="AmmoInClip">Rounds left in the held weapon's clip.</param>
 /// <param name="HasGrenade">
-/// <c>HumanAI+15869</c>. The constructor zeroes it, so a soldier throws nothing until whatever writes
-/// it has run — and what writes it is <b>not read</b> (§13.1).
+/// <c>HumanAI+15869</c>. <c>0x44FBA0</c> sets it when any carried inventory weapon has weapon category
+/// 4 (<c>WEAPONTYPE_GRENADE</c>); the held slot does not need to be the grenade.
 /// </param>
 /// <param name="AimersOnTarget">How many attackers already hold an aiming mode on this target.</param>
 /// <param name="FreePositionTowardTarget">
@@ -270,26 +270,23 @@ public sealed class AiPatrolCombat
     /// <param name="currentTick">The engine tick, for the ten-tick cooldown.</param>
     /// <param name="distanceToTargetInUnits">The argument block's <c>+8</c>.</param>
     /// <param name="rollSpace">Which sides have three metres of nav node — <c>sub_4526E0</c>.</param>
-    /// <param name="onForbiddenNode">
-    /// Whether the current node carries the criteria bit held in <c>dword_A7B2D8</c>. <b>Which bit that
-    /// is has not been read</b> (§13.3), so the caller decides.
-    /// </param>
+    /// <param name="underFire">Whether TakingDamage, Gunshot, or GunshotMiss was drained this tick.</param>
+    /// <param name="onForbiddenNode">Whether the current node carries <c>NODECRITERIA_STAIR</c>.</param>
     /// <returns>What to do, or <see cref="AiEvasiveAction.None"/>.</returns>
     /// <remarks>
     /// <para>
     /// <b>The cooldown is set unconditionally, before any other gate</b>, so an evasion is considered at
     /// most three times a second however the rest of the tests come out.
     /// </para>
-    /// <para>
-    /// <b>Divergence, recorded.</b> The original also gates on three task fields at <c>ai+2232</c>,
-    /// <c>+2236</c> and <c>+2252</c> — "only while something is happening to it". They are unread, so the
-    /// gate is <b>open</b> here and the port's soldiers evade slightly more often than the original's.
-    /// </para>
+    /// <para><c>ai+2232/+2236/+2252</c> are the drained-count array entries for event ids 15, 16 and 20:
+    /// TakingDamage, Gunshot and GunshotMiss. <c>dword_A7B2D8</c> is initialized from
+    /// <c>NODECRITERIA_STAIR</c> by <c>0x508F80</c>.</para>
     /// </remarks>
     public AiEvasiveAction ChooseEvasion(
         int currentTick,
         double distanceToTargetInUnits,
         AiRollSpace rollSpace,
+        bool underFire,
         bool onForbiddenNode)
     {
         // The first draw is taken BEFORE the cooldown test in the original, and it is the one the
@@ -302,6 +299,11 @@ public sealed class AiPatrolCombat
         }
 
         _evasionAllowedAtTick = currentTick + EvasionCooldownTicks;
+
+        if (!underFire)
+        {
+            return AiEvasiveAction.None;
+        }
 
         if (onForbiddenNode)
         {

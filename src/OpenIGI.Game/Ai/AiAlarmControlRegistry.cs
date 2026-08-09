@@ -59,6 +59,23 @@ public sealed class AiAlarmControlRegistry
     /// <summary>Gets whether a task id names a control that is sounding now.</summary>
     public bool IsOn(int id) => _controls.TryGetValue(id, out Entry? entry) && entry.State.IsOn;
 
+    /// <summary>Gets whether any control at all is sounding now — the mission-wide alarm state.</summary>
+    public bool AnyOn
+    {
+        get
+        {
+            foreach (Entry entry in _controls.Values)
+            {
+                if (entry.State.IsOn)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
     /// <summary>Gets a control's state for diagnostics and event delivery.</summary>
     public bool TryGet(int id, out AiAlarmControlState? state)
     {

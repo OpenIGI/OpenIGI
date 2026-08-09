@@ -71,6 +71,8 @@ public sealed class AiScriptedActionTests
         soldier.Tick(1, target, 0.0, enemyAlive: false);
         Assert.True(soldier.Combat.PressReload);
         Assert.False(soldier.Combat.ReloadWeaponDirectly);
+        Assert.Contains(soldier.RawInputWrites, write => write.Slot == 8 && write.Value == 1f);
+        Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.Stand);
 
         soldier.ApplyActions([
             new AiProducedAction("AIAction_FireAtTask", [20, 1, 0, 0, 0], 0),
@@ -78,6 +80,7 @@ public sealed class AiScriptedActionTests
         soldier.Tick(2, target, 0.0, enemyAlive: false);
         Assert.False(soldier.Combat.PressReload);
         Assert.True(soldier.Combat.ReloadWeaponDirectly);
+        Assert.DoesNotContain(soldier.RawInputWrites, write => write.Slot == 8);
     }
 
     [Fact]
@@ -123,6 +126,50 @@ public sealed class AiScriptedActionTests
         Assert.NotNull(posted);
         Assert.Equal(attacker, posted.Value.Position);
         Assert.Equal(-1, posted.Value.Source);
+    }
+
+    [Fact]
+    public void PlaySoundPreservesTheTextOperandAndAttachFlag()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        (string Name, bool Attached)? played = null;
+        soldier.SetScriptSound((name, attached) => played = (name, attached));
+
+        soldier.ApplyActions([
+            new AiProducedAction(
+                "AIAction_PlaySound",
+                [0, 1, 4],
+                4,
+                [0f, 1f, 4f],
+                ["guard_warning", "", ""]),
+        ]);
+
+        Assert.Equal(("guard_warning", true), played);
+    }
+
+    [Fact]
+    public void StunnedHoldsAnimationThirtyEightForTheRequestedDuration()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.ApplyActions([
+            new AiProducedAction("AIAction_Stunned", [1, 0], 0, [1f, 0f]),
+        ]);
+
+        Vector3d irrelevantEnemy = new(position.X, position.Y - 100_000, position.Z);
+        for (int tick = 1; tick <= 31; tick++)
+        {
+            soldier.Tick(tick, irrelevantEnemy, 0.0, enemyAlive: false);
+            Assert.Equal(AiSoldierActivity.Stunned, soldier.Activity);
+            Assert.Equal(38, soldier.RequestedAnimation);
+            Assert.Contains(
+                soldier.ChannelWrites,
+                write => write.Channel == AiCombatChannel.PlayAnimation && write.Value == 38.0f);
+        }
+
+        soldier.Tick(32, irrelevantEnemy, 0.0, enemyAlive: false);
+        Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+        Assert.Equal(-1, soldier.RequestedAnimation);
     }
 
     [RequiresGameDataFact]

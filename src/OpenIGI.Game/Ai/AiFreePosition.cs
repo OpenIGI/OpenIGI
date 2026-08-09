@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 
 namespace OpenIGI.Game.Ai;
@@ -48,6 +49,12 @@ public static class AiFreePosition
     /// will advance to somewhere it cannot actually shoot from.
     /// </param>
     /// <param name="budget">How many new nodes may be expanded.</param>
+    /// <param name="occupancy">
+    /// The level's shared node-claim registry, or <see langword="null"/> to search without occupancy —
+    /// <c>0x48B260</c> rejects a full node before the can-shoot ray and CLAIMS an accepted one.
+    /// </param>
+    /// <param name="claimant">Who the claim belongs to. No claim is made when this is <see langword="null"/>.</param>
+    /// <param name="claimedPosition">Receives the claimed sub-slot's world position — <c>HumanAI+16048</c>.</param>
     /// <returns>The node to stand on, or <see langword="null"/> when the search finds nothing.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="graph"/> is <see langword="null"/>.</exception>
     public static int? Find(
@@ -56,7 +63,10 @@ public static class AiFreePosition
         int targetNodeId,
         bool towardTarget,
         Func<int, bool>? canShootFrom = null,
-        int budget = DefaultBudget)
+        int budget = DefaultBudget,
+        AiNodeOccupancy? occupancy = null,
+        object? claimant = null,
+        Action<Vector3d>? claimedPosition = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
 
@@ -65,7 +75,7 @@ public static class AiFreePosition
             return null;
         }
 
-        if (Accept(graph, targetNodeId, myNodeId, targetNodeId, towardTarget, canShootFrom))
+        if (Accept(graph, targetNodeId, myNodeId, targetNodeId, towardTarget, canShootFrom, occupancy, claimant, claimedPosition))
         {
             return targetNodeId;
         }
@@ -88,7 +98,7 @@ public static class AiFreePosition
                     continue;
                 }
 
-                if (Accept(graph, neighbour, myNodeId, targetNodeId, towardTarget, canShootFrom))
+                if (Accept(graph, neighbour, myNodeId, targetNodeId, towardTarget, canShootFrom, occupancy, claimant, claimedPosition))
                 {
                     return neighbour;
                 }
@@ -144,9 +154,12 @@ public static class AiFreePosition
         int myNodeId,
         int targetNodeId,
         bool towardTarget,
-        Func<int, bool>? canShootFrom)
+        Func<int, bool>? canShootFrom,
+        AiNodeOccupancy? occupancy,
+        object? claimant,
+        Action<Vector3d>? claimedPosition)
     {
-        if (graph.NodeAt(candidateId) is null)
+        if (graph.NodeAt(candidateId) is not { } node)
         {
             return false;
         }
@@ -156,6 +169,29 @@ public static class AiFreePosition
             return false;
         }
 
-        return canShootFrom?.Invoke(candidateId) ?? true;
+        // The occupancy gates from 0x48B260: a node whose record says it is full is rejected before
+        // the can-shoot ray is even cast, and an accepted node is CLAIMED — the search is what takes
+        // the sub-slot, and the claimed position is the walk target retail keeps at HumanAI+16048.
+        if (occupancy is not null && claimant is not null && occupancy.IsFull(graph, candidateId))
+        {
+            return false;
+        }
+
+        if (!(canShootFrom?.Invoke(candidateId) ?? true))
+        {
+            return false;
+        }
+
+        if (occupancy is not null && claimant is not null)
+        {
+            if (!occupancy.TryClaim(graph, node, claimant, out Vector3d position))
+            {
+                return false;
+            }
+
+            claimedPosition?.Invoke(position);
+        }
+
+        return true;
     }
 }

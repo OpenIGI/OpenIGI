@@ -46,14 +46,30 @@ public sealed class AiCombatStateMachine
     /// <param name="Dead">Bit <c>0x20000</c>: the damage that killed it landed.</param>
     /// <param name="FirePose">Bit <c>0x2000000</c> (slot 27): the combat arm wants the firing pose.</param>
     /// <param name="FireHeld">Bit <c>0x200</c> (slot 6): the trigger is down this tick.</param>
+    /// <param name="ThrowGrenade">Logical channel 8, slot 29 for the captured patrol soldier.</param>
+    /// <param name="CloseCombat">Logical channel 9, slot 30 for the captured patrol soldier.</param>
+    /// <param name="Kneel">Logical channel 1, slot 21, packed in signal mask <c>0x80010</c>.</param>
+    /// <param name="LieDown">Logical channel 2, slot 22, packed as signal <c>0x100000</c>.</param>
+    /// <param name="RollLeft">Raw input slot 2, packed as signal <c>0x20</c>.</param>
+    /// <param name="RollRight">Raw input slot 3, packed as signal <c>0x40</c>.</param>
+    /// <param name="ReloadPressed">Raw input slot 8, packed as signal <c>0x800</c>.</param>
     /// <param name="AnimationDone">Bit <c>0x1</c>: the current state's clip has finished a cycle.</param>
+    /// <param name="MovingForward">Signals <c>0x1000000|0x80</c>: tense forward locomotion.</param>
     public readonly record struct Signals(
         bool OnGround,
         bool Flinch,
         bool Dead,
         bool FirePose,
         bool FireHeld,
-        bool AnimationDone);
+        bool ThrowGrenade,
+        bool CloseCombat,
+        bool Kneel,
+        bool LieDown,
+        bool RollLeft,
+        bool RollRight,
+        bool ReloadPressed,
+        bool AnimationDone,
+        bool MovingForward = false);
 
     /// <summary>Gets the state the machine is in.</summary>
     public int State { get; private set; } = HumanSoldierStates.StandState;
@@ -90,10 +106,203 @@ public sealed class AiCombatStateMachine
 
     private int Next(in Signals s)
     {
-        // The three pre-emptions every combat state tests first, in this order.
+        // The evasive/prone branch has state-specific hit/death outcomes. These are the exact exits
+        // from 0x45B900, 0x458BF0, 0x45BA80, 0x45BF90 and 0x45BB40.
         if (!s.OnGround)
         {
             return HumanSoldierStates.AirborneState;
+        }
+
+        if (State is HumanSoldierStates.RollLeftState
+            or HumanSoldierStates.RollRightState
+            or HumanSoldierStates.CrouchDownState
+            or HumanSoldierStates.KneelRollLeftState
+            or HumanSoldierStates.KneelRollRightState)
+        {
+            if (s.Dead)
+            {
+                return 33;
+            }
+
+            return s.AnimationDone ? HumanSoldierStates.KneelingState : State;
+        }
+
+        if (State == HumanSoldierStates.KneelingState)
+        {
+            if (s.Flinch)
+            {
+                return HumanSoldierStates.FlinchState;
+            }
+
+            if (s.Dead)
+            {
+                return 33;
+            }
+
+            if (s.LieDown)
+            {
+                return HumanSoldierStates.KneelToProneState;
+            }
+
+            if (!s.Kneel)
+            {
+                // 0x458BF0 falls straight to state 0 when the kneel signal is released.
+                return HumanSoldierStates.StandState;
+            }
+
+            if (s.FireHeld)
+            {
+                return HumanSoldierStates.KneelReadyState;
+            }
+
+            if (s.ReloadPressed)
+            {
+                return HumanSoldierStates.KneelReloadState;
+            }
+
+            if (s.RollLeft)
+            {
+                return HumanSoldierStates.KneelRollLeftState;
+            }
+
+            return s.RollRight ? HumanSoldierStates.KneelRollRightState : HumanSoldierStates.KneelingState;
+        }
+
+        if (State == HumanSoldierStates.KneelReadyState)
+        {
+            if (s.Flinch)
+            {
+                return HumanSoldierStates.FlinchState;
+            }
+
+            if (s.Dead)
+            {
+                return 33;
+            }
+
+            if (!s.FirePose)
+            {
+                return HumanSoldierStates.KneelingState;
+            }
+
+            return s.AnimationDone && s.FireHeld
+                ? HumanSoldierStates.KneelFiringState
+                : HumanSoldierStates.KneelReadyState;
+        }
+
+        if (State == HumanSoldierStates.KneelFiringState)
+        {
+            if (s.Flinch)
+            {
+                return HumanSoldierStates.FlinchState;
+            }
+
+            if (s.Dead)
+            {
+                return 33;
+            }
+
+            return s.AnimationDone && !s.FireHeld
+                ? (s.FirePose ? HumanSoldierStates.KneelReadyState : HumanSoldierStates.KneelingState)
+                : HumanSoldierStates.KneelFiringState;
+        }
+
+        if (State == HumanSoldierStates.KneelReloadState)
+        {
+            if (s.Flinch)
+            {
+                return HumanSoldierStates.FlinchState;
+            }
+
+            if (s.Dead)
+            {
+                return 33;
+            }
+
+            return s.AnimationDone ? HumanSoldierStates.KneelingState : State;
+        }
+
+        if (State == HumanSoldierStates.KneelToProneState)
+        {
+            if (s.Dead)
+            {
+                return 33;
+            }
+
+            return s.AnimationDone ? HumanSoldierStates.ProneState : State;
+        }
+
+        if (State == HumanSoldierStates.LieDownState)
+        {
+            if (s.Dead)
+            {
+                return 34;
+            }
+
+            return s.AnimationDone ? HumanSoldierStates.ProneState : State;
+        }
+
+        if (State == HumanSoldierStates.ProneState)
+        {
+            if (s.Flinch)
+            {
+                return 31;
+            }
+
+            if (s.Dead)
+            {
+                return 34;
+            }
+
+            return s.LieDown
+                ? (s.FireHeld
+                    ? HumanSoldierStates.ProneFiringState
+                    : s.ReloadPressed
+                        ? HumanSoldierStates.ProneReloadState
+                        : HumanSoldierStates.ProneState)
+                : HumanSoldierStates.GetUpState;
+        }
+
+        if (State == HumanSoldierStates.ProneFiringState)
+        {
+            if (s.Flinch)
+            {
+                return 31;
+            }
+
+            if (s.Dead)
+            {
+                return 34;
+            }
+
+            return s.AnimationDone && !s.FireHeld
+                ? HumanSoldierStates.ProneState
+                : HumanSoldierStates.ProneFiringState;
+        }
+
+        if (State == HumanSoldierStates.ProneReloadState)
+        {
+            if (s.Flinch)
+            {
+                return 31;
+            }
+
+            if (s.Dead)
+            {
+                return 34;
+            }
+
+            return s.AnimationDone ? HumanSoldierStates.ProneState : HumanSoldierStates.ProneReloadState;
+        }
+
+        if (State == HumanSoldierStates.GetUpState)
+        {
+            if (s.Dead)
+            {
+                return 34;
+            }
+
+            return s.AnimationDone ? HumanSoldierStates.StandState : State;
         }
 
         if (s.Flinch)
@@ -106,10 +315,101 @@ public sealed class AiCombatStateMachine
             return HumanSoldierStates.DeathState;
         }
 
+        // 0x457FC0: tense forward run. A held trigger changes 17 -> 18 before the ordinary
+        // movement exits; raw rolls are considered while the forward-run signals remain set.
+        if (State == HumanSoldierStates.RunState)
+        {
+            if (s.Kneel)
+            {
+                return HumanSoldierStates.CrouchDownState;
+            }
+
+            if (s.LieDown)
+            {
+                return HumanSoldierStates.LieDownState;
+            }
+
+            if (s.FireHeld)
+            {
+                return HumanSoldierStates.RunFiringState;
+            }
+
+            if (s.MovingForward)
+            {
+                return s.RollLeft
+                    ? HumanSoldierStates.RollLeftState
+                    : s.RollRight
+                        ? HumanSoldierStates.RollRightState
+                        : HumanSoldierStates.RunState;
+            }
+
+            return HumanSoldierStates.StandState;
+        }
+
+        // 0x45AB00: state 18 forwards slot 6 to the weapon. Releasing the trigger while the tense
+        // forward signals remain set returns to 17. This is a running-fire state, not a diagonal run.
+        if (State == HumanSoldierStates.RunFiringState)
+        {
+            if (s.MovingForward)
+            {
+                if (s.RollLeft)
+                {
+                    return HumanSoldierStates.RollLeftState;
+                }
+
+                if (s.RollRight)
+                {
+                    return HumanSoldierStates.RollRightState;
+                }
+
+                return s.FireHeld ? HumanSoldierStates.RunFiringState : HumanSoldierStates.RunState;
+            }
+
+            return HumanSoldierStates.StandState;
+        }
+
+        if (State == HumanSoldierStates.DisplayReloadState)
+        {
+            return s.AnimationDone
+                ? (s.FirePose ? ReadyState : HumanSoldierStates.StandState)
+                : HumanSoldierStates.DisplayReloadState;
+        }
+
         return State switch
         {
             // 0x457A00: standing raises the weapon into the ready sequence when the fire pose is asked for.
-            HumanSoldierStates.StandState => s.FirePose ? RackState : HumanSoldierStates.StandState,
+            // 0x457A00 precedence for the signals this runtime currently produces: kneel precedes lie
+            // down, fire pose precedes grenade/reload/melee, and raw roll slots are considered last.
+            HumanSoldierStates.StandState => s.Kneel
+                ? HumanSoldierStates.CrouchDownState
+                : s.LieDown
+                    ? HumanSoldierStates.LieDownState
+                    : s.FirePose
+                        ? RackState
+                        : s.ThrowGrenade
+                            ? HumanSoldierStates.GrenadeThrowState
+                            : s.ReloadPressed
+                                ? HumanSoldierStates.DisplayReloadState
+                                : s.CloseCombat
+                                    ? HumanSoldierStates.CloseCombatState
+                                    : s.RollLeft
+                                    ? HumanSoldierStates.RollLeftState
+                                    : s.RollRight
+                                        ? HumanSoldierStates.RollRightState
+                                            : s.MovingForward
+                                                ? HumanSoldierStates.RunState
+                                                : HumanSoldierStates.StandState,
+
+            // mission1-parity.log: channel 8/slot 29 enters state 8/animation 58. The child stops
+            // writing on the next AI tick, but the body owns the state until its one-shot clip ends.
+            HumanSoldierStates.GrenadeThrowState => s.AnimationDone
+                ? HumanSoldierStates.StandState
+                : HumanSoldierStates.GrenadeThrowState,
+
+            // The same measured lifecycle for channel 9/slot 30: state 9, animation 70.
+            HumanSoldierStates.CloseCombatState => s.AnimationDone
+                ? HumanSoldierStates.StandState
+                : HumanSoldierStates.CloseCombatState,
 
             // 0x458810: the rack holds until its clip finishes, then goes to ready.
             RackState => s.AnimationDone ? ReadyState : RackState,

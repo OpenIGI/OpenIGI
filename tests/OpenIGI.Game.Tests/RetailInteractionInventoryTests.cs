@@ -5,6 +5,7 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -123,6 +124,19 @@ public sealed class RetailInteractionInventoryTests
                     0.0,
                     Vector3d.Dot(attachment, (wire.End - wire.Anchor).Normalized()),
                     precision: 3);
+            }
+            foreach (WorldInteraction interaction in interactions.Items.Where(
+                static item => item.Type == InteractionActivateType.StationaryGun))
+            {
+                DeclaredTask task = interaction.Task;
+                AiStationaryGun gun = Assert.IsType<AiStationaryGun>(interaction.StationaryGun);
+                Assert.Equal(task.Id, gun.TaskId);
+                Assert.Equal(ReadReal(task, "Max up angle", 25f), gun.MaximumAlphaDegrees);
+                Assert.Equal(ReadReal(task, "Max down angle", -25f), gun.MinimumAlphaDegrees);
+                Assert.Equal(ReadReal(task, "Max sideways angle", 90f), gun.MaximumGammaDegrees);
+                Assert.Equal(
+                    task.TryGetValue("Ammo", out object? rawAmmo) && rawAmmo is int ammo ? ammo : -1,
+                    gun.Ammunition);
             }
         }
 

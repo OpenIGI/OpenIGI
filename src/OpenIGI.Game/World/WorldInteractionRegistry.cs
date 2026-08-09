@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Rendering;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.
@@ -11,6 +12,7 @@ namespace OpenIGI.Game.World;
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
 public sealed class WorldInteraction
 {
+    private readonly object _userOccupant = new();
     private int _pressedTicks;
     private Func<bool>? _onCondition;
     private Func<bool>? _lockedCondition;
@@ -26,7 +28,8 @@ public sealed class WorldInteraction
         float facing,
         int durationTicks,
         string actionSprite,
-        DoorState? door)
+        DoorState? door,
+        AiStationaryGun? stationaryGun)
     {
         Task = task;
         Type = type;
@@ -37,6 +40,7 @@ public sealed class WorldInteraction
         DurationTicks = durationTicks;
         ActionSprite = actionSprite;
         Door = door;
+        StationaryGun = stationaryGun;
     }
 
     public DeclaredTask Task { get; }
@@ -48,6 +52,7 @@ public sealed class WorldInteraction
     public int DurationTicks { get; }
     public string ActionSprite { get; }
     public DoorState? Door { get; }
+    public AiStationaryGun? StationaryGun { get; }
     public ScriptFlag InUse { get; } = new();
     public ScriptFlag Pressed { get; } = new();
     public bool IsOn { get; set; } = true;
@@ -159,12 +164,25 @@ public sealed class WorldInteraction
         _pressedTicks = 3;
     }
 
-    public void BeginUse() => InUse.Value = true;
+    public void BeginUse()
+    {
+        if (StationaryGun is not null && !StationaryGun.TryMount(_userOccupant))
+        {
+            return;
+        }
 
-    public void CancelUse() => InUse.Value = false;
+        InUse.Value = true;
+    }
+
+    public void CancelUse()
+    {
+        StationaryGun?.Dismount(_userOccupant);
+        InUse.Value = false;
+    }
 
     public void CompleteUse()
     {
+        StationaryGun?.Dismount(_userOccupant);
         InUse.Value = false;
         CompletedThisTick = true;
         switch (Type)
@@ -288,6 +306,10 @@ public sealed class WorldInteractionRegistry
         return true;
     }
 
+    /// <summary>Resolves the live stationary-gun task a HumanAI's gunner id names.</summary>
+    public AiStationaryGun? FindStationaryGun(int taskId) =>
+        _items.FirstOrDefault(item => item.Task.Id == taskId)?.StationaryGun;
+
     /// <summary>Finds the eligible task nearest the centre of the player's aim.</summary>
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch = 0f)
         => Resolve(eye, yaw, pitch, out _);
@@ -361,7 +383,8 @@ public sealed class WorldInteractionRegistry
 
         if (task is DeclaredTask declared && TypeOf(task.Type.Name) is { } type)
         {
-            Vector3d start = PositionOf(declared, type);
+            Vector3d taskPosition = PositionOf(declared, type);
+            Vector3d start = taskPosition;
             Vector3d end = ReadPosition(declared, "Stop position", start);
             float facing = FacingOf(declared);
             Matrix3f orientation = OrientationOf(declared);
@@ -391,9 +414,20 @@ public sealed class WorldInteractionRegistry
             DoorState? door = type == InteractionActivateType.Door
                 ? doors.Doors.FirstOrDefault(candidate => ReferenceEquals(candidate.Task, task))?.State
                 : null;
+            AiStationaryGun? stationaryGun = type == InteractionActivateType.StationaryGun
+                ? new AiStationaryGun(
+                    declared.Id,
+                    taskPosition,
+                    orientation,
+                    ReadReal(declared, "Max up angle", 25f),
+                    ReadReal(declared, "Max down angle", -25f),
+                    ReadReal(declared, "Max sideways angle", 90f),
+                    ReadString(declared, "Weapon ID", "WEAPON_ID_M2HB"),
+                    (int)ReadReal(declared, "Ammo", -1f))
+                : null;
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
-                DurationOf(declared, type), SpriteOf(declared, type), door);
+                DurationOf(declared, type), SpriteOf(declared, type), door, stationaryGun);
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
             string openExpression = ReadString(declared, "Open door expression", string.Empty);

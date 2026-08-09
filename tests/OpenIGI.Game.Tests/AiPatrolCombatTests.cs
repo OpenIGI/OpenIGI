@@ -174,18 +174,18 @@ public sealed class AiPatrolCombatTests
             Parameters(evasiveActionProbability: 1f, rollOrLieDownProbability: 0f),
             AlwaysZero());
 
-        Assert.Equal(AiEvasiveAction.LieDown, patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left, false));
+        Assert.Equal(AiEvasiveAction.LieDown, patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left, true, false));
 
         for (int tick = 1; tick <= AiPatrolCombat.EvasionCooldownTicks; tick++)
         {
             Assert.Equal(
                 AiEvasiveAction.None,
-                patrol.ChooseEvasion(tick, 0.0, AiRollSpace.Left, false));
+                patrol.ChooseEvasion(tick, 0.0, AiRollSpace.Left, true, false));
         }
 
         Assert.Equal(
             AiEvasiveAction.LieDown,
-            patrol.ChooseEvasion(AiPatrolCombat.EvasionCooldownTicks + 1, 0.0, AiRollSpace.Left, false));
+            patrol.ChooseEvasion(AiPatrolCombat.EvasionCooldownTicks + 1, 0.0, AiRollSpace.Left, true, false));
     }
 
     /// <summary>A zero roll probability means "always lie down", tested as an exact float compare.</summary>
@@ -198,7 +198,7 @@ public sealed class AiPatrolCombatTests
 
         Assert.Equal(
             AiEvasiveAction.LieDown,
-            patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left | AiRollSpace.Right, false));
+            patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left | AiRollSpace.Right, true, false));
     }
 
     /// <summary>A soldier never rolls the same way twice running.</summary>
@@ -210,9 +210,9 @@ public sealed class AiPatrolCombatTests
             AlwaysZero());
 
         // p == 1 short-circuits to the right, but only while the last roll was not itself right.
-        AiEvasiveAction first = patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left | AiRollSpace.Right, false);
+        AiEvasiveAction first = patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left | AiRollSpace.Right, true, false);
         AiEvasiveAction second = patrol.ChooseEvasion(
-            AiPatrolCombat.EvasionCooldownTicks + 1, 0.0, AiRollSpace.Left | AiRollSpace.Right, false);
+            AiPatrolCombat.EvasionCooldownTicks + 1, 0.0, AiRollSpace.Left | AiRollSpace.Right, true, false);
 
         Assert.Equal(AiEvasiveAction.RollRight, first);
         Assert.NotEqual(AiEvasiveAction.RollRight, second);
@@ -228,7 +228,7 @@ public sealed class AiPatrolCombatTests
         // Right is the only side p == 1 takes, and there is no node there.
         Assert.Equal(
             AiEvasiveAction.None,
-            patrol.ChooseEvasion(0, 0.0, AiRollSpace.None, false));
+            patrol.ChooseEvasion(0, 0.0, AiRollSpace.None, true, false));
     }
 
     [Fact]
@@ -238,12 +238,35 @@ public sealed class AiPatrolCombatTests
 
         Assert.Equal(
             AiEvasiveAction.None,
-            patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left, onForbiddenNode: true));
+            patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left, underFire: true, onForbiddenNode: true));
 
         // The cooldown was taken before the gate, so the next tick is still barred.
         Assert.Equal(
             AiEvasiveAction.None,
-            patrol.ChooseEvasion(1, 0.0, AiRollSpace.Left, onForbiddenNode: false));
+            patrol.ChooseEvasion(1, 0.0, AiRollSpace.Left, underFire: true, onForbiddenNode: false));
+    }
+
+    [Fact]
+    public void EvasionRequiresDamageShotOrMissEventButStillSpendsCooldown()
+    {
+        AiPatrolCombat patrol = new(
+            Parameters(evasiveActionProbability: 1f, rollOrLieDownProbability: 0f),
+            AlwaysZero());
+
+        Assert.Equal(
+            AiEvasiveAction.None,
+            patrol.ChooseEvasion(0, 0.0, AiRollSpace.Left, underFire: false, onForbiddenNode: false));
+        Assert.Equal(
+            AiEvasiveAction.None,
+            patrol.ChooseEvasion(1, 0.0, AiRollSpace.Left, underFire: true, onForbiddenNode: false));
+        Assert.Equal(
+            AiEvasiveAction.LieDown,
+            patrol.ChooseEvasion(
+                AiPatrolCombat.EvasionCooldownTicks + 1,
+                0.0,
+                AiRollSpace.Left,
+                underFire: true,
+                onForbiddenNode: false));
     }
 
     private static Func<double> AlwaysZero() => () => 0.0;

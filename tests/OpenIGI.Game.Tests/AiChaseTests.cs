@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -70,6 +71,126 @@ public sealed class AiChaseTests
         Assert.True(
             Distance(soldier.Position, start) > 5 * Metre,
             $"the soldier lost sight but barely moved ({Distance(soldier.Position, start) / Metre:0.0} m) — it hunted on the spot");
+    }
+
+    /// <summary>
+    /// The hunt keeps moving <b>while the body machine is driven</b>, as the renderer drives it. Moving puts
+    /// the body in the run state (17), and the chooser's wait-for-stand gate must not fire on it — gating on
+    /// it produced a one-tick oscillation (move → run state → gate → stand → move …) that shuffled in place
+    /// for ever, and, because each search cycle reset the lost-target timeout, never left combat either.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AHuntingSoldierKeepsMovingWhileTheBodyMachineRuns()
+    {
+        GraphFile graph = Graph();
+        Vector3d position = graph.Nodes[0].Position;
+        int clip = 30;
+        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            Parameters(trackingMetres: 15f),
+            () => new AiCombatWeaponState(clip, 30, 30, WeaponCategory.Gun));
+
+        Vector3d seen = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        bool engaged = false;
+        for (int tick = 1; tick <= 60 && !engaged; tick++)
+        {
+            soldier.Tick(tick, seen, rootMotionThisTick: 178.0);
+            soldier.TickCombatState(animationDone: true);
+            engaged |= soldier.Activity == AiSoldierActivity.Engaging;
+        }
+
+        Assert.True(engaged, "the patrol soldier never engaged the enemy it could see");
+
+        Vector3d gone = new(position.X + (25 * Metre), position.Y - (25 * Metre), position.Z);
+        int movingStreak = 0;
+        int bestStreak = 0;
+        List<string> trace = [];
+        for (int tick = 61; tick <= 600; tick++)
+        {
+            soldier.Tick(tick, gone, rootMotionThisTick: soldier.IsMovingInCombat ? 500.0 : 0.0);
+            if (soldier.Activity == AiSoldierActivity.Engaging)
+            {
+                soldier.TickCombatState(animationDone: true);
+            }
+
+            // What the app's weapon path does: a pulled trigger spends the clip, a reload refills it.
+            if (soldier.Combat.PullTrigger && clip > 0)
+            {
+                clip--;
+            }
+            if (soldier.Combat.PressReload || soldier.Combat.ReloadWeaponDirectly)
+            {
+                clip = 30;
+            }
+
+            movingStreak = soldier.IsMovingInCombat ? movingStreak + 1 : 0;
+            bestStreak = Math.Max(bestStreak, movingStreak);
+            if (tick % 60 == 0)
+            {
+                trace.Add($"t{tick} {soldier.DescribeCombat()}");
+            }
+        }
+
+        Assert.True(
+            bestStreak >= 10,
+            $"the hunt never held its movement for 10 consecutive ticks (best {bestStreak}) — the run-state " +
+            "oscillation is back and the soldier is shuffling in place\n" + string.Join("\n", trace));
+    }
+
+    /// <summary>
+    /// A soldier that fires while advancing reaches a state the trigger actually forwards from. Retail's
+    /// Follow raises RUN + FIRE and never the fire pose (<c>0x48C860</c>); raising the pose shoved the body
+    /// into the STANDING fire chain from a moving start, where the stand gate cut the command each tick —
+    /// guards played rack/recover at their destination for ever without one round leaving, because the
+    /// trigger only forwards from states 6, 18, 22 and 27.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void AFollowFiringSoldierReachesATriggerForwardingState()
+    {
+        GraphFile graph = Graph();
+        Vector3d position = graph.Nodes[0].Position;
+        int clip = 30;
+        AiSoldier soldier = new(graph, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            Parameters(trackingMetres: 5f),
+            () => new AiCombatWeaponState(clip, 30, 30, WeaponCategory.Gun));
+
+        // Visible, and far beyond the 5 m tracking distance: the chooser advances on it, firing en route.
+        Vector3d enemy = new(position.X, position.Y + (20 * Metre), position.Z + (5 * Metre / 4));
+
+        bool forwarded = false;
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: soldier.IsMovingInCombat ? 500.0 : 178.0);
+            if (soldier.Activity == AiSoldierActivity.Engaging)
+            {
+                int state = soldier.TickCombatState(animationDone: true);
+                if (soldier.Combat.PullTrigger
+                    && state is HumanSoldierStates.FiringState
+                        or HumanSoldierStates.RunFiringState
+                        or HumanSoldierStates.KneelFiringState
+                        or HumanSoldierStates.ProneFiringState)
+                {
+                    forwarded = true;
+                    if (clip > 0)
+                    {
+                        clip--;
+                    }
+                }
+            }
+
+            if (soldier.Combat.PressReload || soldier.Combat.ReloadWeaponDirectly)
+            {
+                clip = 30;
+            }
+        }
+
+        Assert.True(
+            forwarded,
+            "the soldier pulled the trigger but never in a state the body forwards it from — the " +
+            "shooting animation would play with no rounds leaving");
     }
 
     /// <summary>

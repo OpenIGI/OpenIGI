@@ -27,7 +27,11 @@ public enum AiCombatChannel
     /// <remarks>The stun writes <c>38.0</c> here, which is what shows the value is an id and not a flag.</remarks>
     PlayAnimation = 3,
 
-    /// <summary>A second animation slot, written by the walk-to-and-act action.</summary>
+    /// <summary>A second animation/activation slot, written by walk-to-and-act and the gunner arm.</summary>
+    /// <remarks>
+    /// A gunner writes its StationaryGun task id here to mount, and <c>1.0</c> to leave state 36.
+    /// The logical channel is shared even though other AI types use the resolved slot for animation.
+    /// </remarks>
     PlayAnimationAlternate = 4,
 
     /// <summary>Run — <c>"Run panicking"</c>.</summary>
@@ -210,3 +214,13 @@ public static class AiCombatChannels
 /// probe capture of the retail game can be compared line for line.
 /// </remarks>
 public readonly record struct AiChannelWrite(AiCombatChannel Channel, int Slot, float Value);
+
+/// <summary>One direct write to a body's forty-slot input frame.</summary>
+/// <param name="Slot">The physical input slot, without logical-channel translation.</param>
+/// <param name="Value">The value written to the current frame.</param>
+/// <remarks>
+/// Roll callbacks are the important distinction: IGI 1's <c>0x48D830</c>/<c>0x48D870</c> write
+/// slots 2/3 directly, while ordinary combat requests go through <c>0x48EF70</c> and the per-type
+/// channel table. Keeping separate records prevents probe comparisons from inventing a logical channel.
+/// </remarks>
+public readonly record struct AiRawInputWrite(int Slot, float Value);

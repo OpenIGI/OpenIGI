@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
 
@@ -15,11 +16,13 @@ namespace OpenIGI.Game.Ai;
 /// The same arguments as the reals the script actually passed — durations and weights lose their
 /// fractions in <paramref name="Arguments"/>' integer truncation.
 /// </param>
+/// <param name="Strings">Text operands; only PlaySound's definition name uses one.</param>
 public readonly record struct AiProducedAction(
     string Name,
     IReadOnlyList<int> Arguments,
     int Slot,
-    IReadOnlyList<float>? Reals = null)
+    IReadOnlyList<float>? Reals = null,
+    IReadOnlyList<string>? Strings = null)
 {
     /// <summary>Gets an argument, or zero when the script passed fewer than that.</summary>
     /// <param name="index">The argument index.</param>
@@ -31,6 +34,10 @@ public readonly record struct AiProducedAction(
     /// <returns>The value, falling back on the integer argument when no real was captured.</returns>
     public float Real(int index) =>
         Reals is not null && index >= 0 && index < Reals.Count ? Reals[index] : Argument(index);
+
+    /// <summary>An argument as text, or the empty string when it was numeric.</summary>
+    public string Text(int index) =>
+        Strings is not null && index >= 0 && index < Strings.Count ? Strings[index] : string.Empty;
 }
 
 /// <summary>
@@ -65,17 +72,19 @@ public sealed class AiScriptHost
     private int _slot;
     private QvmProgram? _archetypeScript;
     private QvmProgram? _runningScript;
-    private uint _random = 0x1234_5678;
+    private readonly IgiRandom _random;
 
     /// <summary>Initializes a new instance of the <see cref="AiScriptHost"/> class.</summary>
     /// <param name="natives">The registry the archetype scripts resolve against.</param>
     /// <param name="logger">Where to report a script asking for something unmodelled.</param>
+    /// <param name="random">The mission-wide IGI random stream, or a fresh stream for isolated use.</param>
     /// <exception cref="ArgumentNullException"><paramref name="natives"/> is <see langword="null"/>.</exception>
-    public AiScriptHost(NativeRegistry natives, IIgiLogger? logger = null)
+    public AiScriptHost(NativeRegistry natives, IIgiLogger? logger = null, IgiRandom? random = null)
     {
         ArgumentNullException.ThrowIfNull(natives);
         _natives = natives;
         _logger = logger ?? NullLogger.Instance;
+        _random = random ?? new IgiRandom();
         RegisterAll();
     }
 
@@ -148,13 +157,16 @@ public sealed class AiScriptHost
 
     private void RegisterAll()
     {
+        // ALWAYS re-register, never skip on Contains: the registry rebinds a duplicate name, and that
+        // rebinding is the point. Each native's closure captures THIS host — its produced-action list,
+        // its current event, its archetype delegation. A mission transition builds a fresh host against
+        // the session's persistent registry, and skipping "already registered" names left every
+        // AIFunction_*/AIAction_* pointing at the PREVIOUS mission's host: scripts read a stale
+        // GetCurrentEventType so no event branch matched, and anything they did produce landed in a
+        // list nobody read. Every guard in the next mission was deaf, silently. This is the same
+        // per-mission re-registration rule the weapon, ammo and material registrars already follow.
         foreach (AiNative native in AiScriptApi.Natives)
         {
-            if (_natives.Contains(native.Name))
-            {
-                continue;
-            }
-
             QvmValueKind kind = native.Return switch
             {
                 AiNativeReturn.Real => QvmValueKind.Float,
@@ -172,10 +184,7 @@ public sealed class AiScriptHost
 
         foreach ((string name, int value) in AiScriptApi.Constants)
         {
-            if (!_natives.Contains(name))
-            {
-                _natives.RegisterConstant(name, value);
-            }
+            _natives.RegisterConstant(name, value);
         }
     }
 
@@ -185,13 +194,24 @@ public sealed class AiScriptHost
         {
             int[] arguments = new int[call.ArgumentCount];
             float[] reals = new float[call.ArgumentCount];
+            string[] strings = new string[call.ArgumentCount];
             for (int i = 0; i < arguments.Length; i++)
             {
-                arguments[i] = call.GetInt32(i);
-                reals[i] = call.GetSingle(i);
+                // PlaySound's first operand is the only textual AI-action operand in the registrar.
+                // Evaluating it as a number first would run a deferred QVM argument expression with the
+                // wrong requested type and lose the sound definition.
+                if (native.Name == "AIAction_PlaySound" && i == 0)
+                {
+                    strings[i] = call.GetString(i);
+                }
+                else
+                {
+                    arguments[i] = call.GetInt32(i);
+                    reals[i] = call.GetSingle(i);
+                }
             }
 
-            _produced.Add(new AiProducedAction(native.Name, arguments, _slot, reals));
+            _produced.Add(new AiProducedAction(native.Name, arguments, _slot, reals, strings));
             return QvmValue.Zero;
         }
 
@@ -226,7 +246,7 @@ public sealed class AiScriptHost
                 return QvmValue.Zero;
 
             case "AIFunction_GetRandomValue":
-                return QvmValue.FromSingle(NextRandom() * Math.Max(0f, call.GetSingle(0)));
+                return QvmValue.FromSingle(_random.NextSingle() * Math.Max(0f, call.GetSingle(0)));
 
             case "AIFunction_SetViewLength" when ai is not null:
                 ai.Vision.Primary = ai.Vision.Primary.WithLengthInMetres(call.GetSingle(0));
@@ -336,11 +356,9 @@ public sealed class AiScriptHost
             case "AIFunction_GetAlarmAccess" when ai is not null:
                 return QvmValue.FromInt32(ai.AlarmAccess);
 
-            // --- Called, but the state they need is not modelled yet: return the original's failure/idle
-            //     value and say so, rather than falling through the blanket default silently. ---
-            case "AIFunction_GetGunnerStatus":
-                // 0x44E5E0 returns 0 with no stationary gun; the port never assigns one.
-                return QvmValue.FromInt32(0);
+            case "AIFunction_GetGunnerStatus" when ai is not null:
+                // 0x44E5E0 resolves the configured StationaryGun and returns its byte at +540.
+                return QvmValue.FromInt32(ai.GetGunnerStatus() ? 1 : 0);
 
             case "AIFunction_SetAnimationInterval" when ai is not null:
                 // 0x44EAF0: ai+15192 = min x 30 ticks, +15196 = random x 30, and the next-play deadline
@@ -392,11 +410,4 @@ public sealed class AiScriptHost
         }
     }
 
-    // The engine's own 0..1 generator is IgiRandom; this only has to be deterministic and in range, because
-    // the retail scripts use it for idle timing rather than anything that has to match tick for tick.
-    private float NextRandom()
-    {
-        _random = (_random * 1664525u) + 1013904223u;
-        return (_random >> 8) / (float)(1 << 24);
-    }
 }

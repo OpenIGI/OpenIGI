@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Qvm;
 using OpenIGI.Scripting.Runtime;
@@ -52,6 +53,27 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(sawIt, "the soldier never saw the enemy at five metres");
         Assert.True(engaged, "the soldier saw the enemy and never engaged");
         Assert.True(fired, $"the soldier engaged and never pulled the trigger (phase {soldier.CombatPhase})");
+    }
+
+    [RequiresGameDataFact]
+    public void VisibleEngagementRequestsExactlyOneDetectionShout()
+    {
+        AiSoldier soldier = Soldier(out Vector3d position);
+        Vector3d enemy = new(position.X, position.Y + (5 * Metre), position.Z + (5 * Metre / 4));
+        int requests = 0;
+
+        for (int tick = 1; tick <= 300; tick++)
+        {
+            soldier.Tick(tick, enemy, rootMotionThisTick: 0.0);
+            if (soldier.DetectionShoutRequestedThisTick)
+            {
+                requests++;
+            }
+
+            Spend(soldier);
+        }
+
+        Assert.Equal(1, requests);
     }
 
     /// <summary>
@@ -614,6 +636,111 @@ public sealed class AiSoldierCombatWiringTests
         Assert.True(fired, "the installed patrol burst was abandoned when the shared aim slots filled");
     }
 
+    [Fact]
+    public void PatrolGrenadeChildWritesOnceAndBodyOwnsAnimationToCompletion()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+        Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre), position.Z);
+        Vector3d enemyEye = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
+        AiSoldier soldier = PatrolOneShotSoldier(position, grenadeProbability: 1f);
+        soldier.SetGrenadeAvailable(true);
+
+        int tick = 1;
+        while (tick < 20 && soldier.PatrolAction != AiPatrolAction.ThrowGrenade)
+        {
+            soldier.Tick(tick++, enemyEye, 0.0, enemyFeet: enemyFeet);
+        }
+
+        Assert.Equal(AiPatrolAction.ThrowGrenade, soldier.PatrolAction);
+        Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.ThrowGrenade);
+        Assert.Equal(HumanSoldierStates.GrenadeThrowState, soldier.TickCombatState(animationDone: false));
+
+        soldier.Tick(tick, enemyEye, 0.0, enemyFeet: enemyFeet);
+        Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.ThrowGrenade);
+        Assert.Equal(HumanSoldierStates.GrenadeThrowState, soldier.TickCombatState(animationDone: false));
+        Assert.Equal(HumanSoldierStates.StandState, soldier.TickCombatState(animationDone: true));
+    }
+
+    [Fact]
+    public void PatrolCloseCombatChildUsesMeasuredStateAndAnimation()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+
+        // 1.25 m, not 1 m: detection tests the target's mid-body mark (feet + 0.7 m, sub_465820), and at
+        // 1 m that mark sits 47.7 degrees below the rig-less 1.8 m fallback eye -- outside the +/-45 degree
+        // default vertical cone. Retail has the same below-the-cone blind spot at arm's length; the melee
+        // range itself is 1.5 m, so 1.25 m stays a close-combat scenario the cone actually admits.
+        Vector3d enemyFeet = new(position.X, position.Y + (5 * Metre / 4), position.Z);
+        Vector3d enemyEye = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
+        AiSoldier soldier = PatrolOneShotSoldier(position, grenadeProbability: 0f);
+
+        int tick = 1;
+        while (tick < 20 && soldier.PatrolAction != AiPatrolAction.CloseCombat)
+        {
+            soldier.Tick(tick++, enemyEye, 0.0, enemyFeet: enemyFeet);
+        }
+
+        Assert.Equal(AiPatrolAction.CloseCombat, soldier.PatrolAction);
+        Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.CloseCombat);
+        Assert.Equal(HumanSoldierStates.CloseCombatState, soldier.TickCombatState(animationDone: false));
+        Assert.Equal(70, HumanSoldierStates.AnimationOf(soldier.CombatState));
+
+        soldier.Tick(tick, enemyEye, 0.0, enemyFeet: enemyFeet);
+        Assert.DoesNotContain(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.CloseCombat);
+        Assert.Equal(HumanSoldierStates.CloseCombatState, soldier.TickCombatState(animationDone: false));
+        Assert.Equal(HumanSoldierStates.StandState, soldier.TickCombatState(animationDone: true));
+    }
+
+    [Fact]
+    public void PatrolDamageEventInstallsPersistentProneBehavior()
+    {
+        Vector3d position = new(1000, 2000, 3000);
+        Vector3d enemyFeet = new(position.X, position.Y + (8 * Metre), position.Z);
+        Vector3d enemyEye = new(enemyFeet.X, enemyFeet.Y, enemyFeet.Z + (5 * Metre / 4));
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_PATROL_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                TrackingDistanceMetres = 100f,
+                EvasiveActionProbability = 1f,
+                EvasiveStandRollOrLieDownProbability = 0f,
+                LieDownMinimumDistanceMetres = 1f,
+                MinimumClipFraction = 0.8f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.6f,
+            }),
+            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+
+        // The evasion routine sets its cooldown even when no shot event exists. Keep the measured
+        // type-15 condition present until the first eligible patrol tick rather than assuming which
+        // creation/detection tick first installed combat.
+        int damageTick = 1;
+        do
+        {
+            soldier.ReceiveDamage(enemyFeet);
+            soldier.Tick(damageTick++, enemyEye, 0.0, enemyFeet: enemyFeet);
+        }
+        while (damageTick < 50
+            && !soldier.ChannelWrites.Any(write => write.Channel == AiCombatChannel.LieDown));
+
+        Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.LieDown);
+        Assert.Equal(HumanSoldierStates.LieDownState, soldier.TickCombatState(animationDone: false));
+
+        soldier.Tick(damageTick, enemyEye, 0.0, enemyFeet: enemyFeet);
+        Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.LieDown);
+        Assert.Equal(HumanSoldierStates.ProneState, soldier.TickCombatState(animationDone: true));
+
+        soldier.Tick(damageTick + 1, enemyEye, 0.0, enemyFeet: enemyFeet);
+        Assert.Contains(soldier.ChannelWrites, write => write.Channel == AiCombatChannel.LieDown);
+        Assert.Equal(HumanSoldierStates.ProneState, soldier.TickCombatState(animationDone: false));
+    }
+
     /// <summary>
     /// A heard shot can start combat before the shooter has ever been visible: the living enemy's
     /// detection slot is already registered by classification, which is what retail combat tests.
@@ -718,6 +845,30 @@ public sealed class AiSoldierCombatWiringTests
             }),
             () => new AiCombatWeaponState(_clip, 30, 30, WeaponCategory.Gun));
 
+        return soldier;
+    }
+
+    private static AiSoldier PatrolOneShotSoldier(Vector3d position, float grenadeProbability)
+    {
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.PatrolAk,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_PATROL_AK",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                TrackingDistanceMetres = 100f,
+                GrenadeThrowProbability = grenadeProbability,
+                GrenadeMinimumDistanceMetres = 1f,
+                GrenadeMaximumDistanceMetres = 20f,
+                MinimumClipFraction = 0.8f,
+                MaximumRoundsPerSequence = 30,
+                HitProbabilityAtMinimumRange = 1f,
+                HitProbabilityAtMaximumRange = 0.3f,
+                AimPrecision = 0.6f,
+            }),
+            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
         return soldier;
     }
 

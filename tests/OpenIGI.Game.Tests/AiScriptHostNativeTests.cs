@@ -97,6 +97,18 @@ public sealed class AiScriptHostNativeTests
         Assert.Equal(9, soldier.DeathAnimationOverride);
     }
 
+    [RequiresGameDataFact]
+    public void GetGunnerStatusReadsTheResolvedStationaryGunOccupiedFlag()
+    {
+        AiSoldier soldier = Soldier();
+        soldier.GunnerId = 17;
+        soldier.SetGunnerStatusResolver(id => id == 17);
+        Assert.True(soldier.GetGunnerStatus());
+
+        soldier.SetGunnerStatusResolver(_ => false);
+        Assert.False(soldier.GetGunnerStatus());
+    }
+
     /// <summary>
     /// <c>SetEventPriority</c> builds the dispatch order in <b>call order</b> (<c>0x44E0C0</c> appends): the
     /// first type named leads, and naming a type twice does not move it.
@@ -220,9 +232,54 @@ public sealed class AiScriptHostNativeTests
         Assert.True(soldier.HearGunshot(shot, silenced: false));
         soldier.Tick(2, enemyFarAway, rootMotionThisTick: 0.0);
 
-        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+        // SetCombat is NOT a combat install: 0x48E560 synthesizes an AIEVENT_COMBAT onto the AI's own
+        // queue and ends. The engagement begins one tick later, when that COMBAT event dispatches and
+        // the archetype's COMBAT branch runs AIAction_Combat.
         Assert.Contains(soldier.LastActions, action => action.Name == "AIAction_SetCombat");
         Assert.Equal(10 * 4096.0, soldier.LastEventDistance, precision: 3);
+        Assert.NotEqual(AiSoldierActivity.Engaging, soldier.Activity);
+
+        soldier.Tick(3, enemyFarAway, rootMotionThisTick: 0.0);
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+        Assert.Contains(soldier.LastActions, action => action.Name == "AIAction_Combat");
+    }
+
+    /// <summary>
+    /// A <b>second</b> host on the same registry owns the natives — the mission-transition case. Each
+    /// native's closure captures its host; skipping "already registered" names left the next mission's
+    /// scripts running natives bound to the previous mission's host, so <c>GetCurrentEventType</c> read a
+    /// stale event and every produced action landed in a list nobody read: guards in mission 2 were
+    /// silently deaf to everything.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ASecondHostOnTheSameRegistryOwnsTheNatives()
+    {
+        NativeRegistry shared = new();
+        shared.RegisterConstant("TRUE", 1);
+        shared.RegisterConstant("FALSE", 0);
+        shared.RegisterConstant("GAME_FREQUENCY", 30);
+        shared.RegisterRealConstant("WORLD_METER", 4096.0);
+        shared.RegisterRealConstant("MATH_PI", Math.PI);
+        _ = new AiScriptHost(shared, new Recorder());
+
+        // The next mission's host registers against the SAME registry, as the transition does.
+        AiScriptHost nextMission = new(shared, new Recorder());
+
+        AiSoldier soldier = Soldier();
+        QvmProgram script = QvmProgram.Read(File.ReadAllBytes(ArchetypePath("guard")));
+        soldier.SetScript(nextMission, script);
+
+        Vector3d position = soldier.Position;
+        Vector3d enemyFarAway = new(position.X, position.Y + (500 * 4096.0), position.Z);
+        Vector3d shot = new(position.X + (10 * 4096.0), position.Y, position.Z);
+
+        soldier.Tick(1, enemyFarAway, rootMotionThisTick: 0.0); // CREATE
+        Assert.True(soldier.HearGunshot(shot, silenced: false));
+        soldier.Tick(2, enemyFarAway, rootMotionThisTick: 0.0);
+        Assert.Contains(soldier.LastActions, action => action.Name == "AIAction_SetCombat");
+
+        soldier.Tick(3, enemyFarAway, rootMotionThisTick: 0.0);
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
     }
 
     private static readonly int[] LookAtEventArgs = [2, 0];
@@ -232,6 +289,12 @@ public sealed class AiScriptHostNativeTests
         NativeRegistry natives = new();
         natives.RegisterConstant("TRUE", 1);
         natives.RegisterConstant("FALSE", 0);
+
+        // The Game module registers these beside its natives (sub_415530); guard.qvm's COMBAT branch
+        // multiplies by WORLD_METER, so a host without it faults the branch that installs combat.
+        natives.RegisterConstant("GAME_FREQUENCY", 30);
+        natives.RegisterRealConstant("WORLD_METER", 4096.0);
+        natives.RegisterRealConstant("MATH_PI", Math.PI);
         Recorder log = new();
         return (new AiScriptHost(natives, log), log);
     }

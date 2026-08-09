@@ -268,6 +268,38 @@ public sealed class AiGuardCombatTests
         Assert.Equal(5, ammo);
     }
 
+    /// <summary>An already-started burst is not cancelled when its target disappears behind cover.</summary>
+    /// <remarks>
+    /// Mission 1 probe capture <c>mission1-parity.log</c> records the patrol guard at
+    /// <c>0x1574CC44</c> losing LOS during an eleven-round burst and spending it to zero. The world/body
+    /// nearest-contact cast, not this action, prevents those rounds from damaging the occluded player.
+    /// </remarks>
+    [Fact]
+    public void LosingSightDoesNotCancelAnActiveBurst()
+    {
+        AiGuardCombat combat = Guard();
+        combat.Begin();
+        combat.Update(Sense(), standing: true, ViewLength);
+        combat.ReportAimed(true);
+
+        int ammo = 30;
+        AiCombatCommand command = combat.Update(
+            Sense() with { Visible = false, AmmoInClip = ammo }, standing: true, ViewLength);
+
+        Assert.Equal(AiCombatPhase.Fire, combat.Phase);
+        Assert.True(command.FirePose);
+        Assert.True(command.PullTrigger);
+
+        // Every observed round drains the original burst even though LOS remains blocked.
+        ammo--;
+        command = combat.Update(
+            Sense() with { Visible = false, AmmoInClip = ammo }, standing: true, ViewLength);
+
+        Assert.Equal(AiCombatPhase.Fire, combat.Phase);
+        Assert.Equal(23, combat.RoundsLeftInBurst);
+        Assert.True(command.PullTrigger);
+    }
+
     /// <summary>The aim point chases the target at the row's aim precision, not instantly.</summary>
     [Fact]
     public void TheAimPointChasesTheTargetAtTheRowsPrecision()
