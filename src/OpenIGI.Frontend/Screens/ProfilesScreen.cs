@@ -30,6 +30,7 @@ public sealed class ProfilesScreen : ShellScreen
     private Panel? _deleteDetails;
     private TextBox? _name;
     private Dropdown? _difficulty;
+    private Toggle? _unlockAllMissions;
     private Label? _profileName;
     private Label? _profileDifficulty;
     private Label? _profileProgress;
@@ -217,6 +218,12 @@ public sealed class ProfilesScreen : ShellScreen
         };
         column.AddChild(_difficulty);
 
+        _unlockAllMissions = new Toggle(theme, "Temporary: unlock all missions")
+        {
+            Tooltip = "Testing option: make every campaign mission available for this profile.",
+        };
+        column.AddChild(_unlockAllMissions);
+
         _formError = new Label(theme.Body, string.Empty, theme.BodyTextSize * 0.72f, theme.Accent);
         column.AddChild(_formError);
 
@@ -331,6 +338,11 @@ public sealed class ProfilesScreen : ShellScreen
             _difficulty.SelectedIndex = Math.Clamp(Context.Config.Active?.Difficulty ?? 1, 0, AiDifficultyNames.All.Length - 1);
         }
 
+        if (_unlockAllMissions is not null)
+        {
+            _unlockAllMissions.Value = false;
+        }
+
         if (_formError is not null)
         {
             _formError.Text = string.Empty;
@@ -382,6 +394,7 @@ public sealed class ProfilesScreen : ShellScreen
     {
         string name = _name?.Text ?? string.Empty;
         int difficulty = _difficulty?.SelectedIndex ?? 1;
+        bool unlockAllMissions = _unlockAllMissions?.Value == true;
         string trimmed = name.TrimEnd(' ', '\t');
 
         if (Context.Config.Profiles.Count >= GameConfig.MaxProfiles)
@@ -408,6 +421,11 @@ public sealed class ProfilesScreen : ShellScreen
         {
             SetFormError("The profile could not be created.");
             return;
+        }
+
+        if (unlockAllMissions && Context.Missions.Count > 0 && Context.Config.Active is { } created)
+        {
+            created.ActiveMission = Context.Missions[^1].Id;
         }
 
         Context.Host.SaveProfiles();
