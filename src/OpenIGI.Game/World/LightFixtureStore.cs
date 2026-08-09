@@ -23,15 +23,9 @@ namespace OpenIGI.Game.World;
 /// lightmap for this.
 /// </para>
 /// </remarks>
-public static class LightFixtureStore
+public static partial class LightFixtureStore
 {
     private const string LogCategory = "Emissive";
-
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-    };
 
     /// <summary>Writes a mission's fixtures to a file, creating the directory if it is missing.</summary>
     /// <param name="path">Where to write.</param>
@@ -61,7 +55,7 @@ public static class LightFixtureStore
                 records[i] = Record.From(fixtures[i]);
             }
 
-            File.WriteAllText(path, JsonSerializer.Serialize(records, Options));
+            File.WriteAllText(path, JsonSerializer.Serialize(records, LightFixtureJsonContext.Default.RecordArray));
             log.Information(LogCategory, $"Wrote {fixtures.Count} light fixture(s) to {path}.");
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
@@ -91,7 +85,8 @@ public static class LightFixtureStore
 
         try
         {
-            Record[]? records = JsonSerializer.Deserialize<Record[]>(File.ReadAllText(path), Options);
+            Record[]? records = JsonSerializer.Deserialize(
+                File.ReadAllText(path), LightFixtureJsonContext.Default.RecordArray);
 
             if (records is null)
             {
@@ -167,4 +162,8 @@ public static class LightFixtureStore
             Extent,
             TriangleCount);
     }
+
+    [JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
+    [JsonSerializable(typeof(Record[]))]
+    private sealed partial class LightFixtureJsonContext : JsonSerializerContext;
 }

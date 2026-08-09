@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenIGI.Core.Graphics;
 
 namespace OpenIGI.Frontend.Saves;
@@ -19,11 +20,9 @@ namespace OpenIGI.Frontend.Saves;
 /// constructor, so a hand-edited or partially-written file cannot stop the shell opening.
 /// </para>
 /// </remarks>
-public sealed class SaveSlotStore
+public sealed partial class SaveSlotStore
 {
     private const string ManifestName = "saves.json";
-    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
-
     private readonly string _directory;
     private readonly List<SaveSlot> _slots = [];
 
@@ -55,7 +54,8 @@ public sealed class SaveSlotStore
 
         try
         {
-            SaveSlot[]? loaded = JsonSerializer.Deserialize<SaveSlot[]>(File.ReadAllText(path));
+            SaveSlot[]? loaded = JsonSerializer.Deserialize(
+                File.ReadAllText(path), SaveSlotJsonContext.Default.SaveSlotArray);
             if (loaded is not null)
             {
                 _slots.AddRange(loaded);
@@ -199,7 +199,8 @@ public sealed class SaveSlotStore
         string path = Path.Combine(_directory, ManifestName);
         try
         {
-            File.WriteAllText(path, JsonSerializer.Serialize(_slots.ToArray(), SerializerOptions));
+            File.WriteAllText(path, JsonSerializer.Serialize(
+                _slots.ToArray(), SaveSlotJsonContext.Default.SaveSlotArray));
         }
         catch (IOException)
         {
@@ -232,4 +233,8 @@ public sealed class SaveSlotStore
             // A screenshot we cannot delete does not stop the slot being forgotten.
         }
     }
+
+    [JsonSourceGenerationOptions(WriteIndented = true)]
+    [JsonSerializable(typeof(SaveSlot[]))]
+    private sealed partial class SaveSlotJsonContext : JsonSerializerContext;
 }
