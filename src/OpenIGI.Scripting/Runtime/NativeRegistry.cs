@@ -48,6 +48,13 @@ public sealed class NativeRegistry
     /// <returns>The registered symbol.</returns>
     public QvmSymbol RegisterConstant(string name, int value) => Add(QvmSymbol.CreateConstant(name, value));
 
+    /// <summary>Registers a real-valued constant — the engine's <c>sub_4B8870</c> registrar.</summary>
+    /// <param name="name">The script-visible name.</param>
+    /// <param name="value">The constant value.</param>
+    /// <returns>The symbol.</returns>
+    public QvmSymbol RegisterRealConstant(string name, double value) =>
+        Add(QvmSymbol.CreateRealConstant(name, value));
+
     /// <summary>Registers a variable.</summary>
     /// <param name="name">The script-visible name.</param>
     /// <param name="variable">The storage binding.</param>

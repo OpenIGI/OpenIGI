@@ -94,6 +94,27 @@ public sealed class QvmSymbol
         return new QvmSymbol(name, QvmSymbolKind.Constant, QvmValueKind.Integer, 0, null, null, value, null);
     }
 
+    /// <summary>Creates a real-valued constant symbol — the form <c>sub_4B8870</c> registers.</summary>
+    /// <param name="name">The script-visible name.</param>
+    /// <param name="value">The constant value.</param>
+    /// <returns>The symbol.</returns>
+    /// <remarks>
+    /// The engine keeps two constant registrars: <c>sub_4B8810</c> for integers and <c>sub_4B8870</c>
+    /// for doubles. <c>WORLD_METER</c> (4096.0) and <c>MATH_PI</c> are reals; a script multiplying by
+    /// them must see a float, not a truncated integer.
+    /// </remarks>
+    public static QvmSymbol CreateRealConstant(string name, double value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        QvmSymbol symbol = new(name, QvmSymbolKind.Constant, QvmValueKind.Float, 0, null, null, 0, null)
+        {
+            _realConstant = value,
+        };
+        return symbol;
+    }
+
+    private double _realConstant;
+
     /// <summary>Creates a variable symbol.</summary>
     /// <param name="name">The script-visible name.</param>
     /// <param name="variable">The storage binding.</param>
@@ -110,6 +131,7 @@ public sealed class QvmSymbol
     /// <exception cref="InvalidOperationException">The symbol is a function, which has no readable value.</exception>
     public QvmValue Read() => Kind switch
     {
+        QvmSymbolKind.Constant when ValueType == QvmValueKind.Float => QvmValue.FromDouble(_realConstant),
         QvmSymbolKind.Constant => QvmValue.FromInt32(_constant),
         QvmSymbolKind.Variable => _variable!.Read(),
         _ => throw new InvalidOperationException($"The symbol '{Name}' is a function and has no value to read."),

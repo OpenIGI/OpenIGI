@@ -99,29 +99,44 @@ public sealed class ResourceRegistry
     /// <remarks>A resource read from disk is registered, so the second load of a name never hits the disk.</remarks>
     public bool TryLoad(string name, out ReadOnlyMemory<byte> data)
     {
+        // Keep explicit in-memory registrations authoritative. Disk-backed alias loads are registered
+        // under their resolved device path below, so rebinding MISSION: cannot return the previous
+        // mission's file from this lookup.
         if (TryGetEntry(name, out ResourceEntry? entry))
         {
             data = entry.Data;
             return true;
         }
 
-        if (!_fileSystem.TryOpenRead(name, out Stream? stream))
+        foreach (string candidate in _fileSystem.ResolveCandidates(name))
         {
-            data = default;
-            return false;
+            if (!candidate.Equals(name, StringComparison.OrdinalIgnoreCase)
+                && TryGetEntry(candidate, out entry))
+            {
+                data = entry.Data;
+                return true;
+            }
+
+            if (!_fileSystem.TryOpenRead(candidate, out Stream? stream))
+            {
+                continue;
+            }
+
+            byte[] bytes;
+            using (stream)
+            {
+                using var buffer = new MemoryStream();
+                stream.CopyTo(buffer);
+                bytes = buffer.ToArray();
+            }
+
+            _logger.Debug(LogCategory, $"Loaded '{candidate}' from disk ({bytes.Length} bytes).");
+            data = Register(candidate, bytes).Data;
+            return true;
         }
 
-        byte[] bytes;
-        using (stream)
-        {
-            using var buffer = new MemoryStream();
-            stream.CopyTo(buffer);
-            bytes = buffer.ToArray();
-        }
-
-        _logger.Debug(LogCategory, $"Loaded '{name}' from disk ({bytes.Length} bytes).");
-        data = Register(name, bytes).Data;
-        return true;
+        data = default;
+        return false;
     }
 
     /// <summary>Loads a resource, failing fatally when it does not exist.</summary>

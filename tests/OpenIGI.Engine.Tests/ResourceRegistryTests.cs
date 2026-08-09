@@ -121,6 +121,27 @@ public sealed class ResourceRegistryTests : IDisposable
     }
 
     [Fact]
+    public void AliasDiskCacheFollowsARebinding()
+    {
+        Write("missions/level1/ai/2220.qvm", "level one");
+        Write("missions/level2/ai/2220.qvm", "level two");
+
+        var fileSystem = new VirtualFileSystem();
+        fileSystem.RegisterDevice(new LocalFileDevice(_root));
+        fileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/level1/");
+        var registry = new ResourceRegistry(fileSystem);
+
+        Assert.Equal("level one", LoadText(registry, "MISSION:AI/2220.qvm"));
+
+        fileSystem.SetAlias(VirtualFileSystem.MissionAlias, "LOCAL:missions/level2/");
+
+        Assert.Equal("level two", LoadText(registry, "MISSION:AI/2220.qvm"));
+        Assert.True(registry.TryGetEntry("LOCAL:missions/level1/AI/2220.qvm", out _));
+        Assert.True(registry.TryGetEntry("LOCAL:missions/level2/AI/2220.qvm", out _));
+        Assert.False(registry.TryGetEntry("MISSION:AI/2220.qvm", out _));
+    }
+
+    [Fact]
     public void ExplodesAnArchiveItLoadsFromDisk()
     {
         byte[] archive = new IlffWriter("IRES")

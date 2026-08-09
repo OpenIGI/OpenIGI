@@ -77,6 +77,15 @@ public sealed class GameLoop
         // leans on them heavily: objects.qvm faults on the very first TRUE without them.
         Natives.RegisterConstant("TRUE", 1);
         Natives.RegisterConstant("FALSE", 0);
+
+        // The Game module's own registrar (sub_415530) adds these three beside its natives:
+        // GAME_FREQUENCY = 30 through the integer registrar (sub_4B8810), WORLD_METER = 4096.0 and
+        // MATH_PI = pi through the REAL registrar (sub_4B8870). WORLD_METER going unregistered meant
+        // every distance test in the shipped AI scripts faulted — guard.qvm's whole COMBAT branch
+        // (the combat install AND the run-to-the-alarm) died on `10 * WORLD_METER` without a sound.
+        Natives.RegisterConstant("GAME_FREQUENCY", 30);
+        Natives.RegisterRealConstant("WORLD_METER", 4096.0);
+        Natives.RegisterRealConstant("MATH_PI", Math.PI);
     }
 
     /// <summary>The name the original registers the root task type under.</summary>
