@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.World;
 
@@ -35,6 +36,190 @@ public readonly record struct WorldRayHit(
 /// rather than only against a loaded level.
 /// </remarks>
 public delegate bool WorldRayCast(Vector3d origin, Vector3d end, out WorldRayHit hit);
+
+/// <summary>The categories accepted by an IGI world trace.</summary>
+[Flags]
+public enum WorldTraceMask
+{
+    /// <summary>Do not visit any collision category.</summary>
+    None = 0,
+
+    /// <summary>The terrain octree and its triangle leaves.</summary>
+    Terrain = 1 << 0,
+
+    /// <summary>Placed collision meshes whose transform is fixed.</summary>
+    StaticObjects = 1 << 1,
+
+    /// <summary>Placed collision meshes with a live transform, notably doors.</summary>
+    DynamicObjects = 1 << 2,
+
+    /// <summary>Human body collision supplied by the caller.</summary>
+    Humans = 1 << 3,
+
+    /// <summary>Every world category. Humans remain a caller-owned body test.</summary>
+    World = Terrain | StaticObjects | DynamicObjects,
+
+    /// <summary>Every known category.</summary>
+    All = World | Humans,
+}
+
+/// <summary>Which collision system produced a rich trace contact.</summary>
+public enum WorldTraceHitKind
+{
+    /// <summary>No contact.</summary>
+    None,
+
+    /// <summary>A terrain-octree triangle.</summary>
+    Terrain,
+
+    /// <summary>A fixed placed-object triangle.</summary>
+    StaticObject,
+
+    /// <summary>A placed-object triangle carrying a live transform.</summary>
+    DynamicObject,
+
+    /// <summary>A human body supplied by a body evaluator.</summary>
+    Human,
+}
+
+/// <summary>One IGI-style world trace request.</summary>
+/// <param name="Origin">Where the segment starts, in world units.</param>
+/// <param name="End">Where the segment ends.</param>
+/// <param name="Mask">Which collision categories participate.</param>
+/// <param name="IgnoredOwner">A placing task whose collision must be skipped.</param>
+/// <param name="IgnoredSubject">A second task to skip, used by owner/subject sight handlers.</param>
+public readonly record struct WorldTraceRequest(
+    Vector3d Origin,
+    Vector3d End,
+    WorldTraceMask Mask = WorldTraceMask.World,
+    GameTask? IgnoredOwner = null,
+    GameTask? IgnoredSubject = null)
+{
+    /// <summary>Gets the segment length in world units.</summary>
+    public double Length
+    {
+        get
+        {
+            double x = End.X - Origin.X;
+            double y = End.Y - Origin.Y;
+            double z = End.Z - Origin.Z;
+            return Math.Sqrt((x * x) + (y * y) + (z * z));
+        }
+    }
+}
+
+/// <summary>A nearest contact carrying the information IGI's trace handlers consume.</summary>
+/// <param name="Position">The point of contact.</param>
+/// <param name="Normal">The outward, ray-facing surface normal.</param>
+/// <param name="Distance">Distance from the request origin.</param>
+/// <param name="Fraction">Fraction of the request segment at which the contact occurred.</param>
+/// <param name="Material">The struck material row.</param>
+/// <param name="Kind">The collision category that answered.</param>
+/// <param name="Owner">The exact task owning a placed collision mesh, when applicable.</param>
+/// <param name="Label">A stable diagnostic name for the blocker.</param>
+public readonly record struct WorldTraceHit(
+    Vector3d Position,
+    Vector3f Normal,
+    double Distance,
+    double Fraction,
+    int Material,
+    WorldTraceHitKind Kind,
+    GameTask? Owner = null,
+    string Label = "")
+{
+    /// <summary>Projects this rich contact into the legacy cast result.</summary>
+    public WorldRayHit RayHit => new(Position, Normal, Distance, Material);
+
+    /// <summary>Builds a rich contact from a legacy result.</summary>
+    public static WorldTraceHit FromRayHit(
+        in WorldTraceRequest request,
+        in WorldRayHit hit,
+        WorldTraceHitKind kind,
+        GameTask? owner = null,
+        string label = "")
+    {
+        double length = request.Length;
+        double fraction = length > 0.0 ? Math.Clamp(hit.Distance / length, 0.0, 1.0) : 0.0;
+        return new WorldTraceHit(
+            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label);
+    }
+}
+
+/// <summary>Casts one rich request and reports its nearest accepted contact.</summary>
+public delegate bool WorldTraceCast(in WorldTraceRequest request, out WorldTraceHit hit);
+
+/// <summary>Adapters and ordering rules shared by sight and projectile callers.</summary>
+public static class WorldTrace
+{
+    /// <summary>Wraps a legacy world ray in the richer request contract.</summary>
+    public static WorldTraceCast FromRayCast(WorldRayCast cast, WorldTraceHitKind kind = WorldTraceHitKind.StaticObject)
+    {
+        ArgumentNullException.ThrowIfNull(cast);
+        return (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            hit = default;
+            if ((request.Mask & MaskFor(kind)) == 0 || !cast(request.Origin, request.End, out WorldRayHit legacy))
+            {
+                return false;
+            }
+
+            hit = WorldTraceHit.FromRayHit(request, legacy, kind);
+            return true;
+        };
+    }
+
+    /// <summary>Combines trace providers and keeps the nearest valid contact.</summary>
+    public static WorldTraceCast Nearest(params WorldTraceCast[] casts)
+    {
+        ArgumentNullException.ThrowIfNull(casts);
+        return (in WorldTraceRequest request, out WorldTraceHit hit) =>
+        {
+            hit = default;
+            bool found = false;
+            double nearest = double.PositiveInfinity;
+
+            foreach (WorldTraceCast cast in casts)
+            {
+                if (cast is null || !cast(request, out WorldTraceHit candidate))
+                {
+                    continue;
+                }
+
+                if (!double.IsFinite(candidate.Distance) || candidate.Distance < 0.0 || candidate.Distance >= nearest)
+                {
+                    continue;
+                }
+
+                nearest = candidate.Distance;
+                hit = candidate;
+                found = true;
+            }
+
+            return found;
+        };
+    }
+
+    /// <summary>Returns the legacy adapter used by movement and camera callers.</summary>
+    public static WorldRayCast AsRayCast(WorldTraceCast cast, WorldTraceMask mask = WorldTraceMask.World)
+    {
+        ArgumentNullException.ThrowIfNull(cast);
+        return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            bool found = cast(new WorldTraceRequest(origin, end, mask), out WorldTraceHit rich);
+            hit = found ? rich.RayHit : default;
+            return found;
+        };
+    }
+
+    private static WorldTraceMask MaskFor(WorldTraceHitKind kind) => kind switch
+    {
+        WorldTraceHitKind.Terrain => WorldTraceMask.Terrain,
+        WorldTraceHitKind.StaticObject => WorldTraceMask.StaticObjects,
+        WorldTraceHitKind.DynamicObject => WorldTraceMask.DynamicObjects,
+        WorldTraceHitKind.Human => WorldTraceMask.Humans,
+        _ => WorldTraceMask.None,
+    };
+}
 
 /// <summary>Ray against a triangle.</summary>
 /// <remarks>

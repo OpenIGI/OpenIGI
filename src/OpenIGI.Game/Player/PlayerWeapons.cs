@@ -81,6 +81,8 @@ public sealed class PlayerWeapons
     private int _heldIndex = -1;
     private bool _wantFire;
     private bool _firedThisTick;
+    private int _throwChargeTicks;
+    private bool _throwReleased;
     private int _shotSequence;
     private bool _actionComplete;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
@@ -334,6 +336,10 @@ public sealed class PlayerWeapons
     /// <param name="forward">The view's <c>+Y</c> axis, which is where the barrel points.</param>
     /// <param name="right">The view's <c>+X</c> axis.</param>
     /// <param name="up">The view's <c>+Z</c> axis.</param>
+    /// <param name="recoilScale">
+    /// What the round's sampled kick is multiplied by before it accumulates — the Dragunov's scoped
+    /// 0.05, or one.
+    /// </param>
     /// <returns><see langword="true"/> when a round went off.</returns>
     /// <remarks>
     /// <para>
@@ -345,7 +351,7 @@ public sealed class PlayerWeapons
     /// is the whole of the model: no clamp, no separate recovery curve.
     /// </para>
     /// </remarks>
-    public bool ResolveFire(Vector3d eye, Vector3f forward, Vector3f right, Vector3f up)
+    public bool ResolveFire(Vector3d eye, Vector3f forward, Vector3f right, Vector3f up, float recoilScale = 1f)
     {
         _shots.Clear();
         _firedThisTick = false;
@@ -370,8 +376,11 @@ public sealed class PlayerWeapons
             _shots.AddRange(result.Projectiles);
         }
 
-        RecoilPitch = (result.RecoilX + RecoilPitch) * RecoilDamping;
-        RecoilYaw = (result.RecoilZ + RecoilYaw) * RecoilDamping;
+        // The scale is the Dragunov's scoped 0.05, or one. It multiplies the ROUND'S OWN kick and
+        // not the accumulated angles, exactly where 0x472E50 applies it -- damping what is already
+        // accumulated would make opening the scope mid-burst yank the view back down.
+        RecoilPitch = ((result.RecoilX * recoilScale) + RecoilPitch) * RecoilDamping;
+        RecoilYaw = ((result.RecoilZ * recoilScale) + RecoilYaw) * RecoilDamping;
         return result.Fired;
     }
 
@@ -521,6 +530,7 @@ public sealed class PlayerWeapons
         HumanWeaponState.Reloading => Reloading(),
         HumanWeaponState.ChangingWeapon => ChangingWeapon(),
         HumanWeaponState.Peeking => Peeking(input),
+        HumanWeaponState.Throwing => Throwing(input),
         _ => Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : State,
     };
 
@@ -653,6 +663,85 @@ public sealed class PlayerWeapons
     private static HumanWeaponState DryFire(PlayerInputState input) =>
         input.IsSet(PlayerInputSlot.Fire) ? HumanWeaponState.DryFire : HumanWeaponState.Ready;
 
+    /// <summary>Gets how long the current or last throw was charged, in ticks.</summary>
+    /// <remarks>
+    /// The original's <c>Human+1248</c>: the ticks the fire button was held in the throw state,
+    /// which <c>0x462E50</c> clamps to 3–60 and feeds the power-law strength curve.
+    /// </remarks>
+    public int ThrowChargeTicks => _throwChargeTicks;
+
+    /// <summary>Turns a throw's charge into its release speed, in metres a second.</summary>
+    /// <param name="muzzleVelocity">The weapon's own muzzle velocity — fifteen for both grenades.</param>
+    /// <param name="chargeTicks">How many ticks the button was held.</param>
+    /// <returns>The speed the grenade leaves at.</returns>
+    /// <remarks>
+    /// <para>
+    /// The curve is retail's, from <c>0x462E50</c>'s category-4 special case:
+    /// <c>t = clamp(held, 3, 60); s = pow(t·50, 0.7) + t·0.1</c>, times a per-weapon scale — so a
+    /// tenth-of-a-second tap lobs and a two-second wind-up hurls, on a 0.7 power law rather than a
+    /// line.
+    /// </para>
+    /// <para>
+    /// <b>The scale's field (<c>record+1632</c>) is unresolved</b>, so the calibration is chosen and
+    /// measured in play: a tap throws at <see cref="MinimumThrowShare"/> of the muzzle velocity —
+    /// a deliberate short toss that still clears a crate rather than a drop at the feet — and a
+    /// full two-second charge at <see cref="MaximumThrowShare"/>, the long hurl. The retail curve
+    /// shapes everything between.
+    /// </para>
+    /// </remarks>
+    public static float ChargedThrowSpeed(float muzzleVelocity, int chargeTicks)
+    {
+        float held = Math.Clamp(chargeTicks, 3, 60);
+        float curve = MathF.Pow(held * 50f, 0.7f) + (held * 0.1f);
+        float tap = MathF.Pow(3f * 50f, 0.7f) + 0.3f;
+        float fullCharge = MathF.Pow(60f * 50f, 0.7f) + 6f;
+
+        float share = (curve - tap) / (fullCharge - tap);
+        return muzzleVelocity * (MinimumThrowShare + ((MaximumThrowShare - MinimumThrowShare) * share));
+    }
+
+    /// <summary>What fraction of the muzzle velocity a minimal tap throws at.</summary>
+    public const float MinimumThrowShare = 0.45f;
+
+    /// <summary>What fraction of the muzzle velocity a full charge throws at.</summary>
+    /// <remarks>
+    /// Above one on purpose: the table's fifteen metres a second reads as the ordinary throw, and a
+    /// two-second wind-up should visibly out-range it.
+    /// </remarks>
+    public const float MaximumThrowShare = 1.8f;
+
+    // 0x40F590 into 0x40F640, the grenade's charge-and-release. Holding fire charges (Human+1248
+    // counts the ticks); letting go releases -- the trigger byte is raised for exactly one tick,
+    // the gun lets the round out, and the throw animation plays over the round that went off. The
+    // state runs home once that clip ends.
+    private HumanWeaponState Throwing(PlayerInputState input)
+    {
+        if (!_throwReleased)
+        {
+            if (input.IsSet(PlayerInputSlot.Fire))
+            {
+                _throwChargeTicks++;
+                return HumanWeaponState.Throwing;
+            }
+
+            _throwReleased = true;
+            _wantFire = true;
+            return HumanWeaponState.Throwing;
+        }
+
+        if (_firedThisTick)
+        {
+            // The throw itself is the SECOND fire animation where the record carries one -- the
+            // first is the wind-up the entry already played and holding it again would read as the
+            // hand pocketing the grenade rather than releasing it.
+            Request(WeaponAction.Fire, InHand?.Weapon.FireAnimation2 >= 0 ? 1 : 0);
+        }
+
+        return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded)
+            ? HumanWeaponState.Ready
+            : HumanWeaponState.Throwing;
+    }
+
     // 0x479990, the gun's own reload handler, which 0x40F180 drives. It is a two-phase machine: play
     // the reload animation, and move the rounds only when that animation has finished. So the reload's
     // DURATION is the clip's length -- the roster's `Reload Time` (+1596) is not read on this path at
@@ -756,6 +845,16 @@ public sealed class PlayerWeapons
             // FireAnimation1 rather than continuing the previous swing's cycle.
             case HumanWeaponState.Striking:
                 FireVariant = 0;
+                break;
+
+            // 0x40F4F0. Zeroed here: a transition runs its target's step in the same tick, and that
+            // step counts this first held tick to one. The entry also plays the weapon's first fire
+            // animation -- the pin-and-wind-up the hand holds while the throw charges -- exactly as
+            // the retail entry plays record +1668.
+            case HumanWeaponState.Throwing:
+                _throwChargeTicks = 0;
+                _throwReleased = false;
+                Request(WeaponAction.Fire);
                 break;
 
             case HumanWeaponState.Reloading:

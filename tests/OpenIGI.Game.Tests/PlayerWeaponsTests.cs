@@ -534,6 +534,64 @@ public sealed class PlayerWeaponsTests
 
     // Runs until the cycle has put a weapon in hand and the machine is idle again. The swap is a
     // TWO-PHASE lowering and raising of the rig -- 11 ticks each way -- so it is not instant.
+    /// <summary>The frag grenade, as the roster and the physics table declare it.</summary>
+    private static WeaponType Grenade => new()
+    {
+        WeaponId = 3,
+        ScriptId = "WEAPON_ID_GRENADE",
+        Category = WeaponCategory.Grenade,
+        CalibreId = 10000,
+        MuzzleVelocity = 15f,
+        RoundsPerMinute = 60,
+        RoundsPerClip = 3,
+        MaximumRoundsPerBurst = 1,
+        BulletsPerRound = 1,
+        EffectiveRange = 1f,
+        GunModel = "135_01_1",
+        StandAnimation = 22,
+        FireAnimation1 = 24,
+    };
+
+    private static AmmoType GrenadeAmmo => new() { AmmoId = 8, ScriptId = "AMMO_ID_GRENADE", CalibreId = 10000 };
+
+    /// <summary>The throw charges while fire is held and releases the round when it is let go.</summary>
+    /// <remarks>The 0x40F590/0x40F640 charge-and-release, with <c>Human+1248</c> as the charge.</remarks>
+    [Fact]
+    public void AGrenadeChargesWhileHeldAndFliesOnRelease()
+    {
+        PlayerWeapons weapons = new([3]);
+        weapons.Carry(Grenade, GrenadeAmmo);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+
+        // Twelve ticks of holding: the machine sits in the throw state, charging, firing nothing.
+        for (int tick = 0; tick < 12; tick++)
+        {
+            Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+            Assert.Equal(HumanWeaponState.Throwing, weapons.State);
+            Assert.False(weapons.FiredThisTick);
+        }
+
+        Assert.Equal(12, weapons.ThrowChargeTicks);
+
+        // The release is the throw: one round leaves on that very tick.
+        Tick(weapons, input, Frame());
+        Assert.True(weapons.FiredThisTick);
+        Assert.Single(weapons.Shots);
+        Assert.Equal(2, weapons.InHand?.Gun.RoundsInClip);
+
+        // The retail power curve: longer charges throw harder, between the tap's short toss and the
+        // full wind-up's hurl, and the charge caps at retail's sixty ticks.
+        Assert.True(
+            PlayerWeapons.ChargedThrowSpeed(15f, 12) > PlayerWeapons.ChargedThrowSpeed(15f, 3));
+        Assert.Equal(15f * PlayerWeapons.MinimumThrowShare, PlayerWeapons.ChargedThrowSpeed(15f, 3), 0.001f);
+        Assert.Equal(15f * PlayerWeapons.MaximumThrowShare, PlayerWeapons.ChargedThrowSpeed(15f, 60), 0.001f);
+        Assert.Equal(
+            PlayerWeapons.ChargedThrowSpeed(15f, 60),
+            PlayerWeapons.ChargedThrowSpeed(15f, 600));
+    }
+
     private static void Equip(PlayerWeapons weapons, bool clipEnded = true)
     {
         PlayerInputState input = new();

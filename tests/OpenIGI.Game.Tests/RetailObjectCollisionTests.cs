@@ -135,6 +135,34 @@ public sealed class RetailObjectCollisionTests
             "the bake's cast honoured a door being open, which would bake a hole into a wall");
     }
 
+    [RequiresGameDataFact]
+    public void MovingCollisionKeepsBlockingAtItsLiveTransform()
+    {
+        WorldPlacement placement = RetailLevelOneGround.Scene().Placements.First(candidate =>
+            ObjectCollisionIndex.Build([candidate]).Count != 0);
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build([placement]);
+        (Vector3d oldCentre, double radius) = index.Bounds(0);
+        double reach = (radius * 2.0) + UnitsPerMetre;
+        Vector3d oldFrom = new(oldCentre.X - reach, oldCentre.Y, oldCentre.Z);
+        Vector3d oldTo = new(oldCentre.X + reach, oldCentre.Y, oldCentre.Z);
+        Assert.True(index.TryCast(oldFrom, oldTo, out _));
+
+        double shiftUnits = (radius * 6.0) + (10.0 * UnitsPerMetre);
+        Vector3d movedMetres = new(
+            placement.Position.X + (shiftUnits / UnitsPerMetre),
+            placement.Position.Y,
+            placement.Position.Z);
+        Assert.True(index.UpdateTransform(placement.Owner, movedMetres, placement.Orientation));
+
+        (Vector3d movedCentre, _) = index.Bounds(0);
+        Vector3d movedFrom = new(movedCentre.X - reach, movedCentre.Y, movedCentre.Z);
+        Vector3d movedTo = new(movedCentre.X + reach, movedCentre.Y, movedCentre.Z);
+
+        Assert.False(index.TryCast(oldFrom, oldTo, out _));
+        Assert.True(index.TryCast(movedFrom, movedTo, out _));
+        Assert.True(index.TryCastWithDoorsShut(oldFrom, oldTo, out _));
+    }
+
     /// <summary>An index holding one placement that a task placed, and where that placement is.</summary>
     /// <remarks>
     /// One placement rather than the level, so the ray cannot be stopped by something nearer than the

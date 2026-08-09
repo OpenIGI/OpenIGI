@@ -137,6 +137,60 @@ public sealed class RetailWeaponTypeTests
         Assert.Equal(HumanView.DefaultViewModelTanX, reset.ViewModelTanX);
     }
 
+    /// <summary>The Dragunov's scope: hold to zoom, release to hold, press again to snap shut.</summary>
+    /// <remarks>Against <c>0x472E50</c>'s own arithmetic; see <see cref="DragunovScope"/>.</remarks>
+    [RequiresGameDataFact]
+    public void TheDragunovScopeHoldsToZoomAndSnapsShut()
+    {
+        WeaponTypeRegistry weapons = Load(out _, out _, out _);
+        WeaponType dragunov = weapons.Weapons.First(w => w.ScriptId == "WEAPON_ID_DRAGUNOV");
+        WeaponType glock = weapons.Weapons.First(w => w.ScriptId == "WEAPON_ID_GLOCK");
+        DragunovScope scope = new();
+
+        // The opening edge sets the latch and moves nothing: the glide reads the PREVIOUS tick's
+        // slot, which on the edge is still clear.
+        SightZoomFrame frame = scope.Tick(
+            dragunov,
+            alternateHeld: true,
+            alternateHeldLastTick: false,
+            zoomInHeld: false,
+            zoomOutHeld: false,
+            HumanView.DefaultTanX,
+            HumanView.DefaultViewModelTanX);
+        Assert.True(scope.IsScoped);
+        Assert.Equal(HumanView.DefaultTanX, frame.TanX);
+
+        // Held, the view glides in at the retail 0.96 a tick.
+        frame = scope.Tick(dragunov, true, true, false, false, frame.TanX, frame.ViewModelTanX);
+        Assert.Equal(HumanView.DefaultTanX * DragunovScope.ZoomInFactor, frame.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX * DragunovScope.ZoomInFactor, frame.ViewModelTanX);
+
+        // The release tick still glides -- the previous slot is what the selector reads -- and the
+        // tick after that HOLDS the magnification. That is the whole hold-to-zoom feel.
+        frame = scope.Tick(dragunov, false, true, false, false, frame.TanX, frame.ViewModelTanX);
+        SightZoomFrame held = scope.Tick(dragunov, false, false, false, false, frame.TanX, frame.ViewModelTanX);
+        Assert.Equal(frame, held);
+        Assert.True(scope.IsScoped);
+
+        // The zoom-out slot widens at 1.04 a tick, and never past the default.
+        SightZoomFrame wider = scope.Tick(dragunov, false, false, false, true, held.TanX, held.ViewModelTanX);
+        Assert.Equal(held.TanX * DragunovScope.ZoomOutFactor, wider.TanX);
+
+        // A second press of alternate fire snaps the scope shut in one tick -- 0x4659E0 writes the
+        // defaults outright, where the MP5 would glide back.
+        SightZoomFrame shut = scope.Tick(dragunov, true, false, false, false, wider.TanX, wider.ViewModelTanX);
+        Assert.False(scope.IsScoped);
+        Assert.Equal(HumanView.DefaultTanX, shut.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX, shut.ViewModelTanX);
+
+        // Changing weapons closes and resets, as the weapon-change states do through 0x4659E0.
+        scope.Tick(dragunov, true, false, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        Assert.True(scope.IsScoped);
+        SightZoomFrame reset2 = scope.Tick(glock, false, false, false, false, 0.1f, 0.1f);
+        Assert.False(scope.IsScoped);
+        Assert.Equal(HumanView.DefaultTanX, reset2.TanX);
+    }
+
     [RequiresGameDataFact]
     public void TheBinocularsStoreTheirThreeAnglesOutOfOrder()
     {

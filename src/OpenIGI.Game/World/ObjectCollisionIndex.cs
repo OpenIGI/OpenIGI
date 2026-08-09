@@ -32,11 +32,8 @@ public sealed class ObjectCollisionIndex
 {
     private readonly Entry[] _entries;
 
-    // Placements whose collision is switched OFF -- an open door. The original's door pushes its
-    // moving transform down to its collision child every tick; the port does not move collision
-    // meshes, so a door that is not fully closed stops colliding instead (a recorded stand-in: rounds,
-    // sight and walkers pass an open doorway, but a half-open door does not block at its half-open
-    // angle).
+    // Legacy/manual passability override. Mission doors no longer use it: their collision mesh follows
+    // the live task transform through UpdateTransform, including every half-open pose.
     private readonly HashSet<GameTask> _passable = [];
 
     private ObjectCollisionIndex(Entry[] entries) => _entries = entries;
@@ -54,6 +51,34 @@ public sealed class ObjectCollisionIndex
         {
             _passable.Remove(owner);
         }
+    }
+
+    /// <summary>Updates the live transform of a moving placed object.</summary>
+    /// <param name="owner">The exact placing task instance.</param>
+    /// <param name="positionMetres">Its current world position in metres.</param>
+    /// <param name="orientation">Its current local-to-world orientation.</param>
+    /// <returns><see langword="true"/> when at least one indexed mesh belonged to the task.</returns>
+    /// <remarks>
+    /// Doors in IGI keep colliding while they swing or slide; only their transform changes. This replaces
+    /// the old all-or-nothing passable approximation for live callers while retaining
+    /// <see cref="SetPassable"/> for compatibility and diagnostic bakes.
+    /// </remarks>
+    public bool UpdateTransform(GameTask owner, Vector3d positionMetres, Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        bool updated = false;
+        foreach (Entry entry in _entries)
+        {
+            if (!ReferenceEquals(entry.Owner, owner))
+            {
+                continue;
+            }
+
+            entry.UpdateTransform(positionMetres, orientation);
+            updated = true;
+        }
+
+        return updated;
     }
 
     /// <summary>Gets how many placed objects carry collision geometry.</summary>
@@ -126,6 +151,53 @@ public sealed class ObjectCollisionIndex
     public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         Cast(origin, end, honourPassable: true, out hit);
 
+    /// <summary>Casts a rich request at the indexed placed objects.</summary>
+    public bool TryTrace(in WorldTraceRequest request, out WorldTraceHit hit)
+    {
+        hit = default;
+
+        Vector3d direction = new(
+            request.End.X - request.Origin.X,
+            request.End.Y - request.Origin.Y,
+            request.End.Z - request.Origin.Z);
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return false;
+        }
+
+        double nearest = double.MaxValue;
+        bool found = false;
+        foreach (Entry entry in _entries)
+        {
+            if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
+                || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
+                || _passable.Contains(entry.Owner))
+            {
+                continue;
+            }
+
+            WorldTraceHitKind kind = entry.IsDynamic
+                ? WorldTraceHitKind.DynamicObject
+                : WorldTraceHitKind.StaticObject;
+            WorldTraceMask category = entry.IsDynamic
+                ? WorldTraceMask.DynamicObjects
+                : WorldTraceMask.StaticObjects;
+            if ((request.Mask & category) == 0
+                || !MeetsSphere(request.Origin, direction, entry.Centre, entry.Radius)
+                || !entry.TryCast(request.Origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
+            {
+                continue;
+            }
+
+            hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label);
+            found = true;
+        }
+
+        return found;
+    }
+
     /// <summary>Casts a ray with every door treated as shut, whatever it is doing right now.</summary>
     /// <param name="origin">Where the ray starts, in world units.</param>
     /// <param name="end">Where it stops.</param>
@@ -172,12 +244,13 @@ public sealed class ObjectCollisionIndex
 
             // The root sphere encloses every vertex - checked against all 254 of level 1's meshes - so
             // a ray that misses it cannot touch a triangle.
-            if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
+            Vector3d broadCentre = honourPassable ? entry.Centre : entry.ClosedCentre;
+            if (!MeetsSphere(origin, direction, broadCentre, entry.Radius))
             {
                 continue;
             }
 
-            if (entry.TryCast(origin, direction, ref nearest, out WorldRayHit candidate))
+            if (entry.TryCast(origin, direction, ref nearest, useClosedTransform: !honourPassable, out WorldRayHit candidate))
             {
                 hit = candidate;
                 found = true;
@@ -224,6 +297,9 @@ public sealed class ObjectCollisionIndex
     /// <returns>The delegate the sweep takes.</returns>
     public WorldRayCast Caster() => TryCast;
 
+    /// <summary>Gets the rich trace delegate bound to this index.</summary>
+    public WorldTraceCast Tracer() => TryTrace;
+
     /// <summary>Gets a cast delegate that treats every door as shut and reads no mutable state.</summary>
     /// <returns>The delegate the probe bake takes.</returns>
     /// <remarks>See <see cref="TryCastWithDoorsShut"/> for why the bake wants both properties.</remarks>
@@ -261,7 +337,7 @@ public sealed class ObjectCollisionIndex
                 continue;
             }
 
-            if (entry.TryCast(origin, direction, ref nearest, out WorldRayHit candidate))
+            if (entry.TryCast(origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
             {
                 hit = candidate;
                 label = entry.Label;
@@ -303,20 +379,29 @@ public sealed class ObjectCollisionIndex
 
     private sealed class Entry
     {
-        private readonly Vector3d[] _vertices;
+        private readonly Vector3f[] _localVertices;
+        private readonly Vector3d[] _closedVertices;
+        private readonly Vector3f _rootCentre;
+        private Vector3d[] _vertices;
 
         private Entry(
             MefCollisionMesh mesh,
+            Vector3f[] localVertices,
             Vector3d[] vertices,
             Vector3d centre,
             double radius,
+            Vector3f rootCentre,
             string label,
             string taskName,
             GameTask owner)
         {
             Mesh = mesh;
+            _localVertices = localVertices;
             _vertices = vertices;
+            _closedVertices = (Vector3d[])vertices.Clone();
+            _rootCentre = rootCentre;
             Centre = centre;
+            ClosedCentre = centre;
             Radius = radius;
             Label = label;
             TaskName = taskName;
@@ -325,7 +410,9 @@ public sealed class ObjectCollisionIndex
 
         public MefCollisionMesh Mesh { get; }
 
-        public Vector3d Centre { get; }
+        public Vector3d Centre { get; private set; }
+
+        public Vector3d ClosedCentre { get; }
 
         public double Radius { get; }
 
@@ -334,6 +421,8 @@ public sealed class ObjectCollisionIndex
         public string TaskName { get; }
 
         public GameTask Owner { get; }
+
+        public bool IsDynamic { get; private set; }
 
         public static Entry Create(
             MefCollisionMesh mesh,
@@ -353,19 +442,23 @@ public sealed class ObjectCollisionIndex
 
             // The vertices are placed once at build time. A level's collision geometry does not move,
             // and transforming a ray into every model's own frame instead would cost more than it saves.
+            Vector3f[] localVertices = new Vector3f[mesh.Vertices.Count];
             Vector3d[] vertices = new Vector3d[mesh.Vertices.Count];
             for (int i = 0; i < vertices.Length; i++)
             {
-                Vector3f local = rotation.Transform(mesh.Vertices[i]);
+                localVertices[i] = mesh.Vertices[i];
+                Vector3f local = rotation.Transform(localVertices[i]);
                 vertices[i] = new Vector3d(origin.X + local.X, origin.Y + local.Y, origin.Z + local.Z);
             }
 
             Vector3d centre = origin;
             double radius = 0.0;
+            Vector3f rootCentre = default;
 
             if (mesh.Spheres.Count > 0)
             {
                 MefCollisionSphere root = mesh.Spheres[0];
+                rootCentre = root.Centre;
                 Vector3f placed = rotation.Transform(root.Centre);
                 centre = new Vector3d(origin.X + placed.X, origin.Y + placed.Y, origin.Z + placed.Z);
                 radius = root.Radius;
@@ -381,13 +474,40 @@ public sealed class ObjectCollisionIndex
                 }
             }
 
-            return new Entry(mesh, vertices, centre, radius, label, taskName, owner);
+            return new Entry(mesh, localVertices, vertices, centre, radius, rootCentre, label, taskName, owner);
         }
 
-        public bool TryCast(Vector3d origin, Vector3d direction, ref double nearest, out WorldRayHit hit)
+        public void UpdateTransform(Vector3d positionMetres, Matrix3f orientation)
+        {
+            Vector3d origin = new(
+                positionMetres.X * WorldScene.UnitsPerMetre,
+                positionMetres.Y * WorldScene.UnitsPerMetre,
+                positionMetres.Z * WorldScene.UnitsPerMetre);
+            Matrix3f rotation = orientation.Transposed();
+
+            Vector3d[] vertices = new Vector3d[_localVertices.Length];
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector3f placed = rotation.Transform(_localVertices[i]);
+                vertices[i] = new Vector3d(origin.X + placed.X, origin.Y + placed.Y, origin.Z + placed.Z);
+            }
+
+            _vertices = vertices;
+            Vector3f centre = rotation.Transform(_rootCentre);
+            Centre = new Vector3d(origin.X + centre.X, origin.Y + centre.Y, origin.Z + centre.Z);
+            IsDynamic = true;
+        }
+
+        public bool TryCast(
+            Vector3d origin,
+            Vector3d direction,
+            ref double nearest,
+            bool useClosedTransform,
+            out WorldRayHit hit)
         {
             hit = default;
             bool found = false;
+            Vector3d[] vertices = useClosedTransform ? _closedVertices : _vertices;
 
             foreach (MefCollisionFace face in Mesh.Faces)
             {
@@ -398,9 +518,9 @@ public sealed class ObjectCollisionIndex
                     continue;
                 }
 
-                Vector3d a = _vertices[face.I0];
-                Vector3d b = _vertices[face.I1];
-                Vector3d c = _vertices[face.I2];
+                Vector3d a = vertices[face.I0];
+                Vector3d b = vertices[face.I1];
+                Vector3d c = vertices[face.I2];
 
                 if (!RayTriangle.Intersect(origin, direction, a, b, c, out double t) || t >= nearest)
                 {

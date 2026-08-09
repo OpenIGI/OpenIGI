@@ -111,24 +111,40 @@ public sealed class SoldierView
     /// <returns><see langword="true"/> when the requested clip resolved in this soldier's set.</returns>
     public bool SetMoving(bool walking, int walkAnimation)
     {
+        int wanted = walking ? walkAnimation : StandAnimation;
+        return PlayStateAnimation(wanted, loops: true);
+    }
+
+    /// <summary>Plays the clip selected by a HumanSoldier state with that table entry's loop mode.</summary>
+    /// <param name="animation">The animation id from <c>0x53ED10</c>.</param>
+    /// <param name="loops"><see langword="true"/> when the table's mode is one.</param>
+    /// <returns><see langword="true"/> when the animation exists on this soldier's rig.</returns>
+    /// <remarks>
+    /// This is separate from <see cref="SetMoving"/> because most soldier states are one-shots. Treating
+    /// rack, recover, reload, roll and stance-transition clips as walk cycles made their completion event
+    /// unreachable and left the body machine permanently in the wrong state.
+    /// </remarks>
+    public bool PlayStateAnimation(int animation, bool loops)
+    {
         if (IsDead)
         {
             return false;
         }
 
-        int wanted = walking ? walkAnimation : StandAnimation;
-        if (wanted == CurrentAnimation)
+        if (animation == CurrentAnimation
+            && _bones.SourceOf(0) is { } current
+            && current.Loops == loops)
         {
             return true;
         }
 
-        if (!_bones.Set.TryGet(wanted, out _))
+        if (!_bones.Set.TryGet(animation, out _))
         {
             return false;
         }
 
-        CurrentAnimation = wanted;
-        _bones.Play(0, wanted, loops: true);
+        CurrentAnimation = animation;
+        _bones.Play(0, animation, loops);
         _pose = null;
         return true;
     }

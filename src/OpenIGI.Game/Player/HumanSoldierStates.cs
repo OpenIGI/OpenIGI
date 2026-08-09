@@ -56,6 +56,21 @@ public static class HumanSoldierStates
     /// </remarks>
     public const int FiringState = 6;
 
+    /// <summary>The standing grenade-throw state, animation 58.</summary>
+    /// <remarks>
+    /// Measured in <c>mission1-parity.log</c>: <c>0x48DBF0</c> wrote logical channel 8 to input slot 29
+    /// while the body was in state 0; the signal builder immediately selected state 8 and animation 58.
+    /// The state held after the child callback completed and returned to standing only when the clip ended.
+    /// </remarks>
+    public const int GrenadeThrowState = 8;
+
+    /// <summary>The standing close-combat state, animation 70.</summary>
+    /// <remarks>
+    /// Measured in the same retail capture: <c>0x48DBB0</c> wrote logical channel 9 to input slot 30,
+    /// selecting state 9 and animation 70. Like the grenade state, it owns the body until its clip ends.
+    /// </remarks>
+    public const int CloseCombatState = 9;
+
     /// <summary>The state a soldier's body is in once its burst is spent.</summary>
     /// <remarks>
     /// <para>
@@ -74,6 +89,72 @@ public static class HumanSoldierStates
     /// <summary>The state a soldier stands in.</summary>
     public const int StandState = 0;
 
+    /// <summary>The standing roll-left state, animation 10.</summary>
+    /// <remarks>
+    /// <c>0x48D830</c> writes raw input slot 2, whose <c>0x20</c> signal selects this state in
+    /// <c>0x457A00</c>. Its per-tick, <c>0x45B900</c>, holds until the clip ends and then enters
+    /// <see cref="KneelingState"/>.
+    /// </remarks>
+    public const int RollLeftState = 4;
+
+    /// <summary>The standing roll-right state, animation 11.</summary>
+    /// <remarks>The raw-slot-3/<c>0x40</c> twin of <see cref="RollLeftState"/>.</remarks>
+    public const int RollRightState = 5;
+
+    /// <summary>The displayed standing reload state, animation 14.</summary>
+    /// <remarks>Raw input slot 8/signal <c>0x800</c> selects it; direct weapon reloads do not.</remarks>
+    public const int DisplayReloadState = 7;
+
+    /// <summary>The standing-to-kneeling transition, animation 7.</summary>
+    public const int CrouchDownState = 13;
+
+    /// <summary>The transition from standing to prone, animation 12.</summary>
+    /// <remarks>
+    /// Logical combat channel 2 resolves to input slot 22 and signal <c>0x100000</c>. State 15 holds
+    /// that transition until its clip completes, then enters <see cref="ProneState"/>.
+    /// </remarks>
+    public const int LieDownState = 15;
+
+    /// <summary>The transition from prone back to standing, animation 13.</summary>
+    /// <remarks><c>0x45BF90</c> selects it as soon as the lie-down signal is released.</remarks>
+    public const int GetUpState = 16;
+
+    /// <summary>The stable kneeling state, animation 18.</summary>
+    /// <remarks>Both standing rolls finish here before returning to stand when no kneel input is held.</remarks>
+    public const int KneelingState = 19;
+
+    /// <summary>The kneeling roll-left state, animation 33.</summary>
+    public const int KneelRollLeftState = 20;
+
+    /// <summary>The kneeling roll-right state, animation 32.</summary>
+    public const int KneelRollRightState = 21;
+
+    /// <summary>The kneeling firing state, animation 9.</summary>
+    public const int KneelFiringState = 22;
+
+    /// <summary>The kneeling displayed-reload state, animation 15.</summary>
+    public const int KneelReloadState = 23;
+
+    /// <summary>The kneeling weapon-ready state, animation 8.</summary>
+    public const int KneelReadyState = 24;
+
+    /// <summary>The kneeling-to-prone transition, animation 20.</summary>
+    public const int KneelToProneState = 25;
+
+    /// <summary>The stable prone state, animation 16.</summary>
+    /// <remarks><c>0x45BF90</c> holds it while logical channel 2 remains asserted.</remarks>
+    public const int ProneState = 26;
+
+    /// <summary>The prone firing state, animation 17.</summary>
+    /// <remarks>
+    /// State 26 selects it when raw fire slot 6 contributes signal <c>0x200</c>. Its per-tick
+    /// <c>0x45C0C0</c> is the prone state that actually forwards the trigger to the weapon.
+    /// </remarks>
+    public const int ProneFiringState = 27;
+
+    /// <summary>The prone displayed-reload state, animation 21.</summary>
+    public const int ProneReloadState = 28;
+
     /// <summary>The state a soldier <b>runs</b> in — what the move-and-fight arm's Follow puts it in.</summary>
     /// <remarks>
     /// <para>
@@ -89,6 +170,15 @@ public static class HumanSoldierStates
     /// </para>
     /// </remarks>
     public const int RunState = 17;
+
+    /// <summary>The tense forward-run state which forwards a held trigger to the weapon.</summary>
+    /// <remarks>
+    /// IGI 1 state 17's per-tick (<c>0x457FC0</c>) enters this state on signal <c>0x200</c>. Its own
+    /// per-tick (<c>0x45AB00</c>) calls the weapon-forwarding helper while slot 6 is non-zero and returns
+    /// to state 17 when the trigger is released. Animation 52 is therefore run-and-fire, not a diagonal
+    /// locomotion variant.
+    /// </remarks>
+    public const int RunFiringState = 18;
 
     /// <summary>The state a soldier falls into when it is not on the ground.</summary>
     /// <remarks>Every combat state's per-tick leaves for this the moment flag <c>0x4</c> clears.</remarks>
@@ -141,9 +231,9 @@ public static class HumanSoldierStates
     /// <param name="state">The locomotion state.</param>
     /// <returns>The mode, or <c>-1</c> for a state outside the table.</returns>
     /// <remarks>
-    /// The second field of each pair. Its meaning is <b>not read</b> — it is 1 for eleven states and 0
-    /// for the rest, and no consumer of it has been followed. Exposed because it is measured; named
-    /// nothing because it is not understood.
+    /// The second field of each pair is passed by <c>0x489E70</c> through <c>0x489EA0</c> to
+    /// <c>0x4D61D0</c> as the animation flag word. Mode one loops; mode zero is a one-shot. The retail
+    /// trace confirms the same split (stand/run/fire modes are one, rack/recover/roll/reload are zero).
     /// </remarks>
     public static int ModeOf(int state) => state >= 0 && state < StateCount ? Table[state].Mode : -1;
 
