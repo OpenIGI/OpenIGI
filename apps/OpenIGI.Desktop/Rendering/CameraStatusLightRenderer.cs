@@ -34,6 +34,12 @@ public sealed class CameraStatusLightRenderer : IDisposable
     private const float GreenSmallHalfSize = 307.2f / (float)WorldScene.UnitsPerMetre;
     private const float GreenLargeHalfSize = 819.2f / (float)WorldScene.UnitsPerMetre;
 
+    // Retail projects the magic-vertex point into a 2D sprite queue, so the lens housing cannot clip
+    // the middle of its own glow. Keep world depth testing (so walls still hide it), but move the quad
+    // slightly toward the eye along the identical projection ray. This changes depth only, never its
+    // screen position.
+    private const double LensSurfaceBiasMetres = 0.04;
+
     private static readonly SurfaceMaterial GlowMaterial = new(
         Roughness: 1f,
         Metallic: 0f,
@@ -156,6 +162,7 @@ public sealed class CameraStatusLightRenderer : IDisposable
 
             rightD /= rightLength;
             Vector3d upD = Cross(toEye, rightD);
+            centre += toEye * LensSurfaceBiasMetres;
             float half = HalfSize(camera);
             Vector3f right = new(
                 (float)(rightD.X * half),
