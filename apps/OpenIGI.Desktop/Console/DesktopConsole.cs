@@ -95,6 +95,7 @@ public sealed class DesktopConsole : IDisposable
         // generated registrations are what make the registry complete before settings are read.
         Rendering.Generated.CVarRegistrations.RegisterAll();
 
+        bool settingsLoaded = false;
         if (IsolatedFromSavedSettings)
         {
             _logger.Information(
@@ -103,7 +104,14 @@ public sealed class DesktopConsole : IDisposable
         }
         else if (SettingsFile.Load(System, _settingsPath))
         {
+            settingsLoaded = true;
             _logger.Information(LogCategory, $"Loaded settings from {_settingsPath}.");
+        }
+
+        if (!IsolatedFromSavedSettings && !settingsLoaded)
+        {
+            _logger.Information(LogCategory, "No saved settings found; using the Enhanced graphics preset.");
+            GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Enhanced);
         }
 
         GraphicsPresetRegistry.Default.Detect();

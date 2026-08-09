@@ -6,6 +6,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.Vfs;
+using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
@@ -41,8 +43,16 @@ internal sealed partial class DesktopGame
         // menu's. MISSION: has already been re-pointed by the loader below, in the same step order the
         // original uses.
         ResetSoundsForMission();
+
+        // The resource registry may have arrived from a promoted preview, but audio and other session
+        // services retain the file system created at startup. Both aliases must move before the loader
+        // reads through either side.
+        if (!ReferenceEquals(_resourceFileSystem, _fileSystem))
+        {
+            _fileSystem.SetAlias(VirtualFileSystem.MissionAlias, chosen.MissionAliasTarget);
+        }
         MissionLoader missionLoader = new(
-            _missions, _fileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank);
+            _missions, _resourceFileSystem, _resources, levelLoader, _logger, terrainLoader, _soundBank);
         LoadedMission loaded = missionLoader.Load(id);
 
         // Evaluate the level's ConditionalContainer conditions against the initial playable state, so the
@@ -165,7 +175,7 @@ internal sealed partial class DesktopGame
         else
         {
             _soldiers?.Dispose();
-            _soldiers = new SoldierRenderer(_device, _resources, _logger) { DetailMaps = _detailMaps };
+            _soldiers = new SoldierRenderer(_device, _resources, _logger, _magic) { DetailMaps = _detailMaps };
             _soldiers.Load(
                 loaded,
                 levelRoot,
@@ -180,6 +190,7 @@ internal sealed partial class DesktopGame
         _doors = DoorRegistry.Build(levelRoot);
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
+        _soldiers.UseInteractions(_interactions);
         _soldiers.SetDoors(_doors, solids);
 
         // The first genuinely world-positioned sound in the port. Its distances are the definition's
@@ -200,6 +211,16 @@ internal sealed partial class DesktopGame
         _soldiers.SetHitSound(position => PlayHitSound(
             HumanVariantSound.AiHitPrefix, HumanVariantSound.AiHitVariants, position));
         _soldiers.SetHitCooldown(() => HumanVariantSound.HitCooldownTicks(_soundRandom));
+
+        // AIAction_PlaySound (0x48DF80) either attaches the definition to the human or starts it at
+        // HumanAI's current position. Both begin at the same live position; the backend owns any voice
+        // following after that point.
+        _soldiers.SetScriptSound((name, position, attached) =>
+            _sounds?.PlayDefinition(name, position, priority: 200));
+
+        // Each AI weapon owns its automatic loop and updates its world position every tick. The round
+        // callback handles ballistics only; without this parallel path AI shots were completely silent.
+        _soldiers.SetWeaponSound(TickSoldierWeaponSound);
 
         // Footsteps: animation event 1010, picked from the six walk sounds of whatever is underfoot.
         _soldiers.SetFootstepSound(step => PlayFootstep(step));
@@ -279,21 +300,10 @@ internal sealed partial class DesktopGame
                 // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
                 // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
                 // hills. Nearest contact wins.
-                WorldRayCast objectCast = solids.Caster();
-                WorldRayCast levelCast = (a, b, out blockedAt) =>
-                {
-                    bool hitObject = objectCast(a, b, out WorldRayHit onObject);
-                    if (_playerTerrain is { } ground
-                        && TerrainSightBlock.TryBlock(ground, a, b, out WorldRayHit onGround)
-                        && (!hitObject || onGround.Distance < onObject.Distance))
-                    {
-                        blockedAt = onGround;
-                        return true;
-                    }
-
-                    blockedAt = onObject;
-                    return hitObject;
-                };
+                WorldTraceCast worldTrace = _playerTerrain is { } ground
+                    ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(ground))
+                    : solids.Tracer();
+                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace);
 
                 // The level's doors, before the brains: a walker asks the registry for the nearest door
                 // on a door hop, and an open door is switched out of the collision index so the
@@ -305,6 +315,12 @@ internal sealed partial class DesktopGame
                     graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);
                 EndStage("animating the soldiers' brains");
+
+                // The level's alarm speakers, for the sirens: each follows its own expression over
+                // the same live variables the controls export through.
+                _sirenVoices.Clear();
+                _alarmSpeakers = AlarmSpeakerRegistry.Build(levelRoot, _loop.Variables);
+                _logger.Information("Ai", $"{_alarmSpeakers.Speakers.Count} alarm speaker(s) placed.");
 
                 // A guard's round: it raised the trigger, the weapon's cadence let one out, and this is
                 // where it becomes a cast. The AI's hit probability decides whether the round is on
@@ -346,12 +362,68 @@ internal sealed partial class DesktopGame
                     // the same mark a player's round does. In retail a miss is visible: the round lands
                     // on the wall or the dirt near you (10.4's decals) -- rounds that silently vanished
                     // are why the guards seemed to hit with every bullet.
-                    bool worldBlocked = levelCast(from, to, out WorldRayHit worldHit);
+                    bool worldBlocked = worldTrace(
+                        new WorldTraceRequest(from, to, WorldTraceMask.World),
+                        out WorldTraceHit blocker);
+                    WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
+
+                    // The streak, before the outcome: visual only, along the very ray this handler is
+                    // resolving, dying where the world stops it. Whether the round connects is decided
+                    // below exactly as ever -- from inside the head, a streak that reaches the eye and
+                    // a round that hits look the same.
+                    if (GameplayCVars.Ballistics.Value && GameplayCVars.BallisticsAiTracers.Value)
+                    {
+                        Vector3d streakEnd = worldBlocked ? worldHit.Position : to;
+                        Vector3d line = streakEnd - from;
+                        double lineLength = line.Length;
+                        if (lineLength > 1e-6)
+                        {
+                            AmmoType? streakAmmo = _ammoTypes is { } table
+                                && table.TryGetByCalibre(weapon.CalibreId, out AmmoType found)
+                                ? found
+                                : null;
+                            _player.Ballistics.SpawnVisual(
+                                from,
+                                new Vector3f(
+                                    (float)(line.X / lineLength),
+                                    (float)(line.Y / lineLength),
+                                    (float)(line.Z / lineLength)),
+                                streakEnd,
+                                weapon,
+                                streakAmmo);
+                        }
+                    }
+
                     void MarkTheImpact()
                     {
-                        if (worldBlocked && _worldMaterials is { } table)
+                        if (!worldBlocked)
+                        {
+                            return;
+                        }
+
+                        if (_worldMaterials is { } table)
                         {
                             _player.Marks.TryAdd(worldHit, table);
+                        }
+
+                        // A guard's stray round pops a speaker exactly as the player's does -- the
+                        // retail damage message never asked who fired.
+                        DamageAlarmSpeakers(worldHit.Position);
+
+                        // A guard's round kicks the same burst a player's does -- misses landing
+                        // around you are half of what sells incoming fire.
+                        if (_impactParticles is { } bursts
+                            && RenderCVars.ImpactParticles.Value is > 0f and var intensity)
+                        {
+                            string material = _worldMaterials is { } names
+                                && names.TryGet(worldHit.Material, out GameMaterial struck)
+                                ? struck.Name
+                                : string.Empty;
+                            bursts.SpawnBurst(
+                                worldHit.Position,
+                                worldHit.Normal,
+                                ImpactParticleRenderer.KindOf(material),
+                                intensity);
                         }
                     }
 
@@ -370,6 +442,10 @@ internal sealed partial class DesktopGame
                     if (worldBlocked && worldHit.Distance < hit.Distance - 40.0)
                     {
                         MarkTheImpact();
+                        _logger.Debug(
+                            "Weapon",
+                            $"Guard round blocked by {blocker.Kind} '{blocker.Label}' at "
+                                + $"{blocker.Fraction:P1} before the player body.");
                         return;
                     }
 
@@ -433,75 +509,11 @@ internal sealed partial class DesktopGame
 
                     if (_playerHealth.IsDead)
                     {
-                        // Locomotion state 47 (0x40E560): the clip comes from the LAST ZONE STRUCK's row
-                        // in the player's own hit-zone table, one of its two reactions by rand(2). The
-                        // player stops taking input from here on -- it is a state, not a message.
-                        _playerDead = true;
-                        int fall = HumanPlayerDeath.Choose(
-                            hit.Zone, HumanHitZoneTable.Player, _shotRandom.Next(2));
-
-                        // Hold the screen red. The wash decays a forty-fifth a tick, so on death it is
-                        // pinned to full and left to fade -- the last thing the player sees is red.
-                        _damageFlash.Hit();
-
-                        // Which way the body is thrown. The fall clip carries the body along its own
-                        // backward axis, so the facing decides where "backward" points -- and it has to
-                        // point AWAY FROM THE SHOOTER, so a hit in the stomach throws you onto your back.
-                        // The soldier death does exactly this (SoldierDeath.TurnToTheShot, 0x45DAA0):
-                        // it faces the body at the incoming round. Retail's player death instead falls
-                        // along the look direction (0x40E560 does not turn), which only reads right when
-                        // you were looking straight at the shooter -- so we take the soldier's shot-facing,
-                        // which is right however you were facing. The heading whose backward axis (the
-                        // clip's -Y, rotated) points from the shooter to the body is atan2(dx, -dy).
-                        double throwX = _player.Body.Position.X - from.X;
-                        double throwY = _player.Body.Position.Y - from.Y;
-                        double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
-                        float throwFacing = throwLength > 1e-6
-                            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
-                            : _player.Body.Yaw;
-
-                        // Locomotion state 47 (0x40E560) plays the fall clip on the body rig; here that is
-                        // the player's third-person body, posed with the clip the last zone struck chose.
-                        // The camera hands itself to the death view and pulls back off the eye, so the fall
-                        // is seen from the outside -- the original's death sequence.
-                        // The clip above is the original's and stays whatever g_ragdoll says. The four
-                        // extra arguments are the ragdoll's, and every one of them comes off the round
-                        // that actually killed you: the line it travelled, the bone it went through, the
-                        // weapon that fired it, and what you were doing when it landed.
-                        _soldiers?.KillPlayerBody(
-                            fall,
-                            _player.Body.Position,
-                            throwFacing,
-                            hit.Bone,
-                            new Vector3d(
-                                _player.Body.Position.X - from.X,
-                                _player.Body.Position.Y - from.Y,
-                                _player.Body.Position.Z - from.Z),
-                            weapon.Category,
-                            new Vector3d(
-                                _player.Body.Velocity.X,
-                                _player.Body.Velocity.Y,
-                                _player.Body.Velocity.Z));
-                        WorldRayCast deathCaster = solids.Caster();
-                        _deathCamera.Begin(
-                            _player.Body.Position,
-                            throwFacing,
-                            (f, t, out h) =>
-                            {
-                                bool blocked = deathCaster(f, t, out WorldRayHit wall);
-                                h = blocked ? wall.Position : default;
-                                return blocked;
-                            });
-
-                        // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
-                        PlayDeathSound(
-                            HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
-
+                        BeginPlayerDeath(from, hit.Zone, hit.Bone, weapon.Category);
                         _logger.Information(
                             "Weapon",
                             $"The player is DEAD after {_guardHits} hit(s) from {_guardRounds} round(s), "
-                                + $"struck in zone {hit.Zone}. Falling with animation {fall}; the death "
-                                + "camera has pulled back.");
+                                + $"struck in zone {hit.Zone}; the death camera has pulled back.");
                     }
                 });
             }
@@ -629,6 +641,12 @@ internal sealed partial class DesktopGame
                 "Player",
                 $"{solids.Count} placed object(s) are solid, {solids.TriangleCount} collision triangle(s).");
 
+            // The grenade's own cast INCLUDES the terrain: the body meets the ground through its
+            // ground query, but a grenade has no such query and would fall through the world.
+            candidate.GrenadeWalls = _playerTerrain is { } grenadeGround
+                ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
+                : solids.Caster();
+
             // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
             // W/S up and down, E held to slide).
             if (_scene is not null)
@@ -656,6 +674,10 @@ internal sealed partial class DesktopGame
                 weaponRoster.Load(_fileSystem, _resources, _loop.Natives);
                 ammoTable.Register(_loop.Natives);
                 ammoTable.Load(_fileSystem, _resources, _loop.Natives);
+
+                // Shared with the guard-round handler: the ammunition record is what colours a
+                // ballistic streak, exactly as it colours the retail tracer.
+                _ammoTypes = ammoTable;
 
                 // What every surface in the world is made of, and therefore what a round leaves on it.
                 materialTable.Register(_loop.Natives);
@@ -785,6 +807,10 @@ internal sealed partial class DesktopGame
             _heldWeapon?.Dispose();
     _hud?.Dispose();
     _marks?.Dispose();
+            _tracers?.Dispose();
+            _tracers = null;
+            _impactParticles?.Dispose();
+            _impactParticles = null;
             _heldWeapon = null;
 
             if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
@@ -798,11 +824,25 @@ internal sealed partial class DesktopGame
                 {
                     candidate.Humans = guards.Shooter();
                     candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
+
+                    // One grenade pool for both throwers: the player's own and every guard's lob fly,
+                    // bounce and detonate through the same simulation and the same drain.
+                    guards.SetGrenades(candidate.Grenades);
                 }
 
                 // The in-game HUD owns its own archive, exactly as StatusScreen's constructor does.
                 _marks?.Dispose();
                 _marks = new BulletMarkRenderer(_device, _resources, _logger);
+
+                // The ballistic streaks, beside the marks they end in. Cheap to have around: with
+                // g_ballistics off nothing is ever spawned and Draw returns at the count check.
+                _tracers?.Dispose();
+                _tracers = new TracerTrailRenderer(_device);
+
+                // And the bursts where rounds land. Also cheap when off: r_impact_particles 0
+                // spawns nothing, and an empty pool returns at the count check.
+                _impactParticles?.Dispose();
+                _impactParticles = new ImpactParticleRenderer(_device);
 
                 _hud?.Dispose();
                 _hud = new StatusScreenRenderer(_device, _logger);
@@ -833,6 +873,12 @@ internal sealed partial class DesktopGame
                 };
                 _gunPickupRenderer.Load(loaded, pickups);
             }
+
+            // The grenades in the air, drawn with their own retail models. Loaded beside the
+            // pickups because it is the same model machinery at a transform the simulation owns.
+            _grenadeRenderer?.Dispose();
+            _grenadeRenderer = new GrenadeRenderer(_device, _resources, _magic, _logger);
+            _grenadeRenderer.Load(loaded);
 
             EndStage("the loadout, the bullet marks and the HUD");
 
@@ -938,6 +984,7 @@ internal sealed partial class DesktopGame
         preview.Loop.Clock.AdoptScheduleFrom(outgoing.Clock);
 
         _loop = preview.Loop;
+        _resourceFileSystem = preview.FileSystem;
         _resources = preview.Resources;
         _activeLevelRoot = preview.LevelRoot;
         _activeMission = chosen;
@@ -997,6 +1044,9 @@ internal sealed partial class DesktopGame
         _hud?.Dispose();
         _remasteredHud?.Dispose();
         _marks?.Dispose();
+        _tracers?.Dispose();
+        _impactParticles?.Dispose();
+        _grenadeRenderer?.Dispose();
         _arms?.Dispose();
         _sky = null;
         _terrain = null;
@@ -1077,6 +1127,75 @@ internal sealed partial class DesktopGame
         }
 
         return new HeldWeaponRenderer(_device, _resources, _magic, _logger) { Materials = _materials };
+    }
+
+    /// <summary>Puts the player through the whole death sequence, whatever killed them.</summary>
+    /// <param name="from">Where the killing thing came from — the shooter's muzzle, or the blast.</param>
+    /// <param name="zone">The zone the killing damage landed on.</param>
+    /// <param name="bone">The bone the round went through, or <c>-1</c> when nothing so precise.</param>
+    /// <param name="category">The killing weapon's category, which picks the fall's family.</param>
+    /// <remarks>
+    /// Extracted from the guard-round handler so that EVERYTHING lethal runs it — a grenade that
+    /// zeroes the health must kill exactly the way a bullet does, or the player stands at zero
+    /// health forever, which is precisely the bug this fixed.
+    /// </remarks>
+    private void BeginPlayerDeath(Vector3d from, int zone, int bone, WeaponCategory category)
+    {
+        if (_player is null || _playerDead)
+        {
+            return;
+        }
+
+        // Locomotion state 47 (0x40E560): the clip comes from the LAST ZONE STRUCK's row in the
+        // player's own hit-zone table, one of its two reactions by rand(2). The player stops taking
+        // input from here on -- it is a state, not a message.
+        _playerDead = true;
+        int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _shotRandom.Next(2));
+
+        // Hold the screen red. The wash decays a forty-fifth a tick, so on death it is pinned to
+        // full and left to fade -- the last thing the player sees is red.
+        _damageFlash.Hit();
+
+        // Which way the body is thrown: the facing whose backward axis points away from the killer,
+        // exactly as the soldier death faces the incoming round (SoldierDeath.TurnToTheShot).
+        double throwX = _player.Body.Position.X - from.X;
+        double throwY = _player.Body.Position.Y - from.Y;
+        double throwLength = Math.Sqrt((throwX * throwX) + (throwY * throwY));
+        float throwFacing = throwLength > 1e-6
+            ? (float)Math.Atan2(throwX / throwLength, -(throwY / throwLength))
+            : _player.Body.Yaw;
+
+        _soldiers?.KillPlayerBody(
+            fall,
+            _player.Body.Position,
+            throwFacing,
+            bone,
+            new Vector3d(
+                _player.Body.Position.X - from.X,
+                _player.Body.Position.Y - from.Y,
+                _player.Body.Position.Z - from.Z),
+            category,
+            new Vector3d(
+                _player.Body.Velocity.X,
+                _player.Body.Velocity.Y,
+                _player.Body.Velocity.Z));
+
+        if (_worldSolids is { } deathSolids)
+        {
+            WorldRayCast deathCaster = deathSolids.Caster();
+            _deathCamera.Begin(
+                _player.Body.Position,
+                throwFacing,
+                (f, t, out h) =>
+                {
+                    bool blocked = deathCaster(f, t, out WorldRayHit wall);
+                    h = blocked ? wall.Position : default;
+                    return blocked;
+                });
+        }
+
+        // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
+        PlayDeathSound(HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
     }
 
     // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does

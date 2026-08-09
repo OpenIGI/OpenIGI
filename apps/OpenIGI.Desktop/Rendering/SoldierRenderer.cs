@@ -47,11 +47,13 @@ public sealed class SoldierRenderer : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
+    private readonly MagicObjectRegistry? _magic;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Group> _groups = [];
     private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
+    private readonly IgiRandom _aiRandom = new();
 
     // Each soldier's combat row, resolved from its own AIType at the difficulty in force. It is what
     // gives a guard its maximum health -- sub_406F70 writes the row's "Damage scale" over Human+600,
@@ -82,8 +84,11 @@ public sealed class SoldierRenderer : IDisposable
     private readonly HashSet<int> _activatedTasks = [];
     private AiAlarmControlRegistry? _alarmControls;
     private AiCombatTarget _playerTarget = new("HumanPlayer");
+    private WorldInteractionRegistry? _interactions;
     private Action<int>? _aiTaskActivator;
     private Action<WeaponType, Vector3d, Matrix3f>? _weaponDrop;
+    private Action<string, Vector3d, bool>? _scriptSound;
+    private Action<int, bool, WeaponType?, Vector3d>? _weaponSound;
     private GunPickupRegistry? _droppedWeaponPickups;
     private GameTask? _levelRoot;
 
@@ -106,6 +111,9 @@ public sealed class SoldierRenderer : IDisposable
 
     /// <summary>Connects an AI's input-channel activation to the live world interaction task.</summary>
     public void SetAiTaskActivator(Action<int>? activator) => _aiTaskActivator = activator;
+
+    /// <summary>Connects gunner AIs to the level's live StationaryGun tasks.</summary>
+    public void UseInteractions(WorldInteractionRegistry? interactions) => _interactions = interactions;
     /// <summary>Sounds a soldier's death cry, at the position the body fell from.</summary>
     /// <param name="report">The sink, or <see langword="null"/> to make deaths silent.</param>
     /// <remarks>
@@ -133,6 +141,12 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="report">The sink, or <see langword="null"/> to make hits silent.</param>
     /// <remarks>The argument is the body's position in engine units.</remarks>
     public void SetHitSound(Action<Vector3d>? report) => _hitSound = report;
+
+    /// <summary>Plays a definition requested by <c>AIAction_PlaySound</c>.</summary>
+    public void SetScriptSound(Action<string, Vector3d, bool>? report) => _scriptSound = report;
+
+    /// <summary>Reports every AI weapon tick, including quiet ticks needed to end automatic loops.</summary>
+    public void SetWeaponSound(Action<int, bool, WeaponType?, Vector3d>? report) => _weaponSound = report;
 
     /// <summary>Sets how long a struck soldier stays quiet for, in ticks.</summary>
     /// <param name="cooldown">Draws the gap; see <c>HumanVariantSound.HitCooldownTicks</c>.</param>
@@ -219,6 +233,7 @@ public sealed class SoldierRenderer : IDisposable
     private double _travelTotal;
     private double _travelMax;
     private bool _disposed;
+    private int _lastDetectionShoutTick = -1;
 
     // The player's own third-person body -- Jones, the rig the first-person view never shows. It is NOT a
     // guard: it has no AI, is not in _groups, and the soldier tick and draw loops never touch it. It loads
@@ -250,20 +265,28 @@ public sealed class SoldierRenderer : IDisposable
 
     // The frame alpha BeginFrame resolved, kept for DrawPlayerBody which runs once per frame.
     private float _frameAlpha = 1f;
+    private readonly Dictionary<SoldierView, int> _lastCombatState = [];
+    private GrenadeSimulation? _grenades;
     private bool _frameSmooth;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierRenderer"/> class.</summary>
     /// <param name="device">The device to upload to and draw with.</param>
     /// <param name="resources">Where texture bytes are read from.</param>
     /// <param name="logger">Where to report problems.</param>
+    /// <param name="magic">The retail multipart-object table, used to attach gun-flame tasks.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public SoldierRenderer(IGraphicsDevice device, ResourceRegistry resources, IIgiLogger? logger = null)
+    public SoldierRenderer(
+        IGraphicsDevice device,
+        ResourceRegistry resources,
+        IIgiLogger? logger = null,
+        MagicObjectRegistry? magic = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(resources);
 
         _device = device;
         _resources = resources;
+        _magic = magic;
         _logger = logger ?? NullLogger.Instance;
     }
 
@@ -652,6 +675,7 @@ public sealed class SoldierRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _brains.Clear();
+        _lastDetectionShoutTick = -1;
         _combat.Clear();
         _health.Clear();
         _activatedTasks.Clear();
@@ -684,8 +708,14 @@ public sealed class SoldierRenderer : IDisposable
             _logger.Information(LogCategory, $"{paths.Count} authored patrol path(s) in this level.");
         }
 
-        AiScriptHost? host = scripts is not null && natives is not null ? new AiScriptHost(natives, _logger) : null;
+        AiScriptHost? host = scripts is not null && natives is not null
+            ? new AiScriptHost(natives, _logger, _aiRandom)
+            : null;
         Dictionary<string, QvmProgram?> scriptCache = new(StringComparer.Ordinal);
+
+        // One occupancy registry per level -- the global claim list at 0x57D768. Every brain shares it,
+        // which is what stops a squad's free-position searches all electing the same node.
+        AiNodeOccupancy occupancy = new();
 
         int index = 0;
         int patrolling = 0;
@@ -715,7 +745,8 @@ public sealed class SoldierRenderer : IDisposable
                     }
                 }
 
-                AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index);
+                AiSoldier brain = new(graph, view.Position, GammaOf(view), index & 3, index, _aiRandom);
+                brain.SetScriptSound((name, attached) => _scriptSound?.Invoke(name, view.Position, attached));
                 brain.SetEyeTransform(
                     () =>
                     {
@@ -751,7 +782,10 @@ public sealed class SoldierRenderer : IDisposable
                 });
                 brain.SetDefaultTarget(_playerTarget);
                 brain.SetAlarmStatusResolver(_alarmControls is { } controls ? controls.IsOn : null);
+                brain.SetStationaryGunResolver(
+                    _interactions is { } interactions ? interactions.FindStationaryGun : null);
                 brain.SetPatrolPaths(paths);
+                brain.SetNodeOccupancy(occupancy);
                 brain.SetGroundQuery(MakeGroundQuery());
                 if (_doors is { } levelDoors)
                 {
@@ -889,6 +923,16 @@ public sealed class SoldierRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(roster);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        if (_interactions is { } interactions)
+        {
+            foreach (AiStationaryGun gun in interactions.Items
+                .Select(static item => item.StationaryGun)
+                .OfType<AiStationaryGun>())
+            {
+                gun.BindWeapon(roster.TryGetByScriptId(gun.WeaponId, out WeaponType weapon) ? weapon : null);
+            }
+        }
+
         int armed = 0;
         Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -897,6 +941,17 @@ public sealed class SoldierRenderer : IDisposable
             foreach (Member member in group.Soldiers)
             {
                 IReadOnlyList<LoadoutWeapon> carried = PlayerLoadout.WeaponsOf(member.View.Soldier);
+
+                // Human inventory scan 0x44FBA0 examines every carried Weapon task, not only slot 0.
+                // Category 4 publishes HumanAI+15869, which is the patrol grenade chooser's gate.
+                bool hasGrenade = carried.Any(item =>
+                    roster.TryGetByScriptId(item.WeaponId, out WeaponType candidate)
+                    && candidate.Category == WeaponCategory.Grenade);
+                if (_brains.TryGetValue(member.View, out AiSoldier? brain))
+                {
+                    brain.SetGrenadeAvailable(hasGrenade);
+                }
+
                 if (carried.Count == 0)
                 {
                     continue;
@@ -971,7 +1026,18 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
-        HeldWeapon held = new(geometry, mesh, instance, pack);
+        HeldWeaponRenderer? presentation = null;
+        if (_magic is not null)
+        {
+            presentation = new HeldWeaponRenderer(_device, _resources, _magic, _logger);
+            if (!presentation.Load(mission, modelName))
+            {
+                presentation.Dispose();
+                presentation = null;
+            }
+        }
+
+        HeldWeapon held = new(geometry, mesh, instance, pack, presentation);
         _weapons.Add(held);
         return held;
     }
@@ -1068,6 +1134,20 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
+        // The port-side [aiflow] line, for diffing against the retail probe's capture: every two
+        // seconds, one decision-state line per engaged soldier.
+        if (engaging > 0 && _tick - _lastCombatDetailTick >= 60)
+        {
+            _lastCombatDetailTick = _tick;
+            foreach (AiSoldier brain in _brains.Values)
+            {
+                if (brain.Activity == AiSoldierActivity.Engaging)
+                {
+                    _logger.Information(LogCategory, $"[aiflow] #{brain.RuntimeId} {brain.DescribeCombat()}");
+                }
+            }
+        }
+
         string report =
             $"{seeing} soldier(s) see the player, {engaging} engaging, {chasing} chasing, {RoundsFired} round(s) fired.";
         if (report == _lastCombatReport)
@@ -1078,6 +1158,8 @@ public sealed class SoldierRenderer : IDisposable
         _lastCombatReport = report;
         _logger.Information(LogCategory, $"AI: {report}");
     }
+
+    private int _lastCombatDetailTick;
 
     /// <summary>Logs each input channel a fight asks for, once per type and channel.</summary>
     /// <remarks>
@@ -1100,6 +1182,24 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    private static AiCombatWeaponState CombatWeaponState(AiSoldier brain, Member held)
+    {
+        if (brain.MountedGun is { Weapon: { } mounted } gun)
+        {
+            return new AiCombatWeaponState(
+                gun.AmmunitionSample,
+                mounted.RoundsPerClip,
+                mounted.MaximumRoundsPerBurst,
+                mounted.Category);
+        }
+
+        return new AiCombatWeaponState(
+            held.AmmoInClip,
+            held.WeaponType?.RoundsPerClip ?? 0,
+            held.WeaponType?.MaximumRoundsPerBurst ?? 0,
+            held.WeaponType?.Category ?? WeaponCategory.Knife);
+    }
+
     /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
     /// <remarks>
     /// <para>
@@ -1112,42 +1212,83 @@ public sealed class SoldierRenderer : IDisposable
     /// the same place, so they are not told apart here.
     /// </para>
     /// </remarks>
-    private void FireIfAsked(SoldierView view, AiSoldier brain, Vector3d enemyFeet, bool enemyCrouching)
+    private bool FireIfAsked(SoldierView view, AiSoldier brain, Vector3d enemyFeet, bool enemyCrouching)
     {
         Member? member = FindMember(view);
-        if (member?.WeaponType is not { } weapon)
+        AiStationaryGun? mounted = brain.MountedGun;
+        WeaponType? weapon = mounted?.Weapon ?? member?.WeaponType;
+        if (weapon is null)
         {
-            return;
+            return false;
         }
 
-        if (member.FireCooldown > 0)
+        if (mounted is not null)
         {
-            member.FireCooldown--;
+            if (mounted.FireCooldownTicks > 0)
+            {
+                mounted.FireCooldownTicks--;
+            }
         }
-
-        if (member.ReloadTicks > 0 && --member.ReloadTicks == 0)
+        else if (member is not null)
         {
-            member.AmmoInClip = weapon.RoundsPerClip;
+            if (member.FireCooldown > 0)
+            {
+                member.FireCooldown--;
+            }
+
+            if (member.ReloadTicks > 0 && --member.ReloadTicks == 0)
+            {
+                member.AmmoInClip = weapon.RoundsPerClip;
+            }
         }
 
         AiCombatCommand command = brain.Combat;
 
-        if ((command.PressReload || command.ReloadWeaponDirectly)
+        if (mounted is null && member is not null
+            && (command.PressReload || command.ReloadWeaponDirectly)
             && member.ReloadTicks == 0
             && member.AmmoInClip < weapon.RoundsPerClip)
         {
             member.ReloadTicks = Math.Max(1, (int)(weapon.ReloadTimeSeconds * 30f));
-            return;
+            return false;
         }
 
-        if (!command.PullTrigger || member.FireCooldown > 0 || member.AmmoInClip <= 0 || member.ReloadTicks > 0)
+        // IGI 1 does not hand slot 6 straight to the gun. The HumanSoldier body forwards it only from
+        // states 6, 18, 22 and 27 (standing, running, kneeling and prone fire respectively). Previously
+        // this method ran before the body state tick, so rounds left during rack/ready/recover clips.
+        bool bodyForwardsTrigger = mounted is not null
+            || (!brain.CombatStateChangedThisTick
+                && brain.CombatState is HumanSoldierStates.FiringState
+                    or HumanSoldierStates.RunFiringState
+                    or HumanSoldierStates.KneelFiringState
+                    or HumanSoldierStates.ProneFiringState);
+        bool blocked = mounted is not null
+            ? mounted.FireCooldownTicks > 0 || mounted.AmmunitionSample <= 0
+            : member is null || member.FireCooldown > 0 || member.AmmoInClip <= 0 || member.ReloadTicks > 0;
+        if (!command.PullTrigger || !bodyForwardsTrigger || blocked)
         {
-            return;
+            return false;
         }
 
-        member.AmmoInClip--;
-        member.FireCooldown = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
+        if (mounted is not null)
+        {
+            if (!mounted.ConsumeRound())
+            {
+                return false;
+            }
+            mounted.FireCooldownTicks = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
+        }
+        else
+        {
+            member!.AmmoInClip--;
+            member.FireCooldown = GunTiming.TicksPerRound(weapon.RoundsPerMinute);
+        }
         RoundsFired++;
+        if (member is not null)
+        {
+            member.FiredThisTick = true;
+            member.ShotSequence++;
+        }
 
         // The round leaves along where the GUN is pointed, not at the target's true position. Retail's
         // round is a hit-scan ray resolved in the fire tick (GunShot per-tick 0x47B750): the guard's body
@@ -1162,10 +1303,12 @@ public sealed class SoldierRenderer : IDisposable
         // sprays along its own facing whenever the target is inside a 16.3-degree cone, so its ray runs
         // along the body's heading at the aim point's height.
         Vector3d aim = brain.Combat.TurnTo ?? SprayTarget(brain, enemyFeet, enemyCrouching);
-        _onRound?.Invoke(brain.EyePosition(), aim, brain.HitProbability, weapon);
+        Vector3d origin = mounted?.Position ?? brain.EyePosition();
+        _onRound?.Invoke(origin, aim, brain.HitProbability, weapon);
 
         // Every other soldier near the shot hears it -- the same AIEVENT_GUNSHOT a player's shot raises.
-        NotifyGunshot(brain.EyePosition(), weapon.AiDetectionRange, except: view);
+        NotifyGunshot(origin, weapon.AiDetectionRange, except: view);
+        return true;
     }
 
     /// <summary>Where a follow-firing patrol's round goes: along its own facing, at the aim point's height.</summary>
@@ -1215,6 +1358,7 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Delivers a gunshot using the firing weapon's exact AI detection range.</summary>
     public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
+        int heard = 0;
         foreach (AiSoldier brain in _brains.Values)
         {
             if (except is not null && _brains.TryGetValue(except, out AiSoldier? shooter) && ReferenceEquals(shooter, brain))
@@ -1222,8 +1366,13 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            brain.HearGunshot(origin, range);
+            if (brain.HearGunshot(origin, range))
+            {
+                heard++;
+            }
         }
+
+        ReportNoise("gunshot", heard, range);
     }
 
     /// <summary>Delivers a player's world-impact event to every guard inside IGI1's five-metre radius.</summary>
@@ -1231,10 +1380,34 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="shooterPosition">The player's live position for source-based script actions.</param>
     public void NotifyGroundImpact(Vector3d impact, Vector3d shooterPosition)
     {
+        int heard = 0;
         foreach (AiSoldier brain in _brains.Values)
         {
-            brain.ReceiveGroundImpact(impact, shooterPosition);
+            if (brain.ReceiveGroundImpact(impact, shooterPosition))
+            {
+                heard++;
+            }
         }
+
+        ReportNoise("impact", heard, AiSoldier.GroundImpactRadiusInUnits);
+    }
+
+    /// <summary>Delivers the player's footstep noise to every guard the step's radius reaches.</summary>
+    /// <param name="step">Where the foot landed, in units.</param>
+    /// <param name="walkerPosition">The player's live position.</param>
+    /// <param name="radiusUnits">The ground material's hearing radius × 4096 — <c>0x463920</c>.</param>
+    public void NotifyWalk(Vector3d step, Vector3d walkerPosition, double radiusUnits)
+    {
+        int heard = 0;
+        foreach (AiSoldier brain in _brains.Values)
+        {
+            if (brain.ReceiveWalk(step, walkerPosition, radiusUnits))
+            {
+                heard++;
+            }
+        }
+
+        ReportNoise("walk", heard, radiusUnits);
     }
 
     /// <summary>
@@ -1247,6 +1420,7 @@ public sealed class SoldierRenderer : IDisposable
         SoldierView? struck,
         Vector3d shooterPosition)
     {
+        int heard = 0;
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             // A body the round actually damaged receives TAKINGDAMAGE, not the avoidance event for a miss.
@@ -1255,9 +1429,32 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            brain.ReceiveGunshotMiss(origin, end, shooterPosition);
+            if (brain.ReceiveGunshotMiss(origin, end, shooterPosition))
+            {
+                heard++;
+            }
         }
+
+        ReportNoise("near-miss", heard, AiSoldier.GunshotMissRadiusInUnits);
     }
+
+    /// <summary>One rate-limited delivery line per noise kind — the receipt half of the [aiflow] diff.</summary>
+    private void ReportNoise(string kind, int heard, double radiusUnits)
+    {
+        if (heard == 0 || _tick - _lastNoiseLogTick < 30)
+        {
+            return;
+        }
+
+        _lastNoiseLogTick = _tick;
+        _logger.Information(
+            LogCategory,
+            FormattableString.Invariant(
+                $"[aiflow] noise {kind} heard by {heard} soldier(s) (radius {radiusUnits / 4096.0:0.0} m)"));
+    }
+
+    private int _lastNoiseLogTick = -100;
+    private int _lastDrainLogTick = -100;
 
     /// <summary>The body a soldier's held weapon becomes once its hand is dead.</summary>
     /// <remarks>
@@ -1388,11 +1585,7 @@ public sealed class SoldierRenderer : IDisposable
                 if (_brains.TryGetValue(member.View, out AiSoldier? brain))
                 {
                     Member held = member;
-                    brain.SetCombat(type, row, () => new AiCombatWeaponState(
-                        held.AmmoInClip,
-                        held.WeaponType?.RoundsPerClip ?? 0,
-                        held.WeaponType?.MaximumRoundsPerBurst ?? 0,
-                        held.WeaponType?.Category ?? WeaponCategory.Knife));
+                    brain.SetCombat(type, row, () => CombatWeaponState(brain, held));
                     arms[brain.Arm] = arms.GetValueOrDefault(brain.Arm) + 1;
                 }
             }
@@ -1477,13 +1670,20 @@ public sealed class SoldierRenderer : IDisposable
         QvmProgram? program = null;
         try
         {
-            program = QvmProgram.Read(scripts.Load(path));
+            if (scripts.TryLoad(path, out ReadOnlyMemory<byte> bytes))
+            {
+                program = QvmProgram.Read(bytes);
+            }
+            else
+            {
+                // Most HumanAI tasks have an override, but it is not required: an absent one runs the
+                // archetype selected by AIType instead.
+                _logger.Debug(LogCategory, $"No behaviour script at '{path}'.");
+            }
         }
         catch (Exception ex) when (ex is IOException or QvmFormatException or InvalidOperationException)
         {
-            // A level ships a per-task script only for the soldiers it wants to override, so a miss here is
-            // ordinary rather than an error.
-            _logger.Debug(LogCategory, $"No behaviour script at '{path}': {ex.Message}");
+            _logger.Warning(LogCategory, $"Could not read behaviour script at '{path}': {ex.Message}");
         }
 
         cache[path] = program;
@@ -1694,6 +1894,13 @@ public sealed class SoldierRenderer : IDisposable
 
         _tick++;
 
+        // The liveness half of the [aiflow] diff: proof the AI tick is running at all, ten seconds apart.
+        if (_tick % 300 == 1)
+        {
+            _logger.Information(
+                LogCategory, $"[aiflow] heartbeat tick={_tick} brains={_brains.Count}");
+        }
+
         // Vision watches the eye; combat aims at the feet + 0.5 m (sub_451380). See AiSoldier.Tick.
         Vector3d feet = enemyFeet ?? enemy;
 
@@ -1714,8 +1921,9 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
-        // The doors advance with the task pass, before the AIs read their state. A door that is not
-        // fully closed stops colliding, so a walker (and a round, and a sight ray) passes the doorway.
+        // The doors advance with the task pass, before the AIs read their state. Their collision child
+        // follows the same live transform as the drawn door: a half-open door remains a blocker at its
+        // half-open angle instead of disappearing from sight, bullets and movement.
         if (_doors is { } doors)
         {
             doors.Tick();
@@ -1723,7 +1931,7 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (PlacedDoor door in doors.Doors)
                 {
-                    solids.SetPassable(door.Task, !door.State.IsFullyClosed);
+                    solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
                 }
             }
         }
@@ -1736,6 +1944,12 @@ public sealed class SoldierRenderer : IDisposable
         // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (brain.RequestedAnimation >= 0
+                && view.Bones.SourceOf(0)?.EndedThisTick == true)
+            {
+                brain.ReportAnimationFinished();
+            }
+
             if (view.IsDead)
             {
                 // A corpse is still stepped. The death state's per-tick (0x45C700) adds the fall solver's
@@ -1744,6 +1958,12 @@ public sealed class SoldierRenderer : IDisposable
                 brain.Kill();
                 brain.TickDeadBody(view.RootMotion());
                 view.PlaceAt(brain.Position, view.Orientation);
+                Member? corpse = FindMember(view);
+                if (corpse is not null)
+                {
+                    corpse.FiredThisTick = false;
+                }
+                _weaponSound?.Invoke(brain.RuntimeId, false, corpse?.WeaponType, brain.Position);
                 continue;
             }
 
@@ -1778,7 +1998,73 @@ public sealed class SoldierRenderer : IDisposable
                 _tick, enemy, travel, alarmOn: alarmOn, alarmWasOn: alarmWasOn, enemyAlive: enemyAlive,
                 enemyFeet: feet, enemyCrouching: enemyCrouching);
             SeparateFromOtherSoldiers(brain, before);
-            FireIfAsked(view, brain, feet, enemyCrouching);
+
+            // The pump half of the [aiflow] diff: an event that was QUEUED shows up here the tick it is
+            // drained, whether or not any script acted on it. Noise delivered but never drained points at
+            // the pump; drained but never acted on points at the script/actions.
+            int drainedNoise = brain.Events.DrainedCount(AiEvent.Gunshot)
+                + brain.Events.DrainedCount(AiEvent.GunshotMiss)
+                + brain.Events.DrainedCount(AiEvent.GroundImpact)
+                + brain.Events.DrainedCount(AiEvent.Walk)
+                + brain.Events.DrainedCount(AiEvent.TakingDamage);
+            if (drainedNoise > 0 && _tick - _lastDrainLogTick >= 30)
+            {
+                _lastDrainLogTick = _tick;
+                _logger.Information(
+                    LogCategory,
+                    $"[aiflow] #{brain.RuntimeId} drained gunshot={brain.Events.DrainedCount(AiEvent.Gunshot)} " +
+                    $"miss={brain.Events.DrainedCount(AiEvent.GunshotMiss)} " +
+                    $"impact={brain.Events.DrainedCount(AiEvent.GroundImpact)} " +
+                    $"walk={brain.Events.DrainedCount(AiEvent.Walk)} " +
+                    $"dmg={brain.Events.DrainedCount(AiEvent.TakingDamage)} act={brain.Activity}");
+            }
+
+            Member? member = FindMember(view);
+            if (member is not null)
+            {
+                member.FiredThisTick = false;
+            }
+
+            // The body machine consumes this tick's AI channel writes before the weapon consumes the
+            // body's forwarded trigger. Running it after FireIfAsked let a round leave while the body
+            // was still in rack/ready/recover and skipped state 18 entirely during a running burst.
+            int? combatState = null;
+            if (!brain.IsMounted
+                && brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
+            {
+                bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
+                    || _combatClipMissing.Contains(view);
+                combatState = brain.TickCombatState(animationDone);
+            }
+
+            // The grenade leaves the hand when the throw state ENDS -- the clip has swung. The
+            // decision to throw was the combat arm's own (the retail probability, distance band and
+            // has-grenade tests in AiPatrolCombat); this is only the release.
+            int previousCombatState = _lastCombatState.TryGetValue(view, out int rememberedState)
+                ? rememberedState
+                : -1;
+            _lastCombatState[view] = combatState ?? -1;
+            if (previousCombatState == HumanSoldierStates.GrenadeThrowState
+                && (combatState ?? -1) != HumanSoldierStates.GrenadeThrowState
+                && _grenades is { } lobbed)
+            {
+                ThrowAiGrenade(brain, feet, lobbed);
+            }
+
+            bool fired = FireIfAsked(view, brain, feet, enemyCrouching);
+            WeaponType? soundingWeapon = brain.MountedGun?.Weapon ?? member?.WeaponType;
+            Vector3d soundPosition = brain.MountedGun?.Position ?? brain.EyePosition();
+            _weaponSound?.Invoke(brain.RuntimeId, fired, soundingWeapon, soundPosition);
+
+            // sub_48A920, IGI.exe: detected_01..06, once per combat-action argument block. The
+            // dword_5416CC cooldown is process/mission-wide and requires strictly more than 90 ticks.
+            if (brain.DetectionShoutRequestedThisTick
+                && (_lastDetectionShoutTick == -1 || _tick - _lastDetectionShoutTick > 90))
+            {
+                int variant = checked((int)_aiRandom.NextBounded(6) + 1);
+                _scriptSound?.Invoke($"detected_{variant:00}", brain.Position, true);
+                _lastDetectionShoutTick = _tick;
+            }
 
             // An engaged guard pulls in the guards beside it: every 20 ticks it posts AIEVENT_ALERT
             // with a 6.875 m reach (sub_48A920's %20 counter -> sub_48AB10, radius 28160). This is how
@@ -1801,36 +2087,42 @@ public sealed class SoldierRenderer : IDisposable
             // animation.
             if (brain.RequestedAnimation >= 0)
             {
-                view.SetMoving(true, brain.RequestedAnimation);
+                view.PlayStateAnimation(brain.RequestedAnimation, loops: false);
             }
-            else if (brain.Activity == AiSoldierActivity.Panicking
-                || (brain.Activity == AiSoldierActivity.Engaging && brain.IsMovingInCombat))
+            else if (brain.IsMovingInCombat || brain.Activity == AiSoldierActivity.Panicking)
             {
                 // The soldier is travelling a combat route this tick -- advancing, repositioning or hunting a
                 // lost target while it watches. A chasing guard RUNS (retail's Combat-Follow runs in state 17
                 // = anim 48 at ~4.4 m/s), and the run clip's own root motion is what carries it at that speed
                 // (AiSoldier.AdvanceInCombat reads it). Fall back to the walk if the set has no run clip.
+                //
+                // This test MUST come before the combat-state branch: an engaged hunter otherwise plays
+                // the fire pose, whose zero root motion feeds AdvanceInCombat a zero step -- the exact
+                // "engaging, never moving" stall. Retail's Follow is a full-body run state (17), not the
+                // stand cycle with feet glued down.
                 if (_runAnimation < 0 || !view.SetMoving(true, _runAnimation))
                 {
                     view.SetMoving(true, _walkAnimation);
                 }
             }
-            else if (brain.Activity is AiSoldierActivity.Engaging or AiSoldierActivity.FiringAtTask)
+            else if (brain.Activity == AiSoldierActivity.Engaging && brain.IsMounted)
             {
-                // Stationary combat: run the real off_53EC10 machine instead of inferring the state each
-                // tick. It is fed the clip-finished signal (BoneClip.EndedThisTick = the machine's 0x1 bit)
-                // so every state holds until its clip completes -- the hold the old per-tick inference could
-                // not do, which is why the firing animation looped.
-                //
-                // A set that lacks the state's clip must not WEDGE the machine: with no clip playing,
-                // EndedThisTick never fires, the machine held its state forever, and the guard stood
-                // frozen in the walk pose while its rounds kept leaving -- "a guard playing no animation
-                // but I'm taking damage". When last tick's clip could not be placed, the done signal is
-                // forced so the machine advances and the next state gets its chance to animate.
-                bool animationDone = (view.Bones.SourceOf(0)?.EndedThisTick ?? false)
-                    || _combatClipMissing.Contains(view);
-                int anim = HumanSoldierStates.AnimationOf(brain.TickCombatState(animationDone));
-                bool placed = anim >= 0 && view.SetMoving(true, anim);
+                // HumanSoldier state 36 is the attached emplacement pose. It keeps ownership while
+                // the StationaryGun task reads slot 6 and fires; it does not enter the ordinary
+                // 0/12/10/6 carried-weapon body cycle.
+                int mountedState = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Mounted);
+                int animation = HumanSoldierStates.AnimationOf(mountedState);
+                if (animation < 0
+                    || !view.PlayStateAnimation(animation, HumanSoldierStates.ModeOf(mountedState) == 1))
+                {
+                    view.SetMoving(false, _walkAnimation);
+                }
+            }
+            else if (combatState is { } combatBodyState)
+            {
+                int anim = HumanSoldierStates.AnimationOf(combatBodyState);
+                bool placed = anim >= 0
+                    && view.PlayStateAnimation(anim, HumanSoldierStates.ModeOf(combatBodyState) == 1);
                 if (placed)
                 {
                     _combatClipMissing.Remove(view);
@@ -1845,9 +2137,23 @@ public sealed class SoldierRenderer : IDisposable
             {
                 int state = AiCombatChannels.StateOf(brain.Type, AiStanceChannel.Prone);
                 int animation = HumanSoldierStates.AnimationOf(state);
-                if (animation < 0 || !view.SetMoving(true, animation))
+                if (animation < 0
+                    || !view.PlayStateAnimation(animation, HumanSoldierStates.ModeOf(state) == 1))
                 {
                     view.SetMoving(false, _walkAnimation);
+                }
+            }
+            else if (brain.Activity == AiSoldierActivity.Patrolling && !brain.IsWalking)
+            {
+                // The patrol cursor's gait flag (+21) is applied EVERY tick by the retail walker
+                // (0x48E920): a RunTo leg installs the run gait and it stays until the next movement
+                // command changes it. The alarm-response routes (level 1's 2600/2605-2616) are authored
+                // as RunTo, so an alarmed guard RUNS between its posts -- playing the walk clip here is
+                // what made them amble out of the barracks at 1.28 m/s. The run clip's own root motion
+                // carries the brain at run speed; sets without one fall back to the walk.
+                if (_runAnimation < 0 || !view.SetMoving(true, _runAnimation))
+                {
+                    view.SetMoving(true, _walkAnimation);
                 }
             }
             else
@@ -2216,7 +2522,7 @@ public sealed class SoldierRenderer : IDisposable
                 // The gun first, with its OWN previous transform: it is placed by the hand bone, and
                 // handing it the body's previous pose would report it sliding by the distance between
                 // the two.
-                DrawWeapon(member, camera, reportMotion);
+                DrawWeapon(member, camera, projection, reportMotion);
 
                 // The body's previous rigid pose, through the CURRENT camera; the previous-pose vertex
                 // stream carries the limbs. Together they are the exact previous clip position — the
@@ -2978,9 +3284,154 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodySkinTick = -1;
     }
 
+    /// <summary>Gives the soldiers the grenade simulation their throws land in.</summary>
+    /// <param name="grenades">The shared pool — the same one the player's own throws fly in.</param>
+    public void SetGrenades(GrenadeSimulation? grenades) => _grenades = grenades;
+
+    /// <summary>Applies one explosion to every living soldier in reach.</summary>
+    /// <param name="position">The blast's centre, in world units.</param>
+    /// <param name="radiusUnits">The full-damage radius.</param>
+    /// <param name="falloffUnits">The taper past it — zero for the shipped grenade.</param>
+    /// <param name="damageFactor">The blast's damage factor.</param>
+    /// <remarks>
+    /// The retail rules through the port's own pieces: the dose is
+    /// <see cref="ExplosionDamage.Dose"/> with the body radius at a third, and it lands on
+    /// <b>zone 13</b> — an explosion never headshots, however the target stands. A kill goes through
+    /// the same death path a bullet's does, with the blast direction as the round.
+    /// </remarks>
+    public void ApplyExplosion(Vector3d position, float radiusUnits, float falloffUnits, float damageFactor)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView soldier = member.View;
+                if (!_health.TryGetValue(soldier, out HumanHealth? health))
+                {
+                    float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
+                        ? row.MaximumHealth
+                        : HumanHitZoneTable.MaximumHealth;
+                    health = new HumanHealth(HumanHitZoneTable.Soldier, maximum);
+                    _health[soldier] = health;
+                }
+
+                if (health.IsDead)
+                {
+                    continue;
+                }
+
+                Vector3d feet = soldier.Position;
+                double distance = Math.Sqrt(
+                    ((feet.X - position.X) * (feet.X - position.X))
+                    + ((feet.Y - position.Y) * (feet.Y - position.Y))
+                    + ((feet.Z - position.Z) * (feet.Z - position.Z)));
+
+                float dose = ExplosionDamage.Dose(
+                    (float)distance,
+                    ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+                    radiusUnits,
+                    falloffUnits,
+                    damageFactor);
+                if (dose <= 0f)
+                {
+                    continue;
+                }
+
+                AiSoldier? brain = _brains.TryGetValue(soldier, out AiSoldier? b) ? b : null;
+                if (brain?.IsInvulnerable ?? false)
+                {
+                    continue;
+                }
+
+                health.Apply(ExplosionDamage.Zone, dose, brain?.IsInstantDeathDisabled ?? false);
+
+                if (health.IsDead)
+                {
+                    HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
+                    Die(soldier, hit, position, feet, WeaponCategory.Grenade);
+                }
+                else
+                {
+                    brain?.ReceiveDamage(position);
+                    ReportHitSound(soldier);
+                }
+            }
+        }
+    }
+
+    // The lob: reach the target's feet in the settings' own fly time, and cut the fuse to the
+    // settings' explode time. The velocity is the closed-form ballistic answer for the port's
+    // per-tick integrator: v = d/T + g(T+1)/2 upward, which lands EXACTLY on the target after T
+    // ticks of `v.z -= g; p += v`.
+    private void ThrowAiGrenade(AiSoldier brain, Vector3d target, GrenadeSimulation grenades)
+    {
+        AiCombatParameters? parameters = brain.CombatParameters;
+        if (parameters is null)
+        {
+            return;
+        }
+
+        float flySeconds = parameters.GrenadeMinimumFlyTimeSeconds
+            + ((float)_aiRandom.NextDouble() * parameters.GrenadeRandomFlyTimeSeconds);
+        int flyTicks = Math.Max(1, (int)(flySeconds * 30f));
+
+        Vector3d origin = brain.EyePosition();
+        Vector3f velocity = new(
+            (float)((target.X - origin.X) / flyTicks),
+            (float)((target.Y - origin.Y) / flyTicks),
+            (float)((target.Z - origin.Z) / flyTicks) + (GrenadePhysics.GravityPerTick * (flyTicks + 1) * 0.5f));
+
+        float fuseSeconds = parameters.GrenadeMinimumExplodeTimeSeconds
+            + ((float)_aiRandom.NextDouble() * parameters.GrenadeRandomExplodeTimeSeconds);
+        int fuseTicks = fuseSeconds > 0f ? Math.Max(1, (int)(fuseSeconds * 30f)) : GrenadePhysics.FuseTicks;
+
+        grenades.SpawnWithVelocity(origin, velocity, GrenadeExplosionType.Normal, fuseTicks);
+    }
+
+    /// <summary>Draws the one-tick muzzle flames of every soldier that fired, additively.</summary>
+    /// <param name="camera">The eye the scene is drawn from.</param>
+    /// <param name="projection">The world's view-to-clip transform.</param>
+    /// <remarks>
+    /// Once per frame, in the <b>forward</b> pass — never from <see cref="Draw"/>, which serves the
+    /// geometry and shadow passes where an additive glow would be shaded like scenery. The flame is
+    /// drawn at the same resolved weapon transform the body pass used, so the two halves of the gun
+    /// agree to the pixel.
+    /// </remarks>
+    public void DrawMuzzleFlashes(in Camera3D camera, in Matrix4f projection)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (!member.FiredThisTick
+                    || !member.HasWeaponFrameState
+                    || member.Weapon is not { } weapon
+                    || weapon.Presentation is not { } presentation)
+                {
+                    continue;
+                }
+
+                presentation.Draw(
+                    new BoneAttachment(
+                        member.DrawnWeaponOrigin * WorldScene.UnitsPerMetre,
+                        member.DrawnWeaponRotation),
+                    camera,
+                    projection,
+                    firedThisTick: true,
+                    member.ShotSequence,
+                    WeaponDrawParts.FlameOnly);
+            }
+        }
+    }
+
     /// <summary>Draws the weapon a soldier is holding, at its hand bone's own world transform.</summary>
     /// <param name="member">The soldier.</param>
     /// <param name="camera">The eye.</param>
+    /// <param name="projection">The current world projection.</param>
     /// <param name="reportMotion">Whether this pass records motion — the geometry pass and no other.</param>
     /// <remarks>
     /// <para>
@@ -3000,10 +3451,27 @@ public sealed class SoldierRenderer : IDisposable
     /// exactly; last frame's is reported as its previous pose on the geometry pass.
     /// </para>
     /// </remarks>
-    private void DrawWeapon(Member member, in Camera3D camera, bool reportMotion)
+    private void DrawWeapon(Member member, in Camera3D camera, in Matrix4f projection, bool reportMotion)
     {
         if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
         {
+            return;
+        }
+
+        if (weapon.Presentation is { } presentation)
+        {
+            // Body only: the muzzle flame is LIGHT, and drawing it here put it into the deferred
+            // G-buffer to be shaded like scenery -- a one-frame dark square at the muzzle. It is
+            // drawn by DrawMuzzleFlashes instead, in the forward pass, like the player's own.
+            presentation.Draw(
+                new BoneAttachment(
+                    member.DrawnWeaponOrigin * WorldScene.UnitsPerMetre,
+                    member.DrawnWeaponRotation),
+                camera,
+                projection,
+                firedThisTick: false,
+                member.ShotSequence,
+                WeaponDrawParts.BodyOnly);
             return;
         }
 
@@ -3442,6 +3910,7 @@ public sealed class SoldierRenderer : IDisposable
 
         foreach (HeldWeapon weapon in _weapons)
         {
+            weapon.Presentation?.Dispose();
             if (weapon.Mesh.IsValid)
             {
                 _device.DestroyMesh(weapon.Mesh);
@@ -3556,6 +4025,12 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>What this soldier holds, or <see langword="null"/> when the level armed it with nothing.</summary>
         public HeldWeapon? Weapon { get; set; }
+
+        /// <summary>Whether a round left this soldier's barrel on the current simulation tick.</summary>
+        public bool FiredThisTick { get; set; }
+
+        /// <summary>Monotonic round serial used to vary the retail gun-flame attachment.</summary>
+        public int ShotSequence { get; set; }
 
         /// <summary>The weapon's table row, which the AI reads its clip size and burst length from.</summary>
         public WeaponType? WeaponType { get; set; }
@@ -3681,7 +4156,12 @@ public sealed class SoldierRenderer : IDisposable
     /// mesh serves every soldier and only the transform differs. That transform is the hand bone's, which
     /// is why the body mesh has to be posed but this one does not.
     /// </remarks>
-    private sealed class HeldWeapon(MeshGeometry geometry, MeshHandle mesh, MtpInstance? instance, LoadedPack? pack)
+    private sealed class HeldWeapon(
+        MeshGeometry geometry,
+        MeshHandle mesh,
+        MtpInstance? instance,
+        LoadedPack? pack,
+        HeldWeaponRenderer? presentation)
     {
         public MeshGeometry Geometry { get; } = geometry;
 
@@ -3690,5 +4170,8 @@ public sealed class SoldierRenderer : IDisposable
         public MtpInstance? Instance { get; } = instance;
 
         public LoadedPack? Pack { get; } = pack;
+
+        /// <summary>The multipart retail object, including its transient TASKTYPE_GUNFLAME child.</summary>
+        public HeldWeaponRenderer? Presentation { get; } = presentation;
     }
 }

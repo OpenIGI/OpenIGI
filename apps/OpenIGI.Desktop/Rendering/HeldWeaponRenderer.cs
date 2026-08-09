@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Textures;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
@@ -10,6 +11,27 @@ using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
+
+/// <summary>Which of a weapon's parts one <see cref="HeldWeaponRenderer.Draw"/> call covers.</summary>
+/// <remarks>
+/// The split exists because the two kinds of part belong to different passes on the modern renderer:
+/// the gun's body is geometry, but its muzzle flame is LIGHT — additive, depth-read-only — and light
+/// drawn into the deferred G-buffer comes out shaded like scenery. That was visible as a one-frame
+/// dark square at a firing soldier's muzzle. A soldier now draws its body in the geometry and shadow
+/// passes and its flame in the forward pass; the first-person weapon draws whole in the forward pass
+/// and keeps <see cref="All"/>.
+/// </remarks>
+public enum WeaponDrawParts
+{
+    /// <summary>Every part — the first-person path, which draws entirely in the forward pass.</summary>
+    All,
+
+    /// <summary>The rigid parts only, for the geometry and shadow passes.</summary>
+    BodyOnly,
+
+    /// <summary>The muzzle flame only, for the forward pass.</summary>
+    FlameOnly,
+}
 
 /// <summary>Draws the weapon the player is holding, at the bone the player's own rig puts it on.</summary>
 /// <remarks>
@@ -47,6 +69,14 @@ public sealed class HeldWeaponRenderer : IDisposable
         Emissive: 1f,
         CastsOcclusion: false,
         NoHistory: true);
+
+    /// <summary>How close two flame strengths must be before the mesh is not rebuilt.</summary>
+    /// <remarks>
+    /// The strength (<c>RenderCVars.MuzzleFlash</c>) is baked into the flame's vertex colours, which
+    /// only resolve to 255 steps anyway — rebuilding for a smaller change than one step would churn
+    /// the mesh while a settings slider drags.
+    /// </remarks>
+    private const float FlameStrengthStep = 1f / 255f;
 
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
@@ -168,12 +198,14 @@ public sealed class HeldWeaponRenderer : IDisposable
     /// <param name="projection">The view-to-clip transform.</param>
     /// <param name="firedThisTick">Whether the held gun fired on the current simulation tick.</param>
     /// <param name="shotSequence">The serial of the last round fired.</param>
+    /// <param name="parts">Which parts this call draws; see <see cref="WeaponDrawParts"/>.</param>
     public void Draw(
         BoneAttachment attachment,
         in Camera3D camera,
         in Matrix4f projection,
         bool firedThisTick,
-        int shotSequence)
+        int shotSequence,
+        WeaponDrawParts parts = WeaponDrawParts.All)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_parts.Count == 0)
@@ -198,18 +230,43 @@ public sealed class HeldWeaponRenderer : IDisposable
                 * _gunFlameRotation;
         }
 
+        float flameStrength = RenderCVars.MuzzleFlash.Value;
+
         foreach (Part part in _parts)
         {
-            if (part.IsGunFlame && !firedThisTick)
+            if (part.IsGunFlame)
+            {
+                // A strength of zero is "no flash", not "a black flash" -- skip the draw outright.
+                if (!firedThisTick || parts == WeaponDrawParts.BodyOnly || flameStrength <= 0f)
+                {
+                    continue;
+                }
+            }
+            else if (parts == WeaponDrawParts.FlameOnly)
             {
                 continue;
+            }
+
+            // The flame's brightness (r_muzzle_flash) is baked into its vertex colours, so its mesh
+            // has to follow the setting: a change rebuilds it at the new strength.
+            if (part.Mesh.IsValid
+                && part.IsGunFlame
+                && MathF.Abs(part.FlameStrength - flameStrength) >= FlameStrengthStep)
+            {
+                _device.DestroyMesh(part.Mesh);
+                part.Mesh = MeshHandle.None;
             }
 
             if (!part.Mesh.IsValid)
             {
                 try
                 {
-                    part.Mesh = _device.CreateMesh(part.Geometry.Vertices, part.Geometry.Indices);
+                    part.Mesh = _device.CreateMesh(
+                        part.IsGunFlame && flameStrength < 1f
+                            ? Dimmed(part.Geometry.Vertices, flameStrength)
+                            : part.Geometry.Vertices,
+                        part.Geometry.Indices);
+                    part.FlameStrength = flameStrength;
                 }
                 catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
                 {
@@ -396,5 +453,30 @@ public sealed class HeldWeaponRenderer : IDisposable
         public Matrix3f Orientation { get; } = orientation;
         public bool IsGunFlame { get; } = isGunFlame;
         public MeshHandle Mesh { get; set; } = MeshHandle.None;
+        public float FlameStrength { get; set; } = 1f;
+    }
+
+    // A copy of the vertices with the colour scaled down. The additive draw multiplies the texture
+    // by the vertex colour, so this is the one per-part brightness control the device offers.
+    private static Vertex3D[] Dimmed(Vertex3D[] vertices, float factor)
+    {
+        static byte Scale(byte value, float f) => (byte)Math.Clamp((int)(value * f), 0, 255);
+
+        Vertex3D[] dimmed = new Vertex3D[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            Vertex3D v = vertices[i];
+            Bgra32 c = v.Colour;
+            dimmed[i] = new Vertex3D(
+                v.Position,
+                v.Normal,
+                v.DiffuseU,
+                v.DiffuseV,
+                v.LightmapU,
+                v.LightmapV,
+                new Bgra32(Scale(c.B, factor), Scale(c.G, factor), Scale(c.R, factor), c.A));
+        }
+
+        return dimmed;
     }
 }

@@ -55,6 +55,11 @@ internal sealed partial class DesktopGame : IDisposable
     // --- Services built during startup ---
     private ResourceRegistry _resources = null!;
 
+    // Normally the session file system above. A promoted preview brings a registry backed by its own
+    // private file system, while long-lived services such as audio stay on the session one. Mission
+    // changes therefore bind both; keeping this reference beside the registry makes that split explicit.
+    private VirtualFileSystem _resourceFileSystem = null!;
+
     // Silent until the console has read settings.cfg, so nothing can open a device on stale defaults.
     private IAudioDevice _audio = new NullAudioDevice();
 
@@ -96,6 +101,21 @@ internal sealed partial class DesktopGame : IDisposable
 
     /// <summary>The tick the player may grunt at being hit again — <c>0x4637C0</c>'s per-human gate.</summary>
     private int _playerHitQuietUntil;
+    private int _impactSoundQuietUntil;
+    private int _tracerSkipsLogged;
+
+    private AlarmSpeakerRegistry? _alarmSpeakers;
+    private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
+
+    /// <summary>The flashbang's whiteout, 0–2, decaying towards zero every tick.</summary>
+    /// <remarks>
+    /// The retail handler writes the two strengths (<see cref="Flashbang"/>) into fields whose decay
+    /// is unread; a 45-tick fall per unit of strength — a second and a half seen, three blinded — is
+    /// this port's chosen curve.
+    /// </remarks>
+    private float _flashbangStrength;
+
+    private const float FlashbangDecayPerTick = 1f / 45f;
 
 
     // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
@@ -163,11 +183,15 @@ internal sealed partial class DesktopGame : IDisposable
     private int _missionFailureTicks;
     private bool _missionFailedMenu;
     private BulletMarkRenderer? _marks;
+    private TracerTrailRenderer? _tracers;
+    private ImpactParticleRenderer? _impactParticles;
+    private GrenadeRenderer? _grenadeRenderer;
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
     private SoldierRenderer? _soldiers;
     private TerrainData? _playerTerrain;
     private GameMaterialRegistry? _worldMaterials;
+    private AmmoTypeRegistry? _ammoTypes;
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
     private DoorRegistry? _doors;
@@ -224,7 +248,8 @@ internal sealed partial class DesktopGame : IDisposable
 
         // Entry labels are keys into the language archive, so it has to be registered before the menu can
         // resolve any of them.
-        _resources = new(_fileSystem, _logger);
+        _resourceFileSystem = _fileSystem;
+        _resources = new(_resourceFileSystem, _logger);
 
         // menusystem.res holds the menu's own labels; missions.res holds the mission names and briefings,
         // because a descriptor's "Mission 1 Name" is a key into it rather than the title itself.
@@ -535,6 +560,9 @@ internal sealed partial class DesktopGame : IDisposable
         _heldWeapon = null;
         _hud = null;
         _marks = null;
+        _tracers = null;
+        _impactParticles = null;
+        _grenadeRenderer = null;
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
@@ -543,6 +571,9 @@ internal sealed partial class DesktopGame : IDisposable
         // The material table, shared with the guard-round handler so an AI round's impact can leave the
         // same mark a player's does -- retail rounds are physical and decal whatever they meet (10.4).
         _worldMaterials = null;
+        _ammoTypes = null;
+        _alarmSpeakers = null;
+        _sirenVoices.Clear();
         _playerMode = false;
 
         // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The
@@ -1555,6 +1586,46 @@ internal sealed partial class DesktopGame : IDisposable
                     if (_player.TakeFootstep() is { } step)
                     {
                         PlayFootstep(step);
+
+                        // The step is also a NOISE the AI hears: 0x463920's tail posts AIEVENT_WALK
+                        // (type 10, filter 0x46) with the ground material's own radius, unless the
+                        // walker is crouching -- sneaking really is silent to the AI. guard.qvm's WALK
+                        // branch is AIAction_SetCombat, so a guard that hears footsteps it cannot see
+                        // starts hunting.
+                        if (!_player.IsCrouched)
+                        {
+                            _soldiers?.NotifyWalk(
+                                step.PositionInUnits, _player.Body.Position, step.HearingRadiusInUnits);
+                        }
+                    }
+
+                    // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
+                    // material table, where the round arrived rather than where it was fired.
+                    PlayBallisticImpactSounds();
+
+                    // The same impacts, seen: sparks and dust composed from the struck material.
+                    // Ticked before spawning so a new burst draws its birth frame unmoved.
+                    _impactParticles?.Tick();
+                    SpawnBallisticImpactParticles();
+
+                    // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
+                    // and the casualties.
+                    ResolveGrenadeDetonations();
+                    _flashbangStrength = Math.Max(0f, _flashbangStrength - FlashbangDecayPerTick);
+
+                    // The alarm speakers, following their own level expressions -- the siren the
+                    // room hears when a guard reaches a switch.
+                    TickAlarmSpeakers();
+
+                    // And whether one of this tick's rounds landed ON a speaker. The impact list
+                    // carries both the instant rays and the ballistic arrivals, so either mode can
+                    // shoot the siren off the wall.
+                    foreach (GunImpact playerImpact in _player.Impacts)
+                    {
+                        if (playerImpact.HitSomething)
+                        {
+                            DamageAlarmSpeakers(playerImpact.Position);
+                        }
                     }
 
                     // The level's ambience, which is keyed off where the ear is rather than where the
@@ -2332,6 +2403,16 @@ internal sealed partial class DesktopGame : IDisposable
                 EndStageIfSlow("the world's objects");
                 _gunPickupRenderer?.Draw(eye, projection);
 
+                // The grenades in the air, solid geometry among the world's own.
+                if (_grenadeRenderer is not null && _player is not null)
+                {
+                    _grenadeRenderer.Draw(
+                        _player.Grenades,
+                        eye,
+                        projection,
+                        smoothPresentation ? tickBlend : 1f);
+                }
+
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
                 // never swaps in the view-model block for them (player.md section 15.3).
                 _soldiers?.Draw(eye, projection);
@@ -2342,7 +2423,7 @@ internal sealed partial class DesktopGame : IDisposable
                 EndStageIfSlow("the soldiers");
 
                 // The marks rounds have left, over the world and under the first-person rig.
-                if (_marks is not null && _player is not null)
+                if (_marks is not null && _player is not null && RenderCVars.BulletMarks.Value)
                 {
                     _marks.Draw(_player.Marks, eye, projection);
                 }
@@ -2367,6 +2448,39 @@ internal sealed partial class DesktopGame : IDisposable
                     _device.EndPass();
                     _device.BeginPass(ScenePass.Forward);
                 }
+
+                // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
+                // the geometry pass they are written into the g-buffer as scenery and come out lit
+                // and fogged (a dim grey square was exactly what that looked like). Here they draw
+                // additively over the finished scene, emissive like the muzzle flame, testing the
+                // world's depth but writing none.
+                if (_tracers is not null && _player is not null)
+                {
+                    _tracers.Draw(
+                        _player.Ballistics,
+                        eye,
+                        projection,
+                        smoothPresentation ? tickBlend : 1f);
+
+                    // The finite guard's confession, rate-limited: a growing count is a NaN reaching
+                    // the tracer geometry -- the exact stuff one-frame black squares were made of.
+                    if (_tracers.SkippedQuads > _tracerSkipsLogged
+                        && (_tracerSkipsLogged == 0 || _tracers.SkippedQuads - _tracerSkipsLogged >= 100))
+                    {
+                        _tracerSkipsLogged = _tracers.SkippedQuads;
+                        _logger.Warning(
+                            "Tracer",
+                            $"{_tracers.SkippedQuads} tracer quad(s) carried a non-finite value and were not drawn.");
+                    }
+                }
+
+                // The soldiers' muzzle flames, for the same reason: drawn from the soldier pass they
+                // landed in the G-buffer and shaded as scenery -- the one-frame black square at a
+                // firing guard's muzzle. Light draws over the lit scene.
+                (_soldiers ?? _backdropSoldiers)?.DrawMuzzleFlashes(eye, projection);
+
+                // The impact bursts: dust hazes over the scene, spark light over the haze.
+                _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
                 // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
                 // then ask the human where the weapon is and draw that. Only in player mode, because the
@@ -2465,14 +2579,23 @@ internal sealed partial class DesktopGame : IDisposable
                         batch.Begin();
                         if (_hud is { IsReady: true } retailHud)
                         {
-                            retailHud.Draw(
-                                batch,
-                                carried.InHand?.Weapon,
-                                carried.InHand?.Gun.RoundsInClip ?? 0,
-                                carried.InHand is { } held ? held.Gun.Reserve(carried.Ammunition) : 0,
-                                _window.Width,
-                                _window.Height,
-                                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                            // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's
+                            // latch branch never calls the parent handler.
+                            if (_player.IsSniperScoped)
+                            {
+                                retailHud.DrawSniperScope(batch, _window.Width, _window.Height);
+                            }
+                            else
+                            {
+                                retailHud.Draw(
+                                    batch,
+                                    carried.InHand?.Weapon,
+                                    carried.InHand?.Gun.RoundsInClip ?? 0,
+                                    carried.InHand is { } held ? held.Gun.Reserve(carried.Ammunition) : 0,
+                                    _window.Width,
+                                    _window.Height,
+                                    UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                            }
                         }
 
                         batch.End();
@@ -2682,9 +2805,40 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
+                // The flashbang's whiteout, over even the damage wash: at strength 2 the screen is
+                // solid white until the fall brings it under one; a merely-seen flash starts at one
+                // and thins from the first frame. Uniform, unlike the wash -- light has no corner.
+                if (_flashbangStrength > 0f)
+                {
+                    byte whiteAlpha = (byte)Math.Clamp((int)(Math.Min(_flashbangStrength, 1f) * 255f), 0, 255);
+                    Bgra32 white = new(255, 255, 255, whiteAlpha);
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    batch.DrawQuad(
+                        TextureHandle.None,
+                        new Vertex2D(0f, 0f, 0f, 0f, white),
+                        new Vertex2D(_window.Width, 0f, 1f, 0f, white),
+                        new Vertex2D(_window.Width, _window.Height, 1f, 1f, white),
+                        new Vertex2D(0f, _window.Height, 0f, 1f, white));
+                    batch.End();
+                }
+
                 // The modern HUD is intentionally the last gameplay overlay. Rendering it only after the
                 // scene resolve, close foreground device and damage wash means no hand, weapon, world mesh
                 // or post-process pass can cover it.
+                // The scope overlay under the modern HUD: the retail sprite machinery draws it in
+                // both HUD flavours, so the scope is the scope whatever the player's UI taste.
+                if (remasterHud
+                    && showFirstPersonHud
+                    && _player is { IsSniperScoped: true }
+                    && _hud is { IsReady: true } scopeHud)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    scopeHud.DrawSniperScope(batch, _window.Width, _window.Height);
+                    batch.End();
+                }
+
                 if (remasterHud
                     && showFirstPersonHud
                     && _player is { Weapons: { } modernCarried }
@@ -3106,6 +3260,9 @@ internal sealed partial class DesktopGame : IDisposable
         _tacticalComputer?.Dispose();
         _messages?.Dispose();
         _marks?.Dispose();
+        _tracers?.Dispose();
+        _impactParticles?.Dispose();
+        _grenadeRenderer?.Dispose();
         _renderer?.Dispose();
         _arms?.Dispose();
         _detailMaps?.Dispose();

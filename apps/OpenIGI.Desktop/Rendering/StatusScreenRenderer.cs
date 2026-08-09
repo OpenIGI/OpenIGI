@@ -38,6 +38,14 @@ public sealed class StatusScreenRenderer : IDisposable
     /// </remarks>
     public const string FontArchive = "LOCAL:menusystem/menusystem.res";
 
+    /// <summary>The game's global sprite archive, the third place a sprite is looked for.</summary>
+    /// <remarks>
+    /// The original's by-name sprite loader (<c>0x4169D0</c>) reads from here — it is where the
+    /// Dragunov's <c>snipersight</c> overlay and the other non-HUD sprites live, which
+    /// <c>status.res</c> does not carry.
+    /// </remarks>
+    public const string SpriteArchive = "LOCAL:common/sprites/sprites.res";
+
     /// <summary>The font the readout is set in.</summary>
     /// <remarks>
     /// One of <c>font1</c>, <c>font3</c> and <c>font4</c>, which are the only fonts the game ships.
@@ -51,6 +59,7 @@ public sealed class StatusScreenRenderer : IDisposable
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
     private IresArchive? _archive;
     private IresArchive? _fontArchive;
+    private IresArchive? _spriteArchive;
     private BitmapTextRenderer? _font;
     private float _actionPulsePhase;
     private bool _disposed;
@@ -105,6 +114,16 @@ public sealed class StatusScreenRenderer : IDisposable
             else
             {
                 _logger.Warning(LogCategory, $"No font archive at {FontArchive}; the readout has no text.");
+            }
+
+            // And the global sprites -- the scope overlay lives here, not in status.res.
+            if (fileSystem.Exists(SpriteArchive))
+            {
+                _spriteArchive = IresArchive.Read(fileSystem.ReadAllBytes(SpriteArchive));
+            }
+            else
+            {
+                _logger.Warning(LogCategory, $"No sprite archive at {SpriteArchive}; the scope overlay is absent.");
             }
 
             return true;
@@ -221,6 +240,71 @@ public sealed class StatusScreenRenderer : IDisposable
         }
     }
 
+    /// <summary>Draws the Dragunov's scope overlay: the circular mask and the two hairlines.</summary>
+    /// <param name="batch">The 2D batch, already begun.</param>
+    /// <param name="screenWidth">The window width in pixels.</param>
+    /// <param name="screenHeight">The window height.</param>
+    /// <remarks>
+    /// <para>
+    /// <c>0x473040</c>, drawn while the scope latch is up — and INSTEAD of the ordinary weapon HUD,
+    /// which that handler skips entirely. <c>snipersight.spr</c> is one quarter of the circular
+    /// mask, drawn four times mirrored about the screen's centre; <c>snipersight_x</c> and
+    /// <c>_y</c> are the hairlines, stretched across the full width and height at their own pixel
+    /// thickness. Each quadrant is overscanned by the original's own margin — screen width over
+    /// sprite width — so the quarters meet at the centre with no seam at any aspect.
+    /// </para>
+    /// <para>All five draws use the retail modulate of 128, which is this renderer's neutral.</para>
+    /// </remarks>
+    public void DrawSniperScope(SpriteBatch batch, int screenWidth, int screenHeight)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(batch);
+
+        if (Sprite("snipersight.spr") is not { } mask || mask.Asset.Frames.Count == 0)
+        {
+            return;
+        }
+
+        SpriteFrame quarter = mask.Asset.Frames[0];
+        float overscan = (float)screenWidth / quarter.Width;
+        float halfWidth = screenWidth * 0.5f;
+        float halfHeight = screenHeight * 0.5f;
+        float scaleX = (halfWidth + overscan) / quarter.Width;
+        float scaleY = (halfHeight + overscan) / quarter.Height;
+
+        Bgra32 neutral = BitmapTextRenderer.NeutralColor;
+        mask.DrawFrame(batch, quarter, -overscan, -overscan, scaleX, scaleY, neutral);
+        mask.DrawFrame(batch, quarter, screenWidth + overscan, -overscan, -scaleX, scaleY, neutral);
+        mask.DrawFrame(batch, quarter, -overscan, screenHeight + overscan, scaleX, -scaleY, neutral);
+        mask.DrawFrame(batch, quarter, screenWidth + overscan, screenHeight + overscan, -scaleX, -scaleY, neutral);
+
+        if (Sprite("snipersight_x.spr") is { } horizontal && horizontal.Asset.Frames.Count > 0)
+        {
+            SpriteFrame line = horizontal.Asset.Frames[0];
+            horizontal.DrawFrame(
+                batch,
+                line,
+                0f,
+                halfHeight - (line.Height * 0.5f),
+                (float)screenWidth / line.Width,
+                1f,
+                neutral);
+        }
+
+        if (Sprite("snipersight_y.spr") is { } vertical && vertical.Asset.Frames.Count > 0)
+        {
+            SpriteFrame line = vertical.Asset.Frames[0];
+            vertical.DrawFrame(
+                batch,
+                line,
+                halfWidth - (line.Width * 0.5f),
+                0f,
+                1f,
+                (float)screenHeight / line.Height,
+                neutral);
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -239,6 +323,7 @@ public sealed class StatusScreenRenderer : IDisposable
         _font = null;
         _archive = null;
         _fontArchive = null;
+        _spriteArchive = null;
     }
 
     // The icon is chosen by WEAPON ID -- 0x479D20 switches on the record's first field and picks one of
@@ -607,7 +692,7 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         SpriteResource? resource = null;
-        IresEntry? entry = Find(_archive, name) ?? Find(_fontArchive, name);
+        IresEntry? entry = Find(_archive, name) ?? Find(_fontArchive, name) ?? Find(_spriteArchive, name);
         if (entry is not null)
         {
             try

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using OpenIGI.Core.Diagnostics;
 
 namespace OpenIGI.Desktop;
@@ -36,7 +37,7 @@ public readonly record struct MenuCameraSpec(
 /// showcase camera for a level can be re-tuned by flying the free camera with <c>-camlog</c> and editing
 /// the JSON, with no rebuild — the same "data, not code" reasoning the fog presets and LUTs follow.
 /// </remarks>
-public sealed class MenuCameraLibrary
+public sealed partial class MenuCameraLibrary
 {
     private readonly Dictionary<int, MenuCameraSpec> _byMission;
     private readonly Dictionary<int, IReadOnlyList<ShowcasePoint>> _pointsByMission;
@@ -63,13 +64,6 @@ public sealed class MenuCameraLibrary
     /// worse than one that fails loudly, which is what this being an explicit option rather than an
     /// implicit default is meant to keep visible.
     /// </remarks>
-    private static readonly JsonSerializerOptions ReadOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
     /// <summary>Loads the library from a JSON file, falling back to an empty one on any problem.</summary>
     /// <param name="path">The JSON file path.</param>
     /// <param name="logger">Where to report a load failure.</param>
@@ -83,7 +77,8 @@ public sealed class MenuCameraLibrary
 
         try
         {
-            Entry[]? entries = JsonSerializer.Deserialize<Entry[]>(File.ReadAllText(path), ReadOptions);
+            Entry[]? entries = JsonSerializer.Deserialize(
+                File.ReadAllText(path), MenuCameraJsonContext.Default.EntryArray);
             var map = new Dictionary<int, MenuCameraSpec>();
             var points = new Dictionary<int, IReadOnlyList<ShowcasePoint>>();
             foreach (Entry entry in entries ?? [])
@@ -155,4 +150,11 @@ public sealed class MenuCameraLibrary
         double Z,
         double Radius = 0.0,
         double Height = 0.0);
+
+    [JsonSourceGenerationOptions(
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true)]
+    [JsonSerializable(typeof(Entry[]))]
+    private sealed partial class MenuCameraJsonContext : JsonSerializerContext;
 }

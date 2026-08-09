@@ -17,6 +17,14 @@ namespace OpenIGI.Desktop;
 /// looks like and the bullet knows nothing about it.
 /// </para>
 /// <para>
+/// The geometry streams through ONE fixed-capacity mesh whose vertices are replaced in place each
+/// frame (<see cref="IGraphicsDevice.UpdateAnimatedMesh"/>), with each texture's marks drawn as an
+/// index range of it. The first version destroyed and re-created a mesh per texture group per frame
+/// and drew it in the same frame — the create-upload-draw churn that intermittently rasterises a
+/// one-frame garbage quad on a threaded driver, which is exactly what the tracer renderer had to be
+/// cured of. See <c>TracerTrailRenderer</c>.
+/// </para>
+/// <para>
 /// <b>Divergence.</b> The original hands each mark to the struck <i>object</i>, which owns it and
 /// draws it with its own geometry — so a mark on a moving door moves with the door. Here they are
 /// world-space quads in one buffer, which is right for the static scenery every level is mostly made
@@ -34,12 +42,19 @@ public sealed class BulletMarkRenderer : IDisposable
     /// </remarks>
     public const float DepthBiasInMetres = 20.48f / 4096f;
 
+    /// <summary>The most marks one frame draws — the store's own bound, so nothing is ever dropped.</summary>
+    public const int MaximumMarks = BulletMarks.DefaultCapacity;
+
+    private const int MaximumVertices = MaximumMarks * 4;
+
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<Vertex3D> _vertices = [];
-    private readonly List<ushort> _indices = [];
+    private readonly Vertex3D[] _vertices = new Vertex3D[MaximumVertices];
+    private readonly List<(TextureHandle Texture, int FirstQuad, int QuadCount)> _batches = [];
+    private int _used;
+    private int _lastUsed;
     private MeshHandle _mesh = MeshHandle.None;
     private bool _disposed;
 
@@ -81,10 +96,6 @@ public sealed class BulletMarkRenderer : IDisposable
             return;
         }
 
-        _device.SetProjection(projection);
-        _device.SetCullMode(CullMode.None);
-        _device.SetDepthState(DepthState.TestOnly);
-
         // CAMERA-RELATIVE, and it has to be. A level sits tens of kilometres from the world origin --
         // level 1's ground is at 42 km -- and a float there resolves to about five millimetres. A
         // three-centimetre decal built in absolute world space has its corners snapped to that grid and
@@ -94,6 +105,9 @@ public sealed class BulletMarkRenderer : IDisposable
         // pure rotation and the two halves agree.
         Matrix4f modelView = camera.CreateModelView(camera.Position, Matrix3f.Identity);
 
+        _used = 0;
+        _batches.Clear();
+
         foreach (IGrouping<string, BulletMark> group in marks.Marks.GroupBy(m => m.Texture, StringComparer.OrdinalIgnoreCase))
         {
             TextureHandle texture = GetTexture(group.Key);
@@ -102,36 +116,67 @@ public sealed class BulletMarkRenderer : IDisposable
                 continue;
             }
 
-            Build(group, camera.Position);
-            if (_indices.Count == 0)
+            int firstQuad = _used / 4;
+            foreach (BulletMark mark in group)
             {
-                continue;
+                AddMark(mark, camera.Position);
             }
 
-            try
+            int quadCount = (_used / 4) - firstQuad;
+            if (quadCount > 0)
             {
-                if (_mesh.IsValid)
-                {
-                    _device.DestroyMesh(_mesh);
-                }
+                _batches.Add((texture, firstQuad, quadCount));
+            }
+        }
 
-                _mesh = _device.CreateMesh(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_vertices), System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_indices));
+        if (_used == 0)
+        {
+            return;
+        }
+
+        // Whatever last frame wrote past this frame's count is degenerate-cleared, so the fixed index
+        // range never rasterises a stale quad. All-zero vertices are zero-area triangles.
+        if (_lastUsed > _used)
+        {
+            Array.Clear(_vertices, _used, _lastUsed - _used);
+        }
+
+        _lastUsed = _used;
+
+        _device.SetProjection(projection);
+        _device.SetCullMode(CullMode.None);
+        _device.SetDepthState(DepthState.TestOnly);
+
+        try
+        {
+            if (!_mesh.IsValid)
+            {
+                _mesh = _device.CreateAnimatedMesh(_vertices, BuildQuadIndices());
+            }
+
+            _device.UpdateAnimatedMesh(_mesh, _vertices);
+
+            // The animated mesh carries a previous-pose stream a decal has no use for; a stale
+            // soldier interpolation would drag every quad toward last frame's buffer.
+            _device.ClearPoseInterpolation();
+
+            foreach ((TextureHandle texture, int firstQuad, int quadCount) in _batches)
+            {
                 _device.DrawMesh(
                     _mesh,
-                    0,
-                    _indices.Count,
+                    firstQuad * 6,
+                    quadCount * 6,
                     modelView,
                     texture,
                     TextureHandle.None,
                     BlendMode.AlphaBlend);
 
-                LastDrawCount += _indices.Count / 6;
+                LastDrawCount += quadCount;
             }
-            catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-            {
-                _logger.Warning(LogCategory, $"Marks for '{group.Key}' did not upload: {ex.Message}");
-                return;
-            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+        {
+            _logger.Warning(LogCategory, $"The marks did not upload: {ex.Message}");
         }
 
         _device.SetDepthState(DepthState.TestAndWrite);
@@ -164,52 +209,58 @@ public sealed class BulletMarkRenderer : IDisposable
         _textures.Clear();
     }
 
-    private void Build(IEnumerable<BulletMark> marks, Vector3d eye)
+    // The index pattern is static -- quad n is vertices 4n..4n+3 -- so it is built once, at the size
+    // the mesh keeps for its whole life.
+    private static ushort[] BuildQuadIndices()
     {
-        _vertices.Clear();
-        _indices.Clear();
-
-        foreach (BulletMark mark in marks)
+        ushort[] indices = new ushort[MaximumMarks * 6];
+        for (int quad = 0; quad < MaximumMarks; quad++)
         {
-            Vector3f normal = Normalise(mark.Normal);
-
-            // Any two axes perpendicular to the normal will do -- a bullet hole has no up. Picking the
-            // world axis the normal leans on least is what keeps the cross product well conditioned.
-            Vector3f reference = MathF.Abs(normal.Z) < 0.9f
-                ? new Vector3f(0f, 0f, 1f)
-                : new Vector3f(1f, 0f, 0f);
-
-            Vector3f right = Normalise(Cross(reference, normal));
-            Vector3f up = Normalise(Cross(normal, right));
-
-            float half = (float)(mark.SizeInUnits / WorldScene.UnitsPerMetre * 0.5);
-            Vector3d centre = new(
-                (mark.Position.X / WorldScene.UnitsPerMetre) + (normal.X * DepthBiasInMetres) - eye.X,
-                (mark.Position.Y / WorldScene.UnitsPerMetre) + (normal.Y * DepthBiasInMetres) - eye.Y,
-                (mark.Position.Z / WorldScene.UnitsPerMetre) + (normal.Z * DepthBiasInMetres) - eye.Z);
-
-            // A mesh is one 16-bit index buffer, so a group stops at the last quad that fits.
-            if (_vertices.Count + 4 > ushort.MaxValue)
-            {
-                return;
-            }
-
-            ushort b = (ushort)_vertices.Count;
-            Add(centre, right, up, normal, -half, -half, 0f, 1f);
-            Add(centre, right, up, normal, half, -half, 1f, 1f);
-            Add(centre, right, up, normal, half, half, 1f, 0f);
-            Add(centre, right, up, normal, -half, half, 0f, 0f);
-
-            _indices.Add(b);
-            _indices.Add((ushort)(b + 1));
-            _indices.Add((ushort)(b + 2));
-            _indices.Add(b);
-            _indices.Add((ushort)(b + 2));
-            _indices.Add((ushort)(b + 3));
+            int b = quad * 4;
+            int i = quad * 6;
+            indices[i] = (ushort)b;
+            indices[i + 1] = (ushort)(b + 1);
+            indices[i + 2] = (ushort)(b + 2);
+            indices[i + 3] = (ushort)b;
+            indices[i + 4] = (ushort)(b + 2);
+            indices[i + 5] = (ushort)(b + 3);
         }
+
+        return indices;
     }
 
-    private void Add(
+    private void AddMark(in BulletMark mark, Vector3d eye)
+    {
+        if (_used + 4 > MaximumVertices)
+        {
+            return;
+        }
+
+        Vector3f normal = Normalise(mark.Normal);
+
+        // Any two axes perpendicular to the normal will do -- a bullet hole has no up. Picking the
+        // world axis the normal leans on least is what keeps the cross product well conditioned.
+        Vector3f reference = MathF.Abs(normal.Z) < 0.9f
+            ? new Vector3f(0f, 0f, 1f)
+            : new Vector3f(1f, 0f, 0f);
+
+        Vector3f right = Normalise(Cross(reference, normal));
+        Vector3f up = Normalise(Cross(normal, right));
+
+        float half = (float)(mark.SizeInUnits / WorldScene.UnitsPerMetre * 0.5);
+        Vector3d centre = new(
+            (mark.Position.X / WorldScene.UnitsPerMetre) + (normal.X * DepthBiasInMetres) - eye.X,
+            (mark.Position.Y / WorldScene.UnitsPerMetre) + (normal.Y * DepthBiasInMetres) - eye.Y,
+            (mark.Position.Z / WorldScene.UnitsPerMetre) + (normal.Z * DepthBiasInMetres) - eye.Z);
+
+        _vertices[_used] = Corner(centre, right, up, normal, -half, -half, 0f, 1f);
+        _vertices[_used + 1] = Corner(centre, right, up, normal, half, -half, 1f, 1f);
+        _vertices[_used + 2] = Corner(centre, right, up, normal, half, half, 1f, 0f);
+        _vertices[_used + 3] = Corner(centre, right, up, normal, -half, half, 0f, 0f);
+        _used += 4;
+    }
+
+    private static Vertex3D Corner(
         Vector3d centre,
         Vector3f right,
         Vector3f up,
@@ -218,7 +269,7 @@ public sealed class BulletMarkRenderer : IDisposable
         float y,
         float u,
         float v) =>
-        _vertices.Add(new Vertex3D(
+        new(
             new Vector3f(
                 (float)centre.X + (right.X * x) + (up.X * y),
                 (float)centre.Y + (right.Y * x) + (up.Y * y),
@@ -226,7 +277,7 @@ public sealed class BulletMarkRenderer : IDisposable
             normal,
             u,
             v,
-            colour: Bgra32.White));
+            colour: Bgra32.White);
 
     private static Vector3f Cross(Vector3f a, Vector3f b) => new(
         (a.Y * b.Z) - (a.Z * b.Y),

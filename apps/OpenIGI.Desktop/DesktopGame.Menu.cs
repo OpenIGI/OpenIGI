@@ -83,7 +83,7 @@ internal sealed partial class DesktopGame
         // is an offscreen target that is overwritten every frame, so a cast nobody can see pays the cost
         // where nobody can feel it.
         _backdropSoldiers?.Dispose();
-        _backdropSoldiers = new SoldierRenderer(_device, preview.Resources, _logger) { DetailMaps = _detailMaps };
+        _backdropSoldiers = new SoldierRenderer(_device, preview.Resources, _logger, _magic) { DetailMaps = _detailMaps };
         _backdropSoldiers.Load(
             preview.Mission,
             preview.LevelRoot,

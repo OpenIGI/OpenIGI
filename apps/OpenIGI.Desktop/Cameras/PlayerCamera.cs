@@ -1,8 +1,10 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Input;
 using OpenIGI.Rendering;
@@ -57,7 +59,10 @@ public sealed class PlayerCamera
     private readonly PlayerInputState _input = new();
     private readonly IgiRandom _random = new();
     private readonly Mp5SightZoom _sightZoom = new();
+    private readonly DragunovScope _dragunovScope = new();
     private readonly List<GunImpact> _impacts = [];
+    private readonly BallisticSimulation _ballistics = new();
+    private readonly GrenadeSimulation _grenades = new();
     private readonly HumanLadderClimb _climb = new();
     private HumanLocomotionAnimator? _animator;
     private ObjectCollisionIndex? _walls;
@@ -122,6 +127,28 @@ public sealed class PlayerCamera
 
     /// <summary>Gets the marks rounds have left on the world.</summary>
     public BulletMarks Marks { get; } = new();
+
+    /// <summary>Gets the rounds in flight under <c>g_ballistics</c>, for the tracer renderer.</summary>
+    /// <remarks>Empty whenever the option is off — nothing is ever spawned into it.</remarks>
+    public BallisticSimulation Ballistics => _ballistics;
+
+    /// <summary>Gets whether the Dragunov's scope is open, for the HUD's overlay.</summary>
+    public bool IsSniperScoped => _dragunovScope.IsScoped;
+
+    /// <summary>Gets the grenades in the air, both the player's and the AI's.</summary>
+    /// <remarks>
+    /// One simulation for both throwers so there is one place to tick, draw and detonate from — the
+    /// soldiers spawn their lobs into it through the renderer's wiring.
+    /// </remarks>
+    public GrenadeSimulation Grenades => _grenades;
+
+    /// <summary>Gets or sets what a grenade bounces off — the world <b>including the terrain</b>.</summary>
+    /// <remarks>
+    /// Deliberately not <see cref="PlayerBody.Walls"/>: that is the object index alone, because the
+    /// body meets the terrain through its own ground query. A grenade has no ground query — without
+    /// the terrain in its cast it falls straight through the floor of the world.
+    /// </remarks>
+    public WorldRayCast? GrenadeWalls { get; set; }
 
     /// <summary>Gets or sets what offers this player's rounds to the humans in the world.</summary>
     /// <remarks>
@@ -820,6 +847,10 @@ public sealed class PlayerCamera
         // 0x462E50, which HumanPlayer_Update calls after 0x464BD0 has committed the view.
         ResolveFire();
 
+        // After the fire, so a round spawned this tick flies its first segment in the same tick --
+        // otherwise every shot would carry a one-tick delay on top of its real travel time.
+        TickBallistics();
+
         // After the fire has (possibly) started a new clip, so the pair describes what this tick
         // actually shows.
         CaptureViewTickState();
@@ -1430,11 +1461,37 @@ public sealed class PlayerCamera
 
         if (_view is not null)
         {
-            SightZoomFrame zoom = _sightZoom.Tick(
-                _weapons?.InHand?.Weapon,
-                _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
-                _view.TanX,
-                _view.ViewModelTanX);
+            // Two machines share the alternate-fire action and the weapon in hand picks which one
+            // answers: the MP5's toggled sight, or the Dragunov's held scope. The idle one is still
+            // ticked with the current weapon so its own weapon-change reset fires; its answer is a
+            // default frame and is discarded.
+            WeaponType? heldWeapon = _weapons?.InHand?.Weapon;
+            bool dragunov = heldWeapon is not null
+                && string.Equals(heldWeapon.Weapon.TypeName, DragunovScope.TaskType, StringComparison.Ordinal);
+
+            SightZoomFrame zoom;
+            if (dragunov)
+            {
+                _ = _sightZoom.Tick(heldWeapon, false, _view.TanX, _view.ViewModelTanX);
+                zoom = _dragunovScope.Tick(
+                    heldWeapon,
+                    _input.Current.IsSet(PlayerInputSlot.AlternateFire),
+                    _input.Previous.IsSet(PlayerInputSlot.AlternateFire),
+                    _input.Current.IsSet(PlayerInputSlot.ZoomIn),
+                    _input.Current.IsSet(PlayerInputSlot.ZoomOut),
+                    _view.TanX,
+                    _view.ViewModelTanX);
+            }
+            else
+            {
+                _ = _dragunovScope.Tick(heldWeapon, false, false, false, false, _view.TanX, _view.ViewModelTanX);
+                zoom = _sightZoom.Tick(
+                    heldWeapon,
+                    _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
+                    _view.TanX,
+                    _view.ViewModelTanX);
+            }
+
             _view.TanX = zoom.TanX;
             _view.ViewModelTanX = zoom.ViewModelTanX;
         }
@@ -1451,7 +1508,10 @@ public sealed class PlayerCamera
         Vector3f right = new(m.M11, m.M21, m.M31);
         Vector3f up = new(m.M13, m.M23, m.M33);
 
-        if (!_weapons.ResolveFire(_view.Eye, forward, right, up))
+        // A scoped rifle is braced: 0x472E50 multiplies the round's sampled kick by 0.05 before the
+        // accumulators see it, and this is the same factor at the same point.
+        float recoilScale = _dragunovScope.IsScoped ? DragunovScope.ScopedRecoilFactor : 1f;
+        if (!_weapons.ResolveFire(_view.Eye, forward, right, up, recoilScale))
         {
             return;
         }
@@ -1462,9 +1522,118 @@ public sealed class PlayerCamera
         // 0x45D3C0 records a shotgun kill as a throw and everything else as a crumple, and the death
         // state picks a different family of clips for each.
         WeaponCategory category = _weapons.InHand?.Weapon.Category ?? WeaponCategory.Gun;
+
+        // A thrown round is a GRENADE, and a grenade was never hit-scan in the original either --
+        // it is a physics object with a four-second fuse. It flies the same on every profile.
+        WeaponType? thrownWeapon = _weapons.InHand?.Weapon;
+        if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.Grenade)
+        {
+            // The physics table keys the explosion type by MODEL: 135_01_1 is the frag, 137_01_1
+            // the flashbang.
+            GrenadeExplosionType explosion = string.Equals(thrownWeapon.GunModel, "137_01_1", StringComparison.OrdinalIgnoreCase)
+                ? GrenadeExplosionType.Flashbang
+                : GrenadeExplosionType.Normal;
+
+            // The speed is the CHARGE'S: retail winds the throw up while fire is held and releases
+            // on the retail power curve, up to the table's own fifteen metres a second.
+            float throwSpeed = PlayerWeapons.ChargedThrowSpeed(
+                thrownWeapon.MuzzleVelocity, _weapons.ThrowChargeTicks);
+
+            foreach (GunProjectile shot in _weapons.Shots)
+            {
+                _grenades.Spawn(shot.Origin, shot.Direction, throwSpeed, explosion);
+            }
+
+            return;
+        }
+
+        // The opt-in fork. With g_ballistics on, a round that can fly is spawned into the simulation
+        // instead of being resolved here -- it arrives ticks later, in TickBallistics. A weapon no
+        // profile accepts (the knife, a rocket carrier) falls through to the retail ray either way,
+        // so the option never silently disarms anything.
+        WeaponType? held = _weapons.InHand?.Weapon;
+        AmmoType? ammo = _weapons.InHand?.Gun.Ammo;
+        bool simulate = GameplayCVars.Ballistics.Value
+            && held is not null
+            && BallisticProfile.TryCreate(held, ammo) is not null;
+
+        // Where the round is DRAWN from: the gun sits right of and below the eye the simulation
+        // fires from, and a tracer leaving dead screen centre is invisible -- it recedes into a
+        // point behind the crosshair. The offset is presentation only; the flight is the retail
+        // eye-origin geometry either way.
+        Vector3d visualOffset = new(
+            ((right.X * 0.22) - (up.X * 0.16)) * UnitsPerMetre,
+            ((right.Y * 0.22) - (up.Y * 0.16)) * UnitsPerMetre,
+            ((right.Z * 0.22) - (up.Z * 0.16)) * UnitsPerMetre);
+
         foreach (GunProjectile shot in _weapons.Shots)
         {
-            _impacts.Add(Trace(shot, damageFactor, category));
+            if (simulate)
+            {
+                _ballistics.Spawn(
+                    shot,
+                    held!,
+                    ammo,
+                    damageFactor,
+                    category,
+                    visualOffset,
+                    GameplayCVars.BallisticsMinimumFlight.Value);
+            }
+            else
+            {
+                _impacts.Add(Trace(shot, damageFactor, category));
+            }
+        }
+    }
+
+    /// <summary>Advances the ballistic rounds and lands whatever arrived this tick.</summary>
+    /// <remarks>
+    /// The impact side-effects are exactly <see cref="Trace"/>'s, applied on the tick the round
+    /// arrives rather than the tick it was fired: the hit counters, the AI's ground-impact notice and
+    /// the decal. Damage needs nothing here — the <see cref="Humans"/> delegate applied it during the
+    /// cast, the same way it does for a ray.
+    /// </remarks>
+    private void TickBallistics()
+    {
+        // The grenades fly every tick regardless of the tracer option -- they are the retail
+        // behaviour, not a remaster one. Detonations are drained by the game, which owns the
+        // effects and the blast's victims.
+        _grenades.Tick(GrenadeWalls ?? _body.Walls);
+
+        if (_ballistics.Rounds.Count == 0)
+        {
+            return;
+        }
+
+        WorldRayCast? walls = _body.Walls;
+        _ballistics.Tick(
+            walls,
+            Humans,
+            GameplayCVars.BallisticsGravity.Value,
+            GameplayCVars.BallisticsDrag.Value);
+
+        foreach (BallisticImpact impact in _ballistics.Impacts)
+        {
+            if (impact.StruckHuman)
+            {
+                HumanHits++;
+                LastHumanZone = impact.Human.Zone;
+            }
+            else if (impact.StruckWall)
+            {
+                GroundImpact?.Invoke(impact.Wall.Position);
+
+                // The surface decides what the hit looks like, out of the material its own face names.
+                if (_materials is { } materials)
+                {
+                    Marks.TryAdd(impact.Wall, materials);
+                }
+            }
+
+            _impacts.Add(new GunImpact(
+                impact.Position,
+                impact.StruckHuman || impact.StruckWall,
+                impact.RangeInUnits));
         }
     }
 
@@ -1524,8 +1693,14 @@ public sealed class PlayerCamera
         Set(ref frame, PlayerInputSlot.MoveDown, keys.IsDown(KeyCode.S));
         Set(ref frame, PlayerInputSlot.Fire, input.Mouse.IsDown(MouseButton.Left));
         // The retail default profile binds AlternateFire to KEY_BACKSPACE. GunMP5SD consumes its
-        // rising edge as the sight toggle; the M16A2 consumes the same action for the M203.
+        // rising edge as the sight toggle; the M16A2 consumes the same action for the M203; the
+        // Dragunov opens its scope on the edge and keeps zooming while it is held.
         Set(ref frame, PlayerInputSlot.AlternateFire, keys.IsDown(KeyCode.Backspace));
+
+        // The scope's fine adjustment, on the wheel: retail carries these as input slots 14 and 15,
+        // which only the Dragunov's handler (and the binoculars') ever reads.
+        Set(ref frame, PlayerInputSlot.ZoomIn, input.Mouse.WheelDelta > 0f);
+        Set(ref frame, PlayerInputSlot.ZoomOut, input.Mouse.WheelDelta < 0f);
         Set(ref frame, PlayerInputSlot.Reload, keys.IsDown(KeyCode.R));
         Set(ref frame, PlayerInputSlot.Activate, keys.IsDown(KeyCode.E));
         Set(ref frame, PlayerInputSlot.Crouch, keys.IsDown(KeyCode.LeftControl) || keys.IsDown(KeyCode.RightControl));
