@@ -1,4 +1,5 @@
 using OpenIGI.Audio;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Game.Weapons;
 
@@ -22,19 +23,12 @@ namespace OpenIGI.Desktop.Audio;
 /// </remarks>
 internal sealed class WeaponSoundPlayer
 {
-    /// <summary>How many ticks of not firing end an automatic's loop.</summary>
-    /// <remarks>
-    /// One tick of silence is not enough: a burst weapon has gaps between rounds by construction, and
-    /// cutting the loop in one of them would stutter. Two ticks is longer than any shipped weapon's
-    /// round interval and shorter than a deliberate release.
-    /// </remarks>
-    private const int TicksBeforeLoopEnds = 2;
-
     private readonly SoundSystem _sounds;
 
     private AudioVoiceHandle _loop;
     private WeaponType? _looping;
     private int _quietTicks;
+    private Vector3d? _positionInUnits;
 
     /// <summary>Initializes a new instance of the <see cref="WeaponSoundPlayer"/> class.</summary>
     /// <param name="sounds">Where sounds are played.</param>
@@ -48,8 +42,11 @@ internal sealed class WeaponSoundPlayer
     /// <summary>Advances one tick of a weapon's fire sound.</summary>
     /// <param name="firedThisTick">Whether a round left the barrel this tick.</param>
     /// <param name="weapon">The weapon in hand, or <see langword="null"/> when there is none.</param>
-    public void Tick(bool firedThisTick, WeaponType? weapon)
+    /// <param name="positionInUnits">The world emitter for an AI weapon; null for the player's gun.</param>
+    public void Tick(bool firedThisTick, WeaponType? weapon, Vector3d? positionInUnits = null)
     {
+        _positionInUnits = positionInUnits;
+
         // A weapon change mid-burst has to take its loop with it, or an AK's loop keeps running under a
         // drawn knife.
         if (_looping is not null && !ReferenceEquals(_looping, weapon))
@@ -84,13 +81,16 @@ internal sealed class WeaponSoundPlayer
             {
                 // Nothing to re-aim -- the gun is in the listener's own hands. A soldier's weapon will
                 // want a positional voice that follows the shooter, and that is a different caller.
-                _sounds.SetVoiceParameters(_loop, Parameters(looping: true));
+                _sounds.SetVoiceParameters(_loop, Parameters(weapon.FireSound, looping: true));
             }
 
             return;
         }
 
-        if (_looping is not null && ++_quietTicks >= TicksBeforeLoopEnds)
+        // A loop must survive the weapon's own cadence gap. At 400 RPM that gap is four simulation
+        // ticks, so the old fixed two-tick threshold stopped and restarted the sample between rounds.
+        int endAfter = Math.Max(2, GunTiming.TicksPerRound(weapon.RoundsPerMinute) + 1);
+        if (_looping is not null && ++_quietTicks >= endAfter)
         {
             EndLoop();
         }
@@ -108,6 +108,7 @@ internal sealed class WeaponSoundPlayer
         _loop = AudioVoiceHandle.None;
         _looping = null;
         _quietTicks = 0;
+        _positionInUnits = null;
     }
 
     private void EndLoop()
@@ -131,7 +132,13 @@ internal sealed class WeaponSoundPlayer
     private AudioVoiceHandle Play(string name, bool looping = false) =>
         string.IsNullOrEmpty(name)
             ? AudioVoiceHandle.None
-            : _sounds.Play(name, Parameters(looping));
+            : _sounds.Play(BankKey(name), Parameters(name, looping));
+
+    private string BankKey(string name) =>
+        _sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
+            && definition is { IsPlayable: true }
+                ? definition.BankKey
+                : name;
 
     /// <summary>The voice a shot is played on.</summary>
     /// <remarks>
@@ -148,16 +155,33 @@ internal sealed class WeaponSoundPlayer
     /// source sitting on the listener is zero. A flat centred voice reaches the same place directly.
     /// </para>
     /// </remarks>
-    private static VoiceParameters Parameters(bool looping) =>
-        VoiceParameters.Default with
+    private VoiceParameters Parameters(string name, bool looping)
+    {
+        float gain = 1f;
+        float minimum = 1f;
+        float maximum = 50f;
+        if (_sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
+            && definition is { IsPlayable: true })
+        {
+            gain = definition.Volume;
+            minimum = definition.MinimumDistanceMetres;
+            maximum = definition.MaximumDistanceMetres;
+            looping |= definition.Loop;
+        }
+
+        VoiceParameters parameters = VoiceParameters.Default with
         {
             Category = SoundCategory.Effects,
+            Gain = gain,
             Looping = looping,
-            IsPositional = false,
-            Pan = 0f,
 
             // Well above ambience and footsteps. The player's own weapon going silent because a busy
             // level filled the pool is the single most noticeable way a mix can fail.
             Priority = 200,
         };
+
+        return _positionInUnits is { } position
+            ? parameters.At(SoundSystem.ToMetres(position), minimum, maximum)
+            : parameters with { IsPositional = false, Pan = 0f };
+    }
 }

@@ -34,6 +34,8 @@ public sealed class SoundSystem : IDisposable
     private readonly VirtualFileSystem _fileSystem;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, AudioBufferHandle> _buffers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (AudioFormat Format, byte[] Pcm)> _external = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, AudioBufferHandle> _externalBuffers = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _reportedMissing = new(StringComparer.Ordinal);
     private bool _disposed;
 
@@ -125,6 +127,83 @@ public sealed class SoundSystem : IDisposable
         }).At(ToMetres(positionInUnits), minimumDistanceInMetres, maximumDistanceInMetres);
 
         return Play(name, parameters);
+    }
+
+    /// <summary>Registers a sound that belongs to the port itself rather than to the retail data.</summary>
+    /// <param name="name">The name <see cref="PlayExternal"/> plays it by.</param>
+    /// <param name="format">The PCM's format.</param>
+    /// <param name="pcm">The raw PCM, kept so a mission teardown can re-upload it lazily.</param>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="pcm"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The remaster track's own assets — an added impact sound, say — arrive this way instead of
+    /// being spliced into the retail bank, so the bank remains exactly what the game data says.
+    /// </remarks>
+    public void RegisterExternal(string name, AudioFormat format, byte[] pcm)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(pcm);
+
+        if (_externalBuffers.Remove(name, out AudioBufferHandle stale))
+        {
+            _device.DestroyBuffer(stale);
+        }
+
+        _external[name] = (format, pcm);
+    }
+
+    /// <summary>Gets whether an external sound is registered under a name.</summary>
+    /// <param name="name">The name.</param>
+    /// <returns><see langword="true"/> when <see cref="PlayExternal"/> would find it.</returns>
+    public bool HasExternal(string name) => _external.ContainsKey(name);
+
+    /// <summary>Plays a registered external sound, positionally when given a place.</summary>
+    /// <param name="name">The name it was registered under.</param>
+    /// <param name="positionInUnits">Where the emitter is, in engine units, or <see langword="null"/> for flat.</param>
+    /// <param name="gain">The gain before distance.</param>
+    /// <param name="priority">Its importance when the voice pool is full.</param>
+    /// <param name="pitch">The playback ratio; 1 is the sound's own rate.</param>
+    /// <param name="minimumDistanceInMetres">The distance within which it plays at full gain.</param>
+    /// <param name="maximumDistanceInMetres">The distance beyond which it is silent.</param>
+    /// <returns>The voice, or <see cref="AudioVoiceHandle.None"/> when the name is unregistered.</returns>
+    public AudioVoiceHandle PlayExternal(
+        string name,
+        Vector3d? positionInUnits = null,
+        float gain = 1f,
+        int priority = 0,
+        float pitch = 1f,
+        float minimumDistanceInMetres = 2f,
+        float maximumDistanceInMetres = 60f)
+    {
+        if (string.IsNullOrEmpty(name) || !_external.TryGetValue(name, out (AudioFormat Format, byte[] Pcm) sound))
+        {
+            return AudioVoiceHandle.None;
+        }
+
+        if (!_externalBuffers.TryGetValue(name, out AudioBufferHandle buffer))
+        {
+            buffer = _device.CreateBuffer(sound.Format, sound.Pcm);
+            _externalBuffers[name] = buffer;
+        }
+
+        if (!buffer.IsValidHandle)
+        {
+            return AudioVoiceHandle.None;
+        }
+
+        VoiceParameters parameters = VoiceParameters.Default with
+        {
+            Gain = gain,
+            Priority = priority,
+            Pitch = pitch,
+        };
+
+        if (positionInUnits is { } emitter)
+        {
+            parameters = parameters.At(ToMetres(emitter), minimumDistanceInMetres, maximumDistanceInMetres);
+        }
+
+        return _device.Play(buffer, parameters);
     }
 
     /// <summary>Gets or sets the definitions names are resolved through.</summary>
@@ -232,7 +311,15 @@ public sealed class SoundSystem : IDisposable
             _device.DestroyBuffer(buffer);
         }
 
+        // The uploads go; the registered PCM stays, so the next mission re-uploads lazily exactly
+        // like the bank's own sounds.
+        foreach (AudioBufferHandle buffer in _externalBuffers.Values)
+        {
+            _device.DestroyBuffer(buffer);
+        }
+
         _buffers.Clear();
+        _externalBuffers.Clear();
         _reportedMissing.Clear();
     }
 

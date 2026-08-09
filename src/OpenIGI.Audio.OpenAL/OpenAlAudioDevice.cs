@@ -679,6 +679,23 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             orientation[4] = up.Y;
             orientation[5] = up.Z;
             al.SetListenerProperty(ListenerFloatArray.Orientation, orientation);
+
+            // The original recomputes every sound's apparent gain and pan EVERY TICK against the
+            // head as it is now (0x496E60). The vanilla path here instead parks a source-relative
+            // pan when a voice starts -- correct for the instant it starts and frozen from then on,
+            // so a long or looping sound kept the stereo image of wherever the head pointed when it
+            // BEGAN, and turning the camera changed nothing. Re-spatialising the live positional
+            // voices whenever the listener moves is what the original's per-tick recompute was.
+            if (!_options.Spatial)
+            {
+                foreach (OpenAlVoice voice in _voices)
+                {
+                    if (voice.IsActive && voice.Parameters.IsPositional)
+                    {
+                        ApplyParameters(voice, voice.Parameters);
+                    }
+                }
+            }
         }
     }
 

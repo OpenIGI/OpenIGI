@@ -6,7 +6,11 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Game;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
+using OpenIGI.Game.Weapons.Ballistics;
 using OpenIGI.Game.World;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Rendering;
@@ -47,6 +51,25 @@ internal sealed partial class DesktopGame
 
     /// <summary>Makes the player's weapon sound. Null until the device is open.</summary>
     private WeaponSoundPlayer? _weaponSounds;
+
+    /// <summary>One automatic-loop owner per AI human, so simultaneous rifles never share a voice.</summary>
+    private readonly Dictionary<int, WeaponSoundPlayer> _soldierWeaponSounds = [];
+
+    private void TickSoldierWeaponSound(int runtimeId, bool fired, WeaponType? weapon, Vector3d position)
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        if (!_soldierWeaponSounds.TryGetValue(runtimeId, out WeaponSoundPlayer? player))
+        {
+            player = new WeaponSoundPlayer(_sounds);
+            _soldierWeaponSounds.Add(runtimeId, player);
+        }
+
+        player.Tick(fired, weapon, position);
+    }
 
     /// <summary>Dispatches the sounds authored as events in the player's current view-model clip.</summary>
     /// <remarks>
@@ -104,7 +127,9 @@ internal sealed partial class DesktopGame
         _soundBank = new SoundBank(_fileSystem, _logger);
         _sounds?.Dispose();
         _sounds = new SoundSystem(_audio, _soundBank, _fileSystem, _logger);
+        _soldierWeaponSounds.Clear();
         MountMenuSounds();
+        LoadExternalImpactSound();
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
         // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
@@ -222,6 +247,11 @@ internal sealed partial class DesktopGame
     private void ResetSoundsForMission()
     {
         _weaponSounds?.Reset();
+        foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
+        {
+            soldier.Reset();
+        }
+        _soldierWeaponSounds.Clear();
         _sounds?.UnloadBuffers();
         _soundBank?.Clear();
         MountMenuSounds();
@@ -246,6 +276,10 @@ internal sealed partial class DesktopGame
         // on a worker against its own file system, so this one has never been pointed at the level and
         // "MISSION:sounds" would not resolve at all.
         _fileSystem.SetAlias(VirtualFileSystem.MissionAlias, loaded.Descriptor.MissionAliasTarget);
+        if (!ReferenceEquals(_resourceFileSystem, _fileSystem))
+        {
+            _resourceFileSystem.SetAlias(VirtualFileSystem.MissionAlias, loaded.Descriptor.MissionAliasTarget);
+        }
 
         _soundBank.MountDirectory(MissionLoader.CommonSoundDirectory);
         _soundBank.MountDirectory(MissionLoader.MissionSoundDirectory);
@@ -392,6 +426,327 @@ internal sealed partial class DesktopGame
             step.PositionInUnits,
             pitch: FootstepSounds.Pitch(_soundRandom),
             priority: 40);
+    }
+
+    /// <summary>The name the remaster's own impact sound is registered and played under.</summary>
+    private const string CustomImpactSoundName = "remaster_bullet_impact";
+
+    /// <summary>The most custom impact sounds one tick starts.</summary>
+    /// <remarks>
+    /// The custom sound deliberately skips retail's global rand(6)+6-tick quiet spell — an automatic
+    /// rifle lands a round every couple of ticks, and a limit built for one impact a fifth of a
+    /// second swallowed most of a burst. What still needs a bound is the shotgun: thirty pellets
+    /// arrive on ONE tick, and thirty simultaneous copies of one sample is a 30× volume spike, not
+    /// thirty impacts. Six covers every automatic weapon's densest tick with room to spare.
+    /// </remarks>
+    private const int MaximumCustomImpactSoundsPerTick = 6;
+
+    /// <summary>Loads the port's own bullet-impact sound, when the asset ships beside the game.</summary>
+    /// <remarks>
+    /// A mono 16-bit PCM WAV under <c>Assets/sounds</c> — mono deliberately, because only a mono
+    /// source is positioned in 3D; a stereo buffer plays flat on the listener. Registered through
+    /// <see cref="SoundSystem.RegisterExternal"/> so the retail bank stays exactly what the game
+    /// data says. Missing file simply means the material table's own sounds carry on.
+    /// </remarks>
+    private void LoadExternalImpactSound()
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "sounds", "bullet-impact.wav");
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        byte[] bytes;
+        try
+        {
+            bytes = File.ReadAllBytes(path);
+        }
+        catch (IOException error)
+        {
+            _logger.Warning("Audio", $"Impact sound would not read: {error.Message}");
+            return;
+        }
+
+        if (!WavPcm.TryRead(bytes, out AudioFormat format, out byte[] pcm))
+        {
+            _logger.Warning("Audio", $"'{path}' is not an uncompressed PCM WAV; the material sounds stand.");
+            return;
+        }
+
+        _sounds.RegisterExternal(CustomImpactSoundName, format, pcm);
+        _logger.Information(
+            "Audio",
+            $"Impact sound: {format.SampleRate} Hz, {format.Channels} ch, {format.BitsPerSample}-bit, {pcm.Length} bytes.");
+    }
+
+    /// <summary>Plays what this tick's arrived ballistic rounds struck.</summary>
+    /// <remarks>
+    /// The retail rules through the retail data: the struck material's own six sounds, one picked at
+    /// random, and the whole set rate-limited globally so a burst into a wall does not stack six
+    /// samples — see <see cref="BulletImpactSounds"/>. A human resolves to the <c>Flesh</c> row; a
+    /// surface whose row names no sounds falls back to <c>Ground</c>, the same row a step on bare
+    /// terrain takes, because a terrain face names no material row of its own.
+    /// </remarks>
+    private void PlayBallisticImpactSounds()
+    {
+        if (_sounds is null
+            || _player is null
+            || _worldMaterials is null
+            || !GameplayCVars.BallisticsImpactSounds.Value)
+        {
+            return;
+        }
+
+        int customPlayedThisTick = 0;
+        foreach (BallisticImpact impact in _player.Ballistics.Impacts)
+        {
+            if (!impact.StruckHuman && !impact.StruckWall)
+            {
+                continue;
+            }
+
+            // The port's own impact sound, when its asset ships, takes every material for now --
+            // positional at the impact, pitch-jittered so a burst is not one sample five times.
+            // EVERY round of an automatic burst plays; only a same-tick pellet storm is capped.
+            // Per-material variants can hang off the same seam later.
+            if (_sounds.HasExternal(CustomImpactSoundName))
+            {
+                if (++customPlayedThisTick > MaximumCustomImpactSoundsPerTick)
+                {
+                    continue;
+                }
+
+                _sounds.PlayExternal(
+                    CustomImpactSoundName,
+                    impact.Position,
+                    gain: 0.85f,
+                    priority: 45,
+                    pitch: FootstepSounds.Pitch(_soundRandom),
+                    minimumDistanceInMetres: 2f,
+                    maximumDistanceInMetres: 70f);
+                continue;
+            }
+
+            // The retail limit is GLOBAL -- one timestamp for every impact of every round -- so the
+            // first strike of a burst speaks for all of it. It stays on the retail sounds only: it
+            // is the original's own restraint, not the added asset's.
+            if (_loop.Clock.TickCount < _impactSoundQuietUntil)
+            {
+                return;
+            }
+
+            string sound = string.Empty;
+            if (impact.StruckHuman)
+            {
+                if (_worldMaterials.TryGetByName(BulletImpactSounds.FleshMaterialName, out GameMaterial flesh))
+                {
+                    sound = BulletImpactSounds.Pick(flesh, _soundRandom);
+                }
+            }
+            else
+            {
+                if (_worldMaterials.TryGet(impact.Wall.Material, out GameMaterial struck))
+                {
+                    sound = BulletImpactSounds.Pick(struck, _soundRandom);
+                }
+
+                if (sound.Length == 0
+                    && _worldMaterials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground))
+                {
+                    sound = BulletImpactSounds.Pick(ground, _soundRandom);
+                }
+            }
+
+            if (sound.Length == 0)
+            {
+                continue;
+            }
+
+            _impactSoundQuietUntil = _loop.Clock.TickCount + BulletImpactSounds.QuietTicks(_soundRandom);
+            _sounds.PlayDefinition(
+                sound,
+                impact.Position,
+                pitch: FootstepSounds.Pitch(_soundRandom),
+                priority: 45);
+        }
+    }
+
+    /// <summary>Spawns the particle bursts for whatever ballistic rounds landed this tick.</summary>
+    /// <remarks>
+    /// Beside the impact sounds because it reads the same impacts and resolves the same material; a
+    /// human takes the flesh burst, with no surface normal to bias it.
+    /// </remarks>
+    private void SpawnBallisticImpactParticles()
+    {
+        if (_impactParticles is null || _player is null)
+        {
+            return;
+        }
+
+        float intensity = RenderCVars.ImpactParticles.Value;
+        if (!(intensity > 0f))
+        {
+            return;
+        }
+
+        foreach (BallisticImpact impact in _player.Ballistics.Impacts)
+        {
+            if (impact.StruckHuman)
+            {
+                _impactParticles.SpawnBurst(impact.Position, default, ImpactSurfaceKind.Flesh, intensity);
+            }
+            else if (impact.StruckWall)
+            {
+                string material = _worldMaterials is { } table
+                    && table.TryGet(impact.Wall.Material, out GameMaterial struck)
+                    ? struck.Name
+                    : string.Empty;
+                _impactParticles.SpawnBurst(
+                    impact.Wall.Position,
+                    impact.Wall.Normal,
+                    ImpactParticleRenderer.KindOf(material),
+                    intensity);
+            }
+        }
+    }
+
+    /// <summary>Applies and shows whatever grenades went off this tick.</summary>
+    /// <remarks>
+    /// <para>
+    /// The retail detonation, joined up from the reads: the blast damages every human by
+    /// <see cref="ExplosionDamage.Dose"/> on <b>zone 13</b> — soldiers through the renderer's
+    /// explosion path, the player through its own health — plays <c>explo_02_m</c> where it went
+    /// off, and wakes the neighbourhood's AI. A flashbang damages nobody; only the player is
+    /// affected (<see cref="Flashbang"/>), measured to the <b>eye</b>: any flash inside 25 m
+    /// registers, one inside its own radius blinds outright.
+    /// </para>
+    /// <para>
+    /// The visible fireball is this port's particle burst rather than the retail <c>1009_01_1</c>
+    /// fireball model — a recorded stand-in, the numbers around it retail.
+    /// </para>
+    /// </remarks>
+    private void ResolveGrenadeDetonations()
+    {
+        if (_player is null)
+        {
+            return;
+        }
+
+        foreach (GrenadeDetonation blast in _player.Grenades.Detonations)
+        {
+            // 122880 units -- the 30 m HUMANAI_DETECTIONEVENT_GUNSHOT_RANGE an unsuppressed shot
+            // carries; an explosion is at least as loud as the rifle that could have caused it.
+            _sounds?.PlayDefinition("explo_02_m", blast.Position, priority: 90);
+            _soldiers?.NotifyGunshot(blast.Position, 122880f);
+            _impactParticles?.SpawnExplosion(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
+
+            if (blast.Type == GrenadeExplosionType.Flashbang)
+            {
+                float eyeDistance = (float)(_player.EyeUnits - blast.Position).Length;
+                (float visible, float close) = Flashbang.Effect(eyeDistance, blast.RadiusUnits);
+                _flashbangStrength = Math.Max(_flashbangStrength, Math.Max(visible, close));
+                continue;
+            }
+
+            _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
+
+            // A blast in reach of a speaker takes it off the wall too.
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+
+            float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
+            float dose = ExplosionDamage.Dose(
+                playerDistance,
+                ExplosionDamage.EffectiveBodyRadius((float)HumanSeparation.RadiusInUnits),
+                blast.RadiusUnits,
+                blast.FalloffUnits,
+                blast.DamageFactor);
+            if (dose > 0f && !_playerHealth.IsDead)
+            {
+                _playerHealth.Apply(ExplosionDamage.Zone, dose);
+                _damageFlash.Hit();
+
+                // A blast that zeroes the health kills exactly the way a bullet does -- without
+                // this the player stood at zero for ever.
+                if (_playerHealth.IsDead)
+                {
+                    BeginPlayerDeath(blast.Position, ExplosionDamage.Zone, -1, WeaponCategory.Grenade);
+                }
+            }
+        }
+    }
+
+    /// <summary>Shoots out whatever alarm speaker an impact landed on.</summary>
+    /// <param name="impactUnits">Where the round or blast hit, in world units.</param>
+    /// <param name="radiusUnits">The destruction's reach — a bullet's touch by default.</param>
+    /// <remarks>
+    /// The retail speaker takes the ordinary damage message and dies with a small fit
+    /// (<c>0x43A5F0</c>): a five-burst spark explosion, its own report — the second of its two
+    /// sound parameters — and permanent silence, its <c>+417</c> byte set for good. The port plays
+    /// the same scene through its own pieces; the destroyed-model swap remains an open item.
+    /// </remarks>
+    private void DamageAlarmSpeakers(Vector3d impactUnits, float radiusUnits = AlarmSpeakerRegistry.HitRadiusUnits)
+    {
+        if (_alarmSpeakers?.TryDestroyAt(impactUnits, radiusUnits) is not { } destroyed)
+        {
+            return;
+        }
+
+        // Silenced on the spot, not on the next tick's sweep -- a shot speaker cuts mid-wail.
+        if (_sirenVoices.Remove(destroyed, out AudioVoiceHandle siren))
+        {
+            _sounds?.Stop(siren);
+        }
+
+        if (destroyed.DestructionSound.Length > 0)
+        {
+            _sounds?.PlayDefinition(destroyed.DestructionSound, destroyed.PositionUnits, priority: 60);
+        }
+
+        _impactParticles?.SpawnExplosion(destroyed.PositionUnits, 0.6f);
+        _logger.Information("Ai", "An alarm speaker was shot out.");
+    }
+
+    /// <summary>Keeps every alarm speaker's siren matched to its own expression, positionally.</summary>
+    /// <remarks>
+    /// <para>
+    /// The retail speaker spawns a looping sound child at its own position the tick its expression
+    /// turns true and destroys it the tick it turns false — so every siren in the level starts on
+    /// the SAME tick and each is heard from the wall it hangs on. This is that behaviour through
+    /// the port's voice pool: one held voice per sounding speaker, restarted if the bank's
+    /// definition happens not to loop, stopped on the falling edge.
+    /// </para>
+    /// <para>Destroying a speaker to silence it is not modelled yet; recorded as an open item.</para>
+    /// </remarks>
+    private void TickAlarmSpeakers()
+    {
+        if (_sounds is null || _alarmSpeakers is null)
+        {
+            return;
+        }
+
+        foreach (AlarmSpeaker speaker in _alarmSpeakers.Speakers)
+        {
+            bool on = _alarmSpeakers.IsOn(speaker) && speaker.SirenSound.Length > 0;
+            bool sounding = _sirenVoices.TryGetValue(speaker, out AudioVoiceHandle voice);
+
+            if (on && (!sounding || !_sounds.IsPlaying(voice)))
+            {
+                _sirenVoices[speaker] = _sounds.PlayDefinition(
+                    speaker.SirenSound,
+                    speaker.PositionUnits,
+                    priority: 70);
+            }
+            else if (!on && sounding)
+            {
+                _sounds.Stop(voice);
+                _sirenVoices.Remove(speaker);
+            }
+        }
     }
 
     /// <summary>Plays a door's sounds, and owns the one voice that has to be held and stopped.</summary>
