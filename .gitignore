@@ -38,7 +38,8 @@ Thumbs.db
 .codex/
 .skills/
 .opencode/
-.agents/
+.agents/*
+!.agents/skills/
 .cursor/
 .copilot/
 .continue/
@@ -83,6 +84,7 @@ a probe of the running original
 !/CONTRIBUTING.md
 !/AGENTS.md
 !src/OpenIGI.Generators/AnalyzerReleases.*.md
+!.github/**/*.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
@@ -95,3 +97,4 @@ a probe of the running original
 /scratch/
 NuGetPackages.config
 NuGet.config
+.agents
