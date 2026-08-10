@@ -57,6 +57,7 @@ a probe of the running original
 *.md
 !/README.md
 !/CONTRIBUTING.md
+!/AGENTS.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
