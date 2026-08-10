@@ -12,14 +12,38 @@ TestResults/
 *.user
 *.suo
 *.DotSettings.user
+*.userprefs
 
 # NuGet
 *.nupkg
 packages/
 
+# JS tooling (any frontend tooling committed to this repo)
+node_modules/
+.next/
+dist/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
 # OS
 Thumbs.db
 .DS_Store
+
+# AI agent tooling, config and caches
+.claude/
+.claude.json
+.codex/
+.skills/
+.opencode/
+.agents/
+.cursor/
+.copilot/
+.continue/
+*.har
+~/
 
 # Coverage / logs
 *.log
@@ -65,3 +89,8 @@ a probe of the running original
 
 # Reference captures and generated format notes kept beside the code but not carried here.
 /docs/
+
+# Scratch space for local build/run scripts and throwaway work.
+/scratch/
+NuGetPackages.config
+NuGet.config
