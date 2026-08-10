@@ -59,6 +59,12 @@ public sealed class WorldScene
     /// <summary>The security-camera task type, whose models are engine-supplied rather than declared.</summary>
     public const string SecurityCameraType = "SCamera";
 
+    /// <summary>The interactive switch task type, whose model a task declares in <see cref="SwitchModelParameter"/>.</summary>
+    public const string SwitchType = "Switch";
+
+    /// <summary>The parameter naming the model a switch rests on — the one its level data assigns, e.g. <c>234_01_1</c>.</summary>
+    public const string SwitchModelParameter = "On model";
+
     /// <summary>The retail task that owns a visible, destructible alarm speaker.</summary>
     public const string SirenType = "Siren";
 
@@ -107,11 +113,13 @@ public sealed class WorldScene
             }
         }
 
-        // A wall switch's model is the literal name "switch" (sub_4450F0), like "waypoint" and
-        // "missing" a lowercase entry the common pack registers.
-        if (string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal))
+        // A switch's model is the name its task declares in "On model" — an alarm pad names its own
+        // ALARM_SWITCH pad (e.g. "234_01_1"), a door button the wall switch it mounts. A bare switch
+        // leans on the literal name "switch" (sub_4450F0), like "waypoint" and "missing" a lowercase
+        // entry the common pack registers.
+        if (string.Equals(task.Type.Name, SwitchType, StringComparison.Ordinal))
         {
-            yield return "switch";
+            yield return SwitchModelNameOf(task);
         }
 
         // A spline waypoint owns the segment that spans from the previous waypoint to it
@@ -126,6 +134,17 @@ public sealed class WorldScene
             yield return segmentName;
         }
     }
+
+    /// <summary>
+    /// The model name a switch task places: its declared <see cref="SwitchModelParameter"/>, or the
+    /// lower-case <c>switch</c> entry the common pack registers when the task names none.
+    /// </summary>
+    /// <param name="task">The switch task to read.</param>
+    /// <returns>The model name.</returns>
+    internal static string SwitchModelNameOf(DeclaredTask task) =>
+        task.TryGetValue(SwitchModelParameter, out object? model) && model is string name && name.Length > 0
+            ? name
+            : "switch";
 
     /// <summary>Tells whether a waypoint has a waypoint sibling before it under the same parent.</summary>
     private static bool HasEarlierWaypointSibling(DeclaredTask waypoint)

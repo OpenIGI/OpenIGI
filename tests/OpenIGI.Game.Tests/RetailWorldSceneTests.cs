@@ -89,6 +89,25 @@ public sealed class RetailWorldSceneTests
             .Count());
     }
 
+    [RequiresGameDataFact]
+    public void SwitchesPlaceTheModelTheirTaskDeclaresNotTheGenericSwitch()
+    {
+        (WorldScene scene, _) = Build();
+
+        // Mission 1 authors two families of Switch task: the three alarm pads (94, 92, 99) declare
+        // "On model" = 234_01_1 (ALARM_SWITCH) and the three door buttons (500, 505, 506) declare
+        // 202_01_1 (SWITCH). Each switch must place the model its level data names, not the literal
+        // common-pack "switch" every one used to fall back to.
+        WorldPlacement[] switches = scene.Placements
+            .Where(placement => placement.Owner.Type.Name == WorldScene.SwitchType)
+            .ToArray();
+
+        Assert.Equal(6, switches.Length);
+        Assert.Equal(3, switches.Count(placement => placement.Instance.Name == "234_01_1"));
+        Assert.Equal(3, switches.Count(placement => placement.Instance.Name == "202_01_1"));
+        Assert.DoesNotContain(switches, placement => placement.Instance.Name == "switch");
+    }
+
     private static void AssertEnginePosition(Vector3d expectedUnits, Vector3d actualMetres)
     {
         const double toleranceUnits = 0.75;
