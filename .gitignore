@@ -38,8 +38,7 @@ Thumbs.db
 .codex/
 .skills/
 .opencode/
-.agents/*
-!.agents/skills/
+.agents/
 .cursor/
 .copilot/
 .continue/
@@ -97,4 +96,3 @@ a probe of the running original
 /scratch/
 NuGetPackages.config
 NuGet.config
-.agents

@@ -1,6 +1,22 @@
 # Normalize line endings: text files use LF in the repo.
 * text=auto eol=lf
 
+# Source code & build configs
+*.cs text eol=lf diff=csharp
+*.csproj text eol=lf
+*.sln text eol=lf
+*.slnx text eol=lf
+*.props text eol=lf
+*.targets text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Shaders
+*.glsl text eol=lf
+*.vert text eol=lf
+*.frag text eol=lf
+
 # Binary assets (never normalize)
 *.png binary
 *.tex binary
