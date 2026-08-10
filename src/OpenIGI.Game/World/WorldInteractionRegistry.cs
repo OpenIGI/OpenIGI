@@ -692,7 +692,9 @@ public sealed class WorldInteractionRegistry
             : ReadPosition(task, "Position", ReadPosition(task, "Position start", default));
 
     private static string ModelNameOf(DeclaredTask task, InteractionActivateType type) =>
-        type == InteractionActivateType.Switch ? "switch" : ReadString(task, "Model", string.Empty);
+        type == InteractionActivateType.Switch
+            ? WorldScene.SwitchModelNameOf(task)
+            : ReadString(task, "Model", string.Empty);
 
     private static float FacingOf(DeclaredTask task)
     {

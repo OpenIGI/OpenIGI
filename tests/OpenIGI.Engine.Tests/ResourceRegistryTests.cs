@@ -123,8 +123,8 @@ public sealed class ResourceRegistryTests : IDisposable
     [Fact]
     public void AliasDiskCacheFollowsARebinding()
     {
-        Write("missions/level1/ai/2220.qvm", "level one");
-        Write("missions/level2/ai/2220.qvm", "level two");
+        Write("missions/level1/AI/2220.qvm", "level one");
+        Write("missions/level2/AI/2220.qvm", "level two");
 
         var fileSystem = new VirtualFileSystem();
         fileSystem.RegisterDevice(new LocalFileDevice(_root));
