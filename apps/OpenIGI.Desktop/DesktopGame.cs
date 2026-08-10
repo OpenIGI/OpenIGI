@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Core.Configuration;
@@ -138,6 +138,7 @@ internal sealed partial class DesktopGame : IDisposable
     private WorldRenderer? _world;
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
+    private RainRenderer? _rain;
     private ShadowCasterPass? _shadowPass;
 
     // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
@@ -2587,6 +2588,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // The impact bursts: dust hazes over the scene, spark light over the haze.
                 _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
+                // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task)
+                _rain?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+
                 // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
                 // red while confirming/detecting, and attached to the head as it pans.
                 if (_securityCameras is { } statusCameras)
@@ -3447,6 +3451,7 @@ internal sealed partial class DesktopGame : IDisposable
     public void Dispose()
     {
         _sky?.Dispose();
+        _rain?.Dispose();
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
