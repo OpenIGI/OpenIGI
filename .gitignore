@@ -82,6 +82,7 @@ a probe of the running original
 !/README.md
 !/CONTRIBUTING.md
 !/AGENTS.md
+!src/OpenIGI.Generators/AnalyzerReleases.*.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
