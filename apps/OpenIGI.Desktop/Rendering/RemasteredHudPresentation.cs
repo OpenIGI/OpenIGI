@@ -8,8 +8,12 @@ namespace OpenIGI.Desktop;
 /// <summary>Pure presentation decisions shared by the remaster HUD and its focused tests.</summary>
 public static class RemasteredHudPresentation
 {
-    /// <summary>Whether the current presentation mode uses the remaster HUD instead of the retail one.</summary>
-    public static bool UsesRemasteredHud(bool vanillaMenu) => !vanillaMenu;
+    /// <summary>Whether the dedicated HUD setting selects the remaster presentation.</summary>
+    public static bool UsesRemasteredHud(bool remasteredHudEnabled) => remasteredHudEnabled;
+
+    /// <summary>Whether messages use the remaster's tactical-card presentation.</summary>
+    public static bool UsesTacticalMessages(bool remasteredHudEnabled, bool tacticalMessagesEnabled)
+        => remasteredHudEnabled && tacticalMessagesEnabled;
 
     /// <summary>Converts the player's clockwise world yaw into a conventional north-based compass heading.</summary>
     public static float HeadingDegrees(float yawRadians)

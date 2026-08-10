@@ -4,6 +4,8 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -22,6 +24,42 @@ public sealed class MissionObjectiveRuntimeTests
         StatusMessageDisplay message = Assert.Single(runtime.DisplayedMessages);
         Assert.Equal("PICKEDUPWEAPONAK-47", message.Text);
         Assert.Empty(runtime.Log);
+    }
+
+    [Fact]
+    public void AuthoredInterfaceTimerStartsAtTheRetailMaximumAndStopsAtZero()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(1),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Level flow"),
+                QvmExpression.Int(1),
+                QvmExpression.Real(2.5f),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+        Assert.True(runtime.InterfaceTimerEnabled);
+        Assert.Equal(2.5f, runtime.MaximumLevelPlayTimeSeconds);
+        Assert.Equal(75, runtime.InterfaceTimerRemainingTicks);
+
+        for (int tick = 0; tick < 80; tick++)
+        {
+            runtime.Tick();
+        }
+
+        Assert.Equal(0, runtime.InterfaceTimerRemainingTicks);
     }
 
     [RequiresGameDataFact]
@@ -45,6 +83,22 @@ public sealed class MissionObjectiveRuntimeTests
             Assert.True(runtime.DefinitionCount > 0, $"{script} has no DefineComputerObjective task.");
             Assert.True(runtime.StatusMessageCount > 0, $"{script} has no StatusMessage task.");
             Assert.InRange(runtime.Objectives.Count, 0, MissionObjectiveRuntime.ObjectiveSlotCount);
+
+            if (runtime.InterfaceTimerEnabled)
+            {
+                Assert.True(runtime.MaximumLevelPlayTimeSeconds > 0f, $"{script} enables a zero-length timer.");
+                Assert.Equal(
+                    (int)MathF.Round(runtime.MaximumLevelPlayTimeSeconds * 30f, MidpointRounding.ToEven),
+                    runtime.InterfaceTimerRemainingTicks);
+                runtime.Tick();
+                Assert.Equal(
+                    (int)MathF.Round(runtime.MaximumLevelPlayTimeSeconds * 30f, MidpointRounding.ToEven) - 1,
+                    runtime.InterfaceTimerRemainingTicks);
+            }
+            else
+            {
+                Assert.Null(runtime.InterfaceTimerRemainingTicks);
+            }
 
             if (script.EndsWith(@"level1\objects.qvm", StringComparison.OrdinalIgnoreCase))
             {

@@ -23,7 +23,11 @@ namespace OpenIGI.Desktop;
 /// <para>
 /// <see cref="StatusScreenLayout"/> holds the arithmetic; this holds the resources and the drawing.
 /// </para>
-/// <para><b>Not built</b>: the health and power bars, the map computer and mission timer.</para>
+/// <para>
+/// The human's handler then adds the bottom-filled health power bar and any timed-interaction progress;
+/// <c>StatusScreen::Render</c> finishes with the authored <c>LevelFlow</c> countdown. The map computer is
+/// a separate screen and remains owned by <see cref="MapComputerRenderer"/>.
+/// </para>
 /// </remarks>
 public sealed class StatusScreenRenderer : IDisposable
 {
@@ -31,12 +35,14 @@ public sealed class StatusScreenRenderer : IDisposable
 
     /// <summary>The archive the HUD's font comes out of.</summary>
     /// <remarks>
-    /// <b>Not the HUD's own.</b> <c>status.res</c> holds forty-seven sprites and no font at all; the
-    /// text objects the constructor builds take their font from a <i>global</i> the whole game shares
-    /// (<c>sub_46B4D0()[4]</c>). Which of the three shipped faces that global holds has not been read,
-    /// so the body face is used — see <see cref="FontResource"/>.
+    /// <b>Not the HUD's own.</b> <c>status.res</c> holds forty-seven sprites and no font at all. The
+    /// constructor reads <c>sub_46B4D0()+16</c>, which <c>0x46B070</c> initializes from the third
+    /// computer font. That archive is therefore part of the retail HUD even when the computer is closed.
     /// </remarks>
-    public const string FontArchive = "LOCAL:menusystem/menusystem.res";
+    public const string FontArchive = "COMPUTER:computer.res";
+
+    /// <summary>The retail installation path used when the optional <c>COMPUTER:</c> alias is not mounted.</summary>
+    public const string LocalFontArchive = "LOCAL:computer/computer.res";
 
     /// <summary>The game's global sprite archive, the third place a sprite is looked for.</summary>
     /// <remarks>
@@ -48,11 +54,9 @@ public sealed class StatusScreenRenderer : IDisposable
 
     /// <summary>The font the readout is set in.</summary>
     /// <remarks>
-    /// One of <c>font1</c>, <c>font3</c> and <c>font4</c>, which are the only fonts the game ships.
-    /// <b>Which one the HUD uses is unread</b>; this is the body face, and it is the smallest of the
-    /// three, which is what the readout wants.
+    /// <c>font3.fnt</c>, the value at the global computer-resource block's <c>+16</c> field.
     /// </remarks>
-    public const string FontResource = "font1.fnt";
+    public const string FontResource = "font3.fnt";
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
@@ -106,14 +110,18 @@ public sealed class StatusScreenRenderer : IDisposable
 
             _archive = IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenLayout.Archive));
 
-            // The font is a global the whole game shares, so it comes out of a different archive.
-            if (fileSystem.Exists(FontArchive))
+            // The font is a global the whole game shares, so it comes out of a different archive. The
+            // desktop host does not require fsconfig.qsc and therefore may not have COMPUTER: mounted;
+            // probe the installation's physical path, just as MapComputerRenderer does.
+            if (fileSystem.Exists(LocalFontArchive))
             {
-                _fontArchive = IresArchive.Read(fileSystem.ReadAllBytes(FontArchive));
+                _fontArchive = IresArchive.Read(fileSystem.ReadAllBytes(LocalFontArchive));
             }
             else
             {
-                _logger.Warning(LogCategory, $"No font archive at {FontArchive}; the readout has no text.");
+                _logger.Warning(
+                    LogCategory,
+                    $"No font archive at {FontArchive} or {LocalFontArchive}; the readout has no text.");
             }
 
             // And the global sprites -- the scope overlay lives here, not in status.res.
@@ -140,6 +148,8 @@ public sealed class StatusScreenRenderer : IDisposable
     /// <param name="weapon">The weapon in hand, or <see langword="null"/> to draw nothing.</param>
     /// <param name="roundsInClip">What is left in the magazine.</param>
     /// <param name="reserve">How many loose rounds are carried.</param>
+    /// <param name="secondSubCounter">The Gun+412 effect counter used to animate a revolver cylinder.</param>
+    /// <param name="m203Reserve">How many M203 rounds are carried when the weapon is an M16A2.</param>
     /// <param name="screenWidth">The back buffer's width.</param>
     /// <param name="screenHeight">The back buffer's height.</param>
     /// <param name="scale">
@@ -157,6 +167,8 @@ public sealed class StatusScreenRenderer : IDisposable
         WeaponType? weapon,
         int roundsInClip,
         int reserve,
+        int secondSubCounter,
+        int m203Reserve,
         int screenWidth,
         int screenHeight,
         int scale = UiScale.Native)
@@ -183,21 +195,35 @@ public sealed class StatusScreenRenderer : IDisposable
         {
             float ammoY = baseline + (StatusScreenLayout.AmmoDrop * s);
             float ammoRight = right - (StatusScreenLayout.AmmoInset * s);
-            float ammoWidth = DrawRightAligned(batch, StatusScreenLayout.AmmoText(reserve), ammoRight, ammoY, s);
+            bool loadedRocket = weapon.WeaponId == 12 && roundsInClip != 0;
+            int displayedReserve = weapon.WeaponId == 12 && loadedRocket ? reserve + 1 : reserve;
+            float ammoWidth = DrawRightAligned(
+                batch, StatusScreenLayout.AmmoText(displayedReserve), ammoRight, ammoY, s);
 
-            // The magazine gauge is a 61-frame sprite that empties as the clip does, and only the
-            // clip-counting weapons show one.
-            if (weapon.AmmoDisplay == AmmoDisplayType.Clip
-                && Sprite(StatusScreenLayout.MagazineSprite) is { } magazine
-                && magazine.Asset.Frames.Count > 0)
+            (string? Sprite, int Frame) gauge = weapon.AmmoDisplay switch
             {
-                int frame = StatusScreenLayout.MagazineFrame(roundsInClip, weapon.RoundsPerClip);
-                frame = Math.Min(frame, magazine.Asset.Frames.Count - 1);
+                AmmoDisplayType.Clip when weapon.WeaponId == 12 && loadedRocket =>
+                    (StatusScreenLayout.RocketSprite, 0),
+                AmmoDisplayType.Clip when weapon.WeaponId == 12 => (null, 0),
+                AmmoDisplayType.Clip =>
+                    (StatusScreenLayout.MagazineSprite,
+                     StatusScreenLayout.MagazineFrame(roundsInClip, weapon.RoundsPerClip)),
+                AmmoDisplayType.Barrel =>
+                    (StatusScreenLayout.BarrelSprite,
+                     StatusScreenLayout.BarrelFrame(roundsInClip, secondSubCounter)),
+                AmmoDisplayType.Shell =>
+                    (StatusScreenLayout.ShellSprite, StatusScreenLayout.ShellFrame(roundsInClip)),
+                _ => (null, 0),
+            };
 
-                SpriteFrame first = magazine.Asset.Frames[0];
-                float x = ammoRight - (StatusScreenLayout.MagazineGap * s) - (first.Width * s) - ammoWidth;
-                magazine.DrawFrame(
-                    batch, magazine.Asset.Frames[frame], x, ammoY, s, s, BitmapTextRenderer.NeutralColor);
+            if (gauge.Sprite is { } gaugeName
+                && Sprite(gaugeName) is { } gaugeSprite
+                && gaugeSprite.Asset.Frames.Count > 0)
+            {
+                int frameIndex = Math.Min(gauge.Frame, gaugeSprite.Asset.Frames.Count - 1);
+                SpriteFrame frame = gaugeSprite.Asset.Frames[frameIndex];
+                float x = ammoRight - (StatusScreenLayout.MagazineGap * s) - (frame.Width * s) - ammoWidth;
+                gaugeSprite.DrawFrame(batch, frame, x, ammoY, s, s, BitmapTextRenderer.NeutralColor);
             }
 
             nameWidth = DrawRightAligned(
@@ -237,6 +263,68 @@ public sealed class StatusScreenRenderer : IDisposable
             (float x, float y) = StatusScreenLayout.Crosshair(
                 screenWidth, screenHeight, frame.Width * s, frame.Height * s);
             cross.DrawFrame(batch, frame, x, y, s, s, BitmapTextRenderer.NeutralColor);
+        }
+
+        // GunM16A2's status handler calls the complete Gun parent first, then appends the M203 count
+        // and STATUSSCREEN:M16_alternative.spr. The helper deliberately measures the primary-ammo
+        // count again so the secondary block begins to the left of the existing clip readout.
+        if (weapon.ScriptId == "WEAPON_ID_M16A2")
+        {
+            DrawM203(batch, reserve, m203Reserve, right, baseline, s);
+        }
+    }
+
+    /// <summary>Draws the player-owned part of the retail status display.</summary>
+    /// <param name="batch">The active 2D batch.</param>
+    /// <param name="healthFraction">Remaining health from zero through one.</param>
+    /// <param name="interactionProgress">Timed-use progress, or <see langword="null"/> when idle.</param>
+    /// <param name="missionTimeRemainingTicks">
+    /// Authored LevelFlow time left in 30 Hz ticks, or <see langword="null"/> when its interface timer is off.
+    /// </param>
+    /// <param name="screenWidth">The framebuffer width.</param>
+    /// <param name="screenHeight">The framebuffer height.</param>
+    /// <param name="scale">UI magnification; anchors remain resolution-relative.</param>
+    /// <remarks>
+    /// This is the original call order: <c>Human::StatusDisplay</c> adds health after the weapon handler,
+    /// <c>HumanPlayer</c> adds the held-action progress bar, then <c>StatusScreen::Render</c> adds the timer.
+    /// Keeping it separate from <see cref="Draw"/> also lets health and progress remain visible while a
+    /// full-body interaction has hidden the first-person weapon.
+    /// </remarks>
+    public void DrawPlayerStatus(
+        SpriteBatch batch,
+        float healthFraction,
+        float? interactionProgress,
+        int? missionTimeRemainingTicks,
+        int screenWidth,
+        int screenHeight,
+        int scale = UiScale.Native)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_archive is null)
+        {
+            return;
+        }
+
+        float s = Math.Max(UiScale.Native, scale);
+        DrawHealth(batch, Math.Clamp(healthFraction, 0f, 1f), screenWidth, screenHeight, s);
+
+        if (interactionProgress is { } progress)
+        {
+            DrawInteractionProgress(batch, progress, screenWidth, screenHeight);
+        }
+
+        if (missionTimeRemainingTicks is { } remainingTicks && Font() is { } font)
+        {
+            (float x, float y) = StatusScreenLayout.TimerPosition(screenWidth, screenHeight);
+            font.Draw(
+                batch,
+                StatusScreenLayout.TimerText(remainingTicks),
+                x,
+                y,
+                BitmapTextRenderer.NeutralColor,
+                s,
+                s);
         }
     }
 
@@ -357,12 +445,22 @@ public sealed class StatusScreenRenderer : IDisposable
     /// <param name="batch">The active 2D batch.</param>
     /// <param name="screenWidth">The framebuffer width.</param>
     /// <param name="screenHeight">The framebuffer height.</param>
+    /// <param name="scale">UI magnification for the native sprite dimensions.</param>
     /// <exception cref="ArgumentNullException"><paramref name="batch"/> is <see langword="null"/>.</exception>
-    public void DrawLadderAction(SpriteBatch batch, int screenWidth, int screenHeight)
-        => DrawAction(batch, StatusScreenLayout.LadderActionSprite, screenWidth, screenHeight);
+    public void DrawLadderAction(
+        SpriteBatch batch,
+        int screenWidth,
+        int screenHeight,
+        int scale = UiScale.Native)
+        => DrawAction(batch, StatusScreenLayout.LadderActionSprite, screenWidth, screenHeight, scale);
 
     /// <summary>Draws the native action sprite selected by a retail activatable task.</summary>
-    public void DrawAction(SpriteBatch batch, string spriteName, int screenWidth, int screenHeight)
+    public void DrawAction(
+        SpriteBatch batch,
+        string spriteName,
+        int screenWidth,
+        int screenHeight,
+        int scale = UiScale.Native)
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentException.ThrowIfNullOrEmpty(spriteName);
@@ -372,12 +470,13 @@ public sealed class StatusScreenRenderer : IDisposable
             return;
         }
 
+        float s = Math.Max(UiScale.Native, scale);
         SpriteFrame frame = icon.Asset.Frames[0];
         (float x, float y) = StatusScreenLayout.ActionIcon(
-            screenWidth, screenHeight, frame.Width, frame.Height);
+            screenWidth, screenHeight, frame.Width * s, frame.Height * s);
         float alpha = StatusScreenLayout.ActionIconAlpha(_actionPulsePhase);
         byte alphaByte = (byte)Math.Clamp((int)(alpha * byte.MaxValue), 0, byte.MaxValue);
-        icon.DrawFrame(batch, frame, x, y, 1f, 1f, new Bgra32(128, 128, 128, alphaByte));
+        icon.DrawFrame(batch, frame, x, y, s, s, new Bgra32(128, 128, 128, alphaByte));
     }
 
     /// <summary>Draws a stack of debug lines down the top-left corner, readable over any background.</summary>
@@ -657,6 +756,119 @@ public sealed class StatusScreenRenderer : IDisposable
 
     private float LineHeight() => Font()?.LineHeight ?? 0f;
 
+    private void DrawM203(
+        SpriteBatch batch,
+        int primaryReserve,
+        int m203Reserve,
+        float right,
+        float baseline,
+        float scale)
+    {
+        float primaryWidth = TextWidth(StatusScreenLayout.AmmoText(primaryReserve), scale);
+        SpriteResource? indicator = Sprite(StatusScreenLayout.M16AlternativeSprite);
+        SpriteFrame? indicatorFrame = indicator is { Asset.Frames.Count: > 0 }
+            ? indicator.Asset.Frames[0]
+            : null;
+        float indicatorWidth = indicatorFrame is { } frame ? frame.Width * scale : 0f;
+        float helperX = right
+            - (StatusScreenLayout.AmmoInset * scale)
+            - (StatusScreenLayout.MagazineGap * scale)
+            - indicatorWidth
+            - primaryWidth;
+        float y = baseline + (StatusScreenLayout.AmmoDrop * scale);
+        float secondaryWidth = DrawRightAligned(
+            batch, StatusScreenLayout.AmmoText(m203Reserve), helperX, y, scale);
+
+        if (indicator is not null && indicatorFrame is { } secondaryFrame)
+        {
+            float x = helperX
+                - secondaryWidth
+                - (StatusScreenLayout.MagazineGap * scale)
+                - indicatorWidth;
+            indicator.DrawFrame(
+                batch,
+                secondaryFrame,
+                x,
+                y,
+                scale,
+                scale,
+                BitmapTextRenderer.NeutralColor);
+        }
+    }
+
+    private void DrawHealth(
+        SpriteBatch batch,
+        float healthFraction,
+        int screenWidth,
+        int screenHeight,
+        float scale)
+    {
+        (float anchorX, float anchorY) = StatusScreenLayout.HealthAnchor(screenWidth, screenHeight);
+        Bgra32 neutral = BitmapTextRenderer.NeutralColor;
+
+        if (Sprite(StatusScreenLayout.HealthBackgroundSprite) is { } background
+            && background.Asset.Frames.Count > 0)
+        {
+            SpriteFrame frame = background.Asset.Frames[0];
+            background.DrawFrame(
+                batch,
+                frame,
+                anchorX - (frame.Width * scale * 0.5f),
+                anchorY - (frame.Height * scale * 0.5f),
+                scale,
+                scale,
+                neutral);
+        }
+
+        if (healthFraction <= 0f
+            || Sprite(StatusScreenLayout.HealthForegroundSprite) is not { } foreground
+            || foreground.Asset.Frames.Count == 0)
+        {
+            return;
+        }
+
+        // Human::StatusDisplay does not squeeze the bar. It advances both the destination top and the
+        // source V coordinate by (1-health), retaining the lower portion of powerbar.spr at native width.
+        SpriteFrame fill = foreground.Asset.Frames[0];
+        float cursorX = anchorX
+            - (StatusScreenLayout.HealthForegroundInset * scale)
+            - (fill.Width * scale * 0.5f);
+        float cursorY = anchorY
+            - (StatusScreenLayout.HealthForegroundInset * scale)
+            - (fill.Height * scale * 0.5f);
+        float croppedTop = 1f - healthFraction;
+        RectF destination = new(
+            cursorX + (fill.OffsetX * scale),
+            cursorY + (fill.OffsetY * scale) + (fill.Height * scale * croppedTop),
+            fill.Width * scale,
+            fill.Height * scale * healthFraction);
+        RectF source = RectF.FromEdges(
+            fill.U0,
+            fill.V0 + ((fill.V1 - fill.V0) * croppedTop),
+            fill.U1,
+            fill.V1);
+        batch.Draw(foreground.Textures[fill.TextureIndex], destination, source, neutral);
+    }
+
+    private static void DrawInteractionProgress(
+        SpriteBatch batch,
+        float progress,
+        int screenWidth,
+        int screenHeight)
+    {
+        (float fillX, float fillY, float fillWidth, float fillHeight) =
+            StatusScreenLayout.InteractionFill(screenWidth, screenHeight, progress);
+        if (fillWidth > 0f && fillHeight > 0f)
+        {
+            // Submission order and colours match HumanPlayer's status-display handler at 0x413120.
+            batch.FillRect(new RectF(fillX, fillY, fillWidth, fillHeight), new Bgra32(0, 0, 128, 128));
+        }
+
+        (float backX, float backY, float backWidth, float backHeight) =
+            StatusScreenLayout.InteractionBackground(screenWidth, screenHeight);
+        batch.FillRect(new RectF(backX, backY, backWidth, backHeight), new Bgra32(0, 100, 0, 128));
+    }
+
     private float DrawRightAligned(SpriteBatch batch, string text, float rightEdge, float y, float scale = 1f)
     {
         if (Font() is not { } font || string.IsNullOrEmpty(text))
@@ -668,6 +880,9 @@ public sealed class StatusScreenRenderer : IDisposable
         font.Draw(batch, text, rightEdge - width, y, BitmapTextRenderer.NeutralColor, scale, scale);
         return width;
     }
+
+    private float TextWidth(string text, float scale) =>
+        Font() is { } font && !string.IsNullOrEmpty(text) ? font.Measure(text, scale, scale).Width : 0f;
 
     private BitmapTextRenderer? Font()
     {

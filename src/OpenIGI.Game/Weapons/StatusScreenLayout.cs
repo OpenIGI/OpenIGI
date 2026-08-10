@@ -13,10 +13,10 @@ namespace OpenIGI.Game.Weapons;
 /// are carrying is drawn by the weapon, not by the screen.
 /// </para>
 /// <para>
-/// <b>Everything is a fraction of the current resolution</b>, so the HUD scales with the window rather
-/// than being authored at 640×480 and centred the way the menus are. The two fractions below are the
-/// whole of the layout: an anchor at the right and one near the bottom, with every element measured
-/// back from them.
+/// <b>Everything is anchored as a fraction of the current resolution</b>, so the HUD follows the window
+/// rather than being authored at 640×480 and centred the way the menus are. Sprite and font dimensions
+/// stay in authored pixels; the renderer's UI scale magnifies those dimensions for modern displays while
+/// these original fractional anchors keep every element in the correct part of any aspect ratio.
 /// </para>
 /// </remarks>
 public static class StatusScreenLayout
@@ -40,6 +40,18 @@ public static class StatusScreenLayout
     /// sprite draw is a <i>frame index</i>, not a crop, so the magazine empties by picking a frame.
     /// </remarks>
     public const string MagazineSprite = "clip20.spr";
+
+    /// <summary>The six-shot revolver gauge.</summary>
+    public const string BarrelSprite = "barrel6.spr";
+
+    /// <summary>The seven-shell shotgun gauge.</summary>
+    public const string ShellSprite = "shell7.spr";
+
+    /// <summary>The loaded-round indicator used by weapon id 12, the RPG-18.</summary>
+    public const string RocketSprite = "rocket.spr";
+
+    /// <summary>The M16A2's M203 secondary-ammunition indicator.</summary>
+    public const string M16AlternativeSprite = "M16_alternative.spr";
 
     /// <summary>The action sprite displayed for activate type 10 (ladder).</summary>
     public const string LadderActionSprite = "a_ladder.spr";
@@ -76,6 +88,51 @@ public static class StatusScreenLayout
     /// <summary>Where the weapon readout's baseline sits, as a fraction of the height.</summary>
     /// <remarks><c>0.89583331</c> — fifty pixels up from the bottom at 480 tall.</remarks>
     public const float BaselineFraction = 0.89583331f;
+
+    /// <summary>The horizontal centre of the health bar.</summary>
+    /// <remarks><c>0.0625</c> — 40 pixels from the left at 640 wide.</remarks>
+    public const float HealthAnchorXFraction = 0.0625f;
+
+    /// <summary>The vertical centre of the health bar.</summary>
+    /// <remarks>The bar shares the weapon readout's <see cref="BaselineFraction"/>.</remarks>
+    public const float HealthAnchorYFraction = BaselineFraction;
+
+    /// <summary>How far the foreground power bar is shifted up and left from its background.</summary>
+    /// <remarks>Two authored pixels on both axes, recovered from <c>Human::StatusDisplay</c>.</remarks>
+    public const float HealthForegroundInset = 2f;
+
+    /// <summary>The background sprite behind the player's remaining health.</summary>
+    public const string HealthBackgroundSprite = "powerbarbackground.spr";
+
+    /// <summary>The bottom-filled foreground sprite representing the player's remaining health.</summary>
+    public const string HealthForegroundSprite = "powerbar.spr";
+
+    /// <summary>The timer's left edge as a fraction of the framebuffer width.</summary>
+    /// <remarks><c>0.8125</c> — 520 pixels at 640 wide.</remarks>
+    public const float TimerXFraction = 0.8125f;
+
+    /// <summary>The timer's top edge as a fraction of the framebuffer height.</summary>
+    /// <remarks><c>0.041666668</c> — 20 pixels at 480 high.</remarks>
+    public const float TimerYFraction = 0.041666668f;
+
+    /// <summary>The timed-interaction bar's full background rectangle.</summary>
+    public static (float X, float Y, float Width, float Height) InteractionBackground(
+        int screenWidth,
+        int screenHeight) =>
+        (screenWidth * 0.3125f,
+         screenHeight * 0.83333331f,
+         screenWidth * 0.375f,
+         screenHeight * 0.01875f);
+
+    /// <summary>The timed-interaction bar's filled rectangle.</summary>
+    public static (float X, float Y, float Width, float Height) InteractionFill(
+        int screenWidth,
+        int screenHeight,
+        float progress) =>
+        (screenWidth * 0.315625f,
+         screenHeight * 0.8375f,
+         screenWidth * 0.36875f * Math.Clamp(progress, 0f, 1f),
+         screenHeight * 0.010416667f);
 
     /// <summary>The gap between the baseline and the weapon's name.</summary>
     public const float NameGap = 2f;
@@ -236,6 +293,27 @@ public static class StatusScreenLayout
     /// <returns>Where the readout sits vertically.</returns>
     public static float Baseline(int screenHeight) => screenHeight * BaselineFraction;
 
+    /// <summary>The centre point used to place both health-bar sprites.</summary>
+    public static (float X, float Y) HealthAnchor(int screenWidth, int screenHeight) =>
+        (screenWidth * HealthAnchorXFraction, screenHeight * HealthAnchorYFraction);
+
+    /// <summary>The mission timer's top-left corner.</summary>
+    public static (float X, float Y) TimerPosition(int screenWidth, int screenHeight) =>
+        (screenWidth * TimerXFraction, screenHeight * TimerYFraction);
+
+    /// <summary>Formats remaining LevelFlow time exactly as <c>StatusScreen::Render</c> does.</summary>
+    /// <param name="remainingTicks">Time left in the original 30 Hz simulation ticks.</param>
+    public static string TimerText(int remainingTicks)
+    {
+        int wholeSeconds = Math.Max(0, remainingTicks) / 30;
+        int minutes = wholeSeconds / 60;
+        int seconds = wholeSeconds % 60;
+        string minuteSuffix = minutes == 1 ? string.Empty : "s";
+        string secondSuffix = seconds == 1 ? string.Empty : "s";
+        return FormattableString.Invariant(
+            $"Time Left: {minutes} minute{minuteSuffix}, {seconds} second{secondSuffix}");
+    }
+
     /// <summary>Where the crosshair's top-left corner goes.</summary>
     /// <param name="screenWidth">The back buffer's width.</param>
     /// <param name="screenHeight">The back buffer's height.</param>
@@ -264,10 +342,10 @@ public static class StatusScreenLayout
     public static (float X, float Y) ActionIcon(
         int screenWidth,
         int screenHeight,
-        int spriteWidth,
-        int spriteHeight) =>
-        ((screenWidth * 0.5f) - (spriteWidth / 2),
-         (screenHeight * ActionIconYFraction) - (spriteHeight / 2));
+        float spriteWidth,
+        float spriteHeight) =>
+        ((screenWidth * 0.5f) - (int)(spriteWidth * 0.5f),
+         (screenHeight * ActionIconYFraction) - (int)(spriteHeight * 0.5f));
 
     /// <summary>Converts the status screen's triangular phase into action-icon opacity.</summary>
     /// <param name="phase">The status phase in the range zero through two.</param>
@@ -296,6 +374,15 @@ public static class StatusScreenLayout
         int frame = MagazineFrames - (MagazineFrames * roundsInClip / roundsPerClip);
         return frame < 0 ? 0 : frame > MagazineFrames ? MagazineFrames : frame;
     }
+
+    /// <summary>Selects the revolver-cylinder animation frame.</summary>
+    /// <remarks><c>Gun+412 + 10 × (6 - rounds)</c>, floored at zero by <c>0x47A540</c>.</remarks>
+    public static int BarrelFrame(int roundsInClip, int secondSubCounter) =>
+        Math.Max(0, secondSubCounter + (10 * (6 - roundsInClip)));
+
+    /// <summary>Selects the shotgun-shell gauge frame.</summary>
+    /// <remarks><c>7 - Gun+324</c>, floored at zero by <c>0x47A750</c>.</remarks>
+    public static int ShellFrame(int roundsInClip) => Math.Max(0, 7 - roundsInClip);
 
     /// <summary>How the ammunition count is spelled.</summary>
     /// <param name="rounds">What the count is.</param>

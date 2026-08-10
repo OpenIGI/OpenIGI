@@ -64,11 +64,24 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(expected, RemasteredHudPresentation.WeaponStateLabel(state));
 
     [Fact]
-    public void RetailPresentationKeepsTheOriginalHud()
+    public void DedicatedSettingSelectsEitherHudWithoutDependingOnTheMenuStyle()
     {
-        Assert.True(RemasteredHudPresentation.UsesRemasteredHud(vanillaMenu: false));
-        Assert.False(RemasteredHudPresentation.UsesRemasteredHud(vanillaMenu: true));
+        Assert.True(RemasteredHudPresentation.UsesRemasteredHud(remasteredHudEnabled: true));
+        Assert.False(RemasteredHudPresentation.UsesRemasteredHud(remasteredHudEnabled: false));
     }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    public void TacticalCardsOnlyBelongToTheRemasterHud(
+        bool remasteredHudEnabled,
+        bool tacticalMessagesEnabled,
+        bool expected)
+        => Assert.Equal(
+            expected,
+            RemasteredHudPresentation.UsesTacticalMessages(remasteredHudEnabled, tacticalMessagesEnabled));
 
     private static MissionObjective Objective(string text, MissionObjectiveState state) => new(
         TextResource: text,

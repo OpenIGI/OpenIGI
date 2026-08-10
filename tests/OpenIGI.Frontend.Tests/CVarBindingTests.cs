@@ -30,6 +30,7 @@ public sealed class CVarBindingTests
         Assert.Equal("Vsync", CVarBinding.Humanize("r_vsync"));
         Assert.Equal("Music Volume", CVarBinding.Humanize("snd_music_volume"));
         Assert.Equal("Field Of View", CVarBinding.Humanize("field_of_view"));
+        Assert.Equal("Remastered HUD", CVarBinding.Humanize("r_remastered_hud"));
     }
 
     [Fact]

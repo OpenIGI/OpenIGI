@@ -1949,11 +1949,14 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     // The remaster holds a message three seconds longer than the original does, because
                     // the authored durations are short and the hold only starts once the last character
-                    // has been typed. Tied to the same switch as the comms cards, so the vanilla path
-                    // keeps the original's timing exactly -- and with it the moment every script that
-                    // waits on isFinishedDisplay sees the message end.
+                    // has been typed. The retail HUD always retains the original timing and message block,
+                    // irrespective of the independently archived tactical-message preference.
                     objectiveTick.ExtraMessageHoldSeconds =
-                        RenderCVars.TacticalMessages.Value ? RemasteredMessageHoldSeconds : 0f;
+                        RemasteredHudPresentation.UsesTacticalMessages(
+                            RenderCVars.RemasteredHud.Value,
+                            RenderCVars.TacticalMessages.Value)
+                            ? RemasteredMessageHoldSeconds
+                            : 0f;
                 }
 
                 _missionObjectives?.TickAfterLevelState();
@@ -2530,13 +2533,16 @@ internal sealed partial class DesktopGame : IDisposable
                 // Not while the entry shot is running: the camera is somewhere over the level, and a pair
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
-                bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(_options.VanillaMenu);
-                bool showFirstPersonHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
+                bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
+                bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
+                    remasterHud,
+                    RenderCVars.TacticalMessages.Value);
+                bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
                     && !(_playerDead && _deathCamera.IsActive)
-                    && _player is { IsOnLadder: false, IsInWorldInteraction: false, View: not null };
-                if (_playerMode && !_computerOpen && !_entry.IsCameraActive
-                    && !(_playerDead && _deathCamera.IsActive)
-                    && _player is { IsOnLadder: false, IsInWorldInteraction: false, View: { } rig })
+                    && _player is { View: not null };
+                bool showFirstPersonHud = showPlayerHud
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+                if (showFirstPersonHud && _player is { View: { } rig })
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                     // than the frame.
@@ -2627,11 +2633,19 @@ internal sealed partial class DesktopGame : IDisposable
                             }
                             else
                             {
+                                CarriedWeapon? held = carried.InHand;
+                                int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
+                                    && _ammoTypes?.Types.FirstOrDefault(
+                                        ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
+                                    ? carried.Ammunition.Count(m203.AmmoId)
+                                    : 0;
                                 retailHud.Draw(
                                     batch,
-                                    carried.InHand?.Weapon,
-                                    carried.InHand?.Gun.RoundsInClip ?? 0,
-                                    carried.InHand is { } held ? held.Gun.Reserve(carried.Ammunition) : 0,
+                                    held?.Weapon,
+                                    held?.Gun.RoundsInClip ?? 0,
+                                    held is { } primary ? primary.Gun.Reserve(carried.Ammunition) : 0,
+                                    held?.Gun.State.SecondSubCounter ?? 0,
+                                    m203Reserve,
                                     _window.Width,
                                     _window.Height,
                                     UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
@@ -2650,22 +2664,23 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
-                        _hud.DrawAction(batch, actionSprite, _window.Width, _window.Height);
+                        _hud.DrawAction(
+                            batch,
+                            actionSprite,
+                            _window.Width,
+                            _window.Height,
+                            UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
                         batch.End();
                     }
 
                     // The mission's status messages. Kept off screen while the computer is up, as the rest
                     // of the HUD is: the map is a full-screen readout of the same mission and a comms card
                     // over it would be the same information twice.
-                    if (!remasterHud && _missionObjectives is { } messageRuntime)
+                    if (!tacticalMessages && _missionObjectives is { } messageRuntime)
                     {
                         _device.Set2DProjection(_window.Width, _window.Height);
                         batch.Begin();
-                        if (RenderCVars.TacticalMessages.Value && _messages is { IsReady: true } cards)
-                        {
-                            cards.Draw(batch, messageRuntime.DisplayedMessages, _window.Width, _window.Height);
-                        }
-                        else if (_hud is { IsReady: true } retailMessages)
+                        if (_hud is { IsReady: true } retailMessages)
                         {
                             retailMessages.DrawStatusMessages(
                                 batch,
@@ -2677,6 +2692,27 @@ internal sealed partial class DesktopGame : IDisposable
 
                         batch.End();
                     }
+                }
+
+                // The human-owned retail display remains alive when a full-body interaction hides the
+                // hands and weapon: that is precisely when HumanPlayer's timed-use bar is needed. In the
+                // original dispatch order this follows the weapon handler and precedes StatusScreen's timer.
+                if (!remasterHud
+                    && showPlayerHud
+                    && _player is { } retailPlayer
+                    && _hud is { IsReady: true } retailStatus)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    retailStatus.DrawPlayerStatus(
+                        batch,
+                        _playerHealth.RemainingFraction,
+                        retailPlayer.InteractionProgress,
+                        _missionObjectives?.InterfaceTimerRemainingTicks,
+                        _window.Width,
+                        _window.Height,
+                        UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                    batch.End();
                 }
 
                 // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
@@ -2903,10 +2939,9 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
-                if (remasterHud
+                if (tacticalMessages
                     && showFirstPersonHud
                     && _missionObjectives is { } modernMessages
-                    && RenderCVars.TacticalMessages.Value
                     && _messages is { IsReady: true } modernCards)
                 {
                     _device.Set2DProjection(_window.Width, _window.Height);

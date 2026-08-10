@@ -597,6 +597,18 @@ public sealed class PlayerCamera
     /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
     public bool IsInWorldInteraction => _activeInteraction is not null;
 
+    /// <summary>Gets progress through a held, timed interaction for the retail status bar.</summary>
+    /// <remarks>
+    /// Wire, fence and stationary-gun states own locomotion but do not run the HumanPlayer progress
+    /// display. The remaining interaction types use their authored 30 Hz duration directly.
+    /// </remarks>
+    public float? InteractionProgress => _activeInteraction is { DurationTicks: > 0 } interaction
+        && interaction.Type is not InteractionActivateType.Wire
+            and not InteractionActivateType.Fence
+            and not InteractionActivateType.StationaryGun
+        ? Math.Clamp(_interactionTick / (float)interaction.DurationTicks, 0f, 1f)
+        : null;
+
     /// <summary>Gets the active interaction's retail locomotion state, or -1.</summary>
     public int InteractionLocomotionState => _activeInteraction is null
         ? -1

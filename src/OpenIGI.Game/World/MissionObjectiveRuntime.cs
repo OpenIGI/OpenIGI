@@ -40,7 +40,10 @@ public sealed class MissionObjectiveRuntime
     private readonly string _completeExpression = string.Empty;
     private readonly string _failedExpression = string.Empty;
     private readonly bool _hasLevelFlow;
+    private readonly bool _interfaceTimerEnabled;
+    private readonly float _maximumLevelPlayTimeSeconds;
     private int _tick;
+    private int _levelFlowTick;
 
     /// <summary>Builds the runtime from the authored level task tree.</summary>
     public MissionObjectiveRuntime(
@@ -106,6 +109,8 @@ public sealed class MissionObjectiveRuntime
                 _hasLevelFlow = true;
                 _completeExpression = String(declared, "Complete");
                 _failedExpression = String(declared, "Failed");
+                _interfaceTimerEnabled = Bool(declared, "Interface timer enabled");
+                _maximumLevelPlayTimeSeconds = Math.Max(0f, Real(declared, "Max level play time", 0f));
             }
             else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
@@ -132,6 +137,10 @@ public sealed class MissionObjectiveRuntime
 
         Objectives = [];
         Tick();
+
+        // The constructor's Tick primes objective/message state before the first simulation update. Retail
+        // LevelFlow's +104 counter is still zero at that point and advances only from its Update handler.
+        _levelFlowTick = 0;
     }
 
     /// <summary>Gets the currently selected six-row definition, with empty rows omitted.</summary>
@@ -233,6 +242,33 @@ public sealed class MissionObjectiveRuntime
 
     /// <summary>Gets whether the level declares the LevelFlow task that owns mission success and failure.</summary>
     public bool HasLevelFlow => _hasLevelFlow;
+
+    /// <summary>Gets whether LevelFlow asks StatusScreen to show its countdown.</summary>
+    public bool InterfaceTimerEnabled => _interfaceTimerEnabled;
+
+    /// <summary>Gets the authored maximum play time in seconds.</summary>
+    public float MaximumLevelPlayTimeSeconds => _maximumLevelPlayTimeSeconds;
+
+    /// <summary>Gets the retail countdown in 30 Hz ticks, or no value when the interface timer is disabled.</summary>
+    /// <remarks>
+    /// <c>sub_4894B0</c> computes <c>max(0, MaxLevelPlayTime*30 - LevelFlowTick)</c>. Keeping ticks here
+    /// avoids introducing wall-clock drift and lets StatusScreen perform the original whole-second divide.
+    /// </remarks>
+    public int? InterfaceTimerRemainingTicks
+    {
+        get
+        {
+            if (!_interfaceTimerEnabled)
+            {
+                return null;
+            }
+
+            int maximumTicks = _maximumLevelPlayTimeSeconds >= int.MaxValue / 30f
+                ? int.MaxValue
+                : (int)MathF.Round(_maximumLevelPlayTimeSeconds * 30f, MidpointRounding.ToEven);
+            return Math.Max(0, maximumTicks - _levelFlowTick);
+        }
+    }
 
     /// <summary>Gets the result of the LevelFlow <c>Complete</c> expression.</summary>
     public bool IsComplete { get; private set; }
@@ -386,6 +422,7 @@ public sealed class MissionObjectiveRuntime
         IsFailed = failedLevel;
         IsComplete = completeLevel && !failedLevel;
         _tick++;
+        _levelFlowTick++;
     }
 
     private static Definition ReadDefinition(DeclaredTask task)

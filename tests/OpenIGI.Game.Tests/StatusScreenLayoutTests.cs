@@ -31,6 +31,36 @@ public sealed class StatusScreenLayoutTests
     }
 
     [Fact]
+    public void HealthAndTimerUseTheirRetailAnchors()
+    {
+        Assert.Equal((40f, 430f), StatusScreenLayout.HealthAnchor(640, 480));
+        Assert.Equal((520f, 20f), StatusScreenLayout.TimerPosition(640, 480));
+    }
+
+    [Fact]
+    public void InteractionProgressUsesTheRetailNestedRectanglesAtEveryResolution()
+    {
+        Assert.Equal((200f, 400f, 240f, 9f), StatusScreenLayout.InteractionBackground(640, 480));
+
+        (float x, float y, float width, float height) = StatusScreenLayout.InteractionFill(640, 480, 0.5f);
+        Assert.Equal(202f, x, 3);
+        Assert.Equal(402f, y, 3);
+        Assert.Equal(118f, width, 3);
+        Assert.Equal(5f, height, 3);
+
+        Assert.Equal(472f, StatusScreenLayout.InteractionFill(1280, 960, 1f).Width, 3);
+    }
+
+    [Theory]
+    [InlineData(0, "Time Left: 0 minutes, 0 seconds")]
+    [InlineData(30, "Time Left: 0 minutes, 1 second")]
+    [InlineData(1800, "Time Left: 1 minute, 0 seconds")]
+    [InlineData(1830, "Time Left: 1 minute, 1 second")]
+    [InlineData(3780, "Time Left: 2 minutes, 6 seconds")]
+    public void MissionTimerUsesTheRetailTextAndPluralRules(int ticks, string expected)
+        => Assert.Equal(expected, StatusScreenLayout.TimerText(ticks));
+
+    [Fact]
     public void TheCrosshairIsCentredWithATruncatedHalfSprite()
     {
         // The half-SPRITE is truncated to a whole pixel and the half-SCREEN is not, so a 9-pixel
@@ -65,6 +95,17 @@ public sealed class StatusScreenLayoutTests
         // sprite, and it never reaches this draw anyway because it counts no ammunition.
         Assert.InRange(StatusScreenLayout.MagazineFrame(-1, -1), 0, StatusScreenLayout.MagazineFrames);
         Assert.InRange(StatusScreenLayout.MagazineFrame(99, 17), 0, StatusScreenLayout.MagazineFrames);
+    }
+
+    [Fact]
+    public void RevolverAndShotgunGaugesUseTheirOwnRetailFrameArithmetic()
+    {
+        Assert.Equal(0, StatusScreenLayout.BarrelFrame(roundsInClip: 6, secondSubCounter: 0));
+        Assert.Equal(30, StatusScreenLayout.BarrelFrame(roundsInClip: 3, secondSubCounter: 0));
+        Assert.Equal(34, StatusScreenLayout.BarrelFrame(roundsInClip: 3, secondSubCounter: 4));
+        Assert.Equal(0, StatusScreenLayout.ShellFrame(roundsInClip: 7));
+        Assert.Equal(4, StatusScreenLayout.ShellFrame(roundsInClip: 3));
+        Assert.Equal(7, StatusScreenLayout.ShellFrame(roundsInClip: 0));
     }
 
     [Fact]

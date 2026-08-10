@@ -80,7 +80,9 @@ public static class CVarBinding
         for (int i = start; i < parts.Length; i++)
         {
             string word = parts[i];
-            words.Add(word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..]);
+            words.Add(word.Equals("hud", StringComparison.OrdinalIgnoreCase)
+                ? "HUD"
+                : word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..]);
         }
 
         return words.Count > 0 ? string.Join(' ', words) : name;

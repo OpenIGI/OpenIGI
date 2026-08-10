@@ -879,15 +879,11 @@ internal sealed partial class DesktopGame
                 }
 
                 _remasteredHud?.Dispose();
-                _remasteredHud = null;
-                if (!_options.VanillaMenu)
+                _remasteredHud = new RemasteredHudRenderer(_device, _logger);
+                if (!_remasteredHud.Load())
                 {
-                    _remasteredHud = new RemasteredHudRenderer(_device, _logger);
-                    if (!_remasteredHud.Load())
-                    {
-                        _remasteredHud.Dispose();
-                        _remasteredHud = null;
-                    }
+                    _remasteredHud.Dispose();
+                    _remasteredHud = null;
                 }
             }
 

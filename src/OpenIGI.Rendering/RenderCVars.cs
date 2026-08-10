@@ -994,6 +994,22 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether gameplay uses the remaster HUD instead of IGI1's retail StatusScreen.</summary>
+    /// <remarks>
+    /// Both presentations stay loaded so this can switch live from the console or settings screen.
+    /// Vanilla selects the recovered retail path; the other presets retain the remaster HUD by default.
+    /// </remarks>
+    public static readonly BoolCVar RemasteredHud = Presets.Define(
+        CVar.Bool(
+            "r_remastered_hud",
+            true,
+            CVarOptions.Archive,
+            "Draw the remaster HUD. Off uses IGI1's original health, weapon, action and timer display."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>Whether the C-key map computer is the remaster's interface rather than the retail one.</summary>
     /// <remarks>
     /// <para>
@@ -1028,8 +1044,8 @@ public static class RenderCVars
     /// reach that. Off is the original's placement and bitmap face; on is a card set in the shell's Saira.
     /// </para>
     /// <para>
-    /// Off under vanilla for the same reason as everything else here — <c>-vanilla</c> is the original's
-    /// picture, and a redesigned message block is not it.
+    /// This preference only applies while <see cref="RemasteredHud"/> is on. The retail HUD always uses
+    /// its own bitmap message block and original display timing.
     /// </para>
     /// </remarks>
     public static readonly BoolCVar TacticalMessages = Presets.Define(
@@ -1037,7 +1053,7 @@ public static class RenderCVars
             "r_messages_tactical",
             true,
             CVarOptions.Archive,
-            "Draw mission status messages as the remaster's comms cards. Off is the retail message block."),
+            "With the remaster HUD, draw mission messages as tactical cards. Off is the retail message block."),
         vanilla: "0",
         enhanced: "1",
         high: "1",
