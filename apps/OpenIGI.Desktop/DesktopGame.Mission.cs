@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Formats.Ai;
@@ -649,6 +649,9 @@ internal sealed partial class DesktopGame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
             _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
+            _rain?.Dispose();
+            _rain = new RainRenderer(_device, _logger);
+            _rain.ReadParams(levelRoot);
             _shadowPass = new ShadowCasterPass(_device);
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
@@ -1151,9 +1154,11 @@ internal sealed partial class DesktopGame
         _impactParticles?.Dispose();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
-        _arms?.Dispose();
+        _sky?.Dispose();
         _sky = null;
-        _terrain = null;
+        _rain?.Dispose();
+        _rain = null;
+        _terrain?.Dispose();
         _world = null;
         _soldiers = null;
         _backdropSoldiers = null;

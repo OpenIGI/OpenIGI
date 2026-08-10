@@ -138,7 +138,7 @@ public sealed class QualityBindingTests
         _ = OpenIGI.Rendering.RenderCVars.VSync;
 
         int graphicsVariables = 0;
-        foreach (ICVar cvar in registry.All)
+        foreach (ICVar cvar in registry.All.ToList())
         {
             if (cvar.Name.StartsWith("r_", StringComparison.Ordinal) && !cvar.Flags.HasFlag(CVarOptions.Hidden))
             {
