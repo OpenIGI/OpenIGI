@@ -39,6 +39,7 @@ public sealed class StatusScreenRendererTests
         Assert.Equal("COMPUTER:computer.res", StatusScreenRenderer.FontArchive);
         Assert.Equal("LOCAL:computer/computer.res", StatusScreenRenderer.LocalFontArchive);
         Assert.Equal("font3.fnt", StatusScreenRenderer.FontResource);
+        Assert.Equal("font1.fnt", StatusScreenRenderer.SubtitleFontResource);
         Assert.True(renderer.Load(fileSystem));
 
         IresArchive status = IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenLayout.Archive));
@@ -71,6 +72,36 @@ public sealed class StatusScreenRendererTests
                 scale);
             batch.End();
         }
+    }
+
+    [RequiresGameDataFact]
+    public void CutsceneSubtitleUsesTheTallWhiteRetailFaceInsteadOfTheGreenStatusFace()
+    {
+        IresArchive computer = IresArchive.Read(File.ReadAllBytes(
+            Path.Combine(GameData.RequireRoot(), "computer", "computer.res")));
+        SpriteAsset subtitle = Asset(computer, StatusScreenRenderer.SubtitleFontResource);
+        SpriteAsset status = Asset(computer, StatusScreenRenderer.FontResource);
+
+        Assert.Equal(18, subtitle.DefaultHeight);
+        Assert.Equal(9, status.DefaultHeight);
+
+        bool foundOpaqueWhite = false;
+        foreach (var texture in subtitle.Textures)
+        {
+            foreach (var pixel in texture.GetLevel(0))
+            {
+                if (pixel.A == 0)
+                {
+                    continue;
+                }
+
+                Assert.True(pixel.R == pixel.G && pixel.G == pixel.B,
+                    $"subtitle glyph contains baked colour ({pixel.R},{pixel.G},{pixel.B})");
+                foundOpaqueWhite |= pixel is { R: 255, G: 255, B: 255, A: 255 };
+            }
+        }
+
+        Assert.True(foundOpaqueWhite);
     }
 
     private static SpriteFrame Frame(IresArchive archive, string name)

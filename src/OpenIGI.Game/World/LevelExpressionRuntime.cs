@@ -11,10 +11,12 @@ public sealed class LevelExpressionRuntime
     private readonly Dictionary<string, ScriptExpression?> _cache = new(StringComparer.Ordinal);
 
     /// <summary>Creates an evaluator over a mission's script variables.</summary>
-    public LevelExpressionRuntime(ScriptVarRegistry variables)
+    public LevelExpressionRuntime(
+        ScriptVarRegistry variables,
+        Func<string, ScriptArguments, QvmValue?>? invoke = null)
     {
         ArgumentNullException.ThrowIfNull(variables);
-        _context = new Context(variables);
+        _context = new Context(variables, invoke);
     }
 
     /// <summary>Evaluates an authored condition; an empty condition uses the caller's default.</summary>
@@ -53,6 +55,23 @@ public sealed class LevelExpressionRuntime
         return expression is null ? 0 : new ScriptExpressionEvaluator(_context).Evaluate(expression);
     }
 
+    /// <summary>Evaluates an authored numeric expression as a single-precision value.</summary>
+    public float EvaluateSingle(string? source, float emptyValue = 0f)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return emptyValue;
+        }
+
+        ScriptExpression? expression = Parse(source);
+        return expression is null
+            ? 0f
+            : (float)new ScriptExpressionEvaluator(_context).EvaluateReal(expression);
+    }
+
+    /// <summary>Evaluates an authored expression for its side effects and returns its integer result.</summary>
+    public int Execute(string? source) => EvaluateInt32(source, 0);
+
     private ScriptExpression? Parse(string source)
     {
         if (_cache.TryGetValue(source, out ScriptExpression? cached))
@@ -80,15 +99,18 @@ public sealed class LevelExpressionRuntime
         _ => null,
     };
 
-    private sealed class Context(ScriptVarRegistry variables) : IScriptExpressionContext
+    private sealed class Context(
+        ScriptVarRegistry variables,
+        Func<string, ScriptArguments, QvmValue?>? invoke) : IScriptExpressionContext
     {
         public bool TryGetValue(string name, out QvmValue value) => variables.TryRead(name, out value);
         public QvmValueKind GetValueKind(string name) => variables.GetValueKind(name);
         public bool TrySetValue(string name, QvmValue value) => variables.TryWrite(name, value);
         public bool TryInvoke(string name, ScriptArguments arguments, out QvmValue result)
         {
-            result = QvmValue.Zero;
-            return false;
+            QvmValue? invoked = invoke?.Invoke(name, arguments);
+            result = invoked ?? QvmValue.Zero;
+            return invoked.HasValue;
         }
     }
 }

@@ -223,10 +223,19 @@ public sealed class MaterialDetailPack : IDisposable
     /// because it is the exception — a level has a handful of ground tiles and a thousand other
     /// textures, and the thousand come from the pack.
     /// </para>
+    /// <para>
+    /// <see cref="DeriveMissing"/> is still the policy gate. Ground tiles have no authored name to look
+    /// up, but deriving maps for them while material detail is disabled is wasted CPU and can turn a
+    /// mission load into a multi-minute stall on some systems.
+    /// </para>
     /// </remarks>
     public void AttachDerived(TextureHandle diffuse, ReadOnlySpan<Bgra32> pixels, int width, int height)
     {
-        if (!diffuse.IsValid || width <= 0 || height <= 0 || pixels.Length < width * height)
+        if (!DeriveMissing
+            || !diffuse.IsValid
+            || width <= 0
+            || height <= 0
+            || pixels.Length < width * height)
         {
             return;
         }

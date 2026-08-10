@@ -328,4 +328,5 @@ public sealed class SoldierView
     /// so that a shared pose skins once and turns per soldier (see <c>ViewModelRenderer</c>).
     /// </remarks>
     public BonePose UnrotatedPose() => _bones.Pose();
+
 }

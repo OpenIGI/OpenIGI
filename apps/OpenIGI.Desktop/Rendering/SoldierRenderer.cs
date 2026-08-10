@@ -45,6 +45,19 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>How far below the declared position the probe reaches — 2 m, the sliding step-down budget.</summary>
     private const double ProbeBelowInUnits = 8192.0;
 
+    /// <summary>
+    /// Retail IGI.exe Human_GroundCollision raises a standing human's task position by 1638.4
+    /// engine units before subtracting the animated root height and querying the supporting surface.
+    /// </summary>
+    private const double HumanGroundCheckLiftInUnits = 1638.4;
+
+    /// <summary>
+    /// Retail Human_GroundCollision supplies -40960.0 as the first distance to
+    /// World_GetNextZSpecificMesh. This is deliberately deeper than the normal two-metre
+    /// placement probe so a staged cutscene actor can acquire a vehicle below its task origin.
+    /// </summary>
+    private const double HumanGroundProbeDownInUnits = 40960.0;
+
     private readonly IGraphicsDevice _device;
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry? _magic;
@@ -108,6 +121,14 @@ public sealed class SoldierRenderer : IDisposable
     {
         _doors = doors;
         _solids = solids;
+
+        // Human_GroundCollision runs during retail task registration, before the first CutScene tick.
+        // That is when Mission 1 actor 1666 acquires train car 1888 (and actor 1505 the helicopter),
+        // preserving the authored parent-local origin through every later shot. Waiting for the visible
+        // landing produces the right vehicle but a permanently shifted local offset inside the wagon.
+        // Moving vehicle placements receive their derived transforms immediately before the first
+        // Soldier tick. Ground registration must wait for that publication; probing the build-time
+        // placement here can mistake a nearby dormant vehicle for the actor's support.
     }
 
     /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
@@ -256,6 +277,7 @@ public sealed class SoldierRenderer : IDisposable
     private bool _playerBodyShown;
     private bool _playerBodySuppressRootHeight;
     private double _playerBodyVisualLift;
+    private double _playerBodyRootHeightAtStart;
     private float _playerBodyFacing;
     private AiSoldier.GroundQuery? _playerBodyGround;
 
@@ -297,19 +319,81 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Gets the number of soldiers that resolved and will draw.</summary>
     public int Count { get; private set; }
 
+    /// <summary>Gets or sets the active authored cutscene transform source.</summary>
+    public CutsceneRuntime? Cutscenes { get; set; }
+
     /// <summary>Gets the living soldiers the retail map computer plots as guard contacts.</summary>
     public IReadOnlyList<Vector3d> MapContacts()
     {
         List<Vector3d> contacts = [];
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
-            if (_health.TryGetValue(view, out HumanHealth? health) && !health.IsDead)
+            if (ConditionalContainerGate.IsTaskActive(view.Soldier)
+                && _health.TryGetValue(view, out HumanHealth? health) && !health.IsDead)
             {
                 contacts.Add(brain.Position);
             }
         }
 
         return contacts;
+    }
+
+    /// <summary>Resolves a human task's live pose for an EditCamera link or target.</summary>
+    public CutsceneTargetPose? CutscenePose(int taskId)
+    {
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (member.View.Soldier.Id == taskId && ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+                {
+                    if (Cutscenes?.TryGetAttachedDrawTransform(
+                        member.View.Soldier, out Vector3d attached, out Matrix3f attachedOrientation) == true)
+                    {
+                        return new CutsceneTargetPose(
+                            attached * WorldScene.UnitsPerMetre,
+                            attachedOrientation);
+                    }
+
+                    if (member.IsCutsceneActor)
+                    {
+                        if (member.HasCutsceneGameplayMovement)
+                        {
+                            double groundedZ = SnapToGround(
+                                member.View.Position.X,
+                                member.View.Position.Y,
+                                member.View.Position.Z);
+                            return new CutsceneTargetPose(
+                                new Vector3d(
+                                    member.View.Position.X,
+                                    member.View.Position.Y,
+                                    groundedZ + member.View.RootSample.Z),
+                                member.View.Orientation);
+                        }
+
+                        if (member.HasCutsceneRootMotion)
+                        {
+                            return new CutsceneTargetPose(member.View.Position, member.View.Orientation);
+                        }
+
+                        // The task position is the Human's planted feet. Human's ground pass writes
+                        // Human+32 at ground + Human+1300, so even a dormant cinematic performer has
+                        // its playing clip's root height above the authored floor. Keeping the bare task
+                        // Z is what buried the garage guard to his waist during Mission 1's briefing.
+                        HumanSoldierTask staged = member.View.Soldier;
+                        return new CutsceneTargetPose(
+                            new Vector3d(
+                                staged.Position.X,
+                                staged.Position.Y,
+                                staged.Position.Z + member.View.RootSample.Z),
+                            Matrix3f.FromEngineEulerAngles(0f, 0f, staged.Gamma));
+                    }
+                    return new CutsceneTargetPose(member.View.Position, member.View.Orientation);
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Gets or sets the derived surface-detail maps, or <see langword="null"/> for none.</summary>
@@ -377,7 +461,18 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            group.Soldiers.Add(new Member(view, Stand(soldier, group, terrain, cast), own));
+            // A human staged beside a CutScene keeps the authored object origin.  Gameplay humans are
+            // grounded by their mover on the first ticks, but cinematic performers deliberately sit,
+            // crouch or ride at offsets from nearby geometry.  Running the gameplay stand probe over
+            // Anya, for example, put the lowest vertex of her seated clip on the control-room floor and
+            // lifted the entire actor through the camera framing. Do not add the fallback standing
+            // clip's root height here either: the task authors the cinematic pelvis origin, and the real
+            // seated clip is selected only after the timeline starts.
+            bool cutsceneActor = CinematicActor.IsStaged(soldier);
+            Vector3d placement = cutsceneActor
+                ? soldier.Position / WorldScene.UnitsPerMetre
+                : Stand(soldier, group, terrain, cast);
+            group.Soldiers.Add(new Member(view, placement, own) { IsCutsceneActor = cutsceneActor });
             Count++;
         }
 
@@ -443,6 +538,10 @@ public sealed class SoldierRenderer : IDisposable
             foreach (Member member in group.Soldiers)
             {
                 SoldierView view = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+                {
+                    continue;
+                }
                 double snappedZ = SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
                 Vector3d feet = new(view.Position.X, view.Position.Y, snappedZ);
 
@@ -505,6 +604,10 @@ public sealed class SoldierRenderer : IDisposable
 
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
             double snappedZ = SnapToGround(view.Position.X, view.Position.Y, view.Position.Z);
             Vector3d centre = new(view.Position.X, view.Position.Y, snappedZ + PickChestUnits);
             if (RaySphere(originUnits, dir, centre, PickCullRadiusUnits, reachUnits, out double t) && t < nearestT)
@@ -1363,8 +1466,12 @@ public sealed class SoldierRenderer : IDisposable
     public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
         int heard = 0;
-        foreach (AiSoldier brain in _brains.Values)
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
             if (except is not null && _brains.TryGetValue(except, out AiSoldier? shooter) && ReferenceEquals(shooter, brain))
             {
                 continue;
@@ -1385,8 +1492,12 @@ public sealed class SoldierRenderer : IDisposable
     public void NotifyGroundImpact(Vector3d impact, Vector3d shooterPosition)
     {
         int heard = 0;
-        foreach (AiSoldier brain in _brains.Values)
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
             if (brain.ReceiveGroundImpact(impact, shooterPosition))
             {
                 heard++;
@@ -1403,8 +1514,12 @@ public sealed class SoldierRenderer : IDisposable
     public void NotifyWalk(Vector3d step, Vector3d walkerPosition, double radiusUnits)
     {
         int heard = 0;
-        foreach (AiSoldier brain in _brains.Values)
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
             if (brain.ReceiveWalk(step, walkerPosition, radiusUnits))
             {
                 heard++;
@@ -1427,6 +1542,10 @@ public sealed class SoldierRenderer : IDisposable
         int heard = 0;
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
             // A body the round actually damaged receives TAKINGDAMAGE, not the avoidance event for a miss.
             if (struck is not null && ReferenceEquals(struck, view))
             {
@@ -1914,6 +2033,11 @@ public sealed class SoldierRenderer : IDisposable
         // on the spot. Exactly one soldier per group actually moved: that group's representative.
         foreach ((SoldierView view, AiSoldier _) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
             view.Tick();
 
             // Read here, not after the clip selection below: the event belongs to the interval this
@@ -1940,6 +2064,12 @@ public sealed class SoldierRenderer : IDisposable
             }
         }
 
+        // Child Train collision starts at its authored placeholder and receives its derived consist
+        // transform from DesktopGame immediately before this tick. Retry registration here so the
+        // first live mesh pose can reproduce retail's pre-scene Human_SetParent call. This pass is
+        // deliberately before animation root motion: the authored Human position is the parent origin.
+        AttachStagedActorsToVehicles();
+
         // The alarm controls advance first, so this tick's AIEVENT_ALARMON reflects this tick's state
         // -- 0x4408A0's update runs on the task pass, before the AIs. The on condition stands in for
         // the control's authored expression: any named trigger pressed turns it on, and it stays on.
@@ -1959,10 +2089,51 @@ public sealed class SoldierRenderer : IDisposable
         // The AI runs second, so the root motion it is handed is this tick's, not last tick's.
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
             if (brain.RequestedAnimation >= 0
                 && view.Bones.SourceOf(0)?.EndedThisTick == true)
             {
                 brain.ReportAnimationFinished();
+            }
+
+            Member? member = FindMember(view);
+            if (member is { IsCutsceneActor: true })
+            {
+                AiPatrolCommandKind? patrolCommand = brain.Route?.Current?.Kind;
+                bool authoredAnimation = brain.RequestedAnimation >= 0
+                    || patrolCommand == AiPatrolCommandKind.Animation;
+                if (authoredAnimation)
+                {
+                    AttachCutsceneActorToMovingGround(
+                        view,
+                        brain.Position,
+                        member.Position * WorldScene.UnitsPerMetre);
+                    Vector3f rootDelta = view.RootMotion();
+                    if (Cutscenes?.AdvanceAttachedActor(view.Soldier, rootDelta) != true
+                        && (rootDelta.X != 0f || rootDelta.Y != 0f || rootDelta.Z != 0f))
+                    {
+                        // The ordinary Human mover consumes the clip's root delta into Human+32 even
+                        // when the AI action itself is a non-locomotion PlayAnimation. Cutscene jumps
+                        // use exactly that path; keeping the task's authored spawn here froze Jones in
+                        // mid-air while EditCamera continued targeting the moving Human.
+                        Vector3d moved = view.Orientation.Transposed().Transform(new Vector3d(
+                            rootDelta.X,
+                            rootDelta.Y,
+                            rootDelta.Z));
+                        brain.SeparateTo(brain.Position + moved);
+                        member.HasCutsceneRootMotion = true;
+                    }
+
+                }
+
+                if (patrolCommand is { } command && command.IsMovement())
+                {
+                    member.HasCutsceneGameplayMovement = true;
+                }
             }
 
             if (view.IsDead)
@@ -2034,7 +2205,6 @@ public sealed class SoldierRenderer : IDisposable
                     $"dmg={brain.Events.DrainedCount(AiEvent.TakingDamage)} act={brain.Activity}");
             }
 
-            Member? member = FindMember(view);
             if (member is not null)
             {
                 member.FiredThisTick = false;
@@ -2287,6 +2457,97 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    private void AttachCutsceneActorToMovingGround(
+        SoldierView view,
+        Vector3d probePosition,
+        Vector3d? attachmentPosition = null,
+        WorldTraceMask mask = WorldTraceMask.DynamicObjects,
+        bool includeInactiveOwners = false,
+        bool preferExistingBodyContact = false)
+    {
+        if (_solids is null || Cutscenes is null)
+        {
+            return;
+        }
+
+        if (Cutscenes.TryGetAttachedDrawTransform(view.Soldier, out _, out _))
+        {
+            // Retail 0x4626E8 only calls Human_SetParent when Human+1900 is null. Once attached,
+            // the parent owns movement until a separate detach path clears it; another ground ray
+            // must not silently recapture or switch the local frame.
+            return;
+        }
+
+        // Retail actor 1666 reaches Human_GroundCollision with BoneDynCubeObj's train-1888 contact
+        // already populated. That branch calls Human_SetParent directly and never executes GetNextZ.
+        // Staged actors use the collision index's corresponding dynamic broad-phase contact first;
+        // live actors below retain the fallback animated-foot query.
+        if (preferExistingBodyContact
+            && _solids.TryFindContainingDynamicOwner(
+                attachmentPosition ?? probePosition,
+                includeInactiveOwners,
+                out GameTask? existingParent)
+            && existingParent is not null)
+        {
+            Cutscenes.TryAttachActorToTask(
+                view.Soldier,
+                existingParent,
+                attachmentPosition ?? probePosition,
+                view.Orientation);
+            return;
+        }
+
+        // Retail IGI.exe 0x4623C3 samples BoneDynCubeObj's animated root, then 0x462403 forms the
+        // standing ground-check Z as Human.Position.Z + 1638.4 - RootSample.Z. Querying from the task origin
+        // instead hits geometry above the feet (Mission 1's helicopter underside) and parents Jones
+        // to the wrong vehicle. DynamicObject is this port's equivalent of the moving-platform flag
+        // tested at 0x4626E1; its Owner is the exact task passed to Human_SetParent at 0x463310.
+        double checkZ = probePosition.Z + HumanGroundCheckLiftInUnits - view.RootSample.Z;
+        WorldTraceRequest request = new(
+            new Vector3d(probePosition.X, probePosition.Y, checkZ),
+            new Vector3d(probePosition.X, probePosition.Y, checkZ - HumanGroundProbeDownInUnits),
+            mask,
+            IgnoredOwner: view.Soldier,
+            IncludeInactiveOwners: includeInactiveOwners);
+        if (_solids.TryTrace(request, out WorldTraceHit hit) && hit.Owner is { } parent)
+        {
+            // The retail probe selects the supporting task from the live foot query, but the first
+            // Human_SetParent packet still contains the staged Human+32. Our actor mover may have
+            // consumed a root delta while the vehicle's conditional container was dormant, so keep
+            // those two inputs distinct instead of baking that scheduling error into the local frame.
+            Cutscenes.TryAttachActorToTask(
+                view.Soldier,
+                parent,
+                attachmentPosition ?? probePosition,
+                view.Orientation);
+        }
+    }
+
+    private void AttachStagedActorsToVehicles()
+    {
+        if (_solids is null || Cutscenes is null)
+        {
+            return;
+        }
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (member.IsCutsceneActor)
+                {
+                    AttachCutsceneActorToMovingGround(
+                        member.View,
+                        member.Position * WorldScene.UnitsPerMetre,
+                        attachmentPosition: null,
+                        mask: WorldTraceMask.DynamicObjects,
+                        includeInactiveOwners: true,
+                        preferExistingBodyContact: true);
+                }
+            }
+        }
+    }
+
     /// <summary>Records a soldier's drawn placement for this tick, keeping the tick before.</summary>
     private void CaptureTickState(Member member)
     {
@@ -2349,6 +2610,42 @@ public sealed class SoldierRenderer : IDisposable
             return (corpse.Origin / WorldScene.UnitsPerMetre, Matrix3f.Identity);
         }
 
+        // A dormant cinematic actor may still have an AI row and therefore a brain object, but its
+        // authored staging wins while its conditional scene is active.  Letting the generic brain
+        // branch below ground it simply reintroduced the seated-actor lift avoided at construction.
+        if (member.IsCutsceneActor)
+        {
+            if (Cutscenes?.TryGetAttachedDrawTransform(
+                soldier.Soldier, out Vector3d attached, out Matrix3f attachedOrientation) == true)
+            {
+                // Human_SetParent derives Human+1904 from the actor's already-staged Human+32. For a
+                // seated actor that position is the model/pelvis origin, not gameplay feet. The probe's
+                // Mission 1 trace fixes Jones at local (47.574,-2649.593,-866.474) inside heli 1502;
+                // Human_AttachedMovement then consumes only the per-tick root DELTA into that local
+                // offset. Adding the absolute Human+1300 sample here commits it a second time, lifting
+                // Jones into the cabin roof until only his legs survive the depth test.
+                return (attached, attachedOrientation);
+            }
+
+            if (member.HasCutsceneGameplayMovement)
+            {
+                double groundedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+                return (new Vector3d(
+                    soldier.Position.X / WorldScene.UnitsPerMetre,
+                    soldier.Position.Y / WorldScene.UnitsPerMetre,
+                    (groundedZ + soldier.RootSample.Z) / WorldScene.UnitsPerMetre), soldier.Orientation);
+            }
+
+            if (member.HasCutsceneRootMotion)
+            {
+                return (soldier.Position / WorldScene.UnitsPerMetre, soldier.Orientation);
+            }
+            return (new Vector3d(
+                member.Position.X,
+                member.Position.Y,
+                member.Position.Z + (soldier.RootSample.Z / WorldScene.UnitsPerMetre)), soldier.Orientation);
+        }
+
         // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT HEIGHT.
         // That is the original's Human+1300 (see SoldierView.RootSample): every retail skeleton's
         // bone 0 rest translation is zero, so the pose puts the pelvis at the object origin and the
@@ -2386,7 +2683,7 @@ public sealed class SoldierRenderer : IDisposable
     /// that feeds the temporal resolve are all untouched by it.
     /// </remarks>
     private static BonePose PoseToDraw(Member member) =>
-        member.Ragdoll is { } corpse ? corpse.Pose() : member.View.UnrotatedPose();
+        member.Ragdoll?.Pose() ?? member.View.UnrotatedPose();
 
     /// <summary>A body's heading out of its world 3×3 — the inverse of <c>Z(facing)</c>.</summary>
     /// <remarks>
@@ -2520,6 +2817,11 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
+                if (!ConditionalContainerGate.IsTaskActive(member.View.Soldier))
+                {
+                    continue;
+                }
+
                 // A dead soldier keeps being drawn -- a body stays on the ground in the original, and
                 // vanishing was only ever the port having no death animation to play. Each soldier
                 // carries its own skinned mesh, so a corpse is posed by its own death clip.
@@ -2976,6 +3278,7 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodySuppressRootHeight = suppressRootHeight;
         _playerBodyVisualLift = visualLift;
         view.StartLadderAnimation(animation, loops, backwards, paused);
+        _playerBodyRootHeightAtStart = view.RootSample.Z;
     }
 
     private void ResetPlayerTraversalHistory()
@@ -3061,11 +3364,31 @@ public sealed class SoldierRenderer : IDisposable
         CapturePlayerBodyTickState(snap: false);
     }
 
+    /// <summary>Gets the interaction task position adjusted by the clip's visible root-height change.</summary>
+    /// <remarks>
+    /// The body renderer adds the current root Z above the task, while the third-person camera normally
+    /// follows the task itself. Following the delta from the clip's entry height keeps an airborne vault
+    /// framed without treating the standing pelvis height as an extra metre of world elevation.
+    /// </remarks>
+    public Vector3d PlayerInteractionCameraFeet(Vector3d taskPosition)
+    {
+        if (_playerBodyView is not { } view || _playerBodySuppressRootHeight)
+        {
+            return taskPosition;
+        }
+
+        return new Vector3d(
+            taskPosition.X,
+            taskPosition.Y,
+            taskPosition.Z + view.RootSample.Z - _playerBodyRootHeightAtStart + _playerBodyVisualLift);
+    }
+
     /// <summary>Stops showing the climbing body — the player has left the ladder.</summary>
     public void HidePlayerBodyClimbing()
     {
         _playerBodyClimbing = false;
         _playerBodyVisualLift = 0.0;
+        _playerBodyRootHeightAtStart = 0.0;
     }
 
     // Re-poses the player body's animated mesh in place. Shared by the death fall and the ladder climb.
@@ -3294,6 +3617,7 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyClimbing = false;
         _playerBodyShown = false;
         _playerBodyVisualLift = 0.0;
+        _playerBodyRootHeightAtStart = 0.0;
         _playerBodyHasTickState = false;
         _playerBodyCaptureTick = -1;
         _playerBodySkinTick = -1;
@@ -3323,6 +3647,10 @@ public sealed class SoldierRenderer : IDisposable
             foreach (Member member in group.Soldiers)
             {
                 SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
+                {
+                    continue;
+                }
                 if (!_health.TryGetValue(soldier, out HumanHealth? health))
                 {
                     float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
@@ -3560,6 +3888,10 @@ public sealed class SoldierRenderer : IDisposable
             foreach (Member member in group.Soldiers)
             {
                 SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier))
+                {
+                    continue;
+                }
                 if (!_health.TryGetValue(soldier, out HumanHealth? health))
                 {
                     float maximum = _combat.TryGetValue(soldier, out AiCombatParameters? row)
@@ -3866,16 +4198,6 @@ public sealed class SoldierRenderer : IDisposable
     {
         foreach (GameTask child in task.Children)
         {
-            // A soldier inside a ConditionalContainer that is not running is not registered into the world
-            // -- the original creates the task but never fires its DynCubeObj register event until the
-            // scene runs. Level 1's intro and outro cut-scenes park several Jones-model soldiers this way
-            // (the "Jones drive truck" outro actor among them); without this the port drew them standing in
-            // the base at mission start. See ConditionalContainerGate.
-            if (ConditionalContainerGate.IsDormant(child))
-            {
-                continue;
-            }
-
             if (child is HumanSoldierTask soldier)
             {
                 yield return soldier;
@@ -4035,6 +4357,15 @@ public sealed class SoldierRenderer : IDisposable
         public SoldierView View { get; } = view;
 
         public Vector3d Position { get; } = position;
+
+        /// <summary>Whether the authored origin is cinematic staging rather than a gameplay spawn.</summary>
+        public bool IsCutsceneActor { get; init; }
+
+        /// <summary>Whether an authored one-shot has moved this staged Human from its spawn.</summary>
+        public bool HasCutsceneRootMotion { get; set; }
+
+        /// <summary>Whether an authored WalkTo/RunTo route has handed placement to the Human mover.</summary>
+        public bool HasCutsceneGameplayMovement { get; set; }
 
         public MeshHandle Mesh { get; set; } = mesh;
 

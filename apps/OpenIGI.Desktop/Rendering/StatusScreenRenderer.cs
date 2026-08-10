@@ -58,6 +58,14 @@ public sealed class StatusScreenRenderer : IDisposable
     /// </remarks>
     public const string FontResource = "font3.fnt";
 
+    /// <summary>The tall white shipped face used by the cutscene subtitle text objects.</summary>
+    /// <remarks>
+    /// <c>font3.fnt</c> is the nine-pixel green computer/status face. The retail subtitle is
+    /// <c>font1.fnt</c>: an eighteen-pixel greyscale face whose glyph texture can actually produce
+    /// white. A white vertex colour cannot turn font3's baked-green pixels white.
+    /// </remarks>
+    public const string SubtitleFontResource = "font1.fnt";
+
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, SpriteResource?> _sprites = new(StringComparer.OrdinalIgnoreCase);
@@ -65,6 +73,7 @@ public sealed class StatusScreenRenderer : IDisposable
     private IresArchive? _fontArchive;
     private IresArchive? _spriteArchive;
     private BitmapTextRenderer? _font;
+    private BitmapTextRenderer? _subtitleFont;
     private float _actionPulsePhase;
     private bool _disposed;
 
@@ -409,6 +418,7 @@ public sealed class StatusScreenRenderer : IDisposable
 
         _sprites.Clear();
         _font = null;
+        _subtitleFont = null;
         _archive = null;
         _fontArchive = null;
         _spriteArchive = null;
@@ -555,7 +565,9 @@ public sealed class StatusScreenRenderer : IDisposable
     {
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(messages);
-        if (Font() is not { } font)
+        BitmapTextRenderer? font = Font();
+        BitmapTextRenderer? subtitleFont = SubtitleFont() ?? font;
+        if (font is null && subtitleFont is null)
         {
             return;
         }
@@ -567,12 +579,73 @@ public sealed class StatusScreenRenderer : IDisposable
         {
             if (message.IsCutscene)
             {
-                DrawSubtitle(batch, font, message, screenWidth, screenHeight, scale);
+                if (subtitleFont is not null)
+                {
+                    DrawSubtitle(batch, subtitleFont, message, screenWidth, screenHeight, scale);
+                }
                 continue;
             }
 
-            DrawStatusMessage(batch, font, message, left, y, scale);
+            if (font is not null)
+            {
+                DrawStatusMessage(batch, font, message, left, y, scale);
+            }
             y += StatusScreenLayout.MessageStep * scale;
+        }
+    }
+
+    /// <summary>Draws the HANDICAM battery and clock at their retail anchors.</summary>
+    /// <remarks>
+    /// <c>sub_4A4D10</c> draws <c>LOCAL:common/sprites/battery.spr</c> at 10%/20%, formats a
+    /// four-field, 24-frame clock, and right-aligns it at 90%/80%. The original seeds the counter
+    /// from its global random stream over a 21600-frame span; a task-id seed keeps captures
+    /// deterministic while preserving that range and rate.
+    /// </remarks>
+    public void DrawHandicamTimecode(
+        SpriteBatch batch, CutsceneFrame frame, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        ArgumentNullException.ThrowIfNull(frame);
+        if (Font() is not { } font)
+        {
+            return;
+        }
+
+        const int FramesPerSecond = 24;
+        const int SeedSpan = 21600;
+        int seed = (int)((uint)(frame.Scene.Id * 1103515245 + 12345) % SeedSpan);
+        int total = seed + (int)((long)frame.Scene.Ticks * FramesPerSecond / CutsceneRuntime.Frequency);
+        int field3 = total % FramesPerSecond;
+        int seconds = (total / FramesPerSecond) % 60;
+        int minutes = (total / FramesPerSecond / 60) % 60;
+        int hours = (total / FramesPerSecond / 60 / 60) % 60;
+        string text = $"{hours:00} : {minutes:00} : {seconds:00} : {field3:00}";
+        float scale = Math.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
+        (float width, float height) = font.Measure(text, scale, scale);
+        float x = (screenWidth * 0.90f) - width;
+        float y = (screenHeight * 0.80f) - height;
+        // The text object's three colour fields are literal 100.0 percent: full white. Retail submits
+        // it once, so there is no invented black shadow or second outline pass.
+        font.Draw(batch, text, x, y, new Bgra32(255, 255, 255, 255), scale, scale);
+
+        if (Sprite("battery.spr") is { } battery && battery.Asset.Frames.Count > 0)
+        {
+            // The timer in 0x4A4CB0 wraps every 1.5 seconds and changes the sprite state at 0.75.
+            // Multi-frame variants use the second frame for that half-cycle; shipped single-frame
+            // assets retain their only frame.
+            bool secondState = (frame.Scene.Ticks % 45) >= 23;
+            int index = secondState && battery.Asset.Frames.Count > 1 ? 1 : 0;
+            SpriteFrame batteryFrame = battery.Asset.Frames[index];
+            float displayWidth = screenWidth * 0.07f;
+            float spriteScale = displayWidth / Math.Max(1f, batteryFrame.Width);
+            battery.DrawFrame(
+                batch,
+                batteryFrame,
+                screenWidth * 0.10f,
+                screenHeight * 0.20f,
+                spriteScale,
+                spriteScale,
+                new Bgra32(128, 128, 128, 255));
         }
     }
 
@@ -621,7 +694,8 @@ public sealed class StatusScreenRenderer : IDisposable
             x + (StatusScreenLayout.MessageTextInset * scale),
             y + (StatusScreenLayout.MessageTextDrop * scale),
             StatusScreenLayout.MessageWrapWidth * scale,
-            scale);
+            scale,
+            cutscene: false);
     }
 
     private static void DrawSubtitle(
@@ -646,7 +720,8 @@ public sealed class StatusScreenRenderer : IDisposable
             StatusScreenLayout.MessageLeft(screenWidth),
             StatusScreenLayout.SubtitleY(screenHeight),
             screenWidth * StatusScreenLayout.SubtitleWrapFraction,
-            scale);
+            scale,
+            cutscene: true);
     }
 
     /// <summary>Draws text broken at spaces to a maximum width, in the message colour.</summary>
@@ -661,10 +736,21 @@ public sealed class StatusScreenRenderer : IDisposable
         float x,
         float y,
         float maxWidth,
-        float scale)
+        float scale,
+        bool cutscene)
     {
-        (float R, float G, float B) colour = StatusScreenLayout.MessageColour;
-        Bgra32 ink = new((byte)colour.B, (byte)colour.G, (byte)colour.R, 255);
+        Bgra32 ink;
+        if (cutscene)
+        {
+            // StatusMessageScreen selects the white subtitle pen for its cutscene branch. The green
+            // status-feed colour belongs only to the ordinary expanding message panels.
+            ink = new Bgra32(255, 255, 255, 255);
+        }
+        else
+        {
+            (float R, float G, float B) colour = StatusScreenLayout.MessageColour;
+            ink = new Bgra32((byte)colour.B, (byte)colour.G, (byte)colour.R, 255);
+        }
         Bgra32 shadow = new(0, 0, 0, 190);
         float step = font.LineHeight * scale;
 
@@ -897,6 +983,21 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         return _font;
+    }
+
+    private BitmapTextRenderer? SubtitleFont()
+    {
+        if (_subtitleFont is not null || _archive is null)
+        {
+            return _subtitleFont;
+        }
+
+        if (Sprite(SubtitleFontResource) is { IsFont: true } font)
+        {
+            _subtitleFont = new BitmapTextRenderer(font);
+        }
+
+        return _subtitleFont;
     }
 
     private SpriteResource? Sprite(string name)

@@ -52,8 +52,14 @@ public sealed class DoorState
     /// <summary>Gets the swing's current angle, in degrees — <c>+396</c>.</summary>
     public float AngleDegrees => _angleDegrees;
 
+    /// <summary>Gets the swing angle at the end of the previous simulation tick.</summary>
+    public float PreviousAngleDegrees { get; private set; }
+
     /// <summary>Gets the slide's current fraction — <c>+312</c>.</summary>
     public float SlideFraction => _slide;
+
+    /// <summary>Gets the slide fraction at the end of the previous simulation tick.</summary>
+    public float PreviousSlideFraction { get; private set; }
 
     /// <summary>Gets whether the door sits fully open — <c>+409</c>.</summary>
     public bool IsFullyOpen { get; private set; }
@@ -107,6 +113,8 @@ public sealed class DoorState
     /// <summary>Advances one 30 Hz tick — the channel-stepping half of <c>0x446D10</c>.</summary>
     public void Tick()
     {
+        PreviousAngleDegrees = _angleDegrees;
+        PreviousSlideFraction = _slide;
         WasFullyOpen = IsFullyOpen;
         WasFullyClosed = IsFullyClosed;
         float ticks = _openTimeSeconds * 30f;

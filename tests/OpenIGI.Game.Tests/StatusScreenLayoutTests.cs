@@ -135,6 +135,15 @@ public sealed class StatusScreenLayoutTests
         Assert.Equal(expected, StatusScreenLayout.ActionIconAlpha(phase), 3);
     }
 
+    [Theory]
+    [InlineData(-1f, 0f)]
+    [InlineData(2f, 236f)]
+    public void TheTimedInteractionFillClampsToItsFrame(float progress, float expectedWidth)
+    {
+        (_, _, float width, _) = StatusScreenLayout.InteractionFill(640, 480, progress);
+        Assert.Equal(expectedWidth, width, 3);
+    }
+
     [Fact]
     public void TheMessageColumnStartsTenPixelsInAndTenDownAtTheAuthoredSize()
     {

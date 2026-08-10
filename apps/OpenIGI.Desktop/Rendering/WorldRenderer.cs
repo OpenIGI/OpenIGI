@@ -38,6 +38,8 @@ public sealed class WorldRenderer : IDisposable
     private readonly HashSet<string> _missingTextures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextureHandle[]> _lightmaps = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, IresEntry>? _lightmapArchive;
+    private float _frameAlpha = 1f;
+    private bool _frameSmooth;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="WorldRenderer"/> class.</summary>
@@ -76,6 +78,16 @@ public sealed class WorldRenderer : IDisposable
 
     /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
     public SecurityCameraRegistry? SecurityCameras { get; set; }
+
+    /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
+    public CutsceneRuntime? Cutscenes { get; set; }
+
+    /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
+    public void BeginFrame(float tickFraction, bool smooth)
+    {
+        _frameAlpha = Math.Clamp(tickFraction, 0f, 1f);
+        _frameSmooth = smooth;
+    }
 
     /// <summary>Resolves one placement's mesh, textures and lightmap pages without drawing it.</summary>
     /// <param name="scene">The scene the placement belongs to.</param>
@@ -161,6 +173,11 @@ public sealed class WorldRenderer : IDisposable
 
         foreach (WorldPlacement authoredPlacement in scene.Placements)
         {
+            if (!ConditionalContainerGate.IsTaskActive(authoredPlacement.Owner))
+            {
+                continue;
+            }
+
             WorldPlacement placement = DisplayedPlacement(authoredPlacement);
             // Bent geometry is unique to its placement — a spline segment shaped to its own span — so
             // it is cached under the placement's task name rather than the shared model name.
@@ -180,12 +197,31 @@ public sealed class WorldRenderer : IDisposable
 
             Vector3d drawPosition = placement.Position;
             Matrix3f drawOrientation = placement.Orientation;
-            if (Doors?.TryGetDrawTransform(placement.Owner, out Vector3d doorPosition, out Matrix3f doorOrientation) == true)
+            RotorDrawState rotorDraw = default;
+            bool hasRotorDraw = false;
+            if (Doors?.TryGetDrawTransform(
+                placement.Owner,
+                _frameAlpha,
+                _frameSmooth,
+                out Vector3d doorPosition,
+                out Matrix3f doorOrientation) == true)
             {
                 drawPosition = doorPosition;
                 drawOrientation = doorOrientation;
             }
-            Matrix4f modelView = camera.CreateModelView(drawPosition, drawOrientation);
+            else if (Cutscenes?.TryGetRotorDrawState(placement, out rotorDraw) == true)
+            {
+                drawPosition = rotorDraw.Position;
+                hasRotorDraw = true;
+            }
+            else if (Cutscenes?.TryGetPlacementDrawTransform(
+                placement,
+                out Vector3d cinematicPosition,
+                out Matrix3f cinematicOrientation) == true)
+            {
+                drawPosition = cinematicPosition;
+                drawOrientation = cinematicOrientation;
+            }
             TextureHandle[] pages = GetLightmapPages(scene, placement);
 
             foreach (MeshSubset subset in geometry.Subsets)
@@ -216,20 +252,28 @@ public sealed class WorldRenderer : IDisposable
                     : TextureHandle.None;
 
                 _device.SetMaterialOverride(material);
-                _device.DrawMesh(
-                    mesh,
-                    subset.IndexOffset,
-                    subset.IndexCount,
-                    modelView,
-                    diffuse,
-                    lightmap,
-                    BlendMode.Opaque);
-
-                draws++;
-                triangles += subset.TriangleCount;
-                if (lightmap.IsValid)
+                int sampleCount = hasRotorDraw ? rotorDraw.SampleCount : 1;
+                for (int sample = 0; sample < sampleCount; sample++)
                 {
-                    lit++;
+                    Matrix3f sampleOrientation = hasRotorDraw
+                        ? rotorDraw.GetOrientation(sample)
+                        : drawOrientation;
+                    Matrix4f modelView = camera.CreateModelView(drawPosition, sampleOrientation);
+                    _device.DrawMesh(
+                        mesh,
+                        subset.IndexOffset,
+                        subset.IndexCount,
+                        modelView,
+                        diffuse,
+                        lightmap,
+                        BlendMode.Opaque);
+
+                    draws++;
+                    triangles += subset.TriangleCount;
+                    if (lightmap.IsValid)
+                    {
+                        lit++;
+                    }
                 }
             }
         }
@@ -253,7 +297,11 @@ public sealed class WorldRenderer : IDisposable
             };
         }
 
-        if (SecurityCameras?.TryGetHeadOrientation(placement, out Matrix3f orientation) == true)
+        if (SecurityCameras?.TryGetHeadOrientation(
+            placement,
+            _frameAlpha,
+            _frameSmooth,
+            out Matrix3f orientation) == true)
         {
             displayed = displayed with { Orientation = orientation };
         }

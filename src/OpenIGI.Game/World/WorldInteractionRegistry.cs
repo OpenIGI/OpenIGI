@@ -12,6 +12,9 @@ namespace OpenIGI.Game.World;
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
 public sealed class WorldInteraction
 {
+    /// <summary>The fixed length of fence locomotion state 41, returned by IGI1 <c>0x440270</c>.</summary>
+    public const int FenceTraversalTicks = 6 * 30;
+
     private readonly object _userOccupant = new();
     private int _pressedTicks;
     private Func<bool>? _onCondition;
@@ -29,7 +32,10 @@ public sealed class WorldInteraction
         int durationTicks,
         string actionSprite,
         DoorState? door,
-        AiStationaryGun? stationaryGun)
+        AiStationaryGun? stationaryGun,
+        Vector3d localBoundsMinimum,
+        Vector3d localBoundsMaximum,
+        bool hasLocalBounds)
     {
         Task = task;
         Type = type;
@@ -41,6 +47,9 @@ public sealed class WorldInteraction
         ActionSprite = actionSprite;
         Door = door;
         StationaryGun = stationaryGun;
+        LocalBoundsMinimum = localBoundsMinimum;
+        LocalBoundsMaximum = localBoundsMaximum;
+        HasLocalBounds = hasLocalBounds;
     }
 
     public DeclaredTask Task { get; }
@@ -53,6 +62,9 @@ public sealed class WorldInteraction
     public string ActionSprite { get; }
     public DoorState? Door { get; }
     public AiStationaryGun? StationaryGun { get; }
+    public Vector3d LocalBoundsMinimum { get; }
+    public Vector3d LocalBoundsMaximum { get; }
+    public bool HasLocalBounds { get; }
     public ScriptFlag InUse { get; } = new();
     public ScriptFlag Pressed { get; } = new();
     public bool IsOn { get; set; } = true;
@@ -82,6 +94,19 @@ public sealed class WorldInteraction
             Vector3d local = Orientation.Transform(from - Anchor);
             Vector3d projected = Orientation.Transposed().Transform(new Vector3d(local.X, 0.0, local.Z));
             return Anchor + projected;
+        }
+
+        if (Type == InteractionActivateType.Fence && HasLocalBounds)
+        {
+            // Fence::GetActivate scores the model bounds, not the task origin. Retail fence 302_01_1
+            // is eight metres long, so treating its origin as the only candidate makes almost the
+            // entire visible fence impossible to use.
+            Vector3d local = Orientation.Transform(from - Anchor);
+            Vector3d nearest = new(
+                Math.Clamp(local.X, LocalBoundsMinimum.X, LocalBoundsMaximum.X),
+                Math.Clamp(local.Y, LocalBoundsMinimum.Y, LocalBoundsMaximum.Y),
+                Math.Clamp(local.Z, LocalBoundsMinimum.Z, LocalBoundsMaximum.Z));
+            return Anchor + Orientation.Transposed().Transform(nearest);
         }
 
         if (Type != InteractionActivateType.Wire || End == Anchor)
@@ -126,6 +151,89 @@ public sealed class WorldInteraction
         return WireMountPoint(from) - (up * 3686.4);
     }
 
+    /// <summary>Gets the exact root placement and gamma of a retail self-driving interaction state.</summary>
+    /// <remarks>
+    /// These are the constants in the state initializers at <c>0x40BED0</c>, <c>0x40C2F0</c>,
+    /// <c>0x40C670</c>, <c>0x40C970</c> and <c>0x40CF70</c>. The interaction animations were authored
+    /// against these roots; playing them at the player's arbitrary standing point leaves the hands
+    /// visibly detached from the lock, cabinet, keyboard or gun.
+    /// </remarks>
+    public (Vector3d Position, float Facing) BodyPose(Vector3d from)
+    {
+        Vector3d local = Orientation.Transform(from - Anchor);
+        return Type switch
+        {
+            InteractionActivateType.Door when local.X >= 0.0 =>
+                Pose(new Vector3d(-409.6, 2949.12, 0.0), Facing + MathF.PI),
+            InteractionActivateType.Door =>
+                Pose(new Vector3d(-409.6, -2949.12, 0.0), Facing),
+            InteractionActivateType.Cabinet =>
+                Pose(new Vector3d(778.24, 2457.6, 0.0), Facing + MathF.PI),
+            InteractionActivateType.Terminal =>
+                Pose(new Vector3d(2764.8, 0.0, 0.0), Facing + MathF.PI),
+            InteractionActivateType.StationaryGun when local.X < 0.0 =>
+                Pose(new Vector3d(-2867.2, 0.0, local.Z), Facing),
+            InteractionActivateType.StationaryGun =>
+                Pose(new Vector3d(2867.2, 0.0, local.Z), Facing + MathF.PI),
+            InteractionActivateType.Generic =>
+                Pose(new Vector3d(3481.6, 0.0, 0.0), Facing + MathF.PI),
+            InteractionActivateType.PlaceExplosive => PlaceExplosivePose(from),
+            InteractionActivateType.Fence => FenceMountPose(from),
+            _ => (from, Facing),
+        };
+    }
+
+    /// <summary>Gets the landing root on the far side of the fence mount returned by <see cref="BodyPose"/>.</summary>
+    public Vector3d FenceExitPoint(Vector3d from)
+    {
+        if (Type != InteractionActivateType.Fence)
+        {
+            return from;
+        }
+
+        Vector3d local = Orientation.Transform(from - Anchor);
+        local = new Vector3d(
+            ClampFenceX(local.X),
+            local.Y >= 0.0 ? -2457.6 : 2457.6,
+            3891.2);
+        return Anchor + Orientation.Transposed().Transform(local);
+    }
+
+    private (Vector3d Position, float Facing) FenceMountPose(Vector3d from)
+    {
+        Vector3d local = Orientation.Transform(from - Anchor);
+        bool positiveSide = local.Y >= 0.0;
+        local = new Vector3d(
+            ClampFenceX(local.X),
+            positiveSide ? 2457.6 : -2457.6,
+            3891.2);
+        Vector3d position = Anchor + Orientation.Transposed().Transform(local);
+        return (position, positiveSide ? Facing + MathF.PI : Facing);
+    }
+
+    private (Vector3d Position, float Facing) PlaceExplosivePose(Vector3d from)
+    {
+        Vector3d towardTarget = (Anchor - from).Normalized();
+        if (towardTarget.LengthSquared == 0.0)
+        {
+            return (from, Facing);
+        }
+
+        // State 36 raycasts this line and backs the body root 2048 units off the contact. Anchor is the
+        // unobstructed result; collision remains the caller's concern, but the authored stand-off and
+        // target-facing gamma are preserved here.
+        Vector3d position = Anchor - (towardTarget * 2048.0);
+        float facing = (float)Math.Atan2(towardTarget.X, towardTarget.Y);
+        return (position, facing);
+    }
+
+    private (Vector3d Position, float Facing) Pose(Vector3d localOffset, float facing) =>
+        (Anchor + Orientation.Transposed().Transform(localOffset), facing);
+
+    private double ClampFenceX(double x) => HasLocalBounds
+        ? Math.Clamp(x, LocalBoundsMinimum.X, LocalBoundsMaximum.X)
+        : x;
+
     /// <summary>Applies the task-specific front/side gate before the shared aim resolver.</summary>
     public bool CanOfferFrom(Vector3d from)
     {
@@ -136,7 +244,7 @@ public sealed class WorldInteraction
                 && local.Z > -4096.0 && local.Z < 4096.0;
         }
 
-        if (Type == InteractionActivateType.Wire)
+        if (Type is InteractionActivateType.Wire or InteractionActivateType.Fence)
         {
             return true;
         }
@@ -153,7 +261,6 @@ public sealed class WorldInteraction
                 or InteractionActivateType.Terminal or InteractionActivateType.Generic
                 or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 3072.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
-            InteractionActivateType.Fence => inFront > 0.0,
             _ => true,
         };
     }
@@ -434,9 +541,15 @@ public sealed class WorldInteractionRegistry
                     ReadString(declared, "Weapon ID", "WEAPON_ID_M2HB"),
                     (int)ReadReal(declared, "Ammo", -1f))
                 : null;
+            (Vector3d localBoundsMinimum, Vector3d localBoundsMaximum, bool hasLocalBounds) =
+                type == InteractionActivateType.Fence
+                    && models.TryGetValue(modelName, out MefModel? fenceModel)
+                    ? BoundsOf(fenceModel)
+                    : default;
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
-                DurationOf(declared, type), SpriteOf(declared, type), door, stationaryGun);
+                DurationOf(declared, type), SpriteOf(declared, type), door, stationaryGun,
+                localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
@@ -520,13 +633,15 @@ public sealed class WorldInteractionRegistry
     {
         string parameter = type switch
         {
-            InteractionActivateType.Door => "Pick lock time",
-            InteractionActivateType.Cabinet => "Search Time",
-            InteractionActivateType.Terminal => "Hack Time",
-            InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive => "Activate Time",
+            InteractionActivateType.Door => "Pick lock time (s)",
+            InteractionActivateType.Cabinet => "Search Time (s)",
+            InteractionActivateType.Terminal => "Hack Time (s)",
+            InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive => "Activate Time (s)",
             _ => string.Empty,
         };
-        return parameter.Length == 0 ? 0 : Math.Max(1, (int)(ReadReal(task, parameter, 1f) * 30f));
+        return type == InteractionActivateType.Fence
+            ? WorldInteraction.FenceTraversalTicks
+            : parameter.Length == 0 ? 0 : Math.Max(1, (int)(ReadReal(task, parameter, 4f) * 30f));
     }
 
     private static string SpriteOf(DeclaredTask task, InteractionActivateType type) => type switch
@@ -539,9 +654,37 @@ public sealed class WorldInteractionRegistry
         InteractionActivateType.Wire => "a_wire.spr",
         InteractionActivateType.Fence => "a_fence.spr",
         InteractionActivateType.Generic or InteractionActivateType.PlaceExplosive =>
-            ReadString(task, "Click sprite", "a_c4.spr").Replace("STATUSSCREEN:", string.Empty, StringComparison.OrdinalIgnoreCase),
+            ReadString(task, "Click to select sprite", "a_c4.spr")
+                .Replace("STATUSSCREEN:", string.Empty, StringComparison.OrdinalIgnoreCase),
         _ => string.Empty,
     };
+
+    private static (Vector3d Minimum, Vector3d Maximum, bool HasBounds) BoundsOf(MefModel model)
+    {
+        ReadOnlySpan<MefVertex> vertices = model.Vertices;
+        if (vertices.IsEmpty)
+        {
+            return default;
+        }
+
+        Vector3f first = vertices[0].Position;
+        Vector3d minimum = new(first.X, first.Y, first.Z);
+        Vector3d maximum = minimum;
+        for (int i = 1; i < vertices.Length; i++)
+        {
+            Vector3f point = vertices[i].Position;
+            minimum = new Vector3d(
+                Math.Min(minimum.X, point.X),
+                Math.Min(minimum.Y, point.Y),
+                Math.Min(minimum.Z, point.Z));
+            maximum = new Vector3d(
+                Math.Max(maximum.X, point.X),
+                Math.Max(maximum.Y, point.Y),
+                Math.Max(maximum.Z, point.Z));
+        }
+
+        return (minimum, maximum, true);
+    }
 
     private static Vector3d PositionOf(DeclaredTask task, InteractionActivateType type) =>
         type == InteractionActivateType.Wire

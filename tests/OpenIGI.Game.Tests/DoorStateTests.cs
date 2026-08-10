@@ -110,4 +110,21 @@ public sealed class DoorStateTests
         Assert.True(door.IsFullyOpen);
         Assert.Equal(1f, door.SlideFraction, precision: 3);
     }
+
+    [Fact]
+    public void MovingChannelsRetainTheirPreviousTickForPresentation()
+    {
+        DoorState door = new(maxAngleDegrees: 90f, openTimeSeconds: 1f, slides: true);
+        door.CommandOpen();
+
+        door.Tick();
+        Assert.Equal(0f, door.PreviousAngleDegrees);
+        Assert.Equal(0f, door.PreviousSlideFraction);
+
+        door.Tick();
+        Assert.Equal(3f, door.PreviousAngleDegrees, precision: 4);
+        Assert.Equal(1f / 30f, door.PreviousSlideFraction, precision: 4);
+        Assert.Equal(6f, door.AngleDegrees, precision: 4);
+        Assert.Equal(2f / 30f, door.SlideFraction, precision: 4);
+    }
 }

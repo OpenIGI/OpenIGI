@@ -9,6 +9,18 @@ namespace OpenIGI.Engine.Tests.Tasks;
 public sealed class AnimDataProgramTests
 {
     [Fact]
+    public void ReceivingTaskCanInstallALatchedResetSentinel()
+    {
+        AnimDataProgram program = new([new AnimDataEntry(AnimDataProgram.WaitChannel, 3f)]);
+
+        program.SeekTo(0);
+        program.WriteChannel(3, -1f);
+        program.SeekTo(1);
+
+        Assert.Equal(-1f, program.Channels[3]);
+    }
+
+    [Fact]
     public void AnEntryJustWritesItsChannel()
     {
         // There is no instruction set: opcode 7 means "channel 7". The programme runs until something

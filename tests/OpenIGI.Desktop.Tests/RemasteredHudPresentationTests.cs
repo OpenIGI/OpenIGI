@@ -1,6 +1,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using Xunit;
 
@@ -82,6 +83,15 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(
             expected,
             RemasteredHudPresentation.UsesTacticalMessages(remasteredHudEnabled, tacticalMessagesEnabled));
+
+    [Fact]
+    public void DragunovScopeReplacesTheOrdinaryCrosshair()
+    {
+        var crosshairWeapon = new WeaponType { SightDisplay = SightDisplayType.Crosshair };
+
+        Assert.True(RemasteredHudPresentation.ShowsCrosshair(crosshairWeapon, sniperScoped: false));
+        Assert.False(RemasteredHudPresentation.ShowsCrosshair(crosshairWeapon, sniperScoped: true));
+    }
 
     private static MissionObjective Objective(string text, MissionObjectiveState state) => new(
         TextResource: text,

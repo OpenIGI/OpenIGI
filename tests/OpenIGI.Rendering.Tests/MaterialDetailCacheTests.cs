@@ -106,6 +106,38 @@ public sealed class MaterialDetailCacheTests : IDisposable
     }
 
     [Fact]
+    public void DisabledDetailDoesNotSynchronouslyDeriveAnUnnamedGroundTile()
+    {
+        RecordingGraphicsDevice device = new();
+        using MaterialDetailPack pack = new(device, directory: null, logger: null);
+        pack.DeriveMissing = false;
+
+        TextureHandle diffuse = device.CreateTexture(
+            new TextureDescription(8, 8, 1, TextureFilter.Linear, TextureAddressMode.Repeat), Checker(8));
+
+        pack.AttachDerived(diffuse, Checker(8), 8, 8);
+
+        Assert.Equal(0, pack.Count);
+        Assert.Empty(device.TextureDetails);
+    }
+
+    [Fact]
+    public void EnabledDetailStillDerivesAndAttachesAnUnnamedGroundTile()
+    {
+        RecordingGraphicsDevice device = new();
+        using MaterialDetailPack pack = new(device, directory: null, logger: null);
+        pack.DeriveMissing = true;
+
+        TextureHandle diffuse = device.CreateTexture(
+            new TextureDescription(8, 8, 1, TextureFilter.Linear, TextureAddressMode.Repeat), Checker(8));
+
+        pack.AttachDerived(diffuse, Checker(8), 8, 8);
+
+        Assert.Equal(1, pack.Count);
+        Assert.Single(device.TextureDetails);
+    }
+
+    [Fact]
     public void TwoTexturesAskingForOneNameShareASingleDerivation()
     {
         RecordingGraphicsDevice device = new();

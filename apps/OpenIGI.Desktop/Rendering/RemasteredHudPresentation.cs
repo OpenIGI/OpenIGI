@@ -15,6 +15,10 @@ public static class RemasteredHudPresentation
     public static bool UsesTacticalMessages(bool remasteredHudEnabled, bool tacticalMessagesEnabled)
         => remasteredHudEnabled && tacticalMessagesEnabled;
 
+    /// <summary>Whether the ordinary weapon crosshair remains visible.</summary>
+    public static bool ShowsCrosshair(WeaponType? weapon, bool sniperScoped) =>
+        !sniperScoped && weapon?.SightDisplay == SightDisplayType.Crosshair;
+
     /// <summary>Converts the player's clockwise world yaw into a conventional north-based compass heading.</summary>
     public static float HeadingDegrees(float yawRadians)
     {

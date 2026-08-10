@@ -102,9 +102,9 @@ public sealed class RetailWorldSceneTests
     {
         (WorldScene scene, _) = Build();
 
-        // A Door calls its position "Position start". Placing those at the origin instead put objects a
-        // kilometre outside the level and dragged the camera out with them.
-        Assert.True(scene.UnplacedCount > 0, "the level has types whose position is named differently");
+        // Doors use "Position start" and trains use a scalar position on a railroad spline. Both are now
+        // resolved; neither may fall through to the world origin and drag the camera out with it.
+        Assert.Equal(0, scene.UnplacedCount);
 
         foreach (WorldPlacement placement in scene.Placements)
         {

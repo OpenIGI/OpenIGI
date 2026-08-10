@@ -6,26 +6,19 @@ using OpenIGI.Scripting.Runtime;
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// Wires every <see cref="ConditionalContainerTask"/> in a loaded level with a condition evaluator, so the
-/// render, spawn and collision walks can skip the subtrees the original leaves unregistered.
+/// Wires every <see cref="ConditionalContainerTask"/> in a loaded level with its live condition evaluator.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This stands in for the per-tick <c>ConditionalContainer_RunHandler</c>. The port does not run
-/// cut-scenes, so rather than register and remove children as conditions change it evaluates each
-/// container's <c>Condition</c> once against the level's initial playable state and exposes the result as
+/// This evaluates the initial registration state. <see cref="CutsceneRuntime"/> then reproduces the
+/// per-tick <c>ConditionalContainer_RunHandler</c>, including start/stop expressions, and exposes the result as
 /// <see cref="ConditionalContainerTask.IsRun"/>. The operands are the script variables the level's tasks
 /// export — <c>CutScene_1203.isFinished</c>, <c>EditVariable_199.nValue</c>,
 /// <c>ConditionalContainer_4007.isRun</c> — resolved through the same
-/// <see cref="ScriptVarRegistry"/> a mission script reads. Cut-scene tasks present as already finished
-/// (<see cref="OpenIGI.Game.World.CutSceneTask"/>), and progress flags and level timers read zero, so the
-/// intro and outro containers evaluate false while the gameplay container evaluates true — exactly the
-/// steady state the original reaches once the intro has played.
+/// <see cref="ScriptVarRegistry"/> a mission script reads.
 /// </para>
 /// <para>
-/// A name the expression cannot resolve (an <c>EditVariable</c> or <c>LevelTimer</c> the port does not
-/// model) reads zero, which is the value those tasks hold at the start of play, so the conditions still
-/// come out right through their short-circuits.
+/// A name the expression cannot resolve reads zero, matching the script evaluator's normal fallback.
 /// </para>
 /// </remarks>
 public sealed class ConditionalContainerGate
@@ -55,6 +48,20 @@ public sealed class ConditionalContainerGate
     /// <returns><see langword="true"/> when the task's subtree is not registered into the world.</returns>
     public static bool IsDormant(GameTask? task) =>
         task is ConditionalContainerTask container && !container.IsRun;
+
+    /// <summary>Gets whether a task and every conditional ancestor are registered in the live world.</summary>
+    public static bool IsTaskActive(GameTask? task)
+    {
+        for (GameTask? current = task; current is not null; current = current.Parent)
+        {
+            if (current is ConditionalContainerTask container && !container.IsRun)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>Wires and evaluates every conditional container under a level root.</summary>
     /// <param name="levelRoot">The task the level's subtree hangs off.</param>

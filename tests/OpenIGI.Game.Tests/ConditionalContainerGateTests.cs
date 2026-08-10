@@ -65,11 +65,10 @@ public sealed class ConditionalContainerGateTests
     }
 
     [Fact]
-    public void ACutSceneContainerIsDormantAndTheGameplayContainerRuns()
+    public void AnUnfinishedIntroContainerRunsAndTheGameplayContainerWaits()
     {
-        // CutScene 1203 presents as already finished, so the intro condition is false; the outro condition
-        // names an EditVariable the level does not model here, which reads zero, so 4007 is false too; and
-        // the gameplay container 1495 runs because neither cut-scene container does — level 1's own logic.
+        // A newly loaded authored cutscene is unfinished, so the intro subtree registers. The gameplay
+        // subtree waits until that intro completes, while the untriggered outro remains dormant.
         (TaskTree tree, ScriptVarRegistry variables) = BuildLevel(
             QvmExpression.Call("Task_New", QvmExpression.Int(1203), QvmExpression.Text("CutScene"), QvmExpression.Text("")),
             QvmExpression.Call(
@@ -99,12 +98,12 @@ public sealed class ConditionalContainerGateTests
 
         int dormant = new ConditionalContainerGate(variables).Prepare(tree.Root);
 
-        Assert.False(Container(tree, 4001).IsRun);
+        Assert.True(Container(tree, 4001).IsRun);
         Assert.False(Container(tree, 4007).IsRun);
-        Assert.True(Container(tree, 1495).IsRun);
+        Assert.False(Container(tree, 1495).IsRun);
 
-        Assert.True(ConditionalContainerGate.IsDormant(Container(tree, 4001)));
-        Assert.False(ConditionalContainerGate.IsDormant(Container(tree, 1495)));
+        Assert.False(ConditionalContainerGate.IsDormant(Container(tree, 4001)));
+        Assert.True(ConditionalContainerGate.IsDormant(Container(tree, 1495)));
         Assert.Equal(2, dormant);
     }
 
@@ -139,6 +138,47 @@ public sealed class ConditionalContainerGateTests
         Assert.True(PlayerSpawn.TryFind(tree.Root, out PlayerSpawnPoint spawn));
         Assert.Equal("the_real_jones", spawn.Model);
         Assert.Equal(2.0, spawn.Position.X);
+
+        static QvmExpression Player(int id, float x, string model) => QvmExpression.Call(
+            "Task_New",
+            QvmExpression.Int(id),
+            QvmExpression.Text("HumanPlayer"),
+            QvmExpression.Text("player"),
+            QvmExpression.Real(x),
+            QvmExpression.Real(0f),
+            QvmExpression.Real(0f),
+            QvmExpression.Real(0f),
+            QvmExpression.Text(model),
+            QvmExpression.Int(0));
+    }
+
+    [Fact]
+    public void GameplaySpawnRemainsAvailableWhileTheIntroOwnsRegistration()
+    {
+        (TaskTree tree, ScriptVarRegistry variables) = BuildLevel(
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(4001),
+                QvmExpression.Text("ConditionalContainer"),
+                QvmExpression.Text("Intro cutscene"),
+                QvmExpression.Text("TRUE"),
+                QvmExpression.Text(""),
+                QvmExpression.Text(""),
+                Player(id: 90, x: 1f, model: "cinematic_jones")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(1495),
+                QvmExpression.Text("ConditionalContainer"),
+                QvmExpression.Text("Main character"),
+                QvmExpression.Text("FALSE"),
+                QvmExpression.Text(""),
+                QvmExpression.Text(""),
+                Player(id: 0, x: 2f, model: "gameplay_jones")));
+
+        new ConditionalContainerGate(variables).Prepare(tree.Root);
+
+        Assert.True(PlayerSpawn.TryFindGameplay(tree.Root, out PlayerSpawnPoint spawn));
+        Assert.Equal("gameplay_jones", spawn.Model);
 
         static QvmExpression Player(int id, float x, string model) => QvmExpression.Call(
             "Task_New",

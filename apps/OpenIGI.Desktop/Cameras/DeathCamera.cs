@@ -37,6 +37,9 @@ public sealed class DeathCamera
 
     private Camera3D _camera = Camera3D.Default;
     private Vector3d _pivot;
+    private Vector3d _pivotPrevTick;
+    private bool _hasPivotPair;
+    private float _presentedAlpha = 1f;
     private double _alpha;      // elevation, radians
     private double _gamma;      // azimuth, radians
     private double _distance;   // engine units
@@ -64,6 +67,9 @@ public sealed class DeathCamera
     {
         _pivot = new Vector3d(
             bodyFeetUnits.X, bodyFeetUnits.Y, bodyFeetUnits.Z + ChestAboveFeetInUnits);
+        _pivotPrevTick = _pivot;
+        _hasPivotPair = false;
+        _presentedAlpha = 1f;
         _walls = walls;
 
         DeathCameraVantage.Vantage vantage = DeathCameraVantage.Find(_pivot, gamma, walls);
@@ -74,7 +80,7 @@ public sealed class DeathCamera
         _gamma = Math.Atan2(vantage.Direction.X, -vantage.Direction.Y);
         _distance = vantage.DistanceInUnits;
 
-        BuildCamera();
+        BuildCamera(_pivot);
         IsActive = true;
     }
 
@@ -99,8 +105,25 @@ public sealed class DeathCamera
             return;
         }
 
+        _pivotPrevTick = _pivot;
         _pivot = pivotUnits;
-        BuildCamera();
+        _hasPivotPair = true;
+        BuildCamera(_pivot);
+    }
+
+    /// <summary>Places the death camera between the last two corpse positions for this render frame.</summary>
+    public void Present(float tickFraction)
+    {
+        if (!IsActive)
+        {
+            return;
+        }
+
+        _presentedAlpha = Math.Clamp(tickFraction, 0f, 1f);
+        Vector3d pivot = _hasPivotPair
+            ? PresentationBlend.Lerp(_pivotPrevTick, _pivot, _presentedAlpha)
+            : _pivot;
+        BuildCamera(pivot);
     }
 
     /// <summary>Orbits the camera around the body from a frame's mouse motion.</summary>
@@ -157,7 +180,7 @@ public sealed class DeathCamera
             _distance = Math.Max(resting, _distance - ease);
         }
 
-        BuildCamera();
+        Present(_presentedAlpha);
     }
 
     /// <summary>Hands the view back — what starting a fresh mission does.</summary>
@@ -166,6 +189,8 @@ public sealed class DeathCamera
         IsActive = false;
         _camera = Camera3D.Default;
         _walls = null;
+        _hasPivotPair = false;
+        _presentedAlpha = 1f;
     }
 
     private static Vector3d DirectionOf(double alpha, double gamma)
@@ -174,15 +199,15 @@ public sealed class DeathCamera
         return new Vector3d(Math.Sin(gamma) * ce, -Math.Cos(gamma) * ce, Math.Sin(alpha));
     }
 
-    private void BuildCamera()
+    private void BuildCamera(Vector3d pivot)
     {
         Vector3d direction = DirectionOf(_alpha, _gamma);
         Vector3d eye = new(
-            _pivot.X + (direction.X * _distance),
-            _pivot.Y + (direction.Y * _distance),
-            _pivot.Z + (direction.Z * _distance));
+            pivot.X + (direction.X * _distance),
+            pivot.Y + (direction.Y * _distance),
+            pivot.Z + (direction.Z * _distance));
 
-        Vector3d look = new(_pivot.X - eye.X, _pivot.Y - eye.Y, _pivot.Z - eye.Z);
+        Vector3d look = new(pivot.X - eye.X, pivot.Y - eye.Y, pivot.Z - eye.Z);
         double lookLength = Math.Sqrt((look.X * look.X) + (look.Y * look.Y) + (look.Z * look.Z));
         float yaw = (float)Math.Atan2(look.X, look.Y);
         float pitch = lookLength > 0.0 ? (float)Math.Asin(look.Z / lookLength) : 0f;

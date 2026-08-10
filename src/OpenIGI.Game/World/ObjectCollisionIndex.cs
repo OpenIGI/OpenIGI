@@ -115,8 +115,84 @@ public sealed class ObjectCollisionIndex
         return updated;
     }
 
+    /// <summary>Updates one exact placement, including duplicate attached instance names.</summary>
+    public bool UpdateTransform(WorldPlacement placement, Vector3d positionMetres, Matrix3f orientation)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        foreach (Entry entry in _entries)
+        {
+            if (!ReferenceEquals(entry.Placement, placement))
+            {
+                continue;
+            }
+
+            entry.UpdateTransform(positionMetres, orientation);
+            return true;
+        }
+
+        return false;
+    }
+
     /// <summary>Gets how many placed objects carry collision geometry.</summary>
     public int Count => _entries.Length;
+
+    /// <summary>
+    /// Finds the moving collision object whose broad-phase volume already contains a point.
+    /// </summary>
+    /// <param name="position">The point in world units.</param>
+    /// <param name="includeInactiveOwners">Whether dormant conditional-container objects participate.</param>
+    /// <param name="owner">Receives the most specific containing moving owner.</param>
+    /// <returns><see langword="true"/> when a moving-object volume contains the point.</returns>
+    /// <remarks>
+    /// Retail staged humans acquire their vehicle from BoneDynCubeObj's existing contact before
+    /// Human_GroundCollision considers its fallback GetNextZ query. The collision sphere is this
+    /// index's broad-phase equivalent of that existing dynamic-cube contact.
+    /// </remarks>
+    public bool TryFindContainingDynamicOwner(
+        Vector3d position,
+        bool includeInactiveOwners,
+        out GameTask? owner)
+    {
+        owner = null;
+        double bestScore = double.MaxValue;
+
+        foreach (Entry entry in _entries)
+        {
+            if (!entry.IsDynamic
+                || _passable.Contains(entry.Owner)
+                || (!includeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner))
+                || entry.Radius <= 0.0)
+            {
+                continue;
+            }
+
+            double dx = position.X - entry.Centre.X;
+            double dy = position.Y - entry.Centre.Y;
+            double dz = position.Z - entry.Centre.Z;
+            double distanceSquared = (dx * dx) + (dy * dy) + (dz * dz);
+            double radiusSquared = entry.Radius * entry.Radius;
+            if (distanceSquared > radiusSquared)
+            {
+                continue;
+            }
+
+            // Prefer the tightest containing volume. Equal volumes deliberately select the later
+            // placement: retail World_RegisterObj inserts every dynamic object at the HEAD of its
+            // spatial list, and the rigid-object trace preserves the first equal-distance front-face
+            // hit. WorldScene emits placements in task creation order, so the later entry is the same
+            // object retail visits first. Mission 1 relies on this: the opening train and landing train
+            // start with identical freight cars at the same transform, and Human 1666 must acquire the
+            // later-created landing car 1888 rather than the opening train's anonymous car.
+            double score = distanceSquared / radiusSquared;
+            if (score <= bestScore)
+            {
+                bestScore = score;
+                owner = entry.Owner;
+            }
+        }
+
+        return owner is not null;
+    }
 
     /// <summary>Gets how many triangles the index holds in total.</summary>
     public int TriangleCount
@@ -171,7 +247,8 @@ public sealed class ObjectCollisionIndex
                 : $"{placement.Instance.Name} [{placement.TaskName}]";
 
             entries.Add(Entry.Create(
-                mesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName, placement.Owner));
+                mesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
+                placement.Owner, placement));
         }
 
         return new ObjectCollisionIndex([.. entries]);
@@ -207,7 +284,8 @@ public sealed class ObjectCollisionIndex
         {
             if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
                 || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
-                || _passable.Contains(entry.Owner))
+                || _passable.Contains(entry.Owner)
+                || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
             {
                 continue;
             }
@@ -271,7 +349,8 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (honourPassable && _passable.Contains(entry.Owner))
+            if (honourPassable
+                && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner)))
             {
                 continue;
             }
@@ -366,6 +445,11 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
+            if (!ConditionalContainerGate.IsTaskActive(entry.Owner))
+            {
+                continue;
+            }
+
             if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
             {
                 continue;
@@ -428,7 +512,8 @@ public sealed class ObjectCollisionIndex
             string instanceName,
             string label,
             string taskName,
-            GameTask owner)
+            GameTask owner,
+            WorldPlacement placement)
         {
             Mesh = mesh;
             _localVertices = localVertices;
@@ -442,6 +527,7 @@ public sealed class ObjectCollisionIndex
             Label = label;
             TaskName = taskName;
             Owner = owner;
+            Placement = placement;
         }
 
         public MefCollisionMesh Mesh { get; }
@@ -460,6 +546,8 @@ public sealed class ObjectCollisionIndex
 
         public GameTask Owner { get; }
 
+        public WorldPlacement Placement { get; }
+
         public bool IsDynamic { get; private set; }
 
         public static Entry Create(
@@ -469,7 +557,8 @@ public sealed class ObjectCollisionIndex
             string instanceName,
             string label,
             string taskName,
-            GameTask owner)
+            GameTask owner,
+            WorldPlacement placement)
         {
             // Local-to-world is the COLUMN-vector product M·v — the renderer's `uModelView * v`, and
             // the convention the original itself uses for a placement's Real32x9 (it reads elements
@@ -514,7 +603,8 @@ public sealed class ObjectCollisionIndex
             }
 
             return new Entry(
-                mesh, localVertices, vertices, centre, radius, rootCentre, instanceName, label, taskName, owner);
+                mesh, localVertices, vertices, centre, radius, rootCentre, instanceName, label, taskName, owner,
+                placement);
         }
 
         public void UpdateTransform(Vector3d positionMetres, Matrix3f orientation)

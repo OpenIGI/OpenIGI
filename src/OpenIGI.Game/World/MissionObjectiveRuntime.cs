@@ -1,5 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Scripting.Expressions;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Game.World;
 
@@ -25,7 +27,6 @@ public sealed class MissionObjectiveRuntime
     private readonly List<Definition> _definitions = [];
     private readonly List<AreaActivation> _areaActivations = [];
     private readonly List<EditVariable> _editVariables = [];
-    private readonly List<OutroCutScene> _outroCutScenes = [];
     private readonly List<StatusMessage> _statusMessages = [];
     private readonly List<StatusMessage> _transientMessages = [];
 
@@ -49,30 +50,16 @@ public sealed class MissionObjectiveRuntime
     public MissionObjectiveRuntime(
         GameTask levelRoot,
         ScriptVarRegistry variables,
-        Func<string, string>? resolveText = null)
+        Func<string, string>? resolveText = null,
+        Func<string, ScriptArguments, QvmValue?>? native = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         _levelRoot = levelRoot;
-        _expressions = new LevelExpressionRuntime(variables);
+        _expressions = new LevelExpressionRuntime(variables, native);
         _resolveText = resolveText ?? (static key => key);
 
         List<GameTask> tasks = Walk(levelRoot).ToList();
-
-        // The port skips cinematics by presenting the intro chain as finished. That steady-play stub must
-        // not also finish the authored outro or every mission's terminal StatusMessage fires at spawn.
-        // All retail missions 1..13 place their terminal CutScene below a specifically named Outro
-        // ConditionalContainer; keep it unfinished until that container's authored trigger becomes true.
-        foreach (GameTask task in tasks)
-        {
-            if (task is CutSceneTask cutScene && FindOutroContainer(task) is { } outro)
-            {
-                cutScene.IsRun = false;
-                cutScene.IsFinished = false;
-                cutScene.Ticks = 0;
-                _outroCutScenes.Add(new OutroCutScene(cutScene, outro.Condition));
-            }
-        }
 
         foreach (GameTask task in tasks)
         {
@@ -317,18 +304,6 @@ public sealed class MissionObjectiveRuntime
     /// <summary>Evaluates objectives, messages, cutscenes, and level flow after live level state has advanced.</summary>
     public void TickAfterLevelState()
     {
-        // With no cinematic player, entering an outro completes it immediately; the trigger is still the
-        // retail ConditionalContainer expression, so gameplay must perform the real authored action first.
-        foreach (OutroCutScene outro in _outroCutScenes)
-        {
-            if (!outro.Task.IsFinished
-                && _expressions.EvaluateCondition(outro.TriggerExpression, emptyValue: false))
-            {
-                outro.Task.IsRun = false;
-                outro.Task.IsFinished = true;
-            }
-        }
-
         Definition? active = null;
         foreach (Definition definition in _definitions)
         {
@@ -544,23 +519,8 @@ public sealed class MissionObjectiveRuntime
         return default;
     }
 
-    private static ConditionalContainerTask? FindOutroContainer(GameTask task)
-    {
-        for (GameTask? ancestor = task.Parent; ancestor is not null; ancestor = ancestor.Parent)
-        {
-            if (ancestor is ConditionalContainerTask container
-                && container.Label.Contains("outro", StringComparison.OrdinalIgnoreCase)
-                && !container.Label.Contains("intro and outro", StringComparison.OrdinalIgnoreCase))
-            {
-                return container;
-            }
-        }
-        return null;
-    }
-
     private sealed record Definition(string ValidExpression, IReadOnlyList<Slot> Slots);
     private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression);
-    private sealed record OutroCutScene(CutSceneTask Task, string TriggerExpression);
 
     private sealed class EditVariable(int initialValue, string addExpression, string subExpression)
     {

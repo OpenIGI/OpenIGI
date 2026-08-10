@@ -67,6 +67,8 @@ public sealed class SecurityCamera
     private int _resumeScanDelay;
     private bool _hadTarget;
     private bool _lampPulseLarge;
+    private float _previousAlpha;
+    private float _previousGamma;
 
     internal SecurityCamera(DeclaredTask task)
     {
@@ -92,6 +94,8 @@ public sealed class SecurityCamera
         _viewCone = new AiSnapshotCone(alpha, gamma, length);
 
         CurrentAlpha = _cameraAlpha;
+        _previousAlpha = CurrentAlpha;
+        _previousGamma = CurrentGamma;
         HeadPositionUnits = ReadPosition(task);
         RefreshTransform();
     }
@@ -116,6 +120,29 @@ public sealed class SecurityCamera
 
     /// <summary>Gets the current lens orientation.</summary>
     public Matrix3f Orientation { get; private set; }
+
+    /// <summary>Gets a render-only lens orientation between the previous and current ticks.</summary>
+    public Matrix3f PresentedOrientation(float tickFraction, bool smooth)
+    {
+        float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
+        float pitch = _previousAlpha + ((CurrentAlpha - _previousAlpha) * alpha);
+        float yaw = LerpAngle(_previousGamma, CurrentGamma, alpha);
+        return Matrix3f.FromEngineEulerAngles(
+            pitch,
+            0f,
+            _holderGamma + _cameraGamma + yaw);
+    }
+
+    /// <summary>Gets the presentation-interpolated lamp point in engine units.</summary>
+    public Vector3d PresentedLampPositionUnits(float tickFraction, bool smooth)
+    {
+        Matrix3f orientation = PresentedOrientation(tickFraction, smooth);
+        Vector3f offset = orientation.Transposed().Transform(_lampVertex);
+        return new Vector3d(
+            HeadPositionUnits.X + offset.X,
+            HeadPositionUnits.Y + offset.Y,
+            HeadPositionUnits.Z + offset.Z);
+    }
 
     /// <summary>Gets the lens pitch in radians.</summary>
     public float CurrentAlpha { get; private set; }
@@ -183,6 +210,8 @@ public sealed class SecurityCamera
         bool targetAlive,
         WorldTraceCast? sight)
     {
+        _previousAlpha = CurrentAlpha;
+        _previousGamma = CurrentGamma;
         if (_lampPulseCountdown > 0)
         {
             _lampPulseCountdown--;
@@ -371,6 +400,12 @@ public sealed class SecurityCamera
         return value;
     }
 
+    private static float LerpAngle(float from, float to, float amount)
+    {
+        float difference = MathF.IEEERemainder(to - from, 2f * MathF.PI);
+        return from + (difference * amount);
+    }
+
     private static Vector3d ReadPosition(DeclaredTask task) =>
         task.TryGetValue("Holder Position", out object? raw) && raw is Vector3d position ? position : default;
 
@@ -485,12 +520,16 @@ public sealed class SecurityCameraRegistry
     }
 
     /// <summary>Resolves the current transform for a rendered camera head.</summary>
-    public bool TryGetHeadOrientation(WorldPlacement placement, out Matrix3f orientation)
+    public bool TryGetHeadOrientation(
+        WorldPlacement placement,
+        float tickFraction,
+        bool smooth,
+        out Matrix3f orientation)
     {
         if (_byTask.TryGetValue(placement.Owner, out SecurityCamera? camera)
             && string.Equals(placement.Instance.Name, camera.HeadModelName, StringComparison.OrdinalIgnoreCase))
         {
-            orientation = camera.Orientation;
+            orientation = camera.PresentedOrientation(tickFraction, smooth);
             return true;
         }
 

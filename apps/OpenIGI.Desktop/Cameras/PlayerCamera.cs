@@ -83,7 +83,8 @@ public sealed class PlayerCamera
     private WorldInteraction? _activeInteraction;
     private int _interactionTick;
     private bool _interactionUseArmed;
-    private Vector3d _interactionStartPosition;
+    private Vector3d _fenceExitPosition;
+    private float _interactionFacing;
     private Vector3d _wireDirection;
     private double _wireSpeed;
     private bool _mapComputerOpen;
@@ -597,18 +598,6 @@ public sealed class PlayerCamera
     /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
     public bool IsInWorldInteraction => _activeInteraction is not null;
 
-    /// <summary>Gets progress through a held, timed interaction for the retail status bar.</summary>
-    /// <remarks>
-    /// Wire, fence and stationary-gun states own locomotion but do not run the HumanPlayer progress
-    /// display. The remaining interaction types use their authored 30 Hz duration directly.
-    /// </remarks>
-    public float? InteractionProgress => _activeInteraction is { DurationTicks: > 0 } interaction
-        && interaction.Type is not InteractionActivateType.Wire
-            and not InteractionActivateType.Fence
-            and not InteractionActivateType.StationaryGun
-        ? Math.Clamp(_interactionTick / (float)interaction.DurationTicks, 0f, 1f)
-        : null;
-
     /// <summary>Gets the active interaction's retail locomotion state, or -1.</summary>
     public int InteractionLocomotionState => _activeInteraction is null
         ? -1
@@ -626,7 +615,44 @@ public sealed class PlayerCamera
     /// mode-3 camera consume the original gamma, so feeding them the camera yaw turns the cable pose
     /// the wrong way and leaves the authored hand contact laterally off the wire.
     /// </remarks>
-    public float InteractionFacing => -_body.Yaw;
+    public float InteractionFacing => _interactionFacing;
+
+    /// <summary>Consumes this tick's authored horizontal root motion for a self-driving interaction.</summary>
+    /// <remarks>
+    /// Fence animation 171 carries Jones across the obstacle in its root track. As with ordinary grounded
+    /// locomotion, X/Y move the human task while the current root Z is presentation height; applying Z here
+    /// as well would lift the task and then add the same vault height again when the body is drawn.
+    /// </remarks>
+    internal void ApplyInteractionRootMotion(Vector3d rootDelta)
+    {
+        if (_activeInteraction?.Type != InteractionActivateType.Fence)
+        {
+            return;
+        }
+
+        _body.Position = new Vector3d(
+            _body.Position.X + rootDelta.X,
+            _body.Position.Y + rootDelta.Y,
+            _body.Position.Z);
+    }
+
+    /// <summary>Gets whether the active clip loops in the original state initializer.</summary>
+    public bool InteractionAnimationLoops => InteractionLocomotionState is 30 or 32 or 35 or 36 or 42 or 43;
+
+    /// <summary>Gets the retail held-interaction progress, or <see langword="null"/> outside a timed state.</summary>
+    /// <remarks>
+    /// HumanPlayer+3432 is enabled only by states 30, 31, 32, 35 and 36. The status handler divides
+    /// the current tick at +3428 by the authored total at +3424; fence, wire and stationary-gun states
+    /// deliberately do not display this bar.
+    /// </remarks>
+    public float? InteractionProgress => _activeInteraction?.Type switch
+    {
+        InteractionActivateType.Door or InteractionActivateType.Cabinet
+            or InteractionActivateType.Terminal or InteractionActivateType.Generic
+            or InteractionActivateType.PlaceExplosive when _activeInteraction.DurationTicks > 0 =>
+                Math.Clamp(_interactionTick / (float)_activeInteraction.DurationTicks, 0f, 1f),
+        _ => null,
+    };
 
     /// <summary>Gets the retail full-body animation selected by the active state.</summary>
     public int InteractionAnimation => _activeInteraction?.Type switch
@@ -914,7 +940,13 @@ public sealed class PlayerCamera
                 _activeInteraction = interaction;
                 _interactionTick = 0;
                 _interactionUseArmed = false;
-                _interactionStartPosition = _body.Position;
+                (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
+                _body.Position = position;
+                _interactionFacing = facing;
+                _body.Yaw = -facing;
+                _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
+                    ? interaction.FenceExitPoint(position)
+                    : position;
                 interaction.BeginUse();
                 break;
         }
@@ -944,10 +976,10 @@ public sealed class PlayerCamera
         _body.BeginLadderTraversal();
         _body.Position = bodyPoint;
         _body.Yaw = (float)Math.Atan2(_wireDirection.X, _wireDirection.Y);
+        _interactionFacing = -_body.Yaw;
         _activeInteraction = wire;
         _interactionTick = 0;
         _interactionUseArmed = false;
-        _interactionStartPosition = _body.Position;
         wire.BeginUse();
         _nearInteraction = null;
     }
@@ -955,7 +987,7 @@ public sealed class PlayerCamera
     private void TickInteraction(InputState input, TerrainData terrain)
     {
         WorldInteraction interaction = _activeInteraction!;
-        bool use = input.Keyboard.IsDown(KeyCode.E);
+        bool use = _input.IsSet(PlayerInputSlot.Activate);
         if (!use)
         {
             _interactionUseArmed = true;
@@ -1025,19 +1057,12 @@ public sealed class PlayerCamera
 
     private void TickFence(WorldInteraction fence, TerrainData terrain)
     {
-        const int traversalTicks = 30;
-        double t = Math.Clamp(_interactionTick / (double)traversalTicks, 0.0, 1.0);
-        Vector3d forward = new(Math.Sin(fence.Facing), Math.Cos(fence.Facing), 0.0);
-        if (Vector3d.Dot(_interactionStartPosition - fence.Anchor, forward) > 0.0)
+        // State 41 plants the task root at the authored fence mount and lets animation 171 carry the
+        // visible body over it. Its own duration accessor returns six seconds (0x440270), not the
+        // one-second parabolic placeholder this replaces.
+        if (_interactionTick >= fence.DurationTicks)
         {
-            forward = -forward;
-        }
-        _body.Position = _interactionStartPosition
-            + (forward * (8192.0 * t))
-            + (Vector3d.UnitZ * (4096.0 * Math.Sin(Math.PI * t)));
-        _body.Yaw = (float)Math.Atan2(forward.X, forward.Y);
-        if (_interactionTick >= traversalTicks)
-        {
+            _body.Position = _fenceExitPosition;
             EndInteraction(completed: false, terrain);
         }
     }
@@ -1056,6 +1081,7 @@ public sealed class PlayerCamera
         }
         _activeInteraction = null;
         _interactionTick = 0;
+        _interactionFacing = -_body.Yaw;
         if (interaction.Type == InteractionActivateType.Wire)
         {
             // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
@@ -1169,6 +1195,10 @@ public sealed class PlayerCamera
     /// </remarks>
     public Vector3d SmoothedEyeMetres(float alpha) => ToMetres(
         HasViewTickPair ? PresentationBlend.Lerp(_prevTickEye, _tickEye, alpha) : _body.Eye);
+
+    /// <summary>Gets the complete first-person camera at one shared between-tick presentation point.</summary>
+    public Camera3D SmoothedCamera(float alpha) =>
+        new(SmoothedEyeMetres(alpha), SmoothedLookRotation(alpha));
 
     /// <summary>Gets the two FOV tangents blended for an uncapped presentation frame.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>

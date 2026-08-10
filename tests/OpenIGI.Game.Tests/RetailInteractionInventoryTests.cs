@@ -43,6 +43,22 @@ public sealed class RetailInteractionInventoryTests
                 root, mission, doors, variables);
             WorldScene scene = WorldScene.Build(mission, root, magic);
             Assert.Equal(found.Values.Sum(static tasks => tasks.Count), interactions.Items.Count);
+            foreach (WorldInteraction interaction in interactions.Items.Where(static item => item.Type is
+                         InteractionActivateType.Door or InteractionActivateType.Cabinet
+                         or InteractionActivateType.Terminal or InteractionActivateType.Generic
+                         or InteractionActivateType.PlaceExplosive))
+            {
+                string durationParameter = interaction.Type switch
+                {
+                    InteractionActivateType.Door => "Pick lock time (s)",
+                    InteractionActivateType.Cabinet => "Search Time (s)",
+                    InteractionActivateType.Terminal => "Hack Time (s)",
+                    _ => "Activate Time (s)",
+                };
+                Assert.Equal(
+                    Math.Max(1, (int)(ReadReal(interaction.Task, durationParameter, 4f) * 30f)),
+                    interaction.DurationTicks);
+            }
             foreach (WorldInteraction door in interactions.Items.Where(
                 static item => item.Type == InteractionActivateType.Door))
             {
@@ -124,6 +140,38 @@ public sealed class RetailInteractionInventoryTests
                     0.0,
                     Vector3d.Dot(attachment, (wire.End - wire.Anchor).Normalized()),
                     precision: 3);
+            }
+            foreach (WorldInteraction fence in interactions.Items.Where(
+                         static item => item.Type == InteractionActivateType.Fence))
+            {
+                WorldPlacement placement = Assert.Single(
+                    scene.Placements,
+                    candidate => ReferenceEquals(candidate.Owner, fence.Task));
+                Assert.NotNull(MefMeshBuilder.Build(placement.Model));
+                Assert.Equal(fence.Orientation, placement.Orientation);
+                Assert.True(fence.HasLocalBounds);
+                Assert.Equal(WorldInteraction.FenceTraversalTicks, fence.DurationTicks);
+
+                double x = fence.LocalBoundsMaximum.X - 1.0;
+                double z = (fence.LocalBoundsMinimum.Z + fence.LocalBoundsMaximum.Z) * 0.5;
+                double outsideY = fence.LocalBoundsMaximum.Y + 2048.0;
+                Vector3d positiveSide = fence.Anchor + fence.Orientation.Transposed().Transform(
+                    new Vector3d(x, outsideY, z));
+                Vector3d negativeSide = fence.Anchor + fence.Orientation.Transposed().Transform(
+                    new Vector3d(x, fence.LocalBoundsMinimum.Y - 2048.0, z));
+
+                Assert.True(fence.CanOfferFrom(positiveSide));
+                Assert.True(fence.CanOfferFrom(negativeSide));
+                Vector3d offeredLocal = fence.Orientation.Transform(fence.CandidatePoint(positiveSide) - fence.Anchor);
+                Assert.InRange(Math.Abs(offeredLocal.X - x), 0.0, 0.01);
+                Assert.InRange(Math.Abs(offeredLocal.Y - fence.LocalBoundsMaximum.Y), 0.0, 0.01);
+
+                (Vector3d mount, _) = fence.BodyPose(positiveSide);
+                Vector3d mountLocal = fence.Orientation.Transform(mount - fence.Anchor);
+                Assert.Equal(2457.6, mountLocal.Y, precision: 3);
+                Assert.Equal(3891.2, mountLocal.Z, precision: 3);
+                Vector3d exitLocal = fence.Orientation.Transform(fence.FenceExitPoint(mount) - fence.Anchor);
+                Assert.Equal(-2457.6, exitLocal.Y, precision: 3);
             }
             foreach (WorldInteraction interaction in interactions.Items.Where(
                 static item => item.Type == InteractionActivateType.StationaryGun))

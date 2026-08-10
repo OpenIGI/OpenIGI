@@ -89,6 +89,7 @@ public readonly record struct DesktopOptions(
         bool logCamera = false;
         bool lockstep = false;
         bool startFlying = false;
+        bool playCutscenes = true;
         float cameraYaw = 0f;
         float cameraPitch = -0.12f;
         float cameraHeight = 0f;
@@ -280,6 +281,10 @@ public readonly record struct DesktopOptions(
             {
                 startFlying = true;
             }
+            else if (arg.Equals("cutscene", StringComparison.OrdinalIgnoreCase))
+            {
+                playCutscenes = true;
+            }
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
                 // The whole remaster track off in one word: the retail menus instead of the cinematic
@@ -407,6 +412,7 @@ public readonly record struct DesktopOptions(
             EntryCamMission = entryCamMission,
             ComputerCamFrame = computerCamFrame,
             ShowcasePointDump = showcasePointDump,
+            PlayCutscenes = playCutscenes,
         };
     }
 
@@ -501,6 +507,13 @@ public readonly record struct DesktopOptions(
     /// </remarks>
     public bool VanillaMenu { get; init; }
 
+    /// <summary>
+    /// Gets a value indicating whether authored mission cinematics play instead of being skipped during
+    /// mission start-up. Cinematics are enabled by default; <c>-cutscene</c> remains accepted for command
+    /// line compatibility with parity captures made while the system was opt-in.
+    /// </summary>
+    public bool PlayCutscenes { get; init; }
+
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
     public static string Usage =>
@@ -530,6 +543,8 @@ public readonly record struct DesktopOptions(
                            instead of the wall clock. A run then depends only on its arguments,
                            which is what makes a capture reproducible. Capture only -- it uncaps
                            the simulation rate and is not how the game is meant to be played.
+          -cutscene        Play the mission's authored opening cinematic. Cinematics already play by
+                           default; this legacy flag remains accepted for capture-script compatibility.
           -uiscale <n>     Magnify the 640x480-authored menus and HUD by a whole number.
                            0 (the default) picks one from the window size; 1 is the original's
                            own size, which on a modern display is very small.

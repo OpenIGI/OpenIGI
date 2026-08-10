@@ -88,12 +88,17 @@ public enum WorldTraceHitKind
 /// <param name="Mask">Which collision categories participate.</param>
 /// <param name="IgnoredOwner">A placing task whose collision must be skipped.</param>
 /// <param name="IgnoredSubject">A second task to skip, used by owner/subject sight handlers.</param>
+/// <param name="IncludeInactiveOwners">
+/// Whether collision owned by a dormant conditional container participates. Retail uses this during
+/// Human registration so staged actors can acquire their moving parent before the scene is activated.
+/// </param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
     WorldTraceMask Mask = WorldTraceMask.World,
     GameTask? IgnoredOwner = null,
-    GameTask? IgnoredSubject = null)
+    GameTask? IgnoredSubject = null,
+    bool IncludeInactiveOwners = false)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length

@@ -236,12 +236,14 @@ public sealed class SoundSystem : IDisposable
     /// </para>
     /// </remarks>
     /// <param name="pitch">The playback ratio; 1 is the sound's own rate.</param>
+    /// <param name="looping">An optional call-site override for direct one-shot playback.</param>
     public AudioVoiceHandle PlayDefinition(
         string name,
         Vector3d? positionInUnits = null,
         float gain = 1f,
         int priority = 0,
-        float pitch = 1f)
+        float pitch = 1f,
+        bool? looping = null)
     {
         if (Definitions is null || !Definitions.TryResolve(name, out SoundDefinition? definition) || definition is null)
         {
@@ -263,7 +265,7 @@ public sealed class SoundSystem : IDisposable
         VoiceParameters parameters = VoiceParameters.Default with
         {
             Gain = definition.Volume * gain,
-            Looping = definition.Loop,
+            Looping = looping ?? definition.Loop,
             Priority = priority,
             Pitch = pitch,
         };

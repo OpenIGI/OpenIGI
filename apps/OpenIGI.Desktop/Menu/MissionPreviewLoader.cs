@@ -280,7 +280,13 @@ public sealed class MissionPreviewLoader(
         // after it — and they are per-tile independent, so they also run alongside each OTHER. That matters
         // more than the overlap does: derivation is around three quarters of a backdrop's whole build, and
         // it is the one part of it that divides cleanly.
-        Task<Bgra32[][]> groundDetail = DeriveGroundDetailAsync(loaded.Terrain);
+        // Enhanced and vanilla render with material detail disabled. Deriving maps in those presets is
+        // not merely unused work: on the affected machine the eighteen ground tiles held this worker for
+        // 211-284 seconds and saturated enough CPU to make the live game appear frozen. Cold mission loads
+        // share the same policy through MaterialDetailPack.AttachDerived.
+        Task<Bgra32[][]> groundDetail = ShouldDeriveGroundDetail(RenderCVars.MaterialDetail.Value)
+            ? DeriveGroundDetailAsync(loaded.Terrain)
+            : Task.FromResult<Bgra32[][]>([]);
 
         WorldScene scene = WorldScene.Build(loaded, levelRoot, magic, logger);
         ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
@@ -321,6 +327,11 @@ public sealed class MissionPreviewLoader(
             resources,
             fileSystem);
     }
+
+    /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>
+    /// <param name="materialDetail">The current <c>r_material_detail</c> strength.</param>
+    /// <returns><see langword="true"/> only when deriving and uploading the maps can affect the picture.</returns>
+    internal static bool ShouldDeriveGroundDetail(float materialDetail) => materialDetail > 0f;
 
     /// <summary>Derives every ground tile's detail map, the tiles in parallel with one another.</summary>
     /// <param name="terrain">The level's terrain, or <see langword="null"/> when it has none to speak of.</param>

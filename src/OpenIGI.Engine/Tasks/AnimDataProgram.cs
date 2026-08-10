@@ -61,6 +61,20 @@ public sealed class AnimDataProgram
     /// <summary>Gets the channel values, which are what the programme publishes to its target.</summary>
     public ReadOnlySpan<float> Channels => _channels;
 
+    /// <summary>Writes a channel value on behalf of the task receiving this programme.</summary>
+    /// <param name="channel">The channel to update.</param>
+    /// <param name="value">The value published on subsequent ticks.</param>
+    /// <remarks>
+    /// Retail sends the live channel block by pointer. Vehicle handlers use that alias on tick zero to
+    /// install their hold/reset sentinels, so the receiver can legitimately change later input.
+    /// </remarks>
+    public void WriteChannel(int channel, float value)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(channel);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(channel, ChannelCount);
+        _channels[channel] = value;
+    }
+
     /// <summary>Gets the tick the programme has been advanced to; <c>-1</c> before it first runs.</summary>
     /// <remarks>The constructor starts a task's counter at <c>-1</c>, so its first update steps to 0.</remarks>
     public int Tick { get; private set; } = -1;

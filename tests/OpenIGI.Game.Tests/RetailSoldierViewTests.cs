@@ -76,6 +76,22 @@ public sealed class RetailSoldierViewTests
     }
 
     [RequiresGameDataFact]
+    public void MissionOneGameplayGuardsAreNotClassifiedAsCinematicActors()
+    {
+        _ = Load(1, out LevelTask root);
+        HumanSoldierTask[] soldiers = [.. FindAll<HumanSoldierTask>(root)];
+        HumanSoldierTask[] staged = [.. soldiers.Where(CinematicActor.IsStaged)];
+
+        Assert.Contains(staged, soldier => soldier.Id == 1505);
+        Assert.Contains(staged, soldier => soldier.Id == 2021);
+        Assert.Contains(staged, soldier => soldier.Id == 4023);
+        Assert.Equal(8, staged.Length);
+        Assert.DoesNotContain(staged, soldier => soldier.Id is >= 2000 and <= 2025 && soldier.Id != 2021);
+        Assert.True(soldiers.Length - staged.Length >= 20,
+            $"classified {staged.Length} of {soldiers.Length} soldiers as cinematic");
+    }
+
+    [RequiresGameDataFact]
     public void APosedSoldierIsHumanSized()
     {
         // The skin and the pose come from different functions (0x49B700 and 0x4D3A90); a soldier
@@ -193,6 +209,7 @@ public sealed class RetailSoldierViewTests
         magic.Load(resources, loop.Natives);
 
         PlayerTaskTypes.RegisterAll(loop.Types);
+        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
 
         root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
         LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);

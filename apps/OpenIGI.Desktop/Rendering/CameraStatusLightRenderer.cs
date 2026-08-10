@@ -125,7 +125,12 @@ public sealed class CameraStatusLightRenderer : IDisposable
     }
 
     /// <summary>Draws all powered, intact lamps in one additive batch.</summary>
-    public void Draw(IReadOnlyList<SecurityCamera> cameras, in Camera3D eye, in Matrix4f projection)
+    public void Draw(
+        IReadOnlyList<SecurityCamera> cameras,
+        in Camera3D eye,
+        in Matrix4f projection,
+        float tickFraction = 1f,
+        bool smooth = false)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(cameras);
@@ -142,7 +147,8 @@ public sealed class CameraStatusLightRenderer : IDisposable
                 continue;
             }
 
-            Vector3d centre = (camera.LampPositionUnits / WorldScene.UnitsPerMetre) - eye.Position;
+            Vector3d centre = (camera.PresentedLampPositionUnits(tickFraction, smooth)
+                / WorldScene.UnitsPerMetre) - eye.Position;
             double distance = centre.Length;
             if (!(distance > 1e-6))
             {

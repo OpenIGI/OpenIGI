@@ -51,6 +51,26 @@ public static class PlayerSpawn
         return true;
     }
 
+    /// <summary>Finds the mission's gameplay player even while an intro container has it unregistered.</summary>
+    /// <remarks>
+    /// Retail gives the playable HumanPlayer script id zero. Cutscene containers can temporarily make
+    /// that task dormant while the authored camera is running, but the desktop still needs its eventual
+    /// spawn to build the player body before the hand-off.
+    /// </remarks>
+    public static bool TryFindGameplay(GameTask root, out PlayerSpawnPoint spawn)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        HumanPlayerTask? player = FindById(root, 0) ?? FindAny(root);
+        if (player is null)
+        {
+            spawn = default;
+            return false;
+        }
+
+        spawn = new PlayerSpawnPoint(player.SpawnPosition, player.SpawnGamma, player.PlayerModel, player.PlayerTeam);
+        return true;
+    }
+
     private static HumanPlayerTask? FindFirst(GameTask task)
     {
         foreach (GameTask child in task.Children)
@@ -74,6 +94,38 @@ public static class PlayerSpawn
             }
         }
 
+        return null;
+    }
+
+    private static HumanPlayerTask? FindById(GameTask task, int id)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            if (child is HumanPlayerTask player && player.Id == id)
+            {
+                return player;
+            }
+            if (FindById(child, id) is { } found)
+            {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private static HumanPlayerTask? FindAny(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            if (child is HumanPlayerTask player)
+            {
+                return player;
+            }
+            if (FindAny(child) is { } found)
+            {
+                return found;
+            }
+        }
         return null;
     }
 }

@@ -295,9 +295,25 @@ public sealed class WorldScene
 
         List<WorldPlacement> placements = [];
         List<LadderPlacement> ladders = [];
+        Dictionary<GameTask, TrainPlacementState> trainPlacements = [];
+        Dictionary<GameTask, float> trainTailOffsets = [];
         int unresolved = 0;
         int unplaced = 0;
         int attached = 0;
+
+        (float Length, float Pivot) TrainGeometry(IEnumerable<string> names)
+        {
+            foreach (string name in names)
+            {
+                if (!byName.TryGetValue(name, out var bound))
+                {
+                    continue;
+                }
+
+                return (TrainCouplingDistance(bound.Model), TrainCouplingPivotFraction(bound.Model));
+            }
+            return default;
+        }
 
         foreach (GameTask task in Walk(levelRoot))
         {
@@ -315,8 +331,57 @@ public sealed class WorldScene
 
             lightmapped.TryGetValue(task, out List<(string Set, WorldObject Root)>? bakes);
 
+            string[] placedNames = [.. PlacedModelNames(declared)];
+            TrainPlacementState? trainPlacement = null;
+            if (string.Equals(declared.Type.Name, "Train", StringComparison.Ordinal))
+            {
+                (float ownLength, float ownPivot) = TrainGeometry(placedNames);
+                if (task.Parent is DeclaredTask parent
+                    && string.Equals(parent.Type.Name, "Train", StringComparison.Ordinal)
+                    && trainPlacements.TryGetValue(parent, out TrainPlacementState? parentTrain))
+                {
+                    float direction = parentTrain.Railroad.Flipped ? 1f : -1f;
+                    (float parentLength, float parentPivot) = TrainGeometry(PlacedModelNames(parent));
+                    float frontOffset = trainTailOffsets.TryGetValue(parent, out float tail)
+                        ? tail
+                        : parentTrain.Offset + (direction * parentLength * (1f - parentPivot));
+                    float offset = frontOffset + (direction * ownLength * ownPivot);
+                    parentTrain.Railroad.Evaluate(
+                        parentTrain.TrackPosition + offset,
+                        out Vector3d childPosition,
+                        out Matrix3f childOrientation);
+                    trainPlacement = new TrainPlacementState(
+                        parentTrain.Railroad,
+                        parentTrain.TrackPosition,
+                        offset,
+                        childPosition,
+                        childOrientation);
+                    trainPlacements[task] = trainPlacement;
+                    float tailOffset = frontOffset + (direction * ownLength);
+                    trainTailOffsets[parent] = tailOffset;
+                    trainTailOffsets[task] = tailOffset;
+                }
+                else if (RailroadPath.FromTrain(declared) is { } railroad)
+                {
+                    float direction = railroad.Flipped ? 1f : -1f;
+                    float rootOffset = direction * ownLength * ownPivot;
+                    railroad.Evaluate(
+                        railroad.InitialPosition + rootOffset,
+                        out Vector3d rootPosition,
+                        out Matrix3f rootOrientation);
+                    trainPlacement = new TrainPlacementState(
+                        railroad,
+                        railroad.InitialPosition,
+                        rootOffset,
+                        rootPosition,
+                        rootOrientation);
+                    trainPlacements[task] = trainPlacement;
+                    trainTailOffsets[task] = direction * ownLength;
+                }
+            }
+
             int slot = 0;
-            foreach (string name in PlacedModelNames(declared))
+            foreach (string name in placedNames)
             {
                 int modelSlot = slot++;
                 if (!byName.TryGetValue(name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
@@ -353,13 +418,27 @@ public sealed class WorldScene
                     continue;
                 }
 
-                if (!TryGetPosition(declared, out Vector3d position))
+                Vector3d position;
+                if (trainPlacement is not null)
                 {
-                    unplaced++;
-                    continue;
+                    position = trainPlacement.Position / UnitsPerMetre;
+                }
+                else if (!TryGetPosition(declared, out position))
+                {
+                    RailroadPath? railroad = string.Equals(declared.Type.Name, "Train", StringComparison.Ordinal)
+                        ? RailroadPath.FromTrain(declared)
+                        : null;
+                    if (railroad is null)
+                    {
+                        unplaced++;
+                        continue;
+                    }
+
+                    railroad.Evaluate(railroad.InitialPosition, out Vector3d trainPosition, out _);
+                    position = trainPosition / UnitsPerMetre;
                 }
 
-                Matrix3f orientation = PlacementOrientation(declared, modelSlot);
+                Matrix3f orientation = trainPlacement?.Orientation ?? PlacementOrientation(declared, modelSlot);
 
                 // SCameraLens is not committed at the holder task's origin. Retail asks the holder
                 // model for magic vertex 0, rotates that mount through the holder's own orientation,
@@ -445,6 +524,13 @@ public sealed class WorldScene
             unplaced,
             attached);
     }
+
+    private sealed record TrainPlacementState(
+        RailroadPath Railroad,
+        float TrackPosition,
+        float Offset,
+        Vector3d Position,
+        Matrix3f Orientation);
 
     /// <summary>Lays every <c>SplineObj</c> chain: one bent segment per consecutive waypoint pair.</summary>
     /// <remarks>
@@ -537,6 +623,40 @@ public sealed class WorldScene
             Matrix3f m = raw is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
             return new Vector3f(m.M11, m.M21, m.M31);
         }
+    }
+
+    /// <summary>Gets the coupling distance the retail Train solver reads from a car model.</summary>
+    /// <remarks>
+    /// Train initialization (<c>0x42A150</c>) asks the model for magic vertices 0 and 1 through
+    /// <c>0x414ED0</c>, stores <c>abs(v0.x - v1.x)</c> at Train+1868, and passes one such value per car
+    /// to the railroad evaluator. Mesh bounds include overhangs and are not the consist spacing.
+    /// </remarks>
+    public static float TrainCouplingDistance(MefModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        return model.TryGetMagicVertex(0, out Vector3f front)
+            && model.TryGetMagicVertex(1, out Vector3f rear)
+                ? MathF.Abs(front.X - rear.X)
+                : 0f;
+    }
+
+    /// <summary>Gets the retail model-origin fraction between a Train car's two couplers.</summary>
+    /// <remarks>
+    /// Train initialization (<c>0x42A150</c>) stores <c>abs(v0.x) / abs(v0.x - v1.x)</c> at
+    /// Train+1864. The consist updater later interpolates the two railroad samples by this fraction;
+    /// omitting it places the model origin on its front coupler instead of inside the car.
+    /// </remarks>
+    public static float TrainCouplingPivotFraction(MefModel model)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        if (!model.TryGetMagicVertex(0, out Vector3f front)
+            || !model.TryGetMagicVertex(1, out Vector3f rear))
+        {
+            return 0f;
+        }
+
+        float length = MathF.Abs(front.X - rear.X);
+        return length > float.Epsilon ? MathF.Abs(front.X) / length : 0f;
     }
 
     /// <summary>Bends one segment model along its span's Hermite curve.</summary>
@@ -782,6 +902,12 @@ public sealed class WorldScene
         int added = 0;
         foreach (WorldObject child in node.Children)
         {
+            bool isRotor = magic is not null
+                && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition)
+                && string.Equals(
+                    magic.TaskTypeName(childDefinition.TaskType),
+                    "TASKTYPE_ROTOR",
+                    StringComparison.Ordinal);
             // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
@@ -825,7 +951,10 @@ public sealed class WorldScene
                     taskName,
                     owner,
                     set,
-                    set.Length > 0 ? child.LightmapIndex : -1));
+                    set.Length > 0 ? child.LightmapIndex : -1)
+                {
+                    IsRotor = isRotor,
+                });
                 added++;
             }
 
@@ -951,8 +1080,22 @@ public sealed class WorldScene
             return Matrix3f.FromEngineEulerAngles(cameraAlpha, 0f, holderGamma + cameraGamma);
         }
 
-        task.TryGetValue(OrientationParameter, out object? rawOrientation);
-        return rawOrientation is Vector3f angles ? ToOrientation(angles) : Matrix3f.Identity;
+        if (task.TryGetValue(OrientationParameter, out object? rawOrientation))
+        {
+            return rawOrientation switch
+            {
+                Vector3f angles => ToOrientation(angles),
+                float gamma => Matrix3f.RotationZ(gamma),
+                _ => Matrix3f.Identity,
+            };
+        }
+
+        // Point objects may expose their heading as a standalone Gamma instead of the three-angle
+        // Orientation value. Fence does exactly that: its interaction path already consumes Gamma,
+        // and drawing the model at identity left the visible mesh on a different plane from the vault.
+        return task.TryGetValue("Gamma", out object? rawGamma) && rawGamma is float value
+            ? Matrix3f.RotationZ(value)
+            : Matrix3f.Identity;
     }
 
     private static Matrix3f CameraHolderOrientation(DeclaredTask task) =>
@@ -991,14 +1134,6 @@ public sealed class WorldScene
     {
         foreach (GameTask child in root.Children)
         {
-            // A ConditionalContainer whose condition is false is not registered into the world, so its
-            // subtree draws nothing — the intro/outro cut-scene props and actors level 1 hides. See
-            // ConditionalContainerGate.
-            if (ConditionalContainerGate.IsDormant(child))
-            {
-                continue;
-            }
-
             yield return child;
             foreach (GameTask nested in Walk(child))
             {

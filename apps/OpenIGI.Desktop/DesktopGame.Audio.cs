@@ -43,6 +43,51 @@ internal sealed partial class DesktopGame
 
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
+    private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
+
+    private void SetCutsceneSound(CutsceneSoundEvent sound)
+    {
+        if (_sounds is null || string.IsNullOrWhiteSpace(sound.Name))
+        {
+            return;
+        }
+
+        if (!sound.Simple
+            && _cutsceneVoices.Remove(sound.Task, out AudioVoiceHandle old)
+            && old.IsValidHandle)
+        {
+            _sounds.Stop(old);
+        }
+
+        if (sound.Playing)
+        {
+            AudioVoiceHandle voice = _sounds.PlayDefinition(
+                sound.Name,
+                sound.Position,
+                priority: 320,
+                looping: sound.Simple ? false : null);
+            if (!sound.Simple && voice.IsValidHandle)
+            {
+                _cutsceneVoices[sound.Task] = voice;
+            }
+        }
+    }
+
+    private void StopCutsceneSounds()
+    {
+        if (_sounds is not null)
+        {
+            foreach (AudioVoiceHandle voice in _cutsceneVoices.Values)
+            {
+                if (voice.IsValidHandle)
+                {
+                    _sounds.Stop(voice);
+                }
+            }
+        }
+
+        _cutsceneVoices.Clear();
+    }
 
     /// <summary>The level's authored ambience boxes. Null until a mission is up.</summary>
     private AmbientAreaRegistry? _ambience;
@@ -212,7 +257,7 @@ internal sealed partial class DesktopGame
 
         // The same blend the presentation uses, so the ear and the eye agree about where the head is.
         float alpha = RenderCVars.SmoothPresentation.Value
-            ? _loop.Clock.TickFraction(_loop.TimeSource.Milliseconds)
+            ? _loop.Clock.TickFraction(_loop.TimeSource.PreciseMilliseconds)
             : 1f;
 
         // The EYE, not the feet: an ear 1.8 m below the head is a metre and a half of error against

@@ -149,6 +149,30 @@ public sealed class RetailSoundDefinitionTests
     }
 
     [RequiresGameDataFact]
+    public void MissionOneCutsceneDialogueResolvesToItsGlobalVoiceTrack()
+    {
+        SoundDefinitionRegistry registry = Load();
+
+        Assert.True(registry.TryResolve("_cut01_01", out SoundDefinition? dialogue));
+        Assert.NotNull(dialogue);
+        Assert.Equal(SoundDefinitionKind.Sound, dialogue.Kind);
+        Assert.True(dialogue.Loop);
+
+        VirtualFileSystem fileSystem = BuildFileSystem();
+        SoundBank bank = new(fileSystem, null);
+        bank.MountDirectory("LOCAL:common/sounds");
+        bank.MountDirectory("MISSION:sounds");
+        Assert.True(bank.TryGet(dialogue.BankKey, out _),
+            $"Definition '{dialogue.Name}' points at absent bank key '{dialogue.BankKey}'.");
+
+        RecordingAudioDevice device = new();
+        SoundSystem sounds = new(device, bank, fileSystem, null) { Definitions = registry };
+        Assert.NotEqual(AudioVoiceHandle.None,
+            sounds.PlayDefinition(dialogue.Name, priority: 320, looping: false));
+        Assert.False(Assert.Single(device.Played).Parameters.Looping);
+    }
+
+    [RequiresGameDataFact]
     public void PlayingByDefinitionNameReachesTheBankKeyWithTheAuthoredDistances()
     {
         VirtualFileSystem fileSystem = BuildFileSystem();

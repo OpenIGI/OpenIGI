@@ -9,26 +9,15 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The port does not play cut-scenes, but a level's AI scripts still read a cut-scene's state: level 1's
-/// <c>MISSION:AI/&lt;id&gt;.qsc</c> reads <c>CutScene_1200.nTick</c> in its idle branch, and with no
-/// <c>CutScene</c> type registered the symbol did not resolve — the archetype script faulted with
-/// <c>UnknownIdentifier: CutScene_1200.nTick</c> on every idle tick, cutting its idle and patrol handling
-/// short. Registering the type so the variables export stops that.
-/// </para>
-/// <para>
 /// <b>The fourteen parameters are the ones level 1's <c>objects.qvm</c> declares</b>
 /// (<c>Task_DeclareParameters("CutScene", …)</c>), in that order — the registry verifies a class against
-/// the declaration, so they have to be present and match by type. They are captured but not acted on: the
-/// cut-scene <em>runtime</em> (camera interpolation, viewport fades) is not built. The exported variables
+/// the declaration, so they have to be present and match by type. The exported variables
 /// are the ones the original's symbol registrar binds (<c>0x4F4FB0</c>): <c>isRun</c> (a byte at
 /// <c>+96</c>), <c>isFinished</c> (a byte at <c>+97</c>) and <c>nTick</c> (an int at <c>+100</c>).
 /// </para>
 /// <para>
-/// <b>Stub state, recorded as such.</b> With no cut-scene playing the task presents the scene as already
-/// finished — <c>isRun = 0</c>, <c>isFinished = 1</c>, <c>nTick = 0</c> — so a script gating normal
-/// behaviour on the intro being over lets guards proceed rather than wait for a scene the port never runs.
-/// Whether the mission script reads <c>nTick</c> as a timeline it advances against is flagged in
-/// <c>TODO.md</c>; the immediate goal is that the read resolves.
+/// <see cref="CutsceneRuntime"/> reproduces the original Run/Reset/Start/Stop transitions, advances
+/// <c>nTick</c>, and latches <c>isFinished</c> after the final nested EditCamera duration.
 /// </para>
 /// </remarks>
 public partial class CutSceneTask : GameTask
@@ -96,8 +85,8 @@ public partial class CutSceneTask : GameTask
     public bool IsRun { get; set; }
 
     /// <summary>Gets or sets whether the cut-scene has finished — <c>CutScene+97</c>, <c>isFinished</c>.</summary>
-    /// <remarks>Defaults to <see langword="true"/>: the port does not play the scene, so it reads as done.</remarks>
-    public bool IsFinished { get; set; } = true;
+    /// <remarks>A newly-created authored scene is unfinished; <see cref="CutsceneRuntime"/> latches this once its final shot ends.</remarks>
+    public bool IsFinished { get; set; }
 
     /// <summary>Gets or sets the cut-scene's tick counter — <c>CutScene+100</c>, <c>nTick</c>.</summary>
     public int Ticks { get; set; }

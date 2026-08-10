@@ -73,8 +73,30 @@ internal sealed class RemasteredHudRenderer : IDisposable
         DrawObjectives(painter, context, body, snapshot.Objectives);
         DrawVitals(painter, context, body, snapshot.HealthFraction);
         DrawWeapon(painter, context, body, snapshot);
-        DrawCrosshair(painter, context, snapshot.Weapon);
+        DrawCrosshair(painter, context, snapshot.Weapon, snapshot.SniperScoped);
         DrawInteraction(painter, context, body, snapshot.ActionSprite);
+    }
+
+    /// <summary>Draws the modern presentation of the same timed state progress the retail HUD exposes.</summary>
+    public void DrawInteractionProgress(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_body is not { } body)
+        {
+            return;
+        }
+
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+        var painter = new UiPainter(batch, context);
+        float width = MathF.Min(context.Px(430f), context.SafeRect.Width * 0.52f);
+        float x = context.SafeRect.X + ((context.SafeRect.Width - width) * 0.5f);
+        float y = context.SafeRect.Bottom - context.Px(118f);
+        painter.DrawText(body, "INTERACTING", new UiVec2(x, y), context.Px(15f), Muted);
+        DrawMeter(
+            painter,
+            new UiRect(x, y + context.Px(25f), width, context.Px(6f)),
+            progress,
+            Accent);
     }
 
     public void Dispose()
@@ -275,9 +297,13 @@ internal sealed class RemasteredHudRenderer : IDisposable
             Muted.WithAlpha(115));
     }
 
-    private static void DrawCrosshair(UiPainter painter, LayoutContext context, WeaponType? weapon)
+    private static void DrawCrosshair(
+        UiPainter painter,
+        LayoutContext context,
+        WeaponType? weapon,
+        bool sniperScoped)
     {
-        if (weapon?.SightDisplay != SightDisplayType.Crosshair)
+        if (!RemasteredHudPresentation.ShowsCrosshair(weapon, sniperScoped))
         {
             return;
         }
@@ -335,4 +361,5 @@ internal readonly record struct RemasteredHudSnapshot(
     int ReserveAmmo,
     HumanWeaponState WeaponState,
     string? ActionSprite,
-    IReadOnlyList<MissionObjective> Objectives);
+    IReadOnlyList<MissionObjective> Objectives,
+    bool SniperScoped);

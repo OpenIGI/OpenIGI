@@ -326,6 +326,22 @@ public sealed class GameClockTests
     }
 
     [Fact]
+    public void PreciseTickFractionDoesNotQuantiseHighRefreshPresentation()
+    {
+        GameClock clock = Create(out ManualTimeSource time);
+        time.Milliseconds = 0;
+        clock.SetTickRate(30);
+        clock.CompleteTick();
+
+        float first = clock.TickFraction(6.25);
+        float second = clock.TickFraction(6.75);
+
+        Assert.Equal(6.25f / 33f, first, 5);
+        Assert.Equal(6.75f / 33f, second, 5);
+        Assert.True(second > first);
+    }
+
+    [Fact]
     public void TickFractionClampsRatherThanExtrapolatingWhenTheNextTickIsOverdue()
     {
         GameClock clock = Create(out ManualTimeSource time);

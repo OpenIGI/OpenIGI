@@ -160,6 +160,17 @@ public sealed class GameClock
     /// </para>
     /// </remarks>
     public float TickFraction(int nowMilliseconds)
+        => TickFraction((double)nowMilliseconds);
+
+    /// <summary>Gets presentation progress through the current tick period from a precise clock.</summary>
+    /// <param name="nowMilliseconds">The elapsed wall time, including any fractional millisecond.</param>
+    /// <returns>0 just after a tick ran, approaching 1 as the next falls due; 1 once it is overdue.</returns>
+    /// <remarks>
+    /// Simulation scheduling remains integer and retail-compatible. Only rendering calls this overload:
+    /// retaining the fraction prevents a coarse Windows tick counter from holding several high-refresh
+    /// frames at the exact same interpolated position, which is perceived most strongly while strafing.
+    /// </remarks>
+    public float TickFraction(double nowMilliseconds)
     {
         if (TickCount == 0)
         {
@@ -177,8 +188,19 @@ public sealed class GameClock
             return 1f;
         }
 
-        int elapsed = unchecked(nowMilliseconds - previousDue);
-        return Math.Clamp(elapsed / (float)period, 0f, 1f);
+        // The precise source retains the signed 32-bit counter's wrap while adding a fractional part.
+        // Normalize the subtraction exactly as unchecked int arithmetic would on either side of it.
+        double elapsed = nowMilliseconds - previousDue;
+        const double counterRange = 4294967296.0;
+        if (elapsed > int.MaxValue)
+        {
+            elapsed -= counterRange;
+        }
+        else if (elapsed < int.MinValue)
+        {
+            elapsed += counterRange;
+        }
+        return (float)Math.Clamp(elapsed / period, 0.0, 1.0);
     }
 
     /// <summary>Decides what the frame at a given clock reading may do.</summary>

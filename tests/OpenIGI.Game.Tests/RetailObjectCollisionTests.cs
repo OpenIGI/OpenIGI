@@ -163,6 +163,27 @@ public sealed class RetailObjectCollisionTests
         Assert.True(index.TryCastWithDoorsShut(oldFrom, oldTo, out _));
     }
 
+    [RequiresGameDataFact]
+    public void MovingOneAttachedPlacementDoesNotCollapseItsSiblings()
+    {
+        WorldPlacement[] siblings = RetailLevelOneGround.Scene().Placements
+            .Where(placement => ObjectCollisionIndex.Build([placement]).Count != 0)
+            .GroupBy(placement => placement.Owner)
+            .Select(group => group.Take(2).ToArray())
+            .First(group => group.Length == 2);
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build(siblings);
+        Vector3d firstBefore = index.Bounds(0).Centre;
+        Vector3d secondBefore = index.Bounds(1).Centre;
+        Vector3d moved = siblings[0].Position + new Vector3d(20d, 0d, 0d);
+
+        Assert.True(index.UpdateTransform(siblings[0], moved, siblings[0].Orientation));
+
+        Vector3d firstAfter = index.Bounds(0).Centre;
+        Vector3d secondAfter = index.Bounds(1).Centre;
+        Assert.InRange(Math.Abs((firstAfter.X - firstBefore.X) - (20d * UnitsPerMetre)), 0d, 0.001d);
+        Assert.Equal(secondBefore, secondAfter);
+    }
+
     /// <summary>An index holding one placement that a task placed, and where that placement is.</summary>
     /// <remarks>
     /// One placement rather than the level, so the ray cannot be stopped by something nearer than the

@@ -52,6 +52,13 @@ public sealed record WorldPlacement(
     /// </remarks>
     public MeshGeometry? BentGeometry { get; init; }
 
+    /// <summary>Gets whether this attachment is a retail <c>TASKTYPE_ROTOR</c> object.</summary>
+    /// <remarks>
+    /// Rotor geometry has a draw-time phase of its own. Keeping this on the expanded placement lets the
+    /// renderer spin only rotor pieces while the helicopter's other magic-object attachments remain rigid.
+    /// </remarks>
+    public bool IsRotor { get; init; }
+
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
     public bool HasLightmap => LightmapIndex >= 0 && LightmapSet.Length > 0;
 

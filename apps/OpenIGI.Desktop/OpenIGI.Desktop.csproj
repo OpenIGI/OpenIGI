@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <ApplicationIcon>Assets\openigi.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

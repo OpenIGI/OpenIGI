@@ -20,4 +20,13 @@ public interface ITimeSource
 {
     /// <summary>Gets the milliseconds elapsed since the source was created.</summary>
     int Milliseconds { get; }
+
+    /// <summary>Gets the same elapsed time with the finest precision the source can provide.</summary>
+    /// <remarks>
+    /// The fixed simulation deliberately continues to use <see cref="Milliseconds"/>. Presentation
+    /// interpolation may use this value so a retail-compatible coarse timer cannot quantise an
+    /// uncapped frame stream into repeated camera positions. A source that has no finer clock gets the
+    /// integer reading by default, which keeps deterministic/manual sources simple.
+    /// </remarks>
+    double PreciseMilliseconds => Milliseconds;
 }

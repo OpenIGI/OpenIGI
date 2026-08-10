@@ -104,6 +104,22 @@ public sealed class SecurityCameraRegistryTests
     }
 
     [RequiresGameDataFact]
+    public void CameraHeadCanBePresentedBetweenSimulationTicks()
+    {
+        Fixture fixture = Build();
+        SecurityCamera camera = fixture.Registry.Cameras[0];
+        Matrix3f before = camera.Orientation;
+
+        fixture.Registry.Tick(default, targetCrouching: false, targetAlive: false);
+
+        Matrix3f halfway = camera.PresentedOrientation(0.5f, smooth: true);
+        Matrix3f current = camera.PresentedOrientation(1f, smooth: true);
+        Assert.NotEqual(before, halfway);
+        Assert.NotEqual(halfway, current);
+        Assert.Equal(camera.Orientation, current);
+    }
+
+    [RequiresGameDataFact]
     public void CameraWaitsExactlySixtyTicksAfterLosingItsTargetBeforeResumingSweep()
     {
         Fixture fixture = Build();

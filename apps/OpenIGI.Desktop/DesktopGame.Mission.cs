@@ -2,6 +2,7 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Formats.Ai;
+using OpenIGI.Formats.World;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
@@ -14,6 +15,7 @@ using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Desktop;
 
@@ -64,6 +66,28 @@ internal sealed partial class DesktopGame
         BringMissionUp(loaded, levelRoot, id, promoted: false);
     }
 
+    /// <summary>Gets the along-track extent retail uses to space cars in a Train consist.</summary>
+    private static float CutsceneModelLength(LoadedMission mission, string name)
+    {
+        if (!mission.TryGetModel(name, out MefModel? model) || model is null)
+        {
+            return 0f;
+        }
+
+        return WorldScene.TrainCouplingDistance(model);
+    }
+
+    /// <summary>Gets the retail origin fraction between a Train model's two coupling vertices.</summary>
+    private static float CutsceneModelPivot(LoadedMission mission, string name)
+    {
+        if (!mission.TryGetModel(name, out MefModel? model) || model is null)
+        {
+            return 0f;
+        }
+
+        return WorldScene.TrainCouplingPivotFraction(model);
+    }
+
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -92,7 +116,54 @@ internal sealed partial class DesktopGame
         // Mission text is addressed by its own key, not by the menu table's LOCAL:<language>/<key> —
         // see MissionStringResolver. Everything that resolves mission data goes through this one.
         MissionStringResolver missionText = new(_resources, missionStrings);
-        _missionObjectives = new MissionObjectiveRuntime(levelRoot, _loop.Variables, missionText.Get);
+        _cutscenes = new CutsceneRuntime(
+            levelRoot,
+            _loop.Variables,
+            (name, arguments) =>
+            {
+                if (name == GameMusicNatives.EnableNative)
+                {
+                    if (_music is not null)
+                    {
+                        _music.Enabled = true;
+                    }
+                    return QvmValue.FromInt32(1);
+                }
+                if (name == GameMusicNatives.DisableNative)
+                {
+                    if (_music is not null)
+                    {
+                        _music.Enabled = false;
+                    }
+                    return QvmValue.FromInt32(1);
+                }
+                return name is "MenuManager_SetEnabled" or "Game_CutsceneDelete"
+                    ? QvmValue.FromInt32(1)
+                    : null;
+            },
+            SetCutsceneSound,
+            modelLength: name => CutsceneModelLength(loaded, name),
+            modelPivot: name => CutsceneModelPivot(loaded, name),
+            vehiclePhysics: _vehiclePhysics);
+        _missionObjectives = new MissionObjectiveRuntime(
+            levelRoot,
+            _loop.Variables,
+            missionText.Get,
+            _cutscenes.TryInvokeNative);
+
+        // Cinematics are opt-in while their retail parity work is in progress. Do not tear the runtime
+        // out: the level expressions still use its native surface, and mission outros may activate it
+        // later. Instead take the exact path Escape takes in retail. The objective flow observes the
+        // break key, closes the intro container, and the cutscene tick applies that transition before
+        // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
+        if (!_options.PlayCutscenes && _cutscenes.IsPlaying)
+        {
+            _cutscenes.RequestBreak();
+            _missionObjectives.TickLevelState();
+            _cutscenes.Tick();
+            _cutscenes.FinishExpressionTick();
+            StopCutsceneSounds();
+        }
         _computerHighlights = new ComputerHighlightCatalog(levelRoot, _loop.Variables);
         _mapComputer = new MapComputerRenderer(_device, _resources, _logger, missionText.Get);
         if (!_mapComputer.Load(_fileSystem))
@@ -100,6 +171,7 @@ internal sealed partial class DesktopGame
             _mapComputer.Dispose();
             _mapComputer = null;
         }
+
         _mapComputerDevice = new MapComputerDeviceRenderer(_device, _resources, _logger);
         if (!_mapComputerDevice.Load(loaded))
         {
@@ -158,6 +230,7 @@ internal sealed partial class DesktopGame
             _worldSolids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
+        world.Cutscenes = _cutscenes;
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
@@ -184,6 +257,8 @@ internal sealed partial class DesktopGame
         }
 
         EndStage("the soldiers' meshes and textures");
+        _soldiers.Cutscenes = _cutscenes;
+        _cutscenes?.SetTargetPoseResolver(_soldiers.CutscenePose);
 
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
@@ -243,6 +318,7 @@ internal sealed partial class DesktopGame
             : solids.Tracer();
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
+        StopCutsceneSounds();
         _securityCameras = SecurityCameraRegistry.Build(levelRoot, _loop.Variables, worldTrace);
         _securityCameras.BindScene(scene.Placements);
         world.SecurityCameras = _securityCameras;
@@ -909,7 +985,7 @@ internal sealed partial class DesktopGame
             // Without a declared spawn the player is stood where the opening camera looks from, so that
             // fallback needs a camera to read; a level with neither is simply not placed, which the
             // warning below already covers.
-            bool placed = PlayerSpawn.TryFind(levelRoot, out PlayerSpawnPoint spawn)
+            bool placed = PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
                 ? candidate.PlaceAt(_playerTerrain, spawn)
                 : _camera is { } opening && candidate.Place(_playerTerrain, opening.Position, _options.CameraYaw);
 
@@ -1054,9 +1130,11 @@ internal sealed partial class DesktopGame
         _messages = null;
         _computerHighlights = null;
         _missionObjectives = null;
+        _cutscenes = null;
         _securityCameras = null;
         _cameraBeepVoices.Clear();
         _cameraMoveVoices.Clear();
+        StopCutsceneSounds();
         _activeMission = null;
 
         _sky?.Dispose();
@@ -1084,7 +1162,10 @@ internal sealed partial class DesktopGame
         _hud = null;
         _remasteredHud = null;
         _marks = null;
+        _tracers = null;
+        _impactParticles = null;
         _cameraStatusLights = null;
+        _grenadeRenderer = null;
         _arms = null;
         _player = null;
         _playerMode = false;

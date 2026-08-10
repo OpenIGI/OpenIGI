@@ -36,23 +36,28 @@ public sealed record PlacedDoor(
 
     /// <summary>Gets the door's current drawable position in metres.</summary>
     public Vector3d DrawPosition
+        => DrawPositionAt(State.SlideFraction);
+
+    /// <summary>Gets the door position at a supplied slide fraction.</summary>
+    public Vector3d DrawPositionAt(float slideFraction)
     {
-        get
-        {
-            Vector3f local = new(StopX * State.SlideFraction, StopY * State.SlideFraction, StopZ * State.SlideFraction);
-            // The renderer applies placements as column vectors (M·v); Matrix3f.Transform is v·M,
-            // so transpose once to move a sliding door along its authored local axes.
-            Vector3f offset = Orientation.Transposed().Transform(local);
-            return new Vector3d(
-                (Position.X / WorldScene.UnitsPerMetre) + offset.X,
-                (Position.Y / WorldScene.UnitsPerMetre) + offset.Y,
-                (Position.Z / WorldScene.UnitsPerMetre) + offset.Z);
-        }
+        Vector3f local = new(StopX * slideFraction, StopY * slideFraction, StopZ * slideFraction);
+        // The renderer applies placements as column vectors (M·v); Matrix3f.Transform is v·M,
+        // so transpose once to move a sliding door along its authored local axes.
+        Vector3f offset = Orientation.Transposed().Transform(local);
+        return new Vector3d(
+            (Position.X / WorldScene.UnitsPerMetre) + offset.X,
+            (Position.Y / WorldScene.UnitsPerMetre) + offset.Y,
+            (Position.Z / WorldScene.UnitsPerMetre) + offset.Z);
     }
 
     /// <summary>Gets the door's current drawable swing orientation.</summary>
     public Matrix3f DrawOrientation =>
-        Orientation * Matrix3f.RotationZ(State.AngleDegrees * (MathF.PI / 180f));
+        DrawOrientationAt(State.AngleDegrees);
+
+    /// <summary>Gets the door orientation at a supplied swing angle.</summary>
+    public Matrix3f DrawOrientationAt(float angleDegrees) =>
+        Orientation * Matrix3f.RotationZ(angleDegrees * (MathF.PI / 180f));
 }
 
 /// <summary>
@@ -217,13 +222,27 @@ public sealed class DoorRegistry
 
     /// <summary>Gets the live draw transform for a door placement.</summary>
     public bool TryGetDrawTransform(GameTask task, out Vector3d position, out Matrix3f orientation)
+        => TryGetDrawTransform(task, 1f, smooth: false, out position, out orientation);
+
+    /// <summary>Gets a door transform presented between its last two simulation states.</summary>
+    public bool TryGetDrawTransform(
+        GameTask task,
+        float tickFraction,
+        bool smooth,
+        out Vector3d position,
+        out Matrix3f orientation)
     {
         foreach (PlacedDoor door in _doors)
         {
             if (ReferenceEquals(door.Task, task))
             {
-                position = door.DrawPosition;
-                orientation = door.DrawOrientation;
+                float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
+                float slide = door.State.PreviousSlideFraction
+                    + ((door.State.SlideFraction - door.State.PreviousSlideFraction) * alpha);
+                float angle = door.State.PreviousAngleDegrees
+                    + ((door.State.AngleDegrees - door.State.PreviousAngleDegrees) * alpha);
+                position = door.DrawPositionAt(slide);
+                orientation = door.DrawOrientationAt(angle);
                 return true;
             }
         }

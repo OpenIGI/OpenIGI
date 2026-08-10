@@ -80,6 +80,7 @@ internal sealed partial class DesktopGame : IDisposable
     private GameLoop _loop = null!;
     private MissionRegistry _missions = null!;
     private MagicObjectRegistry _magic = null!;
+    private VehiclePhysicsRegistry _vehiclePhysics = null!;
     private HumanAiConfigRegistry _aiConfig = null!;
     private AnimTriggerRegistry? _animationTriggers;
     private MaterialLibrary _materials = null!;
@@ -165,6 +166,7 @@ internal sealed partial class DesktopGame : IDisposable
     private readonly MapComputerCamera _computerFlight = new();
     private ComputerHighlightCatalog? _computerHighlights;
     private MissionObjectiveRuntime? _missionObjectives;
+    private CutsceneRuntime? _cutscenes;
     private MissionDescriptor? _activeMission;
     private LevelTask? _activeLevelRoot;
     private bool _computerOpen;
@@ -406,6 +408,7 @@ internal sealed partial class DesktopGame : IDisposable
         // contents: every model's attachments name an entry here. Loading it is a startup step, like the
         // mission scan, because a level's own scripts never mention it.
         _magic = new(_logger);
+        _vehiclePhysics = new(_logger);
         _animationTriggers = new(_logger);
 
         // Without these the level's own HumanPlayer task is never built, and the spawn the mission
@@ -443,6 +446,7 @@ internal sealed partial class DesktopGame : IDisposable
         {
             _missions.Scan(_fileSystem, _resources, _loop.Natives);
             _magic.Load(_resources, _loop.Natives);
+            _vehiclePhysics.Load(_resources);
             _animationTriggers.Load(_resources, _loop.Natives);
             _aiConfig.Load(_resources, _loop.Natives, _loop.Tasks);
             configHost.Missions = _missions;
@@ -499,12 +503,6 @@ internal sealed partial class DesktopGame : IDisposable
         float flightStartPitch = 0f;
         int flightFrame = 0;
 
-        // The player eye's last two TICK positions, for drawing the walk between them. Orientation is
-        // already per-frame (mouse-look runs on every loop pass); it is the POSITION that stepped at
-        // 30 Hz, which read as the whole world juddering whenever the player moved.
-        Vector3d playerEyePrevTick = default;
-        Vector3d playerEyeTick = default;
-        bool playerEyeCaptured = false;
         bool climbSlideArmed = false;
         _shotRandom = new(20000101);
         int reportedHumanHits = 0;
@@ -756,9 +754,23 @@ internal sealed partial class DesktopGame : IDisposable
                         && backdrop.MissionId == id
                         && !_options.Lockstep
                         && _showcaseCamera is { } orbit
-                        && PlayerSpawn.TryFind(backdrop.LevelRoot, out PlayerSpawnPoint entrySpawn))
+                        && PlayerSpawn.TryFindGameplay(backdrop.LevelRoot, out PlayerSpawnPoint entrySpawn))
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
+                        // An explicitly requested authored intro owns the mission from its first frame,
+                        // so promote immediately and let its EditCamera take over. In the normal (no
+                        // -cutscene) path the cinematic is skipped during promotion; keep the shell's
+                        // continuous rise/travel/descent shot instead of cutting straight to gameplay.
+                        if (_options.PlayCutscenes && HasAuthoredCutscene(backdrop.LevelRoot))
+                        {
+                            if (PromoteBackdrop(backdrop))
+                            {
+                                _window.CursorVisible = false;
+                                ReportWatchedFramePassesIn(2);
+                                return;
+                            }
+                        }
+
                         lastEntryMilliseconds = _loop.TimeSource.Milliseconds;
                         entrySpawnPosition = entrySpawn.Position;
                         entrySpawnGamma = entrySpawn.Gamma;
@@ -1119,7 +1131,6 @@ internal sealed partial class DesktopGame : IDisposable
                     // The eye is drawn between its last two ticks, and it has just been somewhere else
                     // entirely; without dropping the pair the first gameplay frame interpolates across
                     // the whole descent.
-                    playerEyeCaptured = false;
                     _logger.Information("Menu", "The mission-entry shot has handed over.");
                 }
             }
@@ -1134,8 +1145,17 @@ internal sealed partial class DesktopGame : IDisposable
             // still-pressed Escape and pause the game in the same breath.
             if (!menuMode
                 && !console.IsOpen
+                && _cutscenes?.IsPlaying == true
+                && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
+            {
+                _cutscenes.RequestBreak();
+            }
+
+            if (!menuMode
+                && !console.IsOpen
                 && !_computerOpen
                 && !_missionFailedMenu
+                && _cutscenes?.IsPlaying != true
                 && shell is not null
                 && _activeMission is not null
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
@@ -1152,7 +1172,6 @@ internal sealed partial class DesktopGame : IDisposable
                 // The eye is drawn between its last two ticks and neither of them moves again until the
                 // menu closes, so the pair is dropped: without this the frozen picture rocked back and
                 // forth between two positions a tick apart as the blend swept on.
-                playerEyeCaptured = false;
                 _logger.Information("Menu", "Paused.");
             }
 
@@ -1411,8 +1430,7 @@ internal sealed partial class DesktopGame : IDisposable
                     }
                     else
                     {
-                        // A placement is a teleport; the eye pair must not be interpolated across it.
-                        playerEyeCaptured = false;
+                        // Place() drops the player's presentation pair because this is a teleport.
                     }
                 }
                 else
@@ -1484,6 +1502,11 @@ internal sealed partial class DesktopGame : IDisposable
                     _window.CursorLocked = false;
                     _player?.ReleaseLook();
                 }
+                else if (_cutscenes?.IsPlaying == true)
+                {
+                    _player?.HoldStill();
+                    _window.CursorLocked = false;
+                }
                 else if (_playerMode && _player is not null)
                 {
                     // Looking is per frame so the view is as smooth as the display allows; the body itself
@@ -1547,11 +1570,32 @@ internal sealed partial class DesktopGame : IDisposable
                 continue;
             }
 
+            if (outcome == FrameOutcome.Tick)
+            {
+                _cutscenes?.Tick();
+                if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
+                {
+                    foreach (WorldPlacement placement in cinematicScene.Placements)
+                    {
+                        if (liveCutscenes.TryGetPlacementDrawTransform(
+                            placement.Owner,
+                            placement.Position,
+                            placement.Orientation,
+                            out Vector3d position,
+                            out Matrix3f orientation))
+                        {
+                            cinematicSolids.UpdateTransform(placement, position, orientation);
+                        }
+                    }
+                }
+            }
+
             // The body advances on the simulation tick and ONLY on it. Tick and Render are mutually
             // exclusive outcomes - a render is not a tick - so including Render here stepped the player
             // once per drawn frame as well, and at an uncapped frame rate that is several times 30 Hz.
             // The player then moved as fast as the display was quick, which is exactly what it looked like.
             if (outcome is FrameOutcome.Tick
+                && _cutscenes?.IsPlaying != true
                 && _playerMode && _player is not null && _playerTerrain is not null)
             {
                 // A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the
@@ -1639,12 +1683,6 @@ internal sealed partial class DesktopGame : IDisposable
                     // body stands: an area is a box you listen from the inside of.
                     TickAmbience(_player.EyeUnits);
 
-                    // The eye's tick pair, for drawing frames between ticks from a position that glides
-                    // instead of stepping. Captured AFTER the body moved, so the pair is this tick's and
-                    // the one before's.
-                    playerEyePrevTick = playerEyeCaptured ? playerEyeTick : _player.Camera.Position;
-                    playerEyeTick = _player.Camera.Position;
-                    playerEyeCaptured = true;
                 }
 
                 // The first round of a mission, reported once — the same one-shot diagnostic the world
@@ -1715,6 +1753,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // alarm latch depends on that order: reversing it sets and clears the latch during the
                 // same multi-tick switch pulse, cutting the siren off almost as soon as it starts.
                 _missionObjectives?.TickLevelState(_player?.Body.Position);
+                _cutscenes?.FinishExpressionTick();
                 if (_securityCameras is { } cameras)
                 {
                     bool crouching = _playerMode && _player is not null && _player.IsCrouched;
@@ -1738,7 +1777,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                 _soldiers?.Tick(
                     watched,
-                    enemyAlive: !_playerDead,
+                    enemyAlive: !_playerDead && _cutscenes?.IsPlaying != true,
                     enemyFeet: watchedFeet,
                     enemyCrouching: _playerMode && _player is not null && _player.IsCrouched);
 
@@ -1901,7 +1940,7 @@ internal sealed partial class DesktopGame : IDisposable
                         {
                             _soldiers?.StartPlayerInteractionAnimation(
                                 interacting.InteractionAnimation,
-                                loops: interacting.InteractionLocomotionState is 31 or 32 or 33 or 35 or 36 or 42 or 43);
+                                loops: interacting.InteractionAnimationLoops);
                         }
                     }
 
@@ -1909,16 +1948,22 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         _soldiers.AdvancePlayerLadderAnimation(
                             interacting.InteractionFacing,
-                            out _, out _, out _);
+                            out Vector3d interactionRootDelta,
+                            out _,
+                            out _);
+                        interacting.ApplyInteractionRootMotion(interactionRootDelta);
                         _soldiers.PlacePlayerBodyClimbing(
                             interacting.InteractionFeet, interacting.InteractionFacing);
                     }
+
+                    Vector3d interactionCameraFeet = _soldiers?.PlayerInteractionCameraFeet(
+                        interacting.InteractionFeet) ?? interacting.InteractionFeet;
 
                     if (!interactionCamera.IsActive)
                     {
                         WorldRayCast? cameraCast = _worldSolids?.Caster();
                         interactionCamera.Begin(
-                            interacting.InteractionFeet,
+                            interactionCameraFeet,
                             interacting.InteractionFacing,
                             cameraCast is null
                                 ? null
@@ -1931,7 +1976,7 @@ internal sealed partial class DesktopGame : IDisposable
                     }
                     else
                     {
-                        interactionCamera.Follow(interacting.InteractionFeet);
+                        interactionCamera.Follow(interactionCameraFeet);
                     }
                     interactionCamera.Tick();
                 }
@@ -1955,6 +2000,7 @@ internal sealed partial class DesktopGame : IDisposable
                         RemasteredHudPresentation.UsesTacticalMessages(
                             RenderCVars.RemasteredHud.Value,
                             RenderCVars.TacticalMessages.Value)
+                        && _cutscenes?.IsPlaying != true
                             ? RemasteredMessageHoldSeconds
                             : 0f;
                 }
@@ -2003,9 +2049,9 @@ internal sealed partial class DesktopGame : IDisposable
                         ReleasePlayedMission();
                         if (shell is not null)
                         {
-                            // Event 7 is the retail outro-screen path. Cinematic playback is not yet a
-                            // renderer feature, so the modern shell's credits/extras page is its visible
-                            // campaign-complete destination rather than silently returning to selection.
+                            // Event 7 is the retail outro-screen path. The authored final cutscene has
+                            // completed before LevelFlow reaches here, so the shell now continues to its
+                            // campaign-complete destination.
                             shell.OpenOn("extras");
                             menuMode = true;
                             showcasePending = true;
@@ -2063,8 +2109,18 @@ internal sealed partial class DesktopGame : IDisposable
                 // between them keeps sweeping 0 to 1 with real time, which rocked the eye, the arms and
                 // every guard back and forth between two poses a thirtieth of a second apart. At blend 1
                 // every one of those readings is simply the tick that was last run.
-                bool smoothPresentation = !pauseMenu && !_options.Lockstep && RenderCVars.SmoothPresentation.Value;
-                float tickBlend = smoothPresentation ? _loop.Clock.TickFraction(_loop.TimeSource.Milliseconds) : 1f;
+                // Cutscene camera and vehicle transforms are authored and committed on the 30 Hz task
+                // tick. Blending only the SoldierRenderer between its previous/current records while the
+                // camera and its parent vehicle stay on the current record makes a seated actor sweep
+                // backwards after every tick, then glide forwards again. Retail presents the cinematic
+                // transform set atomically, so keep the actor on that same current tick as its plane/train.
+                bool smoothPresentation = !pauseMenu
+                    && _cutscenes?.IsPlaying != true
+                    && !_options.Lockstep
+                    && RenderCVars.SmoothPresentation.Value;
+                float tickBlend = smoothPresentation
+                    ? _loop.Clock.TickFraction(_loop.TimeSource.PreciseMilliseconds)
+                    : 1f;
                 SightZoomFrame sight = _playerMode && _player is not null
                     ? _player.SmoothedSightZoom(tickBlend)
                     : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
@@ -2072,6 +2128,16 @@ internal sealed partial class DesktopGame : IDisposable
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
                 float horizontalTangent = sight.TanX;
                 float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
+                if (_cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
+                {
+                    // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
+                    // not an angle in radians. A value of 1 is retail's 90-degree horizontal lens.
+                    // The authored framing was composed through retail's fixed 4:3 viewport. Keep that
+                    // vertical aperture at modern aspects and let the wider projection reveal the sides;
+                    // deriving it from a 16:9 window crops the top and bottom by 25 percent, which cut
+                    // Anya's upper body out of the Mission 1 briefing.
+                    verticalFieldOfView = CutsceneVerticalFieldOfView(cutsceneLens.FieldOfView);
+                }
                 // The map's own view of the level, when the computer owns the frame. Under the tactical
                 // interface the transition owns it for as long as it is flying — same viewport, but its
                 // camera and its field of view, which is what makes the climb and the fall a move of the
@@ -2167,6 +2233,10 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     interactionCamera.Present(smoothPresentation ? tickBlend : 1f);
                 }
+                if (_deathCamera.IsActive)
+                {
+                    _deathCamera.Present(smoothPresentation ? tickBlend : 1f);
+                }
 
                 Camera3D eye = _playerDead && _deathCamera.IsActive
                     ? _deathCamera.Camera
@@ -2181,15 +2251,9 @@ internal sealed partial class DesktopGame : IDisposable
                 if (smoothPresentation
                     && _playerMode
                     && !_playerDead
-                    && playerEyeCaptured
-                    && _player is { IsOnLadder: false, IsInWorldInteraction: false })
+                    && _player is { HasViewTickPair: true, IsOnLadder: false, IsInWorldInteraction: false })
                 {
-                    eye = new Camera3D(
-                        new Vector3d(
-                            playerEyePrevTick.X + ((playerEyeTick.X - playerEyePrevTick.X) * tickBlend),
-                            playerEyePrevTick.Y + ((playerEyeTick.Y - playerEyePrevTick.Y) * tickBlend),
-                            playerEyePrevTick.Z + ((playerEyeTick.Z - playerEyePrevTick.Z) * tickBlend)),
-                        _player.SmoothedLookRotation(tickBlend));
+                    eye = _player.SmoothedCamera(tickBlend);
                 }
 
                 // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
@@ -2215,6 +2279,10 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     eye = _entry.Camera;
                 }
+                else if (_cutscenes?.Frame is { } cutsceneView)
+                {
+                    eye = cutsceneView.Camera;
+                }
 
                 // Everything soldier-shaped resolves its own frame state once, here, so the shadow
                 // cascades and the geometry pass draw identical bodies in identical places.
@@ -2222,6 +2290,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // about to read their poses. Only one of the two is ever live: `_soldiers` belongs to a
                 // played mission, `_backdropSoldiers` to the menu's.
                 SoldierRenderer? shadowCasters = _soldiers ?? _backdropSoldiers;
+                _world.BeginFrame(tickBlend, smoothPresentation);
                 shadowCasters?.BeginFrame(tickBlend, smoothPresentation);
                 _gunPickupRenderer?.BeginFrame(tickBlend, smoothPresentation);
 
@@ -2522,7 +2591,12 @@ internal sealed partial class DesktopGame : IDisposable
                 // red while confirming/detecting, and attached to the head as it pans.
                 if (_securityCameras is { } statusCameras)
                 {
-                    _cameraStatusLights?.Draw(statusCameras.Cameras, eye, projection);
+                    _cameraStatusLights?.Draw(
+                        statusCameras.Cameras,
+                        eye,
+                        projection,
+                        tickBlend,
+                        smoothPresentation);
                 }
 
                 // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
@@ -2538,6 +2612,7 @@ internal sealed partial class DesktopGame : IDisposable
                     remasterHud,
                     RenderCVars.TacticalMessages.Value);
                 bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
+                    && _cutscenes?.IsPlaying != true
                     && !(_playerDead && _deathCamera.IsActive)
                     && _player is { View: not null };
                 bool showFirstPersonHud = showPlayerHud
@@ -2616,103 +2691,6 @@ internal sealed partial class DesktopGame : IDisposable
                             _player.FiredThisTick,
                             _player.ShotSequence);
                     }
-
-                    // The retail HUD remains part of the forward presentation. The remaster HUD instead
-                    // draws after the scene has resolved, which guarantees it is above the hands and gun.
-                    if (!remasterHud && _player.Weapons is { } carried)
-                    {
-                        _device.Set2DProjection(_window.Width, _window.Height);
-                        batch.Begin();
-                        if (_hud is { IsReady: true } retailHud)
-                        {
-                            // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's
-                            // latch branch never calls the parent handler.
-                            if (_player.IsSniperScoped)
-                            {
-                                retailHud.DrawSniperScope(batch, _window.Width, _window.Height);
-                            }
-                            else
-                            {
-                                CarriedWeapon? held = carried.InHand;
-                                int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
-                                    && _ammoTypes?.Types.FirstOrDefault(
-                                        ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
-                                    ? carried.Ammunition.Count(m203.AmmoId)
-                                    : 0;
-                                retailHud.Draw(
-                                    batch,
-                                    held?.Weapon,
-                                    held?.Gun.RoundsInClip ?? 0,
-                                    held is { } primary ? primary.Gun.Reserve(carried.Ammunition) : 0,
-                                    held?.Gun.State.SecondSubCounter ?? 0,
-                                    m203Reserve,
-                                    _window.Width,
-                                    _window.Height,
-                                    UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                            }
-                        }
-
-                        batch.End();
-                    }
-
-                    // Retail action sprites are deliberately retained for the faithful UI. The remaster's
-                    // corresponding context label is part of the single modern HUD draw above.
-                    if (!_computerOpen
-                        && !remasterHud
-                        && _hud is { IsReady: true }
-                        && _player.ActionSprite is { } actionSprite)
-                    {
-                        _device.Set2DProjection(_window.Width, _window.Height);
-                        batch.Begin();
-                        _hud.DrawAction(
-                            batch,
-                            actionSprite,
-                            _window.Width,
-                            _window.Height,
-                            UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                        batch.End();
-                    }
-
-                    // The mission's status messages. Kept off screen while the computer is up, as the rest
-                    // of the HUD is: the map is a full-screen readout of the same mission and a comms card
-                    // over it would be the same information twice.
-                    if (!tacticalMessages && _missionObjectives is { } messageRuntime)
-                    {
-                        _device.Set2DProjection(_window.Width, _window.Height);
-                        batch.Begin();
-                        if (_hud is { IsReady: true } retailMessages)
-                        {
-                            retailMessages.DrawStatusMessages(
-                                batch,
-                                messageRuntime.DisplayedMessages,
-                                _window.Width,
-                                _window.Height,
-                                UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                        }
-
-                        batch.End();
-                    }
-                }
-
-                // The human-owned retail display remains alive when a full-body interaction hides the
-                // hands and weapon: that is precisely when HumanPlayer's timed-use bar is needed. In the
-                // original dispatch order this follows the weapon handler and precedes StatusScreen's timer.
-                if (!remasterHud
-                    && showPlayerHud
-                    && _player is { } retailPlayer
-                    && _hud is { IsReady: true } retailStatus)
-                {
-                    _device.Set2DProjection(_window.Width, _window.Height);
-                    batch.Begin();
-                    retailStatus.DrawPlayerStatus(
-                        batch,
-                        _playerHealth.RemainingFraction,
-                        retailPlayer.InteractionProgress,
-                        _missionObjectives?.InterfaceTimerRemainingTicks,
-                        _window.Width,
-                        _window.Height,
-                        UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
-                    batch.End();
                 }
 
                 // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
@@ -2757,6 +2735,109 @@ internal sealed partial class DesktopGame : IDisposable
                     EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
                 }
 
+                // StatusScreen is a display-space layer. Keep every retail HUD component out of the
+                // captured scene so camera motion blur, depth of field, bloom and tone mapping can only
+                // affect the world and first-person rig. The damage and flash washes intentionally remain
+                // later in the draw order and still cover the HUD exactly as they did before this separation.
+                if (!remasterHud
+                    && showFirstPersonHud
+                    && _player is { Weapons: { } carried }
+                    && _hud is { IsReady: true } retailHud)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
+                    // never calls the parent handler.
+                    if (_player.IsSniperScoped)
+                    {
+                        retailHud.DrawSniperScope(batch, _window.Width, _window.Height);
+                    }
+                    else
+                    {
+                        CarriedWeapon? held = carried.InHand;
+                        int m203Reserve = held is { Weapon.ScriptId: "WEAPON_ID_M16A2" }
+                            && _ammoTypes?.Types.FirstOrDefault(
+                                ammo => ammo.ScriptId == "AMMO_ID_M203") is { } m203
+                            ? carried.Ammunition.Count(m203.AmmoId)
+                            : 0;
+                        retailHud.Draw(
+                            batch,
+                            held?.Weapon,
+                            held?.Gun.RoundsInClip ?? 0,
+                            held is { } primary ? primary.Gun.Reserve(carried.Ammunition) : 0,
+                            held?.Gun.State.SecondSubCounter ?? 0,
+                            m203Reserve,
+                            _window.Width,
+                            _window.Height,
+                            UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                    }
+
+                    batch.End();
+                }
+
+                // Retail action sprites are deliberately retained for the faithful UI. The remaster's
+                // corresponding context label is part of the single modern HUD draw below.
+                if (!remasterHud
+                    && showFirstPersonHud
+                    && _hud is { IsReady: true } retailActions
+                    && _player?.ActionSprite is { } actionSprite)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    retailActions.DrawAction(
+                        batch,
+                        actionSprite,
+                        _window.Width,
+                        _window.Height,
+                        UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                    batch.End();
+                }
+
+                // The mission's status messages. Kept off screen while the computer is up, as the rest
+                // of the HUD is: the map is a full-screen readout of the same mission and a comms card
+                // over it would be the same information twice.
+                if (!tacticalMessages
+                    && showFirstPersonHud
+                    && _missionObjectives is { } messageRuntime
+                    && _hud is { IsReady: true } retailMessages)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    retailMessages.DrawStatusMessages(
+                        batch,
+                        messageRuntime.DisplayedMessages,
+                        _window.Width,
+                        _window.Height,
+                        UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                    batch.End();
+                }
+
+                // The human-owned retail display remains alive when a full-body interaction hides the
+                // hands and weapon: that is precisely when HumanPlayer's timed-use bar is needed. In the
+                // original dispatch order this follows the weapon handler and precedes StatusScreen's timer.
+                if (!remasterHud
+                    && showPlayerHud
+                    && _player is { } retailPlayer
+                    && _hud is { IsReady: true } retailStatus)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    retailStatus.DrawPlayerStatus(
+                        batch,
+                        _playerHealth.RemainingFraction,
+                        retailPlayer.InteractionProgress,
+                        _missionObjectives?.InterfaceTimerRemainingTicks,
+                        _window.Width,
+                        _window.Height,
+                        UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                    batch.End();
+                }
+
+                if (_cutscenes?.Frame is { } cinematicFraming)
+                {
+                    DrawCutsceneFraming(batch, cinematicFraming);
+                }
+
                 // ComputerMap renders the terrain through its own top-down camera and turns only that
                 // captured view into green phosphor. The SIMOTECH casing is a separate retail panel that
                 // is drawn after the resolve, in its authored colours, before the HUD fills its aperture.
@@ -2772,12 +2853,7 @@ internal sealed partial class DesktopGame : IDisposable
                     Camera3D computerEye = _player.Camera;
                     if (smoothPresentation && _player.HasViewTickPair)
                     {
-                        computerEye = new Camera3D(
-                            new Vector3d(
-                                playerEyePrevTick.X + ((playerEyeTick.X - playerEyePrevTick.X) * tickBlend),
-                                playerEyePrevTick.Y + ((playerEyeTick.Y - playerEyePrevTick.Y) * tickBlend),
-                                playerEyePrevTick.Z + ((playerEyeTick.Z - playerEyePrevTick.Z) * tickBlend)),
-                            _player.SmoothedLookRotation(tickBlend));
+                        computerEye = _player.SmoothedCamera(tickBlend);
                     }
 
                     float computerViewModelFov = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
@@ -2899,6 +2975,20 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
+                // HumanPlayer_DrawStatus keeps drawing states 30/31/32/35/36 in third person and adds
+                // the current/total bar at 0x413120. It must therefore sit outside the first-person arms
+                // block, which interactions deliberately suppress.
+                if (remasterHud
+                    && _player?.InteractionProgress is float interactionProgress
+                    && _remasteredHud is { IsReady: true } interactionHud)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    interactionHud.DrawInteractionProgress(
+                        batch, interactionProgress, _window.Width, _window.Height);
+                    batch.End();
+                }
+
                 // The modern HUD is intentionally the last gameplay overlay. Rendering it only after the
                 // scene resolve, close foreground device and damage wash means no hand, weapon, world mesh
                 // or post-process pass can cover it.
@@ -2933,7 +3023,8 @@ internal sealed partial class DesktopGame : IDisposable
                             inHand is { } held ? held.Gun.Reserve(modernCarried.Ammunition) : 0,
                             modernCarried.State,
                             _player.ActionSprite,
-                            _missionObjectives?.Objectives ?? []),
+                            _missionObjectives?.Objectives ?? [],
+                            _player.IsSniperScoped),
                         _window.Width,
                         _window.Height);
                     batch.End();
@@ -2949,6 +3040,36 @@ internal sealed partial class DesktopGame : IDisposable
                     float topOffset = new LayoutContext(_window.Width, _window.Height)
                         .Px(RemasteredHudRenderer.MessageTopInsetDesign);
                     modernCards.Draw(batch, modernMessages.DisplayedMessages, _window.Width, _window.Height, topOffset);
+                    batch.End();
+                }
+
+                // Cutscene StatusMessages are subtitles, not HUD. They remain visible while the authored
+                // camera owns the frame even though the arms, weapon and ordinary mission UI are hidden.
+                if (_cutscenes?.IsPlaying == true && _missionObjectives is { } subtitleRuntime)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    // Retail cutscenes always use StatusMessageScreen's shipped bitmap face and its
+                    // left-aligned 620/640-width line. TacticalMessages only replaces the in-game feed;
+                    // letting it replace dialogue produced a centred modern subtitle unlike the original.
+                    if (_hud is { IsReady: true } subtitleHud)
+                    {
+                        subtitleHud.DrawStatusMessages(
+                            batch,
+                            subtitleRuntime.DisplayedMessages,
+                            _window.Width,
+                            _window.Height,
+                            // Retail scales this full-width normalized subtitle face with framebuffer
+                            // height. Keeping the HUD's integer auto scale here made a 938px capture use
+                            // the unscaled 480p glyphs, less than half the size of the original.
+                            // The retail text objects use the shipped face at their 0.9 presentation
+                            // scale; retain that calibration while growing it with framebuffer height.
+                            Math.Max(1f, (_window.Height / (float)UiScale.AuthoredHeight) * 0.87f));
+                    }
+                    else if (_messages is { IsReady: true } subtitleCards)
+                    {
+                        subtitleCards.Draw(batch, subtitleRuntime.DisplayedMessages, _window.Width, _window.Height);
+                    }
                     batch.End();
                 }
 
@@ -3314,6 +3435,10 @@ internal sealed partial class DesktopGame : IDisposable
     // vertical one follows from the window's aspect, rather than the other way round.
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
         2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
+
+    /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
+    internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
+        VerticalFieldOfView(4f / 3f, horizontalTangent);
 
     /// <summary>
     /// Releases the GPU-backed resources the game owns. The window, device and developer console are owned

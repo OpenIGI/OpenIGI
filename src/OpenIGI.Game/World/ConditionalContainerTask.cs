@@ -32,9 +32,8 @@ namespace OpenIGI.Game.World;
 /// <c>!4001.isRun &amp;&amp; !4007.isRun</c> is true during play, so they are unaffected.
 /// </para>
 /// <para>
-/// The port does not run cut-scenes, so this evaluates the condition once against the level's initial
-/// playable state and exposes the result as <see cref="IsRun"/>; the render, spawn and collision walks
-/// skip a container whose <see cref="IsRun"/> is false. See <see cref="ConditionalContainerGate"/>.
+/// <see cref="ConditionalContainerGate"/> prepares the evaluator and <see cref="CutsceneRuntime"/>
+/// refreshes it each fixed tick. Render, spawn, AI and collision paths read the live <see cref="IsRun"/>.
 /// </para>
 /// </remarks>
 public partial class ConditionalContainerTask : ContainerTask
@@ -75,7 +74,7 @@ public partial class ConditionalContainerTask : ContainerTask
     /// world — the original's <c>isRun</c> byte (<c>+284</c>).
     /// </summary>
     /// <remarks>
-    /// Memoised on first read. A container whose condition transitively references itself reads its own
+    /// Between refreshes this returns the last latched value. A container whose condition transitively references itself reads its own
     /// <see cref="IsRun"/> as <see langword="false"/> mid-resolution, which matches the original starting
     /// every container un-run and only latching true once the condition first evaluates true.
     /// </remarks>
@@ -112,6 +111,17 @@ public partial class ConditionalContainerTask : ContainerTask
 
             return _isRun.Value;
         }
+    }
+
+    /// <summary>Re-evaluates the live condition and returns whether the registration state changed.</summary>
+    /// <param name="started"><see langword="true"/> when this transition registered the subtree.</param>
+    internal bool Refresh(out bool started)
+    {
+        bool before = _isRun ?? false;
+        bool after = ConditionResolver?.Invoke(this) ?? true;
+        _isRun = after;
+        started = !before && after;
+        return before != after;
     }
 
     /// <inheritdoc/>
