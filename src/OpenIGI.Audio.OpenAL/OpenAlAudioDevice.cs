@@ -70,7 +70,8 @@ public sealed class OpenAlAudioDevice : IAudioDevice
             Open();
         }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException
-            or InvalidOperationException or TypeInitializationException or BadImageFormatException)
+            or System.IO.FileNotFoundException or InvalidOperationException or TypeInitializationException
+            or BadImageFormatException)
         {
             // A missing or unusable OpenAL is not a fatal condition. Continuous integration has no
             // sound card, and neither do plenty of machines people will run this on.

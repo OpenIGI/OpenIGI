@@ -35,13 +35,12 @@ public sealed class LocalFileDevice : IFileDevice
     public string Name { get; }
 
     /// <inheritdoc/>
-    public bool Exists(string path) => File.Exists(ToFullPath(path));
+    public bool Exists(string path) => TryResolveExistingPath(path, out string fullPath) && File.Exists(fullPath);
 
     /// <inheritdoc/>
     public bool TryOpenRead(string path, out Stream? stream)
     {
-        string fullPath = ToFullPath(path);
-        if (!File.Exists(fullPath))
+        if (!TryResolveExistingPath(path, out string fullPath) || !File.Exists(fullPath))
         {
             stream = null;
             return false;
@@ -56,8 +55,7 @@ public sealed class LocalFileDevice : IFileDevice
     {
         ArgumentNullException.ThrowIfNull(searchPattern);
 
-        string directory = ToFullPath(path);
-        if (!Directory.Exists(directory))
+        if (!TryResolveExistingPath(path, out string directory) || !Directory.Exists(directory))
         {
             return [];
         }
@@ -70,8 +68,7 @@ public sealed class LocalFileDevice : IFileDevice
     /// <inheritdoc/>
     public IEnumerable<string> EnumerateDirectories(string path)
     {
-        string directory = ToFullPath(path);
-        if (!Directory.Exists(directory))
+        if (!TryResolveExistingPath(path, out string directory) || !Directory.Exists(directory))
         {
             return [];
         }
@@ -100,6 +97,72 @@ public sealed class LocalFileDevice : IFileDevice
             ? combined
             : RootDirectory;
     }
+
+    private bool TryResolveExistingPath(string path, out string fullPath)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        string relative = ResourcePath.Normalize(path).TrimStart(ResourcePath.DirectorySeparator);
+        string candidate = Path.GetFullPath(Path.Combine(RootDirectory, relative));
+        if (!IsWithinRoot(candidate))
+        {
+            fullPath = RootDirectory;
+            return false;
+        }
+
+        if (File.Exists(candidate) || Directory.Exists(candidate))
+        {
+            fullPath = candidate;
+            return true;
+        }
+
+        string relativeToRoot = Path.GetRelativePath(RootDirectory, candidate);
+        if (relativeToRoot == ".")
+        {
+            fullPath = RootDirectory;
+            return Directory.Exists(fullPath);
+        }
+
+        string current = RootDirectory;
+        foreach (string segment in relativeToRoot.Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            string? child = FindChild(current, segment);
+            if (child is null)
+            {
+                fullPath = candidate;
+                return false;
+            }
+
+            current = child;
+        }
+
+        fullPath = current;
+        return true;
+    }
+
+    private static string? FindChild(string directory, string name)
+    {
+        string? exact = Directory.EnumerateFileSystemEntries(directory)
+            .FirstOrDefault(entry => string.Equals(
+                Path.GetFileName(entry), name, StringComparison.Ordinal));
+        if (exact is not null)
+        {
+            return exact;
+        }
+
+        return Directory.EnumerateFileSystemEntries(directory)
+            .FirstOrDefault(entry => string.Equals(
+                Path.GetFileName(entry), name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private bool IsWithinRoot(string fullPath) =>
+        fullPath.Equals(RootDirectory, StringComparison.OrdinalIgnoreCase)
+        || fullPath.StartsWith(
+            RootDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar,
+            StringComparison.OrdinalIgnoreCase);
 
     /// <inheritdoc/>
     public override string ToString() => $"{Name}: -> {RootDirectory}";

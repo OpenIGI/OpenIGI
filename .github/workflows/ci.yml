@@ -28,4 +28,9 @@ jobs:
         run: dotnet build OpenIGI.slnx --configuration Release --no-restore
 
       - name: Test
+        env:
+          # Ubuntu runners do not provide a stable audio device. Keep OpenAL on its
+          # supported silent backend so native audio initialisation cannot take down
+          # the test host while the tests are exercising the no-audio contract.
+          ALSOFT_DRIVERS: ${{ matrix.os == 'ubuntu-latest' && 'null' || '' }}
         run: dotnet test OpenIGI.slnx --configuration Release --no-build --verbosity normal
