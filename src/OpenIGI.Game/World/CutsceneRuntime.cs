@@ -29,6 +29,7 @@ public sealed class CutsceneRuntime
     private readonly List<SoundState> _sounds = [];
     private readonly Dictionary<int, TransformState> _transforms = [];
     private readonly Dictionary<GameTask, TransformState> _taskTransforms = [];
+    private readonly Dictionary<GameTask, int> _taskOrder = [];
     private readonly Dictionary<GameTask, AttachmentState> _attachments = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
@@ -61,8 +62,11 @@ public sealed class CutsceneRuntime
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
         List<CutSceneTask> cutscenes = [];
 
+        int taskOrder = 0;
         foreach (GameTask task in Walk(levelRoot))
         {
+            int order = taskOrder++;
+            _taskOrder[task] = order;
             if (task is ConditionalContainerTask container)
             {
                 _containers.Add(container);
@@ -99,6 +103,7 @@ public sealed class CutsceneRuntime
                     _animations.Add(new AnimationState(
                         declared,
                         target,
+                        order,
                         Text(declared, "Run"),
                         Bool(declared, "Initial run"),
                         new AnimDataProgram(entries)));
@@ -158,9 +163,9 @@ public sealed class CutsceneRuntime
                 continue;
             }
             animation.Program.SeekTo(0);
-            ApplyAnimation(animation.TargetId, animation.Program);
+            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
             animation.Program.Step();
-            ApplyAnimation(animation.TargetId, animation.Program);
+            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
         UpdateFrame();
     }
@@ -214,14 +219,14 @@ public sealed class CutsceneRuntime
 
             int previousTick = animation.Program.Tick;
             animation.Program.SeekTo(previousTick + 1);
-            ApplyAnimation(animation.TargetId, animation.Program);
+            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
             if (previousTick < 0)
             {
                 // Containers can defer an AnimTask's first run until after construction. Its first
                 // active scheduler slot still has the same two tick-zero dispatches as a task that
                 // was active during runtime initialization.
                 animation.Program.Step();
-                ApplyAnimation(animation.TargetId, animation.Program);
+                ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
             }
         }
 
@@ -342,9 +347,9 @@ public sealed class CutsceneRuntime
             }
 
             animation.Program.SeekTo(0);
-            ApplyAnimation(animation.TargetId, animation.Program);
+            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
             animation.Program.Step();
-            ApplyAnimation(animation.TargetId, animation.Program);
+            ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
         }
 
         UpdateFrame();
@@ -633,19 +638,22 @@ public sealed class CutsceneRuntime
         return true;
     }
 
-    private static void EvaluateAttachmentParentPose(
+    private void EvaluateAttachmentParentPose(
         GameTask task,
         AttachmentState attachment,
         out Vector3d position,
         out Matrix3f orientation)
     {
-        // The retail scheduler ticks a Human before the vehicle task it is attached to, but draws
-        // vehicle cargo and resolves EditCamera links after that vehicle tick. Our grouped scheduler
-        // advances all AnimTasks first, so attached Humans must explicitly sample the saved pre-tick
-        // parent pose. Mission 1 Human 2021 proves the ordering: its retail skin position is exactly
-        // one freight-car step behind the linked camera and car geometry from the same outer frame.
+        // Human_AttachedMovement reads its parent's pose at the Human's own task-tree slot. Our grouped
+        // scheduler advances every AnimTask first, so reconstruct that slot: a Human preceding the
+        // controlling AnimTask sees the saved pre-update pose, while one following it sees current.
+        // Mission 1 contains both source-of-truth cases: wagon Human 2021 precedes train-1999's AnimTask;
+        // helicopter Human 1505 follows heli-1502's AnimTask.
+        TransformState dynamicParent = attachment.Parent.TrainRoot ?? attachment.Parent;
         bool usePreviousPose = task is HumanSoldierTask
-            && DynamicRevision(attachment.Parent) > attachment.ParentRevisionAtCapture;
+            && DynamicRevision(attachment.Parent) > attachment.ParentRevisionAtCapture
+            && _taskOrder.TryGetValue(task, out int humanOrder)
+            && humanOrder < dynamicParent.LastSimulationOrder;
         EvaluateDynamicPose(attachment.Parent, usePreviousPose, out position, out orientation);
     }
 
@@ -976,7 +984,7 @@ public sealed class CutsceneRuntime
         }
     }
 
-    private void ApplyAnimation(int targetId, AnimDataProgram program)
+    private void ApplyAnimation(int targetId, int simulationOrder, AnimDataProgram program)
     {
         if (targetId < 0 || !_transforms.TryGetValue(targetId, out TransformState? transform))
         {
@@ -1004,7 +1012,7 @@ public sealed class CutsceneRuntime
                 return;
             }
 
-            SnapshotDynamicPose(transform);
+            SnapshotDynamicPose(transform, simulationOrder);
 
             // Train::ReadChannels (0x42B040): channel zero is a latched thrust target.  The live
             // thrust approaches it by the authored step, then MaxSpeed converts km/h to engine
@@ -1034,7 +1042,7 @@ public sealed class CutsceneRuntime
         {
             if (program.Tick > 0)
             {
-                SnapshotDynamicPose(transform);
+                SnapshotDynamicPose(transform, simulationOrder);
             }
 
             // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
@@ -1108,7 +1116,7 @@ public sealed class CutsceneRuntime
                 return;
             }
 
-            SnapshotDynamicPose(transform);
+            SnapshotDynamicPose(transform, simulationOrder);
 
             channels = program.Channels;
             // Heli::ReadChannels stores normalized cyclic/yaw controls; it does not integrate them as
@@ -1145,7 +1153,7 @@ public sealed class CutsceneRuntime
         {
             if (program.Tick > 0)
             {
-                SnapshotDynamicPose(transform);
+                SnapshotDynamicPose(transform, simulationOrder);
             }
 
             // Plane::ReadChannels (0x4337E0) has the same normalized pitch/roll/yaw + latched-thrust
@@ -1240,12 +1248,13 @@ public sealed class CutsceneRuntime
         state.Orientation = orientation;
     }
 
-    private static void SnapshotDynamicPose(TransformState state)
+    private static void SnapshotDynamicPose(TransformState state, int simulationOrder)
     {
         state.PreviousPosition = state.Position;
         state.PreviousOrientation = state.Orientation;
         state.PreviousTrackPosition = state.TrackPosition;
         state.DynamicRevision++;
+        state.LastSimulationOrder = simulationOrder;
     }
 
     private static int DynamicRevision(TransformState state) =>
@@ -1687,7 +1696,13 @@ public sealed class CutsceneRuntime
         public int Tick { get; set; }
     }
 
-    private sealed record AnimationState(DeclaredTask Task, int TargetId, string Run, bool InitialRun, AnimDataProgram Program);
+    private sealed record AnimationState(
+        DeclaredTask Task,
+        int TargetId,
+        int Order,
+        string Run,
+        bool InitialRun,
+        AnimDataProgram Program);
     private sealed record SoundState(
         DeclaredTask Task,
         string Condition,
@@ -1734,6 +1749,7 @@ public sealed class CutsceneRuntime
         public float TrackPosition { get; set; }
         public float PreviousTrackPosition { get; set; }
         public int DynamicRevision { get; set; }
+        public int LastSimulationOrder { get; set; } = int.MinValue;
         public float Thrust { get; set; }
         public float TargetThrust { get; set; }
         public float OriginalThrust { get; set; }
