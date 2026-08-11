@@ -494,7 +494,9 @@ public sealed class PlayerBodyTests
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
         Vector3d ground = player.Position;
         HumanFallImpact? published = null;
-        HumanHealth displayedHealth = new(HumanHitZoneTable.Player, PlayerBody.RetailMaximumHealth);
+        HumanHealth displayedHealth = new(
+            HumanHitZoneTable.Player,
+            RetailPlayerParameters.Value.MaximumHealth);
         player.UseHealth(displayedHealth);
         player.SetFallImpactSink(impact => published = impact);
 

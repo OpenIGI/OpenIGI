@@ -45,9 +45,6 @@ public sealed class PlayerBody
     private Vector3f? _pendingWalkOffVelocity;
     private Action<HumanFallImpact>? _fallImpactSink;
 
-    /// <summary>The retail player's maximum health from <c>humanplayer.qvm</c>.</summary>
-    public const float RetailMaximumHealth = 3f;
-
     /// <summary>How high the eye sits above the feet while standing, in world units.</summary>
     /// <remarks>
     /// The wall probe's high sample (<see cref="HumanWallProbe.HighProbeStandingInUnits"/>) is taken at
@@ -84,16 +81,18 @@ public sealed class PlayerBody
 
     /// <summary>Gets the player's accumulated damage.</summary>
     /// <remarks>
-    /// The default is retail's three-point player. A composed runtime supplies the health object its HUD
-    /// and death state observe through <see cref="UseHealth"/>.
+    /// The unconfigured body starts with the base human value. A composed runtime supplies the health
+    /// object its HUD and death state observe through <see cref="UseHealth"/>; that object's maximum must
+    /// come from <see cref="HumanPlayerParameters.MaximumHealth"/>, argument 7 of <c>humanplayer.qvm</c>.
     /// </remarks>
-    public HumanHealth Health { get; private set; } = new(HumanHitZoneTable.Player, RetailMaximumHealth);
+    public HumanHealth Health { get; private set; } = new(HumanHitZoneTable.Player);
 
     /// <summary>Uses the owning runtime's player-health accumulator for fall damage.</summary>
     /// <param name="health">The same instance the HUD and death state observe.</param>
     /// <remarks>
-    /// The standalone body owns a retail three-point accumulator by default. A composed game must replace
-    /// it with its live player object so a landing cannot damage a private copy that the HUD never reads.
+    /// A composed game must replace the body's base accumulator with its live player object so a landing
+    /// cannot damage a private copy that the HUD never reads. The desktop builds that object using the
+    /// maximum published by <c>humanplayer.qvm</c>, rather than assuming the shipped script's value.
     /// </remarks>
     public void UseHealth(HumanHealth health)
     {

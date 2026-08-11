@@ -34,6 +34,22 @@ public sealed class HumanFallDamageTests
     }
 
     [Theory]
+    [InlineData(1.25f)]
+    [InlineData(6.5f)]
+    public void LethalRangeScalesWithTheMaximumPublishedByHumanPlayerQvm(float maximumHealth)
+    {
+        float speed = HumanFallDamage.SafeSpeedMetresPerSecond
+            + HumanFallDamage.LethalSpeedRangeMetresPerSecond;
+
+        HumanFallImpact impact = HumanFallDamage.Calculate(
+            -speed * 4096f / 30f,
+            maximumHealth);
+
+        Assert.Equal(maximumHealth, impact.Damage, 4);
+        Assert.Equal("player_fall_3", impact.SoundName);
+    }
+
+    [Theory]
     [InlineData(0.099f, "player_fall_1")]
     [InlineData(0.101f, "player_fall_2")]
     [InlineData(0.199f, "player_fall_2")]
