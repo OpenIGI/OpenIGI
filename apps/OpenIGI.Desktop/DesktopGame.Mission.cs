@@ -774,6 +774,7 @@ internal sealed partial class DesktopGame
             if (_genericPickups is { } genericPickups)
             {
                 candidate.UseGenericPickups(genericPickups);
+                candidate.GenericPickedUp += PlayGenericPickupSound;
                 _logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
             }
 

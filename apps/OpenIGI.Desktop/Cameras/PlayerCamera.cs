@@ -600,6 +600,9 @@ public sealed class PlayerCamera
     /// <summary>Raised for each weapon collected from the world this tick.</summary>
     public event Action<GunPickup>? GunPickedUp;
 
+    /// <summary>Raised for each authored generic item collected from the world this tick.</summary>
+    public event Action<GenericPickup>? GenericPickedUp;
+
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
 
@@ -882,7 +885,13 @@ public sealed class PlayerCamera
             }
         }
 
-        _genericPickups?.CollectAt(_body.Position);
+        if (_genericPickups is { } genericPickups)
+        {
+            foreach (GenericPickup pickup in genericPickups.CollectAt(_body.Position))
+            {
+                GenericPickedUp?.Invoke(pickup);
+            }
+        }
 
         _view?.Tick();
 
