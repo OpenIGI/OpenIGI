@@ -1486,10 +1486,14 @@ public sealed class SoldierRenderer : IDisposable
         ReportNoise("gunshot", heard, range);
     }
 
-    /// <summary>Delivers a player's world-impact event to every guard inside IGI1's five-metre radius.</summary>
+    /// <summary>Delivers a player's world-impact event to every guard inside its authored radius.</summary>
     /// <param name="impact">The selected nearest world contact.</param>
     /// <param name="shooterPosition">The player's live position for source-based script actions.</param>
-    public void NotifyGroundImpact(Vector3d impact, Vector3d shooterPosition)
+    /// <param name="radiusInUnits">Five metres for a round; five or ten metres for a landing.</param>
+    public void NotifyGroundImpact(
+        Vector3d impact,
+        Vector3d shooterPosition,
+        double radiusInUnits = AiSoldier.GroundImpactRadiusInUnits)
     {
         int heard = 0;
         foreach ((SoldierView view, AiSoldier brain) in _brains)
@@ -1498,13 +1502,13 @@ public sealed class SoldierRenderer : IDisposable
             {
                 continue;
             }
-            if (brain.ReceiveGroundImpact(impact, shooterPosition))
+            if (brain.ReceiveGroundImpact(impact, shooterPosition, radiusInUnits))
             {
                 heard++;
             }
         }
 
-        ReportNoise("impact", heard, AiSoldier.GroundImpactRadiusInUnits);
+        ReportNoise("impact", heard, radiusInUnits);
     }
 
     /// <summary>Delivers the player's footstep noise to every guard the step's radius reaches.</summary>

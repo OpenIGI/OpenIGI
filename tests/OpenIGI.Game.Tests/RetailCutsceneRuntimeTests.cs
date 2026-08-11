@@ -145,12 +145,27 @@ public sealed class RetailCutsceneRuntimeTests
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics);
         GameTask helicopter = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(1502));
+        HumanSoldierTask helicopterJones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1505));
+        Assert.True(runtime.TryAttachActorToTask(
+            helicopterJones,
+            helicopter,
+            helicopterJones.Position,
+            Matrix3f.FromEngineEulerAngles(0f, 0f, helicopterJones.Gamma)));
 
         for (int tick = 0; tick < 29; tick++)
         {
             runtime.Tick();
         }
-        Assert.True(runtime.TryGetDrawTransform(helicopter, out Vector3d previousPosition, out _));
+        Assert.True(runtime.TryGetDrawTransform(
+            helicopter,
+            out Vector3d previousPosition,
+            out Matrix3f previousOrientation));
+        Assert.True(runtime.TryGetAttachedDrawTransform(
+            helicopterJones,
+            out Vector3d previousJonesPosition,
+            out _));
+        Vector3d jonesLocalPosition = previousOrientation.Transform(
+            previousJonesPosition - previousPosition);
         runtime.Tick();
 
         Assert.True(runtime.TryGetDrawTransform(helicopter, out Vector3d position, out Matrix3f orientation));
@@ -161,6 +176,16 @@ public sealed class RetailCutsceneRuntimeTests
             $"retail={expected}, runtime={position}, delta={(position - expected).Length:R}, matrix={orientation}, velocity={(position - previousPosition) * WorldScene.UnitsPerMetre}");
         Assert.InRange(MathF.Abs(orientation.M23 - 0.342750251f), 0f, 0.0002f);
         Assert.InRange(MathF.Abs(orientation.M33 - 0.939382612f), 0f, 0.0002f);
+
+        Assert.True(runtime.TryGetAttachedDrawTransform(
+            helicopterJones,
+            out Vector3d jonesPosition,
+            out _));
+        Vector3d expectedJonesPosition = position
+            + orientation.Transposed().Transform(jonesLocalPosition);
+        Assert.True((jonesPosition - expectedJonesPosition).Length <= 0.0001d,
+            $"helicopter Jones must use the current parent slot: expected={expectedJonesPosition}, " +
+            $"runtime={jonesPosition}, delta={(jonesPosition - expectedJonesPosition).Length:R}");
     }
 
     [RequiresGameDataFact]

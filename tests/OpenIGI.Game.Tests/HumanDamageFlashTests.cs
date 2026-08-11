@@ -1,11 +1,12 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Player;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
 
 /// <summary>
-/// The red damage wash: a hit raises the four corners, and each tick fades them a forty-fifth toward
-/// zero — the decay <c>sub_411300</c> runs, so a full flash lives forty-five ticks.
+/// The red damage wash: retail chooses a 0.4–0.8 alpha and weights its corners from the round's view
+/// direction; each tick then fades them a forty-fifth toward zero.
 /// </summary>
 public sealed class HumanDamageFlashTests
 {
@@ -18,72 +19,100 @@ public sealed class HumanDamageFlashTests
         Assert.Equal(0f, flash.TopLeft);
     }
 
-    /// <summary>A hit raises every corner to full and makes the flash paint.</summary>
+    /// <summary>A directionless hit, such as an explosion, gives every corner the same retail intensity.</summary>
     [Fact]
-    public void AHitRaisesEveryCorner()
+    public void AZeroDirectionHitRaisesEveryCornerEqually()
     {
         HumanDamageFlash flash = new();
-        flash.Hit();
+        flash.Hit(Vector3f.Zero, randomUnit: 0.5f);
 
         Assert.True(flash.IsActive);
-        Assert.Equal(1f, flash.TopLeft);
-        Assert.Equal(1f, flash.TopRight);
-        Assert.Equal(1f, flash.BottomRight);
-        Assert.Equal(1f, flash.BottomLeft);
+        Assert.Equal(0.6f, flash.TopLeft, 5);
+        Assert.Equal(0.6f, flash.TopRight, 5);
+        Assert.Equal(0.6f, flash.BottomRight, 5);
+        Assert.Equal(0.6f, flash.BottomLeft, 5);
     }
 
-    /// <summary>Each tick subtracts one forty-fifth, and a full flash is gone after forty-five ticks.</summary>
+    /// <summary>Each tick subtracts one forty-fifth, and the next tick clamps the tiny residual after thirty-six subtractions.</summary>
     [Fact]
-    public void FadesAFortyFifthATickAndDiesAtFortyFive()
+    public void FadesAFortyFifthATickAndDiesAtThirtySeven()
     {
         HumanDamageFlash flash = new();
-        flash.Hit();
+        flash.Hit(Vector3f.Zero, randomUnit: 1f);
 
         flash.Tick();
-        Assert.Equal(1f - HumanDamageFlash.FadePerTick, flash.TopLeft, 5);
+        Assert.Equal(0.8f - HumanDamageFlash.FadePerTick, flash.TopLeft, 5);
 
-        // Forty-four more brings it to forty-five ticks in all -- essentially faded, to within a tick's
-        // worth (repeated float subtraction leaves a hair, as the original's does).
-        for (int i = 0; i < 44; i++)
+        for (int i = 0; i < 35; i++)
         {
             flash.Tick();
         }
 
         Assert.True(flash.TopLeft < HumanDamageFlash.FadePerTick);
 
-        // One more crosses zero and the clamp pins it dark.
         flash.Tick();
         Assert.False(flash.IsActive);
         Assert.Equal(0f, flash.TopLeft);
     }
 
-    /// <summary>A second hit mid-fade tops the wash back up rather than dimming it.</summary>
+    /// <summary>The dominant X direction lights its matching edge and dims the other one by half.</summary>
     [Fact]
-    public void AHitNeverDimsWhatIsAlreadyLit()
+    public void AHorizontalHitWeightsTheMatchingEdge()
     {
         HumanDamageFlash flash = new();
-        flash.Hit();
-        for (int i = 0; i < 10; i++)
-        {
-            flash.Tick();
-        }
+        flash.Hit(new Vector3f(1f, 0f, 0f), randomUnit: 1f);
 
-        Assert.True(flash.TopLeft < 1f);
-        flash.Hit(0.5f);
-
-        // 0.5 is below the ~0.78 still lit, so it must not pull the corner down.
-        Assert.True(flash.TopLeft > 0.5f);
-
-        flash.Hit();
-        Assert.Equal(1f, flash.TopLeft);
+        Assert.Equal(0.8f, flash.TopLeft, 5);
+        Assert.Equal(0.8f, flash.TopRight, 5);
+        Assert.Equal(0.4f, flash.BottomRight, 5);
+        Assert.Equal(0.4f, flash.BottomLeft, 5);
     }
 
-    /// <summary>Intensity is clamped into range.</summary>
+    /// <summary>A dominant negative Z direction lights the retail mapper's left edge.</summary>
     [Fact]
-    public void IntensityIsClamped()
+    public void ANegativeZHitWeightsTheLeftEdge()
     {
         HumanDamageFlash flash = new();
-        flash.Hit(5f);
-        Assert.Equal(1f, flash.TopLeft);
+        flash.Hit(new Vector3f(1f, 0f, -2f), randomUnit: 1f);
+
+        Assert.Equal(0.8f, flash.TopLeft, 5);
+        Assert.Equal(0.4f, flash.TopRight, 5);
+        Assert.Equal(0.4f, flash.BottomRight, 5);
+        Assert.Equal(0.8f, flash.BottomLeft, 5);
+    }
+
+    /// <summary>A dominant positive Y direction chooses the same right edge as the retail branch.</summary>
+    [Fact]
+    public void APositiveYHitWeightsTheRightEdge()
+    {
+        HumanDamageFlash flash = new();
+        flash.Hit(new Vector3f(0f, 2f, 0f), randomUnit: 1f);
+
+        Assert.Equal(0.4f, flash.TopLeft, 5);
+        Assert.Equal(0.8f, flash.TopRight, 5);
+        Assert.Equal(0.8f, flash.BottomRight, 5);
+        Assert.Equal(0.4f, flash.BottomLeft, 5);
+    }
+
+    /// <summary>A second hit overwrites its predecessor, including when the new flash is dimmer.</summary>
+    [Fact]
+    public void AHitReplacesRatherThanAccumulates()
+    {
+        HumanDamageFlash flash = new();
+        flash.Hit(new Vector3f(1f, 0f, 0f), randomUnit: 1f);
+        flash.Hit(new Vector3f(-1f, 0f, 0f), randomUnit: 0f);
+
+        Assert.Equal(0.2f, flash.TopLeft, 5);
+        Assert.Equal(0.2f, flash.TopRight, 5);
+        Assert.Equal(0.4f, flash.BottomRight, 5);
+        Assert.Equal(0.4f, flash.BottomLeft, 5);
+    }
+
+    /// <summary>The random input is clamped before mapping to the retail alpha range.</summary>
+    [Fact]
+    public void RetailIntensityIsClamped()
+    {
+        Assert.Equal(HumanDamageFlash.MinimumHitIntensity, HumanDamageFlash.RetailIntensity(-1f));
+        Assert.Equal(0.8f, HumanDamageFlash.RetailIntensity(5f));
     }
 }
