@@ -571,9 +571,15 @@ internal sealed partial class DesktopGame
                     _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
                     _guardHits++;
 
-                    // The screen goes red. A full wash per hit, so a burst holds it solid and it fades
-                    // over a second and a half once the fire stops -- the retail decay (sub_411300).
-                    _damageFlash.Hit();
+                    // The retail handler transforms the round into camera space before writing the four
+                    // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
+                    // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
+                    Vector3f incoming = new(
+                        (float)(to.X - from.X),
+                        (float)(to.Y - from.Y),
+                        (float)(to.Z - from.Z));
+                    Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
+                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
 
                     // And the grunt. 0x412440 plays it on the same branch and rate-limits it through
                     // 0x4637C0, so sustained fire staggers the player without stuttering the sound.
@@ -1260,9 +1266,9 @@ internal sealed partial class DesktopGame
         _playerDead = true;
         int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _shotRandom.Next(2));
 
-        // Hold the screen red. The wash decays a forty-fifth a tick, so on death it is pinned to
-        // full and left to fade -- the last thing the player sees is red.
-        _damageFlash.Hit();
+        // The lethal hit has already written the retail corner flash. Do not replace it with a uniform
+        // full-screen wash here: 0x412440 writes the flash as part of damage receipt, before it changes
+        // the locomotion state to death.
 
         // Which way the body is thrown: the facing whose backward axis points away from the killer,
         // exactly as the soldier death faces the incoming round (SoldierDeath.TurnToTheShot).
