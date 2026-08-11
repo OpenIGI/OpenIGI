@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Runtime.CompilerServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
@@ -42,12 +41,6 @@ public sealed class LoadedPack
 
     private readonly Dictionary<string, MefModel> _models;
     private HashSet<string>? _registered;
-    private static readonly ConditionalWeakTable<ResourceRegistry, TextureArchiveBinding> TextureArchives = new();
-
-    private sealed class TextureArchiveBinding
-    {
-        public string? Path { get; set; }
-    }
 
     private LoadedPack(
         string name,
@@ -164,20 +157,11 @@ public sealed class LoadedPack
         // The textures archive is registered but not decoded here: a texture becomes pixels only when
         // the renderer asks for it, and the original defers the same way.
         // Texture names are global registry keys, but level packs may reuse a name with different
-        // pixels (notably 015_05_1 on the human face). Rebind the current pack's texture namespace so
-        // a previous mission preview cannot leave stale pixels in the running mission. The previous
-        // archive is freed only after the replacement has been validated and registered successfully.
+        // pixels (notably 015_05_1 on the human face). Registering with replacement enabled overwrites
+        // only colliding texture keys while keeping common-pack-only entries mounted for WorldScene's
+        // instances from both packs.
         string textureArchivePath = $"{dir}textures/{name}.res";
-        TextureArchiveBinding textureBinding = TextureArchives.GetOrCreateValue(resources);
-        string? previousTextureArchivePath = textureBinding.Path;
         _ = TryRegisterArchive(textureArchivePath, resources, log, replaceExisting: true);
-        if (previousTextureArchivePath is { }
-            && !previousTextureArchivePath.Equals(textureArchivePath, StringComparison.OrdinalIgnoreCase))
-        {
-            resources.Free(previousTextureArchivePath);
-        }
-
-        textureBinding.Path = textureArchivePath;
 
         log.Information(
             LogCategory,
