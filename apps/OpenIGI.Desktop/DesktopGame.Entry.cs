@@ -131,16 +131,10 @@ internal sealed partial class DesktopGame
             _worstPassMilliseconds = milliseconds;
         }
 
-        // Every pass in the watched window, named. The worst one on its own says a frame was expensive
-        // without saying which, and the expensive frame is usually not the one the work happened on --
-        // the frame after a mission comes up pays for whatever it is the first to draw.
-        if (milliseconds > HitchMilliseconds)
-        {
-            _logger.Information(
-                "Mission",
-                FormattableString.Invariant(
-                    $"  frame {_loop.Clock.FrameCount}: {milliseconds:F1} ms."));
-        }
+        // Keep this measurement side-effect free. Logging every hitch here is especially harmful while
+        // the scheduler is catching up after an animation: the synchronous file logger turns each hitch
+        // into more work, which creates more catch-up ticks and makes the slowdown self-amplifying. The
+        // final worst-frame summary and the named slow stages retain the useful diagnostic information.
     }
 
     // Where the time inside a single mission hand-over went. Only collected while a watch is running, so

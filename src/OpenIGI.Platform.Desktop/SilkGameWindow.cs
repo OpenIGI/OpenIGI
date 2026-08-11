@@ -26,22 +26,9 @@ namespace OpenIGI.Platform.Desktop;
 /// </remarks>
 public sealed class SilkGameWindow : IGameWindow
 {
-    /// <summary>How far a borderless window is allowed to hang off the bottom-right of the monitor.</summary>
-    /// <remarks>
-    /// <para>
-    /// A borderless window whose client rectangle matches the monitor's <em>exactly</em> is the pattern
-    /// both DWM and the NVIDIA OpenGL driver look for before they unredirect it: the compositor is taken
-    /// out of the path and the window is handed the display. That is exclusive fullscreen in all but
-    /// name — a black flash on the way in, alt-tab minimising the window instead of leaving it drawn
-    /// behind what is in front of it, and the rest of the desktop stalled while it has focus. It is also
-    /// exactly what borderless is chosen to avoid.
-    /// </para>
-    /// <para>
-    /// Hanging one pixel off the right and bottom edges fails that equality test, so the window stays
-    /// composited, while still covering every pixel of the screen. The cost is a one-pixel column and
-    /// row of the framebuffer that is never visible.
-    /// </para>
-    /// </remarks>
+    // Keep borderless presentation composited by DWM. An exact monitor-sized client area can be
+    // classified by the desktop compositor/driver as an exclusive-style surface, which causes the
+    // level image to flash when the presentation surface is re-used.
     private const int BorderlessOverhang = 1;
 
     private readonly IWindow _window;
@@ -363,7 +350,6 @@ public sealed class SilkGameWindow : IGameWindow
     }
 
     /// <summary>The client size a borderless window covering <paramref name="display"/> is given.</summary>
-    /// <seealso cref="BorderlessOverhang"/>
     private static Vector2D<int> BorderlessSize(in DesktopDisplay display) =>
         display.DesktopSize + new Vector2D<int>(BorderlessOverhang, BorderlessOverhang);
 

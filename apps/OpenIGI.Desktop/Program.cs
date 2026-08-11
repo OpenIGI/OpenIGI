@@ -21,7 +21,12 @@ catch (ArgumentException ex)
     return 2;
 }
 
-IIgiLogger logger = new ConsoleLogger();
+string logPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    "OpenIGI",
+    "runtime.log");
+using OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger = new(logPath);
+IIgiLogger logger = persistentLogger;
 
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
 // is then the whole of the installation procedure, which is how somebody expects to install an add-on

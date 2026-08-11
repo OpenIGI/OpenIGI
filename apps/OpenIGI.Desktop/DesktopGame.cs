@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Core.Configuration;
@@ -138,6 +138,9 @@ internal sealed partial class DesktopGame : IDisposable
     private WorldRenderer? _world;
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
+    private RainRenderer? _rain;
+    private SnowRenderer? _snow;
+    private IReadOnlyList<RainRenderer.BuildingVolume> _rainBuildingVolumes = [];
     private ShadowCasterPass? _shadowPass;
 
     // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
@@ -251,6 +254,7 @@ internal sealed partial class DesktopGame : IDisposable
 
         void Resize(int width, int height)
         {
+            _logger.Information("Desktop", $"Framebuffer resize event: {width}x{height}.");
             _device.SetViewport(new Viewport(0, 0, width, height));
             _device.Set2DProjection(width, height);
         }
@@ -343,6 +347,10 @@ internal sealed partial class DesktopGame : IDisposable
 
         _device.VSyncEnabled = RenderCVars.VSync.Value;
         RenderCVars.VSync.Changed += (_, _) => _device.VSyncEnabled = RenderCVars.VSync.Value;
+
+        RenderCVars.WeatherEnabled.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.WeatherStyle.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.WeatherSpeed.Changed += (_, _) => ApplyWeatherSettings();
 
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
@@ -933,7 +941,7 @@ internal sealed partial class DesktopGame : IDisposable
         _logger.Information(
             "Render",
             FormattableString.Invariant(
-                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}."));
+                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}/{RenderCVars.FocalRange.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
@@ -2589,6 +2597,23 @@ internal sealed partial class DesktopGame : IDisposable
                 // The impact bursts: dust hazes over the scene, spark light over the haze.
                 _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
+                // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
+                // While the camera is inside a building's shell the rain is suppressed, exactly as the
+                // reference editor does per frame — buildings keep the weather outside.
+                if (_rain is { IsWeatherEnabled: true } rain)
+                {
+                    rain.Indoors = IsCameraInsideBuilding(eye.Position);
+                    rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                }
+
+                // Snow uses the same authored building shells and weather band, but renders small,
+                // drifting flakes instead of rain droplets.
+                if (_snow is { IsWeatherEnabled: true } snow)
+                {
+                    snow.Indoors = IsCameraInsideBuilding(eye.Position);
+                    snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                }
+
                 // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
                 // red while confirming/detecting, and attached to the head as it pans.
                 if (_securityCameras is { } statusCameras)
@@ -3121,7 +3146,8 @@ internal sealed partial class DesktopGame : IDisposable
                             }
                         }
 
-                        target = I($"target: SOLDIER {botName} zone={HumanDamage.ZoneName(botZone)} feetZ={feetU.Z:F0} floorZ={floor}");
+                        string describedBot = ModelNameRegistry.DescribeModel(botName);
+                        target = I($"target: SOLDIER {describedBot} zone={HumanDamage.ZoneName(botZone)} feetZ={feetU.Z:F0} floorZ={floor}");
                     }
 
                     // Whatever soldier the crosshair is on, ask its brain which detection gate is (not) passing
@@ -3432,6 +3458,18 @@ internal sealed partial class DesktopGame : IDisposable
         return 0;
     }
 
+    private void ApplyWeatherSettings()
+    {
+        _rain?.ApplySettings(
+            RenderCVars.WeatherEnabled.Value,
+            RenderCVars.WeatherStyle.Value,
+            RenderCVars.WeatherSpeed.Value);
+        _snow?.ApplySettings(
+            RenderCVars.WeatherEnabled.Value,
+            RenderCVars.WeatherStyle.Value,
+            RenderCVars.WeatherSpeed.Value);
+    }
+
     // The camera's projection, in one place: the terrain traversal needs the same field of view the
     // projection matrix is built from, or it would cull against a frustum the picture does not have.
     // The far plane is shared with the sky, which sizes its dome from it.
@@ -3444,6 +3482,21 @@ internal sealed partial class DesktopGame : IDisposable
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
         2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
 
+    // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
+    // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.
+    private bool IsCameraInsideBuilding(Vector3d position)
+    {
+        foreach (RainRenderer.BuildingVolume volume in _rainBuildingVolumes)
+        {
+            if (volume.Contains(position))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
     internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
         VerticalFieldOfView(4f / 3f, horizontalTangent);
@@ -3455,6 +3508,7 @@ internal sealed partial class DesktopGame : IDisposable
     public void Dispose()
     {
         _sky?.Dispose();
+        _rain?.Dispose();
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();

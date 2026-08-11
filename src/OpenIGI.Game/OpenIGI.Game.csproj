@@ -16,4 +16,8 @@
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\IGIModels.json" />
+  </ItemGroup>
+
 </Project>

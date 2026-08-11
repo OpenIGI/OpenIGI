@@ -843,8 +843,10 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         // Into the buffer holding the OLDER of the two poses; the flip then makes what was current the
-        // previous-pose stream. Orphaned first so the driver never stalls on a buffer a queued frame
-        // is still reading.
+        // previous-pose stream. Orphan the old storage before uploading. A direct BufferSubData can
+        // block until the GPU has finished the previous draw using this buffer; that stall becomes
+        // especially visible when a ladder/death/interaction animation updates many bodies together.
+        // BufferData with DynamicDraw lets the driver retire the old storage asynchronously.
         uint stale = entry.FrontIsFirst ? entry.SecondVertexBuffer : entry.VertexBuffer;
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, stale);
         _gl.BufferData(
@@ -1731,17 +1733,28 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             Math.Clamp(post.CameraTaps, 1, 16));
 
         _cameraFrame = (_cameraFrame + 1) & 63;
+        // The motion attachment belongs to the deferred G-buffer. In the non-deferred offscreen path
+        // the handle is zero, so binding it would make the shader read the backend's fallback texture
+        // as a full-screen velocity field. That turns a small motion-blur setting into an unstable smear
+        // across the whole level. Depth-of-field still works from the shared depth attachment; only the
+        // motion component must be gated by the buffer that actually exists.
+        float motionBlur = target.Description.Deferred ? post.MotionBlur : 0f;
+        // The camera gather uses this phase to decorrelate its defocus taps. That is useful when TAA
+        // accumulates the samples, but with the user's non-deferred/non-temporal path it turns a static
+        // depth-of-field image into fresh noise every frame. Keep the gather stable unless history is
+        // actually blending it; otherwise the result reads as screen flicker rather than bokeh.
+        float cameraJitter = _temporal.Accumulates ? _cameraFrame * 0.61803399f : 0f;
         _cameraProgram.SetVector3(
             _cameraMotionBlur,
 
             // Nothing to reproject against on the very first frame, and a reprojection against an
             // identity matrix would smear the whole picture in one direction.
-            hasPreviousFrame ? Math.Clamp(post.MotionBlur, 0f, 1f) : 0f,
+            hasPreviousFrame ? Math.Clamp(motionBlur, 0f, 1f) : 0f,
 
             // A hard ceiling in pixels, so one very fast object cannot smear across the frame -- and
             // cannot cost a thousand taps doing it.
             48f,
-            _cameraFrame * 0.61803399f);
+            cameraJitter);
 
         _cameraProgram.SetMatrix4(_cameraPrevViewProjection, previousViewProjection);
         _cameraProgram.SetVector3(
@@ -2385,9 +2398,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 // The fourth component is the switch. It is only ever set for the forward pass of a
                 // modern frame, so the original's path uploads a zero here and its picture is
                 // untouched to the bit.
+                // Emissive forward geometry (rain, particles, muzzle light and the sky's forward path)
+                // carries its final colour in the vertex/texture data, like the reference renderer. It
+                // must bypass the scene-lighting branch or an upward-facing streak can receive only the
+                // ambient term and disappear into the fog.
                 bool lit = CurrentPass == ScenePass.Forward
                     && _sceneTarget is { IsReady: true } lightingTarget
-                    && lightingTarget.Description.Deferred;
+                    && lightingTarget.Description.Deferred
+                    && _material.Emissive <= 0.5f;
 
                 program.SetVector4(
                     _meshMaterial,

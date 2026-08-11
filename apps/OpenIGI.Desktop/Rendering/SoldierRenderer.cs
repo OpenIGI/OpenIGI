@@ -2020,9 +2020,10 @@ public sealed class SoldierRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _tick++;
+        bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
 
         // The liveness half of the [aiflow] diff: proof the AI tick is running at all, ten seconds apart.
-        if (_tick % 300 == 1)
+        if (collectDiagnostics && _tick % 300 == 1)
         {
             _logger.Information(
                 LogCategory, $"[aiflow] heartbeat tick={_tick} brains={_brains.Count}");
@@ -2063,7 +2064,12 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (PlacedDoor door in doors.Doors)
                 {
-                    solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
+                    // Closed/open doors spend nearly all their life stationary. Their indexed collision
+                    // already has that pose, so only touch transformed vertices while a channel moved.
+                    if (door.State.TransformChangedThisTick)
+                    {
+                        solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
+                    }
                 }
             }
         }
@@ -2162,7 +2168,7 @@ public sealed class SoldierRenderer : IDisposable
             // Retail ground truth, measured by hooking 0x48E920 in the original: a walking guard covers
             // 160-185 units a tick, about 1.28 m/s, varying through the gait cycle. Recorded here so the
             // port's own figure can be compared without another instrumented run.
-            if (brain.Activity == AiSoldierActivity.Patrolling && travel > 0.0)
+            if (collectDiagnostics && brain.Activity == AiSoldierActivity.Patrolling && travel > 0.0)
             {
                 _travelSamples++;
                 _travelTotal += travel;
@@ -2192,21 +2198,21 @@ public sealed class SoldierRenderer : IDisposable
             // The pump half of the [aiflow] diff: an event that was QUEUED shows up here the tick it is
             // drained, whether or not any script acted on it. Noise delivered but never drained points at
             // the pump; drained but never acted on points at the script/actions.
-            int drainedNoise = brain.Events.DrainedCount(AiEvent.Gunshot)
-                + brain.Events.DrainedCount(AiEvent.GunshotMiss)
-                + brain.Events.DrainedCount(AiEvent.GroundImpact)
-                + brain.Events.DrainedCount(AiEvent.Walk)
-                + brain.Events.DrainedCount(AiEvent.TakingDamage);
-            if (drainedNoise > 0 && _tick - _lastDrainLogTick >= 30)
+            if (collectDiagnostics && _tick - _lastDrainLogTick >= 30)
             {
-                _lastDrainLogTick = _tick;
-                _logger.Information(
-                    LogCategory,
-                    $"[aiflow] #{brain.RuntimeId} drained gunshot={brain.Events.DrainedCount(AiEvent.Gunshot)} " +
-                    $"miss={brain.Events.DrainedCount(AiEvent.GunshotMiss)} " +
-                    $"impact={brain.Events.DrainedCount(AiEvent.GroundImpact)} " +
-                    $"walk={brain.Events.DrainedCount(AiEvent.Walk)} " +
-                    $"dmg={brain.Events.DrainedCount(AiEvent.TakingDamage)} act={brain.Activity}");
+                int gunshot = brain.Events.DrainedCount(AiEvent.Gunshot);
+                int miss = brain.Events.DrainedCount(AiEvent.GunshotMiss);
+                int impact = brain.Events.DrainedCount(AiEvent.GroundImpact);
+                int walk = brain.Events.DrainedCount(AiEvent.Walk);
+                int damage = brain.Events.DrainedCount(AiEvent.TakingDamage);
+                if (gunshot + miss + impact + walk + damage > 0)
+                {
+                    _lastDrainLogTick = _tick;
+                    _logger.Information(
+                        LogCategory,
+                        $"[aiflow] #{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
+                            + $"impact={impact} walk={walk} dmg={damage} act={brain.Activity}");
+                }
             }
 
             if (member is not null)
@@ -2268,8 +2274,10 @@ public sealed class SoldierRenderer : IDisposable
                     }
                 }
             }
-            ReportCombat();
-            ReportChannels(brain);
+            if (collectDiagnostics)
+            {
+                ReportChannels(brain);
+            }
 
             // A patrol ANIMATION command names a clip outright; a soldier in a fight plays its WEAPON's
             // own clips; otherwise the gait picks between the walk cycle and the soldier's stand
@@ -2353,6 +2361,13 @@ public sealed class SoldierRenderer : IDisposable
             view.PlaceAt(brain.Position, brain.Orientation);
         }
 
+        // This scans the complete roster. Calling it from inside the roster loop made diagnostics O(N²)
+        // every tick, including when the logger discarded the result. One final-state scan is sufficient.
+        if (collectDiagnostics)
+        {
+            ReportCombat();
+        }
+
         // Simulated corpses advance on the tick, alongside the rigs they replaced -- and only until they
         // settle, because nothing in this game ever removes a body and a corpse that kept stepping would
         // be a cost paid for the rest of the mission.
@@ -2416,8 +2431,20 @@ public sealed class SoldierRenderer : IDisposable
                 BonePose drawn = PoseToDraw(member);
                 member.DrawnPose = drawn;
 
-                Vertex3D[] skinned = member.SkinScratch ??= new Vertex3D[group.Geometry.Vertices.Length];
-                group.Geometry.Vertices.CopyTo(skinned, 0);
+                // A stopped one-shot (death, interaction or paused ladder pose) needs one duplicate
+                // upload to settle both interpolation streams, then no more skinning or driver traffic.
+                if (!member.PoseUploads.ShouldUpload(drawn))
+                {
+                    continue;
+                }
+
+                Vertex3D[]? skinned = member.SkinScratch;
+                if (skinned is null)
+                {
+                    skinned = new Vertex3D[group.Geometry.Vertices.Length];
+                    group.Geometry.Vertices.CopyTo(skinned, 0);
+                    member.SkinScratch = skinned;
+                }
                 try
                 {
                     MefSkinner.Skin(
@@ -3356,10 +3383,9 @@ public sealed class SoldierRenderer : IDisposable
         _playerBodyFacing = facing;
         view.PlaceAt(taskPosition, Matrix3f.FromEngineEulerAngles(0f, 0f, facing));
 
-        // A paused rung still has to upload once per simulation tick. The animated-mesh upload rotates
-        // current -> previous pose streams; skipping it leaves an old moving pose in the previous stream,
-        // so uncapped presentation alpha repeatedly blends the held pose against stale limbs and jitters.
-        // AdvancePlayerLadderAnimation already uploads moving ticks, hence the per-tick guard.
+        // A newly paused rung must upload its held pose into both interpolation streams. ReskinPlayerBody's
+        // pose latch permits that one duplicate upload, then suppresses further skinning until the pose moves.
+        // AdvancePlayerLadderAnimation already uploads each genuinely moving tick.
         if (_playerBodySkinTick != _tick && _playerBodyGroup?.Model is { } model)
         {
             ReskinPlayerBody(view, model);
@@ -3403,11 +3429,23 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
-        Vertex3D[] skinned = member.SkinScratch ??= new Vertex3D[_playerBodyGroup.Geometry.Vertices.Length];
-        _playerBodyGroup.Geometry.Vertices.CopyTo(skinned, 0);
+        BonePose pose = _playerRagdoll is { } corpse ? corpse.Pose() : view.UnrotatedPose();
+        member.DrawnPose = pose;
+        if (!member.PoseUploads.ShouldUpload(pose))
+        {
+            _playerBodySkinTick = _tick;
+            return;
+        }
+
+        Vertex3D[]? skinned = member.SkinScratch;
+        if (skinned is null)
+        {
+            skinned = new Vertex3D[_playerBodyGroup.Geometry.Vertices.Length];
+            _playerBodyGroup.Geometry.Vertices.CopyTo(skinned, 0);
+            member.SkinScratch = skinned;
+        }
         try
         {
-            BonePose pose = _playerRagdoll is { } corpse ? corpse.Pose() : view.UnrotatedPose();
             MefSkinner.Skin(model, pose, (float)(1.0 / WorldScene.UnitsPerMetre), skinned);
         }
         catch (ArgumentException)
@@ -4407,6 +4445,9 @@ public sealed class SoldierRenderer : IDisposable
         /// have put his hand.
         /// </remarks>
         public BonePose? DrawnPose { get; set; }
+
+        /// <summary>Tracks whether this pose still needs an animated-buffer upload.</summary>
+        public PoseUploadLatch PoseUploads { get; } = new();
 
         /// <summary>
         /// The simulated corpse this soldier is drawn as once it has been killed, or

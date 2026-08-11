@@ -1,0 +1,19 @@
+# CodeRabbit Configuration for OpenIGI
+language: "en-US"
+tone_instructions: "Provide concise, pragmatic, senior developer code reviews focusing on performance, correctness, and C# best practices."
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  collapse_walkthrough: true
+
+path_filters:
+  - "!**/bin/**"
+  - "!**/obj/**"
+  - "!src/OpenIGI.Game/Resources/IGIModels.json"
+  - "!scratch/**"
+
+chat:
+  auto_reply: true

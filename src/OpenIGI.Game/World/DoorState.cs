@@ -61,6 +61,10 @@ public sealed class DoorState
     /// <summary>Gets the slide fraction at the end of the previous simulation tick.</summary>
     public float PreviousSlideFraction { get; private set; }
 
+    /// <summary>Gets whether the last tick changed the door's collision/draw transform.</summary>
+    public bool TransformChangedThisTick =>
+        _angleDegrees != PreviousAngleDegrees || _slide != PreviousSlideFraction;
+
     /// <summary>Gets whether the door sits fully open — <c>+409</c>.</summary>
     public bool IsFullyOpen { get; private set; }
 

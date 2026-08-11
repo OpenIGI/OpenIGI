@@ -163,7 +163,11 @@ public sealed class FlowTask : GameTask
         // once per frame. With renders uncapped the present belongs to the render instead: presenting
         // here would both cap the display at the tick rate again and, on a back-to-back tick, show a
         // buffer that was cleared and never drawn -- which is a solid flash of the clear colour.
-        if (!Clock.UncappedRenders)
+        // A catch-up burst can contain adjacent ticks. Once the first tick has presented and cleared the
+        // next frame, a second tick must not present that cleared buffer again: no rendered frame exists
+        // between the two ticks, so doing another flush produces a one-frame clear-colour flash whenever
+        // an animation (a door, death pose, or other dynamic task) makes the simulation catch up.
+        if (!Clock.UncappedRenders && Clock.HasRendered)
         {
             _renderer.Flush();
             _renderer.Reset();

@@ -121,6 +121,20 @@ public sealed class DesktopConsole : IDisposable
             System.Execute(statement);
         }
 
+        _logger.Information(
+            LogCategory,
+            $"Effective settings: r_smooth={Rendering.RenderCVars.SmoothPresentation.Value}, "
+                + $"r_hdr={Rendering.RenderCVars.OffscreenScene.Value}, "
+                + $"r_deferred={Rendering.RenderCVars.Deferred.Value}, "
+                + $"r_taa={Rendering.RenderCVars.TemporalFeedback.Value:0.###}, "
+                + $"r_scale={Rendering.RenderCVars.RenderScale.Value:0.###}, "
+                + $"r_dof={Rendering.RenderCVars.FocalDistance.Value:0.#}/{Rendering.RenderCVars.FocalRange.Value:0.#}/"
+                + $"{Rendering.RenderCVars.FocalBlur.Value:0.#}, "
+                + $"r_motion_blur={Rendering.RenderCVars.MotionBlur.Value:0.###}.");
+
+        System.Variables.AnyChanged += OnVariableChanged;
+        GraphicsPresetRegistry.Default.PresetChanged += OnPresetChanged;
+
         if (!_renderer.Load())
         {
             _logger.Warning(LogCategory, "The console has no font; it will accept commands but draw nothing.");
@@ -280,8 +294,21 @@ public sealed class DesktopConsole : IDisposable
         }
 
         _disposed = true;
+        System.Variables.AnyChanged -= OnVariableChanged;
+        GraphicsPresetRegistry.Default.PresetChanged -= OnPresetChanged;
         _renderer.Dispose();
     }
+
+    private void OnVariableChanged(object? sender, CVarChangedEventArgs e)
+    {
+        if (e.Variable.Name.StartsWith("r_", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Information(LogCategory, $"CVar changed: {e.Variable.Name} {e.PreviousText} -> {e.CurrentText}.");
+        }
+    }
+
+    private void OnPresetChanged(object? sender, GraphicsPreset preset) =>
+        _logger.Information(LogCategory, $"Graphics preset changed: {preset}.");
 
     private void RegisterShellCommands()
     {
@@ -331,6 +358,11 @@ public sealed class DesktopConsole : IDisposable
 
         public void Log(LogLevel level, string category, string message, Exception? exception = null)
         {
+            if (!inner.IsEnabled(level))
+            {
+                return;
+            }
+
             inner.Log(level, category, message, exception);
 
             if (level < LogLevel.Information)
