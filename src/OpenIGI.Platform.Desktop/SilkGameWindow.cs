@@ -26,6 +26,11 @@ namespace OpenIGI.Platform.Desktop;
 /// </remarks>
 public sealed class SilkGameWindow : IGameWindow
 {
+    // Keep borderless presentation composited by DWM. An exact monitor-sized client area can be
+    // classified by the desktop compositor/driver as an exclusive-style surface, which causes the
+    // level image to flash when the presentation surface is re-used.
+    private const int BorderlessOverhang = 1;
+
     private readonly IWindow _window;
     private readonly IInputContext _input;
     private readonly Vector2D<int> _windowedSize;
@@ -344,9 +349,9 @@ public sealed class SilkGameWindow : IGameWindow
         }
     }
 
-    /// <summary>The exact client size a borderless window covering <paramref name="display"/> is given.</summary>
+    /// <summary>The client size a borderless window covering <paramref name="display"/> is given.</summary>
     private static Vector2D<int> BorderlessSize(in DesktopDisplay display) =>
-        display.DesktopSize;
+        display.DesktopSize + new Vector2D<int>(BorderlessOverhang, BorderlessOverhang);
 
     /// <summary>Moves the window between windowed, borderless and exclusive without recreating it.</summary>
     private void ApplyMode()

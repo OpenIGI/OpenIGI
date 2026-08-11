@@ -78,6 +78,36 @@ public sealed class BoneObjectTests
     }
 
     [Fact]
+    public void AFinishedClipStopsInvalidatingItsPose()
+    {
+        BoneObject bones = new(Set());
+        BoneClip clip = bones.Play(0, TurningAnimationId, loops: false)!;
+
+        while (!clip.Ended)
+        {
+            bones.Tick();
+        }
+
+        Assert.True(bones.ChangedThisTick);
+
+        bones.Tick();
+
+        Assert.False(bones.ChangedThisTick);
+    }
+
+    [Fact]
+    public void APausedClipDoesNotInvalidateItsPose()
+    {
+        BoneObject bones = new(Set());
+        BoneClip clip = bones.Play(0, TurningAnimationId, loops: true)!;
+        clip.Rate = 0f;
+
+        bones.Tick();
+
+        Assert.False(bones.ChangedThisTick);
+    }
+
+    [Fact]
     public void ThePoseComposesTheRootRotationDownTheChain()
     {
         BoneObject bones = new(Set());

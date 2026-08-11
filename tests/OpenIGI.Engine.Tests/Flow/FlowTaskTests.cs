@@ -48,6 +48,29 @@ public sealed class FlowTaskTests
     }
 
     [Fact]
+    public void CatchUpTicksDoNotPresentTheClearedBufferTwice()
+    {
+        Fixture fixture = new();
+
+        // Establish one completed rendered frame, then jump past two tick deadlines so the next two
+        // scheduler calls are adjacent ticks with no render between them.
+        while (fixture.Loop.Clock.TickCount < GameClock.ExcludedStartupCount)
+        {
+            fixture.Time.Advance(34);
+            Assert.Equal(FrameOutcome.Tick, fixture.Frame());
+            Assert.Equal(FrameOutcome.Render, fixture.Frame());
+        }
+        fixture.Renderer.Calls.Clear();
+
+        fixture.Time.Advance(1_000);
+        Assert.Equal(FrameOutcome.Tick, fixture.Frame());
+        Assert.Equal(FrameOutcome.Tick, fixture.Frame());
+
+        Assert.Equal(["flush", "reset"], fixture.Renderer.Calls.Take(2));
+        Assert.Equal(1, fixture.Renderer.Calls.Count(call => call == "flush"));
+    }
+
+    [Fact]
     public void ARenderPassReachesTheLevelTreeButNeverTheSystemTree()
     {
         Fixture fixture = new();

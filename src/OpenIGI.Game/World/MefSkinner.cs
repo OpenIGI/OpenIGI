@@ -51,13 +51,7 @@ public static class MefSkinner
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        int highest = -1;
-        foreach (MefSkinInfluence influence in model.SkinInfluences)
-        {
-            highest = Math.Max(highest, influence.BoneIndex);
-        }
-
-        return highest;
+        return model.HighestSkinBone;
     }
 
     /// <summary>Skins a model into a vertex buffer.</summary>

@@ -843,8 +843,10 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         // Into the buffer holding the OLDER of the two poses; the flip then makes what was current the
-        // previous-pose stream. Orphaned first so the driver never stalls on a buffer a queued frame
-        // is still reading.
+        // previous-pose stream. Orphan the old storage before uploading. A direct BufferSubData can
+        // block until the GPU has finished the previous draw using this buffer; that stall becomes
+        // especially visible when a ladder/death/interaction animation updates many bodies together.
+        // BufferData with DynamicDraw lets the driver retire the old storage asynchronously.
         uint stale = entry.FrontIsFirst ? entry.SecondVertexBuffer : entry.VertexBuffer;
         _gl.BindBuffer(BufferTargetARB.ArrayBuffer, stale);
         _gl.BufferData(
@@ -1737,6 +1739,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // across the whole level. Depth-of-field still works from the shared depth attachment; only the
         // motion component must be gated by the buffer that actually exists.
         float motionBlur = target.Description.Deferred ? post.MotionBlur : 0f;
+        // The camera gather uses this phase to decorrelate its defocus taps. That is useful when TAA
+        // accumulates the samples, but with the user's non-deferred/non-temporal path it turns a static
+        // depth-of-field image into fresh noise every frame. Keep the gather stable unless history is
+        // actually blending it; otherwise the result reads as screen flicker rather than bokeh.
+        float cameraJitter = _temporal.Accumulates ? _cameraFrame * 0.61803399f : 0f;
         _cameraProgram.SetVector3(
             _cameraMotionBlur,
 
@@ -1747,7 +1754,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             // A hard ceiling in pixels, so one very fast object cannot smear across the frame -- and
             // cannot cost a thousand taps doing it.
             48f,
-            _cameraFrame * 0.61803399f);
+            cameraJitter);
 
         _cameraProgram.SetMatrix4(_cameraPrevViewProjection, previousViewProjection);
         _cameraProgram.SetVector3(
