@@ -278,6 +278,9 @@ internal sealed partial class DesktopGame
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         _doors = DoorRegistry.Build(levelRoot);
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
+        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
+        world.GenericPickups = _genericPickups;
+        solids.GenericPickups = _genericPickups;
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
         _soldiers.UseInteractions(_interactions);
         _soldiers.SetDoors(_doors, solids);
@@ -782,6 +785,12 @@ internal sealed partial class DesktopGame
                 candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
                 _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
             }
+            if (_genericPickups is { } genericPickups)
+            {
+                candidate.UseGenericPickups(genericPickups);
+                candidate.GenericPickedUp += PlayGenericPickupSound;
+                _logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
+            }
 
             // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
             // symbols that get their values as the two tables are read, so the rosters have to load
@@ -988,6 +997,14 @@ internal sealed partial class DesktopGame
                     _remasteredHud.Dispose();
                     _remasteredHud = null;
                 }
+
+                _debugOverlay?.Dispose();
+                _debugOverlay = new DebugOverlayRenderer(_device, _logger);
+                if (!_debugOverlay.Load())
+                {
+                    _debugOverlay.Dispose();
+                    _debugOverlay = null;
+                }
             }
 
             if (_gunPickups is { } pickups)
@@ -1173,6 +1190,7 @@ internal sealed partial class DesktopGame
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
+        _debugOverlay?.Dispose();
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
@@ -1193,6 +1211,7 @@ internal sealed partial class DesktopGame
         _gunPickupRenderer = null;
         _hud = null;
         _remasteredHud = null;
+        _debugOverlay = null;
         _marks = null;
         _tracers = null;
         _impactParticles = null;
@@ -1208,6 +1227,7 @@ internal sealed partial class DesktopGame
         _doors = null;
         _interactions = null;
         _gunPickups = null;
+        _genericPickups = null;
         _loadedMissionForWeapon = null;
 
         if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)

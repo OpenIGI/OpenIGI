@@ -185,6 +185,26 @@ public sealed class ResourceRegistryTests : IDisposable
     }
 
     [Fact]
+    public void CanReplaceEntriesWhenAnArchiveRebindsAResourceNamespace()
+    {
+        ResourceRegistry registry = CreateRegistry();
+        byte[] first = new IlffWriter("IRES")
+            .AddName("LOCAL:textures/015_05_1.tex")
+            .AddBody([1])
+            .ToArray();
+        byte[] second = new IlffWriter("IRES")
+            .AddName("LOCAL:textures/015_05_1.tex")
+            .AddBody([2])
+            .ToArray();
+
+        registry.Register("LOCAL:level1/textures/level1.res", first);
+        registry.Register("LOCAL:level8/textures/level8.res", second, replaceExisting: true);
+
+        Assert.True(registry.TryGetEntry("LOCAL:textures/015_05_1.tex", out ResourceEntry? entry));
+        Assert.Equal([2], entry.Data.ToArray());
+    }
+
+    [Fact]
     public void NormalizesBackslashesInNames()
     {
         ResourceRegistry registry = CreateRegistry();
