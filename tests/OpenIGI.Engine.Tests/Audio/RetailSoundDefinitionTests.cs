@@ -60,6 +60,20 @@ public sealed class RetailSoundDefinitionTests
     }
 
     [RequiresGameDataFact]
+    public void GenericItemsUseTheSharedRetailPickupCue()
+    {
+        SoundDefinitionRegistry registry = Load();
+
+        // GenericPickup::cleanup calls 0x4E7200("pickup", 0, 0), and the common sound script maps
+        // that definition to the bank entry PICKUP. It is not selected from the authored model name.
+        Assert.True(registry.TryResolve("pickup", out SoundDefinition? pickup));
+        Assert.NotNull(pickup);
+        Assert.Equal("PICKUP", pickup.BankKey);
+        Assert.Equal(SoundDefinitionKind.Sound, pickup.Kind);
+        Assert.False(pickup.Loop);
+    }
+
+    [RequiresGameDataFact]
     public void TheVariantHelperDrawsOneNameThatWasNeverDefined()
     {
         // 0x4B47C0 is four instructions ending in an unsigned `div`, so the draw is [0, count-1] while

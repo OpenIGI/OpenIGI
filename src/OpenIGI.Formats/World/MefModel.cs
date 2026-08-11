@@ -54,6 +54,14 @@ public sealed class MefModel
         BaseVertexCount = baseVertexCount;
         ExtraInfluenceCount = extraInfluenceCount;
         _skinInfluences = skinInfluences;
+
+        int highestBone = -1;
+        foreach (MefSkinInfluence influence in skinInfluences)
+        {
+            highestBone = Math.Max(highestBone, influence.BoneIndex);
+        }
+
+        HighestSkinBone = highestBone;
     }
 
     /// <summary>Gets the number of vertices the skinner places directly by their one bone.</summary>
@@ -65,6 +73,9 @@ public sealed class MefModel
 
     /// <summary>Gets the number of extra weighted influences that follow the base vertices.</summary>
     public int ExtraInfluenceCount { get; }
+
+    /// <summary>Gets the highest bone index used by this model's skin bindings.</summary>
+    public int HighestSkinBone { get; }
 
     /// <summary>Gets the skin binding of each entry in the vertex array, or empty when not skinned.</summary>
     /// <remarks>

@@ -32,6 +32,7 @@ public sealed class SoldierView
 
     private readonly BoneObject _bones;
     private BonePose? _pose;
+    private BonePose? _unrotatedPose;
 
     /// <summary>Initializes a new instance of the <see cref="SoldierView"/> class.</summary>
     /// <param name="soldier">The placed task, already bound from the level script.</param>
@@ -101,8 +102,11 @@ public sealed class SoldierView
     public void PlaceAt(Vector3d position, Matrix3f orientation)
     {
         Position = position;
-        Orientation = orientation;
-        _pose = null;
+        if (Orientation != orientation)
+        {
+            Orientation = orientation;
+            _pose = null;
+        }
     }
 
     /// <summary>Switches the rig to a walk cycle, or back to standing.</summary>
@@ -146,6 +150,7 @@ public sealed class SoldierView
         CurrentAnimation = animation;
         _bones.Play(0, animation, loops);
         _pose = null;
+        _unrotatedPose = null;
         return true;
     }
 
@@ -174,6 +179,7 @@ public sealed class SoldierView
         }
 
         _pose = null;
+        _unrotatedPose = null;
         return true;
     }
 
@@ -243,7 +249,11 @@ public sealed class SoldierView
     public void Tick()
     {
         _bones.Tick();
-        _pose = null;
+        if (_bones.ChangedThisTick)
+        {
+            _pose = null;
+            _unrotatedPose = null;
+        }
     }
 
     /// <summary>
@@ -313,6 +323,7 @@ public sealed class SoldierView
             CurrentAnimation = deathAnimation;
             _bones.Play(0, deathAnimation, loops: false);
             _pose = null;
+            _unrotatedPose = null;
         }
     }
 
@@ -327,6 +338,6 @@ public sealed class SoldierView
     /// rotation only ever left-multiplies every bone — the trade the port's skinned draw already makes
     /// so that a shared pose skins once and turns per soldier (see <c>ViewModelRenderer</c>).
     /// </remarks>
-    public BonePose UnrotatedPose() => _bones.Pose();
+    public BonePose UnrotatedPose() => _unrotatedPose ??= _bones.Pose();
 
 }

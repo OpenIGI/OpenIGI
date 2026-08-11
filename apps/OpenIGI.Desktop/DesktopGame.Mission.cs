@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Formats.Ai;
@@ -232,6 +232,20 @@ internal sealed partial class DesktopGame
         }
         world.Cutscenes = _cutscenes;
 
+        // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
+        // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
+        // enabled by its Is Rain and Is Active flags), and whatever rain the previous mission left is
+        // dropped first, exactly as the reference resets its rain at every level load. The same scene's
+        // building placements also provide the shells the rain is suppressed inside.
+        _rain?.Dispose();
+        _rain = new RainRenderer(_device, _logger);
+        _rain.ReadParams(levelRoot);
+        _snow?.Dispose();
+        _snow = new SnowRenderer(_device, _logger);
+        _snow.ReadParams(levelRoot);
+        ApplyWeatherSettings();
+        _rainBuildingVolumes = RainRenderer.BuildBuildingVolumes(scene.Placements);
+
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
         // WorldScene placements - a human task is a typed task, and the original draws it through the
@@ -264,6 +278,9 @@ internal sealed partial class DesktopGame
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         _doors = DoorRegistry.Build(levelRoot);
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
+        _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
+        world.GenericPickups = _genericPickups;
+        solids.GenericPickups = _genericPickups;
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
         _soldiers.UseInteractions(_interactions);
         _soldiers.SetDoors(_doors, solids);
@@ -725,7 +742,7 @@ internal sealed partial class DesktopGame
 
         if (_playerTerrain is not null)
         {
-            PlayerCamera candidate = new();
+            PlayerCamera candidate = new(_logger);
 
             // 000.iff, kept so the player's third-person body can be built from the same set it walks on
             // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the
@@ -767,6 +784,12 @@ internal sealed partial class DesktopGame
                 candidate.UseInteractions(interactions);
                 candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
                 _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
+            }
+            if (_genericPickups is { } genericPickups)
+            {
+                candidate.UseGenericPickups(genericPickups);
+                candidate.GenericPickedUp += PlayGenericPickupSound;
+                _logger.Information("Player", $"{genericPickups.Items.Count} generic pickup(s) available.");
             }
 
             // ORDER MATTERS, and it is the original's. WEAPON_ID_* and AMMO_ID_* are pattern-registered
@@ -974,6 +997,14 @@ internal sealed partial class DesktopGame
                     _remasteredHud.Dispose();
                     _remasteredHud = null;
                 }
+
+                _debugOverlay?.Dispose();
+                _debugOverlay = new DebugOverlayRenderer(_device, _logger);
+                if (!_debugOverlay.Load())
+                {
+                    _debugOverlay.Dispose();
+                    _debugOverlay = null;
+                }
             }
 
             if (_gunPickups is { } pickups)
@@ -1159,6 +1190,7 @@ internal sealed partial class DesktopGame
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
+        _debugOverlay?.Dispose();
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
@@ -1166,6 +1198,11 @@ internal sealed partial class DesktopGame
         _grenadeRenderer?.Dispose();
         _arms?.Dispose();
         _sky = null;
+        _rain?.Dispose();
+        _rain = null;
+        _snow?.Dispose();
+        _snow = null;
+        _rainBuildingVolumes = [];
         _terrain = null;
         _world = null;
         _soldiers = null;
@@ -1174,6 +1211,7 @@ internal sealed partial class DesktopGame
         _gunPickupRenderer = null;
         _hud = null;
         _remasteredHud = null;
+        _debugOverlay = null;
         _marks = null;
         _tracers = null;
         _impactParticles = null;
@@ -1189,6 +1227,7 @@ internal sealed partial class DesktopGame
         _doors = null;
         _interactions = null;
         _gunPickups = null;
+        _genericPickups = null;
         _loadedMissionForWeapon = null;
 
         if (_activeLevelRoot is not null && !_activeLevelRoot.IsDeleted)

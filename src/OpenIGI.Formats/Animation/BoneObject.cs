@@ -38,6 +38,9 @@ public sealed class BoneObject
     private readonly BoneClip?[] _inherited;
     private readonly Quaternion32[] _locals;
 
+    /// <summary>Gets whether the last tick changed any clip's sampled time.</summary>
+    public bool ChangedThisTick { get; private set; }
+
     /// <summary>Initializes a new instance of the <see cref="BoneObject"/> class.</summary>
     /// <param name="set">The animation set whose skeleton this instances and whose clips it can play.</param>
     /// <exception cref="ArgumentNullException"><paramref name="set"/> is <see langword="null"/>.</exception>
@@ -163,9 +166,18 @@ public sealed class BoneObject
     /// </remarks>
     public void Tick()
     {
+        ChangedThisTick = false;
         for (int bone = 0; bone < _own.Length; bone++)
         {
-            _own[bone]?.Tick();
+            BoneClip? clip = _own[bone];
+            if (clip is null)
+            {
+                continue;
+            }
+
+            float before = clip.Time;
+            clip.Tick();
+            ChangedThisTick |= before != clip.Time;
         }
     }
 

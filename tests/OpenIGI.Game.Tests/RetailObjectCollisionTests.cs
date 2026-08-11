@@ -206,6 +206,28 @@ public sealed class RetailObjectCollisionTests
         Assert.Equal(secondBefore, secondAfter);
     }
 
+    [RequiresGameDataFact]
+    public void RepeatedDynamicTransformsReuseTheirVertexStorage()
+    {
+        WorldPlacement placement = RetailLevelOneGround.Scene().Placements.First(candidate =>
+            ObjectCollisionIndex.Build([candidate]).Count != 0);
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build([placement]);
+        Vector3d moved = placement.Position + new Vector3d(1d, 0d, 0d);
+
+        // Warm dictionary lookup and JIT paths before measuring managed allocations.
+        Assert.True(index.UpdateTransform(placement, moved, placement.Orientation));
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        bool allUpdated = true;
+        for (int tick = 0; tick < 100; tick++)
+        {
+            allUpdated &= index.UpdateTransform(placement, moved, placement.Orientation);
+        }
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allUpdated);
+        Assert.True(allocated < 1024, $"dynamic transforms allocated {allocated} bytes");
+    }
+
     /// <summary>An index holding one placement that a task placed, and where that placement is.</summary>
     /// <remarks>
     /// One placement rather than the level, so the ray cannot be stopped by something nearer than the

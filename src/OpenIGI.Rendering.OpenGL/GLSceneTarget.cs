@@ -270,6 +270,11 @@ internal sealed class GLSceneTarget : IDisposable
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
         IsReady = true;
+        _logger.Information(
+            LogCategory,
+            $"Configured {description.Width}x{description.Height} -> {description.PresentWidth}x{description.PresentHeight}, "
+                + $"hdr={description.HighDynamicRange}, deferred={description.Deferred}, msaa={description.SampleCount}, "
+                + $"scratch={_scratchFramebuffer != 0}, resolved={_resolvedFramebuffer != 0}, history={_historyFramebuffers[0] != 0}.");
         return true;
     }
 

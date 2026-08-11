@@ -147,6 +147,18 @@ internal sealed partial class DesktopGame
         _sounds?.PlayDefinition("weaponpickup_1", priority: 180);
     }
 
+    /// <summary>Plays the fixed retail cue after an authored generic item reaches the player.</summary>
+    /// <remarks>
+    /// <c>GenericPickup::cleanup</c> calls <c>0x4E7200("pickup", 0, 0)</c>. The cue is shared by C4,
+    /// keycards and every other <c>GenericPickup</c>; the model does not select a per-item sound.
+    /// Like retail, it is played at the listener rather than at the item's former world position.
+    /// </remarks>
+    private void PlayGenericPickupSound(GenericPickup pickup)
+    {
+        ArgumentNullException.ThrowIfNull(pickup);
+        _sounds?.PlayDefinition("pickup", priority: 180);
+    }
+
     /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
     private long _audioTimestamp;
 

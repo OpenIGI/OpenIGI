@@ -123,10 +123,6 @@ public sealed class LoadedPack
             }
         }
 
-        // The textures archive is registered but not decoded here: a texture becomes pixels only when
-        // the renderer asks for it, and the original defers the same way.
-        _ = TryRegisterArchive($"{dir}textures/{name}.res", resources, log);
-
         Dictionary<string, MefModel> models = new(StringComparer.OrdinalIgnoreCase);
         if (TryRegisterArchive($"{dir}models/{name}.res", resources, log) is { } archive)
         {
@@ -157,6 +153,15 @@ public sealed class LoadedPack
         {
             log.Warning(LogCategory, $"Pack '{name}' lists {missing.Count} model(s) its archive does not hold.");
         }
+
+        // The textures archive is registered but not decoded here: a texture becomes pixels only when
+        // the renderer asks for it, and the original defers the same way.
+        // Texture names are global registry keys, but level packs may reuse a name with different
+        // pixels (notably 015_05_1 on the human face). Registering with replacement enabled overwrites
+        // only colliding texture keys while keeping common-pack-only entries mounted for WorldScene's
+        // instances from both packs.
+        string textureArchivePath = $"{dir}textures/{name}.res";
+        _ = TryRegisterArchive(textureArchivePath, resources, log, replaceExisting: true);
 
         log.Information(
             LogCategory,
@@ -236,8 +241,8 @@ public sealed class LoadedPack
 
     private static string BareName(string resourceName)
     {
-        ReadOnlySpan<char> span = resourceName.Replace('\\', '/');
-        int slash = span.LastIndexOf('/');
+        ReadOnlySpan<char> span = resourceName.AsSpan();
+        int slash = span.LastIndexOfAny('\\', '/');
         if (slash >= 0)
         {
             span = span[(slash + 1)..];
@@ -264,7 +269,11 @@ public sealed class LoadedPack
         }
     }
 
-    private static IresArchive? TryRegisterArchive(string path, ResourceRegistry resources, IIgiLogger logger)
+    private static IresArchive? TryRegisterArchive(
+        string path,
+        ResourceRegistry resources,
+        IIgiLogger logger,
+        bool replaceExisting = false)
     {
         if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
         {
@@ -274,7 +283,14 @@ public sealed class LoadedPack
 
         try
         {
-            return IresArchive.Read(bytes);
+            IresArchive archive = IresArchive.Read(bytes);
+            if (replaceExisting)
+            {
+                resources.Free(path);
+                resources.Register(path, bytes, replaceExisting: true);
+            }
+
+            return archive;
         }
         catch (IlffFormatException ex)
         {
