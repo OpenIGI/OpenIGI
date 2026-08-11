@@ -7,6 +7,7 @@ public sealed class ModelNameRegistryTests
 {
     [Theory]
     [InlineData("001011", "001_01_1")]
+    [InlineData("001 01 1", "001_01_1")]
     [InlineData("012011", "012_01_1")]
     [InlineData("437011", "437_01_1")]
     [InlineData("001_01_1", "001_01_1")]

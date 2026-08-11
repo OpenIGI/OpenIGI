@@ -27,6 +27,17 @@ public static partial class ModelNameRegistry
             return rawId ?? string.Empty;
         }
 
+        // The F12 debug target can arrive from the task VM as three digit groups separated by spaces
+        // ("001 01 1"). Treat whitespace-only numeric formatting exactly like the compact six-digit form.
+        if (rawId.Any(char.IsWhiteSpace))
+        {
+            string compact = string.Concat(rawId.Where(character => !char.IsWhiteSpace(character)));
+            if (compact.All(char.IsDigit))
+            {
+                rawId = compact;
+            }
+        }
+
         // If it already contains underscores (e.g. "001_01_1"), keep it as is
         if (rawId.Contains('_'))
         {
