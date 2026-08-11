@@ -68,6 +68,11 @@ public sealed class WorldScene
     /// <summary>The retail task that owns a visible, destructible alarm speaker.</summary>
     public const string SirenType = "Siren";
 
+    /// <summary>The human character task types the original engine grounds onto the terrain when it loads them.</summary>
+    private const string AiSoldierType = "HumanSoldier";
+    private const string AiSoldierFemaleType = "HumanSoldierFemale";
+    private const string HumanPlayerType = "HumanPlayer";
+
     /// <summary>The two models an <c>SCamera</c> builds in — its constructor (<c>0x4423F0</c>) hard-codes both.</summary>
     /// <remarks>
     /// The camera head and its mount. They are placed and numbered like any script-declared model,
@@ -467,6 +472,23 @@ public sealed class WorldScene
                     && modelSlot == 1)
                 {
                     position = CameraLensPosition(declared, position, byName);
+                }
+
+                // Retail grounds character models onto the terrain when it loads them — the editor's
+                // level verifier allows an AI position tolerance for exactly this reason. A character
+                // authored slightly above the terrain, as every Level 4 soldier is, otherwise floats in
+                // the air. The query only finds ground within ~4m below, so a character meant to stand on
+                // a roof (far above the terrain) is left alone; only near-ground strays settle onto it.
+                if (IsCharacterPlacement(declared)
+                    && mission.Terrain is { IsUsable: true } terrain
+                    && TerrainHeightQuery.TryGetGround(
+                        terrain,
+                        position.X * UnitsPerMetre,
+                        position.Y * UnitsPerMetre,
+                        position.Z * UnitsPerMetre,
+                        out TerrainGround ground))
+                {
+                    position = new Vector3d(position.X, position.Y, ground.Height / UnitsPerMetre);
                 }
 
                 (string Set, WorldObject Root) bake = bakes is not null && modelSlot < bakes.Count
@@ -973,6 +995,7 @@ public sealed class WorldScene
                     set.Length > 0 ? child.LightmapIndex : -1)
                 {
                     IsRotor = isRotor,
+                    IsAttached = true,
                 });
                 added++;
             }
@@ -1070,6 +1093,17 @@ public sealed class WorldScene
         position = default;
         return false;
     }
+
+    /// <summary>Returns whether a task is a human character model that retail grounds onto the terrain.</summary>
+    /// <remarks>
+    /// These are the AI soldiers and the player body. The original engine's level verifier exempts them
+    /// from exact position cross-reference because it terrain-snaps them at load, so their authored height
+    /// need not match the surface they settle on.
+    /// </remarks>
+    private static bool IsCharacterPlacement(DeclaredTask declared) =>
+        string.Equals(declared.Type.Name, AiSoldierType, StringComparison.Ordinal)
+        || string.Equals(declared.Type.Name, AiSoldierFemaleType, StringComparison.Ordinal)
+        || string.Equals(declared.Type.Name, HumanPlayerType, StringComparison.Ordinal);
 
     /// <summary>Builds an orientation from the three Euler angles level data stores.</summary>
     /// <param name="angles">The alpha, beta and gamma angles in radians.</param>
