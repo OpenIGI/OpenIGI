@@ -243,6 +243,7 @@ internal sealed partial class DesktopGame
         _snow?.Dispose();
         _snow = new SnowRenderer(_device, _logger);
         _snow.ReadParams(levelRoot);
+        ApplyWeatherSettings();
         _rainBuildingVolumes = RainRenderer.BuildBuildingVolumes(scene.Placements);
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation

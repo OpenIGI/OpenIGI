@@ -83,6 +83,8 @@ public sealed class RainRenderer : IDisposable
     private bool _disposed;
 
     private bool _active;
+    private bool _authoredAvailable;
+    private float _speedMultiplier = 1f;
     private bool _indoors;
     private float _startMeters = 10.0f;
     private float _endMeters = 2.0f;
@@ -131,6 +133,9 @@ public sealed class RainRenderer : IDisposable
     /// <summary>Gets the total simulated particle drop count.</summary>
     public int DropCount => _numDrops;
 
+    /// <summary>Gets the user-selected speed multiplier.</summary>
+    public float SpeedMultiplier => _speedMultiplier;
+
     /// <summary>Configures the rain particle renderer parameters.</summary>
     /// <param name="active">Whether rain rendering is active.</param>
     /// <param name="startMeters">Height above ground in meters where rain begins falling.</param>
@@ -138,10 +143,18 @@ public sealed class RainRenderer : IDisposable
     /// <param name="alpha">Alpha transparency factor for rain streaks.</param>
     public void SetParams(bool active, float startMeters, float endMeters, float alpha)
     {
+        _authoredAvailable = active;
         _active = active;
         _startMeters = startMeters;
         _endMeters = endMeters;
         _alpha = alpha;
+    }
+
+    /// <summary>Applies the live weather settings without changing the level-authored particle band.</summary>
+    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier)
+    {
+        _active = enabled && _authoredAvailable && kind == WeatherKind.Rain;
+        _speedMultiplier = Math.Clamp(speedMultiplier, 0f, 2f);
     }
 
     /// <summary>Recursively searches the task tree for a <c>RainEffect</c> task.</summary>
@@ -181,12 +194,14 @@ public sealed class RainRenderer : IDisposable
         DeclaredTask? rainTask = FindRainEffect(levelRoot);
         if (rainTask is null)
         {
+            _authoredAvailable = false;
             _active = false;
             return false;
         }
 
         bool isRain = ReadFlag(rainTask, "Is Rain");
         bool isActive = ReadFlag(rainTask, "Is Active");
+        _authoredAvailable = isActive;
 
         float start = ReadFloat(rainTask, "Traceline start", _startMeters);
         float end = ReadFloat(rainTask, "Traceline end", _endMeters);
@@ -405,7 +420,7 @@ public sealed class RainRenderer : IDisposable
         for (int i = 0; i < _numDrops; i++)
         {
             (float sx, float sy, float sz) = _seeds[i];
-            float speed = CalculateFallSpeed(fallRange, sz);
+            float speed = CalculateFallSpeed(fallRange, sz) * _speedMultiplier;
 
             float z = heightStart - Mod(seconds * speed + (sy * fallRange) + (float)camera.Position.Z, fallRange);
             float cellX = Mod((sx * boxSize) - (float)camX, boxSize) - halfBox;

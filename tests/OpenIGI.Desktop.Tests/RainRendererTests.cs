@@ -268,6 +268,22 @@ public sealed class RainRendererTests
     }
 
     [Fact]
+    public void UserWeatherSettingsCanDisableRainAndChangeItsSpeed()
+    {
+        RecordingGraphicsDevice device = new();
+        using RainRenderer renderer = new(device);
+        renderer.ReadParams(BuildLevel(RainEffect("TRUE", 50f, 20f, "TRUE", 0.13f)).Root);
+
+        renderer.ApplySettings(enabled: false, WeatherKind.Rain, speedMultiplier: 1.5f);
+        Assert.False(renderer.IsActive);
+        Assert.Equal(1.5f, renderer.SpeedMultiplier);
+
+        renderer.ApplySettings(enabled: true, WeatherKind.Rain, speedMultiplier: 0.25f);
+        Assert.True(renderer.IsActive);
+        Assert.Equal(0.25f, renderer.SpeedMultiplier);
+    }
+
+    [Fact]
     public void HeightBoundsCalculateCorrectlyAroundCameraZ()
     {
         // The reference stores the lower traceline as a positive distance below the camera.

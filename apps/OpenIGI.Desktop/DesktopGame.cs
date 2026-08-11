@@ -345,6 +345,10 @@ internal sealed partial class DesktopGame : IDisposable
         _device.VSyncEnabled = RenderCVars.VSync.Value;
         RenderCVars.VSync.Changed += (_, _) => _device.VSyncEnabled = RenderCVars.VSync.Value;
 
+        RenderCVars.WeatherEnabled.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.WeatherStyle.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.WeatherSpeed.Changed += (_, _) => ApplyWeatherSettings();
+
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
         _device.SetStageTiming(RenderCVars.PerformanceLog.Value);
@@ -3443,6 +3447,18 @@ internal sealed partial class DesktopGame : IDisposable
             $"Shutting down after {_loop.Clock.TickCount} ticks and {_loop.Clock.FrameCount} frames.");
 
         return 0;
+    }
+
+    private void ApplyWeatherSettings()
+    {
+        _rain?.ApplySettings(
+            RenderCVars.WeatherEnabled.Value,
+            RenderCVars.WeatherStyle.Value,
+            RenderCVars.WeatherSpeed.Value);
+        _snow?.ApplySettings(
+            RenderCVars.WeatherEnabled.Value,
+            RenderCVars.WeatherStyle.Value,
+            RenderCVars.WeatherSpeed.Value);
     }
 
     // The camera's projection, in one place: the terrain traversal needs the same field of view the

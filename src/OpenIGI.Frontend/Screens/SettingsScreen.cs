@@ -105,6 +105,7 @@ public sealed class SettingsScreen : ShellScreen
             ("Audio", () => BuildCvarPanel(NamesWithPrefix("snd_"), includePresets: false)),
             ("Controls", BuildControlsPanel),
             ("Gameplay", () => BuildCvarPanel(GameplayNames(), includePresets: false)),
+            ("Weather", () => BuildCvarPanel(NamesWithPrefix("r_weather_"), includePresets: false)),
         ];
 
         string[] tabTitles = new string[categories.Length];

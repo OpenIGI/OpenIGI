@@ -85,6 +85,29 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Draw the marks rounds leave on surfaces.");
 
+    /// <summary>Whether the authored level weather is rendered.</summary>
+    public static readonly BoolCVar WeatherEnabled = CVar.Bool(
+        "r_weather_enabled",
+        true,
+        CVarOptions.Archive,
+        "Enable the level's rain or snow particle weather.");
+
+    /// <summary>Which particle weather style is rendered when weather is enabled.</summary>
+    public static readonly EnumCVar<WeatherKind> WeatherStyle = CVar.Choice(
+        "r_weather_kind",
+        global::OpenIGI.Rendering.WeatherKind.Rain,
+        CVarOptions.Archive,
+        "Choose rain or snow for the active level weather descriptor.");
+
+    /// <summary>Multiplier applied to the authored weather particle fall speed.</summary>
+    public static readonly NumericCVar<float> WeatherSpeed = CVar.Float(
+        "r_weather_speed",
+        1f,
+        0f,
+        2f,
+        CVarOptions.Archive,
+        "Weather particle speed multiplier: 0 stops falling, 1 is the tuned speed, 2 is twice as fast.");
+
     /// <summary>Whether the presentation interpolates between simulation ticks.</summary>
     /// <remarks>
     /// <para>

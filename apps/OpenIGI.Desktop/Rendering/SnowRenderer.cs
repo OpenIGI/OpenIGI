@@ -40,6 +40,8 @@ public sealed class SnowRenderer : IDisposable
     private MeshHandle _mesh = MeshHandle.None;
     private bool _disposed;
     private bool _active;
+    private bool _authoredAvailable;
+    private float _speedMultiplier = 1f;
     private bool _indoors;
     private float _startMeters = 10f;
     private float _endMeters = 2f;
@@ -94,18 +96,23 @@ public sealed class SnowRenderer : IDisposable
     /// <summary>Gets the number of simulated flakes.</summary>
     public int ParticleCount => _particleCount;
 
+    /// <summary>Gets the user-selected speed multiplier.</summary>
+    public float SpeedMultiplier => _speedMultiplier;
+
     /// <summary>Reads the retail RainEffect weather descriptor and enables snow when rain is false.</summary>
     public bool ReadParams(GameTask levelRoot)
     {
         DeclaredTask? task = RainRenderer.FindRainEffect(levelRoot);
         if (task is null)
         {
+            _authoredAvailable = false;
             _active = false;
             return false;
         }
 
         bool isRain = RainRenderer.ReadFlag(task, "Is Rain");
         bool isActive = RainRenderer.ReadFlag(task, "Is Active");
+        _authoredAvailable = isActive;
         _startMeters = RainRenderer.ReadFloat(task, "Traceline start", _startMeters);
         _endMeters = RainRenderer.ReadFloat(task, "Traceline end", _endMeters);
         _alpha = RainRenderer.ReadFloat(task, "Rain Alpha", _alpha);
@@ -117,6 +124,13 @@ public sealed class SnowRenderer : IDisposable
                 ? $"Snow weather configured: start={_startMeters}m, end={_endMeters}m, alpha={_alpha}."
                 : $"Snow weather not active (Is Rain={isRain}, Is Active={isActive}).");
         return _active;
+    }
+
+    /// <summary>Applies the live weather settings without changing the level-authored particle band.</summary>
+    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier)
+    {
+        _active = enabled && _authoredAvailable && kind == WeatherKind.Snow;
+        _speedMultiplier = Math.Clamp(speedMultiplier, 0f, 2f);
     }
 
     /// <summary>Draws small flakes in a camera-relative volume.</summary>
@@ -149,7 +163,7 @@ public sealed class SnowRenderer : IDisposable
         for (int i = 0; i < _particleCount; i++)
         {
             (float sx, float sy, float sz) = _seeds[i];
-            float speed = CalculateFallSpeed(fallRange, sz);
+            float speed = CalculateFallSpeed(fallRange, sz) * _speedMultiplier;
             float z = heightStart - Mod(seconds * speed + (sz * fallRange), fallRange);
             float drift = MathF.Sin((seconds * 0.45f) + (sx * 17f)) * DriftMeters;
             float cellX = Mod((sx * BoxSizeMeters) - (float)camera.Position.X, BoxSizeMeters) - halfBox + drift;

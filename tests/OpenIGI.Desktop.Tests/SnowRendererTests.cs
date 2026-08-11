@@ -37,6 +37,21 @@ public sealed class SnowRendererTests
     }
 
     [Fact]
+    public void UserWeatherSettingsCanSwitchSnowOffAndOn()
+    {
+        RecordingGraphicsDevice device = new();
+        using SnowRenderer renderer = new(device);
+        renderer.ReadParams(BuildLevel(RainEffect("FALSE", 50f, 20f, "TRUE", 0.06f)).Root);
+
+        renderer.ApplySettings(enabled: true, WeatherKind.Rain, speedMultiplier: 2f);
+        Assert.False(renderer.IsActive);
+
+        renderer.ApplySettings(enabled: true, WeatherKind.Snow, speedMultiplier: 0.5f);
+        Assert.True(renderer.IsActive);
+        Assert.Equal(0.5f, renderer.SpeedMultiplier);
+    }
+
+    [Fact]
     public void DrawBuildsSmallHorizontalFlakesAtCameraRelativeHeight()
     {
         RecordingGraphicsDevice device = new();
