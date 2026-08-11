@@ -82,6 +82,9 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the authored cinematic runtime that supplies live vehicle transforms.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 
+    /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
+    public GenericPickupRegistry? GenericPickups { get; set; }
+
     /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
     public void BeginFrame(float tickFraction, bool smooth)
     {
@@ -173,6 +176,11 @@ public sealed class WorldRenderer : IDisposable
 
         foreach (WorldPlacement authoredPlacement in scene.Placements)
         {
+            if (GenericPickups?.IsCollected(authoredPlacement.Owner) == true)
+            {
+                continue;
+            }
+
             if (!ConditionalContainerGate.IsTaskActive(authoredPlacement.Owner))
             {
                 continue;

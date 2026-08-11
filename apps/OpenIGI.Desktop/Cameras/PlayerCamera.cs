@@ -88,6 +88,7 @@ public sealed class PlayerCamera
     private Vector3d _wireDirection;
     private double _wireSpeed;
     private bool _mapComputerOpen;
+    private GenericPickupRegistry? _genericPickups;
 
     // The first-person rig's last two tick states, captured at the end of Tick() — what the
     // presentation draws between when r_smooth is on. All of it is kept in bone/eye space WITHOUT the
@@ -589,8 +590,18 @@ public sealed class PlayerCamera
         _gunPickups = pickups;
     }
 
+    /// <summary>Gives the player the level's automatic generic item pickups.</summary>
+    public void UseGenericPickups(GenericPickupRegistry pickups)
+    {
+        ArgumentNullException.ThrowIfNull(pickups);
+        _genericPickups = pickups;
+    }
+
     /// <summary>Raised for each weapon collected from the world this tick.</summary>
     public event Action<GunPickup>? GunPickedUp;
+
+    /// <summary>Raised for each authored generic item collected from the world this tick.</summary>
+    public event Action<GenericPickup>? GenericPickedUp;
 
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
@@ -871,6 +882,14 @@ public sealed class PlayerCamera
             foreach (GunPickup pickup in _gunPickups.CollectAt(_body.Position, _weapons))
             {
                 GunPickedUp?.Invoke(pickup);
+            }
+        }
+
+        if (_genericPickups is { } genericPickups)
+        {
+            foreach (GenericPickup pickup in genericPickups.CollectAt(_body.Position))
+            {
+                GenericPickedUp?.Invoke(pickup);
             }
         }
 
