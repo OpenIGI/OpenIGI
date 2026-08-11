@@ -159,6 +159,7 @@ internal sealed partial class DesktopGame : IDisposable
     private GunPickupRenderer? _gunPickupRenderer;
     private StatusScreenRenderer? _hud;
     private RemasteredHudRenderer? _remasteredHud;
+    private DebugOverlayRenderer? _debugOverlay;
     private MapComputerRenderer? _mapComputer;
     private MapComputerDeviceRenderer? _mapComputerDevice;
     private TacticalComputerRenderer? _tacticalComputer;
@@ -561,6 +562,7 @@ internal sealed partial class DesktopGame : IDisposable
         _player = null;
         _heldWeapon = null;
         _hud = null;
+        _debugOverlay = null;
         _marks = null;
         _tracers = null;
         _impactParticles = null;
@@ -3072,10 +3074,12 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
+                float debugPanelHeight = 0f;
+
                 // The F12 debug overlay and crosshair. Works in both the walking player and the free (flying)
                 // camera: the state lines come from whichever is active, the crosshair readout and the reticle
                 // are cast from the eye that is actually drawing.
-                if (showDebug && _hud is { IsReady: true })
+                if (showDebug && _debugOverlay is { IsReady: true } debugOverlay)
                 {
                     static string I(FormattableString s) => FormattableString.Invariant(s);
 
@@ -3166,7 +3170,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                     _device.Set2DProjection(_window.Width, _window.Height);
                     batch.Begin();
-                    _hud.DrawDebug(batch, lines, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                    debugPanelHeight = debugOverlay.Draw(batch, lines, _window.Width, _window.Height);
 
                     // A centre reticle so the target readout can be aimed — the crosshair the free camera lacks.
                     float cx = _window.Width * 0.5f;
@@ -3188,8 +3192,9 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // r_perflog, its own overlay rather than a section of F12's: it answers a different question
                 // and is read while the game is being played rather than while it is being inspected. Top
-                // right, so the two can be up together.
-                if (RenderCVars.PerformanceLog.Value && _hud is { IsReady: true })
+                // right, so the two can be up together. When F12 is also enabled, place this panel below
+                // the measured F12 panel instead of letting both panels claim the same top-right corner.
+                if (RenderCVars.PerformanceLog.Value && _debugOverlay is { IsReady: true } performanceOverlay)
                 {
                     static string I(FormattableString s) => FormattableString.Invariant(s);
 
@@ -3216,12 +3221,15 @@ internal sealed partial class DesktopGame : IDisposable
 
                     _device.Set2DProjection(_window.Width, _window.Height);
                     batch.Begin();
-                    _hud.DrawDebugTopRight(
+                    float performanceTopOffset = debugPanelHeight > 0f
+                        ? debugPanelHeight + DebugOverlayRenderer.PanelGapPixels(_window.Width, _window.Height)
+                        : 0f;
+                    performanceOverlay.DrawTopRight(
                         batch,
                         perf,
-                        _window.Width - (8f * UiScale.Resolve(_options.UiScale, _window.Width, _window.Height)),
-                        8f * UiScale.Resolve(_options.UiScale, _window.Width, _window.Height),
-                        UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
+                        _window.Width,
+                        _window.Height,
+                        performanceTopOffset);
                     batch.End();
                 }
 
@@ -3454,6 +3462,7 @@ internal sealed partial class DesktopGame : IDisposable
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
+        _debugOverlay?.Dispose();
         _mapComputer?.Dispose();
         _mapComputerDevice?.Dispose();
         _tacticalComputer?.Dispose();

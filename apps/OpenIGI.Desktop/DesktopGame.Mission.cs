@@ -974,6 +974,14 @@ internal sealed partial class DesktopGame
                     _remasteredHud.Dispose();
                     _remasteredHud = null;
                 }
+
+                _debugOverlay?.Dispose();
+                _debugOverlay = new DebugOverlayRenderer(_device, _logger);
+                if (!_debugOverlay.Load())
+                {
+                    _debugOverlay.Dispose();
+                    _debugOverlay = null;
+                }
             }
 
             if (_gunPickups is { } pickups)
@@ -1159,6 +1167,7 @@ internal sealed partial class DesktopGame
         _gunPickupRenderer?.Dispose();
         _hud?.Dispose();
         _remasteredHud?.Dispose();
+        _debugOverlay?.Dispose();
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
@@ -1174,6 +1183,7 @@ internal sealed partial class DesktopGame
         _gunPickupRenderer = null;
         _hud = null;
         _remasteredHud = null;
+        _debugOverlay = null;
         _marks = null;
         _tracers = null;
         _impactParticles = null;

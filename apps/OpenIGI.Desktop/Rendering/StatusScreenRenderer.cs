@@ -489,53 +489,6 @@ public sealed class StatusScreenRenderer : IDisposable
         icon.DrawFrame(batch, frame, x, y, s, s, new Bgra32(128, 128, 128, alphaByte));
     }
 
-    /// <summary>Draws a stack of debug lines down the top-left corner, readable over any background.</summary>
-    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
-    /// <param name="lines">The lines, top to bottom.</param>
-    /// <param name="scale">The UI scale.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// The text keeps its contrast against bright or busy scenery two ways, both cheaper and steadier
-    /// than sampling the framebuffer to pick a colour: a dark translucent panel sits behind the whole
-    /// block, and every line is drawn once in black, offset by a pixel, before the light text goes on top.
-    /// </remarks>
-    public void DrawDebug(SpriteBatch batch, IReadOnlyList<string> lines, float scale = 1f) =>
-        DrawDebugPanel(batch, lines, 8f * scale, 8f * scale, scale);
-
-    /// <summary>Draws the same stack of lines with its top-right corner at a given point.</summary>
-    /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
-    /// <param name="lines">The lines, top to bottom.</param>
-    /// <param name="right">The right edge to hang the block from, in pixels.</param>
-    /// <param name="top">The top edge, in pixels.</param>
-    /// <param name="scale">The UI scale.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    /// <remarks>
-    /// So a second panel can be up at the same time as the first without the two writing over each
-    /// other — the frame timings are read while the state lines are being read.
-    /// </remarks>
-    public void DrawDebugTopRight(
-        SpriteBatch batch, IReadOnlyList<string> lines, float right, float top, float scale = 1f)
-    {
-        ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(lines);
-        if (Font() is not { } font)
-        {
-            return;
-        }
-
-        float widest = 0f;
-        foreach (string line in lines)
-        {
-            if (!string.IsNullOrEmpty(line))
-            {
-                (float w, _) = font.Measure(line, scale, scale);
-                widest = Math.Max(widest, w);
-            }
-        }
-
-        DrawDebugPanel(batch, lines, right - widest, top, scale);
-    }
-
     /// <summary>Draws the status messages the mission has sent, as the original places them.</summary>
     /// <param name="batch">The 2D batch, already begun under a 2D projection.</param>
     /// <param name="messages">The messages on screen, in slot order.</param>
@@ -783,60 +736,6 @@ public sealed class StatusScreenRenderer : IDisposable
             ReadOnlySpan<char> tail = text[lineStart..];
             font.Draw(batch, tail, x + scale, y + scale, shadow, scale, scale);
             font.Draw(batch, tail, x, y, ink, scale, scale);
-        }
-    }
-
-    private void DrawDebugPanel(SpriteBatch batch, IReadOnlyList<string> lines, float x, float y, float scale)
-    {
-        ArgumentNullException.ThrowIfNull(batch);
-        ArgumentNullException.ThrowIfNull(lines);
-        if (Font() is not { } font)
-        {
-            return;
-        }
-
-        float step = font.LineHeight * scale;
-
-        // The backing panel, sized to the widest line — drawn first so it sits behind the text (the batch
-        // keeps submission order).
-        float widest = 0f;
-        foreach (string line in lines)
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                continue;
-            }
-
-            (float w, _) = font.Measure(line, scale, scale);
-            widest = Math.Max(widest, w);
-        }
-
-        if (widest > 0f)
-        {
-            float pad = 4f * scale;
-            float left = x - pad;
-            float top = y - pad;
-            float right = x + widest + pad;
-            float bottom = y + (step * lines.Count) + pad;
-            Bgra32 panel = new(0, 0, 0, 160);
-            batch.DrawQuad(
-                TextureHandle.None,
-                new Vertex2D(left, top, 0f, 0f, panel),
-                new Vertex2D(right, top, 1f, 0f, panel),
-                new Vertex2D(right, bottom, 1f, 1f, panel),
-                new Vertex2D(left, bottom, 0f, 1f, panel));
-        }
-
-        Bgra32 shadow = new(0, 0, 0, 220);
-        foreach (string line in lines)
-        {
-            if (!string.IsNullOrEmpty(line))
-            {
-                font.Draw(batch, line, x + scale, y + scale, shadow, scale, scale);
-                font.Draw(batch, line, x, y, BitmapTextRenderer.NeutralColor, scale, scale);
-            }
-
-            y += step;
         }
     }
 

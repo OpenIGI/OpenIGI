@@ -8,6 +8,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\fonts\Saira-Regular.ttf"
+          Link="Assets\fonts\Saira-Regular.ttf"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
