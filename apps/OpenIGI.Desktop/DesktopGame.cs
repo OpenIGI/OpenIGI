@@ -205,6 +205,7 @@ internal sealed partial class DesktopGame : IDisposable
     private DoorRegistry? _doors;
     private WorldInteractionRegistry? _interactions;
     private GunPickupRegistry? _gunPickups;
+    private GenericPickupRegistry? _genericPickups;
 
     // --- The menus and the cinematic shell ---
     private MenuRenderer? _renderer;

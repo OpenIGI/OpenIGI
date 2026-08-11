@@ -24,6 +24,7 @@ public sealed class RetailInteractionInventoryTests
     public void EveryRetailDirectInteractionHasARegisteredActivateType()
     {
         Dictionary<string, int> totals = InteractiveTypes.ToDictionary(static name => name, static _ => 0);
+        int genericPickupTotal = 0;
         for (int missionId = 1; missionId <= 14; missionId++)
         {
             (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(missionId);
@@ -41,6 +42,19 @@ public sealed class RetailInteractionInventoryTests
             DoorRegistry doors = DoorRegistry.Build(root);
             WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
                 root, mission, doors, variables);
+            List<DeclaredTask> genericTasks = Walk(root)
+                .OfType<DeclaredTask>()
+                .Where(static task => string.Equals(task.Type.Name, "GenericPickup", StringComparison.Ordinal))
+                .ToList();
+            GenericPickupRegistry genericPickups = GenericPickupRegistry.Build(root, variables);
+            genericPickupTotal += genericTasks.Count;
+            Assert.Equal(genericTasks.Count, genericPickups.Items.Count);
+            foreach (GenericPickup pickup in genericPickups.Items)
+            {
+                Assert.Contains(pickup.Task, genericTasks);
+                Assert.True(variables.TryRead($"{pickup.Task.Name}.isPickedUp", out var pickedUp));
+                Assert.Equal(0, pickedUp.Integer);
+            }
             WorldScene scene = WorldScene.Build(mission, root, magic);
             Assert.Equal(found.Values.Sum(static tasks => tasks.Count), interactions.Items.Count);
             foreach (WorldInteraction interaction in interactions.Items.Where(static item => item.Type is
@@ -193,6 +207,7 @@ public sealed class RetailInteractionInventoryTests
         {
             Assert.True(totals[type] > 0, $"No shipped {type} task was loaded.");
         }
+        Assert.True(genericPickupTotal > 0, "No shipped GenericPickup task was loaded.");
     }
 
     private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(int missionId)

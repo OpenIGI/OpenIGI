@@ -284,6 +284,7 @@ public sealed class ObjectCollisionIndex
         {
             if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
                 || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
+                || GenericPickups?.IsCollected(entry.Owner) == true
                 || _passable.Contains(entry.Owner)
                 || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
             {
@@ -349,8 +350,9 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (honourPassable
-                && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner)))
+            if (GenericPickups?.IsCollected(entry.Owner) == true
+                || (honourPassable
+                    && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
             {
                 continue;
             }
@@ -410,6 +412,8 @@ public sealed class ObjectCollisionIndex
     /// <returns>The delegate the sweep takes.</returns>
     public WorldRayCast Caster() => TryCast;
 
+    /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
+    public GenericPickupRegistry? GenericPickups { get; set; }
     /// <summary>Gets the rich trace delegate bound to this index.</summary>
     public WorldTraceCast Tracer() => TryTrace;
 
