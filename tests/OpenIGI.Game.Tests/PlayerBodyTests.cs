@@ -431,6 +431,43 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
+    public void AHighFallCrossesTheTerrainSurfaceInsteadOfTunnellingBelowIt()
+    {
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        Vector3d ground = player.Position;
+        HumanFallImpact? published = null;
+        player.SetFallImpactSink(impact => published = impact);
+
+        // Fifty metres makes the final 30 Hz step much larger than the endpoint probe's 0.4 m origin.
+        // Before the continuous terrain move test, that endpoint began below the triangle and the body
+        // continued falling through the map forever.
+        player.Position = new Vector3d(ground.X, ground.Y, ground.Z + (50.0 * UnitsPerMetre));
+        player.Tick(default, terrain, default);
+        Assert.False(player.IsGrounded);
+
+        int ticks = 0;
+        while (!player.IsGrounded && ticks < 300)
+        {
+            player.Tick(default, terrain, default);
+            ticks++;
+        }
+
+        Assert.True(player.IsGrounded, "the falling body never recovered the terrain surface");
+        Assert.Equal(ground.Z, player.Position.Z, 1.0);
+        Assert.True(player.Position.Z >= ground.Z - 1.0, "the body settled beneath the terrain");
+
+        // Retail's airborne state observes the ground flag and resolves the impact on the following
+        // tick, after applying one last gravity step.
+        player.Tick(default, terrain, default);
+
+        Assert.NotNull(player.LastFallImpact);
+        Assert.Equal("player_fall_3", player.LastFallImpact.Value.SoundName);
+        Assert.True(player.Health.IsDead);
+        Assert.True(player.DamageFlash.IsActive);
+        Assert.Equal(player.LastFallImpact, published);
+    }
+
+    [RequiresGameDataFact]
     public void TheAnimationAndTheVelocityBothMoveTheBodyAndAreAdded()
     {
         // Correction to an earlier reading. The two were implemented as either/or - animation on the

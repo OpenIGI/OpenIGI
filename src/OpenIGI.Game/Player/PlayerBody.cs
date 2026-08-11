@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Audio;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Player;
@@ -41,6 +42,12 @@ public readonly record struct PlayerCommand(
 /// </remarks>
 public sealed class PlayerBody
 {
+    private float? _pendingLandingVelocityZ;
+    private Action<HumanFallImpact>? _fallImpactSink;
+
+    /// <summary>The retail player's maximum health from <c>humanplayer.qvm</c>.</summary>
+    public const float RetailMaximumHealth = 3f;
+
     /// <summary>How high the eye sits above the feet while standing, in world units.</summary>
     /// <remarks>
     /// The wall probe's high sample (<see cref="HumanWallProbe.HighProbeStandingInUnits"/>) is taken at
@@ -74,6 +81,25 @@ public sealed class PlayerBody
     /// </para>
     /// </remarks>
     public HumanPlayerParameters? Parameters { get; set; }
+
+    /// <summary>Gets the player's accumulated damage.</summary>
+    /// <remarks>
+    /// The default is retail's three-point player. A modded caller may supply a health object matching
+    /// its own <see cref="Parameters"/> through the initializer.
+    /// </remarks>
+    public HumanHealth Health { get; init; } = new(HumanHitZoneTable.Player, RetailMaximumHealth);
+
+    /// <summary>Gets the red full-screen damage wash raised by a damaging landing.</summary>
+    public HumanDamageFlash DamageFlash { get; } = new();
+
+    /// <summary>Gets or sets the sound system used to play the three retail landing definitions.</summary>
+    public SoundSystem? Sounds { get; set; }
+
+    /// <summary>Gets the most recently processed landing, or <see langword="null"/> before the first.</summary>
+    public HumanFallImpact? LastFallImpact { get; private set; }
+
+    /// <summary>Routes landing presentation and AI-hearing effects to the owning runtime.</summary>
+    public void SetFallImpactSink(Action<HumanFallImpact>? sink) => _fallImpactSink = sink;
 
     /// <summary>Gets the upward speed a jump starts with, in units per tick.</summary>
     /// <remarks><see cref="HumanPlayerParameters.JumpVerticalSpeed"/>; 27 km/h, exactly 1024, in retail.</remarks>
@@ -195,6 +221,7 @@ public sealed class PlayerBody
     /// </remarks>
     public void BeginLadderTraversal()
     {
+        _pendingLandingVelocityZ = null;
         Velocity = default;
         InheritedVelocity = default;
         SlopeSlide = default;
@@ -229,7 +256,7 @@ public sealed class PlayerBody
             TouchedWall = false;
         }
 
-        Settle(ref next, terrain);
+        Settle(ref next, terrain, Position);
         Position = next;
         return IsGrounded;
     }
@@ -267,6 +294,8 @@ public sealed class PlayerBody
     public void Tick(in PlayerCommand command, TerrainData terrain, Vector3f rootDelta)
     {
         ArgumentNullException.ThrowIfNull(terrain);
+
+        ProcessPendingLanding();
 
         Yaw += command.YawDelta;
         Pitch = Math.Clamp(Pitch + command.PitchDelta, -PitchLimit, PitchLimit);
@@ -358,7 +387,13 @@ public sealed class PlayerBody
             TouchedWall = false;
         }
 
-        Settle(ref next, terrain);
+        bool wasAirborne = !IsGrounded;
+        float landingVelocityZ = Velocity.Z;
+        Settle(ref next, terrain, Position);
+        if (wasAirborne && IsGrounded && landingVelocityZ < 0f)
+        {
+            _pendingLandingVelocityZ = landingVelocityZ;
+        }
 
         // The slide is accumulated from the ground under the feet, damped, and carried into the next
         // tick's move - which is why a slope you cannot stand on keeps moving you after you stop
@@ -367,6 +402,7 @@ public sealed class PlayerBody
             HumanSlopeSlide.Accumulate(SlopeSlide, IsGrounded ? GroundNormal : null));
 
         Position = next;
+        DamageFlash.Tick();
     }
 
     /// <summary>Advances the player by one tick, taking its movement from its own animation.</summary>
@@ -489,7 +525,7 @@ public sealed class PlayerBody
     /// bug this restores.
     /// </para>
     /// </remarks>
-    private void Settle(ref Vector3d position, TerrainData terrain)
+    private void Settle(ref Vector3d position, TerrainData terrain, Vector3d movementStart)
     {
         double from = position.Z + HumanGroundQuery.ProbeOrigin(IsCrouched);
 
@@ -497,7 +533,23 @@ public sealed class PlayerBody
         double height = double.NegativeInfinity;
         Vector3f normal = default;
 
-        if (TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
+        // A damaging fall can cover more than the 0.4 m between the feet and the ordinary probe origin
+        // in one 30 Hz tick. Querying only below the destination then starts underneath the triangle and
+        // loses the terrain forever. The retail mover casts the move before its endpoint ground query;
+        // preserve that continuous part for terrain by taking the first upward-facing triangle crossed
+        // by the feet. This is what prevents a high fall tunnelling under the map.
+        if (!IsGrounded && position.Z < movementStart.Z)
+        {
+            WorldTraceRequest fall = new(movementStart, position, WorldTraceMask.Terrain);
+            if (TerrainRayTrace.TryTrace(terrain, fall, out WorldTraceHit crossed) && crossed.Normal.Z > 0f)
+            {
+                found = true;
+                height = crossed.Position.Z;
+                normal = crossed.Normal;
+            }
+        }
+
+        if (!found && TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
         {
             found = true;
             height = ground.Height;
@@ -541,6 +593,36 @@ public sealed class PlayerBody
 
         IsGrounded = false;
         GroundNormal = null;
+    }
+
+    private void ProcessPendingLanding()
+    {
+        if (_pendingLandingVelocityZ is not float landingVelocityZ)
+        {
+            return;
+        }
+
+        _pendingLandingVelocityZ = null;
+
+        // The airborne state runs once more on the tick after the collision flag was raised. It applies
+        // gravity before it notices that flag, so retail measures one final gravity step in the impact.
+        HumanFallImpact impact = HumanFallDamage.Calculate(
+            landingVelocityZ - HumanMotion.GravityPerTick,
+            Health.MaximumHealth);
+
+        Health.ApplyDirect(HumanDamage.FrontZone, impact.Damage);
+        if (impact.Damage > 0f)
+        {
+            DamageFlash.Hit();
+        }
+
+        LastFallImpact = impact;
+        if (!string.IsNullOrEmpty(impact.SoundName))
+        {
+            Sounds?.PlayDefinition(impact.SoundName, Position);
+        }
+
+        _fallImpactSink?.Invoke(impact);
     }
 
     /// <summary>How far a placement search looks below its start, in world units.</summary>

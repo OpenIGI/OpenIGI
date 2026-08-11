@@ -112,6 +112,27 @@ public sealed class HumanHealth
         return dealt;
     }
 
+    /// <summary>Adds damage that is already expressed in health units.</summary>
+    /// <param name="zone">The accumulator bucket to add it to.</param>
+    /// <param name="damage">The amount to add, without a zone or difficulty multiplier.</param>
+    /// <returns>The amount actually added.</returns>
+    /// <remarks>
+    /// Falling uses this path. <c>0x408460</c> selects zone 13 for bookkeeping, then adds its computed
+    /// amount straight to the total; player difficulty does not scale it. This compact health model
+    /// retains the selected zone validation but, unlike the retail object, stores only the total.
+    /// </remarks>
+    public float ApplyDirect(int zone, float damage)
+    {
+        if (zone < 0 || zone >= Zones.Count || damage <= 0f)
+        {
+            return 0f;
+        }
+
+        Damage += damage;
+        Hits++;
+        return damage;
+    }
+
     /// <summary>Brings the human back to untouched, as respawning does.</summary>
     public void Reset()
     {
