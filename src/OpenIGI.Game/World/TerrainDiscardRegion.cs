@@ -72,9 +72,9 @@ public sealed class TerrainDiscardRegion
         long span = 2L * (TerrainOctree.RootExtent >> level);
         region = new TerrainDiscardRegion(
             level,
-            (long)position.X & -span,
-            (long)position.Y & -span,
-            (long)position.Z & -span,
+            (long)Math.Floor(position.X) & -span,
+            (long)Math.Floor(position.Y) & -span,
+            (long)Math.Floor(position.Z) & -span,
             span);
         return true;
     }

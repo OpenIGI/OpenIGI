@@ -336,15 +336,42 @@ public sealed class RetailTerrainTests
                 centre.Y - (25.0 * WorldScene.UnitsPerMetre),
                 centre.Z + (15.0 * WorldScene.UnitsPerMetre)),
             Camera3D.LookRotation(0f, -0.45f));
-        TerrainView view = TerrainView.FromPerspective(camera, 1.2f, 16f / 9f);
+
+        // Use a low-detail view from far away to get a coarse cube that would intersect the ramp.
+        Camera3D distantCamera = new(
+            new Vector3d(
+                centre.X,
+                centre.Y - (500.0 * WorldScene.UnitsPerMetre),
+                centre.Z + (300.0 * WorldScene.UnitsPerMetre)),
+            Camera3D.LookRotation(0f, -0.45f));
+        TerrainView coarseView = TerrainView.FromPerspective(distantCamera, 1.2f, 16f / 9f);
 
         List<TerrainChunk> unmasked = [];
-        TerrainTraversal.Collect(terrain.Octree, view, unmasked);
+        TerrainTraversal.Collect(terrain.Octree, coarseView, unmasked);
         Assert.Contains(unmasked, chunk => ramp.IntersectsCube(chunk.Position, chunk.Extent));
 
+        // Find a chunk that is face-adjacent to the ramp region but does not intersect it.
+        TerrainChunk? adjacentChunk = unmasked.FirstOrDefault(chunk =>
+            !ramp.IntersectsCube(chunk.Position, chunk.Extent)
+            && (Math.Abs(chunk.Position.X - ramp.MinX) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.X - ramp.MaxX) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Y - ramp.MinY) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Y - ramp.MaxY) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Z - ramp.MinZ) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Z - ramp.MaxZ) == chunk.Extent * 2));
+
         List<TerrainChunk> masked = [];
-        TerrainTraversal.Collect(terrain.Octree, view, masked, surface.Discards);
+        TerrainTraversal.Collect(terrain.Octree, coarseView, masked, surface.Discards);
         Assert.DoesNotContain(masked, chunk => ramp.IntersectsCube(chunk.Position, chunk.Extent));
+
+        // Verify discard-driven refinement: an adjacent chunk remains even when a ramp-intersecting one is removed.
+        if (adjacentChunk is not null)
+        {
+            Assert.Contains(masked, chunk =>
+                chunk.Position.X == adjacentChunk.Value.Position.X
+                && chunk.Position.Y == adjacentChunk.Value.Position.Y
+                && chunk.Position.Z == adjacentChunk.Value.Position.Z);
+        }
     }
 
     [RequiresGameDataFact]

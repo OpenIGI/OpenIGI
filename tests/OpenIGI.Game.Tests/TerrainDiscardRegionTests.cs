@@ -66,4 +66,34 @@ public sealed class TerrainDiscardRegionTests
         Assert.False(TerrainDiscardRegion.TryCreate(default, level, out TerrainDiscardRegion? region));
         Assert.Null(region);
     }
+
+    [Fact]
+    public void NegativeFractionalCoordinatesSnapToPrecedingCube()
+    {
+        // At level 15, span is 65536; negative fractional positions must snap down to the preceding cube.
+        // Position -1.5 should floor to -2, then snap to -65536 (not 0).
+        Assert.True(TerrainDiscardRegion.TryCreate(
+            new Vector3d(-1.5, -1.5, -1.5),
+            15,
+            out TerrainDiscardRegion? region));
+        Assert.NotNull(region);
+
+        Assert.Equal(-65536, region.MinX);
+        Assert.Equal(-65536, region.MinY);
+        Assert.Equal(-65536, region.MinZ);
+        Assert.Equal(0, region.MaxX);
+        Assert.Equal(0, region.MaxY);
+        Assert.Equal(0, region.MaxZ);
+
+        // Position exactly at a negative boundary should snap to that boundary.
+        Assert.True(TerrainDiscardRegion.TryCreate(
+            new Vector3d(-65536.0, -65536.0, -65536.0),
+            15,
+            out TerrainDiscardRegion? boundary));
+        Assert.NotNull(boundary);
+
+        Assert.Equal(-65536, boundary.MinX);
+        Assert.Equal(-65536, boundary.MinY);
+        Assert.Equal(-65536, boundary.MinZ);
+    }
 }
