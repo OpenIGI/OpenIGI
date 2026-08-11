@@ -714,7 +714,7 @@ internal sealed partial class DesktopGame
             if (dose > 0f && !_playerHealth.IsDead)
             {
                 _playerHealth.Apply(ExplosionDamage.Zone, dose);
-                _damageFlash.Hit();
+                _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
 
                 // A blast that zeroes the health kills exactly the way a bullet does -- without
                 // this the player stood at zero for ever.

@@ -585,9 +585,15 @@ internal sealed partial class DesktopGame
                     _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
                     _guardHits++;
 
-                    // The screen goes red. A full wash per hit, so a burst holds it solid and it fades
-                    // over a second and a half once the fire stops -- the retail decay (sub_411300).
-                    _damageFlash.Hit();
+                    // The retail handler transforms the round into camera space before writing the four
+                    // corner alphas. It picks 0.4–0.8 rather than one opaque wash and replaces the prior
+                    // hit, so automatic fire remains a directional cue instead of a full-screen strobe.
+                    Vector3f incoming = new(
+                        (float)(to.X - from.X),
+                        (float)(to.Y - from.Y),
+                        (float)(to.Z - from.Z));
+                    Vector3f viewIncoming = _player.Camera.Orientation.Transposed().Transform(incoming);
+                    _damageFlash.Hit(viewIncoming, _soundRandom.NextSingle());
 
                     // And the grunt. 0x412440 plays it on the same branch and rate-limits it through
                     // 0x4637C0, so sustained fire staggers the player without stuttering the sound.
@@ -894,6 +900,13 @@ internal sealed partial class DesktopGame
             }
 
             EndStage("humanplayer.qvm");
+
+            // PlayerBody resolves the landing on the tick after contact, just as retail does. Its
+            // default health exists for standalone physics use; the desktop must give it the exact
+            // accumulator the HUD, guard hits and death state already share. The sink crosses the
+            // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
+            candidate.Body.UseHealth(_playerHealth);
+            candidate.Body.SetFallImpactSink(impact => ResolvePlayerFallImpact(candidate, impact));
 
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5
             // and the model 005_01_1 (0x45EB30, 0x464660); it is what the held weapon hangs off, so
@@ -1279,9 +1292,9 @@ internal sealed partial class DesktopGame
         _playerDead = true;
         int fall = HumanPlayerDeath.Choose(zone, HumanHitZoneTable.Player, _shotRandom.Next(2));
 
-        // Hold the screen red. The wash decays a forty-fifth a tick, so on death it is pinned to
-        // full and left to fade -- the last thing the player sees is red.
-        _damageFlash.Hit();
+        // The lethal hit has already written the retail corner flash. Do not replace it with a uniform
+        // full-screen wash here: 0x412440 writes the flash as part of damage receipt, before it changes
+        // the locomotion state to death.
 
         // Which way the body is thrown: the facing whose backward axis points away from the killer,
         // exactly as the soldier death faces the incoming round (SoldierDeath.TurnToTheShot).
@@ -1323,6 +1336,47 @@ internal sealed partial class DesktopGame
 
         // And the death sound -- state 47's own sub_4638A0(human, "player_death_", 3).
         PlayDeathSound(HumanPlayerDeath.SoundPrefix, HumanPlayerDeath.SoundVariants, null);
+    }
+
+    /// <summary>Routes a resolved body landing into the desktop-owned presentation and death state.</summary>
+    private void ResolvePlayerFallImpact(PlayerCamera player, HumanFallImpact impact)
+    {
+        // State 35 names one of these three definitions only when damage is non-zero. Like the player's
+        // own hit and death sounds it belongs to the listener, so it is flat rather than world-panned.
+        if (!string.IsNullOrEmpty(impact.SoundName))
+        {
+            _sounds?.PlayDefinition(impact.SoundName, priority: 250);
+        }
+
+        // Every ground contact posts type 11. A safe landing carries five metres; a damaging one ten.
+        _soldiers?.NotifyGroundImpact(
+            player.Body.Position,
+            player.Body.Position,
+            impact.HearingRadiusUnits);
+
+        if (impact.Damage <= 0f)
+        {
+            return;
+        }
+
+        // PlayerBody has already added the direct, difficulty-independent dose to the shared health.
+        // Raise the desktop wash that the render pass actually draws rather than the body's standalone one.
+        _damageFlash.Hit();
+        _logger.Information(
+            "Player",
+            $"Fall impact {impact.SpeedMetresPerSecond:F2} m/s dealt {impact.Damage:F3} "
+                + $"({_playerHealth.RemainingFraction:P0} left), sound '{impact.SoundName}'.");
+
+        if (_playerHealth.IsDead)
+        {
+            // Zone 13 is the retail fall bucket. With no external attacker the source is the feet,
+            // leaving the death fall aligned to the player's current facing.
+            BeginPlayerDeath(
+                player.Body.Position,
+                HumanDamage.FrontZone,
+                bone: -1,
+                WeaponCategory.Gun);
+        }
     }
 
     // Keeps the drawn model on whatever the cycle has put in hand. Called every frame; it only does
