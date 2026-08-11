@@ -57,6 +57,8 @@ a probe of the running original
 *.md
 !/README.md
 !/CONTRIBUTING.md
+!/src/OpenIGI.Generators/AnalyzerReleases.Shipped.md
+!/src/OpenIGI.Generators/AnalyzerReleases.Unshipped.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
