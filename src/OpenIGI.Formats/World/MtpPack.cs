@@ -97,20 +97,22 @@ public sealed class MtpPack
 
         ReadOnlyCollection<string> instanceNames = ReadInstanceNames(file);
         ReadOnlyCollection<MtpMaterial> materials = ReadMaterials(file);
+        ReadOnlyCollection<string> modelNames = ReadNames(file, MtpTags.ModelNames, required: true);
+        ReadOnlyCollection<string> textureNames = ReadNames(file, MtpTags.TextureNames, required: true);
 
         return new MtpPack(
             file,
             ReadNames(file, MtpTags.AnimationSetNames, required: false),
             ReadNames(file, MtpTags.SoundNames, required: false),
             ReadNames(file, MtpTags.VolumeNames, required: false),
-            ReadNames(file, MtpTags.ModelNames, required: true),
-            ReadNames(file, MtpTags.TextureNames, required: true),
+            modelNames,
+            textureNames,
             ReadNames(file, MtpTags.PaletteNames, required: false),
             materials,
-            ReadInstances(file, instanceNames, materials.Count));
+            ReadInstances(file, instanceNames, textureNames.Count));
     }
 
-    /// <summary>Resolves an instance's material slot to its material table entry.</summary>
+    /// <summary>Resolves an instance's material slot to the material it draws.</summary>
     /// <param name="instance">The instance the draw record belongs to.</param>
     /// <param name="materialSlot">The slot from a model's draw record.</param>
     /// <param name="material">Receives the material when the slot addresses one.</param>
@@ -127,14 +129,17 @@ public sealed class MtpPack
             return false;
         }
 
-        int index = instance.MaterialIndices.Span[materialSlot];
-        if (index < 0 || index >= Materials.Count)
+        int textureIndex = instance.MaterialIndices.Span[materialSlot];
+        if (textureIndex < 0 || textureIndex >= TextureNames.Count)
         {
             material = default;
             return false;
         }
 
-        material = Materials[index];
+        // INST carries a TEXF index directly. GTT is parallel metadata for that texture, not an
+        // indirection table whose index should be read from INST.
+        PackId lightmap = textureIndex < Materials.Count ? Materials[textureIndex].Lightmap : PackId.None;
+        material = new MtpMaterial(new PackId((uint)textureIndex), lightmap);
         return true;
     }
 
@@ -199,7 +204,7 @@ public sealed class MtpPack
         return new ReadOnlyCollection<MtpMaterial>(materials);
     }
 
-    private static ReadOnlyCollection<MtpInstance> ReadInstances(MtpFile file, ReadOnlyCollection<string> names, int materialCount)
+    private static ReadOnlyCollection<MtpInstance> ReadInstances(MtpFile file, ReadOnlyCollection<string> names, int textureCount)
     {
         MtpChunk chunk = file.GetChunk(MtpTags.Instances);
         ReadOnlyMemory<byte> payload = chunk.Payload;
@@ -230,10 +235,13 @@ public sealed class MtpPack
             for (int j = 0; j < slotCount; j++)
             {
                 uint raw = BinaryPrimitives.ReadUInt32LittleEndian(span[(offset + (4 * j))..]);
-                if (raw >= (uint)materialCount)
+                // INST stores TEXF indices directly. GTT is a separate table (currently used only
+                // for its lightmap field); interpreting these values as GTT indices shifts the
+                // model-to-texture mapping on packs whose two tables differ.
+                if (raw >= (uint)textureCount)
                 {
                     throw new PackFormatException(
-                        $"Instance '{names[i]}' slot {j} references material {raw}, but the pack has {materialCount}.");
+                        $"Instance '{names[i]}' slot {j} references texture {raw}, but the pack has {textureCount}.");
                 }
 
                 indices[j] = (int)raw;
