@@ -31,12 +31,37 @@ namespace OpenIGI.Game.World;
 public sealed class ObjectCollisionIndex
 {
     private readonly Entry[] _entries;
+    private readonly Dictionary<GameTask, Entry[]> _entriesByOwner;
+    private readonly Dictionary<WorldPlacement, Entry> _entriesByPlacement;
 
     // Legacy/manual passability override. Mission doors no longer use it: their collision mesh follows
     // the live task transform through UpdateTransform, including every half-open pose.
     private readonly HashSet<GameTask> _passable = [];
 
-    private ObjectCollisionIndex(Entry[] entries) => _entries = entries;
+    private ObjectCollisionIndex(Entry[] entries)
+    {
+        _entries = entries;
+        _entriesByOwner = new Dictionary<GameTask, Entry[]>(ReferenceEqualityComparer.Instance);
+        _entriesByPlacement = new Dictionary<WorldPlacement, Entry>(ReferenceEqualityComparer.Instance);
+
+        Dictionary<GameTask, List<Entry>> grouped = new(ReferenceEqualityComparer.Instance);
+        foreach (Entry entry in entries)
+        {
+            if (!grouped.TryGetValue(entry.Owner, out List<Entry>? owned))
+            {
+                owned = [];
+                grouped.Add(entry.Owner, owned);
+            }
+
+            owned.Add(entry);
+            _entriesByPlacement[entry.Placement] = entry;
+        }
+
+        foreach ((GameTask owner, List<Entry> owned) in grouped)
+        {
+            _entriesByOwner.Add(owner, [.. owned]);
+        }
+    }
 
     /// <summary>Switches a placing task's collision off or back on — an opening or closing door.</summary>
     /// <param name="owner">The exact placing task instance.</param>
@@ -66,19 +91,17 @@ public sealed class ObjectCollisionIndex
     public bool UpdateTransform(GameTask owner, Vector3d positionMetres, Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(owner);
-        bool updated = false;
-        foreach (Entry entry in _entries)
+        if (!_entriesByOwner.TryGetValue(owner, out Entry[]? entries))
         {
-            if (!ReferenceEquals(entry.Owner, owner))
-            {
-                continue;
-            }
-
-            entry.UpdateTransform(positionMetres, orientation);
-            updated = true;
+            return false;
         }
 
-        return updated;
+        foreach (Entry entry in entries)
+        {
+            entry.UpdateTransform(positionMetres, orientation);
+        }
+
+        return true;
     }
 
     /// <summary>Updates one model placement owned by a multi-model task.</summary>
@@ -99,11 +122,15 @@ public sealed class ObjectCollisionIndex
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrEmpty(instanceName);
-        bool updated = false;
-        foreach (Entry entry in _entries)
+        if (!_entriesByOwner.TryGetValue(owner, out Entry[]? entries))
         {
-            if (!ReferenceEquals(entry.Owner, owner)
-                || !string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase))
+            return false;
+        }
+
+        bool updated = false;
+        foreach (Entry entry in entries)
+        {
+            if (!string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -119,18 +146,13 @@ public sealed class ObjectCollisionIndex
     public bool UpdateTransform(WorldPlacement placement, Vector3d positionMetres, Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        foreach (Entry entry in _entries)
+        if (!_entriesByPlacement.TryGetValue(placement, out Entry? entry))
         {
-            if (!ReferenceEquals(entry.Placement, placement))
-            {
-                continue;
-            }
-
-            entry.UpdateTransform(positionMetres, orientation);
-            return true;
+            return false;
         }
 
-        return false;
+        entry.UpdateTransform(positionMetres, orientation);
+        return true;
     }
 
     /// <summary>Gets how many placed objects carry collision geometry.</summary>
@@ -501,7 +523,7 @@ public sealed class ObjectCollisionIndex
         private readonly Vector3f[] _localVertices;
         private readonly Vector3d[] _closedVertices;
         private readonly Vector3f _rootCentre;
-        private Vector3d[] _vertices;
+        private readonly Vector3d[] _vertices;
 
         private Entry(
             MefCollisionMesh mesh,
@@ -616,14 +638,16 @@ public sealed class ObjectCollisionIndex
                 positionMetres.Z * WorldScene.UnitsPerMetre);
             Matrix3f rotation = orientation.Transposed();
 
-            Vector3d[] vertices = new Vector3d[_localVertices.Length];
+            // This entry is single-thread-owned during live simulation. Reuse its transformed storage:
+            // doors, trains and cutscene objects can move every tick, and allocating one array per pose
+            // creates a GC feedback loop precisely while their animations are playing.
+            Vector3d[] vertices = _vertices;
             for (int i = 0; i < vertices.Length; i++)
             {
                 Vector3f placed = rotation.Transform(_localVertices[i]);
                 vertices[i] = new Vector3d(origin.X + placed.X, origin.Y + placed.Y, origin.Z + placed.Z);
             }
 
-            _vertices = vertices;
             Vector3f centre = rotation.Transform(_rootCentre);
             Centre = new Vector3d(origin.X + centre.X, origin.Y + centre.Y, origin.Z + centre.Z);
             IsDynamic = true;

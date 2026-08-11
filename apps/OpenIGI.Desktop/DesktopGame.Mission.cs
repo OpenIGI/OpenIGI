@@ -733,7 +733,7 @@ internal sealed partial class DesktopGame
 
         if (_playerTerrain is not null)
         {
-            PlayerCamera candidate = new();
+            PlayerCamera candidate = new(_logger);
 
             // 000.iff, kept so the player's third-person body can be built from the same set it walks on
             // (HumanPlayerBody: the body is skeleton 0, and this is skeleton 0's set). Walking is the

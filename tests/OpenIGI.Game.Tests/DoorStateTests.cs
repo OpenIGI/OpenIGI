@@ -126,5 +126,16 @@ public sealed class DoorStateTests
         Assert.Equal(1f / 30f, door.PreviousSlideFraction, precision: 4);
         Assert.Equal(6f, door.AngleDegrees, precision: 4);
         Assert.Equal(2f / 30f, door.SlideFraction, precision: 4);
+        Assert.True(door.TransformChangedThisTick);
+    }
+
+    [Fact]
+    public void AStationaryDoorDoesNotRequestAnotherCollisionTransform()
+    {
+        DoorState door = new(maxAngleDegrees: 90f, openTimeSeconds: 1f);
+
+        door.Tick();
+
+        Assert.False(door.TransformChangedThisTick);
     }
 }

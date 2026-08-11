@@ -1,3 +1,4 @@
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Engine.Tasks;
@@ -56,6 +57,7 @@ public sealed class PlayerCamera
     public const double UnitsPerMetre = 4096.0;
 
     private readonly PlayerBody _body = new();
+    private readonly IIgiLogger _logger;
     private readonly PlayerInputState _input = new();
     private readonly IgiRandom _random = new();
     private readonly Mp5SightZoom _sightZoom = new();
@@ -88,6 +90,16 @@ public sealed class PlayerCamera
     private Vector3d _wireDirection;
     private double _wireSpeed;
     private bool _mapComputerOpen;
+
+    /// <summary>Initializes the player camera.</summary>
+    /// <param name="logger">Where optional collision diagnostics are written.</param>
+    public PlayerCamera(IIgiLogger? logger = null)
+    {
+        _logger = logger ?? NullLogger.Instance;
+    }
+
+    /// <summary>Gets whether the expensive wall-contact diagnostic is enabled.</summary>
+    internal bool WallBlockDiagnosticsEnabled => _logger.IsEnabled(LogLevel.Information);
 
     // The first-person rig's last two tick states, captured at the end of Tick() — what the
     // presentation draws between when r_smooth is on. All of it is kept in bone/eye space WITHOUT the
@@ -1287,12 +1299,17 @@ public sealed class PlayerCamera
     /// </summary>
     /// <remarks>
     /// It fires only on a fresh contact (the blocking object changed) so a held-forward push logs once,
-    /// not every tick. The line names the model instance, the placing task, and where the ray met it, and
-    /// is appended to <c>doorblock.log</c> beside the executable as well as written to the console.
+    /// not every tick. The line names the model instance, the placing task, and where the ray met it. The
+    /// configured logger records it only at verbose information level and buffers any file output.
     /// </remarks>
     private void LogWallBlockIfAny(float forward, float strafe)
     {
-        if (_walls is null || !_body.TouchedWall || (forward == 0f && strafe == 0f))
+        // Identifying the blocker casts four extra world rays. Do none of that work unless verbose
+        // diagnostics are actually being collected; minimal/off logging must be a zero-cost path.
+        if (!WallBlockDiagnosticsEnabled
+            || _walls is null
+            || !_body.TouchedWall
+            || (forward == 0f && strafe == 0f))
         {
             _lastBlockLabel = string.Empty;
             return;
@@ -1333,16 +1350,7 @@ public sealed class PlayerCamera
         string line = FormattableString.Invariant(
             $"BLOCKED by {label} at ({nearest.Position.X:F0}, {nearest.Position.Y:F0}, {nearest.Position.Z:F0}) — probe {probeMetres:F2}m, {aheadMetres:F2}m ahead; player ({_body.Position.X:F0}, {_body.Position.Y:F0}, {_body.Position.Z:F0}) yaw {_body.Yaw:F2}");
 
-        Console.WriteLine(line);
-        try
-        {
-            File.AppendAllText(
-                Path.Combine(AppContext.BaseDirectory, "doorblock.log"), line + Environment.NewLine);
-        }
-        catch (IOException)
-        {
-            // A diagnostic must never take the game down; a locked or unwritable log is simply skipped.
-        }
+        _logger.Information("Player", line);
     }
 
     // The nearest ladder that is close enough, faced and within height to mount.
