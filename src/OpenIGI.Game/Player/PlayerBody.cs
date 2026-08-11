@@ -647,7 +647,10 @@ public sealed class PlayerBody
         Health.ApplyDirect(HumanDamage.FrontZone, impact.Damage);
         if (impact.Damage > 0f)
         {
-            DamageFlash.Hit();
+            // A landing has no incoming horizontal direction. The retail flash treats that as a
+            // uniform hit; use the upper end of the authored random intensity range here because the
+            // fall-impact path has no weapon random draw to provide.
+            DamageFlash.Hit(Vector3f.Zero, 1f);
         }
 
         LastFallImpact = impact;
