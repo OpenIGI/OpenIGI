@@ -130,22 +130,6 @@ public sealed class LoadedPack
             }
         }
 
-        // The textures archive is registered but not decoded here: a texture becomes pixels only when
-        // the renderer asks for it, and the original defers the same way.
-        // Texture names are global registry keys, but level packs may reuse a name with different
-        // pixels (notably 015_05_1 on the human face). Rebind the current pack's texture namespace so
-        // a previous mission preview cannot leave stale pixels in the running mission.
-        string textureArchivePath = $"{dir}textures/{name}.res";
-        TextureArchiveBinding textureBinding = TextureArchives.GetOrCreateValue(resources);
-        if (textureBinding.Path is { } previousPath
-            && !previousPath.Equals(textureArchivePath, StringComparison.OrdinalIgnoreCase))
-        {
-            resources.Free(previousPath);
-        }
-
-        _ = TryRegisterArchive(textureArchivePath, resources, log, replaceExisting: true);
-        textureBinding.Path = textureArchivePath;
-
         Dictionary<string, MefModel> models = new(StringComparer.OrdinalIgnoreCase);
         if (TryRegisterArchive($"{dir}models/{name}.res", resources, log) is { } archive)
         {
@@ -176,6 +160,24 @@ public sealed class LoadedPack
         {
             log.Warning(LogCategory, $"Pack '{name}' lists {missing.Count} model(s) its archive does not hold.");
         }
+
+        // The textures archive is registered but not decoded here: a texture becomes pixels only when
+        // the renderer asks for it, and the original defers the same way.
+        // Texture names are global registry keys, but level packs may reuse a name with different
+        // pixels (notably 015_05_1 on the human face). Rebind the current pack's texture namespace so
+        // a previous mission preview cannot leave stale pixels in the running mission. The previous
+        // archive is freed only after the replacement has been validated and registered successfully.
+        string textureArchivePath = $"{dir}textures/{name}.res";
+        TextureArchiveBinding textureBinding = TextureArchives.GetOrCreateValue(resources);
+        string? previousTextureArchivePath = textureBinding.Path;
+        _ = TryRegisterArchive(textureArchivePath, resources, log, replaceExisting: true);
+        if (previousTextureArchivePath is { }
+            && !previousTextureArchivePath.Equals(textureArchivePath, StringComparison.OrdinalIgnoreCase))
+        {
+            resources.Free(previousTextureArchivePath);
+        }
+
+        textureBinding.Path = textureArchivePath;
 
         log.Information(
             LogCategory,
@@ -297,13 +299,14 @@ public sealed class LoadedPack
 
         try
         {
+            IresArchive archive = IresArchive.Read(bytes);
             if (replaceExisting)
             {
                 resources.Free(path);
                 resources.Register(path, bytes, replaceExisting: true);
             }
 
-            return IresArchive.Read(bytes);
+            return archive;
         }
         catch (IlffFormatException ex)
         {
