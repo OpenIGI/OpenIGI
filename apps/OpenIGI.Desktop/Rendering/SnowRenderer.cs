@@ -77,6 +77,9 @@ public sealed class SnowRenderer : IDisposable
     /// <summary>Gets whether snow is enabled and visible outdoors.</summary>
     public bool IsActive => _active && !_indoors;
 
+    /// <summary>Gets whether snow is enabled before the indoor visibility test.</summary>
+    public bool IsWeatherEnabled => _active;
+
     /// <summary>Gets or sets whether the camera is inside a building.</summary>
     public bool Indoors
     {

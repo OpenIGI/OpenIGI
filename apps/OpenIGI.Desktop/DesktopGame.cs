@@ -252,6 +252,7 @@ internal sealed partial class DesktopGame : IDisposable
 
         void Resize(int width, int height)
         {
+            _logger.Information("Desktop", $"Framebuffer resize event: {width}x{height}.");
             _device.SetViewport(new Viewport(0, 0, width, height));
             _device.Set2DProjection(width, height);
         }
@@ -938,7 +939,7 @@ internal sealed partial class DesktopGame : IDisposable
         _logger.Information(
             "Render",
             FormattableString.Invariant(
-                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}."));
+                $"Camera effects: r_motion_blur {RenderCVars.MotionBlur.Value:0.###}, r_camera_taps {RenderCVars.CameraTaps.Value}, r_dof {RenderCVars.FocalDistance.Value:0.#}/{RenderCVars.FocalRange.Value:0.#}, r_dof_blur {RenderCVars.FocalBlur.Value:0.#}, r_hdr {RenderCVars.OffscreenScene.Value}, r_deferred {RenderCVars.Deferred.Value}, r_taa {RenderCVars.TemporalFeedback.Value:0.###}, r_smooth {RenderCVars.SmoothPresentation.Value}, r_scale {RenderCVars.RenderScale.Value:0.###}."));
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
@@ -2597,7 +2598,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
                 // While the camera is inside a building's shell the rain is suppressed, exactly as the
                 // reference editor does per frame — buildings keep the weather outside.
-                if (_rain is { } rain)
+                if (_rain is { IsWeatherEnabled: true } rain)
                 {
                     rain.Indoors = IsCameraInsideBuilding(eye.Position);
                     rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
@@ -2605,7 +2606,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // Snow uses the same authored building shells and weather band, but renders small,
                 // drifting flakes instead of rain droplets.
-                if (_snow is { } snow)
+                if (_snow is { IsWeatherEnabled: true } snow)
                 {
                     snow.Indoors = IsCameraInsideBuilding(eye.Position);
                     snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);

@@ -3,6 +3,19 @@ using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Rendering;
 
+/// <summary>Controls how much runtime diagnostic output is produced.</summary>
+public enum LogVerbosity
+{
+    /// <summary>Write no runtime log messages.</summary>
+    Off,
+
+    /// <summary>Write warnings and failures, but omit normal progress and gameplay diagnostics.</summary>
+    Minimal,
+
+    /// <summary>Write normal progress messages as well as warnings and failures.</summary>
+    Verbose,
+}
+
 /// <summary>
 /// The renderer's console variables.
 /// </summary>
@@ -20,6 +33,13 @@ namespace OpenIGI.Rendering;
 [CVarContainer]
 public static class RenderCVars
 {
+    /// <summary>Runtime logging level. Minimal is intentionally the default for gameplay performance.</summary>
+    public static readonly EnumCVar<OpenIGI.Rendering.LogVerbosity> LogVerbosity = CVar.Choice(
+        "con_log_verbosity",
+        OpenIGI.Rendering.LogVerbosity.Minimal,
+        CVarOptions.Archive,
+        "Runtime log output: off, minimal (warnings/errors), or verbose (normal diagnostics).");
+
     /// <summary>Whether presentation waits for the vertical blank.</summary>
     public static readonly BoolCVar VSync = CVar.Bool(
         "r_vsync",

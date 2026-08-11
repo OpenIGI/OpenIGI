@@ -114,6 +114,9 @@ public sealed class RainRenderer : IDisposable
     /// <summary>Gets a value indicating whether rain rendering is active and visible.</summary>
     public bool IsActive => _active && !_indoors;
 
+    /// <summary>Gets whether rain is enabled before the indoor visibility test.</summary>
+    public bool IsWeatherEnabled => _active;
+
     /// <summary>Gets or sets whether the player/camera is currently indoors (suppressing rain rendering).</summary>
     public bool Indoors
     {

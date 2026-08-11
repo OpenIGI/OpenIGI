@@ -276,10 +276,12 @@ public sealed class RainRendererTests
 
         renderer.ApplySettings(enabled: false, WeatherKind.Rain, speedMultiplier: 1.5f);
         Assert.False(renderer.IsActive);
+        Assert.False(renderer.IsWeatherEnabled);
         Assert.Equal(1.5f, renderer.SpeedMultiplier);
 
         renderer.ApplySettings(enabled: true, WeatherKind.Rain, speedMultiplier: 0.25f);
         Assert.True(renderer.IsActive);
+        Assert.True(renderer.IsWeatherEnabled);
         Assert.Equal(0.25f, renderer.SpeedMultiplier);
     }
 
