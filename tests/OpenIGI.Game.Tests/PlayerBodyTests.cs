@@ -436,6 +436,8 @@ public sealed class PlayerBodyTests
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
         Vector3d ground = player.Position;
         HumanFallImpact? published = null;
+        HumanHealth displayedHealth = new(HumanHitZoneTable.Player, PlayerBody.RetailMaximumHealth);
+        player.UseHealth(displayedHealth);
         player.SetFallImpactSink(impact => published = impact);
 
         // Fifty metres makes the final 30 Hz step much larger than the endpoint probe's 0.4 m origin.
@@ -462,7 +464,8 @@ public sealed class PlayerBodyTests
 
         Assert.NotNull(player.LastFallImpact);
         Assert.Equal("player_fall_3", player.LastFallImpact.Value.SoundName);
-        Assert.True(player.Health.IsDead);
+        Assert.Same(displayedHealth, player.Health);
+        Assert.True(displayedHealth.IsDead);
         Assert.True(player.DamageFlash.IsActive);
         Assert.Equal(player.LastFallImpact, published);
     }

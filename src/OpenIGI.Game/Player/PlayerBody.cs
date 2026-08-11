@@ -1,5 +1,4 @@
 using OpenIGI.Core.Numerics;
-using OpenIGI.Engine.Audio;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Player;
@@ -84,16 +83,25 @@ public sealed class PlayerBody
 
     /// <summary>Gets the player's accumulated damage.</summary>
     /// <remarks>
-    /// The default is retail's three-point player. A modded caller may supply a health object matching
-    /// its own <see cref="Parameters"/> through the initializer.
+    /// The default is retail's three-point player. A composed runtime supplies the health object its HUD
+    /// and death state observe through <see cref="UseHealth"/>.
     /// </remarks>
-    public HumanHealth Health { get; init; } = new(HumanHitZoneTable.Player, RetailMaximumHealth);
+    public HumanHealth Health { get; private set; } = new(HumanHitZoneTable.Player, RetailMaximumHealth);
+
+    /// <summary>Uses the owning runtime's player-health accumulator for fall damage.</summary>
+    /// <param name="health">The same instance the HUD and death state observe.</param>
+    /// <remarks>
+    /// The standalone body owns a retail three-point accumulator by default. A composed game must replace
+    /// it with its live player object so a landing cannot damage a private copy that the HUD never reads.
+    /// </remarks>
+    public void UseHealth(HumanHealth health)
+    {
+        ArgumentNullException.ThrowIfNull(health);
+        Health = health;
+    }
 
     /// <summary>Gets the red full-screen damage wash raised by a damaging landing.</summary>
     public HumanDamageFlash DamageFlash { get; } = new();
-
-    /// <summary>Gets or sets the sound system used to play the three retail landing definitions.</summary>
-    public SoundSystem? Sounds { get; set; }
 
     /// <summary>Gets the most recently processed landing, or <see langword="null"/> before the first.</summary>
     public HumanFallImpact? LastFallImpact { get; private set; }
@@ -617,11 +625,6 @@ public sealed class PlayerBody
         }
 
         LastFallImpact = impact;
-        if (!string.IsNullOrEmpty(impact.SoundName))
-        {
-            Sounds?.PlayDefinition(impact.SoundName, Position);
-        }
-
         _fallImpactSink?.Invoke(impact);
     }
 

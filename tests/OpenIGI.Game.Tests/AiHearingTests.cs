@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -134,6 +135,29 @@ public sealed class AiHearingTests
 
         Assert.False(soldier.ReceiveGroundImpact(default, default));
         Assert.Equal(0, soldier.Events.PendingCount(AiEvent.GroundImpact));
+    }
+
+    [Fact]
+    public void DamagingFallImpactUsesTheRetailTenMetreRadius()
+    {
+        Vector3d feet = new(10_000, 20_000, 30_000);
+        Vector3d impact = Away(feet, HumanFallDamage.DamagingImpactHearingRadiusUnits);
+        AiSoldier soldier = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+
+        Assert.True(soldier.ReceiveGroundImpact(
+            impact,
+            shooterPosition: impact,
+            HumanFallDamage.DamagingImpactHearingRadiusUnits));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.GroundImpact);
+        Assert.NotNull(queued);
+        Assert.Equal(HumanFallDamage.DamagingImpactHearingRadiusUnits, queued.Value.Radius);
+
+        AiSoldier outside = new(graph: null, feet, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveGroundImpact(
+            Away(feet, HumanFallDamage.DamagingImpactHearingRadiusUnits + 1),
+            shooterPosition: impact,
+            HumanFallDamage.DamagingImpactHearingRadiusUnits));
     }
 
     private static Vector3d Away(Vector3d from, double units) => new(from.X + units, from.Y, from.Z);
