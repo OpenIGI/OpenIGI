@@ -259,6 +259,7 @@ public sealed class PlayerBody
             HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, false, IsCrouched, Walls);
             next = swept.Destination;
             TouchedWall = swept.TouchedWall;
+            ApplyOverhangResponse(swept);
         }
         else
         {
@@ -404,6 +405,7 @@ public sealed class PlayerBody
             HumanWallSweepResult swept = HumanWallSweep.Sweep(Position, next, IsGrounded, IsCrouched, Walls);
             next = swept.Destination;
             TouchedWall = swept.TouchedWall;
+            ApplyOverhangResponse(swept);
         }
         else
         {
@@ -647,11 +649,30 @@ public sealed class PlayerBody
         Health.ApplyDirect(HumanDamage.FrontZone, impact.Damage);
         if (impact.Damage > 0f)
         {
-            DamageFlash.Hit();
+            // A fall has no incoming shot direction. Keep #46's full, even wash while using #48's
+            // directional API; the zero vector is the flash type's explicit explosion/fall route.
+            DamageFlash.Hit(Vector3f.Zero, 1f);
         }
 
         LastFallImpact = impact;
         _fallImpactSink?.Invoke(impact);
+    }
+
+    /// <summary>Applies the velocity writes 0x461A70 makes when its high probe meets an obstruction.</summary>
+    /// <param name="sweep">The sweep that supplied the high-probe result.</param>
+    private void ApplyOverhangResponse(HumanWallSweepResult sweep)
+    {
+        if (!sweep.StoppedByOverhang)
+        {
+            return;
+        }
+
+        // The retail high-hit branch always clears +1644 (vertical airborne motion), and clears
+        // +1636/+1640 only when the contacted normal is not a directly downward ceiling normal.
+        Velocity = new Vector3f(
+            sweep.CancelledHorizontalMotion ? 0f : Velocity.X,
+            sweep.CancelledHorizontalMotion ? 0f : Velocity.Y,
+            0f);
     }
 
     /// <summary>How far a placement search looks below its start, in world units.</summary>
