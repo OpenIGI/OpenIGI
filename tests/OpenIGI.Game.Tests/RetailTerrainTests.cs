@@ -313,6 +313,41 @@ public sealed class RetailTerrainTests
     }
 
     [RequiresGameDataFact]
+    public void MissionThreeRemovesTerrainOverTheAmmunitionBuildingRamp()
+    {
+        Harness harness = Harness.Create();
+        (TerrainData terrain, TerrainSurface surface, _) = harness.LoadMission(3);
+
+        // Mission 3's TerrainDiscards container declares fourteen cubes. This level-15 one contains the
+        // ammunition building's entrance and is the sheet of ground that otherwise covers its ramp.
+        Assert.Equal(14, surface.Discards.Count);
+        TerrainDiscardRegion ramp = Assert.Single(
+            surface.Discards,
+            discard => discard.Contains(23749052, -55320144, 174413136));
+        Assert.Equal(15, ramp.Level);
+
+        Vector3d centre = new(
+            (ramp.MinX + ramp.MaxX) * 0.5,
+            (ramp.MinY + ramp.MaxY) * 0.5,
+            (ramp.MinZ + ramp.MaxZ) * 0.5);
+        Camera3D camera = new(
+            new Vector3d(
+                centre.X,
+                centre.Y - (25.0 * WorldScene.UnitsPerMetre),
+                centre.Z + (15.0 * WorldScene.UnitsPerMetre)),
+            Camera3D.LookRotation(0f, -0.45f));
+        TerrainView view = TerrainView.FromPerspective(camera, 1.2f, 16f / 9f);
+
+        List<TerrainChunk> unmasked = [];
+        TerrainTraversal.Collect(terrain.Octree, view, unmasked);
+        Assert.Contains(unmasked, chunk => ramp.IntersectsCube(chunk.Position, chunk.Extent));
+
+        List<TerrainChunk> masked = [];
+        TerrainTraversal.Collect(terrain.Octree, view, masked, surface.Discards);
+        Assert.DoesNotContain(masked, chunk => ramp.IntersectsCube(chunk.Position, chunk.Extent));
+    }
+
+    [RequiresGameDataFact]
     public void EveryTileATileMapNamesExistsInTheLevelsAtlas()
     {
         Harness harness = Harness.Create();

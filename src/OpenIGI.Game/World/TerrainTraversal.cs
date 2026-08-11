@@ -5,8 +5,8 @@ namespace OpenIGI.Game.World;
 
 /// <summary>
 /// The terrain octree descent: <c>sub_4D14E0</c>. Walks <c>terrain.ctr</c> from the camera, culls what
-/// the frustum misses, and emits one <see cref="TerrainChunk"/> per node that is the coarsest detail
-/// good enough at its distance.
+/// the frustum misses, applies the level's <c>DiscardTerrain</c> cubes, and emits one
+/// <see cref="TerrainChunk"/> per node that is the coarsest detail good enough at its distance.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,9 +17,10 @@ namespace OpenIGI.Game.World;
 /// including the arithmetic shifts, because culling decisions have to match at the boundary.
 /// </para>
 /// <para>
-/// The original's descent also drives the object and sector lists that share the tree; that half is not
-/// reproduced here. It changes nothing about which terrain chunks come out — the two only interact
-/// through a branch that descends further for objects than terrain alone would need.
+/// The original's descent also drives the object and sector lists that share the tree. Most of that half
+/// is not reproduced here, but <c>DiscardTerrain</c> is: its area proxy forces descent to the authored
+/// level, then its handler clears the matching node's terrain mask. Ignoring that interaction draws a
+/// coarse terrain sheet over intentionally exposed model geometry such as mission 3's ammunition ramp.
 /// </para>
 /// </remarks>
 public static class TerrainTraversal
@@ -41,6 +42,7 @@ public static class TerrainTraversal
     /// <param name="tree">The level's octree.</param>
     /// <param name="view">The camera and its frustum.</param>
     /// <param name="chunks">Receives the chunks; cleared first.</param>
+    /// <param name="discards">The level's authored terrain holes, or <see langword="null"/> for none.</param>
     /// <returns>What the descent did.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
@@ -48,7 +50,11 @@ public static class TerrainTraversal
     /// child index is re-checked here. That is a deliberate divergence — the original trusts the file and
     /// would follow a dangling link into whatever follows it in memory.
     /// </remarks>
-    public static TerrainTraversalResult Collect(TerrainOctree tree, in TerrainView view, List<TerrainChunk> chunks)
+    public static TerrainTraversalResult Collect(
+        TerrainOctree tree,
+        in TerrainView view,
+        List<TerrainChunk> chunks,
+        IReadOnlyList<TerrainDiscardRegion>? discards = null)
     {
         ArgumentNullException.ThrowIfNull(tree);
         ArgumentNullException.ThrowIfNull(chunks);
@@ -77,7 +83,13 @@ public static class TerrainTraversal
         // The root is centred on the world origin, so the accumulators start at minus the camera.
         Vector3i world = new((int)-cameraX, (int)-cameraY, (int)-cameraZ);
 
-        var state = new State(tree, view, chunks, new Vector3i((int)cameraX, (int)cameraY, (int)cameraZ), octants);
+        var state = new State(
+            tree,
+            view,
+            chunks,
+            discards ?? Array.Empty<TerrainDiscardRegion>(),
+            new Vector3i((int)cameraX, (int)cameraY, (int)cameraZ),
+            octants);
 
         Descend(ref state, TerrainOctree.RootIndex, TerrainOrientation.Identity, 0, world, view.SlackX, view.SlackY);
 
@@ -168,6 +180,32 @@ public static class TerrainTraversal
                 continue;
             }
 
+            Vector3d childCentre = new(
+                state.Camera.X + childWorld.X,
+                state.Camera.Y + childWorld.Y,
+                state.Camera.Z + childWorld.Z);
+
+            bool discarded = false;
+            bool refineForDiscard = false;
+            foreach (TerrainDiscardRegion discard in state.Discards)
+            {
+                if (discard.ContainsCube(childCentre, extent))
+                {
+                    discarded = true;
+                    break;
+                }
+
+                if (childDepth < discard.Level && discard.IntersectsCube(childCentre, extent))
+                {
+                    refineForDiscard = true;
+                }
+            }
+
+            if (discarded)
+            {
+                continue;
+            }
+
             // Chebyshev distance to the chunk's near face, scaled down by its own size: the coarser the
             // chunk, the further it may be before it stops being worth resolving further.
             int reach = Math.Max(Math.Abs(childWorld.X), Math.Max(Math.Abs(childWorld.Y), Math.Abs(childWorld.Z)));
@@ -175,7 +213,7 @@ public static class TerrainTraversal
 
             int childOrientation = TerrainOrientation.Compose(orientation, node.Orientation(slot) & 7);
 
-            if (detail < state.View.ViewDistance && childDepth < MaximumExponent)
+            if ((refineForDiscard || detail < state.View.ViewDistance) && childDepth < MaximumExponent)
             {
                 Descend(ref state, child, childOrientation, childDepth, childWorld, slackX, slackY);
                 continue;
@@ -193,10 +231,7 @@ public static class TerrainTraversal
             }
 
             state.Chunks.Add(new TerrainChunk(
-                new Vector3d(
-                    state.Camera.X + childWorld.X,
-                    state.Camera.Y + childWorld.Y,
-                    state.Camera.Z + childWorld.Z),
+                childCentre,
                 childDepth,
                 childOrientation,
                 state.Tree[child].CommandOffset));
@@ -227,12 +262,14 @@ public static class TerrainTraversal
         TerrainOctree tree,
         in TerrainView view,
         List<TerrainChunk> chunks,
+        IReadOnlyList<TerrainDiscardRegion> discards,
         Vector3i camera,
         Span<Octant> octants)
     {
         public readonly TerrainOctree Tree = tree;
         public readonly TerrainView View = view;
         public readonly List<TerrainChunk> Chunks = chunks;
+        public readonly IReadOnlyList<TerrainDiscardRegion> Discards = discards;
         public readonly Vector3i Camera = camera;
         public readonly Span<Octant> Octants = octants;
         public int Dropped;
