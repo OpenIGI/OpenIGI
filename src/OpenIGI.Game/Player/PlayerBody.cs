@@ -647,7 +647,9 @@ public sealed class PlayerBody
         Health.ApplyDirect(HumanDamage.FrontZone, impact.Damage);
         if (impact.Damage > 0f)
         {
-            DamageFlash.Hit();
+            // A fall has no incoming shot direction. Keep the full, even flash while using the
+            // directional API; the zero vector is the explicit explosion/fall route.
+            DamageFlash.Hit(Vector3f.Zero, 1f);
         }
 
         LastFallImpact = impact;

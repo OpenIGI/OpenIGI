@@ -1342,7 +1342,7 @@ internal sealed partial class DesktopGame
 
         // PlayerBody has already added the direct, difficulty-independent dose to the shared health.
         // Raise the desktop wash that the render pass actually draws rather than the body's standalone one.
-        _damageFlash.Hit();
+        _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
         _logger.Information(
             "Player",
             $"Fall impact {impact.SpeedMetresPerSecond:F2} m/s dealt {impact.Damage:F3} "
