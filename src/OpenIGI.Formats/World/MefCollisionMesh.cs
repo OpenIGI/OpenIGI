@@ -34,9 +34,11 @@ public readonly record struct MefCollisionSphere(Vector3f Centre, float Radius, 
 /// </summary>
 /// <remarks>
 /// <para>
-/// Four chunks, headed by <c>HSMC</c>, whose 64-byte payload opens with the four counts and is zero
-/// after them. Every stride below was checked against <b>all 254</b> collision meshes in level 1's
-/// packs, with no mismatch — the counts and the chunk lengths agree exactly everywhere.
+/// Four chunk groups, headed by <c>HSMC</c>. Its 64-byte payload holds two 32-byte
+/// <c>MultiMesh_Mesh_t</c> headers, one for each collision mesh level. A non-empty level has its own
+/// <c>ECFC</c>, <c>XTVC</c>, <c>TAMC</c>, and <c>HPSC</c> chunk, in level order. Every stride below was
+/// checked against level 1's retail packs, with no mismatch — the counts and the chunk lengths agree
+/// exactly everywhere.
 /// </para>
 /// <list type="table">
 /// <item><term><c>ECFC</c></term><description>faces, <b>8</b> bytes: four <c>u16</c></description></item>
@@ -53,8 +55,14 @@ public readonly record struct MefCollisionSphere(Vector3f Centre, float Radius, 
 /// </remarks>
 public sealed class MefCollisionMesh
 {
-    /// <summary>The header's size, of which only the first four dwords are used.</summary>
+    /// <summary>The HSMC header's size: two 32-byte <c>MultiMesh_Mesh_t</c> records.</summary>
     public const int HeaderSize = 64;
+
+    /// <summary>Bytes occupied by one collision-level header.</summary>
+    public const int MeshHeaderSize = 32;
+
+    /// <summary>How many collision mesh levels an HSMC header carries.</summary>
+    public const int MeshLevels = HeaderSize / MeshHeaderSize;
 
     /// <summary>Bytes per face.</summary>
     public const int FaceStride = 8;
@@ -131,15 +139,28 @@ public sealed class MefCollisionMesh
     /// <remarks><c>2 × faces − 1</c>, which holds for every shipped mesh.</remarks>
     public bool SphereCountIsBinaryTree => Faces.Count > 0 && Spheres.Count == (2 * Faces.Count) - 1;
 
-    /// <summary>Reads a model's collision mesh, if it carries one.</summary>
+    /// <summary>Reads collision mesh level zero from a model, if it carries one.</summary>
     /// <param name="container">The model's chunks.</param>
     /// <param name="mesh">Receives the mesh.</param>
     /// <returns><see langword="false"/> when the model has no collision geometry, which is not an error.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
     /// <exception cref="PackFormatException">A chunk's length disagrees with the header's count.</exception>
     public static bool TryRead(IlffContainer container, out MefCollisionMesh? mesh)
+        => TryRead(container, meshIndex: 0, out mesh);
+
+    /// <summary>Reads one collision mesh level from a model, if it carries one.</summary>
+    /// <param name="container">The model's chunks.</param>
+    /// <param name="meshIndex">The retail <c>iMesh</c> collision level: zero or one.</param>
+    /// <param name="mesh">Receives the mesh.</param>
+    /// <returns><see langword="false"/> when that level has no collision geometry.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="meshIndex"/> is not a declared mesh level.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
+    /// <exception cref="PackFormatException">A chunk's length disagrees with the header's count.</exception>
+    public static bool TryRead(IlffContainer container, int meshIndex, out MefCollisionMesh? mesh)
     {
         ArgumentNullException.ThrowIfNull(container);
+        ArgumentOutOfRangeException.ThrowIfNegative(meshIndex);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(meshIndex, MeshLevels);
         mesh = null;
 
         if (!container.TryFindChunk(MefTags.CollisionMesh, out IlffChunk header) || header.Payload.Length == 0)
@@ -148,26 +169,27 @@ public sealed class MefCollisionMesh
         }
 
         ReadOnlySpan<byte> head = header.Payload.Span;
-        if (head.Length < 16)
+        if (head.Length < HeaderSize)
         {
             throw new PackFormatException(
-                $"The '{MefTags.CollisionMesh}' chunk is {head.Length} bytes, too short for its four counts.");
+                $"The '{MefTags.CollisionMesh}' chunk is {head.Length} bytes, too short for its {HeaderSize}-byte mesh-level headers.");
         }
 
-        int faceCount = BinaryPrimitives.ReadInt32LittleEndian(head);
-        int vertexCount = BinaryPrimitives.ReadInt32LittleEndian(head[4..]);
-        int materialCount = BinaryPrimitives.ReadInt32LittleEndian(head[8..]);
-        int sphereCount = BinaryPrimitives.ReadInt32LittleEndian(head[12..]);
+        ReadOnlySpan<byte> meshHeader = head.Slice(meshIndex * MeshHeaderSize, MeshHeaderSize);
+        int faceCount = BinaryPrimitives.ReadInt32LittleEndian(meshHeader);
+        int vertexCount = BinaryPrimitives.ReadInt32LittleEndian(meshHeader[4..]);
+        int materialCount = BinaryPrimitives.ReadInt32LittleEndian(meshHeader[8..]);
+        int sphereCount = BinaryPrimitives.ReadInt32LittleEndian(meshHeader[12..]);
 
         if (faceCount == 0 && vertexCount == 0)
         {
             return false;
         }
 
-        ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, faceCount, FaceStride);
-        ReadOnlySpan<byte> vertexBytes = Payload(container, MefTags.CollisionVertices, vertexCount, VertexStride);
-        ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, sphereCount, SphereStride);
-        ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, materialCount, MaterialStride);
+        ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, meshIndex, faceCount, FaceStride);
+        ReadOnlySpan<byte> vertexBytes = Payload(container, MefTags.CollisionVertices, meshIndex, vertexCount, VertexStride);
+        ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, meshIndex, sphereCount, SphereStride);
+        ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, meshIndex, materialCount, MaterialStride);
 
         // The material rows' one field the collision needs: iPortal (u16 at offset 4). A doorway or
         // window opening is closed by a portal polygon whose material carries a portal index here; the
@@ -222,24 +244,39 @@ public sealed class MefCollisionMesh
         return true;
     }
 
-    private static ReadOnlySpan<byte> Payload(IlffContainer container, FourCc tag, int count, int stride)
+    private static ReadOnlySpan<byte> Payload(IlffContainer container, FourCc tag, int meshIndex, int count, int stride)
     {
         if (count == 0)
         {
             return default;
         }
 
-        if (!container.TryFindChunk(tag, out IlffChunk chunk))
+        int currentIndex = 0;
+        foreach (IlffChunk candidate in container.Chunks)
         {
-            throw new PackFormatException($"The collision header declares {count} '{tag}' records but the chunk is missing.");
+            if (candidate.Id != tag)
+            {
+                continue;
+            }
+
+            if (currentIndex++ == meshIndex)
+            {
+                return ValidatePayload(candidate, tag, meshIndex, count, stride);
+            }
         }
 
+        throw new PackFormatException(
+            $"The collision mesh level {meshIndex} declares {count} '{tag}' records but that level's chunk is missing.");
+    }
+
+    private static ReadOnlySpan<byte> ValidatePayload(IlffChunk chunk, FourCc tag, int meshIndex, int count, int stride)
+    {
         ReadOnlySpan<byte> span = chunk.Payload.Span;
         int needed = count * stride;
         if (span.Length != needed)
         {
             throw new PackFormatException(
-                $"The '{tag}' chunk is {span.Length} bytes but {count} records at a {stride}-byte stride need {needed}.");
+                $"The level {meshIndex} '{tag}' chunk is {span.Length} bytes but {count} records at a {stride}-byte stride need {needed}.");
         }
 
         return span;

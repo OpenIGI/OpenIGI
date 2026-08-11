@@ -546,7 +546,7 @@ public sealed class PlayerCamera
     {
         ArgumentNullException.ThrowIfNull(walls);
         _walls = walls;
-        _body.Walls = walls.Caster();
+        _body.Walls = walls.PlayerCaster();
     }
 
     /// <summary>Gives the player the tuning <c>humanplayer.qvm</c> publishes.</summary>
