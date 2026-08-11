@@ -1164,14 +1164,14 @@ internal sealed partial class DesktopGame
         _impactParticles?.Dispose();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
-        _sky?.Dispose();
+        _arms?.Dispose();
         _sky = null;
         _rain?.Dispose();
         _rain = null;
         _snow?.Dispose();
         _snow = null;
         _rainBuildingVolumes = [];
-        _terrain?.Dispose();
+        _terrain = null;
         _world = null;
         _soldiers = null;
         _backdropSoldiers = null;
