@@ -1731,12 +1731,18 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             Math.Clamp(post.CameraTaps, 1, 16));
 
         _cameraFrame = (_cameraFrame + 1) & 63;
+        // The motion attachment belongs to the deferred G-buffer. In the non-deferred offscreen path
+        // the handle is zero, so binding it would make the shader read the backend's fallback texture
+        // as a full-screen velocity field. That turns a small motion-blur setting into an unstable smear
+        // across the whole level. Depth-of-field still works from the shared depth attachment; only the
+        // motion component must be gated by the buffer that actually exists.
+        float motionBlur = target.Description.Deferred ? post.MotionBlur : 0f;
         _cameraProgram.SetVector3(
             _cameraMotionBlur,
 
             // Nothing to reproject against on the very first frame, and a reprojection against an
             // identity matrix would smear the whole picture in one direction.
-            hasPreviousFrame ? Math.Clamp(post.MotionBlur, 0f, 1f) : 0f,
+            hasPreviousFrame ? Math.Clamp(motionBlur, 0f, 1f) : 0f,
 
             // A hard ceiling in pixels, so one very fast object cannot smear across the frame -- and
             // cannot cost a thousand taps doing it.

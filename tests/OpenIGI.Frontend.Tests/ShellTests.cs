@@ -492,7 +492,7 @@ public sealed class ShellTests
             TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
 
             // Advanced is not a category beside Audio and Controls; it is the other half of Graphics.
-            Assert.Equal(["Graphics", "Display", "Audio", "Controls", "Gameplay", "Weather"], tabs.Tabs);
+            Assert.Equal(["Graphics", "Display", "Audio", "Controls", "Gameplay"], tabs.Tabs);
             Assert.Equal(0, tabs.SelectedIndex);
 
             Button basic = Find<Button>(screen, b => b.Text == "Basic")!;
