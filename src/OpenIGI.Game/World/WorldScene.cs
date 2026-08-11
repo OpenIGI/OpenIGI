@@ -983,9 +983,15 @@ public sealed class WorldScene
             // lightmap numbering already counted it, and its own children may well be instances.
             if (byName.TryGetValue(child.Name, out (MtpInstance Instance, LoadedPack Pack, MefModel Model) bound))
             {
+                // The attachment draws in the rebuilt right-handed frame sub_4DFA50 builds, which after the
+                // model-to-world axis conversion is the ATTA orientation's transpose — the same childTaskOrientation
+                // the ladder task frame uses (and the reference editor's attLocalRot = R_row^T). The old draw
+                // frame dropped the transpose, which put attached sub-meshes such as a building's windows on the
+                // wrong side of their parent. The ladder's climb line keeps the non-transposed draw frame: its
+                // magic-vertex positions were pinned to the retail game's climb line.
                 placements.Add(new WorldPlacement(
                     childPosition,
-                    childDrawOrientation,
+                    childTaskOrientation,
                     bound.Instance,
                     bound.Pack,
                     bound.Model,
