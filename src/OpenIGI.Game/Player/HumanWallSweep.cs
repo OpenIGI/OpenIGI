@@ -7,7 +7,14 @@ namespace OpenIGI.Game.Player;
 /// <param name="Destination">Where the body ends up, in world units.</param>
 /// <param name="TouchedWall">Whether a wall was met — the flag <c>0x8</c> the original raises.</param>
 /// <param name="Checks">How many casts it took; <b>0x461A70</b> gives up after ten.</param>
-public readonly record struct HumanWallSweepResult(Vector3d Destination, bool TouchedWall, int Checks);
+public readonly record struct HumanWallSweepResult(Vector3d Destination, bool TouchedWall, int Checks)
+{
+    /// <summary>Gets whether the high probe clamped the human below an obstruction.</summary>
+    public bool StoppedByOverhang { get; init; }
+
+    /// <summary>Gets whether the high-probe branch also cleared horizontal airborne motion.</summary>
+    public bool CancelledHorizontalMotion { get; init; }
+}
 
 /// <summary>
 /// Slides a human along the walls in its way — <c>0x461A70</c>, transcribed.
@@ -32,11 +39,10 @@ public readonly record struct HumanWallSweepResult(Vector3d Destination, bool To
 /// airborne, all three are live. See <see cref="HumanWallProbe.ActiveProbes"/>.
 /// </para>
 /// <para>
-/// <b>What is here and what is not.</b> The wall response is the whole of this function's wall
-/// handling. Two further branches of <c>0x461A70</c> are read but not driven from here: a mid-air snap
-/// onto a near-perfect floor (<c>normal.z &gt; 0.9999</c>), and a head-bump that pushes the body down
-/// when the high ray meets an overhang. Both overlap the ground query <c>0x462390</c>, which the port
-/// answers from the terrain octree instead. Recorded in <c>collision.md</c>.
+/// The same cast also handles the two airborne cases that are not walls: the low probe snaps a falling
+/// human to an almost perfectly upward-facing object surface, and the high probe keeps a jump below an
+/// overhang. Those use the raw hit from their respective probes; neither is a substitute for the normal
+/// wall slide.
 /// </para>
 /// </remarks>
 public static class HumanWallSweep
@@ -76,6 +82,8 @@ public static class HumanWallSweep
         (int first, int count) = HumanWallProbe.ActiveProbes(grounded);
 
         bool touchedWall = false;
+        bool stoppedByOverhang = false;
+        bool cancelledHorizontalMotion = false;
         int checks = 0;
 
         while (true)
@@ -102,13 +110,33 @@ public static class HumanWallSweep
             double nearest = double.MaxValue;
             Vector3d wallPoint = default;
             Vector3f wallNormal = default;
+            WorldRayHit lowHit = default;
+            WorldRayHit highHit = default;
+            bool hitLow = false;
+            bool hitHigh = false;
 
             for (int i = first; i < first + count; i++)
             {
                 Vector3d origin = new(start.X, start.Y, start.Z + heights[i]);
                 Vector3d end = new(origin.X + extended.X, origin.Y + extended.Y, origin.Z + extended.Z);
 
-                if (!cast(origin, end, out WorldRayHit probe) || !HumanWallProbe.IsWall(probe.Normal))
+                if (!cast(origin, end, out WorldRayHit probe))
+                {
+                    continue;
+                }
+
+                if (i == 0)
+                {
+                    lowHit = probe;
+                    hitLow = true;
+                }
+                else if (i == 2)
+                {
+                    highHit = probe;
+                    hitHigh = true;
+                }
+
+                if (!HumanWallProbe.IsWall(probe.Normal))
                 {
                     continue;
                 }
@@ -122,6 +150,39 @@ public static class HumanWallSweep
                 wallPoint = probe.Position;
                 wallNormal = HumanWallProbe.Flatten(probe.Normal);
                 haveWall = true;
+            }
+
+            // Airborne low-probe landing: 0x461A70 accepts only a near-perfect upward normal. This
+            // catches a thin object floor crossed during a large fall, which a later endpoint-only
+            // ground query has already passed through.
+            if (!grounded
+                && !haveWall
+                && hitLow
+                && HumanWallProbe.UnitZ(lowHit.Normal) > 0.99989998f)
+            {
+                destination = new Vector3d(
+                    lowHit.Position.X,
+                    lowHit.Position.Y,
+                    lowHit.Position.Z - heights[0]);
+            }
+
+            // The high probe is the head-bump pass. A surface directly above the human places the
+            // feet one skin width below it; a non-ceiling contact also takes the hit's horizontal
+            // point, exactly as the retail branch does before it clears the motion accumulators.
+            if (!grounded && !haveWall && hitHigh)
+            {
+                cancelledHorizontalMotion = HumanWallProbe.UnitZ(highHit.Normal) >= -0.99989998f;
+                if (cancelledHorizontalMotion)
+                {
+                    destination = new Vector3d(highHit.Position.X, highHit.Position.Y, destination.Z);
+                }
+
+                destination = new Vector3d(
+                    destination.X,
+                    destination.Y,
+                    highHit.Position.Z - heights[2] - SkinInUnits);
+                stoppedByOverhang = true;
+                break;
             }
 
             if (!haveWall)
@@ -147,10 +208,18 @@ public static class HumanWallSweep
             // tight enough to need an eleventh is one the original refuses to enter.
             if (checks > HumanWallProbe.MaximumIterations)
             {
-                return new HumanWallSweepResult(start, touchedWall, checks);
+                return new HumanWallSweepResult(start, touchedWall, checks)
+                {
+                    StoppedByOverhang = stoppedByOverhang,
+                    CancelledHorizontalMotion = cancelledHorizontalMotion,
+                };
             }
         }
 
-        return new HumanWallSweepResult(destination, touchedWall, checks);
+        return new HumanWallSweepResult(destination, touchedWall, checks)
+        {
+            StoppedByOverhang = stoppedByOverhang,
+            CancelledHorizontalMotion = cancelledHorizontalMotion,
+        };
     }
 }

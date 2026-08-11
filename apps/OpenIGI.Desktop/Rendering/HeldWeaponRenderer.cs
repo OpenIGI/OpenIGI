@@ -50,11 +50,12 @@ public enum WeaponDrawParts
 /// world objects. Effect tasks are driven separately by the weapon state and are not rigid parts.
 /// </para>
 /// <para>
-/// It draws into the ordinary depth buffer, as <c>0x4644A0</c> does — no clear, no separate near pass.
-/// The consequence is that standing face-on to a wall can bury the blade in it, because the original
-/// keeps the weapon clear by pushing the <i>eye</i> back with the multi-ray probe in <c>0x464BD0</c>,
-/// and that probe is not built. Clearing depth here would hide the missing probe rather than leave it
-/// visible.
+/// It remains in the ordinary depth buffer, but not in the world's depth range. The retail view-model
+/// renderer (<c>0x49F700</c>) selects transform layer zero; <c>0x493580</c> gives it a 204.8-unit near
+/// plane instead of the world's 409.6. <see cref="ViewModelProjection"/> reproduces that 0.05 m foreground
+/// range, while <see cref="ViewModelDepth"/> starts the rig with fresh depth. The weapon therefore keeps
+/// normal arm-and-weapon self-occlusion without a close wall cutting through it. The physical wall pullback
+/// still determines where the model rests.
 /// </para>
 /// </remarks>
 public sealed class HeldWeaponRenderer : IDisposable

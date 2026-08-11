@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -176,6 +177,33 @@ public sealed class RetailHumanViewTests
         Assert.Equal(hold.X, view.Position.X, 3);
         Assert.Equal(hold.Y, view.Position.Y, 3);
         Assert.Equal(hold.Z, view.Position.Z, 3);
+    }
+
+    [RequiresGameDataFact]
+    public void TheWallProbePullsBackTheRigWithoutMovingTheEye()
+    {
+        HumanView view = new(ViewSet())
+        {
+            Eye = new Vector3d(1000d, 2000d, 3000d),
+            EyeOrientation = Matrix3f.Identity,
+        };
+
+        WorldRayCast wall = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            Assert.Equal(view.Eye, origin);
+            Assert.Equal(view.Eye.Y + HumanViewWallPullback.ProbeDistanceInUnits, end.Y, 3);
+            hit = new WorldRayHit(
+                new Vector3d(origin.X, origin.Y + 1024d, origin.Z),
+                new Vector3f(0f, -1f, 0f),
+                1024d);
+            return true;
+        };
+
+        view.TickWallPullback(wall);
+
+        Assert.Equal(-HumanViewWallPullback.PullInStepInUnits, view.WallPullbackInUnits, 5);
+        Assert.Equal(2000d - HumanViewWallPullback.PullInStepInUnits, view.Position.Y, 5);
+        Assert.Equal(new Vector3d(1000d, 2000d, 3000d), view.Eye);
     }
 
     [RequiresGameDataFact]

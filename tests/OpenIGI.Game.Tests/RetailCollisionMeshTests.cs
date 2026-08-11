@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -10,6 +11,22 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailCollisionMeshTests
 {
+    [RequiresGameDataFact]
+    public void TheReportedFenceCarriesDistinctRetailCollisionLevels()
+    {
+        WorldPlacement fence = RetailLevelOneGround.Scene().Placements
+            .First(placement => placement.Instance.Name == "303_01_1");
+
+        Assert.True(MefCollisionMesh.TryRead(fence.Model.Container, meshIndex: 0, out MefCollisionMesh? levelZero));
+        Assert.True(MefCollisionMesh.TryRead(fence.Model.Container, meshIndex: 1, out MefCollisionMesh? levelOne));
+
+        Assert.Equal(32, levelZero!.Faces.Count);
+        Assert.Equal(24, levelZero.Vertices.Count);
+        Assert.Equal(16, levelOne!.Faces.Count);
+        Assert.Equal(10, levelOne.Vertices.Count);
+        Assert.Equal(1, levelOne.Materials);
+    }
+
     [RequiresGameDataFact]
     public void EveryCollisionMeshInLevelOneReadsAndItsCountsAgree()
     {

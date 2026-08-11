@@ -20,6 +20,28 @@ public sealed class RetailObjectCollisionTests
     private const double UnitsPerMetre = 4096.0;
 
     [RequiresGameDataFact]
+    public void RetailPlayerCollisionLodBlocksTheReportedCabinAndFenceGap()
+    {
+        // The player's recorded DEBUG TELEMETRY position in the cabin/fence pocket. The user can enter
+        // it through this approach with level zero, but retail 0x461A70 gives World_TraceLines iMesh=1.
+        Vector3d pocket = new(24387108, -56227905, 174413141);
+        Vector3d approach = new(
+            pocket.X - (3.0 * UnitsPerMetre),
+            pocket.Y - (0.5 * UnitsPerMetre),
+            pocket.Z);
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build(RetailLevelOneGround.Scene().Placements);
+
+        HumanWallSweepResult levelZero = HumanWallSweep.Sweep(
+            approach, pocket, grounded: true, crouching: false, index.Caster());
+        HumanWallSweepResult retailPlayer = HumanWallSweep.Sweep(
+            approach, pocket, grounded: true, crouching: false, index.PlayerCaster());
+
+        Assert.InRange(Distance(levelZero.Destination, pocket), 0.0, 0.01 * UnitsPerMetre);
+        Assert.True(retailPlayer.TouchedWall, "retail's player collision LOD must reject the pocket approach");
+        Assert.InRange(Distance(retailPlayer.Destination, pocket), 1.3 * UnitsPerMetre, 1.4 * UnitsPerMetre);
+    }
+
+    [RequiresGameDataFact]
     public void LevelOnePlacesHundredsOfSolidObjects()
     {
         ObjectCollisionIndex index = Index();
@@ -246,4 +268,12 @@ public sealed class RetailObjectCollisionTests
     }
 
     private static ObjectCollisionIndex Index() => ObjectCollisionIndex.Build(RetailLevelOneGround.Scene().Placements);
+
+    private static double Distance(Vector3d left, Vector3d right)
+    {
+        double x = left.X - right.X;
+        double y = left.Y - right.Y;
+        double z = left.Z - right.Z;
+        return Math.Sqrt((x * x) + (y * y) + (z * z));
+    }
 }

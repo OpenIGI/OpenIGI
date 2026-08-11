@@ -31,36 +31,63 @@ namespace OpenIGI.Game.World;
 public sealed class ObjectCollisionIndex
 {
     private readonly Entry[] _entries;
+    private readonly Entry[] _playerEntries;
     private readonly Dictionary<GameTask, Entry[]> _entriesByOwner;
-    private readonly Dictionary<WorldPlacement, Entry> _entriesByPlacement;
+    private readonly Dictionary<WorldPlacement, Entry[]> _entriesByPlacement;
 
     // Legacy/manual passability override. Mission doors no longer use it: their collision mesh follows
     // the live task transform through UpdateTransform, including every half-open pose.
     private readonly HashSet<GameTask> _passable = [];
 
-    private ObjectCollisionIndex(Entry[] entries)
+    private ObjectCollisionIndex(Entry[] entries, Entry[] playerEntries)
     {
         _entries = entries;
+        _playerEntries = playerEntries;
         _entriesByOwner = new Dictionary<GameTask, Entry[]>(ReferenceEqualityComparer.Instance);
-        _entriesByPlacement = new Dictionary<WorldPlacement, Entry>(ReferenceEqualityComparer.Instance);
+        _entriesByPlacement = new Dictionary<WorldPlacement, Entry[]>(ReferenceEqualityComparer.Instance);
 
-        Dictionary<GameTask, List<Entry>> grouped = new(ReferenceEqualityComparer.Instance);
+        Dictionary<GameTask, List<Entry>> byOwner = new(ReferenceEqualityComparer.Instance);
+        Dictionary<WorldPlacement, List<Entry>> byPlacement = new(ReferenceEqualityComparer.Instance);
         foreach (Entry entry in entries)
         {
-            if (!grouped.TryGetValue(entry.Owner, out List<Entry>? owned))
-            {
-                owned = [];
-                grouped.Add(entry.Owner, owned);
-            }
-
-            owned.Add(entry);
-            _entriesByPlacement[entry.Placement] = entry;
+            AddEntry(entry, byOwner, byPlacement);
         }
 
-        foreach ((GameTask owner, List<Entry> owned) in grouped)
+        foreach (Entry entry in playerEntries)
+        {
+            AddEntry(entry, byOwner, byPlacement);
+        }
+
+        foreach ((GameTask owner, List<Entry> owned) in byOwner)
         {
             _entriesByOwner.Add(owner, [.. owned]);
         }
+
+        foreach ((WorldPlacement placement, List<Entry> placed) in byPlacement)
+        {
+            _entriesByPlacement.Add(placement, [.. placed]);
+        }
+    }
+
+    private static void AddEntry(
+        Entry entry,
+        Dictionary<GameTask, List<Entry>> byOwner,
+        Dictionary<WorldPlacement, List<Entry>> byPlacement)
+    {
+        if (!byOwner.TryGetValue(entry.Owner, out List<Entry>? owned))
+        {
+            owned = [];
+            byOwner.Add(entry.Owner, owned);
+        }
+
+        owned.Add(entry);
+        if (!byPlacement.TryGetValue(entry.Placement, out List<Entry>? placed))
+        {
+            placed = [];
+            byPlacement.Add(entry.Placement, placed);
+        }
+
+        placed.Add(entry);
     }
 
     /// <summary>Switches a placing task's collision off or back on — an opening or closing door.</summary>
@@ -146,12 +173,16 @@ public sealed class ObjectCollisionIndex
     public bool UpdateTransform(WorldPlacement placement, Vector3d positionMetres, Matrix3f orientation)
     {
         ArgumentNullException.ThrowIfNull(placement);
-        if (!_entriesByPlacement.TryGetValue(placement, out Entry? entry))
+        if (!_entriesByPlacement.TryGetValue(placement, out Entry[]? entries))
         {
             return false;
         }
 
-        entry.UpdateTransform(positionMetres, orientation);
+        foreach (Entry entry in entries)
+        {
+            entry.UpdateTransform(positionMetres, orientation);
+        }
+
         return true;
     }
 
@@ -244,19 +275,21 @@ public sealed class ObjectCollisionIndex
         ArgumentNullException.ThrowIfNull(placements);
 
         List<Entry> entries = [];
-        Dictionary<MefModel, MefCollisionMesh?> cache = [];
+        List<Entry> playerEntries = [];
+        Dictionary<MefModel, (MefCollisionMesh? Default, MefCollisionMesh? Player)> cache = [];
 
         foreach (WorldPlacement placement in placements)
         {
-            if (!cache.TryGetValue(placement.Model, out MefCollisionMesh? mesh))
+            if (!cache.TryGetValue(placement.Model, out var meshes))
             {
-                mesh = MefCollisionMesh.TryRead(placement.Model.Container, out MefCollisionMesh? read) ? read : null;
-                cache[placement.Model] = mesh;
-            }
-
-            if (mesh is null || mesh.Faces.Count == 0)
-            {
-                continue;
+                meshes = (
+                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? readDefaultMesh)
+                        ? readDefaultMesh
+                        : null,
+                    MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 1, out MefCollisionMesh? readPlayerMesh)
+                        ? readPlayerMesh
+                        : null);
+                cache[placement.Model] = meshes;
             }
 
             Vector3d origin = new(
@@ -269,12 +302,22 @@ public sealed class ObjectCollisionIndex
                 ? describedModel
                 : $"{describedModel} [{placement.TaskName}]";
 
-            entries.Add(Entry.Create(
-                mesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
-                placement.Owner, placement));
+            if (meshes.Default is { Faces.Count: > 0 } defaultMesh)
+            {
+                entries.Add(Entry.Create(
+                    defaultMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
+                    placement.Owner, placement));
+            }
+
+            if (meshes.Player is { Faces.Count: > 0 } playerMesh)
+            {
+                playerEntries.Add(Entry.Create(
+                    playerMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
+                    placement.Owner, placement));
+            }
         }
 
-        return new ObjectCollisionIndex([.. entries]);
+        return new ObjectCollisionIndex([.. entries], [.. playerEntries]);
     }
 
     /// <summary>Casts a ray at the placed objects.</summary>
@@ -283,7 +326,16 @@ public sealed class ObjectCollisionIndex
     /// <param name="hit">Receives the nearest contact.</param>
     /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
     public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-        Cast(origin, end, honourPassable: true, out hit);
+        Cast(_entries, origin, end, honourPassable: true, out hit);
+
+    /// <summary>Casts the retail-human object trace.</summary>
+    /// <remarks>
+    /// IGI1's <c>0x461A70</c> calls <c>0x4CDB20</c> with <c>iMesh = 1</c> at <c>0x461D71</c>.
+    /// Human movement therefore follows collision mesh level one, not the default level-zero geometry
+    /// that visibility and ordinary world traces use.
+    /// </remarks>
+    public bool TryCastForPlayer(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        Cast(_playerEntries, origin, end, honourPassable: true, out hit);
 
     /// <summary>Casts a rich request at the indexed placed objects.</summary>
     public bool TryTrace(in WorldTraceRequest request, out WorldTraceHit hit)
@@ -322,7 +374,12 @@ public sealed class ObjectCollisionIndex
                 : WorldTraceMask.StaticObjects;
             if ((request.Mask & category) == 0
                 || !MeetsSphere(request.Origin, direction, entry.Centre, entry.Radius)
-                || !entry.TryCast(request.Origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
+                || !entry.TryCast(
+                    request.Origin,
+                    direction,
+                    ref nearest,
+                    useClosedTransform: false,
+                    out WorldRayHit candidate))
             {
                 continue;
             }
@@ -354,9 +411,9 @@ public sealed class ObjectCollisionIndex
     /// </para>
     /// </remarks>
     public bool TryCastWithDoorsShut(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-        Cast(origin, end, honourPassable: false, out hit);
+        Cast(_entries, origin, end, honourPassable: false, out hit);
 
-    private bool Cast(Vector3d origin, Vector3d end, bool honourPassable, out WorldRayHit hit)
+    private bool Cast(Entry[] entries, Vector3d origin, Vector3d end, bool honourPassable, out WorldRayHit hit)
     {
         hit = default;
 
@@ -371,7 +428,7 @@ public sealed class ObjectCollisionIndex
         double nearest = double.MaxValue;
         bool found = false;
 
-        foreach (Entry entry in _entries)
+        foreach (Entry entry in entries)
         {
             if (GenericPickups?.IsCollected(entry.Owner) == true
                 || (honourPassable
@@ -388,7 +445,12 @@ public sealed class ObjectCollisionIndex
                 continue;
             }
 
-            if (entry.TryCast(origin, direction, ref nearest, useClosedTransform: !honourPassable, out WorldRayHit candidate))
+            if (entry.TryCast(
+                origin,
+                direction,
+                ref nearest,
+                useClosedTransform: !honourPassable,
+                out WorldRayHit candidate))
             {
                 hit = candidate;
                 found = true;
@@ -434,6 +496,9 @@ public sealed class ObjectCollisionIndex
     /// <summary>Gets a cast delegate bound to this index.</summary>
     /// <returns>The delegate the sweep takes.</returns>
     public WorldRayCast Caster() => TryCast;
+
+    /// <summary>Gets the collision-level-one cast retail player movement uses.</summary>
+    public WorldRayCast PlayerCaster() => TryCastForPlayer;
 
     /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
@@ -482,7 +547,12 @@ public sealed class ObjectCollisionIndex
                 continue;
             }
 
-            if (entry.TryCast(origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
+            if (entry.TryCast(
+                origin,
+                direction,
+                ref nearest,
+                useClosedTransform: false,
+                out WorldRayHit candidate))
             {
                 hit = candidate;
                 label = entry.Label;
@@ -670,8 +740,8 @@ public sealed class ObjectCollisionIndex
 
             foreach (MefCollisionFace face in Mesh.Faces)
             {
-                // A portal face is a doorway or window opening, not a wall. The original walks through it;
-                // colliding with it walls off the door. See MefCollisionMesh.IsPortal.
+                // Portal polygons are visibility boundaries, not solid geometry. IGI1's human trace
+                // selects mesh level one but still leaves isTracePortals clear.
                 if (Mesh.IsPortal(face.Material))
                 {
                     continue;

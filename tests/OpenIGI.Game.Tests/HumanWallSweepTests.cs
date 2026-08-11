@@ -135,6 +135,53 @@ public sealed class HumanWallSweepTests
         Assert.True(result.Checks > HumanWallProbe.MaximumIterations);
     }
 
+    [Fact]
+    public void AnAirborneLowProbeLandsOnAThinObjectFloorItCrossed()
+    {
+        // The endpoint is below the floor, so an endpoint-only ground query would miss it. Retail's
+        // low ray crosses it and puts the feet 0.1 m below that collision point.
+        double floor = 2.0 * Metre;
+        WorldRayCast lowFloor = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            if (Math.Abs(origin.Z - (4.0 * Metre + HumanWallProbe.LowProbeInUnits)) > 1e-6)
+            {
+                hit = default;
+                return false;
+            }
+
+            return Cast(origin, end, new Vector3f(0f, 0f, 1f), new Vector3d(0.0, 0.0, floor), double.MinValue, double.MaxValue, out hit);
+        };
+        HumanWallSweepResult result = HumanWallSweep.Sweep(
+            new Vector3d(0.0, 0.0, 4.0 * Metre),
+            new Vector3d(0.0, 0.0, 0.0),
+            false,
+            false,
+            lowFloor);
+
+        Assert.False(result.TouchedWall);
+        Assert.Equal(floor - HumanWallProbe.LowProbeInUnits, result.Destination.Z, 1e-6);
+    }
+
+    [Fact]
+    public void AnAirborneHighProbeStopsAJumpBelowAnOverhang()
+    {
+        double ceiling = 3.0 * Metre;
+        HumanWallSweepResult result = HumanWallSweep.Sweep(
+            new Vector3d(0.0, 0.0, 0.0),
+            new Vector3d(0.0, 0.0, 2.0 * Metre),
+            false,
+            false,
+            Plane(new Vector3f(0f, 0f, -1f), new Vector3d(0.0, 0.0, ceiling)));
+
+        Assert.False(result.TouchedWall);
+        Assert.True(result.StoppedByOverhang);
+        Assert.False(result.CancelledHorizontalMotion);
+        Assert.Equal(
+            ceiling - HumanWallProbe.HighProbeStandingInUnits - HumanWallProbe.SkinInUnits,
+            result.Destination.Z,
+            1e-6);
+    }
+
     private static bool Miss(Vector3d origin, Vector3d end, out WorldRayHit hit)
     {
         hit = default;

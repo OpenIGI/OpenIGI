@@ -74,13 +74,21 @@ public static class HumanWallProbe
     /// <returns><see langword="true"/> when the surface is vertical enough to slide along.</returns>
     public static bool IsWall(Vector3f normal)
     {
-        float length = MathF.Sqrt((normal.X * normal.X) + (normal.Y * normal.Y) + (normal.Z * normal.Z));
-        if (length == 0f)
+        if ((normal.X == 0f) && (normal.Y == 0f) && (normal.Z == 0f))
         {
             return false;
         }
 
-        return MathF.Abs(normal.Z / length) < WallNormalZLimit;
+        return MathF.Abs(UnitZ(normal)) < WallNormalZLimit;
+    }
+
+    /// <summary>Gets the Z component of a normal after the original's unit-length conversion.</summary>
+    /// <param name="normal">The hit normal; need not already be unit length.</param>
+    /// <returns>The unit normal's Z, or zero for a zero-length normal.</returns>
+    public static float UnitZ(Vector3f normal)
+    {
+        float length = MathF.Sqrt((normal.X * normal.X) + (normal.Y * normal.Y) + (normal.Z * normal.Z));
+        return length == 0f ? 0f : normal.Z / length;
     }
 
     /// <summary>Flattens a wall normal to the horizontal plane and renormalises it.</summary>
