@@ -32,6 +32,9 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public List<Bgra32> Clears { get; } = [];
 
+    /// <summary>The number of foreground depth resets requested.</summary>
+    public int DepthClearCount { get; private set; }
+
     public int SwapCount { get; private set; }
 
     public GraphicsCapabilities Capabilities { get; } = new(2, 4096, true, "recording")
@@ -441,6 +444,8 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void Restore() => DeviceRestored?.Invoke(this, EventArgs.Empty);
 
     public void Clear(Bgra32 color) => Clears.Add(color);
+
+    public void ClearDepth() => DepthClearCount++;
 
     public void SwapBuffers() => SwapCount++;
 

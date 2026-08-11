@@ -53,8 +53,9 @@ public enum WeaponDrawParts
 /// It remains in the ordinary depth buffer, but not in the world's depth range. The retail view-model
 /// renderer (<c>0x49F700</c>) selects transform layer zero; <c>0x493580</c> gives it a 204.8-unit near
 /// plane instead of the world's 409.6. <see cref="ViewModelProjection"/> reproduces that 0.05 m foreground
-/// range, so a weapon keeps normal arm-and-weapon self-occlusion without being hidden by a wall at close
-/// range. The physical wall pullback still determines where the model rests.
+/// range, while <see cref="ViewModelDepth"/> starts the rig with fresh depth. The weapon therefore keeps
+/// normal arm-and-weapon self-occlusion without a close wall cutting through it. The physical wall pullback
+/// still determines where the model rests.
 /// </para>
 /// </remarks>
 public sealed class HeldWeaponRenderer : IDisposable

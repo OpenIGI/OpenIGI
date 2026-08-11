@@ -64,6 +64,13 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>The original always clears colour and depth together and always clears depth to <c>1.0</c>.</remarks>
     void Clear(Bgra32 color);
 
+    /// <summary>Clears only the depth buffer to its far value.</summary>
+    /// <remarks>
+    /// This is for a foreground 3D layer which must retain its own depth ordering without comparing
+    /// against an already-rendered scene. It does not change the colour buffer or the active depth state.
+    /// </remarks>
+    void ClearDepth();
+
     /// <summary>Presents the back buffer and opens the next scene. Mirrors <c>DisplaySwapBuffers</c>.</summary>
     /// <remarks>See the frame-order note on <see cref="IGraphicsDevice"/>: this presents first, then begins.</remarks>
     void SwapBuffers();

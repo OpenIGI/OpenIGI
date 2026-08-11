@@ -7,8 +7,8 @@ namespace OpenIGI.Desktop;
 /// Retail's model renderer (<c>0x49F700</c>) copies the active transform context, selects layer zero,
 /// and installs it for the draw. The Direct3D setup at <c>0x493580</c> gives that layer a 204.8-unit
 /// near plane, half of the 409.6-unit world layer. With 4096 game units per metre that is 0.05 m.
-/// Keeping the model in this shallower foreground depth range preserves its own depth ordering while
-/// preventing close world geometry from occluding it.
+/// Keeping the model in this shallower foreground depth range preserves its own depth ordering. The
+/// foreground pass then resets its depth before drawing the rig, so close world geometry cannot occlude it.
 /// </remarks>
 internal static class ViewModelProjection
 {

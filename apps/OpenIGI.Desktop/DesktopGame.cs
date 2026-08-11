@@ -2671,6 +2671,10 @@ internal sealed partial class DesktopGame : IDisposable
                         previousPoseShare = 1f - tickBlend;
                     }
 
+                    // The retail rig is foreground-only: it draws after the world under its own transform
+                    // layer, so an already-rendered wall must not be allowed to cut through the hands or
+                    // weapon. Resetting only depth keeps normal arm-versus-weapon self-occlusion.
+                    ViewModelDepth.Begin(_device);
                     _arms?.Draw(rig, eye, viewModelProjection, rigOriginUnits, previousPoseShare, rigOrientation);
 
                     // Cycling weapons changes the model as well as the animations, so the renderer has to

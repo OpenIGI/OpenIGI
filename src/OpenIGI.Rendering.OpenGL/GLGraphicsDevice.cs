@@ -403,6 +403,29 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void ClearDepth()
+    {
+        ThrowIfDisposed();
+
+        // glClear honours the write mask even though it does not use the depth test. A preceding
+        // translucent pass may have selected TestOnly, so temporarily enable writes and restore that
+        // state afterwards rather than silently leaving stale scene depth under a foreground model.
+        bool maskedOff = _depthState == DepthState.TestOnly;
+        if (maskedOff)
+        {
+            _gl.DepthMask(true);
+        }
+
+        _gl.ClearDepth(1.0);
+        _gl.Clear(ClearBufferMask.DepthBufferBit);
+
+        if (maskedOff)
+        {
+            _gl.DepthMask(false);
+        }
+    }
+
+    /// <inheritdoc/>
     public void SwapBuffers()
     {
         ThrowIfDisposed();
