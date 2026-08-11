@@ -52,10 +52,11 @@ public sealed class ResourceRegistry
     /// <summary>Registers a buffer under a name, exploding it when it is an archive.</summary>
     /// <param name="name">The resource name; backslashes are normalized.</param>
     /// <param name="data">The buffer, which the registry keeps a reference to rather than copying.</param>
+    /// <param name="replaceExisting">Whether duplicate names from this registration replace existing entries.</param>
     /// <returns>The entry created for <paramref name="name"/> itself.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="EngineFatalException">The buffer looks like an archive but does not parse.</exception>
-    public ResourceEntry Register(string name, ReadOnlyMemory<byte> data)
+    public ResourceEntry Register(string name, ReadOnlyMemory<byte> data, bool replaceExisting = false)
     {
         ArgumentNullException.ThrowIfNull(name);
         string key = ResourcePath.Normalize(name);
@@ -65,20 +66,20 @@ public sealed class ResourceRegistry
             IlffContainer container = ReadContainer(key, data);
             if (container.FormType == IlffTags.Ires)
             {
-                return RegisterArchive(key, data, container);
+                return RegisterArchive(key, data, container, replaceExisting);
             }
 
             // A model or a font is a container too, but it is a single resource: nothing inside it is
             // separately addressable by name.
-            return Add(key, ResourceKind.RawFile, data, parent: null);
+            return Add(key, ResourceKind.RawFile, data, parent: null, replaceExisting);
         }
 
         if (FlatResourceArchive.IsFlatArchive(data.Span))
         {
-            return RegisterFlatArchive(key, data);
+            return RegisterFlatArchive(key, data, replaceExisting);
         }
 
-        return Add(key, ResourceKind.RawFile, data, parent: null);
+        return Add(key, ResourceKind.RawFile, data, parent: null, replaceExisting);
     }
 
     /// <summary>Looks up a registered resource.</summary>
@@ -189,7 +190,11 @@ public sealed class ResourceRegistry
     /// <summary>Removes every registered resource.</summary>
     public void Clear() => _entries.Clear();
 
-    private ResourceEntry RegisterArchive(string key, ReadOnlyMemory<byte> data, IlffContainer container)
+    private ResourceEntry RegisterArchive(
+        string key,
+        ReadOnlyMemory<byte> data,
+        IlffContainer container,
+        bool replaceExisting)
     {
         IresArchive archive;
         try
@@ -201,17 +206,17 @@ public sealed class ResourceRegistry
             throw new EngineFatalException($"Error in resource file: '{key}'", error);
         }
 
-        ResourceEntry entry = Add(key, ResourceKind.Container, data, parent: null);
+        ResourceEntry entry = Add(key, ResourceKind.Container, data, parent: null, replaceExisting);
         foreach (IresEntry item in archive.Entries)
         {
-            Add(item.Name, ToResourceKind(item.Kind), item.Data, key);
+            Add(item.Name, ToResourceKind(item.Kind), item.Data, key, replaceExisting);
         }
 
         _logger.Debug(LogCategory, $"Registered archive '{key}' with {archive.Entries.Count} entries.");
         return entry;
     }
 
-    private ResourceEntry RegisterFlatArchive(string key, ReadOnlyMemory<byte> data)
+    private ResourceEntry RegisterFlatArchive(string key, ReadOnlyMemory<byte> data, bool replaceExisting)
     {
         FlatResourceArchive archive;
         try
@@ -223,10 +228,10 @@ public sealed class ResourceRegistry
             throw new EngineFatalException($"Error in resource file: '{key}'", error);
         }
 
-        ResourceEntry entry = Add(key, ResourceKind.Container, data, parent: null);
+        ResourceEntry entry = Add(key, ResourceKind.Container, data, parent: null, replaceExisting);
         foreach (FlatResourceEntry item in archive.Entries)
         {
-            Add(item.Name, ResourceKind.Body, item.Data, key);
+            Add(item.Name, ResourceKind.Body, item.Data, key, replaceExisting);
         }
 
         _logger.Debug(LogCategory, $"Registered flat archive '{key}' with {archive.Entries.Count} entries.");
@@ -252,9 +257,20 @@ public sealed class ResourceRegistry
         _ => ResourceKind.ContextString,
     };
 
-    private ResourceEntry Add(string name, ResourceKind kind, ReadOnlyMemory<byte> data, string? parent)
+    private ResourceEntry Add(
+        string name,
+        ResourceKind kind,
+        ReadOnlyMemory<byte> data,
+        string? parent,
+        bool replaceExisting = false)
     {
         var entry = new ResourceEntry(name, kind, data, parent);
+        if (replaceExisting)
+        {
+            _entries[name] = entry;
+            return entry;
+        }
+
         if (!_entries.TryAdd(name, entry))
         {
             // The original's hash table refuses a duplicate rather than replacing it; a mount that

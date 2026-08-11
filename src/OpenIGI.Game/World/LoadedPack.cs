@@ -125,7 +125,10 @@ public sealed class LoadedPack
 
         // The textures archive is registered but not decoded here: a texture becomes pixels only when
         // the renderer asks for it, and the original defers the same way.
-        _ = TryRegisterArchive($"{dir}textures/{name}.res", resources, log);
+        // Texture names are global registry keys, but level packs may reuse a name with different
+        // pixels (notably 015_05_1 on the human face). Rebind the current pack's texture namespace so
+        // a previous mission preview cannot leave stale pixels in the running mission.
+        _ = TryRegisterArchive($"{dir}textures/{name}.res", resources, log, replaceExisting: true);
 
         Dictionary<string, MefModel> models = new(StringComparer.OrdinalIgnoreCase);
         if (TryRegisterArchive($"{dir}models/{name}.res", resources, log) is { } archive)
@@ -264,7 +267,11 @@ public sealed class LoadedPack
         }
     }
 
-    private static IresArchive? TryRegisterArchive(string path, ResourceRegistry resources, IIgiLogger logger)
+    private static IresArchive? TryRegisterArchive(
+        string path,
+        ResourceRegistry resources,
+        IIgiLogger logger,
+        bool replaceExisting = false)
     {
         if (!resources.TryLoad(path, out ReadOnlyMemory<byte> bytes))
         {
@@ -274,6 +281,12 @@ public sealed class LoadedPack
 
         try
         {
+            if (replaceExisting)
+            {
+                resources.Free(path);
+                resources.Register(path, bytes, replaceExisting: true);
+            }
+
             return IresArchive.Read(bytes);
         }
         catch (IlffFormatException ex)
