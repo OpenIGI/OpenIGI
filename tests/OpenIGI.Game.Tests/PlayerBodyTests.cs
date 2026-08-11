@@ -166,6 +166,64 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
+    public void WalkingOffAPlatformCarriesTheLastGroundRootMotionIntoTheFall()
+    {
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        double terrainZ = player.Position.Z;
+        double platformZ = terrainZ + (4.0 * UnitsPerMetre);
+        double edgeX = player.Position.X + 200.0;
+
+        // A high shelf ending 200 units ahead. Horizontal wall probes cannot hit it; only the downward
+        // ground query can, and only while the destination remains on the shelf side of the edge.
+        player.Walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            hit = default;
+            if (end.Z >= origin.Z || origin.X > edgeX || origin.Z < platformZ || end.Z > platformZ)
+            {
+                return false;
+            }
+
+            hit = new WorldRayHit(
+                new Vector3d(origin.X, origin.Y, platformZ),
+                new Vector3f(0f, 0f, 1f),
+                origin.Z - platformZ);
+            return true;
+        };
+
+        player.Position = new Vector3d(player.Position.X, player.Position.Y, platformZ);
+        player.Tick(default, terrain, default);
+        Assert.True(player.IsGrounded);
+
+        Vector3d onShelf = player.Position;
+        Vector3f authoredGroundDelta = new(300f, 0f, 0f);
+        float carriedX = authoredGroundDelta.X * HumanMotion.DefaultDeltaTranslationScale;
+
+        // This tick spends the animation delta crossing the lip and clears the ground bit.
+        player.Tick(default, terrain, authoredGroundDelta);
+        Assert.False(player.IsGrounded);
+        Assert.Equal(onShelf.X + carriedX, player.Position.X, 1e-3);
+
+        Vector3d overLip = player.Position;
+
+        // On the following tick retail state 29 copies that prior root delta into velocity and returns:
+        // horizontal motion continues, while gravity deliberately has not run on the entry tick.
+        player.Tick(default, terrain, default);
+        Assert.Equal(carriedX, player.Velocity.X, 1e-3f);
+        Assert.Equal(0f, player.Velocity.Y, 1e-3f);
+        Assert.Equal(0f, player.Velocity.Z, 1e-3f);
+        Assert.Equal(overLip.X + carriedX, player.Position.X, 1e-3);
+        Assert.Equal(overLip.Z, player.Position.Z, 1e-6);
+
+        // The airborne per-tick starts after that entry tick: gravity now bites, while X keeps carrying.
+        Vector3d enteredFall = player.Position;
+        player.Tick(default, terrain, default);
+        Assert.Equal(carriedX, player.Velocity.X, 1e-3f);
+        Assert.Equal(-HumanMotion.GravityPerTick, player.Velocity.Z, 1e-3f);
+        Assert.Equal(enteredFall.X + carriedX, player.Position.X, 1e-3);
+        Assert.True(player.Position.Z < enteredFall.Z);
+    }
+
+    [RequiresGameDataFact]
     public void APlayerJumpsAndComesBackDown()
     {
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
@@ -428,6 +486,48 @@ public sealed class PlayerBodyTests
 
         // Consumed, not carried: the next jump does not get it again.
         Assert.Equal(default, player.InheritedVelocity);
+    }
+
+    [RequiresGameDataFact]
+    public void AHighFallCrossesTheTerrainSurfaceInsteadOfTunnellingBelowIt()
+    {
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        Vector3d ground = player.Position;
+        HumanFallImpact? published = null;
+        HumanHealth displayedHealth = new(
+            HumanHitZoneTable.Player,
+            RetailPlayerParameters.Value.MaximumHealth);
+        player.UseHealth(displayedHealth);
+        player.SetFallImpactSink(impact => published = impact);
+
+        // Fifty metres makes the final 30 Hz step much larger than the endpoint probe's 0.4 m origin.
+        // Before the continuous terrain move test, that endpoint began below the triangle and the body
+        // continued falling through the map forever.
+        player.Position = new Vector3d(ground.X, ground.Y, ground.Z + (50.0 * UnitsPerMetre));
+        player.Tick(default, terrain, default);
+        Assert.False(player.IsGrounded);
+
+        int ticks = 0;
+        while (!player.IsGrounded && ticks < 300)
+        {
+            player.Tick(default, terrain, default);
+            ticks++;
+        }
+
+        Assert.True(player.IsGrounded, "the falling body never recovered the terrain surface");
+        Assert.Equal(ground.Z, player.Position.Z, 1.0);
+        Assert.True(player.Position.Z >= ground.Z - 1.0, "the body settled beneath the terrain");
+
+        // Retail's airborne state observes the ground flag and resolves the impact on the following
+        // tick, after applying one last gravity step.
+        player.Tick(default, terrain, default);
+
+        Assert.NotNull(player.LastFallImpact);
+        Assert.Equal("player_fall_3", player.LastFallImpact.Value.SoundName);
+        Assert.Same(displayedHealth, player.Health);
+        Assert.True(displayedHealth.IsDead);
+        Assert.True(player.DamageFlash.IsActive);
+        Assert.Equal(player.LastFallImpact, published);
     }
 
     [RequiresGameDataFact]

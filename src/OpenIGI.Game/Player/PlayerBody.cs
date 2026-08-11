@@ -41,6 +41,10 @@ public readonly record struct PlayerCommand(
 /// </remarks>
 public sealed class PlayerBody
 {
+    private float? _pendingLandingVelocityZ;
+    private Vector3f? _pendingWalkOffVelocity;
+    private Action<HumanFallImpact>? _fallImpactSink;
+
     /// <summary>How high the eye sits above the feet while standing, in world units.</summary>
     /// <remarks>
     /// The wall probe's high sample (<see cref="HumanWallProbe.HighProbeStandingInUnits"/>) is taken at
@@ -74,6 +78,36 @@ public sealed class PlayerBody
     /// </para>
     /// </remarks>
     public HumanPlayerParameters? Parameters { get; set; }
+
+    /// <summary>Gets the player's accumulated damage.</summary>
+    /// <remarks>
+    /// The unconfigured body starts with the base human value. A composed runtime supplies the health
+    /// object its HUD and death state observe through <see cref="UseHealth"/>; that object's maximum must
+    /// come from <see cref="HumanPlayerParameters.MaximumHealth"/>, argument 7 of <c>humanplayer.qvm</c>.
+    /// </remarks>
+    public HumanHealth Health { get; private set; } = new(HumanHitZoneTable.Player);
+
+    /// <summary>Uses the owning runtime's player-health accumulator for fall damage.</summary>
+    /// <param name="health">The same instance the HUD and death state observe.</param>
+    /// <remarks>
+    /// A composed game must replace the body's base accumulator with its live player object so a landing
+    /// cannot damage a private copy that the HUD never reads. The desktop builds that object using the
+    /// maximum published by <c>humanplayer.qvm</c>, rather than assuming the shipped script's value.
+    /// </remarks>
+    public void UseHealth(HumanHealth health)
+    {
+        ArgumentNullException.ThrowIfNull(health);
+        Health = health;
+    }
+
+    /// <summary>Gets the red full-screen damage wash raised by a damaging landing.</summary>
+    public HumanDamageFlash DamageFlash { get; } = new();
+
+    /// <summary>Gets the most recently processed landing, or <see langword="null"/> before the first.</summary>
+    public HumanFallImpact? LastFallImpact { get; private set; }
+
+    /// <summary>Routes landing presentation and AI-hearing effects to the owning runtime.</summary>
+    public void SetFallImpactSink(Action<HumanFallImpact>? sink) => _fallImpactSink = sink;
 
     /// <summary>Gets the upward speed a jump starts with, in units per tick.</summary>
     /// <remarks><see cref="HumanPlayerParameters.JumpVerticalSpeed"/>; 27 km/h, exactly 1024, in retail.</remarks>
@@ -195,6 +229,8 @@ public sealed class PlayerBody
     /// </remarks>
     public void BeginLadderTraversal()
     {
+        _pendingLandingVelocityZ = null;
+        _pendingWalkOffVelocity = null;
         Velocity = default;
         InheritedVelocity = default;
         SlopeSlide = default;
@@ -229,7 +265,7 @@ public sealed class PlayerBody
             TouchedWall = false;
         }
 
-        Settle(ref next, terrain);
+        Settle(ref next, terrain, Position);
         Position = next;
         return IsGrounded;
     }
@@ -267,6 +303,22 @@ public sealed class PlayerBody
     public void Tick(in PlayerCommand command, TerrainData terrain, Vector3f rootDelta)
     {
         ArgumentNullException.ThrowIfNull(terrain);
+
+        ProcessPendingLanding();
+
+        // Grounded states observe a lost ground bit on the tick after collision. State 29's entry
+        // (0x40BDB0) then copies the PREVIOUS tick's transformed animation delta into horizontal
+        // velocity and returns without running gravity or air control. Keep that one-tick transition
+        // explicit so walking off a ledge carries the pace that crossed it instead of dropping straight
+        // down, and so neither the crossing step nor gravity is applied twice.
+        bool enteredFallFromGround = false;
+        if (!IsGrounded && _pendingWalkOffVelocity is Vector3f walkOffVelocity)
+        {
+            Velocity = walkOffVelocity;
+            _pendingWalkOffVelocity = null;
+            InheritedVelocity = default;
+            enteredFallFromGround = true;
+        }
 
         Yaw += command.YawDelta;
         Pitch = Math.Clamp(Pitch + command.PitchDelta, -PitchLimit, PitchLimit);
@@ -322,7 +374,7 @@ public sealed class PlayerBody
         // the take-off velocity applied clean and gravity does not bite until the tick after.
         if (!IsGrounded)
         {
-            if (!tookOff)
+            if (!tookOff && !enteredFallFromGround)
             {
                 // Gravity, then air control - the integrator adds the steering to the velocity rather
                 // than replacing it, so holding a direction through a jump bends the arc a little.
@@ -358,7 +410,24 @@ public sealed class PlayerBody
             TouchedWall = false;
         }
 
-        Settle(ref next, terrain);
+        bool wasAirborne = !IsGrounded;
+        float landingVelocityZ = Velocity.Z;
+        Settle(ref next, terrain, Position);
+        if (wasAirborne && IsGrounded && landingVelocityZ < 0f)
+        {
+            _pendingLandingVelocityZ = landingVelocityZ;
+        }
+        else if (!wasAirborne && !IsGrounded)
+        {
+            // State 29 entry (0x40BDB0): Human+1636/+1640 receive the current transformed root
+            // translation at +1312/+1316 plus the ground task's delta at +1832/+1836. Z receives only
+            // +1840. Settle has already spent the root step that crossed the edge; this pending copy is
+            // the velocity the following tick carries onward.
+            _pendingWalkOffVelocity = new Vector3f(
+                step.X + InheritedVelocity.X,
+                step.Y + InheritedVelocity.Y,
+                InheritedVelocity.Z);
+        }
 
         // The slide is accumulated from the ground under the feet, damped, and carried into the next
         // tick's move - which is why a slope you cannot stand on keeps moving you after you stop
@@ -367,6 +436,7 @@ public sealed class PlayerBody
             HumanSlopeSlide.Accumulate(SlopeSlide, IsGrounded ? GroundNormal : null));
 
         Position = next;
+        DamageFlash.Tick();
     }
 
     /// <summary>Advances the player by one tick, taking its movement from its own animation.</summary>
@@ -489,7 +559,7 @@ public sealed class PlayerBody
     /// bug this restores.
     /// </para>
     /// </remarks>
-    private void Settle(ref Vector3d position, TerrainData terrain)
+    private void Settle(ref Vector3d position, TerrainData terrain, Vector3d movementStart)
     {
         double from = position.Z + HumanGroundQuery.ProbeOrigin(IsCrouched);
 
@@ -497,7 +567,23 @@ public sealed class PlayerBody
         double height = double.NegativeInfinity;
         Vector3f normal = default;
 
-        if (TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
+        // A damaging fall can cover more than the 0.4 m between the feet and the ordinary probe origin
+        // in one 30 Hz tick. Querying only below the destination then starts underneath the triangle and
+        // loses the terrain forever. The retail mover casts the move before its endpoint ground query;
+        // preserve that continuous part for terrain by taking the first upward-facing triangle crossed
+        // by the feet. This is what prevents a high fall tunnelling under the map.
+        if (!IsGrounded && position.Z < movementStart.Z)
+        {
+            WorldTraceRequest fall = new(movementStart, position, WorldTraceMask.Terrain);
+            if (TerrainRayTrace.TryTrace(terrain, fall, out WorldTraceHit crossed) && crossed.Normal.Z > 0f)
+            {
+                found = true;
+                height = crossed.Position.Z;
+                normal = crossed.Normal;
+            }
+        }
+
+        if (!found && TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
         {
             found = true;
             height = ground.Height;
@@ -543,6 +629,31 @@ public sealed class PlayerBody
         GroundNormal = null;
     }
 
+    private void ProcessPendingLanding()
+    {
+        if (_pendingLandingVelocityZ is not float landingVelocityZ)
+        {
+            return;
+        }
+
+        _pendingLandingVelocityZ = null;
+
+        // The airborne state runs once more on the tick after the collision flag was raised. It applies
+        // gravity before it notices that flag, so retail measures one final gravity step in the impact.
+        HumanFallImpact impact = HumanFallDamage.Calculate(
+            landingVelocityZ - HumanMotion.GravityPerTick,
+            Health.MaximumHealth);
+
+        Health.ApplyDirect(HumanDamage.FrontZone, impact.Damage);
+        if (impact.Damage > 0f)
+        {
+            DamageFlash.Hit();
+        }
+
+        LastFallImpact = impact;
+        _fallImpactSink?.Invoke(impact);
+    }
+
     /// <summary>How far a placement search looks below its start, in world units.</summary>
     /// <remarks>
     /// Half a kilometre. Placement is <b>not</b> the runtime ground query and does not share its
@@ -560,6 +671,8 @@ public sealed class PlayerBody
     public bool PlaceOnGround(TerrainData terrain)
     {
         ArgumentNullException.ThrowIfNull(terrain);
+
+        _pendingWalkOffVelocity = null;
 
         double from = Position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
         double floor = from - PlacementSearchUnits;

@@ -700,22 +700,28 @@ public sealed class AiSoldier
     /// </summary>
     /// <param name="impactPosition">The actual world contact, in engine units.</param>
     /// <param name="shooterPosition">The player's live position, used by source-distance action gates.</param>
-    /// <returns><see langword="true"/> when the inclusive five-metre test admitted the event.</returns>
+    /// <param name="radiusInUnits">
+    /// The event radius. Bullet impacts use five metres; a damaging player landing uses ten.
+    /// </param>
+    /// <returns><see langword="true"/> when the inclusive radius test admitted the event.</returns>
     /// <remarks>
     /// A Mission 1 capture of IGI1's broadcaster at <c>0x450CE0</c> records type 11 with filter
     /// <c>0x46</c>, radius <c>5.00 m</c>, and the projectile's real contact position. This is separate from
     /// both muzzle audibility and the strict two-metre <see cref="AiEvent.GunshotMiss"/> test, so even a
     /// suppressed round wakes a guard when it hits the wall or ground beside them.
     /// </remarks>
-    public bool ReceiveGroundImpact(Vector3d impactPosition, Vector3d shooterPosition)
+    public bool ReceiveGroundImpact(
+        Vector3d impactPosition,
+        Vector3d shooterPosition,
+        double radiusInUnits = GroundImpactRadiusInUnits)
     {
-        if (Activity == AiSoldierActivity.Dead)
+        if (Activity == AiSoldierActivity.Dead || radiusInUnits < 0.0)
         {
             return false;
         }
 
         double distance = Distance(Position, impactPosition);
-        if (distance > GroundImpactRadiusInUnits)
+        if (distance > radiusInUnits)
         {
             return false;
         }
@@ -734,7 +740,7 @@ public sealed class AiSoldier
                 AiEvent.GroundImpact,
                 -1,
                 AiEventFilter.InRange | AiEventFilter.SubjectIsHuman | AiEventFilter.OtherSide,
-                (float)GroundImpactRadiusInUnits,
+                (float)radiusInUnits,
                 impactPosition,
                 -1,
                 -1),

@@ -468,11 +468,10 @@ internal sealed partial class DesktopGame : IDisposable
         _playerDifficulty = (int)(_options.Difficulty
             ?? (AiDifficulty)Math.Clamp(_configuration.Active?.Difficulty ?? 1, 0, 2));
 
-        // The player's maximum health is humanplayer.qvm's ARGUMENT 7 = 3.0, written over Human+600 by the
-        // constructor (0x410370 at 0x4104E1) AFTER 0x489C30 set the universal 1.0 -- the player is worth
-        // three soldiers. Measured live off the retail game: [phit] max=3.000, dead at exactly 3.0
-        // accumulated. The value is refreshed from the parsed script when the mission loads.
-        _playerMaximumHealth = 3f;
+        // 0x489C30 supplies the universal base value first. Mission loading replaces it with argument 7
+        // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
+        // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
+        _playerMaximumHealth = HumanHitZoneTable.MaximumHealth;
         _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
         {
             DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
