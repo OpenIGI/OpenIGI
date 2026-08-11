@@ -2646,11 +2646,10 @@ internal sealed partial class DesktopGame : IDisposable
                     // rule) shrinks the view model's vertical reach at 16:9 and pushes the hand off the
                     // bottom of the frame. At 4:3 the two rules coincide, tanY = 0.433 and tanX = tan(30).
                     float viewModelFieldOfView = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
-                    Matrix4f viewModelProjection = Matrix4f.CreatePerspective(
+                    Matrix4f viewModelProjection = ViewModelProjection.Create(
                         viewModelFieldOfView,
                         aspectRatio,
-                        near: 0.1f,
-                        far: FarPlane);
+                        FarPlane);
 
                     // Between-tick smoothing for everything the rig steps at 30 Hz: its origin (the eye
                     // the body carried plus the clip's hold offset), its skin, and the weapon bone. The
@@ -2856,11 +2855,10 @@ internal sealed partial class DesktopGame : IDisposable
                     }
 
                     float computerViewModelFov = 2f * MathF.Atan(0.75f * sight.ViewModelTanX);
-                    Matrix4f computerViewModelProjection = Matrix4f.CreatePerspective(
+                    Matrix4f computerViewModelProjection = ViewModelProjection.Create(
                         computerViewModelFov,
                         (float)_window.Width / Math.Max(1, _window.Height),
-                        near: 0.1f,
-                        far: FarPlane);
+                        FarPlane);
 
                     if (_mapComputerDevice is { IsReady: true } deviceModel)
                     {
