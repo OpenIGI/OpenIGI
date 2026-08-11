@@ -236,8 +236,8 @@ public sealed class LoadedPack
 
     private static string BareName(string resourceName)
     {
-        ReadOnlySpan<char> span = resourceName.Replace('\\', '/');
-        int slash = span.LastIndexOf('/');
+        ReadOnlySpan<char> span = resourceName.AsSpan();
+        int slash = span.LastIndexOfAny('\\', '/');
         if (slash >= 0)
         {
             span = span[(slash + 1)..];
