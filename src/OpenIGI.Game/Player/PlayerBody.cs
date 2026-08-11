@@ -42,6 +42,7 @@ public readonly record struct PlayerCommand(
 public sealed class PlayerBody
 {
     private float? _pendingLandingVelocityZ;
+    private Vector3f? _pendingWalkOffVelocity;
     private Action<HumanFallImpact>? _fallImpactSink;
 
     /// <summary>The retail player's maximum health from <c>humanplayer.qvm</c>.</summary>
@@ -230,6 +231,7 @@ public sealed class PlayerBody
     public void BeginLadderTraversal()
     {
         _pendingLandingVelocityZ = null;
+        _pendingWalkOffVelocity = null;
         Velocity = default;
         InheritedVelocity = default;
         SlopeSlide = default;
@@ -305,6 +307,20 @@ public sealed class PlayerBody
 
         ProcessPendingLanding();
 
+        // Grounded states observe a lost ground bit on the tick after collision. State 29's entry
+        // (0x40BDB0) then copies the PREVIOUS tick's transformed animation delta into horizontal
+        // velocity and returns without running gravity or air control. Keep that one-tick transition
+        // explicit so walking off a ledge carries the pace that crossed it instead of dropping straight
+        // down, and so neither the crossing step nor gravity is applied twice.
+        bool enteredFallFromGround = false;
+        if (!IsGrounded && _pendingWalkOffVelocity is Vector3f walkOffVelocity)
+        {
+            Velocity = walkOffVelocity;
+            _pendingWalkOffVelocity = null;
+            InheritedVelocity = default;
+            enteredFallFromGround = true;
+        }
+
         Yaw += command.YawDelta;
         Pitch = Math.Clamp(Pitch + command.PitchDelta, -PitchLimit, PitchLimit);
 
@@ -359,7 +375,7 @@ public sealed class PlayerBody
         // the take-off velocity applied clean and gravity does not bite until the tick after.
         if (!IsGrounded)
         {
-            if (!tookOff)
+            if (!tookOff && !enteredFallFromGround)
             {
                 // Gravity, then air control - the integrator adds the steering to the velocity rather
                 // than replacing it, so holding a direction through a jump bends the arc a little.
@@ -401,6 +417,17 @@ public sealed class PlayerBody
         if (wasAirborne && IsGrounded && landingVelocityZ < 0f)
         {
             _pendingLandingVelocityZ = landingVelocityZ;
+        }
+        else if (!wasAirborne && !IsGrounded)
+        {
+            // State 29 entry (0x40BDB0): Human+1636/+1640 receive the current transformed root
+            // translation at +1312/+1316 plus the ground task's delta at +1832/+1836. Z receives only
+            // +1840. Settle has already spent the root step that crossed the edge; this pending copy is
+            // the velocity the following tick carries onward.
+            _pendingWalkOffVelocity = new Vector3f(
+                step.X + InheritedVelocity.X,
+                step.Y + InheritedVelocity.Y,
+                InheritedVelocity.Z);
         }
 
         // The slide is accumulated from the ground under the feet, damped, and carried into the next
@@ -645,6 +672,8 @@ public sealed class PlayerBody
     public bool PlaceOnGround(TerrainData terrain)
     {
         ArgumentNullException.ThrowIfNull(terrain);
+
+        _pendingWalkOffVelocity = null;
 
         double from = Position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
         double floor = from - PlacementSearchUnits;
