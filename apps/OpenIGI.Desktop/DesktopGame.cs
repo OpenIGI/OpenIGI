@@ -139,6 +139,8 @@ internal sealed partial class DesktopGame : IDisposable
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
     private RainRenderer? _rain;
+    private SnowRenderer? _snow;
+    private IReadOnlyList<RainRenderer.BuildingVolume> _rainBuildingVolumes = [];
     private ShadowCasterPass? _shadowPass;
 
     // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
@@ -2588,8 +2590,22 @@ internal sealed partial class DesktopGame : IDisposable
                 // The impact bursts: dust hazes over the scene, spark light over the haze.
                 _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
-                // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task)
-                _rain?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
+                // While the camera is inside a building's shell the rain is suppressed, exactly as the
+                // reference editor does per frame — buildings keep the weather outside.
+                if (_rain is { } rain)
+                {
+                    rain.Indoors = IsCameraInsideBuilding(eye.Position);
+                    rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                }
+
+                // Snow uses the same authored building shells and weather band, but renders small,
+                // drifting flakes instead of rain droplets.
+                if (_snow is { } snow)
+                {
+                    snow.Indoors = IsCameraInsideBuilding(eye.Position);
+                    snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
+                }
 
                 // SCameraLens draws its own alarmlight.spr in the forward pass: green when clear,
                 // red while confirming/detecting, and attached to the head as it pans.
@@ -3121,7 +3137,8 @@ internal sealed partial class DesktopGame : IDisposable
                             }
                         }
 
-                        target = I($"target: SOLDIER {botName} zone={HumanDamage.ZoneName(botZone)} feetZ={feetU.Z:F0} floorZ={floor}");
+                        string describedBot = ModelNameRegistry.DescribeModel(botName);
+                        target = I($"target: SOLDIER {describedBot} zone={HumanDamage.ZoneName(botZone)} feetZ={feetU.Z:F0} floorZ={floor}");
                     }
 
                     // Whatever soldier the crosshair is on, ask its brain which detection gate is (not) passing
@@ -3439,6 +3456,21 @@ internal sealed partial class DesktopGame : IDisposable
     // vertical one follows from the window's aspect, rather than the other way round.
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
         2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
+
+    // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
+    // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.
+    private bool IsCameraInsideBuilding(Vector3d position)
+    {
+        foreach (RainRenderer.BuildingVolume volume in _rainBuildingVolumes)
+        {
+            if (volume.Contains(position))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
     internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>

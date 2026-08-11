@@ -232,6 +232,19 @@ internal sealed partial class DesktopGame
         }
         world.Cutscenes = _cutscenes;
 
+        // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
+        // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
+        // enabled by its Is Rain and Is Active flags), and whatever rain the previous mission left is
+        // dropped first, exactly as the reference resets its rain at every level load. The same scene's
+        // building placements also provide the shells the rain is suppressed inside.
+        _rain?.Dispose();
+        _rain = new RainRenderer(_device, _logger);
+        _rain.ReadParams(levelRoot);
+        _snow?.Dispose();
+        _snow = new SnowRenderer(_device, _logger);
+        _snow.ReadParams(levelRoot);
+        _rainBuildingVolumes = RainRenderer.BuildBuildingVolumes(scene.Placements);
+
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
         // WorldScene placements - a human task is a typed task, and the original draws it through the
@@ -649,9 +662,6 @@ internal sealed partial class DesktopGame
             // clears to, so the horizon meets sky-coloured backing rather than black.
             _sky?.Dispose();
             _sky = new SkyRenderer(_device, _fileSystem, levelRoot, FarPlane, _logger);
-            _rain?.Dispose();
-            _rain = new RainRenderer(_device, _logger);
-            _rain.ReadParams(levelRoot);
             _shadowPass = new ShadowCasterPass(_device);
 
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
@@ -1158,6 +1168,9 @@ internal sealed partial class DesktopGame
         _sky = null;
         _rain?.Dispose();
         _rain = null;
+        _snow?.Dispose();
+        _snow = null;
+        _rainBuildingVolumes = [];
         _terrain?.Dispose();
         _world = null;
         _soldiers = null;

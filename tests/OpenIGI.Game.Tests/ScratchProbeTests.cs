@@ -36,6 +36,153 @@ public sealed class ScratchProbeTests
         }
     }
 
+    [RequiresGameDataFact]
+    public void DumpSniperRegistryOrigins()
+    {
+        foreach (int level in new[] { 7, 8 })
+        {
+            (LoadedMission mission, LevelTask root, ResourceRegistry resources) = Load(level);
+            ReportAllRegistryCollisions(resources, level);
+            DumpSniperTextures(mission, root, resources, level);
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void DumpSniperBodyPng()
+    {
+        const int level = 8;
+        (LoadedMission mission, _, ResourceRegistry resources) = Load(level);
+        string dir = @"D:\Code\open-igi\scratch\sniper-dump";
+        Directory.CreateDirectory(dir);
+        List<string> written = [];
+        (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, "001_02_1");
+        if (pack is null || instance is not { } resolved)
+        {
+            _output.WriteLine("no instance 001_02_1");
+            return;
+        }
+
+        int[] slots = { 0, 4, 11, 12, 3, 7 };
+        foreach (int slot in slots)
+        {
+            if (!pack.TryGetTextureName(resolved, slot, out string texture))
+            {
+                _output.WriteLine($"slot {slot}: no texture");
+                continue;
+            }
+
+            if (!resources.TryLoad(LoadedPack.TextureResourceName(texture), out ReadOnlyMemory<byte> bytes))
+            {
+                _output.WriteLine($"slot {slot} '{texture}': not in registry");
+                continue;
+            }
+
+            OpenIGI.Formats.Textures.TextureImage image =
+                OpenIGI.Formats.Textures.TexFile.Load(bytes.Span);
+            string png = System.IO.Path.Combine(dir, $"L8_001_02_1_slot{slot}_{texture}.png");
+            OpenIGI.Core.Graphics.PngWriter.Write(png, image.GetLevel(0), image.Width, image.Height);
+            written.Add(png);
+
+            int n = System.Math.Min(image.Pixels.Length, 64);
+            int[] sums = new int[3];
+            foreach (OpenIGI.Core.Graphics.Bgra32 pixel in image.Pixels.Slice(0, n))
+            {
+                sums[0] += pixel.R;
+                sums[1] += pixel.G;
+                sums[2] += pixel.B;
+            }
+
+            _output.WriteLine($"slot {slot} '{texture}': wrote {png}; " +
+                $"avg RGB(0..{n}) = ({sums[0] / n}, {sums[1] / n}, {sums[2] / n})");
+        }
+
+        _output.WriteLine($"wrote {written.Count} PNG(s) to {dir}");
+    }
+
+    private void ReportAllRegistryCollisions(ResourceRegistry resources, int level)
+    {
+        Dictionary<string, List<(string Parent, int Size)>> byName = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ResourceEntry entry in resources.Entries)
+        {
+            if (!entry.Name.StartsWith("LOCAL:textures/", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string bare = BareName(entry.Name);
+            if (!byName.TryGetValue(bare, out List<(string, int)>? list))
+            {
+                byName[bare] = list = [];
+            }
+
+            list.Add((entry.Parent ?? "<standalone>", entry.Data.Length));
+        }
+
+        int shared = 0;
+        foreach ((string name, List<(string Parent, int Size)> origins) in byName)
+        {
+            string[] distinct = origins.Select(o => o.Parent).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (distinct.Length <= 1)
+            {
+                continue;
+            }
+
+            shared++;
+            int[] sizes = origins.Select(o => o.Size).Distinct().ToArray();
+            _output.WriteLine($"  MULTI-ORIGIN level {level} '{name}': " +
+                $"{string.Join(" | ", origins.Select(o => $"[{o.Size}@{o.Parent}]"))}" +
+                (sizes.Length > 1 ? "  <-- DIFFERENT SIZES" : ""));
+        }
+
+        _output.WriteLine($"LEVEL {level}: {byName.Count} texture names in registry, {shared} registered from 2+ archives");
+    }
+
+    private void DumpSniperTextures(LoadedMission mission, LevelTask root, ResourceRegistry resources, int level)
+    {
+        foreach (HumanSoldierTask soldier in FindAll<HumanSoldierTask>(root))
+        {
+            string modelName = soldier.Model;
+            if (!string.Equals(modelName, "001_02_1", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            (LoadedPack? pack, MtpInstance? instance) = FindInstance(mission, modelName);
+            if (pack is null || instance is not { } resolved)
+            {
+                _output.WriteLine($"LEVEL {level} soldier '{soldier.Name}': model '{modelName}' has NO pack instance");
+                continue;
+            }
+
+            _output.WriteLine($"LEVEL {level} soldier '{soldier.Name}': model '{modelName}' -> pack '{pack.Name}' " +
+                $"({instance.Value.MaterialIndices.Length} slots)");
+            for (int slot = 0; slot < resolved.MaterialIndices.Length; slot++)
+            {
+                bool has = pack.TryGetTextureName(resolved, slot, out string texture);
+                if (!has)
+                {
+                    _output.WriteLine($"   slot {slot}: (no texture)");
+                    continue;
+                }
+
+                _output.WriteLine($"   slot {slot}: '{texture}' {DescribeRegistry(resources, texture)}");
+                try
+                {
+                    if (resources.TryLoad(LoadedPack.TextureResourceName(texture), out ReadOnlyMemory<byte> bytes))
+                    {
+                        OpenIGI.Formats.Textures.TextureDescriptor header =
+                            OpenIGI.Formats.Textures.TexFile.ReadHeader(bytes.Span, out _);
+                        _output.WriteLine($" decode={header.Format} {header.Width}x{header.Height} mips={header.MipLevels}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _output.WriteLine($" DECODE-ERROR {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+        }
+    }
+
     private void CompareCrossLevelTextures(int a, int b)
     {
         Dictionary<string, (int Size, byte[] Bytes)> ia = LevelTextureNames(a);

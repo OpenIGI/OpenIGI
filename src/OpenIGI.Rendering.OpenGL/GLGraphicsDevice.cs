@@ -2385,9 +2385,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 // The fourth component is the switch. It is only ever set for the forward pass of a
                 // modern frame, so the original's path uploads a zero here and its picture is
                 // untouched to the bit.
+                // Emissive forward geometry (rain, particles, muzzle light and the sky's forward path)
+                // carries its final colour in the vertex/texture data, like the reference renderer. It
+                // must bypass the scene-lighting branch or an upward-facing streak can receive only the
+                // ambient term and disappear into the fog.
                 bool lit = CurrentPass == ScenePass.Forward
                     && _sceneTarget is { IsReady: true } lightingTarget
-                    && lightingTarget.Description.Deferred;
+                    && lightingTarget.Description.Deferred
+                    && _material.Emissive <= 0.5f;
 
                 program.SetVector4(
                     _meshMaterial,

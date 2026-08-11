@@ -242,9 +242,10 @@ public sealed class ObjectCollisionIndex
                 placement.Position.Y * WorldScene.UnitsPerMetre,
                 placement.Position.Z * WorldScene.UnitsPerMetre);
 
+            string describedModel = ModelNameRegistry.DescribeModel(placement.Instance.Name);
             string label = string.IsNullOrEmpty(placement.TaskName)
-                ? placement.Instance.Name
-                : $"{placement.Instance.Name} [{placement.TaskName}]";
+                ? describedModel
+                : $"{describedModel} [{placement.TaskName}]";
 
             entries.Add(Entry.Create(
                 mesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
