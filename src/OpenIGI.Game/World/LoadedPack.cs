@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Animation;
@@ -41,6 +42,12 @@ public sealed class LoadedPack
 
     private readonly Dictionary<string, MefModel> _models;
     private HashSet<string>? _registered;
+    private static readonly ConditionalWeakTable<ResourceRegistry, TextureArchiveBinding> TextureArchives = new();
+
+    private sealed class TextureArchiveBinding
+    {
+        public string? Path { get; set; }
+    }
 
     private LoadedPack(
         string name,
@@ -128,7 +135,16 @@ public sealed class LoadedPack
         // Texture names are global registry keys, but level packs may reuse a name with different
         // pixels (notably 015_05_1 on the human face). Rebind the current pack's texture namespace so
         // a previous mission preview cannot leave stale pixels in the running mission.
-        _ = TryRegisterArchive($"{dir}textures/{name}.res", resources, log, replaceExisting: true);
+        string textureArchivePath = $"{dir}textures/{name}.res";
+        TextureArchiveBinding textureBinding = TextureArchives.GetOrCreateValue(resources);
+        if (textureBinding.Path is { } previousPath
+            && !previousPath.Equals(textureArchivePath, StringComparison.OrdinalIgnoreCase))
+        {
+            resources.Free(previousPath);
+        }
+
+        _ = TryRegisterArchive(textureArchivePath, resources, log, replaceExisting: true);
+        textureBinding.Path = textureArchivePath;
 
         Dictionary<string, MefModel> models = new(StringComparer.OrdinalIgnoreCase);
         if (TryRegisterArchive($"{dir}models/{name}.res", resources, log) is { } archive)

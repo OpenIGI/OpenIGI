@@ -130,7 +130,7 @@ public sealed class MtpPack
         }
 
         int textureIndex = instance.MaterialIndices.Span[materialSlot];
-        if (textureIndex < 0 || textureIndex >= TextureNames.Count || textureIndex >= Materials.Count)
+        if (textureIndex < 0 || textureIndex >= TextureNames.Count)
         {
             material = default;
             return false;
@@ -138,7 +138,8 @@ public sealed class MtpPack
 
         // INST carries a TEXF index directly. GTT is parallel metadata for that texture, not an
         // indirection table whose index should be read from INST.
-        material = Materials[textureIndex];
+        PackId lightmap = textureIndex < Materials.Count ? Materials[textureIndex].Lightmap : PackId.None;
+        material = new MtpMaterial(new PackId((uint)textureIndex), lightmap);
         return true;
     }
 

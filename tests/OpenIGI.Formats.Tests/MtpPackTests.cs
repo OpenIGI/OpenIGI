@@ -11,18 +11,24 @@ public sealed class MtpPackTests
     [Fact]
     public void InstSlotsResolveDirectlyAgainstTexfRatherThanGtt()
     {
-        MtpPack pack = MtpPack.Read(BuildPack());
+        MtpPack pack = MtpPack.Read(BuildPack("unused", "sniper_level8"));
 
         Assert.True(pack.TryGetMaterial(pack.Instances[0], 0, out MtpMaterial material));
         Assert.Equal("sniper_level8", pack.TextureNames[material.Texture.Index]);
     }
 
-    private static byte[] BuildPack()
+    [Fact]
+    public void InstSlotsRejectTexfOutOfRangeIndices()
+    {
+        Assert.Throws<PackFormatException>(() => MtpPack.Read(BuildPack("sniper_level8")));
+    }
+
+    private static byte[] BuildPack(params string[] textureNames)
     {
         List<byte> body = [.. Encoding.ASCII.GetBytes("MTP ")];
         AddNames(body, "MODS", "sniper");
         AddNames(body, "VNAM", "sniper_instance");
-        AddNames(body, "TEXF", "unused", "sniper_level8");
+        AddNames(body, "TEXF", textureNames);
 
         List<byte> inst = [];
         AddUInt32(inst, 0);
@@ -34,7 +40,7 @@ public sealed class MtpPackTests
         AddUInt32(gtt, 2);
         AddUInt32(gtt, 0);
         AddUInt32(gtt, uint.MaxValue);
-        AddUInt32(gtt, 1);
+        AddUInt32(gtt, 0);
         AddUInt32(gtt, uint.MaxValue);
         AddChunk(body, "GTT ", gtt);
 
