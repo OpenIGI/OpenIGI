@@ -95,6 +95,8 @@ public sealed class PlayerCamera
     // to the view however fast the frames come.
     private Vector3d _prevTickEye;
     private Vector3d _tickEye;
+    private double _prevTickWallPullback;
+    private double _tickWallPullback;
     private Vector3f _prevTickRootMotion;
     private Vector3f _tickRootMotion;
     private Vector3f _prevTickWeaponBonePosition;
@@ -319,9 +321,9 @@ public sealed class PlayerCamera
     /// <summary>Clears <see cref="PoseChanged"/>.</summary>
     public void AcknowledgePose() => PoseChanged = false;
 
-    // Binds the rig to the body. The original does far more here (0x464BD0 eases the aim, adds the
-    // weapon sway and the head bob, and pushes the eye out of walls with a multi-ray cast), and none of
-    // that is built; what is transcribed is the part the attachment depends on -- the eye's transform,
+    // Binds the rig to the body. The original does more here (0x464BD0 eases the aim and pushes the eye
+    // out of walls with a multi-ray cast); the view-model's separate forward clearance probe is updated
+    // immediately before this final binding. What is transcribed here is the attachment's eye transform,
     // built from the aim angles with 0x4B38E0's own Euler order, and the fact that 0x4D38C0 poses the
     // rig with a zero root and the object's own 3x3 above it.
     private void SyncView()
@@ -876,6 +878,15 @@ public sealed class PlayerCamera
 
         _view?.Tick();
 
+        // Retail probes the normal placed-object collision level and terrain from the eye, not the
+        // enlarged collision LOD used to keep the player's body out of narrow gaps. This affects only
+        // the first-person rig: the camera and the fired round still begin at the true eye.
+        SyncView();
+        if (_view is { } view)
+        {
+            view.TickWallPullback(ViewModelWalls(terrain));
+        }
+
         // Where 0x464BD0 steps it: after the state machines have read it and before the rig is placed.
         _weapons?.Sway.Advance();
 
@@ -1119,6 +1130,10 @@ public sealed class PlayerCamera
         _prevTickEye = HasViewTickPair ? _tickEye : view.Eye;
         _tickEye = view.Eye;
 
+        double wallPullback = view.WallPullbackInUnits;
+        _prevTickWallPullback = HasViewTickPair ? _tickWallPullback : wallPullback;
+        _tickWallPullback = wallPullback;
+
         Vector3f rootMotion = view.RootMotion;
         _prevTickRootMotion = HasViewTickPair ? _tickRootMotion : rootMotion;
         _tickRootMotion = rootMotion;
@@ -1232,8 +1247,8 @@ public sealed class PlayerCamera
     /// exists.
     /// </returns>
     /// <remarks>
-    /// The tick-stepped halves — the eye the body carried, the clip's hold offset, the weapon bone,
-    /// and the sway angles that ARE the weapon-change animation — are interpolated between the pair;
+    /// The tick-stepped halves — the eye the body carried, the wall pullback, the clip's hold offset,
+    /// the weapon bone, and the sway angles that ARE the weapon-change animation — are interpolated between the pair;
     /// the LOOK is this frame's own, because the mouse already runs per frame and the arms must stay
     /// welded to it. At <paramref name="alpha"/> 1 this is the rig's un-smoothed transform exactly.
     /// </remarks>
@@ -1247,8 +1262,8 @@ public sealed class PlayerCamera
         // The same composition SyncView commits — eye orientation times sway — with the tick-stepped
         // angles blended: the sway pair (the weapon-change animation) and the recoil kick inside the
         // aim pitch. The mouse-driven part of the pitch and the yaw are this frame's own.
-        Matrix3f look = Matrix3f.FromEngineEulerAngles(SmoothedAimPitch(alpha), 0f, -_body.Yaw)
-            * Matrix3f.FromEngineEulerAngles(
+        Matrix3f eyeLook = Matrix3f.FromEngineEulerAngles(SmoothedAimPitch(alpha), 0f, -_body.Yaw);
+        Matrix3f look = eyeLook * Matrix3f.FromEngineEulerAngles(
                 PresentationBlend.LerpAngle(_prevTickSwayPitch, _tickSwayPitch, alpha),
                 0f,
                 PresentationBlend.LerpAngle(_prevTickSwayYaw, _tickSwayYaw, alpha));
@@ -1258,7 +1273,11 @@ public sealed class PlayerCamera
         // M · v — the palette's own convention — is the transpose of the row-vector Transform.
         Vector3f held = look.Transposed().Transform(
             PresentationBlend.Lerp(_prevTickRootMotion, _tickRootMotion, alpha));
-        Vector3d origin = new(eye.X + held.X, eye.Y + held.Y, eye.Z + held.Z);
+        double wallPullback = _prevTickWallPullback + ((_tickWallPullback - _prevTickWallPullback) * alpha);
+        Vector3d origin = new(
+            eye.X + held.X + (eyeLook.M12 * wallPullback),
+            eye.Y + held.Y + (eyeLook.M22 * wallPullback),
+            eye.Z + held.Z + (eyeLook.M32 * wallPullback));
 
         BoneAttachment? weapon = null;
         if (_hasWeaponBonePair)
@@ -1272,6 +1291,14 @@ public sealed class PlayerCamera
         }
 
         return (origin, look, weapon);
+    }
+
+    private WorldRayCast ViewModelWalls(TerrainData terrain)
+    {
+        WorldTraceCast trace = _walls is { } walls
+            ? WorldTrace.Nearest(walls.Tracer(), TerrainRayTrace.Caster(terrain))
+            : TerrainRayTrace.Caster(terrain);
+        return WorldTrace.AsRayCast(trace);
     }
 
     /// <summary>The heights the doorway diagnostic probes forward at, in world units above the feet.</summary>

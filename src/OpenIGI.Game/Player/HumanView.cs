@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Player;
 
@@ -100,8 +101,8 @@ public sealed class HumanView
     /// breathing.
     /// </para>
     /// <para>
-    /// The <c>bob</c> term is not built: it is the weapon pulling back when a forward probe finds a
-    /// wall inside 0.5 m (<c>view+800</c>/<c>+804</c>), and it is zero in the open.
+    /// The final term is <see cref="WallPullbackInUnits"/>: a 0.5 m forward probe pulls the rig back
+    /// when it meets a wall, taking the arms and held weapon with it while the eye remains fixed.
     /// </para>
     /// </remarks>
     public Vector3d Position
@@ -110,7 +111,11 @@ public sealed class HumanView
         {
             Vector3f root = _bones.SampleRootMotion();
             Vector3f offset = Rotate(_orientation, root);
-            return new Vector3d(Eye.X + offset.X, Eye.Y + offset.Y, Eye.Z + offset.Z);
+            Vector3f forward = Forward(EyeOrientation);
+            return new Vector3d(
+                Eye.X + offset.X + (forward.X * WallPullbackInUnits),
+                Eye.Y + offset.Y + (forward.Y * WallPullbackInUnits),
+                Eye.Z + offset.Z + (forward.Z * WallPullbackInUnits));
         }
     }
 
@@ -144,6 +149,13 @@ public sealed class HumanView
 
     /// <summary>Gets or sets the eye's orientation — the original's <c>+248</c>.</summary>
     public Matrix3f EyeOrientation { get; set; } = Matrix3f.Identity;
+
+    /// <summary>Gets how far collision has pulled the first-person rig back from the eye.</summary>
+    /// <remarks>
+    /// This is <c>HumanView+804</c>. It is zero with 0.5 m of clear space and otherwise non-positive,
+    /// so the arms and weapon move opposite the eye's sight vector without shifting the camera.
+    /// </remarks>
+    public double WallPullbackInUnits { get; private set; }
 
     /// <summary>Gets or sets the horizontal field-of-view half-tangent — the original's <c>+484</c>.</summary>
     public float TanX { get; set; } = DefaultTanX;
@@ -229,6 +241,30 @@ public sealed class HumanView
         _pose = null;
     }
 
+    /// <summary>Updates the retail forward wall-clearance probe for one fixed simulation tick.</summary>
+    /// <param name="walls">The ordinary world-object and terrain trace.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="walls"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <c>0x464BD0</c> casts from the final eye to eye + forward × 2,048 before committing the rig
+    /// transform. It does not test the player movement hull or move the camera: it changes only this
+    /// object's placement, so every first-person bone attachment follows the weapon back together.
+    /// </remarks>
+    public void TickWallPullback(WorldRayCast walls)
+    {
+        ArgumentNullException.ThrowIfNull(walls);
+
+        Vector3f forward = Forward(EyeOrientation);
+        Vector3d end = new(
+            Eye.X + (forward.X * HumanViewWallPullback.ProbeDistanceInUnits),
+            Eye.Y + (forward.Y * HumanViewWallPullback.ProbeDistanceInUnits),
+            Eye.Z + (forward.Z * HumanViewWallPullback.ProbeDistanceInUnits));
+
+        double target = walls(Eye, end, out WorldRayHit hit)
+            ? HumanViewWallPullback.TargetForHit(hit.Distance)
+            : 0.0;
+        WallPullbackInUnits = HumanViewWallPullback.Advance(WallPullbackInUnits, target);
+    }
+
     /// <summary>Gets the current pose, rebuilding it only when something has changed.</summary>
     /// <returns>The posed rig, in the object's own space.</returns>
     public BonePose Pose() => _pose ??= _bones.Pose(_orientation);
@@ -276,4 +312,8 @@ public sealed class HumanView
         (m.M11 * v.X) + (m.M12 * v.Y) + (m.M13 * v.Z),
         (m.M21 * v.X) + (m.M22 * v.Y) + (m.M23 * v.Z),
         (m.M31 * v.X) + (m.M32 * v.Y) + (m.M33 * v.Z));
+
+    // The second matrix column is the engine's +Y axis. Both 0x464BD0's probe and the projectile
+    // path use it as the eye's forward vector; see PlayerCamera.ResolveFire for the same convention.
+    private static Vector3f Forward(Matrix3f m) => new(m.M12, m.M22, m.M32);
 }
