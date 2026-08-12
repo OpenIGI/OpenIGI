@@ -43,7 +43,13 @@ public sealed class SoldierRenderer : IDisposable
     private const double ProbeAboveInUnits = 2048.0;
 
     /// <summary>How far below the declared position the probe reaches — 2 m, the sliding step-down budget.</summary>
-    private const double ProbeBelowInUnits = 8192.0;
+    // The terrain query itself only reaches this far down (TerrainHeightQuery.SearchDepthUnits), so
+    // widening the acceptance window to the same depth settles every surface the query can find.
+    // Level 4 authors several soldiers 2.3-3.1m above the terrain (larger than the old 2m window),
+    // which otherwise float; a placed surface the ray cast finds (a roof, a vehicle) is higher than the
+    // terrain and wins, so a soldier standing on one is not pulled down. A character far above the
+    // terrain (a rooftop watcher) has no surface within the search depth and is left alone.
+    private const double ProbeBelowInUnits = 16385.0;
 
     /// <summary>
     /// Retail IGI.exe Human_GroundCollision raises a standing human's task position by 1638.4

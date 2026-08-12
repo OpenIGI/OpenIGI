@@ -685,18 +685,34 @@ public sealed class PlayerBody
     /// </remarks>
     public const double PlacementSearchUnits = 500.0 * 4096.0;
 
+    /// <summary>How far a self-driving interaction state searches when it snaps its authored root to ground.</summary>
+    /// <remarks>
+    /// IGI2's symbolized <c>Human_SnapToGround</c> passes exactly <c>4096000</c> to
+    /// <c>Human_GroundCollision</c>; the matching IGI1 routine is <c>sub_463260</c>. Terminal, generic,
+    /// cabinet, door and explosive state initializers call it immediately after popping the authored
+    /// position. This is deliberately distinct from the ordinary four-metre runtime ground probe.
+    /// </remarks>
+    public const double InteractionSnapSearchUnits = 4096000.0;
+
+    /// <summary>Snaps an authored interaction root to the highest terrain or placed-model surface below it.</summary>
+    public bool SnapInteractionToGround(TerrainData terrain) =>
+        PlaceOnGround(terrain, InteractionSnapSearchUnits);
+
     /// <summary>Drops the player onto the ground beneath it, for placing one at the start of a level.</summary>
     /// <param name="terrain">The level's terrain.</param>
     /// <returns><see langword="false"/> when there is nothing under the player to stand on.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
     public bool PlaceOnGround(TerrainData terrain)
+        => PlaceOnGround(terrain, PlacementSearchUnits);
+
+    private bool PlaceOnGround(TerrainData terrain, double searchUnits)
     {
         ArgumentNullException.ThrowIfNull(terrain);
 
         _pendingWalkOffVelocity = null;
 
         double from = Position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
-        double floor = from - PlacementSearchUnits;
+        double floor = from - searchUnits;
 
         bool found = false;
         double height = double.NegativeInfinity;

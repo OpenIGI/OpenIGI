@@ -313,6 +313,94 @@ public sealed class RetailTerrainTests
     }
 
     [RequiresGameDataFact]
+    public void MissionThreeRemovesTerrainOverTheAmmunitionBuildingRamp()
+    {
+        Harness harness = Harness.Create();
+        (TerrainData terrain, TerrainSurface surface, _) = harness.LoadMission(3);
+
+        // Mission 3's TerrainDiscards container declares fourteen cubes. This level-15 one contains the
+        // ammunition building's entrance and is the sheet of ground that otherwise covers its ramp.
+        Assert.Equal(14, surface.Discards.Count);
+        TerrainDiscardRegion ramp = Assert.Single(
+            surface.Discards,
+            discard => discard.Contains(23749052, -55320144, 174413136));
+        Assert.Equal(15, ramp.Level);
+
+        Vector3d centre = new(
+            (ramp.MinX + ramp.MaxX) * 0.5,
+            (ramp.MinY + ramp.MaxY) * 0.5,
+            (ramp.MinZ + ramp.MaxZ) * 0.5);
+        // Use a low-detail view from far away to get a coarse cube that would intersect the ramp.
+        Camera3D distantCamera = new(
+            new Vector3d(
+                centre.X,
+                centre.Y - (500.0 * WorldScene.UnitsPerMetre),
+                centre.Z + (300.0 * WorldScene.UnitsPerMetre)),
+            Camera3D.LookRotation(0f, -0.45f));
+        TerrainView coarseView = TerrainView.FromPerspective(distantCamera, 1.2f, 16f / 9f);
+
+        List<TerrainChunk> unmasked = [];
+        TerrainTraversal.Collect(terrain.Octree, coarseView, unmasked);
+        Assert.Contains(unmasked, chunk => ramp.IntersectsCube(chunk.Position, chunk.Extent));
+
+        // Find a chunk that is face-adjacent to the ramp region but does not intersect it.
+        TerrainChunk? adjacentChunk = unmasked.FirstOrDefault(chunk =>
+            !ramp.IntersectsCube(chunk.Position, chunk.Extent)
+            && (Math.Abs(chunk.Position.X - ramp.MinX) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.X - ramp.MaxX) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Y - ramp.MinY) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Y - ramp.MaxY) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Z - ramp.MinZ) == chunk.Extent * 2
+                || Math.Abs(chunk.Position.Z - ramp.MaxZ) == chunk.Extent * 2));
+
+        List<TerrainChunk> masked = [];
+        TerrainTraversal.Collect(terrain.Octree, coarseView, masked, surface.Discards);
+        Assert.DoesNotContain(masked, chunk => ramp.IntersectsCube(chunk.Position, chunk.Extent));
+
+        // Verify discard-driven refinement: an adjacent chunk remains even when a ramp-intersecting one is removed.
+        if (adjacentChunk is not null)
+        {
+            Assert.Contains(masked, chunk =>
+                chunk.Position.X == adjacentChunk.Value.Position.X
+                && chunk.Position.Y == adjacentChunk.Value.Position.Y
+                && chunk.Position.Z == adjacentChunk.Value.Position.Z);
+        }
+
+        // The same authored cube must remove collision, not merely the draw descriptor. The raw CTR/CMD
+        // leaf is present at the building entrance—that is the invisible surface the player used to
+        // stand on—but the task binding filters it before either exact terrain collision path sees it.
+        const int entranceX = 23749052;
+        const int entranceY = -55320144;
+        const int entranceZ = 174413136;
+        Vector3i entrance = new(entranceX, entranceY, entranceZ);
+        TerrainDescentCursor raw = TerrainPointDescent.Descend(
+            terrain.Octree,
+            entrance,
+            TerrainLeafQuery.SurfaceDepth);
+        Assert.Equal(TerrainLeafQuery.SurfaceDepth, raw.Depth);
+        Assert.True(terrain.Commands.TryGetBlock(
+            terrain.Octree[raw.NodeIndex].CommandOffset,
+            out TerrainCommandBlock rawBlock));
+        Assert.False(rawBlock.IsEmpty);
+        Assert.True(TerrainDiscardBinding.For(terrain).Discards(raw));
+        Assert.False(TerrainLeafQuery.TryFindLeaf(terrain, entrance, out _));
+
+        Assert.False(TerrainHeightQuery.TryGetGround(
+            terrain,
+            entranceX,
+            entranceY,
+            entranceZ + 8192.0,
+            out _));
+        Assert.False(TerrainRayTrace.TryTrace(
+            terrain,
+            new WorldTraceRequest(
+                new Vector3d(entranceX, entranceY, ramp.MaxZ - 1.0),
+                new Vector3d(entranceX, entranceY, ramp.MinZ + 1.0),
+                WorldTraceMask.Terrain),
+            out _));
+    }
+
+    [RequiresGameDataFact]
     public void EveryTileATileMapNamesExistsInTheLevelsAtlas()
     {
         Harness harness = Harness.Create();

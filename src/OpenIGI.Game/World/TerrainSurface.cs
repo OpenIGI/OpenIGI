@@ -7,8 +7,9 @@ using OpenIGI.Formats.World;
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// What decides which ground material covers a point: the level's <c>TextureModifier</c> layers over a
-/// base material, plus the tile maps and materials the terrain script declared.
+/// What decides which ground material covers a point and which authored terrain cubes do not exist:
+/// the level's <c>TextureModifier</c> and <c>DiscardTerrain</c> tasks, plus the tile maps and materials
+/// the terrain script declared.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -31,6 +32,9 @@ public sealed class TerrainSurface
     /// <summary>The task type that declares a tile layer.</summary>
     public const string TextureModifierType = "TextureModifier";
 
+    /// <summary>The task type that removes an octree cube of terrain.</summary>
+    public const string DiscardTerrainType = "DiscardTerrain";
+
     /// <summary>The material a point takes when no layer covers it.</summary>
     public const int BaseMaterial = 0;
 
@@ -38,12 +42,15 @@ public sealed class TerrainSurface
     public const int MaximumActiveLayers = 4;
 
     private readonly TerrainTileLayer[] _layers;
+    private readonly TerrainDiscardRegion[] _discards;
 
-    private TerrainSurface(TerrainData terrain, TerrainTileLayer[] layers)
+    private TerrainSurface(TerrainData terrain, TerrainTileLayer[] layers, TerrainDiscardRegion[] discards)
     {
         Terrain = terrain;
         _layers = layers;
+        _discards = discards;
         Layers = new ReadOnlyCollection<TerrainTileLayer>(layers);
+        Discards = new ReadOnlyCollection<TerrainDiscardRegion>(discards);
     }
 
     /// <summary>Gets the terrain the layers belong to.</summary>
@@ -52,10 +59,16 @@ public sealed class TerrainSurface
     /// <summary>Gets the layers, most specific first.</summary>
     public IReadOnlyList<TerrainTileLayer> Layers { get; }
 
-    /// <summary>Builds the surface by walking a level's task tree for its <c>TextureModifier</c>s.</summary>
+    /// <summary>Gets the octree cubes whose terrain the level removes, most specific first.</summary>
+    public IReadOnlyList<TerrainDiscardRegion> Discards { get; }
+
+    /// <summary>
+    /// Builds the surface by walking a level's task tree for its <c>TextureModifier</c>s and
+    /// <c>DiscardTerrain</c>s.
+    /// </summary>
     /// <param name="terrain">The loaded terrain.</param>
     /// <param name="levelRoot">The task the level's subtree hangs off.</param>
-    /// <param name="logger">Where to report modifiers that do not resolve.</param>
+    /// <param name="logger">Where to report modifiers or discard volumes that do not resolve.</param>
     /// <returns>The surface.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public static TerrainSurface Build(TerrainData terrain, GameTask levelRoot, IIgiLogger? logger = null)
@@ -65,7 +78,7 @@ public sealed class TerrainSurface
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         List<TerrainTileLayer> layers = [];
-        int skipped = 0;
+        int skippedModifiers = 0;
 
         foreach (GameTask task in Walk(levelRoot))
         {
@@ -77,7 +90,7 @@ public sealed class TerrainSurface
 
             if (!WorldScene.TryGetPosition(declared, out Vector3d metres))
             {
-                skipped++;
+                skippedModifiers++;
                 continue;
             }
 
@@ -100,21 +113,25 @@ public sealed class TerrainSurface
             }
             else
             {
-                skipped++;
+                skippedModifiers++;
             }
         }
 
         // Deeper in the octree means smaller and more specific, and the original's stack tests the most
         // recently entered first. Ordering by level descending reproduces that without the descent.
         layers.Sort((a, b) => b.Level.CompareTo(a.Level));
+        TerrainDiscardBinding discardBinding = TerrainDiscardBinding.Bind(terrain, levelRoot);
+        TerrainDiscardRegion[] discards = [.. discardBinding.Regions];
 
         log.Information(
             LogCategory,
             $"Surface: {layers.Count} tile layer(s)"
-                + (skipped > 0 ? $", {skipped} modifier(s) unresolved" : string.Empty)
+                + (skippedModifiers > 0 ? $", {skippedModifiers} modifier(s) unresolved" : string.Empty)
+                + $", {discards.Length} terrain discard(s)"
+                + (discardBinding.Skipped > 0 ? $", {discardBinding.Skipped} discard(s) unresolved" : string.Empty)
                 + $", {terrain.Materials.Count} material(s), {terrain.TileMaps.Count} tile map(s).");
 
-        return new TerrainSurface(terrain, [.. layers]);
+        return new TerrainSurface(terrain, [.. layers], discards);
     }
 
     /// <summary>Builds a surface with no layers, so every point takes the base material.</summary>
@@ -124,7 +141,7 @@ public sealed class TerrainSurface
     public static TerrainSurface Bare(TerrainData terrain)
     {
         ArgumentNullException.ThrowIfNull(terrain);
-        return new TerrainSurface(terrain, []);
+        return new TerrainSurface(terrain, [], [.. TerrainDiscardBinding.For(terrain).Regions]);
     }
 
     /// <summary>Gets the material covering a world position.</summary>
@@ -169,7 +186,8 @@ public sealed class TerrainSurface
         || Terrain.Materials.TryGetValue(BaseMaterial, out material);
 
     /// <inheritdoc/>
-    public override string ToString() => $"terrain surface, {_layers.Length} layer(s)";
+    public override string ToString() =>
+        $"terrain surface, {_layers.Length} layer(s), {_discards.Length} discard(s)";
 
     private static bool Overlaps(TerrainTileLayer layer, double worldX, double worldY)
     {

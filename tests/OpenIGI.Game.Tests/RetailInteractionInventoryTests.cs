@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -19,6 +20,71 @@ public sealed class RetailInteractionInventoryTests
         "Wire", "Fence", "Ladder", "Terminal", "Cabinet", "Switch", "Door",
         "GenericTBA", "PlaceExplosiveTBA", "StationaryGun",
     };
+
+    [RequiresGameDataFact]
+    public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+            Load(3, loadTerrain: true);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+
+        Assert.True(variables.TryRead("Generator_99.isOn", out var generatorPower));
+        Assert.Equal(1, generatorPower.Integer);
+
+        WorldInteraction terminal = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Terminal && item.Task.Id == 552);
+        WorldInteraction door = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Door
+                && item.Task.TryGetValue("Open door expression", out object? expression)
+                && string.Equals(expression as string, "Terminal_552.isHackedThisTick", StringComparison.Ordinal));
+
+        interactions.Tick();
+        Assert.True(terminal.IsAvailable);
+
+        // F12 telemetry reports the body root rather than the HumanView eye used by the retail scan.
+        // It still gives us the exact side from which this keypad must offer itself. Keep that side,
+        // move inside the verified 8192-unit Human_UpdateActivate radius, and aim at magic vertex 1.
+        Vector3d reportedPlayerPosition = new(23802971.0, -55285329.0, 174418631.0);
+        Assert.True(terminal.CanOfferFrom(reportedPlayerPosition));
+        (Vector3d terminalPose, _) = terminal.BodyPose(reportedPlayerPosition);
+        Vector3d terminalPoseLocal = terminal.Orientation.Transform(terminalPose - terminal.Anchor);
+        Assert.Equal(0.0, terminalPoseLocal.X, 3);
+        Assert.Equal(2764.8, terminalPoseLocal.Y, 3);
+        Assert.Equal(0.0, terminalPoseLocal.Z, 3);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        PlayerBody interactionBody = new()
+        {
+            Position = terminalPose,
+            Walls = ObjectCollisionIndex.Build(scene.Placements).PlayerCaster(),
+        };
+        Assert.True(interactionBody.SnapInteractionToGround(Assert.IsType<TerrainData>(mission.Terrain)));
+        Assert.True(interactionBody.IsGrounded);
+        Assert.True(interactionBody.Position.Z < terminalPose.Z);
+        Vector3d retailEye = terminal.Anchor
+            + ((reportedPlayerPosition - terminal.Anchor).Normalized()
+                * (WorldInteractionRegistry.ActivateRadius * 0.75));
+        Vector3d towardTerminal = terminal.Anchor - retailEye;
+        float terminalYaw = (float)Math.Atan2(towardTerminal.X, towardTerminal.Y);
+        float terminalPitch = (float)Math.Atan2(
+            towardTerminal.Z,
+            Math.Sqrt((towardTerminal.X * towardTerminal.X) + (towardTerminal.Y * towardTerminal.Y)));
+        Assert.Same(
+            terminal,
+            interactions.Resolve(retailEye, terminalYaw, terminalPitch));
+        Assert.True(door.IsLocked);
+        Assert.False(door.IsPickable);
+        Assert.False(door.IsAvailable);
+
+        terminal.BeginUse();
+        terminal.CompleteUse();
+        interactions.Tick();
+        doors.Tick();
+
+        Assert.False(door.Door!.IsFullyClosed);
+    }
 
     [RequiresGameDataFact]
     public void EveryRetailDirectInteractionHasARegisteredActivateType()
@@ -72,6 +138,17 @@ public sealed class RetailInteractionInventoryTests
                 Assert.Equal(
                     Math.Max(1, (int)(ReadReal(interaction.Task, durationParameter, 4f) * 30f)),
                     interaction.DurationTicks);
+                if (interaction.Type is InteractionActivateType.Terminal or InteractionActivateType.Generic)
+                {
+                    (Vector3d pose, _) = interaction.BodyPose(interaction.Anchor);
+                    Vector3d localPose = interaction.Orientation.Transform(pose - interaction.Anchor);
+                    double expectedForward = interaction.Type == InteractionActivateType.Terminal
+                        ? 2764.8
+                        : 3481.6;
+                    Assert.Equal(0.0, localPose.X, 3);
+                    Assert.Equal(expectedForward, localPose.Y, 3);
+                    Assert.Equal(0.0, localPose.Z, 3);
+                }
             }
             foreach (WorldInteraction door in interactions.Items.Where(
                 static item => item.Type == InteractionActivateType.Door))
@@ -210,7 +287,9 @@ public sealed class RetailInteractionInventoryTests
         Assert.True(genericPickupTotal > 0, "No shipped GenericPickup task was loaded.");
     }
 
-    private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(int missionId)
+    private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(
+        int missionId,
+        bool loadTerrain = false)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -224,7 +303,8 @@ public sealed class RetailInteractionInventoryTests
         magic.Register(loop.Natives);
         magic.Load(resources, loop.Natives);
         LevelLoader level = new(root, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level).Load(missionId);
+        TerrainLoader? terrain = loadTerrain ? new TerrainLoader(resources, loop.Natives) : null;
+        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level, null, terrain).Load(missionId);
         return (root, magic, mission, loop.Variables);
     }
 

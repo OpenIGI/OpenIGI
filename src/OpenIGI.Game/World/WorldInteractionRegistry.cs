@@ -32,6 +32,7 @@ public sealed class WorldInteraction
         int durationTicks,
         string actionSprite,
         DoorState? door,
+        bool isPickable,
         AiStationaryGun? stationaryGun,
         Vector3d localBoundsMinimum,
         Vector3d localBoundsMaximum,
@@ -46,6 +47,7 @@ public sealed class WorldInteraction
         DurationTicks = durationTicks;
         ActionSprite = actionSprite;
         Door = door;
+        IsPickable = isPickable;
         StationaryGun = stationaryGun;
         LocalBoundsMinimum = localBoundsMinimum;
         LocalBoundsMaximum = localBoundsMaximum;
@@ -61,6 +63,8 @@ public sealed class WorldInteraction
     public int DurationTicks { get; }
     public string ActionSprite { get; }
     public DoorState? Door { get; }
+    /// <summary>Whether a locked door allows the player to pick its lock.</summary>
+    public bool IsPickable { get; }
     public AiStationaryGun? StationaryGun { get; }
     public Vector3d LocalBoundsMinimum { get; }
     public Vector3d LocalBoundsMaximum { get; }
@@ -80,6 +84,7 @@ public sealed class WorldInteraction
         InteractionActivateType.Terminal or InteractionActivateType.Generic
             or InteractionActivateType.PlaceExplosive => IsOn && !IsCompleted,
         InteractionActivateType.Cabinet => !IsSearched,
+        InteractionActivateType.Door => !IsLocked || IsPickable,
         _ => true,
     };
 
@@ -170,13 +175,13 @@ public sealed class WorldInteraction
             InteractionActivateType.Cabinet =>
                 Pose(new Vector3d(778.24, 2457.6, 0.0), Facing + MathF.PI),
             InteractionActivateType.Terminal =>
-                Pose(new Vector3d(2764.8, 0.0, 0.0), Facing + MathF.PI),
+                Pose(new Vector3d(0.0, 2764.8, 0.0), Facing + MathF.PI),
             InteractionActivateType.StationaryGun when local.X < 0.0 =>
                 Pose(new Vector3d(-2867.2, 0.0, local.Z), Facing),
             InteractionActivateType.StationaryGun =>
                 Pose(new Vector3d(2867.2, 0.0, local.Z), Facing + MathF.PI),
             InteractionActivateType.Generic =>
-                Pose(new Vector3d(3481.6, 0.0, 0.0), Facing + MathF.PI),
+                Pose(new Vector3d(0.0, 3481.6, 0.0), Facing + MathF.PI),
             InteractionActivateType.PlaceExplosive => PlaceExplosivePose(from),
             InteractionActivateType.Fence => FenceMountPose(from),
             _ => (from, Facing),
@@ -249,6 +254,16 @@ public sealed class WorldInteraction
             return true;
         }
 
+        if (Type == InteractionActivateType.Terminal)
+        {
+            // Terminal::GetActivate (0x443C80) transforms the human-to-magic-vertex-1 delta by
+            // the task's complete orientation. It offers only positive local Y and a 3072-unit
+            // local-X strip. Deriving these axes from Facing reverses the positive side for the
+            // mission-3 keypad authored at gamma 270 degrees.
+            Vector3d local = Orientation.Transform(from - Anchor);
+            return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
+        }
+
         Vector3d toHuman = from - Anchor;
         Vector3d forward = new(Math.Sin(Facing), Math.Cos(Facing), 0.0);
         Vector3d right = new(Math.Cos(Facing), -Math.Sin(Facing), 0.0);
@@ -258,7 +273,7 @@ public sealed class WorldInteraction
         return Type switch
         {
             InteractionActivateType.Switch or InteractionActivateType.Cabinet
-                or InteractionActivateType.Terminal or InteractionActivateType.Generic
+                or InteractionActivateType.Generic
                 or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 3072.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
             _ => true,
@@ -307,7 +322,7 @@ public sealed class WorldInteraction
         }
     }
 
-    internal void Tick()
+    internal void EvaluateConditions()
     {
         IsOn = _onCondition?.Invoke() ?? IsOn;
         IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
@@ -322,6 +337,10 @@ public sealed class WorldInteraction
         {
             Door?.CommandClosed();
         }
+    }
+
+    internal void CommitTick()
+    {
         CompletedThisTick = false;
         InUse.CommitTick();
         if (_pressedTicks > 0)
@@ -364,6 +383,7 @@ public sealed class WorldInteractionRegistry
     public const double ActivateRadius = 8192.0;
 
     private readonly List<WorldInteraction> _items = [];
+    private readonly List<GeneratorPowerState> _generators = [];
 
     public IReadOnlyList<WorldInteraction> Items => _items;
 
@@ -381,6 +401,7 @@ public sealed class WorldInteractionRegistry
         Dictionary<string, MefModel> models = ModelsByName(mission);
         LevelExpressionRuntime expressions = new(variables);
         WorldInteractionRegistry registry = new();
+        CollectGenerators(root, registry, variables, expressions);
         Collect(root, registry, models, doors, variables, expressions);
         return registry;
     }
@@ -388,9 +409,22 @@ public sealed class WorldInteractionRegistry
     /// <summary>Advances task pulses and <c>Last</c> script shadows once at 30 Hz.</summary>
     public void Tick()
     {
+        foreach (GeneratorPowerState generator in _generators)
+        {
+            generator.Tick();
+        }
+
         foreach (WorldInteraction item in _items)
         {
-            item.Tick();
+            item.EvaluateConditions();
+        }
+
+        // Expression pulses remain visible throughout the whole task update. Clearing each pulse as
+        // its owner ran made a listener depend on whether it appeared before or after that owner in
+        // the authored task tree; Terminal_552 precedes its door in mission 3.
+        foreach (WorldInteraction item in _items)
+        {
+            item.CommitTick();
         }
     }
 
@@ -548,7 +582,8 @@ public sealed class WorldInteractionRegistry
                     : default;
             WorldInteraction item = new(
                 declared, type, start, end, orientation, facing,
-                DurationOf(declared, type), SpriteOf(declared, type), door, stationaryGun,
+                DurationOf(declared, type), SpriteOf(declared, type), door,
+                ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
@@ -559,7 +594,7 @@ public sealed class WorldInteractionRegistry
                     or InteractionActivateType.PlaceExplosive
                     ? () => expressions.EvaluateCondition(onExpression, emptyValue: true)
                     : null,
-                type == InteractionActivateType.Door && ReadBool(declared, "Pickable")
+                type == InteractionActivateType.Door
                     ? () => expressions.EvaluateCondition(lockedExpression, emptyValue: false)
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(openExpression)
@@ -575,6 +610,80 @@ public sealed class WorldInteractionRegistry
         foreach (GameTask child in task.Children)
         {
             Collect(child, registry, models, doors, variables, expressions);
+        }
+    }
+
+    private static void CollectGenerators(
+        GameTask task,
+        WorldInteractionRegistry registry,
+        ScriptVarRegistry variables,
+        LevelExpressionRuntime expressions)
+    {
+        if (ConditionalContainerGate.IsDormant(task))
+        {
+            return;
+        }
+
+        if (task is DeclaredTask declared
+            && string.Equals(task.Type.Name, "Generator", StringComparison.Ordinal))
+        {
+            string onExpression = ReadString(
+                declared,
+                "On expression",
+                ReadString(declared, "On Expression", string.Empty));
+            GeneratorPowerState state = new(
+                () => expressions.EvaluateCondition(onExpression, emptyValue: true),
+                ReadBool(declared, "Use backup timer"),
+                Math.Max(0, (int)(ReadReal(declared, "Seconds until power backup", 10f) * 30f)));
+            registry._generators.Add(state);
+            variables.BindBool(declared, "isOn", () => state.IsOn, value => state.IsOn = value);
+            variables.BindInt(
+                declared,
+                "nBackupTimer",
+                () => state.BackupTimer,
+                value => state.BackupTimer = value);
+            state.Initialize();
+        }
+
+        foreach (GameTask child in task.Children)
+        {
+            CollectGenerators(child, registry, variables, expressions);
+        }
+    }
+
+    private sealed class GeneratorPowerState(
+        Func<bool> onCondition,
+        bool useBackupTimer,
+        int backupDelayTicks)
+    {
+        public bool IsOn { get; set; }
+        public int BackupTimer { get; set; } = -1;
+
+        public void Initialize() => IsOn = onCondition();
+
+        public void Tick()
+        {
+            IsOn = onCondition();
+            if (!useBackupTimer)
+            {
+                return;
+            }
+
+            // Generator::Run (0x43B500) starts the backup only after primary power is lost, then
+            // publishes power again when the authored 30 Hz countdown reaches zero.
+            if (!IsOn && BackupTimer == -1)
+            {
+                BackupTimer = backupDelayTicks;
+            }
+
+            if (BackupTimer <= 0)
+            {
+                IsOn = true;
+            }
+            else
+            {
+                BackupTimer--;
+            }
         }
     }
 

@@ -155,7 +155,11 @@ public sealed class TerrainRenderer : IDisposable
             verticalFieldOfView,
             aspectRatio,
             viewDistance > 0 ? viewDistance : null);
-        TerrainTraversalResult result = TerrainTraversal.Collect(_terrain.Octree, view, _chunks);
+        TerrainTraversalResult result = TerrainTraversal.Collect(
+            _terrain.Octree,
+            view,
+            _chunks,
+            _surface.Discards);
 
         _frame++;
         _device.SetProjection(projection);

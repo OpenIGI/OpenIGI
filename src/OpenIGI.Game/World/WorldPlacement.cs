@@ -59,6 +59,14 @@ public sealed record WorldPlacement(
     /// </remarks>
     public bool IsRotor { get; init; }
 
+    /// <summary>Gets whether this placement is an attached child of another object rather than its own task.</summary>
+    /// <remarks>
+    /// The world builder expands a model's children (such as a character riding a vehicle) into their own
+    /// placements. Those inherit the parent's world transform, so they sit on the parent object rather than
+    /// the terrain; the retail load only terrain-snaps a task's own placement, never an attached rider.
+    /// </remarks>
+    public bool IsAttached { get; init; }
+
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
     public bool HasLightmap => LightmapIndex >= 0 && LightmapSet.Length > 0;
 

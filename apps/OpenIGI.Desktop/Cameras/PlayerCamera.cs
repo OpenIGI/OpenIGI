@@ -850,7 +850,7 @@ public sealed class PlayerCamera
         // the instant the climb ends.
         if (_input.IsRisingEdge(PlayerInputSlot.Activate) && _nearInteraction is not null)
         {
-            Activate(_nearInteraction);
+            Activate(_nearInteraction, terrain);
             return;
         }
 
@@ -959,7 +959,7 @@ public sealed class PlayerCamera
         CaptureViewTickState();
     }
 
-    private void Activate(WorldInteraction interaction)
+    private void Activate(WorldInteraction interaction, TerrainData terrain)
     {
         InteractionDispatchResult dispatch = HumanInteractionDispatch.Dispatch(
             interaction.Type, DoorNeedsPicking(interaction));
@@ -984,6 +984,7 @@ public sealed class PlayerCamera
                 _interactionUseArmed = false;
                 (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
                 _body.Position = position;
+                SnapBodyForInteraction(_body, interaction.Type, terrain);
                 _interactionFacing = facing;
                 _body.Yaw = -facing;
                 _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
@@ -994,6 +995,23 @@ public sealed class PlayerCamera
         }
 
         _nearInteraction = null;
+    }
+
+    internal static void SnapBodyForInteraction(
+        PlayerBody body,
+        InteractionActivateType type,
+        TerrainData terrain)
+    {
+        if (type is InteractionActivateType.Door
+            or InteractionActivateType.Cabinet
+            or InteractionActivateType.Terminal
+            or InteractionActivateType.Generic
+            or InteractionActivateType.PlaceExplosive)
+        {
+            // IGI2 HumanPlayer_InitStateActivate* names this sequence explicitly: Human_PopPosition,
+            // then Human_SnapToGround. IGI1 has the same pair at sub_4631A0/sub_463260.
+            body.SnapInteractionToGround(terrain);
+        }
     }
 
     private void BeginWire(WorldInteraction wire)
@@ -1124,18 +1142,31 @@ public sealed class PlayerCamera
         _activeInteraction = null;
         _interactionTick = 0;
         _interactionFacing = -_body.Yaw;
-        if (interaction.Type == InteractionActivateType.Wire)
+        RestoreBodyAfterInteraction(_body, interaction.Type, terrain);
+        PoseChanged = true;
+        SyncView();
+    }
+
+    internal static void RestoreBodyAfterInteraction(
+        PlayerBody body,
+        InteractionActivateType type,
+        TerrainData terrain)
+    {
+        if (type == InteractionActivateType.Wire)
         {
             // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
             // release/end look like an instant teleport to ground instead of a drop from the cable.
-            _body.EndLadderTraversal(terrain, placeOnGround: false);
+            body.EndLadderTraversal(terrain, placeOnGround: false);
         }
-        else
+        else if (type == InteractionActivateType.Fence)
         {
-            _body.PlaceOnGround(terrain);
+            // The authored traversal ends above its far-side landing point; settle that endpoint onto
+            // the nearest terrain or placed-model surface before ordinary locomotion resumes.
+            body.PlaceOnGround(terrain);
         }
-        PoseChanged = true;
-        SyncView();
+        // Retail self-driving interaction states leave the root exactly where their initializer put it.
+        // Re-running spawn placement here searches up to half a kilometre downward and can move the
+        // player onto an unrelated surface beneath the building when Use is released.
     }
 
     private static bool DoorNeedsPicking(WorldInteraction interaction)
