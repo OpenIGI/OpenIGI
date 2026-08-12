@@ -1564,6 +1564,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // when the forward pass triggered it.
         ResolveTemporal(target);
 
+        // Full-screen post-processing owns every output pixel and must not inherit a 3D draw's depth
+        // state. The foreground view-model pass deliberately ends in TestAndWrite; before it existed,
+        // another enabled pass usually happened to disable depth here. Spatial AA adds a final draw to
+        // the window framebuffer, whose depth attachment is unrelated to the offscreen scene. Testing
+        // that fullscreen triangle against stale window depth left jagged, undrawn islands visible in
+        // the upper-right corner whenever the rig was present (walk mode, but not fly mode).
+        _gl.Disable(EnableCap.DepthTest);
+        _gl.DepthMask(false);
+        _depthState = DepthState.Disabled;
+
         // One bracket over the whole chain -- defocus, bloom, tone map, grade, edge filter -- because
         // that is the granularity the budget was written at, and because five separate queries over
         // five full-screen passes would start to perturb what they measure.
