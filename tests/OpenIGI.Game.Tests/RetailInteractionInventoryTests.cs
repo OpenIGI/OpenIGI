@@ -21,6 +21,39 @@ public sealed class RetailInteractionInventoryTests
     };
 
     [RequiresGameDataFact]
+    public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(3);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+
+        Assert.True(variables.TryRead("Generator_99.isOn", out var generatorPower));
+        Assert.Equal(1, generatorPower.Integer);
+
+        WorldInteraction terminal = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Terminal && item.Task.Id == 552);
+        WorldInteraction door = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Door
+                && item.Task.TryGetValue("Open door expression", out object? expression)
+                && string.Equals(expression as string, "Terminal_552.isHackedThisTick", StringComparison.Ordinal));
+
+        interactions.Tick();
+        Assert.True(terminal.IsAvailable);
+        Assert.True(door.IsLocked);
+        Assert.False(door.IsPickable);
+        Assert.False(door.IsAvailable);
+
+        terminal.BeginUse();
+        terminal.CompleteUse();
+        interactions.Tick();
+        doors.Tick();
+
+        Assert.False(door.Door!.IsFullyClosed);
+    }
+
+    [RequiresGameDataFact]
     public void EveryRetailDirectInteractionHasARegisteredActivateType()
     {
         Dictionary<string, int> totals = InteractiveTypes.ToDictionary(static name => name, static _ => 0);
