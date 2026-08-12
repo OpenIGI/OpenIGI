@@ -7,6 +7,7 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
@@ -25,6 +26,40 @@ namespace OpenIGI.Game.Tests;
 /// </remarks>
 public sealed class RetailWorldSceneTests
 {
+    [RequiresGameDataFact]
+    public void MissionFourteenExpandsTerrainlessBuildingHolders()
+    {
+        (WorldScene scene, LoadedMission mission) = Build(14, includeMagic: true, out LevelTask levelRoot);
+
+        Assert.Null(mission.Terrain);
+        Assert.Equal(0, scene.UnresolvedCount);
+        Assert.Contains(
+            scene.Placements,
+            placement => placement.Owner.Type.Name == "Building" && placement.Model.IsEmpty);
+
+        GameTask[] buildings = scene.Placements
+            .Where(placement => placement.Owner.Type.Name == "Building")
+            .Select(placement => placement.Owner)
+            .Distinct()
+            .ToArray();
+
+        Assert.Equal(120, buildings.Length);
+        Assert.True(scene.AttachedCount > 1000, $"expected the indoor complex, got {scene.AttachedCount} attachments");
+
+        Assert.True(PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn));
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        PlayerBody player = new()
+        {
+            Position = spawn.Position,
+            Walls = solids.PlayerRegistrationCaster(),
+        };
+        Assert.True(
+            player.PlaceOnGround(terrain: null),
+            $"spawn {spawn.Position} found no floor in {solids.Count} solid placement(s)");
+
+
+    }
+
     [RequiresGameDataFact]
     public void EveryPlacedModelResolvesToAPackInstance()
     {
@@ -253,22 +288,41 @@ public sealed class RetailWorldSceneTests
         Assert.True(bound > 200, $"expected the level's baked objects to bind, got {bound}");
     }
 
-    private static (WorldScene Scene, LoadedMission Mission) Build()
+    private static (WorldScene Scene, LoadedMission Mission) Build(
+        int missionId = 1,
+        bool includeMagic = false)
+        => Build(missionId, includeMagic, out _);
+
+    private static (WorldScene Scene, LoadedMission Mission) Build(
+        int missionId,
+        bool includeMagic,
+        out LevelTask levelRoot)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
 
         GameLoop loop = new(new ManualTimeSource());
-        LevelTask levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        PlayerTaskTypes.RegisterAll(loop.Types);
+        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        levelRoot = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
 
         MissionRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Scan(fileSystem, resources, loop.Natives);
 
-        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader).Load(1);
+        MagicObjectRegistry? magic = null;
+        if (includeMagic)
+        {
+            magic = new MagicObjectRegistry();
+            magic.Register(loop.Natives);
+            magic.Load(resources, loop.Natives);
+        }
 
-        return (WorldScene.Build(mission, levelRoot), mission);
+        LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
+        LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader).Load(missionId);
+        new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
+
+        return (WorldScene.Build(mission, levelRoot, magic), mission);
     }
 }

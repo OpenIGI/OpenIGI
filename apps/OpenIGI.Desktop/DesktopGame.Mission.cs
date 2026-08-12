@@ -88,6 +88,18 @@ internal sealed partial class DesktopGame
         return WorldScene.TrainCouplingPivotFraction(model);
     }
 
+    /// <summary>Chooses the engine-unit occupant used by AreaActivate building-streaming volumes.</summary>
+    /// <param name="playerUnits">The player's body position in engine units.</param>
+    /// <param name="activeViewMetres">
+    /// The authored/free-camera position in renderer metres when that view owns the frame; otherwise null.
+    /// </param>
+    internal static Vector3d? AreaActivationOccupant(
+        Vector3d? playerUnits,
+        Vector3d? activeViewMetres) =>
+        activeViewMetres is { } view
+            ? view * WorldScene.UnitsPerMetre
+            : playerUnits;
+
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
@@ -721,9 +733,9 @@ internal sealed partial class DesktopGame
                 : FreeCameraFactory.Create(scene, _options.CameraYaw, _options.CameraPitch, _options.CameraHeight);
         }
 
-        // The player stands where the camera looks from, dropped onto whatever is under it. A level
-        // whose terrain is not live data has nothing to stand on, so the player stays unavailable and
-        // F1 does nothing.
+        // The player stands where the camera looks from, dropped onto whatever is under it. Terrain is
+        // optional: Mission 14 is entirely inside placed building/tunnel models, whose collision floors
+        // are enough for placement and movement even though its terrain files are not live data.
         _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
         _player = null;
         _playerMode = false;
@@ -740,7 +752,6 @@ internal sealed partial class DesktopGame
 
         EndStage("the terrain, sky, sun, grade and camera");
 
-        if (_playerTerrain is not null)
         {
             PlayerCamera candidate = new(_logger);
 
@@ -1030,7 +1041,7 @@ internal sealed partial class DesktopGame
             // fallback needs a camera to read; a level with neither is simply not placed, which the
             // warning below already covers.
             bool placed = PlayerSpawn.TryFindGameplay(levelRoot, out PlayerSpawnPoint spawn)
-                ? candidate.PlaceAt(_playerTerrain, spawn)
+                ? candidate.PlaceAt(_playerTerrain, spawn, solids.PlayerRegistrationCaster())
                 : _camera is { } opening && candidate.Place(_playerTerrain, opening.Position, _options.CameraYaw);
 
             if (placed)

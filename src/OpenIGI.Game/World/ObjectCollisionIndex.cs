@@ -500,6 +500,18 @@ public sealed class ObjectCollisionIndex
     /// <summary>Gets the collision-level-one cast retail player movement uses.</summary>
     public WorldRayCast PlayerCaster() => TryCastForPlayer;
 
+    /// <summary>Gets the player's collision cast over the registration-time world, including dormant containers.</summary>
+    /// <remarks>
+    /// A mission constructs its player before an opening cutscene hands control to the gameplay
+    /// conditional container. The authored spawn still has to settle onto that container's floor, so
+    /// initial placement uses this immutable, doors-shut view; ordinary movement uses
+    /// <see cref="PlayerCaster"/> and therefore observes live container and door state.
+    /// </remarks>
+    public WorldRayCast PlayerRegistrationCaster() => TryCastForPlayerAtRegistration;
+
+    private bool TryCastForPlayerAtRegistration(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        Cast(_playerEntries, origin, end, honourPassable: false, out hit);
+
     /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
     /// <summary>Gets the rich trace delegate bound to this index.</summary>

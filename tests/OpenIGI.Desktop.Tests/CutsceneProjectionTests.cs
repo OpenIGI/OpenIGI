@@ -1,3 +1,5 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Game.World;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -13,5 +15,19 @@ public sealed class CutsceneProjectionTests
 
         Assert.Equal(retail, actual, 6);
         Assert.True(actual > croppedWidescreen);
+    }
+
+    [Fact]
+    public void ActiveViewDrivesAreaStreamedBuildingsDuringACutscene()
+    {
+        Vector3d playerUnits = new(100.0, 200.0, 300.0);
+        Vector3d cameraMetres = new(4.0, 5.0, 6.0);
+
+        Assert.Equal(
+            cameraMetres * WorldScene.UnitsPerMetre,
+            DesktopGame.AreaActivationOccupant(playerUnits, cameraMetres));
+        Assert.Equal(
+            playerUnits,
+            DesktopGame.AreaActivationOccupant(playerUnits, activeViewMetres: null));
     }
 }

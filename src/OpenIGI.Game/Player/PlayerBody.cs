@@ -240,14 +240,11 @@ public sealed class PlayerBody
     }
 
     /// <summary>Runs state 40's damped slide velocity through the normal wall and ground collision pass.</summary>
-    /// <param name="terrain">The level terrain.</param>
+    /// <param name="terrain">The level terrain, or <see langword="null"/> for an object-only interior.</param>
     /// <param name="animationDelta">Animation 169's world-space root delta for this tick.</param>
     /// <returns><see langword="true"/> when the slide generated the ground-collision signal.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
-    public bool TickLadderSlide(TerrainData terrain, Vector3d animationDelta)
+    public bool TickLadderSlide(TerrainData? terrain, Vector3d animationDelta)
     {
-        ArgumentNullException.ThrowIfNull(terrain);
-
         Velocity = HumanMotion.IntegrateLadderSlide(Velocity);
         Vector3d next = new(
             Position.X + animationDelta.X + Velocity.X,
@@ -277,10 +274,8 @@ public sealed class PlayerBody
     /// Whether to resolve the highest surface below the authored endpoint. Top animation 170 uses this
     /// to commit onto the roof instead of allowing numerical drift to fall through it.
     /// </param>
-    public void EndLadderTraversal(TerrainData terrain, bool placeOnGround)
+    public void EndLadderTraversal(TerrainData? terrain, bool placeOnGround)
     {
-        ArgumentNullException.ThrowIfNull(terrain);
-
         Velocity = default;
         InheritedVelocity = default;
         SlopeSlide = default;
@@ -295,16 +290,13 @@ public sealed class PlayerBody
 
     /// <summary>Advances the player by one tick.</summary>
     /// <param name="command">What the player asked for.</param>
-    /// <param name="terrain">The level's terrain, for the ground query.</param>
+    /// <param name="terrain">The level's terrain for the ground query, or <see langword="null"/>.</param>
     /// <param name="rootDelta">
     /// The animation's delta translation for this tick, in the body's own frame: <b>X is sideways and
     /// Y is forward</b>, matching the view's right and forward axes.
     /// </param>
-    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
-    public void Tick(in PlayerCommand command, TerrainData terrain, Vector3f rootDelta)
+    public void Tick(in PlayerCommand command, TerrainData? terrain, Vector3f rootDelta)
     {
-        ArgumentNullException.ThrowIfNull(terrain);
-
         ProcessPendingLanding();
 
         // Grounded states observe a lost ground bit on the tick after collision. State 29's entry
@@ -443,7 +435,7 @@ public sealed class PlayerBody
 
     /// <summary>Advances the player by one tick, taking its movement from its own animation.</summary>
     /// <param name="command">What the player asked for.</param>
-    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="terrain">The level's terrain, or <see langword="null"/>.</param>
     /// <param name="animator">The locomotion animator, which supplies the delta translation.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     /// <remarks>
@@ -460,9 +452,8 @@ public sealed class PlayerBody
     /// a cycle rather than blending through the state the original would pass through.
     /// </para>
     /// </remarks>
-    public void TickAnimated(in PlayerCommand command, TerrainData terrain, HumanLocomotionAnimator animator)
+    public void TickAnimated(in PlayerCommand command, TerrainData? terrain, HumanLocomotionAnimator animator)
     {
-        ArgumentNullException.ThrowIfNull(terrain);
         ArgumentNullException.ThrowIfNull(animator);
 
         animator.Enter(SelectState(command));
@@ -561,7 +552,7 @@ public sealed class PlayerBody
     /// bug this restores.
     /// </para>
     /// </remarks>
-    private void Settle(ref Vector3d position, TerrainData terrain, Vector3d movementStart)
+    private void Settle(ref Vector3d position, TerrainData? terrain, Vector3d movementStart)
     {
         double from = position.Z + HumanGroundQuery.ProbeOrigin(IsCrouched);
 
@@ -574,7 +565,7 @@ public sealed class PlayerBody
         // loses the terrain forever. The retail mover casts the move before its endpoint ground query;
         // preserve that continuous part for terrain by taking the first upward-facing triangle crossed
         // by the feet. This is what prevents a high fall tunnelling under the map.
-        if (!IsGrounded && position.Z < movementStart.Z)
+        if (terrain is not null && !IsGrounded && position.Z < movementStart.Z)
         {
             WorldTraceRequest fall = new(movementStart, position, WorldTraceMask.Terrain);
             if (TerrainRayTrace.TryTrace(terrain, fall, out WorldTraceHit crossed) && crossed.Normal.Z > 0f)
@@ -585,7 +576,9 @@ public sealed class PlayerBody
             }
         }
 
-        if (!found && TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
+        if (terrain is not null
+            && !found
+            && TerrainHeightQuery.TryGetGround(terrain, position.X, position.Y, from, out TerrainGround ground))
         {
             found = true;
             height = ground.Height;
@@ -695,20 +688,17 @@ public sealed class PlayerBody
     public const double InteractionSnapSearchUnits = 4096000.0;
 
     /// <summary>Snaps an authored interaction root to the highest terrain or placed-model surface below it.</summary>
-    public bool SnapInteractionToGround(TerrainData terrain) =>
+    public bool SnapInteractionToGround(TerrainData? terrain) =>
         PlaceOnGround(terrain, InteractionSnapSearchUnits);
 
     /// <summary>Drops the player onto the ground beneath it, for placing one at the start of a level.</summary>
-    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="terrain">The level's terrain, or <see langword="null"/> for an object-only interior.</param>
     /// <returns><see langword="false"/> when there is nothing under the player to stand on.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
-    public bool PlaceOnGround(TerrainData terrain)
+    public bool PlaceOnGround(TerrainData? terrain)
         => PlaceOnGround(terrain, PlacementSearchUnits);
 
-    private bool PlaceOnGround(TerrainData terrain, double searchUnits)
+    private bool PlaceOnGround(TerrainData? terrain, double searchUnits)
     {
-        ArgumentNullException.ThrowIfNull(terrain);
-
         _pendingWalkOffVelocity = null;
 
         double from = Position.Z + HumanGroundQuery.ProbeOriginStandingInUnits;
@@ -719,7 +709,7 @@ public sealed class PlayerBody
 
         // Terrain: walk down in whole probe lengths and take the first — the highest — ground found.
         double probe = from;
-        while (probe > floor)
+        while (terrain is not null && probe > floor)
         {
             if (TerrainHeightQuery.TryGetGround(terrain, Position.X, Position.Y, probe, out TerrainGround ground))
             {

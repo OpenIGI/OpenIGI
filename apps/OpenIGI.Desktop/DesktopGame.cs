@@ -1444,7 +1444,7 @@ internal sealed partial class DesktopGame : IDisposable
                 _playerMode = !_playerMode;
                 if (_playerMode)
                 {
-                    if (!_player.Place(_playerTerrain!, _camera.Position, _camera.Yaw))
+                    if (!_player.Place(_playerTerrain, _camera.Position, _camera.Yaw))
                     {
                         _playerMode = false;
                         _logger.Warning("Player", "Nothing to stand on here; staying with the free camera.");
@@ -1619,7 +1619,7 @@ internal sealed partial class DesktopGame : IDisposable
             // The player then moved as fast as the display was quick, which is exactly what it looked like.
             if (outcome is FrameOutcome.Tick
                 && _cutscenes?.IsPlaying != true
-                && _playerMode && _player is not null && _playerTerrain is not null)
+                && _playerMode && _player is not null)
             {
                 // A dead player is in locomotion state 47, whose per-tick is not the walking one -- so the
                 // body stops being stepped rather than being stepped with no input. Without this a corpse
@@ -1776,7 +1776,16 @@ internal sealed partial class DesktopGame : IDisposable
                 // Retail's EditVariable tasks run before the AlarmControls that consume them. Mission 1's
                 // alarm latch depends on that order: reversing it sets and clears the latch during the
                 // same multi-tick switch pulse, cutting the siren off almost as soon as it starts.
-                _missionObjectives?.TickLevelState(_player?.Body.Position);
+                // Mission 14 streams 108 of its 120 building tasks through AreaActivate volumes. During
+                // an authored cinematic (or while inspecting in the free camera), the visible occupant
+                // is the active view rather than the stationary player body at the gameplay spawn.
+                // Driving those volumes from the body left whole tunnel sections unregistered as the
+                // camera crossed into them. Ordinary walking remains player-driven.
+                Vector3d? activationViewMetres = _cutscenes?.Frame?.Camera.Position
+                    ?? (!_playerMode ? _camera?.Position : null);
+                _missionObjectives?.TickLevelState(AreaActivationOccupant(
+                    _player?.Body.Position,
+                    activationViewMetres));
                 _cutscenes?.FinishExpressionTick();
                 if (_securityCameras is { } cameras)
                 {

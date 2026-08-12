@@ -300,7 +300,11 @@ public sealed class WorldScene
         {
             foreach (MtpInstance instance in pack.Instances)
             {
-                if (pack.TryGetModel(instance, out MefModel? model) && model is not null && !model.IsEmpty)
+                // Some models are attachment-only holders: they carry no vertices of their own, but
+                // their ATTA tree names the pieces that make up the visible object. Mission 14 builds
+                // almost every room and tunnel from these holders, so dropping them here prevents the
+                // attachment walk below from ever seeing the actual geometry.
+                if (pack.TryGetModel(instance, out MefModel? model) && model is not null)
                 {
                     byName[instance.Name] = (instance, pack, model);
                 }
@@ -524,6 +528,9 @@ public sealed class WorldScene
                     };
                 }
 
+                // Empty render geometry does not make this placement disposable. Attachment holders
+                // can carry HSMC collision of their own (Mission 14's room floors do), while the world
+                // renderer already ignores the null mesh MefMeshBuilder returns for them.
                 placements.Add(placement);
 
                 // Everything the model attaches, and everything those attach in turn. The tree is only

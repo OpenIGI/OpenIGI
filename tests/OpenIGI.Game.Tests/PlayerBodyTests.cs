@@ -165,6 +165,39 @@ public sealed class PlayerBodyTests
         Assert.Equal(platformZ, player.Position.Z, 1e-6);
     }
 
+    [Fact]
+    public void APlayerCanBePlacedAndRemainGroundedOnAnObjectWithoutTerrain()
+    {
+        const double floorZ = 1000.0;
+        PlayerBody player = new()
+        {
+            Position = new Vector3d(2000.0, 3000.0, 10000.0),
+        };
+        player.Walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            hit = default;
+            if (end.Z >= origin.Z || origin.Z < floorZ || end.Z > floorZ)
+            {
+                return false;
+            }
+
+            hit = new WorldRayHit(
+                new Vector3d(origin.X, origin.Y, floorZ),
+                new Vector3f(0f, 0f, 1f),
+                origin.Z - floorZ);
+            return true;
+        };
+
+        Assert.True(player.PlaceOnGround(terrain: null));
+        Assert.True(player.IsGrounded);
+        Assert.Equal(floorZ, player.Position.Z);
+
+        player.Tick(default, terrain: null, rootDelta: default);
+
+        Assert.True(player.IsGrounded);
+        Assert.Equal(floorZ, player.Position.Z);
+    }
+
     [RequiresGameDataFact]
     public void InteractionSnapFindsThePlacedFloorBelowAnAuthoredRoot()
     {
