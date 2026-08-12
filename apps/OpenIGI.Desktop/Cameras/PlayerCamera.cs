@@ -1124,18 +1124,31 @@ public sealed class PlayerCamera
         _activeInteraction = null;
         _interactionTick = 0;
         _interactionFacing = -_body.Yaw;
-        if (interaction.Type == InteractionActivateType.Wire)
+        RestoreBodyAfterInteraction(_body, interaction.Type, terrain);
+        PoseChanged = true;
+        SyncView();
+    }
+
+    internal static void RestoreBodyAfterInteraction(
+        PlayerBody body,
+        InteractionActivateType type,
+        TerrainData terrain)
+    {
+        if (type == InteractionActivateType.Wire)
         {
             // Wire cleanup enters the ordinary fall state. Snapping to the terrain here is what made a
             // release/end look like an instant teleport to ground instead of a drop from the cable.
-            _body.EndLadderTraversal(terrain, placeOnGround: false);
+            body.EndLadderTraversal(terrain, placeOnGround: false);
         }
-        else
+        else if (type == InteractionActivateType.Fence)
         {
-            _body.PlaceOnGround(terrain);
+            // The authored traversal ends above its far-side landing point; settle that endpoint onto
+            // the nearest terrain or placed-model surface before ordinary locomotion resumes.
+            body.PlaceOnGround(terrain);
         }
-        PoseChanged = true;
-        SyncView();
+        // Retail self-driving interaction states leave the root exactly where their initializer put it.
+        // Re-running spawn placement here searches up to half a kilometre downward and can move the
+        // player onto an unrelated surface beneath the building when Use is released.
     }
 
     private static bool DoorNeedsPicking(WorldInteraction interaction)

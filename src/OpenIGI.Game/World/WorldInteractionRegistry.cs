@@ -175,13 +175,13 @@ public sealed class WorldInteraction
             InteractionActivateType.Cabinet =>
                 Pose(new Vector3d(778.24, 2457.6, 0.0), Facing + MathF.PI),
             InteractionActivateType.Terminal =>
-                Pose(new Vector3d(2764.8, 0.0, 0.0), Facing + MathF.PI),
+                Pose(new Vector3d(0.0, 2764.8, 0.0), Facing + MathF.PI),
             InteractionActivateType.StationaryGun when local.X < 0.0 =>
                 Pose(new Vector3d(-2867.2, 0.0, local.Z), Facing),
             InteractionActivateType.StationaryGun =>
                 Pose(new Vector3d(2867.2, 0.0, local.Z), Facing + MathF.PI),
             InteractionActivateType.Generic =>
-                Pose(new Vector3d(3481.6, 0.0, 0.0), Facing + MathF.PI),
+                Pose(new Vector3d(0.0, 3481.6, 0.0), Facing + MathF.PI),
             InteractionActivateType.PlaceExplosive => PlaceExplosivePose(from),
             InteractionActivateType.Fence => FenceMountPose(from),
             _ => (from, Facing),

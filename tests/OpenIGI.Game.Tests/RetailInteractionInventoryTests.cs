@@ -47,6 +47,11 @@ public sealed class RetailInteractionInventoryTests
         // move inside the verified 8192-unit Human_UpdateActivate radius, and aim at magic vertex 1.
         Vector3d reportedPlayerPosition = new(23802971.0, -55285329.0, 174418631.0);
         Assert.True(terminal.CanOfferFrom(reportedPlayerPosition));
+        (Vector3d terminalPose, _) = terminal.BodyPose(reportedPlayerPosition);
+        Vector3d terminalPoseLocal = terminal.Orientation.Transform(terminalPose - terminal.Anchor);
+        Assert.Equal(0.0, terminalPoseLocal.X, 3);
+        Assert.Equal(2764.8, terminalPoseLocal.Y, 3);
+        Assert.Equal(0.0, terminalPoseLocal.Z, 3);
         Vector3d retailEye = terminal.Anchor
             + ((reportedPlayerPosition - terminal.Anchor).Normalized()
                 * (WorldInteractionRegistry.ActivateRadius * 0.75));
@@ -122,6 +127,17 @@ public sealed class RetailInteractionInventoryTests
                 Assert.Equal(
                     Math.Max(1, (int)(ReadReal(interaction.Task, durationParameter, 4f) * 30f)),
                     interaction.DurationTicks);
+                if (interaction.Type is InteractionActivateType.Terminal or InteractionActivateType.Generic)
+                {
+                    (Vector3d pose, _) = interaction.BodyPose(interaction.Anchor);
+                    Vector3d localPose = interaction.Orientation.Transform(pose - interaction.Anchor);
+                    double expectedForward = interaction.Type == InteractionActivateType.Terminal
+                        ? 2764.8
+                        : 3481.6;
+                    Assert.Equal(0.0, localPose.X, 3);
+                    Assert.Equal(expectedForward, localPose.Y, 3);
+                    Assert.Equal(0.0, localPose.Z, 3);
+                }
             }
             foreach (WorldInteraction door in interactions.Items.Where(
                 static item => item.Type == InteractionActivateType.Door))
