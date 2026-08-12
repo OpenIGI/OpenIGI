@@ -41,6 +41,23 @@ public sealed class RetailInteractionInventoryTests
 
         interactions.Tick();
         Assert.True(terminal.IsAvailable);
+
+        // F12 telemetry reports the body root rather than the HumanView eye used by the retail scan.
+        // It still gives us the exact side from which this keypad must offer itself. Keep that side,
+        // move inside the verified 8192-unit Human_UpdateActivate radius, and aim at magic vertex 1.
+        Vector3d reportedPlayerPosition = new(23802971.0, -55285329.0, 174418631.0);
+        Assert.True(terminal.CanOfferFrom(reportedPlayerPosition));
+        Vector3d retailEye = terminal.Anchor
+            + ((reportedPlayerPosition - terminal.Anchor).Normalized()
+                * (WorldInteractionRegistry.ActivateRadius * 0.75));
+        Vector3d towardTerminal = terminal.Anchor - retailEye;
+        float terminalYaw = (float)Math.Atan2(towardTerminal.X, towardTerminal.Y);
+        float terminalPitch = (float)Math.Atan2(
+            towardTerminal.Z,
+            Math.Sqrt((towardTerminal.X * towardTerminal.X) + (towardTerminal.Y * towardTerminal.Y)));
+        Assert.Same(
+            terminal,
+            interactions.Resolve(retailEye, terminalYaw, terminalPitch));
         Assert.True(door.IsLocked);
         Assert.False(door.IsPickable);
         Assert.False(door.IsAvailable);

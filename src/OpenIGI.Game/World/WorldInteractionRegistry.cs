@@ -254,6 +254,16 @@ public sealed class WorldInteraction
             return true;
         }
 
+        if (Type == InteractionActivateType.Terminal)
+        {
+            // Terminal::GetActivate (0x443C80) transforms the human-to-magic-vertex-1 delta by
+            // the task's complete orientation. It offers only positive local Y and a 3072-unit
+            // local-X strip. Deriving these axes from Facing reverses the positive side for the
+            // mission-3 keypad authored at gamma 270 degrees.
+            Vector3d local = Orientation.Transform(from - Anchor);
+            return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
+        }
+
         Vector3d toHuman = from - Anchor;
         Vector3d forward = new(Math.Sin(Facing), Math.Cos(Facing), 0.0);
         Vector3d right = new(Math.Cos(Facing), -Math.Sin(Facing), 0.0);
@@ -263,7 +273,7 @@ public sealed class WorldInteraction
         return Type switch
         {
             InteractionActivateType.Switch or InteractionActivateType.Cabinet
-                or InteractionActivateType.Terminal or InteractionActivateType.Generic
+                or InteractionActivateType.Generic
                 or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 3072.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
             _ => true,
