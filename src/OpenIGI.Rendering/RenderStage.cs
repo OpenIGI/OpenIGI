@@ -17,14 +17,23 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public enum RenderStage
 {
+    /// <summary>Framebuffer binds, viewport changes and clears before scene rasterisation.</summary>
+    Setup,
+
     /// <summary>Every shadow cascade's depth render, together.</summary>
     Shadows,
 
-    /// <summary>The G-buffer fill: albedo, normals, material, motion and depth.</summary>
+    /// <summary>Opaque world rasterisation, including Vanilla's direct forward path.</summary>
     Geometry,
 
-    /// <summary>The horizon search — ambient occlusion and its screen-space bounce.</summary>
-    AmbientOcclusion,
+    /// <summary>Multisample or G-buffer resolve work after opaque rasterisation.</summary>
+    GeometryResolve,
+
+    /// <summary>The low-resolution horizon search for ambient occlusion and screen-space bounce.</summary>
+    AmbientOcclusionSearch,
+
+    /// <summary>Depth- and normal-aware reconstruction of the occlusion result.</summary>
+    AmbientOcclusionReconstruct,
 
     /// <summary>The deferred lighting pass, including the probe field's contribution.</summary>
     Lighting,
@@ -32,15 +41,36 @@ public enum RenderStage
     /// <summary>The screen-space reflection march.</summary>
     Reflections,
 
-    /// <summary>The volumetric fog march.</summary>
-    Fog,
+    /// <summary>The low-resolution volumetric fog integration.</summary>
+    FogIntegrate,
+
+    /// <summary>The depth-aware full-resolution fog composite.</summary>
+    FogComposite,
 
     /// <summary>The forward pass — translucent surfaces and the view model.</summary>
     Forward,
 
-    /// <summary>The temporal resolve and upsample.</summary>
-    Temporal,
+    /// <summary>The temporal resolve, reprojection and resolution transfer.</summary>
+    TemporalResolve,
 
-    /// <summary>Everything after the scene: defocus, bloom, tone map, grade and edge filter.</summary>
-    Post,
+    /// <summary>Depth of field, motion blur and other camera/lens effects.</summary>
+    CameraEffects,
+
+    /// <summary>Bloom extraction and blur.</summary>
+    Bloom,
+
+    /// <summary>Luminance reduction and exposure adaptation.</summary>
+    Exposure,
+
+    /// <summary>Tone mapping, colour grading, vignette and final encode.</summary>
+    ToneMapGrade,
+
+    /// <summary>The display-space anti-aliasing filter.</summary>
+    SpatialAntiAliasing,
+
+    /// <summary>Desktop-owned HUD, menus and other two-dimensional rasterisation.</summary>
+    UserInterface,
+
+    /// <summary>Debug panels, primitives and developer overlays.</summary>
+    DebugRendering,
 }

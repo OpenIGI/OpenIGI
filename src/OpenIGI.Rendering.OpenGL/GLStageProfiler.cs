@@ -34,13 +34,7 @@ namespace OpenIGI.Rendering.OpenGL;
 /// </remarks>
 internal sealed class GLStageProfiler : IDisposable
 {
-    /// <summary>How much of the smoothed figure each new sample contributes.</summary>
-    /// <remarks>
-    /// Slow on purpose. A single frame's query is far noisier than what is being judged — clock boost,
-    /// batching and the odd resident-set miss move it by a factor of two — and a budget is a claim
-    /// about the steady state. At this weight a step change settles in roughly a second.
-    /// </remarks>
-    private const double Smoothing = 0.05;
+    private const int RollingSamples = BenchmarkSchedule.MeasuredFrames;
 
     /// <summary>The most queries left outstanding before new stages stop being timed.</summary>
     /// <remarks>
@@ -48,7 +42,7 @@ internal sealed class GLStageProfiler : IDisposable
     /// query per stage per frame forever. Three frames' worth of stages is far more than the one or two
     /// frames of lag that actually occur.
     /// </remarks>
-    private const int MaxPending = 64;
+    private const int MaxPending = 128;
 
     /// <summary>How many frames are measured and thrown away before anything is believed.</summary>
     /// <remarks>
@@ -57,12 +51,17 @@ internal sealed class GLStageProfiler : IDisposable
     /// 226 ms against a steady-state 0.6. Left in, that one frame is the peak for the rest of the run
     /// and the peak column says nothing about play.
     /// </remarks>
-    private const int WarmUpFrames = 60;
+    private const int WarmUpFrames = BenchmarkSchedule.WarmUpFrames;
 
     private readonly GL _gl;
-    private readonly double[] _smoothed = new double[StageCount];
+    private readonly Queue<double>[] _samples = CreateSampleQueues();
+    private readonly Queue<double> _totalSamples = new(RollingSamples);
+    private readonly double[] _sampleTotals = new double[StageCount];
+    private double _totalSampleSum;
+    private double _totalPeak;
     private readonly double[] _peak = new double[StageCount];
     private readonly bool[] _seen = new bool[StageCount];
+    private readonly bool[] _active = new bool[StageCount];
 
     // A stage may be timed more than once in a frame -- there is one shadow query per cascade -- and
     // the budget is for the stage, not for one visit to it. So a frame's samples are summed here and
@@ -93,6 +92,17 @@ internal sealed class GLStageProfiler : IDisposable
 
     private static int StageCount => Enum.GetValues<RenderStage>().Length;
 
+    private static Queue<double>[] CreateSampleQueues()
+    {
+        Queue<double>[] result = new Queue<double>[StageCount];
+        for (int i = 0; i < result.Length; i++)
+        {
+            result[i] = new Queue<double>(RollingSamples);
+        }
+
+        return result;
+    }
+
     /// <summary>Gets or sets whether stages are timed.</summary>
     /// <remarks>Switching it off forgets the history, so peaks belong to the run being watched.</remarks>
     public bool Enabled
@@ -117,17 +127,18 @@ internal sealed class GLStageProfiler : IDisposable
     /// <summary>Starts timing a stage.</summary>
     /// <param name="stage">The stage about to run.</param>
     /// <remarks>Does nothing when timing is off, or when another stage is already being timed.</remarks>
-    public void Begin(RenderStage stage)
+    public bool Begin(RenderStage stage)
     {
         if (!_enabled || _open || _disposed || _pending.Count >= MaxPending)
         {
-            return;
+            return false;
         }
 
         uint query = _spare.Count > 0 ? _spare.Dequeue() : _gl.GenQuery();
         _gl.BeginQuery(QueryTarget.TimeElapsed, query);
         _pending.Add(new Pending(stage, query, _frame));
         _open = true;
+        return true;
     }
 
     /// <summary>Stops timing the stage begun by the matching <see cref="Begin"/>.</summary>
@@ -192,7 +203,7 @@ internal sealed class GLStageProfiler : IDisposable
     }
 
     /// <summary>Gets the stages measured so far, in frame order.</summary>
-    /// <returns>One entry per stage that has reported at least once; empty when nothing has.</returns>
+    /// <returns>One entry per known stage. Stages absent from the last frame are marked inactive.</returns>
     public IReadOnlyList<RenderStageTiming> Timings()
     {
         if (!_reportStale)
@@ -204,14 +215,37 @@ internal sealed class GLStageProfiler : IDisposable
 
         for (int i = 0; i < _seen.Length; i++)
         {
-            if (_seen[i])
-            {
-                _report.Add(new RenderStageTiming((RenderStage)i, _smoothed[i], _peak[i]));
-            }
+            Queue<double> samples = _samples[i];
+            double average = samples.Count > 0 ? _sampleTotals[i] / samples.Count : 0.0;
+            double p95 = samples.Count > 0
+                ? PerformanceStatistics.Percentile(samples.ToArray(), 0.95)
+                : 0.0;
+            _report.Add(new RenderStageTiming(
+                (RenderStage)i,
+                average,
+                p95,
+                _peak[i],
+                _active[i],
+                samples.Count));
         }
 
         _reportStale = false;
         return _report;
+    }
+
+    /// <summary>Gets the distribution of the per-frame sum, rather than a sum of stage percentiles.</summary>
+    public GpuFrameTiming TotalTiming()
+    {
+        if (_totalSamples.Count == 0)
+        {
+            return default;
+        }
+
+        return new(
+            _totalSampleSum / _totalSamples.Count,
+            PerformanceStatistics.Percentile(_totalSamples.ToArray(), 0.95),
+            _totalPeak,
+            _totalSamples.Count);
     }
 
     /// <inheritdoc/>
@@ -245,6 +279,10 @@ internal sealed class GLStageProfiler : IDisposable
         // Measured and discarded rather than not measured: the queries have to run through the warm-up
         // for the pool to be warm too, and a query issued for the first time is itself slower.
         bool warm = _accumulating >= WarmUpFrames;
+        double gpuTotal = 0.0;
+        bool anyStageRan = false;
+
+        Array.Clear(_active);
 
         for (int i = 0; i < _frameRan.Length; i++)
         {
@@ -254,6 +292,8 @@ internal sealed class GLStageProfiler : IDisposable
             }
 
             double milliseconds = _frameTotal[i];
+            gpuTotal += milliseconds;
+            anyStageRan = true;
 
             if (!warm)
             {
@@ -262,26 +302,50 @@ internal sealed class GLStageProfiler : IDisposable
                 continue;
             }
 
-            // The first sample IS the average, rather than one twentieth of it decaying up from zero --
-            // otherwise every stage reads far too cheap for the first second it is watched, which is
-            // exactly when somebody is looking at it.
-            _smoothed[i] = _seen[i]
-                ? (_smoothed[i] * (1.0 - Smoothing)) + (milliseconds * Smoothing)
-                : milliseconds;
+            Queue<double> samples = _samples[i];
+            if (samples.Count == RollingSamples)
+            {
+                _sampleTotals[i] -= samples.Dequeue();
+            }
+
+            samples.Enqueue(milliseconds);
+            _sampleTotals[i] += milliseconds;
 
             _peak[i] = Math.Max(_peak[i], milliseconds);
             _seen[i] = true;
+            _active[i] = true;
             _frameTotal[i] = 0.0;
             _frameRan[i] = false;
             _reportStale = true;
+        }
+
+        if (warm && anyStageRan)
+        {
+            if (_totalSamples.Count == RollingSamples)
+            {
+                _totalSampleSum -= _totalSamples.Dequeue();
+            }
+
+            _totalSamples.Enqueue(gpuTotal);
+            _totalSampleSum += gpuTotal;
+            _totalPeak = Math.Max(_totalPeak, gpuTotal);
         }
     }
 
     private void Reset()
     {
-        Array.Clear(_smoothed);
+        foreach (Queue<double> samples in _samples)
+        {
+            samples.Clear();
+        }
+
+        Array.Clear(_sampleTotals);
+        _totalSamples.Clear();
+        _totalSampleSum = 0.0;
+        _totalPeak = 0.0;
         Array.Clear(_peak);
         Array.Clear(_seen);
+        Array.Clear(_active);
         Array.Clear(_frameTotal);
         Array.Clear(_frameRan);
         _accumulating = -1;
@@ -322,8 +386,7 @@ internal sealed class GLStageProfiler : IDisposable
 
         internal Scope(GLStageProfiler? owner, RenderStage stage)
         {
-            _owner = owner;
-            owner?.Begin(stage);
+            _owner = owner?.Begin(stage) == true ? owner : null;
         }
 
         /// <summary>Closes the stage.</summary>

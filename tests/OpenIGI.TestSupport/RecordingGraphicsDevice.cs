@@ -15,6 +15,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 {
     private uint _nextTexture = 1;
     private uint _nextMesh = 1;
+    private uint _nextOcclusionQuery = 1;
 
     public event EventHandler? DeviceRestored;
 
@@ -272,11 +273,30 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetStageTiming(bool enabled) => StageTimingEnabled = enabled;
 
+    public void BeginStageTiming(RenderStage stage) { }
+
+    public void EndStageTiming() { }
+
     /// <summary>The timings this device reports; empty, since nothing here runs on a GPU.</summary>
     public List<RenderStageTiming> Timings { get; } = [];
 
     /// <inheritdoc/>
     public IReadOnlyList<RenderStageTiming> StageTimings() => Timings;
+
+    /// <inheritdoc/>
+    public GpuFrameTiming GpuTiming() => default;
+
+    public OcclusionQueryHandle CreateOcclusionQuery() => new(_nextOcclusionQuery++);
+
+    public bool OcclusionVisible(OcclusionQueryHandle query) => true;
+
+    public void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds)
+    {
+    }
+
+    public void DestroyOcclusionQuery(OcclusionQueryHandle query)
+    {
+    }
 
     /// <summary>The debug views asked for, in order.</summary>
     public List<DebugView> DebugViews { get; } = [];
@@ -564,6 +584,23 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         TextureHandle lightmap,
         BlendMode blend) =>
         MeshDraws.Add(new MeshDrawCall(mesh, indexOffset, indexCount, modelView, diffuse, lightmap, blend, DepthState, CullMode));
+
+    public void DrawMeshRanges(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
+        in Matrix4f modelView,
+        TextureHandle diffuse,
+        TextureHandle lightmap,
+        BlendMode blend)
+    {
+        MeshBatchDrawCount++;
+        foreach (MeshDrawRange range in ranges)
+        {
+            DrawMesh(mesh, range.IndexOffset, range.IndexCount, modelView, diffuse, lightmap, blend);
+        }
+    }
+
+    public int MeshBatchDrawCount { get; private set; }
 
     public void Dispose()
     {

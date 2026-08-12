@@ -45,6 +45,14 @@ internal sealed class GLSceneTarget : IDisposable
     private bool _presentingOutput;
     private uint _occlusionTexture;
     private uint _occlusionFramebuffer;
+    private uint _occlusionSearchTexture;
+    private uint _occlusionSearchFramebuffer;
+    private int _occlusionWidth;
+    private int _occlusionHeight;
+    private uint _fogTexture;
+    private uint _fogFramebuffer;
+    private int _fogWidth;
+    private int _fogHeight;
     private readonly uint[] _bloomTextures = [0, 0];
     private readonly uint[] _bloomFramebuffers = [0, 0];
     private int _bloomWidth;
@@ -194,6 +202,12 @@ internal sealed class GLSceneTarget : IDisposable
         }
 
         if (description.Deferred && !CreateGBuffer(description))
+        {
+            Release();
+            return false;
+        }
+
+        if (description.Deferred && !CreateFog(description))
         {
             Release();
             return false;
@@ -463,6 +477,13 @@ internal sealed class GLSceneTarget : IDisposable
     /// </remarks>
     public uint OcclusionTexture => _occlusionTexture;
 
+    /// <summary>Gets the half-resolution raw horizon-search result.</summary>
+    public uint OcclusionSearchTexture => _occlusionSearchTexture;
+
+    /// <summary>Gets the texel size of the half-resolution occlusion buffer.</summary>
+    public (float X, float Y) OcclusionSearchTexelSize =>
+        (1f / Math.Max(1, _occlusionWidth), 1f / Math.Max(1, _occlusionHeight));
+
     /// <summary>Makes the occlusion buffer current, for the horizon search to write into.</summary>
     /// <returns><see langword="true"/> when there is a buffer to write into.</returns>
     public bool BindForOcclusion()
@@ -474,6 +495,38 @@ internal sealed class GLSceneTarget : IDisposable
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _occlusionFramebuffer);
         _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+        return true;
+    }
+
+    /// <summary>Makes the half-resolution horizon-search buffer current.</summary>
+    public bool BindForOcclusionSearch()
+    {
+        if (_occlusionSearchFramebuffer == 0)
+        {
+            return false;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _occlusionSearchFramebuffer);
+        _gl.Viewport(0, 0, (uint)_occlusionWidth, (uint)_occlusionHeight);
+        return true;
+    }
+
+    /// <summary>Gets the half-resolution integrated fog scattering and transmittance.</summary>
+    public uint FogTexture => _fogTexture;
+
+    public (float X, float Y) FogTexelSize =>
+        (1f / Math.Max(1, _fogWidth), 1f / Math.Max(1, _fogHeight));
+
+    /// <summary>Makes the half-resolution fog integration buffer current.</summary>
+    public bool BindForFogIntegration()
+    {
+        if (_fogFramebuffer == 0)
+        {
+            return false;
+        }
+
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fogFramebuffer);
+        _gl.Viewport(0, 0, (uint)_fogWidth, (uint)_fogHeight);
         return true;
     }
 
@@ -623,6 +676,26 @@ internal sealed class GLSceneTarget : IDisposable
     /// </remarks>
     private bool CreateOcclusion(in SceneTargetDescription description)
     {
+        _occlusionWidth = description.HalfWidth;
+        _occlusionHeight = description.HalfHeight;
+        SceneTargetDescription half = description with { Width = _occlusionWidth, Height = _occlusionHeight };
+
+        _occlusionSearchTexture = CreateTexture(
+            InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.Float, half);
+        _occlusionSearchFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _occlusionSearchFramebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            _occlusionSearchTexture,
+            0);
+
+        if (!IsComplete("occlusion search"))
+        {
+            return false;
+        }
+
         _occlusionTexture = CreateTexture(
             InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.Float, description);
 
@@ -636,6 +709,23 @@ internal sealed class GLSceneTarget : IDisposable
             0);
 
         return IsComplete("occlusion");
+    }
+
+    private bool CreateFog(in SceneTargetDescription description)
+    {
+        _fogWidth = description.HalfWidth;
+        _fogHeight = description.HalfHeight;
+        SceneTargetDescription half = description with { Width = _fogWidth, Height = _fogHeight };
+        _fogTexture = CreateTexture(InternalFormat.Rgba16f, PixelFormat.Rgba, PixelType.Float, half);
+        _fogFramebuffer = _gl.GenFramebuffer();
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _fogFramebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.ColorAttachment0,
+            TextureTarget.Texture2D,
+            _fogTexture,
+            0);
+        return IsComplete("fog integration");
     }
 
     /// <summary>Creates the pair of accumulation buffers the temporal resolve alternates between.</summary>
@@ -730,18 +820,26 @@ internal sealed class GLSceneTarget : IDisposable
         InternalFormat[] formats =
         [
             InternalFormat.Rgba8,
-            InternalFormat.Rgba16f,
+            InternalFormat.Rgb10A2,
             InternalFormat.Rgba8,
             InternalFormat.Rgba8,
 
             // Signed, and a fraction of a screen per frame -- so it needs a float format, and half
             // precision is ample for a quantity that is compared against a texel.
-            InternalFormat.Rgba16f,
+            InternalFormat.RG16f,
         ];
 
         for (int i = 0; i < _gbufferTextures.Length; i++)
         {
-            _gbufferTextures[i] = CreateTexture(formats[i], PixelFormat.Rgba, PixelType.Float, description);
+            if ((i == 2 && !description.HasBakedLighting)
+                || (i == 4 && !description.HasMotionVectors))
+            {
+                continue;
+            }
+
+            PixelFormat pixelFormat = i == 4 ? PixelFormat.RG : PixelFormat.Rgba;
+            PixelType pixelType = i == 1 ? PixelType.UnsignedInt2101010Rev : PixelType.Float;
+            _gbufferTextures[i] = CreateTexture(formats[i], pixelFormat, pixelType, description);
         }
 
         _gbufferFramebuffer = _gl.GenFramebuffer();
@@ -771,9 +869,9 @@ internal sealed class GLSceneTarget : IDisposable
         [
             GLEnum.ColorAttachment0,
             GLEnum.ColorAttachment1,
-            GLEnum.ColorAttachment2,
+            description.HasBakedLighting ? GLEnum.ColorAttachment2 : GLEnum.None,
             GLEnum.ColorAttachment3,
-            GLEnum.ColorAttachment4,
+            description.HasMotionVectors ? GLEnum.ColorAttachment4 : GLEnum.None,
         ];
 
         _gl.DrawBuffers(buffers);
@@ -943,11 +1041,41 @@ internal sealed class GLSceneTarget : IDisposable
             _occlusionFramebuffer = 0;
         }
 
+        if (_occlusionSearchFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_occlusionSearchFramebuffer);
+            _occlusionSearchFramebuffer = 0;
+        }
+
         if (_occlusionTexture != 0)
         {
             _gl.DeleteTexture(_occlusionTexture);
             _occlusionTexture = 0;
         }
+
+        if (_occlusionSearchTexture != 0)
+        {
+            _gl.DeleteTexture(_occlusionSearchTexture);
+            _occlusionSearchTexture = 0;
+        }
+
+        _occlusionWidth = 0;
+        _occlusionHeight = 0;
+
+        if (_fogFramebuffer != 0)
+        {
+            _gl.DeleteFramebuffer(_fogFramebuffer);
+            _fogFramebuffer = 0;
+        }
+
+        if (_fogTexture != 0)
+        {
+            _gl.DeleteTexture(_fogTexture);
+            _fogTexture = 0;
+        }
+
+        _fogWidth = 0;
+        _fogHeight = 0;
 
         if (_outputFramebuffer != 0)
         {

@@ -39,6 +39,11 @@ namespace OpenIGI.Desktop;
 /// </summary>
 internal sealed partial class DesktopGame : IDisposable
 {
+    private static readonly System.Text.Json.JsonSerializerOptions BenchmarkJsonOptions = new()
+    {
+        WriteIndented = true,
+    };
+
     // The camera's far plane -- the original's HumanView far distance. Shared with the sky, which sizes
     // its dome from it, and with the terrain traversal, which culls against the same frustum.
     private const float FarPlane = 4000f;
@@ -937,6 +942,7 @@ internal sealed partial class DesktopGame : IDisposable
         // the same cost paid on the frame Play is pressed is the bug.
         BeginWatchingFramePasses("Session");
         long passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        FramePerformanceTracker framePerformance = new();
 
         _logger.Information(
             "Render",
@@ -1021,7 +1027,9 @@ internal sealed partial class DesktopGame : IDisposable
             // too fast. Deterministic either way, but a capture should show the moment it claims to.
             if (lockstepClock is not null)
             {
-                lockstepClock.Milliseconds = (int)(((_loop.Clock.FrameCount + 1L) * 1000L) / GameClock.DefaultTickRate);
+                lockstepClock.Milliseconds = _options.IsBenchmark
+                    ? BenchmarkSchedule.MillisecondsForFrame(_loop.Clock.FrameCount)
+                    : (int)(((_loop.Clock.FrameCount + 1L) * 1000L) / GameClock.DefaultTickRate);
 
                 // A capture must not be able to see the mouse. The window grabs the cursor in player mode,
                 // so moving the mouse in another application changed what got captured -- which is exactly
@@ -1551,7 +1559,9 @@ internal sealed partial class DesktopGame : IDisposable
             // The cinematic shell always renders uncapped so the menu is smooth whatever the render preset's
             // r_smooth is; the orbit and the tweens run on real time and want every frame the display offers.
             // In game the original's one-render-per-tick latch is lifted only by smooth mode.
-            _loop.Clock.UncappedRenders = menuMode || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
+            _loop.Clock.UncappedRenders = _options.IsBenchmark
+                || menuMode
+                || (!_options.Lockstep && RenderCVars.SmoothPresentation.Value);
 
             // The level's own half of the pause, and the reason the frozen picture behind the menu really is
             // frozen: with this set the level task forwards nothing to its subtree, so the scripts, the
@@ -2075,6 +2085,15 @@ internal sealed partial class DesktopGame : IDisposable
                 continue;
             }
 
+            if (_options.IsBenchmark && _loop.Clock.FrameCount == BenchmarkSchedule.WarmUpFrames)
+            {
+                framePerformance.Reset();
+            }
+            if (!_options.IsBenchmark || _loop.Clock.FrameCount <= BenchmarkSchedule.MeasurementEndFrame)
+            {
+                framePerformance.NoteFrame();
+            }
+
             if (_scene is not null && _world is not null && _camera is not null)
             {
                 // The scripted flight, driven off the rendered-frame index so the motion is exactly
@@ -2092,7 +2111,9 @@ internal sealed partial class DesktopGame : IDisposable
                         flightStarted = true;
                     }
 
-                    int span = Math.Max(1, _options.ExitAfterFrames - 1);
+                    int span = Math.Max(
+                        1,
+                        (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames) - 1);
                     float t = Math.Clamp((float)flightFrame / span, 0f, 1f);
 
                     Vector3d endPos = _options.CameraEnd is { } e
@@ -2180,6 +2201,30 @@ internal sealed partial class DesktopGame : IDisposable
                 bool tacticalUp = _computerOpen && TacticalComputer is not null;
                 TacticalDisplaySettings computerDisplay = tacticalUp ? _computerFlight.Display : default;
                 float computerFlightBlur = tacticalUp ? _computerFlight.MotionBlur : 0f;
+                PostProcessSettings postProcess = new(
+                    RenderCVars.ToneMap.Value,
+                    RenderCVars.Exposure.Value,
+                    RenderCVars.Bloom.Value,
+                    RenderCVars.BloomThreshold.Value,
+                    RenderCVars.WhitePoint.Value,
+                    SceneIsDisplayEncoded: true,
+                    Contrast: RenderCVars.Contrast.Value,
+                    Saturation: RenderCVars.Saturation.Value,
+                    Vignette: RenderCVars.Vignette.Value,
+                    Grain: RenderCVars.Grain.Value,
+                    ChromaticAberration: RenderCVars.ChromaticAberration.Value,
+                    Sharpen: RenderCVars.Sharpen.Value,
+                    FocalDistance: RenderCVars.FocalDistance.Value,
+                    FocalRange: RenderCVars.FocalRange.Value,
+                    FocalBlur: RenderCVars.FocalBlur.Value,
+                    MotionBlur: MathF.Max(RenderCVars.MotionBlur.Value, computerFlightBlur),
+                    CameraTaps: RenderCVars.CameraTaps.Value,
+                    SpatialAa: RenderCVars.SpatialAa.Value,
+                    SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
+                    ColourLookup: RenderCVars.ColourLookup.Value,
+                    AutoExposure: RenderCVars.AutoExposure.Value,
+                    GreenPhosphor: mapScene is not null && TacticalComputer is null,
+                    Tactical: computerDisplay);
                 if (mapScene is { } mapView)
                 {
                     aspectRatio = (float)mapView.Viewport.Width / Math.Max(1, mapView.Viewport.Height);
@@ -2322,7 +2367,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // Asked for only when the accumulation is running, because it is the accumulation that
                     // does the upsampling: without it these are two buffers holding a stretched copy.
                     OutputWidth: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Width : 0,
-                    OutputHeight: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Height : 0);
+                    OutputHeight: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Height : 0,
+                    GBuffer: (RenderCVars.Lighting.Value != LightingModel.Dynamic
+                            ? GBufferLayout.BakedLighting
+                            : GBufferLayout.Compact)
+                        | (wantsTemporal || RenderCVars.MotionBlur.Value > 0f
+                            ? GBufferLayout.MotionVectors
+                            : GBufferLayout.Compact));
 
                 // The sun arrives in world space and the G-buffer's normals are in view space, so it is
                 // rotated by the camera here. Transposed() is not decoration: the rows of the orientation
@@ -2477,6 +2528,12 @@ internal sealed partial class DesktopGame : IDisposable
                     // is not lit; it IS light.
                     _device.SetMaterialOverride(new SurfaceMaterial(Emissive: 1f));
                 }
+                else
+                {
+                    // Vanilla draws opaque geometry directly to the back buffer, so it has no backend
+                    // BeginPass bracket. Give that path the same complete GPU timing as deferred geometry.
+                    _device.BeginStageTiming(RenderStage.Geometry);
+                }
 
                 if (mapScene is { } insetMap)
                 {
@@ -2512,8 +2569,11 @@ internal sealed partial class DesktopGame : IDisposable
 
                     // -viewdist still wins when it is given, so an existing diagnostic command line keeps
                     // meaning what it did; otherwise the setting decides.
-                    _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value);
+                    _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
+                    GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
+                    RenderCVars.TerrainOcclusion.Value);
                 EndStageIfSlow("the sky and the terrain");
+                bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
                 _world.Draw(_scene, eye, projection);
                 EndStageIfSlow("the world's objects");
                 _gunPickupRenderer?.Draw(eye, projection);
@@ -2550,6 +2610,12 @@ internal sealed partial class DesktopGame : IDisposable
                         0,
                         captured ? sceneTarget.Width : _window.Width,
                         captured ? sceneTarget.Height : _window.Height));
+                }
+
+                if (!captured)
+                {
+                    _device.EndStageTiming();
+                    _device.BeginStageTiming(RenderStage.Forward);
                 }
 
 
@@ -2602,7 +2668,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // reference editor does per frame — buildings keep the weather outside.
                 if (_rain is { IsWeatherEnabled: true } rain)
                 {
-                    rain.Indoors = IsCameraInsideBuilding(eye.Position);
+                    rain.Indoors = cameraIndoors;
                     rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
                 }
 
@@ -2610,7 +2676,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // drifting flakes instead of rain droplets.
                 if (_snow is { IsWeatherEnabled: true } snow)
                 {
-                    snow.Indoors = IsCameraInsideBuilding(eye.Position);
+                    snow.Indoors = cameraIndoors;
                     snow.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
                 }
 
@@ -2727,43 +2793,21 @@ internal sealed partial class DesktopGame : IDisposable
                 // the menus and the console are authored in display colours and must never be tone mapped.
                 // Unconditional, and outside the player-mode block on purpose -- a free-camera frame draws
                 // no view model, and leaving the capture open would strand it until the next frame threw.
+                if (!captured)
+                {
+                    _device.EndStageTiming();
+                }
+
                 if (captured)
                 {
                     _device.EndPass();
                     _device.EndSceneCapture();
-                    _device.ResolveScene(new PostProcessSettings(
-                        RenderCVars.ToneMap.Value,
-                        RenderCVars.Exposure.Value,
-                        RenderCVars.Bloom.Value,
-                        RenderCVars.BloomThreshold.Value,
-                        RenderCVars.WhitePoint.Value,
-                        SceneIsDisplayEncoded: true,
-                        Contrast: RenderCVars.Contrast.Value,
-                        Saturation: RenderCVars.Saturation.Value,
-                        Vignette: RenderCVars.Vignette.Value,
-                        Grain: RenderCVars.Grain.Value,
-                        ChromaticAberration: RenderCVars.ChromaticAberration.Value,
-                        Sharpen: RenderCVars.Sharpen.Value,
-                        FocalDistance: RenderCVars.FocalDistance.Value,
-                        FocalRange: RenderCVars.FocalRange.Value,
-                        FocalBlur: RenderCVars.FocalBlur.Value,
-                        // The transition's own shutter, taken as the maximum against the player's setting
-                        // rather than replacing it: this camera covers a kilometre in about a second and
-                        // reads as a slideshow without one.
-                        MotionBlur: MathF.Max(RenderCVars.MotionBlur.Value, computerFlightBlur),
-                        CameraTaps: RenderCVars.CameraTaps.Value,
-                        SpatialAa: RenderCVars.SpatialAa.Value,
-                        SpatialAaThreshold: RenderCVars.SpatialAaThreshold.Value,
-                        ColourLookup: RenderCVars.ColourLookup.Value,
-                        AutoExposure: RenderCVars.AutoExposure.Value,
-
-                        // The retail tube, which is a switch, and the remaster's, which is a curve. Never
-                        // both: the tactical path answers for the whole presentation when it is on.
-                        GreenPhosphor: mapScene is not null && TacticalComputer is null,
-                        Tactical: computerDisplay));
+                    _device.ResolveScene(postProcess);
                     captured = false;
                     EndStageIfSlow("the resolve (tone map, bloom, depth of field, temporal)");
                 }
+
+                _device.BeginStageTiming(RenderStage.UserInterface);
 
                 // StatusScreen is a display-space layer. Keep every retail HUD component out of the
                 // captured scene so camera motion blur, depth of field, bloom and tone mapping can only
@@ -3104,11 +3148,14 @@ internal sealed partial class DesktopGame : IDisposable
 
                 float debugPanelHeight = 0f;
 
+                _device.EndStageTiming();
+
                 // The F12 debug overlay and crosshair. Works in both the walking player and the free (flying)
                 // camera: the state lines come from whichever is active, the crosshair readout and the reticle
                 // are cast from the eye that is actually drawing.
                 if (showDebug && _debugOverlay is { IsReady: true } debugOverlay)
                 {
+                    _device.BeginStageTiming(RenderStage.DebugRendering);
                     static string I(FormattableString s) => FormattableString.Invariant(s);
 
                     Vector3d originU = new(
@@ -3217,23 +3264,37 @@ internal sealed partial class DesktopGame : IDisposable
                     Bar(cx - th, cy - len, cx + th, cy + len);
 
                     batch.End();
+                    _device.EndStageTiming();
                 }
 
                 // r_perflog, its own overlay rather than a section of F12's: it answers a different question
                 // and is read while the game is being played rather than while it is being inspected. Top
                 // right, so the two can be up together. When F12 is also enabled, place this panel below
                 // the measured F12 panel instead of letting both panels claim the same top-right corner.
-                if (RenderCVars.PerformanceLog.Value && _debugOverlay is { IsReady: true } performanceOverlay)
+                if (RenderCVars.PerformanceLog.Value
+                    && !_options.IsBenchmark
+                    && _debugOverlay is { IsReady: true } performanceOverlay)
                 {
+                    _device.BeginStageTiming(RenderStage.DebugRendering);
                     static string I(FormattableString s) => FormattableString.Invariant(s);
 
                     IReadOnlyList<RenderStageTiming> timings = _device.StageTimings();
-                    List<string> perf = ["gpu ms   now   peak"];
-                    double total = 0.0;
-
+                    GpuFrameTiming gpu = _device.GpuTiming();
+                    FramePerformanceStatistics frame = framePerformance.Statistics();
+                    GraphicsPreset preset = GraphicsPresetRegistry.Default.Current;
+                    List<string> perf =
+                    [
+                        I($"{preset}  {_window.Width}x{_window.Height}  vsync {(_device.VSyncEnabled ? "on" : "off")}  indoor {(cameraIndoors ? "yes" : "no")}"),
+                        I($"fps {frame.FramesPerSecond:0.0}  frame {frame.AverageMilliseconds:0.00} ms  1% {frame.OnePercentLowFramesPerSecond:0.0}"),
+                        "gpu ms   avg    p95   peak  budget",
+                    ];
                     foreach (RenderStageTiming timing in timings)
                     {
-                        total += timing.Milliseconds;
+                        if (!timing.Active)
+                        {
+                            perf.Add($"{timing.Stage,-24} off");
+                            continue;
+                        }
 
                         // The budget beside the measurement, because a number without the number it was
                         // supposed to beat is a number nobody acts on.
@@ -3241,11 +3302,11 @@ internal sealed partial class DesktopGame : IDisposable
                             ? I($" /{allowed:0.0}{(timing.Milliseconds > allowed ? " OVER" : string.Empty)}")
                             : string.Empty;
 
-                        perf.Add(I($"{timing.Stage,-12} {timing.Milliseconds,5:0.00} {timing.PeakMilliseconds,6:0.00}{budget}"));
+                        perf.Add(I($"{timing.Stage,-24} {timing.Milliseconds,5:0.00} {timing.P95Milliseconds,6:0.00} {timing.PeakMilliseconds,6:0.00}{budget}"));
                     }
 
-                    perf.Add(timings.Count > 0
-                        ? I($"{"gpu total",-12} {total,5:0.00}")
+                    perf.Add(gpu.SampleCount > 0
+                        ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                         : "measuring...");
 
                     _device.Set2DProjection(_window.Width, _window.Height);
@@ -3260,6 +3321,7 @@ internal sealed partial class DesktopGame : IDisposable
                         _window.Height,
                         performanceTopOffset);
                     batch.End();
+                    _device.EndStageTiming();
                 }
 
                 if (!reportedWorld)
@@ -3273,9 +3335,11 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         _logger.Information(
                             "Terrain",
-                            $"Drew {_terrain.LastChunkCount} chunk(s) in {_terrain.LastPassCount} material pass(es), "
+                            $"Drew {_terrain.LastChunkCount} chunk(s) in {_terrain.LastPassCount} material pass(es) "
+                                + $"and {_terrain.LastBatchCount} multi-draw batch(es); "
                                 + $"{_terrain.LastTriangleCount} triangles, from {_terrain.LastVisitedCount} "
-                                + $"octree node(s) visited, over {_terrain.TileCount} ground tile(s).");
+                                + $"octree node(s) visited, {_terrain.LastOccludedChunkCount} chunk(s) occlusion-culled "
+                                + $"by {_terrain.LastOcclusionQueryCount} query box(es), over {_terrain.TileCount} ground tile(s).");
                     }
                 }
             }
@@ -3286,6 +3350,7 @@ internal sealed partial class DesktopGame : IDisposable
             // that it can fade rather than vanish. It hears nothing while it does.
             if ((menuMode || _entry.IsRunning) && shell is not null)
             {
+                _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
                 batch.Begin();
@@ -3347,15 +3412,18 @@ internal sealed partial class DesktopGame : IDisposable
                 }
 
                 batch.End();
+                _device.EndStageTiming();
             }
 
             // The console goes over everything, including the menus, so it is the last thing drawn.
             if (console.IsOpen)
             {
+                _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);
                 batch.Begin();
                 console.Draw(batch, _window.Width, _window.Height, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
                 batch.End();
+                _device.EndStageTiming();
             }
 
             // A flight writes one numbered frame per rendered frame -- stem.NNNN.ext beside the given
@@ -3402,6 +3470,37 @@ internal sealed partial class DesktopGame : IDisposable
 
         }
 
+        if (_options.BenchmarkPath is { } benchmarkPath)
+        {
+            IReadOnlyList<RenderStageTiming> gpuStages = _device.StageTimings();
+            FramePerformanceStatistics frame = framePerformance.Statistics();
+            GpuFrameTiming gpu = _device.GpuTiming();
+            RenderPerformanceSnapshot snapshot = new(
+                GraphicsPresetRegistry.Default.Current.ToString(),
+                _window.Width,
+                _window.Height,
+                _device.VSyncEnabled,
+                frame.FramesPerSecond,
+                frame.AverageMilliseconds,
+                frame.OnePercentLowFramesPerSecond,
+                frame.P95Milliseconds,
+                frame.PeakMilliseconds,
+                frame.SampleCount,
+                gpu.Milliseconds,
+                gpu.P95Milliseconds,
+                gpuStages.ToArray());
+
+            string? benchmarkDirectory = Path.GetDirectoryName(Path.GetFullPath(benchmarkPath));
+            if (!string.IsNullOrEmpty(benchmarkDirectory))
+            {
+                Directory.CreateDirectory(benchmarkDirectory);
+            }
+
+            string json = System.Text.Json.JsonSerializer.Serialize(snapshot, BenchmarkJsonOptions);
+            File.WriteAllText(benchmarkPath, json);
+            _logger.Information("Perf", $"Wrote benchmark snapshot to {Path.GetFullPath(benchmarkPath)}.");
+        }
+
         // The measurement, written down. The overlay answers "is it fast right now" for somebody watching
         // it; this is what a capture run leaves behind, and it is the only form the acceptance criterion
         // can actually be checked in -- nobody reads an overlay in a thirty-frame headless capture.
@@ -3415,12 +3514,16 @@ internal sealed partial class DesktopGame : IDisposable
             }
             else
             {
-                double total = 0.0;
                 int over = 0;
 
                 foreach (RenderStageTiming timing in finalTimings)
                 {
-                    total += timing.Milliseconds;
+                    if (!timing.Active)
+                    {
+                        _logger.Information("Perf", $"{timing.Stage,-28} off");
+                        continue;
+                    }
+
                     double? budget = RenderBudget.For(timing.Stage);
                     bool exceeded = budget is { } allowed && timing.Milliseconds > allowed;
                     over += exceeded ? 1 : 0;
@@ -3432,18 +3535,22 @@ internal sealed partial class DesktopGame : IDisposable
                     _logger.Information(
                         "Perf",
                         FormattableString.Invariant(
-                            $"{timing.Stage,-16} {timing.Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
+                            $"{timing.Stage,-28} avg {timing.Milliseconds,6:0.000} ms  p95 {timing.P95Milliseconds,6:0.000} ms  peak {timing.PeakMilliseconds,6:0.000} ms{against}"));
                 }
 
+                GpuFrameTiming gpu = _device.GpuTiming();
                 _logger.Information(
                     "Perf",
                     FormattableString.Invariant(
-                        $"GPU total {total:0.000} ms of the {RenderBudget.FrameMilliseconds:0.0} ms a 60 Hz frame has; {over} stage(s) over budget."));
+                        $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 120 Hz frame has; {over} stage(s) over budget."));
             }
         }
 
-        DesktopConfiguration.Save(_configuration, _logger);
-        console.SaveSettings();
+        if (!_options.IsBenchmark)
+        {
+            DesktopConfiguration.Save(_configuration, _logger);
+            console.SaveSettings();
+        }
         missionWarmer?.Dispose();
         previewLoader?.Dispose();
         if (_dissolveTexture.IsValid)

@@ -86,10 +86,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
     private AmbientOcclusionSettings _occlusion;
     private GLShaderProgram? _occlusionProgram;
+    private GLShaderProgram? _occlusionReconstructProgram;
     private int _occlusionUnproject = -1;
     private int _occlusionSearch = -1;
     private int _occlusionBounce = -1;
     private int _occlusionTexelSize = -1;
+    private int _occlusionReconstructTexelSize = -1;
     private int _occlusionFrame;
     private int _lightingOcclusionEnabled = -1;
 
@@ -113,6 +115,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _projectionHeight;
     private BlendMode _blend = BlendMode.Opaque;
     private GLShaderProgram? _gbufferProgram;
+    private readonly Dictionary<GBufferLayout, GBufferPipeline> _gbufferPipelines = [];
     private GLShaderProgram? _lightingProgram;
     private GLShaderProgram? _lastMeshProgram;
     private MeshUniforms _gbufferUniforms;
@@ -143,6 +146,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private bool _generateMissingMipmaps;
 
     private GLShaderProgram? _fogProgram;
+    private GLShaderProgram? _fogCompositeProgram;
+    private int _fogCompositeTexelSize = -1;
     private VolumetricFogSettings _fog = VolumetricFogSettings.Off;
     private Vector3f _cameraPosition;
     private readonly LocalFogVolume[] _fogVolumes = new LocalFogVolume[LocalFogVolume.MaxPerLevel];
@@ -226,6 +231,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
     private GLSceneTarget? _sceneTarget;
     private GLStageProfiler? _stageProfiler;
+    private readonly Dictionary<uint, VisibilityQuery> _visibilityQueries = [];
+    private uint _nextVisibilityQuery = 1;
+    private GLShaderProgram? _visibilityProgram;
+    private int _visibilityModelView = -1;
+    private int _visibilityProjection = -1;
+    private int _visibilityMinimum = -1;
+    private int _visibilityMaximum = -1;
+    private uint _visibilityArray;
+    private uint _visibilityVertexBuffer;
+    private uint _visibilityIndexBuffer;
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
     private int _resolveExposure = -1;
@@ -382,15 +397,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     public void Clear(Bgra32 color)
     {
         ThrowIfDisposed();
+        using GLStageProfiler.Scope timing = Measure(RenderStage.Setup);
 
         // The original always clears colour and depth together, and depth always to 1.0.
-        // glClear honours the depth mask, so a TestOnly draw earlier in the frame would silently stop
-        // the depth buffer from clearing; force the mask on across the clear and put it back after.
+        // glClear honours the real GL depth mask. Do not trust only the cached depth state here: a
+        // backend-owned full-screen pass can have touched the mask without going through SetDepthState.
+        // Force writes for the clear, then restore TestOnly's masked state. Disabled deliberately keeps
+        // the mask on because disabling the depth test prevents draws from writing depth by itself.
         bool maskedOff = _depthState == DepthState.TestOnly;
-        if (maskedOff)
-        {
-            _gl.DepthMask(true);
-        }
+        _gl.DepthMask(true);
 
         _gl.ClearColor(color.R / 255.0f, color.G / 255.0f, color.B / 255.0f, 1.0f);
         _gl.ClearDepth(1.0);
@@ -418,14 +433,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _sceneTarget!.BindForForegroundDepth();
         }
 
-        // glClear honours the write mask even though it does not use the depth test. A preceding
-        // translucent pass may have selected TestOnly, so temporarily enable writes and restore that
-        // state afterwards rather than silently leaving stale scene depth under a foreground model.
+        // This clear is especially sensitive to stale backend state: the foreground renderbuffer is
+        // private to the hands/weapon and persists between frames. If a full-screen pass left the real
+        // GL mask off while the cache said Disabled, the clear used to do nothing and old-frame depth
+        // progressively cut holes out of the moving rig. Always enable writes before clearing it.
         bool maskedOff = _depthState == DepthState.TestOnly;
-        if (maskedOff)
-        {
-            _gl.DepthMask(true);
-        }
+        _gl.DepthMask(true);
 
         _gl.ClearDepth(1.0);
         _gl.Clear(ClearBufferMask.DepthBufferBit);
@@ -1063,14 +1076,126 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void BeginStageTiming(RenderStage stage)
+    {
+        ThrowIfDisposed();
+        _stageProfiler?.Begin(stage);
+    }
+
+    /// <inheritdoc/>
+    public void EndStageTiming()
+    {
+        ThrowIfDisposed();
+        _stageProfiler?.End();
+    }
+
+    /// <inheritdoc/>
     public IReadOnlyList<RenderStageTiming> StageTimings() =>
         _stageProfiler?.Timings() ?? [];
+
+    /// <inheritdoc/>
+    public GpuFrameTiming GpuTiming() => _stageProfiler?.TotalTiming() ?? default;
+
+    /// <inheritdoc/>
+    public OcclusionQueryHandle CreateOcclusionQuery()
+    {
+        ThrowIfDisposed();
+        uint id = _nextVisibilityQuery++;
+        _visibilityQueries.Add(id, new VisibilityQuery(_gl.GenQuery()));
+        return new OcclusionQueryHandle(id);
+    }
+
+    /// <inheritdoc/>
+    public bool OcclusionVisible(OcclusionQueryHandle query)
+    {
+        ThrowIfDisposed();
+        if (!query.IsValid || !_visibilityQueries.TryGetValue(query.Id, out VisibilityQuery state))
+        {
+            return true;
+        }
+
+        if (state.Pending)
+        {
+            _gl.GetQueryObject(state.Name, QueryObjectParameterName.ResultAvailable, out int ready);
+            if (ready != 0)
+            {
+                _gl.GetQueryObject(state.Name, QueryObjectParameterName.Result, out uint passed);
+                int emptyFrames = passed != 0 ? 0 : state.EmptyFrames + 1;
+                state = state with
+                {
+                    Pending = false,
+                    EmptyFrames = emptyFrames,
+
+                    // A single empty result can be a camera-edge race. Requiring two retains the
+                    // conservative failure mode: extra drawing, never a one-frame hole.
+                    Visible = passed != 0 || emptyFrames < 2,
+                };
+                _visibilityQueries[query.Id] = state;
+            }
+        }
+
+        return state.Visible;
+    }
+
+    /// <inheritdoc/>
+    public unsafe void IssueOcclusionQuery(
+        OcclusionQueryHandle query,
+        in Matrix4f modelView,
+        in OcclusionBounds bounds)
+    {
+        ThrowIfDisposed();
+        if (_visibilityProgram is null
+            || !query.IsValid
+            || !_visibilityQueries.TryGetValue(query.Id, out VisibilityQuery state)
+            || state.Pending)
+        {
+            return;
+        }
+
+        UseProgram(_visibilityProgram);
+        _visibilityProgram.SetMatrix4(_visibilityModelView, modelView);
+        _visibilityProgram.SetMatrix4(_visibilityProjection, _projection);
+        _visibilityProgram.SetVector3(
+            _visibilityMinimum, bounds.Minimum.X, bounds.Minimum.Y, bounds.Minimum.Z);
+        _visibilityProgram.SetVector3(
+            _visibilityMaximum, bounds.Maximum.X, bounds.Maximum.Y, bounds.Maximum.Z);
+
+        _gl.ColorMask(false, false, false, false);
+        _gl.DepthMask(false);
+        _gl.Disable(EnableCap.CullFace);
+        BindVertexArray(_visibilityArray);
+        _gl.BeginQuery(QueryTarget.AnySamplesPassed, state.Name);
+        _gl.DrawElements(PrimitiveType.Triangles, 36, DrawElementsType.UnsignedShort, null);
+        _gl.EndQuery(QueryTarget.AnySamplesPassed);
+
+        _gl.ColorMask(true, true, true, true);
+        _gl.DepthMask(_depthState != DepthState.TestOnly);
+        if (_cullMode != CullMode.None)
+        {
+            _gl.Enable(EnableCap.CullFace);
+        }
+
+        _visibilityQueries[query.Id] = state with { Pending = true };
+    }
+
+    /// <inheritdoc/>
+    public void DestroyOcclusionQuery(OcclusionQueryHandle query)
+    {
+        ThrowIfDisposed();
+        if (query.IsValid && _visibilityQueries.Remove(query.Id, out VisibilityQuery state))
+        {
+            _gl.DeleteQuery(state.Name);
+        }
+    }
 
     /// <summary>Times a stage until the returned scope is disposed.</summary>
     /// <param name="stage">The stage about to run.</param>
     /// <returns>The scope to keep for the stage's duration.</returns>
     /// <remarks>Costs nothing when timing is off, and nothing at all before the device is initialised.</remarks>
     private GLStageProfiler.Scope Measure(RenderStage stage) => new(_stageProfiler, stage);
+
+    private GLStageProfiler.Scope Measure(RenderStage stage, bool enabled) =>
+        new(enabled ? _stageProfiler : null, stage);
 
     /// <inheritdoc/>
     public void SetDebugView(DebugView view)
@@ -1194,6 +1319,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         if (_sceneTarget is null || !_sceneTarget.Configure(description))
         {
             return false;
+        }
+
+        if (description.Deferred)
+        {
+            SelectGBufferPipeline(description.GBuffer);
         }
 
         _captureActive = true;
@@ -1512,7 +1642,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         if (CurrentPass == ScenePass.Geometry)
         {
             _stageProfiler?.End();
-            _sceneTarget!.ResolveMultisample();
+            if (_sceneTarget!.Description.IsMultisampled)
+            {
+                using GLStageProfiler.Scope resolveTiming = Measure(RenderStage.GeometryResolve);
+                _sceneTarget.ResolveMultisample();
+            }
+            else
+            {
+                _sceneTarget.ResolveMultisample();
+            }
 
             if (_sceneTarget.Description.Deferred)
             {
@@ -1576,16 +1714,20 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // when the forward pass triggered it.
         ResolveTemporal(target);
 
-        // One bracket over the whole chain -- defocus, bloom, tone map, grade, edge filter -- because
-        // that is the granularity the budget was written at, and because five separate queries over
-        // five full-screen passes would start to perturb what they measure.
-        using GLStageProfiler.Scope timing = Measure(RenderStage.Post);
-
         // Before the bloom, so that a defocused highlight blooms as the wide soft thing it has become
         // rather than as the point it was: the lens spreads what actually reaches it.
-        uint scene = RunCameraEffects(
-            target, post, _motionPreviousViewProjection, _motionPreviousCamera, _motionHasPreviousFrame);
-        bool bloomed = RunBloom(target, post, scene);
+        uint scene;
+        using (GLStageProfiler.Scope timing = Measure(RenderStage.CameraEffects, post.WantsCameraEffects))
+        {
+            scene = RunCameraEffects(
+                target, post, _motionPreviousViewProjection, _motionPreviousCamera, _motionHasPreviousFrame);
+        }
+
+        bool bloomed;
+        using (GLStageProfiler.Scope timing = Measure(RenderStage.Bloom, post.WantsBloom))
+        {
+            bloomed = RunBloom(target, post, scene);
+        }
 
         // With anti-aliasing on, the tone map lands in a buffer rather than on the screen, so the
         // edge filter has a finished picture to read. Edges are a property of the DISPLAYED image --
@@ -1608,8 +1750,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // Auto-exposure runs before the resolve uses its result: it reads last frame's adapted value and
         // measures this frame for the next. Off, or without a tone map, it returns the cvar's exposure
         // unchanged -- and the vanilla copy path never reaches here at all, so it is untouched either way.
-        float exposure = RunAutoExposure(scene, post);
+        float exposure;
+        using (GLStageProfiler.Scope timing = Measure(
+            RenderStage.Exposure,
+            post.AutoExposure && post.ToneMap != ToneMapOperator.None))
+        {
+            exposure = RunAutoExposure(scene, post);
+        }
 
+        using GLStageProfiler.Scope toneTiming = Measure(RenderStage.ToneMapGrade);
         UseProgram(_resolveProgram);
         _resolveProgram.SetFloat(_resolveExposure, exposure);
         _resolveProgram.SetInt(_resolveToneMap, (int)post.ToneMap);
@@ -1687,9 +1836,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         BindTexture(0, scene);
         _fullScreen.Draw();
+        toneTiming.Dispose();
 
         if (antiAliased)
         {
+            using GLStageProfiler.Scope aaTiming = Measure(RenderStage.SpatialAntiAliasing);
             _gl.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             SetViewport(new Viewport(0, 0, CurrentMode.Width, CurrentMode.Height));
 
@@ -1808,7 +1959,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         BindTexture(5, target.MotionTexture);
 
         _gl.Disable(EnableCap.DepthTest);
-        _gl.DepthMask(false);
+        // Keep the real mask consistent with DepthState.Disabled. With depth testing disabled the
+        // full-screen draw cannot write depth, while a following glClear must still be able to do so.
+        _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
 
         _fullScreen.Draw();
@@ -1885,7 +2038,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         _gl.Disable(EnableCap.DepthTest);
-        _gl.DepthMask(false);
+        _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
 
         (float texelX, float texelY) = target.BloomTexelSize;
@@ -1978,7 +2131,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         BindTexture(4, target.DepthTexture);
 
         _gl.Disable(EnableCap.DepthTest);
-        _gl.DepthMask(false);
+        _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
 
         _fullScreen.Draw();
@@ -2016,7 +2169,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             return;
         }
 
-        using GLStageProfiler.Scope timing = Measure(RenderStage.Temporal);
+        using GLStageProfiler.Scope timing = Measure(RenderStage.TemporalResolve);
 
         // The first frame after a rebuild has nothing behind it, and the second has a previous camera
         // but no accumulated picture. Both resolve to the current frame alone, which is exactly what a
@@ -2057,7 +2210,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         BindTexture(5, target.MotionTexture);
 
         _gl.Disable(EnableCap.DepthTest);
-        _gl.DepthMask(false);
+        _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
 
         _fullScreen.Draw();
@@ -2113,17 +2266,20 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     /// </remarks>
     private bool RunAmbientOcclusion(GLSceneTarget target)
     {
-        if (!_occlusion.Enabled || _occlusionProgram is null || _fullScreen is null)
+        if (!_occlusion.Enabled
+            || _occlusionProgram is null
+            || _occlusionReconstructProgram is null
+            || _fullScreen is null)
         {
             return false;
         }
 
-        if (!target.BindForOcclusion())
+        if (!target.BindForOcclusionSearch())
         {
             return false;
         }
 
-        using GLStageProfiler.Scope timing = Measure(RenderStage.AmbientOcclusion);
+        using GLStageProfiler.Scope timing = Measure(RenderStage.AmbientOcclusionSearch);
 
         UseProgram(_occlusionProgram);
         _occlusionProgram.SetVector4(
@@ -2132,9 +2288,18 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _unprojection.YScale,
             _unprojection.Near,
             _unprojection.Far);
+        int directions = Math.Clamp(_occlusion.Quality, 1, 8);
+        if (_temporal.Accumulates)
+        {
+            // The slice rotation already advances every frame. High and Ultra therefore cover their
+            // configured angular set over two accumulated frames instead of tracing it redundantly in
+            // each one. Enhanced has no temporal history and deliberately keeps every direction now.
+            directions = (directions + 1) / 2;
+        }
+
         _occlusionProgram.SetVector4(
             _occlusionSearch,
-            Math.Clamp(_occlusion.Quality, 1, 8),
+            directions,
             Math.Clamp(_occlusion.BounceQuality > 0 ? _occlusion.BounceQuality * 4 : _occlusion.Quality * 4, 1, 32),
             MathF.Max(_occlusion.Radius, 0.01f),
             MathF.Max(_occlusion.Intensity, 0f));
@@ -2150,8 +2315,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _occlusionFrame * 0.61803399f,
             0f);
 
-        _occlusionProgram.SetVector2(
-            _occlusionTexelSize, 1f / target.Description.Width, 1f / target.Description.Height);
+        (float lowTexelX, float lowTexelY) = target.OcclusionSearchTexelSize;
+        _occlusionProgram.SetVector2(_occlusionTexelSize, lowTexelX, lowTexelY);
 
         BindTexture(4, target.DepthTexture);
         BindTexture(1, target.NormalTexture);
@@ -2159,9 +2324,23 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         BindTexture(3, target.MaterialTexture);
 
         _gl.Disable(EnableCap.DepthTest);
-        _gl.DepthMask(false);
+        _gl.DepthMask(true);
         _depthState = DepthState.Disabled;
 
+        _fullScreen.Draw();
+
+        timing.Dispose();
+        if (!target.BindForOcclusion())
+        {
+            return false;
+        }
+
+        using GLStageProfiler.Scope reconstructTiming = Measure(RenderStage.AmbientOcclusionReconstruct);
+        UseProgram(_occlusionReconstructProgram);
+        _occlusionReconstructProgram.SetVector2(_occlusionReconstructTexelSize, lowTexelX, lowTexelY);
+        BindTexture(6, target.OcclusionSearchTexture);
+        BindTexture(4, target.DepthTexture);
+        BindTexture(1, target.NormalTexture);
         _fullScreen.Draw();
         return true;
     }
@@ -2253,14 +2432,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private void RunVolumetricFog(GLSceneTarget target)
     {
 
-        if (!_fog.Enabled || _fogProgram is null || _fullScreen is null)
+        if (!_fog.Enabled || _fogProgram is null || _fogCompositeProgram is null || _fullScreen is null)
         {
             return;
         }
 
-        using GLStageProfiler.Scope timing = Measure(RenderStage.Fog);
+        if (!target.BindForFogIntegration())
+        {
+            return;
+        }
 
-        target.BindForPostProcess();
+        using GLStageProfiler.Scope timing = Measure(RenderStage.FogIntegrate);
         UseProgram(_fogProgram);
 
         _fogProgram.SetVector3(
@@ -2327,7 +2509,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _fogFrame = (_fogFrame + 1) & 63;
         _fogProgram.SetFloat(_fogJitter, _fogFrame * 0.61803399f);
 
-        BindTexture(0, target.FrontColorTexture);
         BindTexture(4, target.DepthTexture);
 
         if (_shadowMap is { IsReady: true } shadows)
@@ -2338,6 +2519,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         _fullScreen.Draw();
+
+        timing.Dispose();
+        target.BindForPostProcess();
+        using GLStageProfiler.Scope compositeTiming = Measure(RenderStage.FogComposite);
+        UseProgram(_fogCompositeProgram);
+        (float fogTexelX, float fogTexelY) = target.FogTexelSize;
+        _fogCompositeProgram.SetVector2(_fogCompositeTexelSize, fogTexelX, fogTexelY);
+        BindTexture(0, target.FrontColorTexture);
+        BindTexture(4, target.DepthTexture);
+        BindTexture(6, target.FogTexture);
+        _fullScreen.Draw();
         target.Swap();
 
         _currentVertexArray = 0;
@@ -2347,10 +2539,24 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public unsafe void DrawMesh(
+    public void DrawMesh(
         MeshHandle mesh,
         int indexOffset,
         int indexCount,
+        in Matrix4f modelView,
+        TextureHandle diffuse,
+        TextureHandle lightmap,
+        BlendMode blend)
+    {
+        Span<MeshDrawRange> range = stackalloc MeshDrawRange[1];
+        range[0] = new(indexOffset, indexCount);
+        DrawMeshRanges(mesh, range, modelView, diffuse, lightmap, blend);
+    }
+
+    /// <inheritdoc/>
+    public unsafe void DrawMeshRanges(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
         in Matrix4f modelView,
         TextureHandle diffuse,
         TextureHandle lightmap,
@@ -2363,22 +2569,35 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
         }
 
-        ArgumentOutOfRangeException.ThrowIfNegative(indexOffset);
-        ArgumentOutOfRangeException.ThrowIfNegative(indexCount);
-
-        if (indexCount % 3 != 0)
+        if (ranges.IsEmpty)
         {
-            throw new ArgumentException($"A draw must cover whole triangles, got {indexCount} indices.", nameof(indexCount));
+            return;
         }
 
-        if (indexOffset + indexCount > entry.IndexCount)
+        bool anyIndices = false;
+        foreach (MeshDrawRange range in ranges)
         {
-            throw new ArgumentException(
-                $"Indices {indexOffset}..{indexOffset + indexCount} lie outside the mesh's {entry.IndexCount}.",
-                nameof(indexCount));
+            ArgumentOutOfRangeException.ThrowIfNegative(range.IndexOffset);
+            ArgumentOutOfRangeException.ThrowIfNegative(range.IndexCount);
+
+            if (range.IndexCount % 3 != 0)
+            {
+                throw new ArgumentException(
+                    $"A draw must cover whole triangles, got {range.IndexCount} indices.",
+                    nameof(ranges));
+            }
+
+            if (range.IndexOffset + range.IndexCount > entry.IndexCount)
+            {
+                throw new ArgumentException(
+                    $"Indices {range.IndexOffset}..{range.IndexOffset + range.IndexCount} lie outside the mesh's {entry.IndexCount}.",
+                    nameof(ranges));
+            }
+
+            anyIndices |= range.IndexCount > 0;
         }
 
-        if (indexCount == 0)
+        if (!anyIndices)
         {
             return;
         }
@@ -2589,11 +2808,32 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         ApplyBlend(blend);
 
         BindVertexArray(entry.ActiveVertexArray);
-        _gl.DrawElements(
-            PrimitiveType.Triangles,
-            (uint)indexCount,
-            DrawElementsType.UnsignedShort,
-            (void*)(indexOffset * sizeof(ushort)));
+        if (ranges.Length == 1)
+        {
+            MeshDrawRange range = ranges[0];
+            _gl.DrawElements(
+                PrimitiveType.Triangles,
+                (uint)range.IndexCount,
+                DrawElementsType.UnsignedShort,
+                (void*)(range.IndexOffset * sizeof(ushort)));
+        }
+        else
+        {
+            uint* counts = stackalloc uint[ranges.Length];
+            void** offsets = stackalloc void*[ranges.Length];
+            for (int i = 0; i < ranges.Length; i++)
+            {
+                counts[i] = (uint)ranges[i].IndexCount;
+                offsets[i] = (void*)(ranges[i].IndexOffset * sizeof(ushort));
+            }
+
+            _gl.MultiDrawElements(
+                PrimitiveType.Triangles,
+                counts,
+                DrawElementsType.UnsignedShort,
+                offsets,
+                (uint)ranges.Length);
+        }
     }
 
     /// <inheritdoc/>
@@ -2618,11 +2858,37 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         DisposeComputeResources();
         DisposeTextResources();
         _stageProfiler?.Dispose();
+        foreach (VisibilityQuery query in _visibilityQueries.Values)
+        {
+            _gl.DeleteQuery(query.Name);
+        }
+        _visibilityQueries.Clear();
+        _visibilityProgram?.Dispose();
+        if (_visibilityArray != 0)
+        {
+            _gl.DeleteVertexArray(_visibilityArray);
+        }
+        if (_visibilityVertexBuffer != 0)
+        {
+            _gl.DeleteBuffer(_visibilityVertexBuffer);
+        }
+        if (_visibilityIndexBuffer != 0)
+        {
+            _gl.DeleteBuffer(_visibilityIndexBuffer);
+        }
         _sceneTarget?.Dispose();
         _fogProgram?.Dispose();
+        _fogCompositeProgram?.Dispose();
+        _occlusionProgram?.Dispose();
+        _occlusionReconstructProgram?.Dispose();
         _shadowMap?.Dispose();
         _shadowProgram?.Dispose();
-        _gbufferProgram?.Dispose();
+        foreach (GBufferPipeline pipeline in _gbufferPipelines.Values)
+        {
+            pipeline.Program.Dispose();
+        }
+        _gbufferPipelines.Clear();
+        _gbufferProgram = null;
         _lightingProgram?.Dispose();
         _fullScreen?.Dispose();
         _resolveProgram?.Dispose();
@@ -2676,6 +2942,50 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
 
         _program?.Dispose();
+    }
+
+    /// <summary>Selects the exact G-buffer program matching the attachments allocated by a preset.</summary>
+    /// <remarks>
+    /// Variants are linked on first use and cached thereafter. This keeps a missing attachment out of
+    /// the shader interface itself, so the driver can eliminate its varyings, texture reads and export
+    /// work instead of relying on a per-fragment uniform branch.
+    /// </remarks>
+    private void SelectGBufferPipeline(GBufferLayout layout)
+    {
+        if (!_gbufferPipelines.TryGetValue(layout, out GBufferPipeline? pipeline))
+        {
+            GLShaderProgram program = GLShaderProgram.Create(
+                _gl,
+                GBufferShaders.VertexFor(layout),
+                GBufferShaders.FragmentFor(layout),
+                _programCache);
+            MeshUniforms uniforms = new(
+                program.LocationOf("uModelView"),
+                program.LocationOf("uProjection"),
+                program.LocationOf("uDetailFade"),
+                program.LocationOf("uAlphaTest"),
+                program.LocationOf("uPreviousModelView"),
+                program.LocationOf("uPoseBlend"),
+                program.LocationOf("uPreviousPoseBlend"));
+            pipeline = new(
+                program,
+                uniforms,
+                program.LocationOf("uMaterial"),
+                program.LocationOf("uDecodeAlbedo"),
+                program.LocationOf("uDetailStrength"));
+            _gbufferPipelines.Add(layout, pipeline);
+
+            UseProgram(program);
+            program.SetInt("uDiffuse", 0);
+            program.SetInt("uLightmap", 1);
+            program.SetInt("uDetail", 2);
+        }
+
+        _gbufferProgram = pipeline.Program;
+        _gbufferUniforms = pipeline.Uniforms;
+        _gbufferMaterial = pipeline.Material;
+        _gbufferDecodeAlbedo = pipeline.DecodeAlbedo;
+        _gbufferDetail = pipeline.Detail;
     }
 
     private unsafe void CreatePipeline()
@@ -2786,23 +3096,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _bloomBlurProgram.SetInt("uSource", 0);
         _resolveProgram.SetInt("uDebugDepth", 4);
 
-        _gbufferProgram = GLShaderProgram.Create(_gl, GBufferShaders.Vertex, GBufferShaders.Fragment, _programCache);
-        _gbufferUniforms = new MeshUniforms(
-            _gbufferProgram.LocationOf("uModelView"),
-            _gbufferProgram.LocationOf("uProjection"),
-            _gbufferProgram.LocationOf("uDetailFade"),
-            _gbufferProgram.LocationOf("uAlphaTest"),
-            _gbufferProgram.LocationOf("uPreviousModelView"),
-            _gbufferProgram.LocationOf("uPoseBlend"),
-            _gbufferProgram.LocationOf("uPreviousPoseBlend"));
-        _gbufferMaterial = _gbufferProgram.LocationOf("uMaterial");
-        _gbufferDecodeAlbedo = _gbufferProgram.LocationOf("uDecodeAlbedo");
-        _gbufferDetail = _gbufferProgram.LocationOf("uDetailStrength");
-        UseProgram(_gbufferProgram);
-        _gbufferProgram.SetInt("uDiffuse", 0);
-        _gbufferProgram.SetInt("uLightmap", 1);
-        _gbufferProgram.SetInt("uDetail", 2);
-
         _occlusionProgram = GLShaderProgram.Create(
             _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.Fragment, _programCache);
         _occlusionUnproject = _occlusionProgram.LocationOf("uUnproject");
@@ -2814,6 +3107,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _occlusionProgram.SetInt("uNormal", 1);
         _occlusionProgram.SetInt("uPreviousColour", 2);
         _occlusionProgram.SetInt("uMaterial", 3);
+
+        _occlusionReconstructProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, AmbientOcclusionShaders.ReconstructFragment, _programCache);
+        _occlusionReconstructTexelSize = _occlusionReconstructProgram.LocationOf("uLowTexelSize");
+        UseProgram(_occlusionReconstructProgram);
+        _occlusionReconstructProgram.SetInt("uOcclusion", 6);
+        _occlusionReconstructProgram.SetInt("uDepth", 4);
+        _occlusionReconstructProgram.SetInt("uNormal", 1);
 
         _lightingProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, DeferredLightingShaders.Fragment, _programCache);
         _lightingModelLocation = _lightingProgram.LocationOf("uLightingModel");
@@ -2906,10 +3207,59 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _fogProgram.SetInt("uDepth", 4);
         _fogProgram.SetInt("uShadowMap", 5);
 
+        _fogCompositeProgram = GLShaderProgram.Create(
+            _gl, PostProcessShaders.Vertex, VolumetricFogShaders.CompositeFragment, _programCache);
+        _fogCompositeTexelSize = _fogCompositeProgram.LocationOf("uLowTexelSize");
+        UseProgram(_fogCompositeProgram);
+        _fogCompositeProgram.SetInt("uScene", 0);
+        _fogCompositeProgram.SetInt("uDepth", 4);
+        _fogCompositeProgram.SetInt("uFog", 6);
+
         _shadowMap = new GLShadowMap(_gl, _logger);
         _fullScreen = new GLFullScreenPass(_gl);
         _sceneTarget = new GLSceneTarget(_gl, _logger);
         _stageProfiler = new GLStageProfiler(_gl);
+
+        _visibilityProgram = GLShaderProgram.Create(
+            _gl, OcclusionCullingShaders.Vertex, OcclusionCullingShaders.Fragment, _programCache);
+        _visibilityModelView = _visibilityProgram.LocationOf("uModelView");
+        _visibilityProjection = _visibilityProgram.LocationOf("uProjection");
+        _visibilityMinimum = _visibilityProgram.LocationOf("uMinimum");
+        _visibilityMaximum = _visibilityProgram.LocationOf("uMaximum");
+
+        ReadOnlySpan<Vector3f> visibilityCorners =
+        [
+            new(0f, 0f, 0f), new(1f, 0f, 0f), new(1f, 1f, 0f), new(0f, 1f, 0f),
+            new(0f, 0f, 1f), new(1f, 0f, 1f), new(1f, 1f, 1f), new(0f, 1f, 1f),
+        ];
+        ReadOnlySpan<ushort> visibilityIndices =
+        [
+            0, 2, 1, 0, 3, 2,
+            4, 5, 6, 4, 6, 7,
+            0, 1, 5, 0, 5, 4,
+            1, 2, 6, 1, 6, 5,
+            2, 3, 7, 2, 7, 6,
+            3, 0, 4, 3, 4, 7,
+        ];
+        _visibilityArray = _gl.GenVertexArray();
+        _visibilityVertexBuffer = _gl.GenBuffer();
+        _visibilityIndexBuffer = _gl.GenBuffer();
+        BindVertexArray(_visibilityArray);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, _visibilityVertexBuffer);
+        _gl.BufferData(
+            BufferTargetARB.ArrayBuffer,
+            (nuint)(visibilityCorners.Length * sizeof(float) * 3),
+            visibilityCorners,
+            BufferUsageARB.StaticDraw);
+        _gl.BindBuffer(BufferTargetARB.ElementArrayBuffer, _visibilityIndexBuffer);
+        _gl.BufferData(
+            BufferTargetARB.ElementArrayBuffer,
+            (nuint)(visibilityIndices.Length * sizeof(ushort)),
+            visibilityIndices,
+            BufferUsageARB.StaticDraw);
+        _gl.EnableVertexAttribArray(0);
+        _gl.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, sizeof(float) * 3, null);
+        BindVertexArray(0);
 
         _vertexArray = _gl.GenVertexArray();
         _vertexBuffer = _gl.GenBuffer();
@@ -3241,6 +3591,21 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         int PreviousModelView = -1,
         int PoseBlend = -1,
         int PreviousPoseBlend = -1);
+
+    /// <summary>A linked G-buffer layout and its resolved per-draw uniform locations.</summary>
+    private sealed record GBufferPipeline(
+        GLShaderProgram Program,
+        MeshUniforms Uniforms,
+        int Material,
+        int DecodeAlbedo,
+        int Detail);
+
+    /// <summary>One non-blocking any-samples query and its last trustworthy result.</summary>
+    private readonly record struct VisibilityQuery(
+        uint Name,
+        bool Pending = false,
+        bool Visible = true,
+        int EmptyFrames = 0);
 
     /// <summary>A texture this device owns, and the derived detail map attached to it, if any.</summary>
     /// <remarks>

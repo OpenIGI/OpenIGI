@@ -629,6 +629,13 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetStageTiming(bool enabled);
 
+    /// <summary>Begins a GPU timing range owned by the desktop compositor.</summary>
+    /// <remarks>Ranges must not overlap backend-owned rendering ranges.</remarks>
+    void BeginStageTiming(RenderStage stage);
+
+    /// <summary>Ends the desktop-owned GPU timing range.</summary>
+    void EndStageTiming();
+
     /// <summary>Gets what each stage of the frame last cost the GPU.</summary>
     /// <returns>
     /// One entry per stage that ran, in frame order; empty when timing is off or when no result has
@@ -640,6 +647,21 @@ public interface IGraphicsDevice : IDisposable
     /// the answers are collected whenever the driver has them and reported a little late instead.
     /// </remarks>
     IReadOnlyList<RenderStageTiming> StageTimings();
+
+    /// <summary>Gets the rolling distribution of total timed GPU work per completed frame.</summary>
+    GpuFrameTiming GpuTiming();
+
+    /// <summary>Creates one asynchronous occlusion query.</summary>
+    OcclusionQueryHandle CreateOcclusionQuery();
+
+    /// <summary>Returns the latest non-blocking result; unknown queries are conservatively visible.</summary>
+    bool OcclusionVisible(OcclusionQueryHandle query);
+
+    /// <summary>Issues a bounding-box visibility test against depth already drawn this frame.</summary>
+    void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds);
+
+    /// <summary>Destroys an asynchronous occlusion query.</summary>
+    void DestroyOcclusionQuery(OcclusionQueryHandle query);
 
     /// <summary>Sets which buffer the frame shows instead of the scene.</summary>
     /// <param name="view">The buffer, or <see cref="DebugView.None"/> for the scene itself.</param>
@@ -816,6 +838,19 @@ public interface IGraphicsDevice : IDisposable
         MeshHandle mesh,
         int indexOffset,
         int indexCount,
+        in Matrix4f modelView,
+        TextureHandle diffuse,
+        TextureHandle lightmap,
+        BlendMode blend);
+
+    /// <summary>Draws several ranges from one mesh with shared transform, texture and state.</summary>
+    /// <remarks>
+    /// Backends that support multi-draw submit the ranges together. Keeping this on the graphics seam
+    /// lets terrain batch visible chunks without exposing OpenGL buffers or commands to the game.
+    /// </remarks>
+    void DrawMeshRanges(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
         in Matrix4f modelView,
         TextureHandle diffuse,
         TextureHandle lightmap,

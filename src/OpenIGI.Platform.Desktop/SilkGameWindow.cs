@@ -166,6 +166,10 @@ public sealed class SilkGameWindow : IGameWindow
             ApplyMode();
             _window.DoEvents();
         }
+        else if (_mode == WindowMode.Windowed)
+        {
+            ResizeClientArea(_windowedSize.X, _windowedSize.Y);
+        }
 
         HookEvents();
         ApplyCursorMode();
@@ -345,7 +349,29 @@ public sealed class SilkGameWindow : IGameWindow
     {
         if (width > 0 && height > 0 && _mode != WindowMode.BorderlessFullscreen)
         {
-            _window.Size = new Vector2D<int>(width, height);
+            ResizeClientArea(width, height);
+        }
+    }
+
+    /// <summary>Resizes a decorated window to an exact drawable client area.</summary>
+    /// <remarks>
+    /// On Win32 Silk's <c>IWindow.Size</c> is the outer rectangle while the engine-facing
+    /// <see cref="Width"/> and <see cref="Height"/> are the framebuffer. Applying the requested size
+    /// directly therefore lost the title-bar height (2560x1440 became 2560x1421), invalidating native
+    /// resolution captures and benchmarks. One correction using the measured decoration delta is
+    /// sufficient and remains a no-op on backends where <c>Size</c> already means client size.
+    /// </remarks>
+    private void ResizeClientArea(int width, int height)
+    {
+        _window.Size = new Vector2D<int>(width, height);
+        _window.DoEvents();
+
+        int widthDelta = width - _window.FramebufferSize.X;
+        int heightDelta = height - _window.FramebufferSize.Y;
+        if (widthDelta != 0 || heightDelta != 0)
+        {
+            _window.Size += new Vector2D<int>(widthDelta, heightDelta);
+            _window.DoEvents();
         }
     }
 

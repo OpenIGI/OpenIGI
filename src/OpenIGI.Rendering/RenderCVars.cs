@@ -314,6 +314,17 @@ public static class RenderCVars
         high: "320",
         ultra: "450");
 
+    /// <summary>Whether terrain batch pages use asynchronous visibility queries.</summary>
+    /// <remarks>
+    /// The query result is consumed only after OpenGL reports it ready, so this never stalls the CPU.
+    /// Keeping this as a CVar also makes the query cost directly A/B testable on a given mission.
+    /// </remarks>
+    public static readonly BoolCVar TerrainOcclusion = CVar.Bool(
+        "r_terrain_occlusion",
+        false,
+        CVarOptions.Archive,
+        "Cull fully hidden terrain batch pages with asynchronous GPU visibility queries. Opt-in because sparse scenes can cost more to query than they save.");
+
     /// <summary>Whether surfaces are recorded into a G-buffer and lit afterwards.</summary>
     /// <remarks>
     /// Required by everything from stage R3 on. Kept separate from <see cref="OffscreenScene"/> so the
@@ -347,10 +358,12 @@ public static class RenderCVars
         enhanced: "baked",
         high: "baked",
 
-        // Ultra is the preset that stops using the artists' lightmaps. It can, because the probe field
-        // is what replaces them rather than adding to them: hybrid was tried and blows the ground out,
-        // since a bake that already contains the sun plus a sun is the sun twice.
-        ultra: "dynamic");
+        // Dynamic remains available as an explicit development setting, but it is not a safe preset
+        // default until the probe-irradiance field exists. The current fallback is only flat ambient
+        // plus the live sun; close to Mission 9's tower it exposes the terrain's per-triangle normals
+        // as alternating black and bright facets and leaves interiors without their authored fill.
+        // Ultra therefore keeps the artists' bakes, just as the contract above says it should.
+        ultra: "baked");
 
     /// <summary>The side length in texels of each shadow cascade, or 0 for no shadows.</summary>
     /// <remarks>

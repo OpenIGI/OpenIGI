@@ -53,13 +53,13 @@ public sealed class RenderBudgetTests
         // statement about the hardware rather than about the renderer.
         Assert.Null(RenderBudget.For(RenderStage.Geometry));
         Assert.Null(RenderBudget.For(RenderStage.Forward));
-        Assert.Null(RenderBudget.For(RenderStage.Temporal));
+        Assert.Null(RenderBudget.For(RenderStage.TemporalResolve));
 
         Assert.NotNull(RenderBudget.For(RenderStage.Shadows));
-        Assert.NotNull(RenderBudget.For(RenderStage.AmbientOcclusion));
+        Assert.NotNull(RenderBudget.For(RenderStage.AmbientOcclusionSearch));
         Assert.NotNull(RenderBudget.For(RenderStage.Lighting));
         Assert.NotNull(RenderBudget.For(RenderStage.Reflections));
-        Assert.NotNull(RenderBudget.For(RenderStage.Fog));
-        Assert.NotNull(RenderBudget.For(RenderStage.Post));
+        Assert.NotNull(RenderBudget.For(RenderStage.FogIntegrate));
+        Assert.NotNull(RenderBudget.For(RenderStage.ToneMapGrade));
     }
 }

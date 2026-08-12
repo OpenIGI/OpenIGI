@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
 
@@ -101,6 +102,7 @@ public readonly record struct DesktopOptions(
         int entryCamMission = 0;
         int computerCamFrame = 0;
         string? showcasePointDump = null;
+        string? benchmarkPath = null;
 
         List<string> startupCommands = [];
 
@@ -277,6 +279,14 @@ public readonly record struct DesktopOptions(
             {
                 lockstep = true;
             }
+            else if (arg.Equals("benchmark", StringComparison.OrdinalIgnoreCase))
+            {
+                benchmarkPath = Next(args, ref i, "benchmark");
+                lockstep = true;
+                vsync = false;
+                exitAfterFrames = BenchmarkSchedule.TotalFrames;
+                startupCommands.Add("r_perflog 1");
+            }
             else if (arg.Equals("freecam", StringComparison.OrdinalIgnoreCase))
             {
                 startFlying = true;
@@ -284,6 +294,10 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("cutscene", StringComparison.OrdinalIgnoreCase))
             {
                 playCutscenes = true;
+            }
+            else if (arg.Equals("skipcutscene", StringComparison.OrdinalIgnoreCase))
+            {
+                playCutscenes = false;
             }
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
@@ -413,6 +427,7 @@ public readonly record struct DesktopOptions(
             ComputerCamFrame = computerCamFrame,
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
+            BenchmarkPath = benchmarkPath,
         };
     }
 
@@ -514,6 +529,12 @@ public readonly record struct DesktopOptions(
     /// </summary>
     public bool PlayCutscenes { get; init; }
 
+    /// <summary>Gets the JSON output path for a deterministic 120 Hz/30 Hz benchmark.</summary>
+    public string? BenchmarkPath { get; init; }
+
+    /// <summary>Gets a value indicating whether deterministic performance capture is active.</summary>
+    public bool IsBenchmark => BenchmarkPath is not null;
+
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
     public static string Usage =>
@@ -543,8 +564,11 @@ public readonly record struct DesktopOptions(
                            instead of the wall clock. A run then depends only on its arguments,
                            which is what makes a capture reproducible. Capture only -- it uncaps
                            the simulation rate and is not how the game is meant to be played.
+          -benchmark <f>   Run 120 warm-up and 600 measured frames on a deterministic 120 Hz
+                           presentation clock with 30 Hz simulation, then write JSON to <f>.
           -cutscene        Play the mission's authored opening cinematic. Cinematics already play by
                            default; this legacy flag remains accepted for capture-script compatibility.
+          -skipcutscene    Skip the authored opening cinematic for scene benchmarks and references.
           -uiscale <n>     Magnify the 640x480-authored menus and HUD by a whole number.
                            0 (the default) picks one from the window size; 1 is the original's
                            own size, which on a modern display is very small.

@@ -8,6 +8,9 @@ namespace OpenIGI.Game.World;
 /// <param name="Subsets">One entry per draw record, in record order.</param>
 public sealed record MeshGeometry(Vertex3D[] Vertices, ushort[] Indices, IReadOnlyList<MeshSubset> Subsets)
 {
+    /// <summary>Gets a conservative local-space bound calculated once when geometry is built.</summary>
+    public BoundingSphere Bounds { get; } = BoundingSphere.FromVertices(Vertices);
+
     /// <summary>Gets the total triangle count.</summary>
     public int TriangleCount => Indices.Length / 3;
 

@@ -10,8 +10,17 @@ namespace OpenIGI.Rendering;
 /// steady 0.8 ms reports anywhere from 0.4 to 2 ms frame to frame. A budget is a claim about the
 /// steady state, so the steady state is what is shown.
 /// </param>
+/// <param name="P95Milliseconds">The 95th percentile of the rolling sample window.</param>
 /// <param name="PeakMilliseconds">
 /// The worst single frame seen since measuring began. The budget is what a stage costs; this is what
 /// it costs when the camera turns to face the whole level, which is the frame that actually drops.
 /// </param>
-public readonly record struct RenderStageTiming(RenderStage Stage, double Milliseconds, double PeakMilliseconds);
+/// <param name="Active">Whether the stage ran in the latest completed GPU frame.</param>
+/// <param name="SampleCount">How many samples are represented by the rolling statistics.</param>
+public readonly record struct RenderStageTiming(
+    RenderStage Stage,
+    double Milliseconds,
+    double P95Milliseconds,
+    double PeakMilliseconds,
+    bool Active,
+    int SampleCount);

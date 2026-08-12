@@ -9,6 +9,16 @@ namespace OpenIGI.Rendering.Tests;
 /// </summary>
 public sealed class GraphicsPresetRegistryTests
 {
+    [Fact]
+    public void UltraKeepsAuthoredLightingUntilProbeIrradianceExists()
+    {
+        _ = RenderCVars.Lighting;
+
+        GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Ultra);
+
+        Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
+    }
+
     private readonly CVarRegistry _variables = new();
 
     [Fact]

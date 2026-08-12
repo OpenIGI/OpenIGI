@@ -230,6 +230,14 @@ public sealed class WorldRenderer : IDisposable
                 drawPosition = cinematicPosition;
                 drawOrientation = cinematicOrientation;
             }
+
+            Matrix4f baseModelView = camera.CreateModelView(drawPosition, drawOrientation);
+            if (!hasRotorDraw
+                && !FrustumCulling.SphereVisible(projection * baseModelView, geometry.Bounds))
+            {
+                continue;
+            }
+
             TextureHandle[] pages = GetLightmapPages(scene, placement);
 
             foreach (MeshSubset subset in geometry.Subsets)
@@ -266,7 +274,9 @@ public sealed class WorldRenderer : IDisposable
                     Matrix3f sampleOrientation = hasRotorDraw
                         ? rotorDraw.GetOrientation(sample)
                         : drawOrientation;
-                    Matrix4f modelView = camera.CreateModelView(drawPosition, sampleOrientation);
+                    Matrix4f modelView = hasRotorDraw
+                        ? camera.CreateModelView(drawPosition, sampleOrientation)
+                        : baseModelView;
                     _device.DrawMesh(
                         mesh,
                         subset.IndexOffset,

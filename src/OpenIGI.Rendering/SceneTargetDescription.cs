@@ -37,6 +37,7 @@ namespace OpenIGI.Rendering;
 /// is an ordinary 8-bit buffer and the round trip is lossless, which is what the vanilla path uses so
 /// that going through the offscreen target changes nothing at all.
 /// </param>
+/// <param name="GBuffer">The optional deferred attachments required by the active preset.</param>
 public readonly record struct SceneTargetDescription(
     int Width,
     int Height,
@@ -44,7 +45,8 @@ public readonly record struct SceneTargetDescription(
     bool Deferred = false,
     bool HighDynamicRange = true,
     int OutputWidth = 0,
-    int OutputHeight = 0)
+    int OutputHeight = 0,
+    GBufferLayout GBuffer = GBufferLayout.Full)
 {
     /// <summary>Gets the width the frame is presented at, which is the render width unless upsampling.</summary>
     public int PresentWidth => OutputWidth > 0 ? OutputWidth : Width;
@@ -69,6 +71,18 @@ public readonly record struct SceneTargetDescription(
     /// render scale is the dial.
     /// </remarks>
     public bool IsMultisampled => SampleCount > 1 && !Deferred;
+
+    /// <summary>Gets whether a baked-light target is needed.</summary>
+    public bool HasBakedLighting => Deferred && GBuffer.HasFlag(GBufferLayout.BakedLighting);
+
+    /// <summary>Gets whether a motion-vector target is needed.</summary>
+    public bool HasMotionVectors => Deferred && GBuffer.HasFlag(GBufferLayout.MotionVectors);
+
+    /// <summary>Gets the width of a half-resolution effect target, rounding odd sizes up.</summary>
+    public int HalfWidth => Math.Max(1, (Width + 1) / 2);
+
+    /// <summary>Gets the height of a half-resolution effect target, rounding odd sizes up.</summary>
+    public int HalfHeight => Math.Max(1, (Height + 1) / 2);
 
     /// <summary>Gets a value indicating whether the description names a usable target size.</summary>
     public bool IsValid => Width > 0 && Height > 0 && SampleCount >= 1;

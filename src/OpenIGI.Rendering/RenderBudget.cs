@@ -25,19 +25,25 @@ namespace OpenIGI.Rendering;
 public static class RenderBudget
 {
     /// <summary>The frame time a 60 Hz presentation has to fit inside, in milliseconds.</summary>
-    public const double FrameMilliseconds = 1000.0 / 60.0;
+    public const double FrameMilliseconds = 1000.0 / 120.0;
 
     /// <summary>Gets what a stage is allowed to cost.</summary>
     /// <param name="stage">The stage.</param>
     /// <returns>Its budget in milliseconds, or <see langword="null"/> when it was never given one.</returns>
     public static double? For(RenderStage stage) => stage switch
     {
-        RenderStage.Shadows => 1.0,
-        RenderStage.AmbientOcclusion => 1.0,
-        RenderStage.Lighting => 2.0,
-        RenderStage.Reflections => 1.5,
-        RenderStage.Fog => 1.5,
-        RenderStage.Post => 1.5,
+        RenderStage.Shadows => 0.7,
+        RenderStage.AmbientOcclusionSearch => 1.0,
+        RenderStage.AmbientOcclusionReconstruct => 0.25,
+        RenderStage.Lighting => 0.8,
+        RenderStage.Reflections => 0.5,
+        RenderStage.FogIntegrate => 0.8,
+        RenderStage.FogComposite => 0.2,
+        RenderStage.CameraEffects => 0.25,
+        RenderStage.Bloom => 0.25,
+        RenderStage.Exposure => 0.1,
+        RenderStage.ToneMapGrade => 0.3,
+        RenderStage.SpatialAntiAliasing => 0.1,
         _ => null,
     };
 }

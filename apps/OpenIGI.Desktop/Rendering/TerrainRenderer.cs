@@ -6,6 +6,7 @@ using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using System.Runtime.InteropServices;
 
 namespace OpenIGI.Desktop;
 
@@ -33,6 +34,11 @@ namespace OpenIGI.Desktop;
 public sealed class TerrainRenderer : IDisposable
 {
     private const string LogCategory = "Terrain";
+    private const int BatchCellMetres = 2048;
+    private const int MaximumBatchVertices = ushort.MaxValue + 1;
+    private const int SparseVisibleQueryInterval = 16;
+    private const int ProductiveVisibleQueryInterval = 4;
+    private const int ProductiveOccludedChunkThreshold = 64;
 
     /// <summary>How many uploaded chunks to keep before dropping the ones no recent frame used.</summary>
     /// <remarks>The original bounds the same cache and aborts with "Out of terrain renderchunks".</remarks>
@@ -51,9 +57,15 @@ public sealed class TerrainRenderer : IDisposable
     private readonly IIgiLogger _logger;
     private readonly List<TerrainChunk> _chunks = [];
     private readonly Dictionary<ChunkKey, Entry> _cache = [];
+    private readonly Dictionary<BatchKey, List<BatchPage>> _batchPages = [];
+    private readonly List<BatchPage> _drawPages = [];
+    private readonly List<BatchPage> _queryPages = [];
     private readonly List<ChunkKey> _evictions = [];
     private readonly TextureHandle[] _tiles;
     private long _frame;
+    private Camera3D _previousCamera;
+    private bool _hasPreviousCamera;
+    private int _previousOccludedChunks;
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="TerrainRenderer"/> class.</summary>
@@ -112,6 +124,15 @@ public sealed class TerrainRenderer : IDisposable
     /// <remarks>One per chunk where a single ground material covers it, more where two or more meet.</remarks>
     public int LastPassCount { get; private set; }
 
+    /// <summary>Gets how many multi-draw submissions replaced the last frame's material passes.</summary>
+    public int LastBatchCount { get; private set; }
+
+    /// <summary>Gets how many terrain batch bounds were queried in the last frame.</summary>
+    public int LastOcclusionQueryCount { get; private set; }
+
+    /// <summary>Gets how many emitted chunks were conservatively rejected by prior query results.</summary>
+    public int LastOccludedChunkCount { get; private set; }
+
     /// <summary>Gets how many ground tiles were uploaded from the level's atlas.</summary>
     public int TileCount => _tiles.Length;
 
@@ -131,13 +152,17 @@ public sealed class TerrainRenderer : IDisposable
     /// <param name="verticalFieldOfView">The projection's full vertical field of view in radians.</param>
     /// <param name="aspectRatio">The viewport's width divided by its height.</param>
     /// <param name="viewDistance">Overrides the derived level-of-detail distance; zero keeps the derived one.</param>
+    /// <param name="batching">Whether compatible material draws may use spatial multi-draw pages.</param>
+    /// <param name="occlusionCulling">Whether prior asynchronous visibility results may reject batch pages.</param>
     /// <exception cref="ObjectDisposedException">The renderer has been disposed.</exception>
     public void Draw(
         in Camera3D camera,
         in Matrix4f projection,
         float verticalFieldOfView,
         float aspectRatio,
-        int viewDistance = 0)
+        int viewDistance = 0,
+        bool batching = true,
+        bool occlusionCulling = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -175,13 +200,155 @@ public sealed class TerrainRenderer : IDisposable
         // metres back to the engine units the window is expressed in, per chunk below.
         float fadeOffset = (long)((view.ViewDistance + 64) * 0.375);
         float fadeSlope = 2.6666667f / (view.ViewDistance - 64);
-        bool fading = false;
 
+        if (!batching)
+        {
+            DrawDirect(camera, result, fadeOffset, fadeSlope);
+            Trim();
+            return;
+        }
+
+        _drawPages.Clear();
+        _queryPages.Clear();
+        foreach (List<BatchPage> pages in _batchPages.Values)
+        {
+            foreach (BatchPage page in pages)
+            {
+                page.BeginFrame();
+            }
+        }
+
+        bool bypassOcclusion = !occlusionCulling || IsCameraCut(camera);
+        int visibleQueryInterval = _previousOccludedChunks >= ProductiveOccludedChunkThreshold
+            ? ProductiveVisibleQueryInterval
+            : SparseVisibleQueryInterval;
+        int triangles = 0;
+        int passes = 0;
+        int occludedChunks = 0;
+        foreach (TerrainChunk chunk in _chunks)
+        {
+            if (!TryGetEntry(chunk, out Entry? entry))
+            {
+                continue;
+            }
+
+            Vector3d centreMetres = new(
+                chunk.Position.X / WorldScene.UnitsPerMetre,
+                chunk.Position.Y / WorldScene.UnitsPerMetre,
+                chunk.Position.Z / WorldScene.UnitsPerMetre);
+            double distance = (centreMetres - camera.Position).Length;
+            bool pageVisible = bypassOcclusion || _device.OcclusionVisible(entry.OcclusionPage.OcclusionQuery);
+            bool refreshQuery = !pageVisible
+                || ((_frame + entry.OcclusionPage.OcclusionQuery.Id) % visibleQueryInterval) == 0;
+            if (occlusionCulling && refreshQuery && entry.OcclusionPage.RequestQuery(distance))
+            {
+                _queryPages.Add(entry.OcclusionPage);
+            }
+
+            if (!pageVisible)
+            {
+                occludedChunks++;
+                continue;
+            }
+
+            foreach (BatchedLayer layer in entry.Layers)
+            {
+                if (layer.Page.Queue(layer.Range, distance))
+                {
+                    _drawPages.Add(layer.Page);
+                }
+                triangles += layer.TriangleCount;
+                passes++;
+            }
+        }
+
+        // Layer slot is the hard ordering constraint: every chunk's base must exist before its first
+        // blend, and material blends keep their authored order. Within a slot, nearer pages go first so
+        // ordinary hardware early-Z rejects hills and ground hidden behind them.
+        _drawPages.Sort(BatchPage.DrawOrder);
+        _queryPages.Sort(BatchPage.DrawOrder);
+
+        int batches = 0;
+        int queries = 0;
+        foreach (BatchPage page in _drawPages)
+        {
+            if (!page.Key.IsBase)
+            {
+                continue;
+            }
+
+            Matrix4f pageModelView = camera.CreateModelView(page.OriginMetres);
+            if (page.QueryRequested)
+            {
+                _device.SetDepthState(DepthState.TestAndWrite);
+                _device.IssueOcclusionQuery(page.OcclusionQuery, pageModelView, page.Bounds);
+                queries++;
+            }
+            if (DrawBatchPage(page, pageModelView, fadeOffset, fadeSlope))
+            {
+                batches++;
+            }
+        }
+
+        // Hidden pages have no draw entry. Retest them after visible terrain has populated depth, so
+        // they can recover immediately when the camera moves while still benefiting from occluders.
+        foreach (BatchPage page in _queryPages)
+        {
+            if (page.HasVisibleRanges)
+            {
+                continue;
+            }
+
+            _device.SetDepthState(DepthState.TestAndWrite);
+            _device.IssueOcclusionQuery(
+                page.OcclusionQuery,
+                camera.CreateModelView(page.OriginMetres),
+                page.Bounds);
+            queries++;
+        }
+
+        foreach (BatchPage page in _drawPages)
+        {
+            if (!page.Key.IsBase
+                && DrawBatchPage(page, camera.CreateModelView(page.OriginMetres), fadeOffset, fadeSlope))
+            {
+                batches++;
+            }
+        }
+        _device.ClearDetailFade();
+
+        LastChunkCount = result.Emitted - occludedChunks;
+        LastPassCount = passes;
+        LastBatchCount = batches;
+        LastOcclusionQueryCount = queries;
+        LastOccludedChunkCount = occludedChunks;
+        LastTriangleCount = triangles;
+        LastVisitedCount = result.Visited;
+        _previousCamera = camera;
+        _hasPreviousCamera = true;
+        _previousOccludedChunks = occludedChunks;
+
+        if (result.Dropped > 0)
+        {
+            _logger.Warning(LogCategory, $"{result.Dropped} chunk(s) did not fit the visible list.");
+        }
+
+        Trim();
+    }
+
+    /// <summary>Keeps Vanilla's original chunk-local transforms and submission order byte-identical.</summary>
+    private void DrawDirect(
+        in Camera3D camera,
+        in TerrainTraversalResult result,
+        float fadeOffset,
+        float fadeSlope)
+    {
+        int chunks = 0;
         int triangles = 0;
         int passes = 0;
         foreach (TerrainChunk chunk in _chunks)
         {
-            if (!TryGetMesh(chunk, out Entry? entry) || !entry.Mesh.IsValid)
+            if (!TryGetEntry(chunk, out Entry? entry) || !EnsureDirectMesh(entry))
             {
                 continue;
             }
@@ -190,54 +357,114 @@ public sealed class TerrainRenderer : IDisposable
                 chunk.Position.X / WorldScene.UnitsPerMetre,
                 chunk.Position.Y / WorldScene.UnitsPerMetre,
                 chunk.Position.Z / WorldScene.UnitsPerMetre));
-
-            foreach (TerrainChunkLayer layer in entry.Layers)
+            foreach (TerrainChunkLayer layer in entry.Geometry.Layers)
             {
-                // Every terrain pass morphs its seams with the LOD fade; the detail passes additionally
-                // fade their alpha in with proximity. The fade scale is per chunk because the window is
-                // measured in the chunk's own morph units.
                 _device.SetDetailFade(
                     (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - chunk.LodExponent))),
                     fadeOffset,
                     fadeSlope,
                     layer.IsDetail);
-                fading = true;
-
-                // The base pass fills the chunk and owns the depth; the rest fade in over it, which is
-                // what makes one ground type meet another without a seam. They must not write depth —
-                // an overlay is transparent over most of its own chunk, and a transparent fragment that
-                // writes depth hides whatever is behind it.
                 _device.SetDepthState(layer.IsBase ? DepthState.TestAndWrite : DepthState.TestOnly);
                 _device.DrawMesh(
-                    entry.Mesh,
+                    entry.DirectMesh,
                     layer.IndexOffset,
                     layer.IndexCount,
                     modelView,
                     TileTexture(layer.TileIndex),
                     TextureHandle.None,
                     layer.IsBase ? BlendMode.Opaque : BlendMode.AlphaBlend);
-
                 triangles += layer.TriangleCount;
                 passes++;
             }
+            chunks++;
         }
 
-        if (fading)
+        if (passes > 0)
         {
             _device.ClearDetailFade();
         }
 
-        LastChunkCount = result.Emitted;
+        LastChunkCount = chunks;
         LastPassCount = passes;
+        LastBatchCount = 0;
+        LastOcclusionQueryCount = 0;
+        LastOccludedChunkCount = 0;
         LastTriangleCount = triangles;
         LastVisitedCount = result.Visited;
+    }
 
-        if (result.Dropped > 0)
+    private bool EnsureDirectMesh(Entry entry)
+    {
+        if (entry.DirectMesh.IsValid)
         {
-            _logger.Warning(LogCategory, $"{result.Dropped} chunk(s) did not fit the visible list.");
+            return true;
         }
 
-        Trim();
+        try
+        {
+            entry.DirectMesh = _device.CreateMesh(entry.Geometry.Vertices, entry.Geometry.Indices);
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+        {
+            _logger.Warning(LogCategory, $"Terrain chunk did not upload: {ex.Message}");
+            return false;
+        }
+    }
+
+    private bool DrawBatchPage(
+        BatchPage page,
+        in Matrix4f modelView,
+        float fadeOffset,
+        float fadeSlope)
+    {
+        try
+        {
+            page.EnsureUploaded(_device);
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+        {
+            _logger.Warning(LogCategory, $"Terrain batch {page.Key} did not upload: {ex.Message}");
+            return false;
+        }
+
+        _device.SetDetailFade(
+            (float)(0.375 * WorldScene.UnitsPerMetre / (1 << (25 - page.Key.LodExponent))),
+            fadeOffset,
+            fadeSlope,
+            page.Key.IsDetail);
+        _device.SetDepthState(page.Key.IsBase ? DepthState.TestAndWrite : DepthState.TestOnly);
+        _device.DrawMeshRanges(
+            page.Mesh,
+            page.VisibleRanges,
+            modelView,
+            TileTexture(page.Key.TileIndex),
+            TextureHandle.None,
+            page.Key.IsBase ? BlendMode.Opaque : BlendMode.AlphaBlend);
+        return true;
+    }
+
+    /// <summary>Rejects stale query decisions after a teleport or abrupt camera cut.</summary>
+    private bool IsCameraCut(in Camera3D camera)
+    {
+        if (!_hasPreviousCamera || (camera.Position - _previousCamera.Position).Length > 4.0)
+        {
+            return true;
+        }
+
+        Matrix3f a = camera.Orientation;
+        Matrix3f b = _previousCamera.Orientation;
+        float largest = 0f;
+        largest = Math.Max(largest, Math.Abs(a.M11 - b.M11));
+        largest = Math.Max(largest, Math.Abs(a.M12 - b.M12));
+        largest = Math.Max(largest, Math.Abs(a.M13 - b.M13));
+        largest = Math.Max(largest, Math.Abs(a.M21 - b.M21));
+        largest = Math.Max(largest, Math.Abs(a.M22 - b.M22));
+        largest = Math.Max(largest, Math.Abs(a.M23 - b.M23));
+        largest = Math.Max(largest, Math.Abs(a.M31 - b.M31));
+        largest = Math.Max(largest, Math.Abs(a.M32 - b.M32));
+        largest = Math.Max(largest, Math.Abs(a.M33 - b.M33));
+        return largest > 0.15f;
     }
 
     /// <inheritdoc/>
@@ -249,9 +476,20 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         _disposed = true;
+        foreach (List<BatchPage> pages in _batchPages.Values)
+        {
+            foreach (BatchPage page in pages)
+            {
+                page.Destroy(_device);
+            }
+        }
+
         foreach (Entry entry in _cache.Values)
         {
-            _device.DestroyMesh(entry.Mesh);
+            if (entry.DirectMesh.IsValid)
+            {
+                _device.DestroyMesh(entry.DirectMesh);
+            }
         }
 
         foreach (TextureHandle tile in _tiles)
@@ -260,6 +498,9 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         _cache.Clear();
+        _batchPages.Clear();
+        _drawPages.Clear();
+        _queryPages.Clear();
         _chunks.Clear();
     }
 
@@ -319,7 +560,7 @@ public sealed class TerrainRenderer : IDisposable
     private TextureHandle TileTexture(int index) =>
         (uint)index < (uint)_tiles.Length ? _tiles[index] : TextureHandle.None;
 
-    private bool TryGetMesh(in TerrainChunk chunk, [NotNullWhen(true)] out Entry? entry)
+    private bool TryGetEntry(in TerrainChunk chunk, [NotNullWhen(true)] out Entry? entry)
     {
         // The key is the chunk's integer position and its level of detail — the geometry a record holds
         // is only the same geometry when it is drawn in the same place at the same detail.
@@ -351,20 +592,53 @@ public sealed class TerrainRenderer : IDisposable
             return false;
         }
 
-        MeshHandle mesh = MeshHandle.None;
-        try
-        {
-            mesh = _device.CreateMesh(geometry.Vertices, geometry.Indices);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-        {
-            _logger.Warning(LogCategory, $"A chunk at {chunk.Position} did not upload: {ex.Message}");
-            return false;
-        }
-
-        entry = new Entry(mesh, geometry.Layers) { LastUsedFrame = _frame };
+        entry = new Entry(chunk, geometry) { LastUsedFrame = _frame };
+        entry.Layers = AddToBatches(chunk, geometry);
+        entry.OcclusionPage = entry.Layers[0].Page;
         _cache[key] = entry;
         return true;
+    }
+
+    /// <summary>Adds one chunk's material layers to spatially local, state-compatible mesh pages.</summary>
+    private BatchedLayer[] AddToBatches(in TerrainChunk chunk, TerrainChunkGeometry geometry)
+    {
+        int vertexCount = geometry.Vertices.Length / geometry.Layers.Count;
+        BatchedLayer[] result = new BatchedLayer[geometry.Layers.Count];
+
+        for (int slot = 0; slot < geometry.Layers.Count; slot++)
+        {
+            TerrainChunkLayer layer = geometry.Layers[slot];
+            BatchKey key = BatchKey.For(chunk, layer, slot);
+            if (!_batchPages.TryGetValue(key, out List<BatchPage>? pages))
+            {
+                pages = [];
+                _batchPages.Add(key, pages);
+            }
+
+            BatchPage? page = pages.Count > 0 && pages[^1].CanFit(vertexCount)
+                ? pages[^1]
+                : null;
+            if (page is null)
+            {
+                page = new BatchPage(key, _device);
+                pages.Add(page);
+            }
+
+            int sourceVertex = slot * vertexCount;
+            Vector3d chunkMetres = new(
+                chunk.Position.X / WorldScene.UnitsPerMetre,
+                chunk.Position.Y / WorldScene.UnitsPerMetre,
+                chunk.Position.Z / WorldScene.UnitsPerMetre);
+            Vector3d offset = chunkMetres - page.OriginMetres;
+            MeshDrawRange range = page.Append(
+                geometry.Vertices.AsSpan(sourceVertex, vertexCount),
+                geometry.Indices.AsSpan(layer.IndexOffset, layer.IndexCount),
+                sourceVertex,
+                new Vector3f((float)offset.X, (float)offset.Y, (float)offset.Z));
+            result[slot] = new BatchedLayer(page, range, layer.TriangleCount);
+        }
+
+        return result;
     }
 
     /// <summary>Drops the chunks no recent frame drew, once the cache is over its bound.</summary>
@@ -404,19 +678,257 @@ public sealed class TerrainRenderer : IDisposable
 
         foreach (ChunkKey key in _evictions)
         {
-            _device.DestroyMesh(_cache[key].Mesh);
+            Entry entry = _cache[key];
+            if (entry.DirectMesh.IsValid)
+            {
+                _device.DestroyMesh(entry.DirectMesh);
+            }
             _cache.Remove(key);
+        }
+
+        if (_evictions.Count > 0)
+        {
+            RebuildBatches();
+        }
+    }
+
+    /// <summary>Compacts pages after cache eviction; ordinary frame-to-frame use only appends.</summary>
+    private void RebuildBatches()
+    {
+        foreach (List<BatchPage> pages in _batchPages.Values)
+        {
+            foreach (BatchPage page in pages)
+            {
+                page.Destroy(_device);
+            }
+        }
+        _batchPages.Clear();
+
+        foreach (Entry entry in _cache.Values)
+        {
+            entry.Layers = AddToBatches(entry.Chunk, entry.Geometry);
+            entry.OcclusionPage = entry.Layers[0].Page;
         }
     }
 
     private readonly record struct ChunkKey(long X, long Y, long Z, int Lod);
 
-    private sealed class Entry(MeshHandle mesh, IReadOnlyList<TerrainChunkLayer> layers)
+    private readonly record struct BatchKey(
+        int LodExponent,
+        int TileIndex,
+        bool IsBase,
+        bool IsDetail,
+        int LayerSlot,
+        long CellX,
+        long CellY,
+        long CellZ)
     {
-        public MeshHandle Mesh { get; } = mesh;
+        public static BatchKey For(in TerrainChunk chunk, in TerrainChunkLayer layer, int layerSlot)
+        {
+            double unitsPerCell = BatchCellMetres * WorldScene.UnitsPerMetre;
+            return new(
+                chunk.LodExponent,
+                layer.TileIndex,
+                layer.IsBase,
+                layer.IsDetail,
+                layerSlot,
+                (long)Math.Floor(chunk.Position.X / unitsPerCell),
+                (long)Math.Floor(chunk.Position.Y / unitsPerCell),
+                (long)Math.Floor(chunk.Position.Z / unitsPerCell));
+        }
+    }
 
-        public IReadOnlyList<TerrainChunkLayer> Layers { get; } = layers;
+    private readonly record struct BatchedLayer(BatchPage Page, MeshDrawRange Range, int TriangleCount);
+
+    private sealed class Entry(TerrainChunk chunk, TerrainChunkGeometry geometry)
+    {
+        public TerrainChunk Chunk { get; } = chunk;
+
+        public TerrainChunkGeometry Geometry { get; } = geometry;
+
+        public BatchedLayer[] Layers { get; set; } = [];
+
+        public MeshHandle DirectMesh { get; set; }
+
+        public BatchPage OcclusionPage { get; set; } = null!;
 
         public long LastUsedFrame { get; set; }
+    }
+
+    /// <summary>A 16-bit indexed mesh page sharing every state needed by one multi-draw.</summary>
+    private sealed class BatchPage
+    {
+        private readonly List<Vertex3D> _vertices = [];
+        private readonly List<ushort> _indices = [];
+        private readonly List<VisibleDraw> _visible = [];
+        private readonly List<MeshDrawRange> _visibleRanges = [];
+        private Vector3f _minimum = new(float.MaxValue);
+        private Vector3f _maximum = new(float.MinValue);
+        private bool _dirty;
+        private bool _queryRequested;
+
+        public BatchPage(BatchKey key, IGraphicsDevice device)
+        {
+            Key = key;
+            OriginMetres = new Vector3d(
+                key.CellX * BatchCellMetres,
+                key.CellY * BatchCellMetres,
+                key.CellZ * BatchCellMetres);
+            OcclusionQuery = key.IsBase ? device.CreateOcclusionQuery() : OcclusionQueryHandle.None;
+        }
+
+        public static Comparison<BatchPage> DrawOrder { get; } = (left, right) =>
+        {
+            int layer = left.Key.LayerSlot.CompareTo(right.Key.LayerSlot);
+            return layer != 0 ? layer : left.MinimumDistance.CompareTo(right.MinimumDistance);
+        };
+
+        public BatchKey Key { get; }
+
+        public Vector3d OriginMetres { get; }
+
+        public MeshHandle Mesh { get; private set; }
+
+        public OcclusionQueryHandle OcclusionQuery { get; private set; }
+
+        public OcclusionBounds Bounds => new(_minimum, _maximum);
+
+        public bool HasVisibleRanges => _visible.Count > 0;
+
+        public bool QueryRequested => _queryRequested;
+
+        public double MinimumDistance { get; private set; }
+
+        public ReadOnlySpan<MeshDrawRange> VisibleRanges
+        {
+            get
+            {
+                _visible.Sort(static (left, right) => left.Distance.CompareTo(right.Distance));
+                _visibleRanges.Clear();
+                foreach (VisibleDraw draw in _visible)
+                {
+                    _visibleRanges.Add(draw.Range);
+                }
+                return CollectionsMarshal.AsSpan(_visibleRanges);
+            }
+        }
+
+        public bool CanFit(int vertices) => _vertices.Count + vertices <= MaximumBatchVertices;
+
+        public MeshDrawRange Append(
+            ReadOnlySpan<Vertex3D> vertices,
+            ReadOnlySpan<ushort> indices,
+            int sourceVertex,
+            Vector3f translation)
+        {
+            int vertexBase = _vertices.Count;
+            int indexBase = _indices.Count;
+
+            foreach (Vertex3D vertex in vertices)
+            {
+                Vector3f position = new(
+                    vertex.Position.X + translation.X,
+                    vertex.Position.Y + translation.Y,
+                    vertex.Position.Z + translation.Z);
+                Vector3f morphed = new(
+                    position.X + vertex.Normal.X,
+                    position.Y + vertex.Normal.Y,
+                    position.Z + vertex.Normal.Z);
+                ExpandBounds(position);
+                ExpandBounds(morphed);
+                _vertices.Add(new Vertex3D(
+                    position,
+                    vertex.Normal,
+                    vertex.DiffuseU,
+                    vertex.DiffuseV,
+                    vertex.LightmapU,
+                    vertex.LightmapV,
+                    vertex.Colour));
+            }
+
+            foreach (ushort index in indices)
+            {
+                _indices.Add(checked((ushort)(vertexBase + index - sourceVertex)));
+            }
+
+            _dirty = true;
+            return new MeshDrawRange(indexBase, indices.Length);
+        }
+
+        public void BeginFrame()
+        {
+            _visible.Clear();
+            _visibleRanges.Clear();
+            MinimumDistance = double.MaxValue;
+            _queryRequested = false;
+        }
+
+        /// <returns><see langword="true"/> when this is the first visible range queued.</returns>
+        public bool Queue(MeshDrawRange range, double distance)
+        {
+            bool first = _visible.Count == 0;
+            _visible.Add(new VisibleDraw(range, distance));
+            MinimumDistance = Math.Min(MinimumDistance, distance);
+            return first;
+        }
+
+        /// <returns><see langword="true"/> when this page needs adding to the frame's query order.</returns>
+        public bool RequestQuery(double distance)
+        {
+            MinimumDistance = Math.Min(MinimumDistance, distance);
+            if (_queryRequested || !OcclusionQuery.IsValid)
+            {
+                return false;
+            }
+
+            _queryRequested = true;
+            return true;
+        }
+
+        public void EnsureUploaded(IGraphicsDevice device)
+        {
+            if (!_dirty && Mesh.IsValid)
+            {
+                return;
+            }
+
+            if (Mesh.IsValid)
+            {
+                device.DestroyMesh(Mesh);
+                Mesh = MeshHandle.None;
+            }
+
+            Mesh = device.CreateMesh(CollectionsMarshal.AsSpan(_vertices), CollectionsMarshal.AsSpan(_indices));
+            _dirty = false;
+        }
+
+        public void Destroy(IGraphicsDevice device)
+        {
+            if (Mesh.IsValid)
+            {
+                device.DestroyMesh(Mesh);
+                Mesh = MeshHandle.None;
+            }
+
+            if (OcclusionQuery.IsValid)
+            {
+                device.DestroyOcclusionQuery(OcclusionQuery);
+                OcclusionQuery = OcclusionQueryHandle.None;
+            }
+        }
+
+        private void ExpandBounds(Vector3f point)
+        {
+            _minimum = new Vector3f(
+                Math.Min(_minimum.X, point.X),
+                Math.Min(_minimum.Y, point.Y),
+                Math.Min(_minimum.Z, point.Z));
+            _maximum = new Vector3f(
+                Math.Max(_maximum.X, point.X),
+                Math.Max(_maximum.Y, point.Y),
+                Math.Max(_maximum.Z, point.Z));
+        }
+
+        private readonly record struct VisibleDraw(MeshDrawRange Range, double Distance);
     }
 }

@@ -114,7 +114,30 @@ public sealed class DesktopConsole : IDisposable
             GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Enhanced);
         }
 
-        GraphicsPresetRegistry.Default.Detect();
+        GraphicsPreset detectedPreset = GraphicsPresetRegistry.Default.Detect();
+
+        // Builds which shipped Ultra as dynamic wrote that value into settings.cfg. Merely correcting
+        // the preset would leave those installations on the broken tower/interior path until the player
+        // happened to reselect Ultra. Identify that old preset narrowly: if changing only lighting back
+        // to baked makes every managed value match today's Ultra, migrate it. Any other custom setting
+        // keeps the player's explicit dynamic choice.
+        if (settingsLoaded
+            && detectedPreset == GraphicsPreset.Custom
+            && RenderCVars.Lighting.Value == LightingModel.Dynamic)
+        {
+            RenderCVars.Lighting.Value = LightingModel.Baked;
+            if (GraphicsPresetRegistry.Default.Detect() == GraphicsPreset.Ultra)
+            {
+                _logger.Information(
+                    LogCategory,
+                    "Migrated the former Ultra dynamic-lighting default to authored baked lighting.");
+            }
+            else
+            {
+                RenderCVars.Lighting.Value = LightingModel.Dynamic;
+                GraphicsPresetRegistry.Default.Detect();
+            }
+        }
 
         foreach (string statement in startupCommands ?? [])
         {

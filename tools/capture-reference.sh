@@ -34,6 +34,7 @@ shift || true
 # asks for `+gfx_preset vanilla` without a second copy of the view table.
 EXTRA=("$@")
 TMP="$ROOT/.capture-tmp"
+GAME="$ROOT/apps/OpenIGI.Desktop/bin/Release/net10.0/OpenIGI.Desktop.exe"
 
 # The game and Python are Windows programs; this script runs under Git Bash. Anything handed to
 # either has to be a Windows path, or it silently writes somewhere neither can find.
@@ -62,8 +63,10 @@ VIEWS=(
 mkdir -p "$OUT" "$TMP"
 : > "$OUT/manifest.txt"
 
-echo "Building..."
-dotnet build "$ROOT/apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" -v q --nologo | tail -1
+if [ ! -f "$GAME" ]; then
+  echo "Building..."
+  dotnet build "$ROOT/apps/OpenIGI.Desktop/OpenIGI.Desktop.csproj" -c Release -v q --nologo | tail -1
+fi
 
 for mission in "${MISSIONS[@]}"; do
   for view in "${VIEWS[@]}"; do
@@ -74,8 +77,8 @@ for mission in "${MISSIONS[@]}"; do
 
     printf 'Capturing %-14s ' "$stem"
     # shellcheck disable=SC2086
-    if ! dotnet run --project "$ROOT/apps/OpenIGI.Desktop" --no-build -- \
-        -mission "$mission" -lockstep -size "${WIDTH}x${HEIGHT}" -frames "$FRAMES" \
+    if ! "$GAME" \
+        -mission "$mission" -lockstep -skipcutscene -size "${WIDTH}x${HEIGHT}" -frames "$FRAMES" \
         $extra "${EXTRA[@]}" -screenshot "$(win "$bmp")" > "$TMP/$stem.log" 2>&1; then
       echo "FAILED (see $TMP/$stem.log)"
       continue
