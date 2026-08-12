@@ -43,6 +43,7 @@ internal sealed partial class DesktopGame
 
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
+    private readonly Dictionary<PlacedElevator, AudioVoiceHandle> _elevatorVoices = [];
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
 
@@ -973,6 +974,48 @@ internal sealed partial class DesktopGame
         if (what == DoorSoundEvent.StartedMoving && voice != AudioVoiceHandle.None)
         {
             _doorVoices[door] = voice;
+        }
+    }
+
+    /// <summary>Plays an elevator's start, travel and stop definitions.</summary>
+    private void PlayElevatorSound(PlacedElevator elevator, ElevatorSoundEvent what)
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        if (what == ElevatorSoundEvent.StoppedMoving)
+        {
+            if (_elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
+            {
+                _sounds.Stop(running);
+            }
+
+            if (elevator.StopSound.Length > 0)
+            {
+                _sounds.PlayDefinition(elevator.StopSound, elevator.State.Position, priority: 120);
+            }
+
+            return;
+        }
+
+        if (elevator.StartSound.Length > 0)
+        {
+            _sounds.PlayDefinition(elevator.StartSound, elevator.State.Position, priority: 120);
+        }
+
+        if (elevator.MoveSound.Length > 0)
+        {
+            AudioVoiceHandle voice = _sounds.PlayDefinition(
+                elevator.MoveSound,
+                elevator.State.Position,
+                priority: 120,
+                looping: true);
+            if (voice.IsValidHandle)
+            {
+                _elevatorVoices[elevator] = voice;
+            }
         }
     }
 

@@ -73,6 +73,9 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the live door transforms applied to otherwise static placements.</summary>
     public DoorRegistry? Doors { get; set; }
 
+    /// <summary>Gets or sets the live elevator transforms applied to lift placements.</summary>
+    public ElevatorRegistry? Elevators { get; set; }
+
     /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
     public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
 
@@ -216,6 +219,16 @@ public sealed class WorldRenderer : IDisposable
             {
                 drawPosition = doorPosition;
                 drawOrientation = doorOrientation;
+            }
+            else if (Elevators?.TryGetDrawTransform(
+                placement.Owner,
+                _frameAlpha,
+                _frameSmooth,
+                out Vector3d elevatorPosition,
+                out Matrix3f elevatorOrientation) == true)
+            {
+                drawPosition = elevatorPosition;
+                drawOrientation = elevatorOrientation;
             }
             else if (Cutscenes?.TryGetRotorDrawState(placement, out rotorDraw) == true)
             {

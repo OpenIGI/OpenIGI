@@ -289,6 +289,7 @@ internal sealed partial class DesktopGame
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         _doors = DoorRegistry.Build(levelRoot);
+        _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
         _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
         world.GenericPickups = _genericPickups;
@@ -296,6 +297,7 @@ internal sealed partial class DesktopGame
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
         _soldiers.UseInteractions(_interactions);
         _soldiers.SetDoors(_doors, solids);
+        _soldiers.SetElevators(_elevators);
 
         // The first genuinely world-positioned sound in the port. Its distances are the definition's
         // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
@@ -331,13 +333,15 @@ internal sealed partial class DesktopGame
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
         _doors.SetSoundSink(PlayDoorSound);
+        _elevators.SetSoundSink(PlayElevatorSound);
         world.Doors = _doors;
+        world.Elevators = _elevators;
         if (_doors.Doors.Count > 0)
         {
             _logger.Information("World", $"{_doors.Doors.Count} door(s) available to players and AI.");
         }
 
-        EndStage("the doors and the world interactions");
+        EndStage("the doors, elevators and world interactions");
 
         // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
         // objects, not navigation actors, so construct them independently of whether this mission
@@ -1236,6 +1240,7 @@ internal sealed partial class DesktopGame
         _worldSolids = null;
         _worldMaterials = null;
         _doors = null;
+        _elevators = null;
         _interactions = null;
         _gunPickups = null;
         _genericPickups = null;

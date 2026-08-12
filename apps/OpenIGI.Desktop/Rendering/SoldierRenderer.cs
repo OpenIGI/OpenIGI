@@ -114,6 +114,7 @@ public sealed class SoldierRenderer : IDisposable
     // The level's doors: ticked here (their update runs on the task pass, before the AIs), queried by
     // each walker's door hop, and switched out of the collision index while they stand open.
     private DoorRegistry? _doors;
+    private ElevatorRegistry? _elevators;
     private ObjectCollisionIndex? _solids;
 
     /// <summary>Gets whether any authored alarm control is sounding on the current simulation tick.</summary>
@@ -136,6 +137,10 @@ public sealed class SoldierRenderer : IDisposable
         // Soldier tick. Ground registration must wait for that publication; probing the build-time
         // placement here can mistake a nearby dormant vehicle for the actor's support.
     }
+
+    /// <summary>Gives the renderer the level's moving elevators.</summary>
+    /// <param name="elevators">The elevator registry, or <see langword="null"/>.</param>
+    public void SetElevators(ElevatorRegistry? elevators) => _elevators = elevators;
 
     /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
     public void ActivateTask(int taskId) => _activatedTasks.Add(taskId);
@@ -2075,6 +2080,23 @@ public sealed class SoldierRenderer : IDisposable
                     if (door.State.TransformChangedThisTick)
                     {
                         solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
+                    }
+                }
+            }
+        }
+
+        if (_elevators is { } elevators)
+        {
+            if (_solids is { } solids)
+            {
+                foreach (PlacedElevator elevator in elevators.Elevators)
+                {
+                    if (elevator.State.TransformChangedThisTick)
+                    {
+                        solids.UpdateTransform(
+                            elevator.Task,
+                            elevator.DrawPosition,
+                            elevator.Orientation);
                     }
                 }
             }

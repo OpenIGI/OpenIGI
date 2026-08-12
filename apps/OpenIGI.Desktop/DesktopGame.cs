@@ -211,6 +211,7 @@ internal sealed partial class DesktopGame : IDisposable
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
     private DoorRegistry? _doors;
+    private ElevatorRegistry? _elevators;
     private WorldInteractionRegistry? _interactions;
     private GunPickupRegistry? _gunPickups;
     private GenericPickupRegistry? _genericPickups;
@@ -1738,6 +1739,19 @@ internal sealed partial class DesktopGame : IDisposable
                         "Weapon",
                         $"Hit a guard in zone {_player.LastHumanZone} "
                             + $"({reportedHumanHits} hit(s), {_soldiers?.Killed ?? 0} killed).");
+                }
+            }
+
+            // Lifts advance before perception and AI consume this tick's player position. A passenger
+            // standing on the previous platform sample receives the same displacement, which keeps the
+            // body, camera and collision contact together while the platform travels.
+            if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
+            {
+                elevators.Tick();
+                if (_playerMode && _player is { } passenger
+                    && elevators.TryGetPassengerDisplacement(passenger.Body.Position, out Vector3d displacement))
+                {
+                    passenger.Body.Position += displacement;
                 }
             }
 
