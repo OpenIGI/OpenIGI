@@ -25,4 +25,20 @@ public sealed class PlayerCameraInteractionTests
 
         Assert.Equal(new Vector3d(12345.0, -67890.0, 24680.0), body.Position);
     }
+
+    [Theory]
+    [InlineData(InteractionActivateType.StationaryGun)]
+    [InlineData(InteractionActivateType.Fence)]
+    [InlineData(InteractionActivateType.Wire)]
+    public void TraversalAndMountedStatesDoNotRunTheInteractionGroundSnap(InteractionActivateType type)
+    {
+        PlayerBody body = new()
+        {
+            Position = new Vector3d(12345.0, -67890.0, 24680.0),
+        };
+
+        PlayerCamera.SnapBodyForInteraction(body, type, terrain: null!);
+
+        Assert.Equal(new Vector3d(12345.0, -67890.0, 24680.0), body.Position);
+    }
 }

@@ -850,7 +850,7 @@ public sealed class PlayerCamera
         // the instant the climb ends.
         if (_input.IsRisingEdge(PlayerInputSlot.Activate) && _nearInteraction is not null)
         {
-            Activate(_nearInteraction);
+            Activate(_nearInteraction, terrain);
             return;
         }
 
@@ -959,7 +959,7 @@ public sealed class PlayerCamera
         CaptureViewTickState();
     }
 
-    private void Activate(WorldInteraction interaction)
+    private void Activate(WorldInteraction interaction, TerrainData terrain)
     {
         InteractionDispatchResult dispatch = HumanInteractionDispatch.Dispatch(
             interaction.Type, DoorNeedsPicking(interaction));
@@ -984,6 +984,7 @@ public sealed class PlayerCamera
                 _interactionUseArmed = false;
                 (Vector3d position, float facing) = interaction.BodyPose(_body.Position);
                 _body.Position = position;
+                SnapBodyForInteraction(_body, interaction.Type, terrain);
                 _interactionFacing = facing;
                 _body.Yaw = -facing;
                 _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
@@ -994,6 +995,23 @@ public sealed class PlayerCamera
         }
 
         _nearInteraction = null;
+    }
+
+    internal static void SnapBodyForInteraction(
+        PlayerBody body,
+        InteractionActivateType type,
+        TerrainData terrain)
+    {
+        if (type is InteractionActivateType.Door
+            or InteractionActivateType.Cabinet
+            or InteractionActivateType.Terminal
+            or InteractionActivateType.Generic
+            or InteractionActivateType.PlaceExplosive)
+        {
+            // IGI2 HumanPlayer_InitStateActivate* names this sequence explicitly: Human_PopPosition,
+            // then Human_SnapToGround. IGI1 has the same pair at sub_4631A0/sub_463260.
+            body.SnapInteractionToGround(terrain);
+        }
     }
 
     private void BeginWire(WorldInteraction wire)

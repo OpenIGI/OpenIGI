@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -23,7 +24,8 @@ public sealed class RetailInteractionInventoryTests
     [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {
-        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(3);
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+            Load(3, loadTerrain: true);
         DoorRegistry doors = DoorRegistry.Build(root);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
 
@@ -52,6 +54,15 @@ public sealed class RetailInteractionInventoryTests
         Assert.Equal(0.0, terminalPoseLocal.X, 3);
         Assert.Equal(2764.8, terminalPoseLocal.Y, 3);
         Assert.Equal(0.0, terminalPoseLocal.Z, 3);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        PlayerBody interactionBody = new()
+        {
+            Position = terminalPose,
+            Walls = ObjectCollisionIndex.Build(scene.Placements).PlayerCaster(),
+        };
+        Assert.True(interactionBody.SnapInteractionToGround(Assert.IsType<TerrainData>(mission.Terrain)));
+        Assert.True(interactionBody.IsGrounded);
+        Assert.True(interactionBody.Position.Z < terminalPose.Z);
         Vector3d retailEye = terminal.Anchor
             + ((reportedPlayerPosition - terminal.Anchor).Normalized()
                 * (WorldInteractionRegistry.ActivateRadius * 0.75));
@@ -276,7 +287,9 @@ public sealed class RetailInteractionInventoryTests
         Assert.True(genericPickupTotal > 0, "No shipped GenericPickup task was loaded.");
     }
 
-    private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(int missionId)
+    private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(
+        int missionId,
+        bool loadTerrain = false)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -290,7 +303,8 @@ public sealed class RetailInteractionInventoryTests
         magic.Register(loop.Natives);
         magic.Load(resources, loop.Natives);
         LevelLoader level = new(root, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level).Load(missionId);
+        TerrainLoader? terrain = loadTerrain ? new TerrainLoader(resources, loop.Natives) : null;
+        LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level, null, terrain).Load(missionId);
         return (root, magic, mission, loop.Variables);
     }
 

@@ -166,6 +166,36 @@ public sealed class PlayerBodyTests
     }
 
     [RequiresGameDataFact]
+    public void InteractionSnapFindsThePlacedFloorBelowAnAuthoredRoot()
+    {
+        (TerrainData terrain, PlayerBody player) = OnLevelOne();
+        double terrainZ = player.Position.Z;
+        double platformZ = terrainZ + (5.0 * UnitsPerMetre);
+        player.Position = new Vector3d(
+            player.Position.X,
+            player.Position.Y,
+            terrainZ + (10.0 * UnitsPerMetre));
+        player.Walls = (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
+        {
+            hit = default;
+            if (origin.Z < platformZ || end.Z > platformZ)
+            {
+                return false;
+            }
+
+            hit = new WorldRayHit(
+                new Vector3d(origin.X, origin.Y, platformZ),
+                new Vector3f(0f, 0f, 1f),
+                origin.Z - platformZ);
+            return true;
+        };
+
+        Assert.True(player.SnapInteractionToGround(terrain));
+        Assert.True(player.IsGrounded);
+        Assert.Equal(platformZ, player.Position.Z, 1e-6);
+    }
+
+    [RequiresGameDataFact]
     public void WalkingOffAPlatformCarriesTheLastGroundRootMotionIntoTheFall()
     {
         (TerrainData terrain, PlayerBody player) = OnLevelOne();
