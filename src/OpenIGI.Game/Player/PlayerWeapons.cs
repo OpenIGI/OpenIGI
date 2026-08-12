@@ -329,6 +329,27 @@ public sealed class PlayerWeapons
         }
     }
 
+    /// <summary>Immediately stops weapon activity because the owning player has died.</summary>
+    /// <remarks>
+    /// The death transition does not run another normal player tick. Clearing the outgoing firing
+    /// request here therefore matters: otherwise its last <see cref="FiredThisTick"/> value and firing
+    /// state remain latched for the presentation layer after the player is dead.
+    /// </remarks>
+    public void StopForDeath()
+    {
+        PreviousState = State;
+        State = HumanWeaponState.Suspended;
+        Flags = (Flags & ~(HumanWeaponFlagWord.Fire | HumanWeaponFlagWord.AlternateFire | HumanWeaponFlagWord.Reload))
+            | HumanWeaponFlagWord.Dead
+            | HumanWeaponFlagWord.Dying;
+        _wantFire = false;
+        _firedThisTick = false;
+        _shots.Clear();
+        _throwReleased = false;
+        _actionComplete = false;
+        Request(WeaponAction.None);
+    }
+
     /// <summary>
     /// Turns this tick's raised byte into a message to the gun — the original's <c>0x462E50</c>.
     /// </summary>

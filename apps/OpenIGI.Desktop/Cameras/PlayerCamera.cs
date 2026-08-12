@@ -979,6 +979,13 @@ public sealed class PlayerCamera
         CaptureViewTickState();
     }
 
+    /// <summary>Stops the held-weapon machine because the player has died.</summary>
+    /// <remarks>
+    /// Death stops ordinary player ticks immediately, so this cannot wait for the next input frame to
+    /// release a held trigger.
+    /// </remarks>
+    public void StopWeaponsForDeath() => _weapons?.StopForDeath();
+
     private void Activate(WorldInteraction interaction, TerrainData? terrain)
     {
         InteractionDispatchResult dispatch = HumanInteractionDispatch.Dispatch(

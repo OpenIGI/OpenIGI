@@ -51,4 +51,31 @@ public sealed class WeaponSoundPlayerTests
         Assert.Null(device.Current(started.Voice));
         Assert.True(device.Played[1].Parameters.IsPositional);
     }
+
+    [RequiresGameDataFact]
+    public void ResetImmediatelyStopsAnAutomaticLoop()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        SoundBank bank = new(fileSystem, null);
+        bank.MountDirectory("LOCAL:common/sounds");
+
+        RecordingAudioDevice device = new();
+        using SoundSystem sounds = new(device, bank, fileSystem, null);
+        WeaponSoundPlayer player = new(sounds);
+        WeaponType weapon = new()
+        {
+            FireSound = "ak47_loop",
+            MaximumRoundsPerBurst = 30,
+            RoundsPerMinute = 600,
+        };
+
+        player.Tick(firedThisTick: true, weapon);
+        RecordingAudioDevice.PlayedVoice loop = Assert.Single(device.Played);
+        Assert.NotNull(device.Current(loop.Voice));
+
+        player.Reset();
+
+        Assert.Null(device.Current(loop.Voice));
+    }
 }

@@ -385,6 +385,31 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void DeathImmediatelyCancelsAHeldWeaponFire()
+    {
+        PlayerWeapons weapons = new([7]);
+        weapons.Carry(Mp5Sd, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 0);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.Equal(HumanWeaponState.Firing, weapons.State);
+        Assert.True(weapons.FiredThisTick);
+
+        weapons.StopForDeath();
+
+        Assert.Equal(HumanWeaponState.Firing, weapons.PreviousState);
+        Assert.Equal(HumanWeaponState.Suspended, weapons.State);
+        Assert.True(weapons.Flags.HasFlag(HumanWeaponFlagWord.Dead));
+        Assert.True(weapons.Flags.HasFlag(HumanWeaponFlagWord.Dying));
+        Assert.False(weapons.Flags.HasFlag(HumanWeaponFlagWord.Fire));
+        Assert.False(weapons.FiredThisTick);
+        Assert.Empty(weapons.Shots);
+        Assert.Equal(WeaponAction.None, weapons.RequestedAction);
+    }
+
+    [Fact]
     public void TheMp5SdsBurstCapAndItsMagazineRunOutTogether()
     {
         // Maximum Rounds/Burst equals Rounds/Clip on every automatic weapon in the roster, which is
