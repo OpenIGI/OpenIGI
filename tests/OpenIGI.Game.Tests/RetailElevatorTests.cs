@@ -73,7 +73,10 @@ public sealed class RetailElevatorTests
             elevator.State.RequestFloor(target);
             elevator.State.Tick(canStart: true, floorUp: false, floorDown: false);
 
-            Vector3d expectedOffset = elevators.GetCurrentDisplacement(ownedChild);
+            // Interaction anchors are queried in engine units, unlike render placements which are
+            // expressed in metres. Keep this assertion independent of the registry conversion helper
+            // so a render-space value cannot accidentally make the button appear to follow the lift.
+            Vector3d expectedOffset = elevator.State.Position - elevator.State.StartPosition;
             Vector3d actualOffset = interaction.Anchor - authoredAnchor;
             Assert.InRange(Math.Abs(actualOffset.X - expectedOffset.X), 0.0, 1e-8);
             Assert.InRange(Math.Abs(actualOffset.Y - expectedOffset.Y), 0.0, 1e-8);

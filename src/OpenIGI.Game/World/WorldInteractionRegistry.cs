@@ -594,7 +594,9 @@ public sealed class WorldInteractionRegistry
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
             if (elevators is not null)
             {
-                item.SetDynamicOffset(() => elevators.GetCurrentDisplacement(item.Task));
+                // Interaction anchors, activation radii and player positions are engine units. The
+                // render path uses metres, so do not reuse its converted elevator displacement here.
+                item.SetDynamicOffset(() => elevators.GetCurrentDisplacementInUnits(item.Task));
             }
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);

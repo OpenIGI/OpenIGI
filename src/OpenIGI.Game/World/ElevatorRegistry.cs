@@ -157,7 +157,7 @@ public sealed class ElevatorRegistry
         return false;
     }
 
-    /// <summary>Gets the current world translation for an elevator-owned task.</summary>
+    /// <summary>Gets the current world translation for an elevator-owned task in render metres.</summary>
     public Vector3d GetCurrentDisplacement(GameTask task)
     {
         foreach (PlacedElevator elevator in _elevators)
@@ -165,6 +165,24 @@ public sealed class ElevatorRegistry
             if (IsDescendantOf(task, elevator.Task))
             {
                 return GetDisplacement(elevator, 1f, smooth: false);
+            }
+        }
+
+        return default;
+    }
+
+    /// <summary>Gets the current world translation for an elevator-owned task in engine units.</summary>
+    /// <remarks>
+    /// World interactions and player activation queries use engine units. This is deliberately
+    /// separate from <see cref="GetCurrentDisplacement"/>, which is used by render-space callers.
+    /// </remarks>
+    public Vector3d GetCurrentDisplacementInUnits(GameTask task)
+    {
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            if (IsDescendantOf(task, elevator.Task))
+            {
+                return elevator.State.Position - elevator.State.StartPosition;
             }
         }
 
