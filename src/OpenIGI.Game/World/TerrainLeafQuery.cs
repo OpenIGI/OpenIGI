@@ -70,9 +70,12 @@ public static class TerrainLeafQuery
         leaf = default;
 
         TerrainDescentCursor cursor = TerrainPointDescent.Descend(terrain.Octree, point, SurfaceDepth);
-        if (cursor.Depth < SurfaceDepth)
+        if (cursor.Depth < SurfaceDepth
+            || TerrainDiscardBinding.For(terrain).Discards(point.X, point.Y, point.Z))
         {
-            // The tree stopped short, so nothing here carries surface geometry.
+            // The tree stopped short or the level's task tree removed this cube, so nothing here carries
+            // collision geometry. Retail applies DiscardTerrain to batched point queries in sub_52BF00,
+            // clearing each point's result flag when it lies inside the task's strict 3-D bounds.
             return false;
         }
 

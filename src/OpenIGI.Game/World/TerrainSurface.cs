@@ -78,35 +78,19 @@ public sealed class TerrainSurface
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         List<TerrainTileLayer> layers = [];
-        List<TerrainDiscardRegion> discards = [];
         int skippedModifiers = 0;
-        int skippedDiscards = 0;
 
         foreach (GameTask task in Walk(levelRoot))
         {
-            if (task is not DeclaredTask declared)
-            {
-                continue;
-            }
-
-            bool isModifier = string.Equals(declared.Type.Name, TextureModifierType, StringComparison.Ordinal);
-            bool isDiscard = string.Equals(declared.Type.Name, DiscardTerrainType, StringComparison.Ordinal);
-            if (!isModifier && !isDiscard)
+            if (task is not DeclaredTask declared
+                || !string.Equals(declared.Type.Name, TextureModifierType, StringComparison.Ordinal))
             {
                 continue;
             }
 
             if (!WorldScene.TryGetPosition(declared, out Vector3d metres))
             {
-                if (isModifier)
-                {
-                    skippedModifiers++;
-                }
-                else
-                {
-                    skippedDiscards++;
-                }
-
+                skippedModifiers++;
                 continue;
             }
 
@@ -116,7 +100,7 @@ public sealed class TerrainSurface
                 metres.Y * WorldScene.UnitsPerMetre,
                 metres.Z * WorldScene.UnitsPerMetre);
 
-            if (isModifier && TerrainTileLayer.TryCreate(
+            if (TerrainTileLayer.TryCreate(
                     position,
                     GetInt32(declared, "Level"),
                     GetInt32(declared, "Material Index"),
@@ -127,38 +111,27 @@ public sealed class TerrainSurface
             {
                 layers.Add(layer);
             }
-            else if (isDiscard && TerrainDiscardRegion.TryCreate(
-                         position,
-                         GetInt32(declared, "Level"),
-                         out TerrainDiscardRegion? discard)
-                     && discard is not null)
-            {
-                discards.Add(discard);
-            }
-            else if (isModifier)
-            {
-                skippedModifiers++;
-            }
             else
             {
-                skippedDiscards++;
+                skippedModifiers++;
             }
         }
 
         // Deeper in the octree means smaller and more specific, and the original's stack tests the most
         // recently entered first. Ordering by level descending reproduces that without the descent.
         layers.Sort((a, b) => b.Level.CompareTo(a.Level));
-        discards.Sort((a, b) => b.Level.CompareTo(a.Level));
+        TerrainDiscardBinding discardBinding = TerrainDiscardBinding.Bind(terrain, levelRoot);
+        TerrainDiscardRegion[] discards = [.. discardBinding.Regions];
 
         log.Information(
             LogCategory,
             $"Surface: {layers.Count} tile layer(s)"
                 + (skippedModifiers > 0 ? $", {skippedModifiers} modifier(s) unresolved" : string.Empty)
-                + $", {discards.Count} terrain discard(s)"
-                + (skippedDiscards > 0 ? $", {skippedDiscards} discard(s) unresolved" : string.Empty)
+                + $", {discards.Length} terrain discard(s)"
+                + (discardBinding.Skipped > 0 ? $", {discardBinding.Skipped} discard(s) unresolved" : string.Empty)
                 + $", {terrain.Materials.Count} material(s), {terrain.TileMaps.Count} tile map(s).");
 
-        return new TerrainSurface(terrain, [.. layers], [.. discards]);
+        return new TerrainSurface(terrain, [.. layers], discards);
     }
 
     /// <summary>Builds a surface with no layers, so every point takes the base material.</summary>
@@ -168,7 +141,7 @@ public sealed class TerrainSurface
     public static TerrainSurface Bare(TerrainData terrain)
     {
         ArgumentNullException.ThrowIfNull(terrain);
-        return new TerrainSurface(terrain, [], []);
+        return new TerrainSurface(terrain, [], [.. TerrainDiscardBinding.For(terrain).Regions]);
     }
 
     /// <summary>Gets the material covering a world position.</summary>

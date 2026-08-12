@@ -154,6 +154,14 @@ public sealed class MissionLoader
         // 14. The level's task tree.
         _levelLoader.LoadMission($"LOCAL:{descriptor.MissionDirectory}", tickRate);
 
+        // DiscardTerrain is authored in objects.qvm rather than a terrain file. Publish it immediately:
+        // scene placement, AI settling, player collision and rendering all consume the same terrain after
+        // this point, just as retail's spatial task traversal supplies the volumes to all of them.
+        if (terrain is { IsUsable: true })
+        {
+            TerrainDiscardBinding.Bind(terrain, _levelLoader.LevelRoot);
+        }
+
         // 16. AI navigation graphs are M10's.
         pending.Add("AI navigation graphs");
 

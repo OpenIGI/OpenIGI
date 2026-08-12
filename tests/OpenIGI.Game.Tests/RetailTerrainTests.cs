@@ -330,13 +330,6 @@ public sealed class RetailTerrainTests
             (ramp.MinX + ramp.MaxX) * 0.5,
             (ramp.MinY + ramp.MaxY) * 0.5,
             (ramp.MinZ + ramp.MaxZ) * 0.5);
-        Camera3D camera = new(
-            new Vector3d(
-                centre.X,
-                centre.Y - (25.0 * WorldScene.UnitsPerMetre),
-                centre.Z + (15.0 * WorldScene.UnitsPerMetre)),
-            Camera3D.LookRotation(0f, -0.45f));
-
         // Use a low-detail view from far away to get a coarse cube that would intersect the ramp.
         Camera3D distantCamera = new(
             new Vector3d(
@@ -372,6 +365,39 @@ public sealed class RetailTerrainTests
                 && chunk.Position.Y == adjacentChunk.Value.Position.Y
                 && chunk.Position.Z == adjacentChunk.Value.Position.Z);
         }
+
+        // The same authored cube must remove collision, not merely the draw descriptor. The raw CTR/CMD
+        // leaf is present at the building entrance—that is the invisible surface the player used to
+        // stand on—but the task binding filters it before either exact terrain collision path sees it.
+        const int entranceX = 23749052;
+        const int entranceY = -55320144;
+        const int entranceZ = 174413136;
+        Vector3i entrance = new(entranceX, entranceY, entranceZ);
+        TerrainDescentCursor raw = TerrainPointDescent.Descend(
+            terrain.Octree,
+            entrance,
+            TerrainLeafQuery.SurfaceDepth);
+        Assert.Equal(TerrainLeafQuery.SurfaceDepth, raw.Depth);
+        Assert.True(terrain.Commands.TryGetBlock(
+            terrain.Octree[raw.NodeIndex].CommandOffset,
+            out TerrainCommandBlock rawBlock));
+        Assert.False(rawBlock.IsEmpty);
+        Assert.True(TerrainDiscardBinding.For(terrain).Discards(raw));
+        Assert.False(TerrainLeafQuery.TryFindLeaf(terrain, entrance, out _));
+
+        Assert.False(TerrainHeightQuery.TryGetGround(
+            terrain,
+            entranceX,
+            entranceY,
+            entranceZ + 8192.0,
+            out _));
+        Assert.False(TerrainRayTrace.TryTrace(
+            terrain,
+            new WorldTraceRequest(
+                new Vector3d(entranceX, entranceY, ramp.MaxZ - 1.0),
+                new Vector3d(entranceX, entranceY, ramp.MinZ + 1.0),
+                WorldTraceMask.Terrain),
+            out _));
     }
 
     [RequiresGameDataFact]
