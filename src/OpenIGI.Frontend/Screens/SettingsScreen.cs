@@ -24,9 +24,8 @@ namespace OpenIGI.Frontend.Screens;
 /// own change event. A row whose CVar requires a restart is flagged in the footer while it is focused.
 /// </para>
 /// <para>
-/// The Controls tab rebinds keys against the active profile. It captures a key code the port understands
-/// and stores its name; that is the port's binding, not a faithful DirectInput scan-code name — a
-/// deliberate simplification until input remap reaches full retail fidelity.
+/// The Controls tab rebinds keyboard keys and mouse buttons against the active profile and persists their
+/// retail input symbols, so the same assignments the player sees are the ones gameplay resolves.
 /// </para>
 /// </remarks>
 public sealed class SettingsScreen : ShellScreen
@@ -50,6 +49,7 @@ public sealed class SettingsScreen : ShellScreen
 
     private readonly Dictionary<Control, ICVar> _boundCvars = [];
     private readonly List<UiElement> _tabPanels = [];
+    private KeyBindingRow? _armingBindingRow;
 
     // Each category's focusable rows in reading order — down a column, then on to the top of the next. Up
     // and down walk THIS rather than the spatial traversal, because a control consumes left and right for
@@ -142,6 +142,20 @@ public sealed class SettingsScreen : ShellScreen
         // A key-binding row that is listening swallows the keyboard until it captures a key.
         if (Focus?.Focused is KeyBindingRow { IsListening: true } row)
         {
+            // Activation through Enter is itself queued as a key press, and navigation presses can have
+            // been waiting in that queue since before the row was selected. Establish a fresh boundary
+            // on the first update after activation: none of those presses is the new binding the player
+            // was prompted to choose. Without this, the row immediately binds Return or an old arrow key.
+            if (!ReferenceEquals(_armingBindingRow, row))
+            {
+                while (input.Keyboard.TryDequeuePress(out _))
+                {
+                }
+
+                _armingBindingRow = row;
+                return false;
+            }
+
             while (input.Keyboard.TryDequeuePress(out KeyCode key))
             {
                 if (row.TryCaptureKey(key))
@@ -150,8 +164,28 @@ public sealed class SettingsScreen : ShellScreen
                 }
             }
 
+            if (row.IsListening)
+            {
+                for (int i = 0; i < MouseState.ButtonCount; i++)
+                {
+                    MouseButton button = (MouseButton)i;
+                    if (input.Mouse.WasPressed(button))
+                    {
+                        row.TryCaptureMouseButton(button);
+                        break;
+                    }
+                }
+            }
+
+            if (!row.IsListening)
+            {
+                _armingBindingRow = null;
+            }
+
             return false;
         }
+
+        _armingBindingRow = null;
 
         return base.HandleInput(nav, input);
     }
@@ -478,7 +512,14 @@ public sealed class SettingsScreen : ShellScreen
             return new Panel().WithChild(empty);
         }
 
-        var rows = new List<Control>(profile.Bindings.Count + 2);
+        var rows = new List<Control>(profile.Bindings.Count + 3);
+
+        var resetBindings = new Button(theme, "RESET BINDINGS TO DEFAULTS")
+        {
+            Padding = new Thickness(18f, 8f),
+            Tooltip = "Restore the standard WASD keyboard and mouse assignments.",
+        };
+        rows.Add(resetBindings);
 
         // The mouse comes first, above the bindings: it is the setting a player reaches for on the way
         // into their first mission, and unlike a binding it has no default anyone is happy with.
@@ -505,6 +546,7 @@ public sealed class SettingsScreen : ShellScreen
         invert.ValueChanged += value => profile.InvertMouse = value;
         rows.Add(invert);
 
+        var bindingRows = new List<KeyBindingRow>(profile.Bindings.Count);
         for (int i = 0; i < profile.Bindings.Count; i++)
         {
             int index = i;
@@ -512,18 +554,49 @@ public sealed class SettingsScreen : ShellScreen
             KeyCode current = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed) ? parsed : KeyCode.None;
             var row = new KeyBindingRow(theme, binding.Action, current, InputBindingKeyNames.DisplayName(binding))
             {
-                Tooltip = $"Press this row, then a key, to rebind {binding.Action}.",
+                Tooltip = $"Press this row, then a key or mouse button, to rebind {binding.Action}.",
             };
 
-            row.BindingChanged += key => profile.Bindings[index] = binding with
+            row.BindingChanged += key =>
             {
-                Device = InputBindingKeyNames.KeyboardDevice,
-                Key = InputBindingKeyNames.ToRetailKeyboardKey(key),
+                int conflict = profile.RebindKeyboard(index, key);
+                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
+                if (conflict >= 0)
+                {
+                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
+                }
             };
+            row.MouseBindingChanged += button =>
+            {
+                int conflict = profile.RebindMouseButton(index, button);
+                RefreshBindingRow(bindingRows[index], profile.Bindings[index]);
+                if (conflict >= 0)
+                {
+                    RefreshBindingRow(bindingRows[conflict], profile.Bindings[conflict]);
+                }
+            };
+            bindingRows.Add(row);
             rows.Add(row);
         }
 
+        resetBindings.Activated += _ =>
+        {
+            profile.ResetBindingsToDefaults();
+            for (int i = 0; i < bindingRows.Count; i++)
+            {
+                RefreshBindingRow(bindingRows[i], profile.Bindings[i]);
+            }
+        };
+
         return BuildColumns(theme, rows);
+    }
+
+    private static void RefreshBindingRow(KeyBindingRow row, InputBinding binding)
+    {
+        KeyCode key = InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode parsed)
+            ? parsed
+            : KeyCode.None;
+        row.SetBinding(key, InputBindingKeyNames.DisplayName(binding));
     }
 
     /// <summary>The viewport a category's rows scroll inside: the full page, top to bottom and edge to edge.</summary>

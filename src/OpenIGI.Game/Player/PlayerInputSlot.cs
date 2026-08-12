@@ -223,6 +223,10 @@ public static class PlayerInputBindings
         (PlayerInputSlot.Binoculars, PlayerAction.Binoculars),
     ];
 
+    /// <summary>Gets the action name used by the persisted retail configuration.</summary>
+    public static string ConfigName(PlayerAction action) =>
+        action == PlayerAction.PreviousWeapon ? "PrevWeapon" : action.ToString();
+
     /// <summary>Finds the action a slot carries.</summary>
     /// <param name="slot">The slot.</param>
     /// <param name="action">The action, when the slot binds one.</param>

@@ -8,8 +8,8 @@ using OpenIGI.UI.Layout;
 namespace OpenIGI.UI.Widgets;
 
 /// <summary>
-/// A row binding an action to a key: it shows the current key, and on activation listens for the next
-/// key press to rebind it.
+/// A row binding an action to a key or mouse button: it shows the current assignment, and on activation
+/// listens for the next supported control press to rebind it.
 /// </summary>
 /// <remarks>
 /// Activating the row puts it into a listening state that shows a prompt; the owning screen, seeing
@@ -38,6 +38,9 @@ public class KeyBindingRow : Control
     /// <summary>Raised when the bound key changes, with the new key.</summary>
     public event Action<KeyCode>? BindingChanged;
 
+    /// <summary>Raised when the action is rebound to a mouse button.</summary>
+    public event Action<MouseButton>? MouseBindingChanged;
+
     /// <summary>Gets or sets the action name.</summary>
     public string Action { get; set; }
 
@@ -47,6 +50,15 @@ public class KeyBindingRow : Control
     /// <summary>Gets the player-facing name of the current binding.</summary>
     /// <remarks>A retail mouse binding has no <see cref="KeyCode"/>, but still needs an honest label.</remarks>
     public string BoundKeyName { get; private set; }
+
+    /// <summary>Refreshes the displayed assignment without raising <see cref="BindingChanged"/>.</summary>
+    /// <param name="key">The keyboard key, or <see cref="KeyCode.None"/> for a non-keyboard binding.</param>
+    /// <param name="displayName">The player-facing assignment name.</param>
+    public void SetBinding(KeyCode key, string displayName)
+    {
+        BoundKey = key;
+        BoundKeyName = displayName ?? string.Empty;
+    }
 
     /// <summary>Gets a value indicating whether the row is waiting for a key to bind.</summary>
     public bool IsListening { get; private set; }
@@ -74,6 +86,23 @@ public class KeyBindingRow : Control
             BindingChanged?.Invoke(key);
         }
 
+        return true;
+    }
+
+    /// <summary>Feeds a mouse-button press to a listening row.</summary>
+    /// <param name="button">The button pressed.</param>
+    /// <returns><see langword="true"/> when the row consumed the press.</returns>
+    public bool TryCaptureMouseButton(MouseButton button)
+    {
+        if (!IsListening)
+        {
+            return false;
+        }
+
+        IsListening = false;
+        BoundKey = KeyCode.None;
+        BoundKeyName = $"Mouse Button {(int)button + 1}";
+        MouseBindingChanged?.Invoke(button);
         return true;
     }
 

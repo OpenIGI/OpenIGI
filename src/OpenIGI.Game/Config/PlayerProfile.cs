@@ -25,30 +25,30 @@ public sealed class PlayerProfile
     /// <remarks><c>Config_ResetToDefaults</c> (<c>0x405300</c>) writes 27 and copies them from <c>0x536410</c>.</remarks>
     public const int BindingCount = 27;
 
-    /// <summary>The retail bindings a fresh profile starts with.</summary>
+    /// <summary>The bindings a fresh profile starts with.</summary>
     /// <remarks>
-    /// These are the 27 <c>GOInRemap</c> calls in the retail default profile. They must live in the
-    /// model rather than the Controls screen: a profile created before that page is opened still has to
-    /// serialize to a complete configuration and provide usable input to the game.
+    /// The port keeps the retail action set but uses a conflict-free modern movement layout. They must
+    /// live in the model rather than the Controls screen: a profile created before that page is opened
+    /// still has to serialize to a complete configuration and provide usable input to the game.
     /// </remarks>
     public static IReadOnlyList<InputBinding> DefaultBindings { get; } =
     [
-        new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"),
-        new("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT"),
-        new("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_UP"),
-        new("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_DOWN"),
+        new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A"),
+        new("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_D"),
+        new("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"),
+        new("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_S"),
         new("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"),
         new("Reload", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RETURN"),
-        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_SHIFT"),
+        new("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"),
         new("Crouch", "INPUTPORT_DEVICE_KEYBOARD", "KEY_RIGHT_CTRL"),
-        new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD0"),
+        new("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
         new("NextWeapon", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_2"),
         new("PrevWeapon", "INPUTPORT_DEVICE_KEYBOARD", "KEY_O"),
         new("AlternateFire", "INPUTPORT_DEVICE_KEYBOARD", "KEY_BACKSPACE"),
         new("Peek", "INPUTPORT_DEVICE_KEYBOARD", "KEY_NUMPAD1"),
-        new("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"),
+        new("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_B"),
         new("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"),
-        new("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"),
+        new("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_SHIFT"),
         new("ZoomIn", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEUP"),
         new("ZoomOut", "INPUTPORT_DEVICE_KEYBOARD", "KEY_PAGEDOWN"),
         new("WeaponCategory1", "INPUTPORT_DEVICE_KEYBOARD", "KEY_1"),
@@ -167,18 +167,129 @@ public sealed class PlayerProfile
         return profile;
     }
 
-    /// <summary>Restores the retail bindings when an older OpenIGI profile has none.</summary>
-    /// <remarks>
-    /// Early shell builds serialized a newly created profile before it had any bindings, which made the
-    /// Controls page look empty on every subsequent run. An empty list cannot represent a usable retail
-    /// profile, so it is safe to repair; a non-empty list is always left exactly as the player saved it.
-    /// </remarks>
-    public void RestoreDefaultBindingsWhenEmpty()
+    /// <summary>Restores every supported action to its current default assignment.</summary>
+    /// <remarks>Unknown extension actions are preserved because this model cannot define their defaults.</remarks>
+    public void ResetBindingsToDefaults()
     {
-        if (Bindings.Count == 0)
+        foreach (InputBinding binding in DefaultBindings)
         {
-            Bindings.AddRange(DefaultBindings);
+            int index = Bindings.FindIndex(candidate =>
+                string.Equals(candidate.Action, binding.Action, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+            {
+                Bindings[index] = binding;
+            }
+            else
+            {
+                Bindings.Add(binding);
+            }
         }
+    }
+
+    /// <summary>Restores retail bindings missing from an older OpenIGI profile.</summary>
+    /// <remarks>
+    /// Early shell builds could serialize an incomplete binding list. A retail profile always carries one
+    /// row for every supported action, so missing actions are repaired while existing and extension rows
+    /// are left exactly as the player saved them.
+    /// </remarks>
+    public void RestoreMissingDefaultBindings()
+    {
+        var actions = new HashSet<string>(Bindings.Select(binding => binding.Action), StringComparer.OrdinalIgnoreCase);
+        foreach (InputBinding binding in DefaultBindings)
+        {
+            if (actions.Add(binding.Action))
+            {
+                Bindings.Add(binding);
+            }
+        }
+    }
+
+    /// <summary>Assigns a keyboard key to one action, swapping any conflicting assignment.</summary>
+    /// <param name="index">The binding row to change.</param>
+    /// <param name="key">The new key.</param>
+    /// <returns>The row that received the old assignment, or <c>-1</c> when there was no conflict.</returns>
+    /// <remarks>
+    /// A control must not silently drive two actions. Swapping preserves a complete, usable binding set
+    /// and also lets a keyboard assignment trade places with one of the retail mouse-button defaults.
+    /// </remarks>
+    public int RebindKeyboard(int index, KeyCode key)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Bindings.Count);
+
+        InputBinding previous = Bindings[index];
+        int conflict = -1;
+        for (int i = 0; i < Bindings.Count; i++)
+        {
+            InputBinding candidate = Bindings[i];
+            if (i != index
+                && string.Equals(candidate.Device, InputBindingKeyNames.KeyboardDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseKeyboardKey(candidate.Key, out KeyCode candidateKey)
+                && candidateKey == key)
+            {
+                conflict = i;
+                break;
+            }
+        }
+
+        Bindings[index] = previous with
+        {
+            Device = InputBindingKeyNames.KeyboardDevice,
+            Key = InputBindingKeyNames.ToRetailKeyboardKey(key),
+        };
+
+        if (conflict >= 0)
+        {
+            Bindings[conflict] = Bindings[conflict] with
+            {
+                Device = previous.Device,
+                Key = previous.Key,
+            };
+        }
+
+        return conflict;
+    }
+
+    /// <summary>Assigns a mouse button to one action, swapping any conflicting assignment.</summary>
+    /// <param name="index">The binding row to change.</param>
+    /// <param name="button">The new mouse button.</param>
+    /// <returns>The row that received the old assignment, or <c>-1</c> when there was no conflict.</returns>
+    public int RebindMouseButton(int index, MouseButton button)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(index);
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, Bindings.Count);
+
+        InputBinding previous = Bindings[index];
+        int conflict = -1;
+        for (int i = 0; i < Bindings.Count; i++)
+        {
+            InputBinding candidate = Bindings[i];
+            if (i != index
+                && string.Equals(candidate.Device, InputBindingKeyNames.MouseDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseMouseButton(candidate.Key, out MouseButton candidateButton)
+                && candidateButton == button)
+            {
+                conflict = i;
+                break;
+            }
+        }
+
+        Bindings[index] = previous with
+        {
+            Device = InputBindingKeyNames.MouseDevice,
+            Key = InputBindingKeyNames.ToRetailMouseButton(button),
+        };
+
+        if (conflict >= 0)
+        {
+            Bindings[conflict] = Bindings[conflict] with
+            {
+                Device = previous.Device,
+                Key = previous.Key,
+            };
+        }
+
+        return conflict;
     }
 
     /// <summary>Makes an independent copy.</summary>
@@ -245,6 +356,32 @@ public static class InputBindingKeyNames
 
     /// <summary>The original symbol for the mouse input device.</summary>
     public const string MouseDevice = "INPUTPORT_DEVICE_MOUSE";
+
+    /// <summary>Tries to turn a stored mouse-button name into the input enum.</summary>
+    public static bool TryParseMouseButton(string? storedName, out MouseButton button)
+    {
+        button = default;
+        if (string.IsNullOrWhiteSpace(storedName)
+            || !storedName.StartsWith("MOUSE_BUTTON_", StringComparison.OrdinalIgnoreCase)
+            || !int.TryParse(storedName["MOUSE_BUTTON_".Length..], out int number)
+            || number < 1
+            || number > MouseState.ButtonCount)
+        {
+            return false;
+        }
+
+        button = (MouseButton)(number - 1);
+        return true;
+    }
+
+    /// <summary>Returns the original config symbol for a mouse button.</summary>
+    public static string ToRetailMouseButton(MouseButton button)
+    {
+        int index = (int)button;
+        ArgumentOutOfRangeException.ThrowIfNegative(index, nameof(button));
+        ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(index, MouseState.ButtonCount, nameof(button));
+        return $"MOUSE_BUTTON_{index + 1}";
+    }
 
     /// <summary>Tries to turn a stored key name into a keyboard scan-code enum.</summary>
     public static bool TryParseKeyboardKey(string? storedName, out KeyCode key)
@@ -383,5 +520,48 @@ public static class InputBindingKeyNames
         }
 
         return builder.ToString();
+    }
+}
+
+/// <summary>Resolves a profile's persisted controls against the live input snapshot.</summary>
+public static class PlayerProfileInputBindings
+{
+    /// <summary>Determines whether an action is currently held.</summary>
+    public static bool IsDown(PlayerProfile? profile, InputState input, string action) =>
+        Resolve(profile, input, action, pressed: false);
+
+    /// <summary>Determines whether an action was pressed this frame.</summary>
+    public static bool WasPressed(PlayerProfile? profile, InputState input, string action) =>
+        Resolve(profile, input, action, pressed: true);
+
+    private static bool Resolve(PlayerProfile? profile, InputState input, string action, bool pressed)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentException.ThrowIfNullOrWhiteSpace(action);
+
+        IReadOnlyList<InputBinding> bindings = profile?.Bindings ?? PlayerProfile.DefaultBindings;
+        foreach (InputBinding binding in bindings)
+        {
+            if (!string.Equals(binding.Action, action, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(binding.Device, InputBindingKeyNames.KeyboardDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseKeyboardKey(binding.Key, out KeyCode key)
+                && (pressed ? input.Keyboard.WasPressed(key) : input.Keyboard.IsDown(key)))
+            {
+                return true;
+            }
+
+            if (string.Equals(binding.Device, InputBindingKeyNames.MouseDevice, StringComparison.OrdinalIgnoreCase)
+                && InputBindingKeyNames.TryParseMouseButton(binding.Key, out MouseButton button)
+                && (pressed ? input.Mouse.WasPressed(button) : input.Mouse.IsDown(button)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

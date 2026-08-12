@@ -559,9 +559,157 @@ public sealed class ShellTests
             Assert.Equal(PlayerProfile.BindingCount, screen.Root!.Descendants().OfType<KeyBindingRow>().Count());
             KeyBindingRow moveLeft = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "MoveLeft");
             KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>().Single(row => row.Action == "Fire");
-            Assert.Equal(KeyCode.Left, moveLeft.BoundKey);
-            Assert.Equal("Left", moveLeft.BoundKeyName);
+            Assert.Equal(KeyCode.A, moveLeft.BoundKey);
+            Assert.Equal("A", moveLeft.BoundKeyName);
             Assert.Equal("Mouse Button 1", fire.BoundKeyName);
+            Assert.NotNull(Find<Button>(screen, button => button.Text == "RESET BINDINGS TO DEFAULTS"));
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Controls_tab_swaps_conflicting_assignments_and_refreshes_both_rows()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3;
+            Pump(shell, 0.1f);
+
+            KeyBindingRow moveLeft = screen.Root!.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "MoveLeft");
+            KeyBindingRow fire = screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "Fire");
+            KeyBindingRow nextWeapon = screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "NextWeapon");
+
+            fire.Activate();
+            Assert.True(fire.TryCaptureKey(KeyCode.A));
+
+            Assert.Equal(KeyCode.A, fire.BoundKey);
+            Assert.Equal("A", fire.BoundKeyName);
+            Assert.Equal(KeyCode.None, moveLeft.BoundKey);
+            Assert.Equal("Mouse Button 1", moveLeft.BoundKeyName);
+
+            moveLeft.Activate();
+            Assert.True(moveLeft.TryCaptureMouseButton(MouseButton.Right));
+
+            Assert.Equal("Mouse Button 2", moveLeft.BoundKeyName);
+            Assert.Equal("Mouse Button 1", nextWeapon.BoundKeyName);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Controls_tab_waits_for_a_fresh_press_after_activation()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3;
+            Pump(shell, 0.1f);
+
+            KeyBindingRow fire = screen.Root!.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "Fire");
+            UiVec2 centre = fire.Bounds.Center;
+            InputState input = new();
+
+            // A stale press is already queued when the pointer activates the row.
+            input.Keyboard.SetKey(KeyCode.F, down: true);
+            input.Keyboard.SetKey(KeyCode.F, down: false);
+            input.BeginFrame();
+            input.Mouse.SetPosition(centre.X, centre.Y);
+            input.Mouse.SetButton(MouseButton.Left, down: true);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.True(fire.IsListening);
+
+            // The first listening update establishes the capture boundary and discards F.
+            input.BeginFrame();
+            input.Mouse.SetButton(MouseButton.Left, down: false);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+            Assert.True(fire.IsListening);
+            Assert.Equal("Mouse Button 1", fire.BoundKeyName);
+
+            // Only a press made after the prompt is armed can become the binding.
+            input.BeginFrame();
+            input.Keyboard.SetKey(KeyCode.G, down: true);
+            shell.Update(new LayoutContext(1920f, 1080f), input, 1f / 60f);
+
+            Assert.False(fire.IsListening);
+            Assert.Equal(KeyCode.G, fire.BoundKey);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Controls_tab_reset_button_restores_the_modern_default_layout()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, _) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, button => button.Text == "Settings")!.Activate();
+            Pump(shell, 0.6f);
+
+            SettingsScreen screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
+            TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
+            tabs.SelectedIndex = 3;
+            Pump(shell, 0.1f);
+
+            KeyBindingRow moveUp = screen.Root!.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "MoveUp");
+            moveUp.Activate();
+            Assert.True(moveUp.TryCaptureKey(KeyCode.F));
+            Assert.Equal(KeyCode.F, moveUp.BoundKey);
+
+            Find<Button>(screen, button => button.Text == "RESET BINDINGS TO DEFAULTS")!.Activate();
+
+            Assert.Equal(KeyCode.W, moveUp.BoundKey);
+            Assert.Equal(KeyCode.A, screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "MoveLeft").BoundKey);
+            Assert.Equal(KeyCode.D, screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "MoveRight").BoundKey);
+            Assert.Equal(KeyCode.S, screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "MoveDown").BoundKey);
+            Assert.Equal(KeyCode.Space, screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "Jump").BoundKey);
+            Assert.Equal(KeyCode.C, screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "MapComputer").BoundKey);
+            Assert.Equal(KeyCode.E, screen.Root.Descendants().OfType<KeyBindingRow>()
+                .Single(row => row.Action == "Activate").BoundKey);
         }
         finally
         {

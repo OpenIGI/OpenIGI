@@ -3,6 +3,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game;
+using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.Weapons.Ballistics;
@@ -30,9 +31,6 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 public sealed class PlayerCamera
 {
-    /// <summary>How fast the arrow keys turn, in radians a second.</summary>
-    public const float KeyTurnRate = 1.8f;
-
     /// <summary>
     /// The delta translation a walk covers in one tick, in the body's frame.
     /// </summary>
@@ -90,6 +88,7 @@ public sealed class PlayerCamera
     private Vector3d _wireDirection;
     private double _wireSpeed;
     private bool _mapComputerOpen;
+    private bool _running;
     private GenericPickupRegistry? _genericPickups;
 
     /// <summary>Initializes the player camera.</summary>
@@ -368,6 +367,18 @@ public sealed class PlayerCamera
     /// takes effect on the next one. See <see cref="MouseLookSettings"/> for why the rate is what it is.
     /// </remarks>
     public MouseLookSettings LookSettings { get; set; } = MouseLookSettings.Default;
+
+    /// <summary>Gets or sets the active profile whose persisted controls drive gameplay.</summary>
+    /// <remarks>The host refreshes this reference every frame, so switching or editing a profile is immediate.</remarks>
+    public PlayerProfile? InputProfile { get; set; }
+
+    /// <summary>Determines whether a configured action is held in the current input snapshot.</summary>
+    public bool IsActionDown(InputState input, PlayerAction action) =>
+        PlayerProfileInputBindings.IsDown(InputProfile, input, PlayerInputBindings.ConfigName(action));
+
+    /// <summary>Determines whether a configured action was pressed in the current input snapshot.</summary>
+    public bool WasActionPressed(InputState input, PlayerAction action) =>
+        PlayerProfileInputBindings.WasPressed(InputProfile, input, PlayerInputBindings.ConfigName(action));
 
     /// <summary>Gets whether the human is held in retail locomotion state 45 for the map computer.</summary>
     public bool IsMapComputerOpen => _mapComputerOpen;
@@ -787,9 +798,6 @@ public sealed class PlayerCamera
                 PlayerBody.PitchLimit);
         }
 
-        KeyboardState keys = input.Keyboard;
-        _body.Yaw += Axis(keys, KeyCode.Right, KeyCode.Left) * seconds * KeyTurnRate;
-
         // The rig follows the look every frame, not every tick: the weapon is attached to the view and
         // has to stay welded to it however fast the frames come.
         SyncView();
@@ -813,7 +821,11 @@ public sealed class PlayerCamera
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(terrain);
 
-        _input.Accept(SampleFrame(input));
+        _input.Accept(SampleFrame(input, InputProfile));
+        if (_input.IsRisingEdge(PlayerInputSlot.ToggleWalkRun))
+        {
+            _running = !_running;
+        }
         _interactions?.Tick();
 
         // On a ladder the ordinary walk, gravity and collision do not run. The rung-by-rung climb (state
@@ -844,8 +856,6 @@ public sealed class PlayerCamera
             _nearLadder = null;
         }
 
-        KeyboardState keys = input.Keyboard;
-
         // The use key mounts the ladder in reach. Taken on the rising edge so holding it does not remount
         // the instant the climb ends.
         if (_input.IsRisingEdge(PlayerInputSlot.Activate) && _nearInteraction is not null)
@@ -862,15 +872,14 @@ public sealed class PlayerCamera
 
         // The action names are the game's own, from the binding table at 0x536558: MoveUp and
         // MoveDown are forward and back - named for the screen, as the era's binding dialogs were.
-        float forward = Axis(keys, KeyCode.W, KeyCode.S);
-        float strafe = Axis(keys, KeyCode.D, KeyCode.A);
-        bool run = keys.IsDown(KeyCode.LeftShift) || keys.IsDown(KeyCode.RightShift);
-        bool crouch = keys.IsDown(KeyCode.LeftControl) || keys.IsDown(KeyCode.RightControl);
+        float forward = Axis(_input, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown);
+        float strafe = Axis(_input, PlayerInputSlot.MoveRight, PlayerInputSlot.MoveLeft);
+        bool crouch = _input.IsSet(PlayerInputSlot.Crouch);
 
         // Jump is the rising edge, not the level, so holding it does not bounce.
         bool jump = _input.IsRisingEdge(PlayerInputSlot.Jump);
 
-        PlayerCommand command = new(forward, strafe, 0f, 0f, run, crouch, jump);
+        PlayerCommand command = new(forward, strafe, 0f, 0f, _running, crouch, jump);
 
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in
         // HumanPlayer_Update ahead of 0x464800, so its clip-end flag is last tick's.
@@ -1064,7 +1073,7 @@ public sealed class PlayerCamera
 
         if (interaction.Type == InteractionActivateType.Wire)
         {
-            TickWire(input, terrain, use);
+            TickWire(terrain, use);
             return;
         }
 
@@ -1089,7 +1098,7 @@ public sealed class PlayerCamera
         }
     }
 
-    private void TickWire(InputState input, TerrainData terrain, bool use)
+    private void TickWire(TerrainData terrain, bool use)
     {
         WorldInteraction wire = _activeInteraction!;
         bool sliding = Math.Abs(_wireDirection.Z) > Math.Sin(0.034906585);
@@ -1100,7 +1109,7 @@ public sealed class PlayerCamera
         }
         else
         {
-            float along = Axis(input.Keyboard, KeyCode.W, KeyCode.S);
+            float along = Axis(_input, PlayerInputSlot.MoveUp, PlayerInputSlot.MoveDown);
             _body.Position += _wireDirection * (along * 512.0);
         }
 
@@ -1813,41 +1822,15 @@ public sealed class PlayerCamera
     // 0x45E060, for the slots this port can supply. Every action slot carries the MASKED BIT VALUE and
     // never 1, because the original stores `mask & bit` -- a consumer that compared against 1 would
     // read almost every action as released.
-    private static PlayerInputFrame SampleFrame(InputState input)
+    internal static PlayerInputFrame SampleFrame(InputState input, PlayerProfile? profile)
     {
         PlayerInputFrame frame = default;
-        KeyboardState keys = input.Keyboard;
-
-        Set(ref frame, PlayerInputSlot.MoveLeft, keys.IsDown(KeyCode.A));
-        Set(ref frame, PlayerInputSlot.MoveRight, keys.IsDown(KeyCode.D));
-        Set(ref frame, PlayerInputSlot.MoveUp, keys.IsDown(KeyCode.W));
-        Set(ref frame, PlayerInputSlot.MoveDown, keys.IsDown(KeyCode.S));
-        Set(ref frame, PlayerInputSlot.Fire, input.Mouse.IsDown(MouseButton.Left));
-        // The retail default profile binds AlternateFire to KEY_BACKSPACE. GunMP5SD consumes its
-        // rising edge as the sight toggle; the M16A2 consumes the same action for the M203; the
-        // Dragunov opens its scope on the edge and keeps zooming while it is held.
-        Set(ref frame, PlayerInputSlot.AlternateFire, keys.IsDown(KeyCode.Backspace));
-
-        // The scope's fine adjustment, on the wheel: retail carries these as input slots 14 and 15,
-        // which only the Dragunov's handler (and the binoculars') ever reads.
-        Set(ref frame, PlayerInputSlot.ZoomIn, input.Mouse.WheelDelta > 0f);
-        Set(ref frame, PlayerInputSlot.ZoomOut, input.Mouse.WheelDelta < 0f);
-        Set(ref frame, PlayerInputSlot.Reload, keys.IsDown(KeyCode.R));
-        Set(ref frame, PlayerInputSlot.Activate, keys.IsDown(KeyCode.E));
-        Set(ref frame, PlayerInputSlot.Crouch, keys.IsDown(KeyCode.LeftControl) || keys.IsDown(KeyCode.RightControl));
-        Set(ref frame, PlayerInputSlot.Jump, keys.IsDown(KeyCode.Space));
-        Set(ref frame, PlayerInputSlot.NextWeapon, keys.IsDown(KeyCode.Q));
-        Set(ref frame, PlayerInputSlot.PreviousWeapon, keys.IsDown(KeyCode.Z));
-        Set(ref frame, PlayerInputSlot.MapComputer, keys.IsDown(KeyCode.C));
-
-        // 1 to 9, as the original binds them: nine weapon CATEGORIES, not nine weapons. Pressing the
-        // same one again steps to the next weapon of that category you are carrying.
-        for (int i = 0; i < HumanPlayerWeaponCategory.CategoryCount; i++)
+        foreach ((PlayerInputSlot slot, PlayerAction action) in PlayerInputBindings.All)
         {
             Set(
                 ref frame,
-                PlayerInputSlot.WeaponCategory1 + i,
-                keys.IsDown((KeyCode)((int)KeyCode.D1 + i)));
+                slot,
+                PlayerProfileInputBindings.IsDown(profile, input, PlayerInputBindings.ConfigName(action)));
         }
 
         return frame;
@@ -1861,15 +1844,15 @@ public sealed class PlayerCamera
         }
     }
 
-    private static float Axis(KeyboardState keys, KeyCode positive, KeyCode negative)
+    private static float Axis(PlayerInputState input, PlayerInputSlot positive, PlayerInputSlot negative)
     {
         float value = 0f;
-        if (keys.IsDown(positive))
+        if (input.IsSet(positive))
         {
             value += 1f;
         }
 
-        if (keys.IsDown(negative))
+        if (input.IsSet(negative))
         {
             value -= 1f;
         }

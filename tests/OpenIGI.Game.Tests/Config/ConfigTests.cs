@@ -81,7 +81,9 @@ public sealed class ConfigTests
         GameConfig reloaded = ConfigScript.Load(bytes);
 
         Assert.Equal("Joe", reloaded.Profiles[0].Name);
-        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"), reloaded.Profiles[0].Bindings[0]);
+        Assert.Contains(
+            new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"),
+            reloaded.Profiles[0].Bindings);
     }
 
     [Fact]
@@ -162,15 +164,26 @@ public sealed class ConfigTests
     }
 
     [Fact]
-    public void ADefaultProfileHasTheRetailBindingsAndAnEmptyConfigurationUsesThemToo()
+    public void ADefaultProfileHasTheStandardBindingsAndAnEmptyConfigurationUsesThemToo()
     {
         GameConfig defaults = GameConfig.CreateDefault();
         PlayerProfile joe = defaults.Active!;
 
         Assert.Equal(PlayerProfile.BindingCount, joe.Bindings.Count);
-        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"), joe.Bindings[0]);
+        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A"), joe.Bindings[0]);
+        Assert.Contains(new InputBinding("MoveUp", "INPUTPORT_DEVICE_KEYBOARD", "KEY_W"), joe.Bindings);
+        Assert.Contains(new InputBinding("MoveRight", "INPUTPORT_DEVICE_KEYBOARD", "KEY_D"), joe.Bindings);
+        Assert.Contains(new InputBinding("MoveDown", "INPUTPORT_DEVICE_KEYBOARD", "KEY_S"), joe.Bindings);
+        Assert.Contains(new InputBinding("Jump", "INPUTPORT_DEVICE_KEYBOARD", "KEY_SPACE"), joe.Bindings);
+        Assert.Contains(new InputBinding("Activate", "INPUTPORT_DEVICE_KEYBOARD", "KEY_E"), joe.Bindings);
+        Assert.Contains(new InputBinding("MapComputer", "INPUTPORT_DEVICE_KEYBOARD", "KEY_C"), joe.Bindings);
+        Assert.Contains(new InputBinding("Binoculars", "INPUTPORT_DEVICE_KEYBOARD", "KEY_B"), joe.Bindings);
+        Assert.Contains(new InputBinding("ToggleWalkRun", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT_SHIFT"), joe.Bindings);
         Assert.Contains(new InputBinding("Fire", "INPUTPORT_DEVICE_MOUSE", "MOUSE_BUTTON_1"), joe.Bindings);
         Assert.Contains(new InputBinding("WeaponCategory9", "INPUTPORT_DEVICE_KEYBOARD", "KEY_9"), joe.Bindings);
+        Assert.Equal(
+            PlayerProfile.BindingCount,
+            joe.Bindings.Select(binding => (binding.Device, binding.Key)).Distinct().Count());
 
         GameConfig empty = new();
         Assert.True(empty.CreateProfile("Alex", 1));
@@ -178,7 +191,7 @@ public sealed class ConfigTests
     }
 
     [Fact]
-    public void Loading_a_legacy_profile_with_no_bindings_repairs_the_retail_defaults()
+    public void Loading_a_legacy_profile_with_no_bindings_repairs_the_standard_defaults()
     {
         GameConfig legacy = new();
         legacy.Add(new PlayerProfile { Name = "Joe" });
@@ -186,7 +199,54 @@ public sealed class ConfigTests
         GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(legacy));
 
         Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
-        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT"), loaded.Active.Bindings[0]);
+        Assert.Equal(new InputBinding("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A"), loaded.Active.Bindings[0]);
+    }
+
+    [Fact]
+    public void Loading_an_incomplete_profile_restores_only_its_missing_actions()
+    {
+        GameConfig partial = new();
+        PlayerProfile joe = new() { Name = "Joe" };
+        joe.Bindings.Add(new InputBinding("MoveLeft", InputBindingKeyNames.KeyboardDevice, "KEY_F"));
+        partial.Add(joe);
+
+        GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(partial));
+
+        Assert.Equal(PlayerProfile.BindingCount, loaded.Active!.Bindings.Count);
+        Assert.Equal("KEY_F", loaded.Active.Bindings.Single(binding => binding.Action == "MoveLeft").Key);
+        Assert.Contains(loaded.Active.Bindings, binding => binding.Action == "Binoculars");
+    }
+
+    [Fact]
+    public void Rebinding_a_conflicting_key_swaps_assignments_and_round_trips()
+    {
+        GameConfig config = GameConfig.CreateDefault();
+        PlayerProfile profile = config.Active!;
+        int moveLeft = profile.Bindings.FindIndex(binding => binding.Action == "MoveLeft");
+        int fire = profile.Bindings.FindIndex(binding => binding.Action == "Fire");
+
+        Assert.Equal(moveLeft, profile.RebindKeyboard(fire, KeyCode.A));
+        Assert.Equal("KEY_A", profile.Bindings[fire].Key);
+        Assert.Equal(InputBindingKeyNames.MouseDevice, profile.Bindings[moveLeft].Device);
+        Assert.Equal("MOUSE_BUTTON_1", profile.Bindings[moveLeft].Key);
+
+        GameConfig loaded = ConfigScript.Load(ConfigScriptWriter.Write(config));
+        Assert.Equal("KEY_A", loaded.Active!.Bindings[fire].Key);
+        Assert.Equal("MOUSE_BUTTON_1", loaded.Active.Bindings[moveLeft].Key);
+    }
+
+    [Fact]
+    public void Resetting_bindings_restores_defaults_and_preserves_extension_actions()
+    {
+        PlayerProfile profile = PlayerProfile.CreateDefault();
+        int moveUp = profile.Bindings.FindIndex(binding => binding.Action == "MoveUp");
+        profile.RebindKeyboard(moveUp, KeyCode.F);
+        profile.Bindings.Add(new InputBinding("ModAction", InputBindingKeyNames.KeyboardDevice, "KEY_F10"));
+
+        profile.ResetBindingsToDefaults();
+
+        Assert.Equal("KEY_W", profile.Bindings[moveUp].Key);
+        Assert.Contains(profile.Bindings, binding => binding.Action == "ModAction" && binding.Key == "KEY_F10");
     }
 
     [Fact]
@@ -198,6 +258,9 @@ public sealed class ConfigTests
         Assert.Equal(KeyCode.Numpad0, numpad);
         Assert.Equal("KEY_RIGHT_CTRL", InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.RightControl));
         Assert.Equal("KEY_9", InputBindingKeyNames.ToRetailKeyboardKey(KeyCode.D9));
+        Assert.True(InputBindingKeyNames.TryParseMouseButton("MOUSE_BUTTON_5", out MouseButton button));
+        Assert.Equal(MouseButton.Extra2, button);
+        Assert.Equal("MOUSE_BUTTON_5", InputBindingKeyNames.ToRetailMouseButton(MouseButton.Extra2));
         Assert.Equal(
             "Mouse Button 1",
             InputBindingKeyNames.DisplayName(new InputBinding("Fire", InputBindingKeyNames.MouseDevice, "MOUSE_BUTTON_1")));

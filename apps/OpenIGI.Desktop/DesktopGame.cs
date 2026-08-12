@@ -1238,7 +1238,8 @@ internal sealed partial class DesktopGame : IDisposable
                     _computerCamFired = true;
                 }
 
-                bool toggleComputer = _window.Input.Keyboard.WasPressed(Input.KeyCode.C) || automaticOpen;
+                _player.InputProfile = _configuration.Active;
+                bool toggleComputer = _player.WasActionPressed(_window.Input, PlayerAction.MapComputer) || automaticOpen;
                 bool closeComputer = _computerOpen && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape);
 
                 if (TacticalComputer is { } tacticalComputer)
@@ -1625,6 +1626,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // walks around.
                 if (!_playerDead && !_missionFailedMenu)
                 {
+                    _player.InputProfile = _configuration.Active;
                     if (_computerOpen)
                     {
                         _player.TickMapComputer();
@@ -1820,10 +1822,10 @@ internal sealed partial class DesktopGame : IDisposable
                 // falls to a ground collision. Every advance happens here, on the fixed 30 Hz tick.
                 if (_player is not null && _player.IsOnLadder)
                 {
-                    Input.KeyboardState climbKeys = _window.Input.Keyboard;
-                    bool climbUp = climbKeys.IsDown(Input.KeyCode.W);
-                    bool climbDown = climbKeys.IsDown(Input.KeyCode.S);
-                    bool climbUse = climbKeys.IsDown(Input.KeyCode.E);
+                    _player.InputProfile = _configuration.Active;
+                    bool climbUp = _player.IsActionDown(_window.Input, PlayerAction.MoveUp);
+                    bool climbDown = _player.IsActionDown(_window.Input, PlayerAction.MoveDown);
+                    bool climbUse = _player.IsActionDown(_window.Input, PlayerAction.Activate);
 
                     // Mount and use share E. The release gate is a shell detail that prevents the mounting press
                     // from becoming state 40 on the immediately following tick.

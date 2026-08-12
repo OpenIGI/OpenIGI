@@ -125,7 +125,7 @@ public sealed class GameConfig
     {
         foreach (PlayerProfile profile in _profiles)
         {
-            profile.RestoreDefaultBindingsWhenEmpty();
+            profile.RestoreMissingDefaultBindings();
         }
     }
 
