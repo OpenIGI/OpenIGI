@@ -7,7 +7,7 @@ namespace OpenIGI.Desktop.Tests;
 public sealed class ViewModelDepthTests
 {
     [Fact]
-    public void BeginClearsWorldDepthAndKeepsViewModelSelfOcclusion()
+    public void BeginClearsForegroundDepthAndKeepsViewModelSelfOcclusion()
     {
         var device = new RecordingGraphicsDevice();
         device.SetDepthState(DepthState.TestOnly);

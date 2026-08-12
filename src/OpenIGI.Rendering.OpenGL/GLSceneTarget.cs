@@ -41,6 +41,7 @@ internal sealed class GLSceneTarget : IDisposable
     private uint _outputTexture;
     private uint _outputFramebuffer;
     private uint _outputDepth;
+    private uint _foregroundDepth;
     private bool _presentingOutput;
     private uint _occlusionTexture;
     private uint _occlusionFramebuffer;
@@ -260,6 +261,17 @@ internal sealed class GLSceneTarget : IDisposable
             _logger.Warning(LogCategory, "The temporal history could not be created; accumulation is off.");
         }
 
+        // The first-person rig is a foreground layer, not part of the world's depth. Giving it a
+        // private attachment lets the hands and held object occlude one another without clearing the
+        // scene depth texture that depth-of-field and the other screen-space passes still have to read.
+        _foregroundDepth = _gl.GenRenderbuffer();
+        _gl.BindRenderbuffer(RenderbufferTarget.Renderbuffer, _foregroundDepth);
+        _gl.RenderbufferStorage(
+            RenderbufferTarget.Renderbuffer,
+            InternalFormat.DepthComponent32f,
+            (uint)description.PresentWidth,
+            (uint)description.PresentHeight);
+
         if (description.IsMultisampled && !CreateMultisampleTargets(colorFormat, description))
         {
             // Falling back to a single-sampled target is far better than refusing to render: the
@@ -330,6 +342,39 @@ internal sealed class GLSceneTarget : IDisposable
 
         _gl.BindFramebuffer(FramebufferTarget.Framebuffer, _colorFramebuffers[_front]);
         _gl.Viewport(0, 0, (uint)Description.Width, (uint)Description.Height);
+    }
+
+    /// <summary>Replaces the colour target's world depth with the private first-person depth layer.</summary>
+    /// <remarks>
+    /// The colour attachment is deliberately unchanged: the rig draws over the finished world. Only
+    /// depth is isolated, so clearing it cannot turn the scene depth into the far-plane/sky value.
+    /// Pair with <see cref="RestoreWorldDepth"/> before post-processing reads scene depth.
+    /// </remarks>
+    public void BindForForegroundDepth()
+    {
+        uint framebuffer = _presentingOutput ? _outputFramebuffer : _colorFramebuffers[_front];
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+        _gl.FramebufferRenderbuffer(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.DepthAttachment,
+            RenderbufferTarget.Renderbuffer,
+            _foregroundDepth);
+        _gl.Viewport(0, 0, (uint)Description.PresentWidth, (uint)Description.PresentHeight);
+    }
+
+    /// <summary>Restores the world's depth attachment after the first-person foreground layer.</summary>
+    public void RestoreWorldDepth()
+    {
+        uint framebuffer = _presentingOutput ? _outputFramebuffer : _colorFramebuffers[_front];
+        uint depth = _presentingOutput ? _outputDepth : _depthTexture;
+        _gl.BindFramebuffer(FramebufferTarget.Framebuffer, framebuffer);
+        _gl.FramebufferTexture2D(
+            FramebufferTarget.Framebuffer,
+            FramebufferAttachment.DepthAttachment,
+            TextureTarget.Texture2D,
+            depth,
+            0);
+        _gl.Viewport(0, 0, (uint)Description.PresentWidth, (uint)Description.PresentHeight);
     }
 
     /// <summary>Makes the back colour buffer current so a full-screen pass can write into it.</summary>
@@ -920,6 +965,12 @@ internal sealed class GLSceneTarget : IDisposable
         {
             _gl.DeleteTexture(_outputDepth);
             _outputDepth = 0;
+        }
+
+        if (_foregroundDepth != 0)
+        {
+            _gl.DeleteRenderbuffer(_foregroundDepth);
+            _foregroundDepth = 0;
         }
 
         if (_depthTexture != 0)

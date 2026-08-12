@@ -407,6 +407,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     {
         ThrowIfDisposed();
 
+        // The forward rig must start with empty depth so its own pieces can occlude one another, but
+        // clearing the colour target's shared world-depth texture destroys information still consumed
+        // by post-processing. This distinction was invisible with temporal upsampling because its
+        // forward target already has separate depth; Spatial AA renders the rig straight into the scene
+        // colour target and exposed the regression as sky-coloured holes. Swap in a private attachment
+        // before clearing it, then EndPass restores world depth for the post chain.
+        if (_captureActive && CurrentPass == ScenePass.Forward)
+        {
+            _sceneTarget!.BindForForegroundDepth();
+        }
+
         // glClear honours the write mask even though it does not use the depth test. A preceding
         // translucent pass may have selected TestOnly, so temporarily enable writes and restore that
         // state afterwards rather than silently leaving stale scene depth under a foreground model.
@@ -1518,6 +1529,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         else if (CurrentPass == ScenePass.Forward)
         {
             _stageProfiler?.End();
+            _sceneTarget!.RestoreWorldDepth();
         }
 
         CurrentPass = ScenePass.None;
@@ -1563,16 +1575,6 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // Outside the post bracket: the temporal resolve is its own stage and has already been timed
         // when the forward pass triggered it.
         ResolveTemporal(target);
-
-        // Full-screen post-processing owns every output pixel and must not inherit a 3D draw's depth
-        // state. The foreground view-model pass deliberately ends in TestAndWrite; before it existed,
-        // another enabled pass usually happened to disable depth here. Spatial AA adds a final draw to
-        // the window framebuffer, whose depth attachment is unrelated to the offscreen scene. Testing
-        // that fullscreen triangle against stale window depth left jagged, undrawn islands visible in
-        // the upper-right corner whenever the rig was present (walk mode, but not fly mode).
-        _gl.Disable(EnableCap.DepthTest);
-        _gl.DepthMask(false);
-        _depthState = DepthState.Disabled;
 
         // One bracket over the whole chain -- defocus, bloom, tone map, grade, edge filter -- because
         // that is the granularity the budget was written at, and because five separate queries over
