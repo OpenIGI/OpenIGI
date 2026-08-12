@@ -1019,6 +1019,45 @@ internal sealed partial class DesktopGame
         }
     }
 
+    /// <summary>Keeps each retail elevator travel loop attached to the moving car.</summary>
+    private void UpdateElevatorSoundPositions()
+    {
+        if (_sounds is null || _elevators is null)
+        {
+            return;
+        }
+
+        foreach (PlacedElevator elevator in _elevators.Elevators)
+        {
+            if (!_elevatorVoices.TryGetValue(elevator, out AudioVoiceHandle voice))
+            {
+                continue;
+            }
+
+            if (!elevator.State.IsMoving)
+            {
+                // The state transition normally removes this voice. This reconciliation also covers
+                // a voice that was retained across a task transition or reclaimed by the audio pool.
+                _sounds.Stop(voice);
+                _elevatorVoices.Remove(elevator);
+                continue;
+            }
+
+            if (!_sounds.IsPlaying(voice))
+            {
+                _elevatorVoices.Remove(elevator);
+                continue;
+            }
+
+            _sounds.SetDefinitionVoicePosition(
+                elevator.MoveSound,
+                voice,
+                elevator.State.Position,
+                priority: 120,
+                looping: true);
+        }
+    }
+
     /// <summary>Mounts the menu system's sound archive, which belongs to no mission.</summary>
     private void MountMenuSounds()
     {

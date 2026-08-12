@@ -1748,6 +1748,7 @@ internal sealed partial class DesktopGame : IDisposable
             if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
             {
                 elevators.Tick();
+                UpdateElevatorSoundPositions();
                 if (_playerMode && _player is { } passenger
                     && elevators.TryGetPassengerDisplacement(passenger.Body.Position, out Vector3d displacement))
                 {
