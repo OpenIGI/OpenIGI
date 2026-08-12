@@ -1167,6 +1167,8 @@ internal sealed partial class DesktopGame : IDisposable
                 && _window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
             {
                 _cutscenes.RequestBreak();
+                StopCutsceneSounds();
+                _missionObjectives?.ClearCutsceneMessages();
             }
 
             if (!menuMode
@@ -2879,7 +2881,7 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.Begin();
                     retailMessages.DrawStatusMessages(
                         batch,
-                        messageRuntime.DisplayedMessages,
+                        messageRuntime.DisplayedMessages.Where(static message => !message.IsCutscene),
                         _window.Width,
                         _window.Height,
                         UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
@@ -3112,7 +3114,12 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.Begin();
                     float topOffset = new LayoutContext(_window.Width, _window.Height)
                         .Px(RemasteredHudRenderer.MessageTopInsetDesign);
-                    modernCards.Draw(batch, modernMessages.DisplayedMessages, _window.Width, _window.Height, topOffset);
+                    modernCards.Draw(
+                        batch,
+                        modernMessages.DisplayedMessages.Where(static message => !message.IsCutscene),
+                        _window.Width,
+                        _window.Height,
+                        topOffset);
                     batch.End();
                 }
 

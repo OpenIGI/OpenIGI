@@ -44,6 +44,7 @@ internal sealed partial class DesktopGame
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
+    private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
 
     private void SetCutsceneSound(CutsceneSoundEvent sound)
     {
@@ -51,6 +52,11 @@ internal sealed partial class DesktopGame
         {
             return;
         }
+
+        // Simple ConditionalSounds have no falling-edge event, but their voices still belong to the
+        // cutscene while it is being skipped. Retire completed handles so this set only represents
+        // one-shots that can still be stopped by the next cancellation.
+        _cutsceneOneShotVoices.RemoveWhere(voice => !_sounds.IsPlaying(voice));
 
         if (!sound.Simple
             && _cutsceneVoices.Remove(sound.Task, out AudioVoiceHandle old)
@@ -70,6 +76,10 @@ internal sealed partial class DesktopGame
             {
                 _cutsceneVoices[sound.Task] = voice;
             }
+            else if (sound.Simple && voice.IsValidHandle)
+            {
+                _cutsceneOneShotVoices.Add(voice);
+            }
         }
     }
 
@@ -84,9 +94,18 @@ internal sealed partial class DesktopGame
                     _sounds.Stop(voice);
                 }
             }
+
+            foreach (AudioVoiceHandle voice in _cutsceneOneShotVoices)
+            {
+                if (voice.IsValidHandle)
+                {
+                    _sounds.Stop(voice);
+                }
+            }
         }
 
         _cutsceneVoices.Clear();
+        _cutsceneOneShotVoices.Clear();
     }
 
     /// <summary>The level's authored ambience boxes. Null until a mission is up.</summary>

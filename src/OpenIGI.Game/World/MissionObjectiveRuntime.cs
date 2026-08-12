@@ -224,6 +224,25 @@ public sealed class MissionObjectiveRuntime
         }
     }
 
+    /// <summary>Removes subtitles that belong to a cutscene which the player skipped.</summary>
+    /// <remarks>
+    /// Cutscene messages share the same slots as ordinary status messages. Releasing them here prevents
+    /// a subtitle from surviving the camera hand-off and being drawn as a normal gameplay message.
+    /// </remarks>
+    public void ClearCutsceneMessages()
+    {
+        foreach (StatusMessage message in _statusMessages)
+        {
+            if (!message.Cutscene || !message.IsDisplaying)
+            {
+                continue;
+            }
+
+            message.StopDisplay();
+            ReleaseMessageSlot(message);
+        }
+    }
+
     /// <summary>Gets how many authored objective definitions the mission contains.</summary>
     public int DefinitionCount => _definitions.Count;
 
@@ -621,6 +640,8 @@ public sealed class MissionObjectiveRuntime
             CharactersRemaining = Cutscene ? 0 : text.Length;
             HoldTicks = 0;
         }
+
+        public void StopDisplay() => IsDisplaying = false;
 
         public bool AdvanceDisplay(float extraHoldSeconds)
         {
