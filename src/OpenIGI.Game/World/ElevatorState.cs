@@ -44,11 +44,13 @@ public sealed class ElevatorState
         _floors = floors;
         _maxSpeed = Math.Max(0.0, maxSpeedUnitsPerSecond);
         _inertia = Math.Max(0.0, speedInertiaUnitsPerSecondSquared);
+        StartPosition = startPosition;
         Position = startPosition;
         PreviousPosition = startPosition;
         CurrentFloorIndex = FindStartFloor(startPosition, startFloorTaskId);
     }
 
+    public Vector3d StartPosition { get; }
     public Vector3d Position { get; private set; }
     public Vector3d PreviousPosition { get; private set; }
     public int CurrentFloorIndex { get; private set; }
@@ -101,12 +103,15 @@ public sealed class ElevatorState
             return;
         }
 
-        Vector3d destination = _floors[targetIndex].Position;
+        int nextIndex = targetIndex > CurrentFloorIndex
+            ? CurrentFloorIndex + 1
+            : CurrentFloorIndex - 1;
+        Vector3d destination = _floors[nextIndex].Position;
         Vector3d delta = destination - Position;
         double distance = delta.Length;
         if (distance == 0.0)
         {
-            Arrive(targetIndex, destination);
+            Arrive(nextIndex, destination);
             return;
         }
 
@@ -114,7 +119,7 @@ public sealed class ElevatorState
         double step = _speed * TickSeconds;
         if (step >= distance || _maxSpeed == 0.0)
         {
-            Arrive(targetIndex, destination);
+            Arrive(nextIndex, destination);
             return;
         }
 
@@ -131,11 +136,14 @@ public sealed class ElevatorState
         }
     }
 
-    private void Arrive(int targetIndex, Vector3d destination)
+    private void Arrive(int reachedIndex, Vector3d destination)
     {
         Position = destination;
-        CurrentFloorIndex = targetIndex;
-        TargetFloorIndex = null;
+        CurrentFloorIndex = reachedIndex;
+        if (TargetFloorIndex == reachedIndex)
+        {
+            TargetFloorIndex = null;
+        }
         _speed = 0.0;
     }
 

@@ -21,6 +21,9 @@ public sealed class WorldInteraction
     private Func<bool>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
+    private readonly Vector3d _authoredAnchor;
+    private readonly Vector3d _authoredEnd;
+    private Func<Vector3d>? _dynamicOffset;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -40,8 +43,8 @@ public sealed class WorldInteraction
     {
         Task = task;
         Type = type;
-        Anchor = anchor;
-        End = end;
+        _authoredAnchor = anchor;
+        _authoredEnd = end;
         Orientation = orientation;
         Facing = facing;
         DurationTicks = durationTicks;
@@ -56,8 +59,8 @@ public sealed class WorldInteraction
 
     public DeclaredTask Task { get; }
     public InteractionActivateType Type { get; }
-    public Vector3d Anchor { get; }
-    public Vector3d End { get; }
+    public Vector3d Anchor => _authoredAnchor + (_dynamicOffset?.Invoke() ?? default);
+    public Vector3d End => _authoredEnd + (_dynamicOffset?.Invoke() ?? default);
     public Matrix3f Orientation { get; }
     public float Facing { get; }
     public int DurationTicks { get; }
@@ -372,6 +375,8 @@ public sealed class WorldInteraction
         IsOn = on?.Invoke() ?? true;
         IsLocked = locked?.Invoke() ?? false;
     }
+
+    internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
 }
 
 /// <summary>
@@ -391,7 +396,8 @@ public sealed class WorldInteractionRegistry
         GameTask root,
         LoadedMission mission,
         DoorRegistry doors,
-        ScriptVarRegistry variables)
+        ScriptVarRegistry variables,
+        ElevatorRegistry? elevators = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(mission);
@@ -402,7 +408,7 @@ public sealed class WorldInteractionRegistry
         LevelExpressionRuntime expressions = new(variables);
         WorldInteractionRegistry registry = new();
         CollectGenerators(root, registry, variables, expressions);
-        Collect(root, registry, models, doors, variables, expressions);
+        Collect(root, registry, models, doors, variables, expressions, elevators);
         return registry;
     }
 
@@ -524,7 +530,8 @@ public sealed class WorldInteractionRegistry
         IReadOnlyDictionary<string, MefModel> models,
         DoorRegistry doors,
         ScriptVarRegistry variables,
-        LevelExpressionRuntime expressions)
+        LevelExpressionRuntime expressions,
+        ElevatorRegistry? elevators)
     {
         if (ConditionalContainerGate.IsDormant(task))
         {
@@ -585,6 +592,10 @@ public sealed class WorldInteractionRegistry
                 DurationOf(declared, type), SpriteOf(declared, type), door,
                 ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
+            if (elevators is not null)
+            {
+                item.SetDynamicOffset(() => elevators.GetCurrentDisplacement(item.Task));
+            }
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
@@ -609,7 +620,7 @@ public sealed class WorldInteractionRegistry
 
         foreach (GameTask child in task.Children)
         {
-            Collect(child, registry, models, doors, variables, expressions);
+            Collect(child, registry, models, doors, variables, expressions, elevators);
         }
     }
 

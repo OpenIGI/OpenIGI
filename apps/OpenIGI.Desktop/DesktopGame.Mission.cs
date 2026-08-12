@@ -290,7 +290,7 @@ internal sealed partial class DesktopGame
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         _doors = DoorRegistry.Build(levelRoot);
         _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
-        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
+        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
         _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
         world.GenericPickups = _genericPickups;
         solids.GenericPickups = _genericPickups;

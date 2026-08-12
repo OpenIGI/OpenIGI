@@ -219,9 +219,19 @@ public sealed class WorldRenderer : IDisposable
             {
                 drawPosition = doorPosition;
                 drawOrientation = doorOrientation;
+                if (Elevators?.TryGetDisplacement(
+                    placement.Owner,
+                    _frameAlpha,
+                    _frameSmooth,
+                    out Vector3d doorDisplacement) == true)
+                {
+                    drawPosition += doorDisplacement;
+                }
             }
             else if (Elevators?.TryGetDrawTransform(
                 placement.Owner,
+                placement.Position,
+                placement.Orientation,
                 _frameAlpha,
                 _frameSmooth,
                 out Vector3d elevatorPosition,

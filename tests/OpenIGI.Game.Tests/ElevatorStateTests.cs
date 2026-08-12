@@ -92,4 +92,45 @@ public sealed class ElevatorStateTests
         Assert.True(elevator.IsMoving);
         Assert.Equal(1, elevator.TargetFloorIndex);
     }
+
+    [Fact]
+    public void RequestedFarFloorTraversesEveryAuthoredWaypoint()
+    {
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors:
+            [
+                new ElevatorFloor(10, new Vector3d(0, 0, 0)),
+                new ElevatorFloor(20, new Vector3d(10, 0, 0)),
+                new ElevatorFloor(30, new Vector3d(20, 0, 0)),
+            ],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.RequestFloor(2);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.Equal(0, elevator.CurrentFloorIndex);
+        Assert.Equal(2, elevator.TargetFloorIndex);
+
+        for (int i = 0; i < 30; i++)
+        {
+            elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+            if (elevator.CurrentFloorIndex == 1)
+            {
+                break;
+            }
+        }
+
+        Assert.Equal(1, elevator.CurrentFloorIndex);
+        Assert.Equal(2, elevator.TargetFloorIndex);
+
+        for (int i = 0; i < 30; i++)
+        {
+            elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        }
+
+        Assert.Equal(2, elevator.CurrentFloorIndex);
+        Assert.False(elevator.IsMoving);
+        Assert.Equal(new Vector3d(20, 0, 0), elevator.Position);
+    }
 }

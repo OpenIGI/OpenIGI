@@ -131,6 +131,34 @@ public sealed class ObjectCollisionIndex
         return true;
     }
 
+    /// <summary>Translates every indexed child of a moving parent task.</summary>
+    /// <param name="parent">The parent task whose children are moving.</param>
+    /// <param name="displacementMetres">The incremental world translation in metres.</param>
+    /// <returns>The number of collision entries translated.</returns>
+    public int UpdateDescendantTranslation(GameTask parent, Vector3d displacementMetres)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        Vector3d units = displacementMetres * WorldScene.UnitsPerMetre;
+        int updated = 0;
+
+        foreach (Entry entry in _entries)
+        {
+            for (GameTask? current = entry.Owner.Parent; current is not null; current = current.Parent)
+            {
+                if (!ReferenceEquals(current, parent))
+                {
+                    continue;
+                }
+
+                entry.Translate(units);
+                updated++;
+                break;
+            }
+        }
+
+        return updated;
+    }
+
     /// <summary>Updates one model placement owned by a multi-model task.</summary>
     /// <param name="owner">The task owning the placement.</param>
     /// <param name="instanceName">The exact pack-instance name to move.</param>
@@ -643,7 +671,7 @@ public sealed class ObjectCollisionIndex
 
         public Vector3d Centre { get; private set; }
 
-        public Vector3d ClosedCentre { get; }
+        public Vector3d ClosedCentre { get; private set; }
 
         public double Radius { get; }
 
@@ -736,6 +764,19 @@ public sealed class ObjectCollisionIndex
 
             Vector3f centre = rotation.Transform(_rootCentre);
             Centre = new Vector3d(origin.X + centre.X, origin.Y + centre.Y, origin.Z + centre.Z);
+            IsDynamic = true;
+        }
+
+        public void Translate(Vector3d displacementUnits)
+        {
+            for (int i = 0; i < _vertices.Length; i++)
+            {
+                _vertices[i] += displacementUnits;
+                _closedVertices[i] += displacementUnits;
+            }
+
+            Centre += displacementUnits;
+            ClosedCentre += displacementUnits;
             IsDynamic = true;
         }
 

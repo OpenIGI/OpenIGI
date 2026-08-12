@@ -2079,7 +2079,17 @@ public sealed class SoldierRenderer : IDisposable
                     // already has that pose, so only touch transformed vertices while a channel moved.
                     if (door.State.TransformChangedThisTick)
                     {
-                        solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
+                        Vector3d position = door.DrawPosition;
+                        if (_elevators?.TryGetDisplacement(
+                            door.Task,
+                            tickFraction: 1f,
+                            smooth: false,
+                            out Vector3d elevatorDisplacement) == true)
+                        {
+                            position += elevatorDisplacement;
+                        }
+
+                        solids.UpdateTransform(door.Task, position, door.DrawOrientation);
                     }
                 }
             }
@@ -2093,10 +2103,13 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     if (elevator.State.TransformChangedThisTick)
                     {
+                        Vector3d displacement = (elevator.State.Position - elevator.State.PreviousPosition)
+                            / WorldScene.UnitsPerMetre;
                         solids.UpdateTransform(
                             elevator.Task,
                             elevator.DrawPosition,
                             elevator.Orientation);
+                        solids.UpdateDescendantTranslation(elevator.Task, displacement);
                     }
                 }
             }

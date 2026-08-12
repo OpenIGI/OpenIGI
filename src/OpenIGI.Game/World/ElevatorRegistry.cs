@@ -107,6 +107,8 @@ public sealed class ElevatorRegistry
 
     public bool TryGetDrawTransform(
         GameTask task,
+        Vector3d authoredPosition,
+        Matrix3f authoredOrientation,
         float tickFraction,
         bool smooth,
         out Vector3d position,
@@ -120,10 +122,73 @@ public sealed class ElevatorRegistry
                 orientation = elevator.Orientation;
                 return true;
             }
+
+            Vector3d displacement = GetDisplacement(elevator, tickFraction, smooth);
+            if (IsDescendantOf(task, elevator.Task) && displacement != Vector3d.Zero)
+            {
+                position = authoredPosition + displacement;
+                orientation = authoredOrientation;
+                return true;
+            }
         }
 
         position = default;
         orientation = default;
+        return false;
+    }
+
+    /// <summary>Gets the interpolated translation of an elevator-owned child task.</summary>
+    public bool TryGetDisplacement(
+        GameTask task,
+        float tickFraction,
+        bool smooth,
+        out Vector3d displacement)
+    {
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            if (IsDescendantOf(task, elevator.Task))
+            {
+                displacement = GetDisplacement(elevator, tickFraction, smooth);
+                return displacement != Vector3d.Zero;
+            }
+        }
+
+        displacement = default;
+        return false;
+    }
+
+    /// <summary>Gets the current world translation for an elevator-owned task.</summary>
+    public Vector3d GetCurrentDisplacement(GameTask task)
+    {
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            if (IsDescendantOf(task, elevator.Task))
+            {
+                return GetDisplacement(elevator, 1f, smooth: false);
+            }
+        }
+
+        return default;
+    }
+
+    private static Vector3d GetDisplacement(PlacedElevator elevator, float tickFraction, bool smooth)
+    {
+        double alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1.0;
+        Vector3d position = elevator.State.PreviousPosition
+            + ((elevator.State.Position - elevator.State.PreviousPosition) * alpha);
+        return (position - elevator.State.StartPosition) / WorldScene.UnitsPerMetre;
+    }
+
+    private static bool IsDescendantOf(GameTask task, GameTask ancestor)
+    {
+        for (GameTask? current = task.Parent; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
