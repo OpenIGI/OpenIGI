@@ -134,11 +134,32 @@ public sealed class ElevatorState
     }
 
     /// <summary>Requests a specific authored floor, subject to the normal start gate.</summary>
+    /// <remarks>
+    /// A request for the floor the lift is already standing at is a no-op and must not occupy the
+    /// pending slot: such a request can be left over while the doors stay open (for example from an
+    /// idle <c>vFloor</c> binding) and would otherwise silently swallow a later, real destination
+    /// request such as a hall-call switch.
+    /// </remarks>
     public void RequestFloor(int floorIndex)
     {
-        if ((uint)floorIndex < (uint)_floors.Count
-            && TargetFloorIndex is null
-            && _pendingTargetFloor is null)
+        if ((uint)floorIndex >= (uint)_floors.Count || TargetFloorIndex is not null)
+        {
+            return;
+        }
+
+        // Drop a stale pending request that targets the floor we are already on before evaluating
+        // the new request, so it can take the slot instead of being blocked by the no-op.
+        if (_pendingTargetFloor == CurrentFloorIndex)
+        {
+            _pendingTargetFloor = null;
+        }
+
+        if (floorIndex == CurrentFloorIndex)
+        {
+            return;
+        }
+
+        if (_pendingTargetFloor is null)
         {
             _pendingDirection = 0;
             _pendingTargetFloor = floorIndex;

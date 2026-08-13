@@ -115,6 +115,25 @@ public sealed class ElevatorRegistry
         return false;
     }
 
+    /// <summary>Evaluates an authored wanted-floor expression for a lift for diagnostics.</summary>
+    /// <param name="elevatorTask">The lift task to inspect.</param>
+    /// <param name="floorIndex">The wanted floor index.</param>
+    /// <returns>The expression result, or <see langword="null"/> when the lift/floor is unknown.</returns>
+    public bool? EvaluateWantedFloor(DeclaredTask elevatorTask, int floorIndex)
+    {
+        foreach (ElevatorCommand command in _commands)
+        {
+            if (ReferenceEquals(command.Elevator.Task, elevatorTask)
+                && floorIndex >= 0
+                && floorIndex < command.WantedFloors.Count)
+            {
+                return command.WantedFloors[floorIndex]();
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Gets the displacement to apply to a passenger standing on a moving platform.</summary>
     /// <param name="passenger">The passenger feet position in engine units.</param>
     /// <param name="displacement">The platform displacement in engine units.</param>
