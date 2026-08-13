@@ -284,14 +284,18 @@ public sealed class ElevatorRegistry
                     ReadString(declared, "Move sound"));
                 registry._elevators.Add(elevator);
                 List<Func<bool>> wantedFloors = Enumerable.Range(0, 10)
-                    .Select(i => (Func<bool>)(() => expressions.EvaluateCondition(
-                        ReadString(declared, $"Wanted floor {i}"), emptyValue: false)))
+                    .Select(i => ReadString(declared, $"Wanted floor {i}"))
+                    .Select(expression => (Func<bool>)(() => expressions.EvaluateCondition(
+                        expression, emptyValue: false)))
                     .ToList();
+                string canStart = ReadString(declared, "Can start");
+                string floorUp = ReadString(declared, "Floor up");
+                string floorDown = ReadString(declared, "Floor down");
                 registry._commands.Add(new ElevatorCommand(
                     elevator,
-                    () => expressions.EvaluateCondition(ReadString(declared, "Can start"), emptyValue: true),
-                    () => expressions.EvaluateCondition(ReadString(declared, "Floor up"), emptyValue: false),
-                    () => expressions.EvaluateCondition(ReadString(declared, "Floor down"), emptyValue: false),
+                    () => expressions.EvaluateCondition(canStart, emptyValue: true),
+                    () => expressions.EvaluateCondition(floorUp, emptyValue: false),
+                    () => expressions.EvaluateCondition(floorDown, emptyValue: false),
                     wantedFloors));
                 variables.BindInt(declared, "vFloor", () => state.CurrentFloorIndex, value => state.RequestFloor(value));
                 variables.BindBool(declared, "isMoving", () => state.IsMoving, _ => { });

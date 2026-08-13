@@ -25,6 +25,7 @@ public sealed class WorldInteraction
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
     private Func<Vector3d>? _dynamicOffset;
+    private Vector3d _offset;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -60,8 +61,8 @@ public sealed class WorldInteraction
 
     public DeclaredTask Task { get; }
     public InteractionActivateType Type { get; }
-    public Vector3d Anchor => _authoredAnchor + (_dynamicOffset?.Invoke() ?? default);
-    public Vector3d End => _authoredEnd + (_dynamicOffset?.Invoke() ?? default);
+    public Vector3d Anchor => _authoredAnchor + _offset;
+    public Vector3d End => _authoredEnd + _offset;
     public Matrix3f Orientation { get; }
     public float Facing { get; }
     public int DurationTicks { get; }
@@ -329,6 +330,7 @@ public sealed class WorldInteraction
 
     internal void EvaluateConditions()
     {
+        _offset = _dynamicOffset?.Invoke() ?? default;
         IsOn = _onCondition?.Invoke() ?? IsOn;
         IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
         // Door_RunHandler only evaluates the open expression while fully closed and the close

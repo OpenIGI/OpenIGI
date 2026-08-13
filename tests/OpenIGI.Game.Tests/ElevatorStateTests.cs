@@ -135,6 +135,22 @@ public sealed class ElevatorStateTests
     }
 
     [Fact]
+    public void ZeroSpeedElevatorHoldsItsPosition()
+    {
+        ElevatorState elevator = new(
+            new Vector3d(0, 0, 0),
+            [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 10))],
+            maxSpeedUnitsPerSecond: 0,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.RequestFloor(1);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+
+        Assert.Equal(new Vector3d(0, 0, 0), elevator.Position);
+        Assert.False(elevator.IsMoving);
+    }
+
+    [Fact]
     public void DuplicateRequestWhileMovingDoesNotCancelTheCurrentTrip()
     {
         ElevatorState elevator = new(

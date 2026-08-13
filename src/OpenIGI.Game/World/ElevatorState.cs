@@ -115,9 +115,16 @@ public sealed class ElevatorState
             return;
         }
 
+        if (_maxSpeed == 0.0)
+        {
+            _speed = 0.0;
+            TargetFloorIndex = null;
+            return;
+        }
+
         _speed = Math.Min(_maxSpeed, _speed + (_inertia * TickSeconds));
         double step = _speed * TickSeconds;
-        if (step >= distance || _maxSpeed == 0.0)
+        if (step >= distance)
         {
             Arrive(nextIndex, destination);
             return;

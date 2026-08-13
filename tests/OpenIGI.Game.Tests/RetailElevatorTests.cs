@@ -17,7 +17,6 @@ public sealed class RetailElevatorTests
     public void AuthoredElevatorsExposeSplineFloorsAndLiveScriptVariables()
     {
         int liftCount = 0;
-        int floorCount = 0;
 
         for (int missionId = 1; missionId <= 14; missionId++)
         {
@@ -32,12 +31,11 @@ public sealed class RetailElevatorTests
                 Assert.InRange(elevator.State.CurrentFloorIndex, 0, elevator.State.FloorCount - 1);
                 Assert.Contains($"{elevator.Task.Name}.vFloor", variables.GetBoundNames(elevator.Task));
                 Assert.Contains($"{elevator.Task.Name}.isMoving", variables.GetBoundNames(elevator.Task));
-                floorCount++;
+                Assert.True(elevator.State.FloorCount > 0);
             }
         }
 
         Assert.True(liftCount > 0, "no Elevator tasks were found in the retail campaign");
-        Assert.Equal(liftCount, floorCount);
     }
 
     [RequiresGameDataFact]
@@ -72,6 +70,7 @@ public sealed class RetailElevatorTests
                 : elevator.State.CurrentFloorIndex - 1;
             elevator.State.RequestFloor(target);
             elevator.State.Tick(canStart: true, floorUp: false, floorDown: false);
+            interactions.Tick();
 
             // Interaction anchors are queried in engine units, unlike render placements which are
             // expressed in metres. Keep this assertion independent of the registry conversion helper

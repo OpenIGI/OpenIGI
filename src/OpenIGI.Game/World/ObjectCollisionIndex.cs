@@ -141,18 +141,21 @@ public sealed class ObjectCollisionIndex
         Vector3d units = displacementMetres * WorldScene.UnitsPerMetre;
         int updated = 0;
 
-        foreach (Entry entry in _entries)
+        foreach (Entry[] set in new[] { _entries, _playerEntries })
         {
-            for (GameTask? current = entry.Owner.Parent; current is not null; current = current.Parent)
+            foreach (Entry entry in set)
             {
-                if (!ReferenceEquals(current, parent))
+                for (GameTask? current = entry.Owner.Parent; current is not null; current = current.Parent)
                 {
-                    continue;
-                }
+                    if (!ReferenceEquals(current, parent))
+                    {
+                        continue;
+                    }
 
-                entry.Translate(units);
-                updated++;
-                break;
+                    entry.Translate(units);
+                    updated++;
+                    break;
+                }
             }
         }
 

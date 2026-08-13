@@ -1618,6 +1618,17 @@ internal sealed partial class DesktopGame : IDisposable
             // exclusive outcomes - a render is not a tick - so including Render here stepped the player
             // once per drawn frame as well, and at an uncapped frame rate that is several times 30 Hz.
             // The player then moved as fast as the display was quick, which is exactly what it looked like.
+            if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
+            {
+                elevators.Tick();
+                UpdateElevatorSoundPositions();
+                if (_playerMode && _player is { } passenger
+                    && elevators.TryGetPassengerDisplacement(passenger.Body.Position, out Vector3d displacement))
+                {
+                    passenger.Body.Position += displacement;
+                }
+            }
+
             if (outcome is FrameOutcome.Tick
                 && _cutscenes?.IsPlaying != true
                 && _playerMode && _player is not null)
@@ -1745,17 +1756,6 @@ internal sealed partial class DesktopGame : IDisposable
             // Lifts advance before perception and AI consume this tick's player position. A passenger
             // standing on the previous platform sample receives the same displacement, which keeps the
             // body, camera and collision contact together while the platform travels.
-            if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
-            {
-                elevators.Tick();
-                UpdateElevatorSoundPositions();
-                if (_playerMode && _player is { } passenger
-                    && elevators.TryGetPassengerDisplacement(passenger.Body.Position, out Vector3d displacement))
-                {
-                    passenger.Body.Position += displacement;
-                }
-            }
-
             // The soldiers' rigs advance on the tick, not on the render, so their animation runs at the
             // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
             //

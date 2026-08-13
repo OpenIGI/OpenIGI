@@ -2075,19 +2075,15 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (PlacedDoor door in doors.Doors)
                 {
-                    // Closed/open doors spend nearly all their life stationary. Their indexed collision
-                    // already has that pose, so only touch transformed vertices while a channel moved.
-                    if (door.State.TransformChangedThisTick)
+                    // Closed/open doors spend nearly all their life stationary, unless they ride a
+                    // moving elevator: keep collision synchronized with the rendered displacement.
+                    bool onMovingElevator = _elevators?.TryGetDisplacement(
+                        door.Task, tickFraction: 1f, smooth: false, out Vector3d elevatorDisplacement) == true;
+                    if (door.State.TransformChangedThisTick || onMovingElevator)
                     {
-                        Vector3d position = door.DrawPosition;
-                        if (_elevators?.TryGetDisplacement(
-                            door.Task,
-                            tickFraction: 1f,
-                            smooth: false,
-                            out Vector3d elevatorDisplacement) == true)
-                        {
-                            position += elevatorDisplacement;
-                        }
+                        Vector3d position = onMovingElevator
+                            ? door.DrawPosition + elevatorDisplacement
+                            : door.DrawPosition;
 
                         solids.UpdateTransform(door.Task, position, door.DrawOrientation);
                     }
