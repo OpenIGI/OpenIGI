@@ -419,9 +419,7 @@ public sealed class StatusScreenRenderer : IDisposable
     public void DrawBinocularOverlay(
         SpriteBatch batch,
         int screenWidth,
-        int screenHeight,
-        float headingRadians,
-        float tanX)
+        int screenHeight)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
@@ -445,13 +443,9 @@ public sealed class StatusScreenRenderer : IDisposable
         batch.FillRect(new RectF(centreX - 1f, centreY - 18f, 2f, 36f), signal);
         batch.FillRect(new RectF(centreX - 18f, centreY - 1f, 36f, 2f), signal);
 
-        if (Font() is { } font)
-        {
-            int degrees = ((int)MathF.Round(headingRadians * (180f / MathF.PI)) % 360 + 360) % 360;
-            string readout = $"BINOCULAR  {degrees:000}°  ZOOM {tanX:0.00}";
-            (float width, _) = font.Measure(readout, 1f, 1f);
-            font.Draw(batch, readout, (screenWidth - width) * 0.5f, 18f, signal);
-        }
+        // The retail task draws its authored device overlay and range widget here. Do not expose
+        // internal tangent/heading diagnostics in the retail presentation; those values are camera
+        // state and belong only to the enhanced themed presentation.
     }
 
     /// <inheritdoc/>

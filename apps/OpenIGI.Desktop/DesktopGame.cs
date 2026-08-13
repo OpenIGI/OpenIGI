@@ -2939,9 +2939,7 @@ internal sealed partial class DesktopGame : IDisposable
                         retailHud.DrawBinocularOverlay(
                             batch,
                             _window.Width,
-                            _window.Height,
-                            _player.Yaw,
-                            _player.View?.TanX ?? HumanView.DefaultTanX);
+                            _window.Height);
                     }
                     else if (_player.IsSniperScoped)
                     {
