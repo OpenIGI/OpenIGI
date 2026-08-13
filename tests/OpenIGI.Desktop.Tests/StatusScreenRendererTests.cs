@@ -1,8 +1,10 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -39,7 +41,8 @@ public sealed class StatusScreenRendererTests
         Assert.Equal("COMPUTER:computer.res", StatusScreenRenderer.FontArchive);
         Assert.Equal("LOCAL:computer/computer.res", StatusScreenRenderer.LocalFontArchive);
         Assert.Equal("font3.fnt", StatusScreenRenderer.FontResource);
-        Assert.Equal("font1.fnt", StatusScreenRenderer.SubtitleFontResource);
+        Assert.Equal("font4.fnt", StatusScreenRenderer.SubtitleFontResource);
+        Assert.Equal("LOCAL:screens/intro/font4.fnt", StatusScreenRenderer.SubtitleFontPath);
         Assert.True(renderer.Load(fileSystem));
 
         IresArchive status = IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenLayout.Archive));
@@ -75,37 +78,54 @@ public sealed class StatusScreenRendererTests
     }
 
     [RequiresGameDataFact]
-    public void CutsceneSubtitleUsesTheTallWhiteRetailFaceInsteadOfTheGreenStatusFace()
+    public void CutsceneSubtitleUsesTheTallNarrowRetailFace()
     {
         IresArchive computer = IresArchive.Read(File.ReadAllBytes(
             Path.Combine(GameData.RequireRoot(), "computer", "computer.res")));
-        SpriteAsset subtitle = Asset(computer, StatusScreenRenderer.SubtitleFontResource);
+        SpriteAsset subtitle = CutsceneFont();
         SpriteAsset status = Asset(computer, StatusScreenRenderer.FontResource);
 
-        Assert.Equal(18, subtitle.DefaultHeight);
+        Assert.True(subtitle.IsFont);
+        Assert.Equal(15, subtitle.DefaultHeight);
         Assert.Equal(9, status.DefaultHeight);
+        Assert.NotEqual(subtitle.GetGlyph('A'), status.GetGlyph('A'));
+    }
 
-        bool foundOpaqueWhite = false;
-        foreach (var texture in subtitle.Textures)
-        {
-            foreach (var pixel in texture.GetLevel(0))
-            {
-                if (pixel.A == 0)
-                {
-                    continue;
-                }
+    [RequiresGameDataFact]
+    public void CutsceneSubtitleUsesTheRetailPresentationScaleAndBrightSinglePass()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        RecordingGraphicsDevice device = new();
+        using StatusScreenRenderer renderer = new(device);
+        SpriteBatch batch = new(device);
+        Assert.True(renderer.Load(fileSystem));
 
-                Assert.True(pixel.R == pixel.G && pixel.G == pixel.B,
-                    $"subtitle glyph contains baked colour ({pixel.R},{pixel.G},{pixel.B})");
-                foundOpaqueWhite |= pixel is { R: 255, G: 255, B: 255, A: 255 };
-            }
-        }
+        SpriteFrame glyph = CutsceneFont().GetGlyph('A');
+        const float PresentationScale = 2f; // 1280 / retail 640-pixel presentation width.
 
-        Assert.True(foundOpaqueWhite);
+        batch.Begin();
+        renderer.DrawStatusMessages(
+            batch,
+            [new StatusMessageDisplay("A", RevealedCharacters: 1, DisplayFrame: 0, IsCutscene: true)],
+            screenWidth: 1280,
+            screenHeight: 720,
+            scale: PresentationScale);
+        batch.End();
+
+        RecordingGraphicsDevice.DrawCall draw = Assert.Single(device.Draws);
+        Assert.Equal(glyph.Width * PresentationScale, draw.Vertices[1].X - draw.Vertices[0].X, 3);
+        Assert.Equal(glyph.Height * PresentationScale, draw.Vertices[3].Y - draw.Vertices[0].Y, 3);
+        Assert.Equal(4, draw.Vertices.Length);
+        Assert.Equal(new Bgra32(255, 255, 255, 255), draw.Vertices[0].Color);
     }
 
     private static SpriteFrame Frame(IresArchive archive, string name)
         => Assert.Single(Asset(archive, name).Frames);
+
+    private static SpriteAsset CutsceneFont() => SpriteLoader.Load(
+        File.ReadAllBytes(Path.Combine(GameData.RequireRoot(), "screens", "intro", "font4.fnt")),
+        StatusScreenRenderer.SubtitleFontResource);
 
     private static SpriteAsset Asset(IresArchive archive, string name)
     {
