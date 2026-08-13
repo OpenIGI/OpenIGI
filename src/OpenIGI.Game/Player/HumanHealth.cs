@@ -139,4 +139,19 @@ public sealed class HumanHealth
         Damage = 0f;
         Hits = 0;
     }
+
+    /// <summary>Restores a fraction of this human's maximum health.</summary>
+    /// <param name="fraction">The fraction of <see cref="MaximumHealth"/> to restore.</param>
+    /// <returns>The damage removed from the accumulator.</returns>
+    public float HealFraction(float fraction)
+    {
+        if (fraction <= 0f || Damage <= 0f)
+        {
+            return 0f;
+        }
+
+        float before = Damage;
+        Damage = Math.Max(0f, Damage - (MaximumHealth * fraction));
+        return before - Damage;
+    }
 }

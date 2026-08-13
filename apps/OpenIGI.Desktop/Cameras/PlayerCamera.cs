@@ -60,6 +60,7 @@ public sealed class PlayerCamera
     private readonly IgiRandom _random = new();
     private readonly Mp5SightZoom _sightZoom = new();
     private readonly DragunovScope _dragunovScope = new();
+    private readonly BinocularsView _binocularsView = new();
     private readonly List<GunImpact> _impacts = [];
     private readonly BallisticSimulation _ballistics = new();
     private readonly GrenadeSimulation _grenades = new();
@@ -1611,6 +1612,11 @@ public sealed class PlayerCamera
 
         _weapons.Tick(_input, _view?.ClipEnded ?? false, _body.IsGrounded, locomotion);
 
+        if (_weapons.State == HumanWeaponState.Medipack)
+        {
+            _ = _weapons.TryUseMedipack(_body.Health);
+        }
+
         if (_weapons.InHand is { } held && _weapons.RequestedAction is { } action)
         {
             PlayWeaponAction(held.Weapon, action, _weapons.RequestedFireVariant);
@@ -1647,11 +1653,19 @@ public sealed class PlayerCamera
             else
             {
                 _ = _dragunovScope.Tick(heldWeapon, false, false, false, false, _view.TanX, _view.ViewModelTanX);
-                zoom = _sightZoom.Tick(
-                    heldWeapon,
-                    _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
-                    _view.TanX,
-                    _view.ViewModelTanX);
+                zoom = heldWeapon?.Category == WeaponCategory.Binocular
+                    ? _binocularsView.Tick(
+                        heldWeapon,
+                        _input.IsRisingEdge(PlayerInputSlot.Binoculars),
+                        _input.IsSet(PlayerInputSlot.ZoomIn),
+                        _input.IsSet(PlayerInputSlot.ZoomOut),
+                        _view.TanX,
+                        _view.ViewModelTanX)
+                    : _sightZoom.Tick(
+                        heldWeapon,
+                        _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
+                        _view.TanX,
+                        _view.ViewModelTanX);
             }
 
             _view.TanX = zoom.TanX;

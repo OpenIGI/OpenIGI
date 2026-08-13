@@ -85,6 +85,98 @@ public sealed class PlayerWeaponsTests
 
     private static AmmoType NineMillimetre => new() { AmmoId = 0, ScriptId = "AMMO_ID_919", CalibreId = 919 };
 
+    private static WeaponType Binoculars => new()
+    {
+        WeaponId = 30,
+        ScriptId = "WEAPON_ID_BINOCULARS",
+        Category = WeaponCategory.Binocular,
+        Weapon = new WeaponTaskBinding("TASKTYPE_BINOCULAR", 0, [0.5f, 0.1f, 1.0f], string.Empty, 0),
+    };
+
+    private static WeaponType Medipack => new()
+    {
+        WeaponId = 31,
+        ScriptId = "WEAPON_ID_MEDIPACK",
+        Category = WeaponCategory.Medipack,
+        CalibreId = 10005,
+        RoundsPerClip = 1,
+        Weapon = new WeaponTaskBinding("TASKTYPE_MEDIPACK", 0, [0.25f], string.Empty, 0),
+    };
+
+    private static AmmoType MedipackAmmo => new() { AmmoId = 6, ScriptId = "AMMO_ID_MEDIPACK", CalibreId = 10005 };
+
+    [Fact]
+    public void BinocularBindingSelectsTheCarriedBinoculars()
+    {
+        PlayerWeapons weapons = new([30, 20]);
+        weapons.Carry(Knife);
+        weapons.Carry(Binoculars);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        PlayerInputFrame binocularPress = default;
+        binocularPress[(int)PlayerInputSlot.Binoculars] = 1f;
+        input.Accept(binocularPress);
+        weapons.Tick(input, clipEnded: true, onGround: true);
+
+        Assert.Equal(HumanWeaponState.ChangingWeapon, weapons.State);
+        for (int i = 0; i < 10 && weapons.State != HumanWeaponState.Ready; i++)
+        {
+            input.Accept(default);
+            weapons.Tick(input, clipEnded: true, onGround: true);
+        }
+
+        Assert.Equal("WEAPON_ID_BINOCULARS", weapons.InHand?.Weapon.ScriptId);
+    }
+
+    [Fact]
+    public void MedipackConsumesOneReserveAndRestoresAuthoredHealthFraction()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 2);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        PlayerInputFrame firePress = default;
+        firePress[(int)PlayerInputSlot.Fire] = 1f;
+        input.Accept(firePress);
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.True(weapons.TryUseMedipack(health));
+
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.False(weapons.TryUseMedipack(health));
+    }
+
+    [Fact]
+    public void BinocularViewUsesAuthoredDefaultAndClampsZoomToAuthoredBounds()
+    {
+        BinocularsView view = new();
+        WeaponType binoculars = Binoculars;
+        SightZoomFrame opened = view.Tick(
+            binoculars,
+            togglePressed: true,
+            zoomInHeld: false,
+            zoomOutHeld: false,
+            tanX: HumanView.DefaultTanX,
+            viewModelTanX: HumanView.DefaultViewModelTanX);
+
+        Assert.True(view.IsOpen);
+        Assert.Equal(0.5f, opened.TanX);
+
+        SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
+        Assert.Equal(0.42f, narrowed.TanX, 3);
+        for (int i = 0; i < 20; i++)
+        {
+            narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
+        }
+
+        Assert.Equal(0.1f, narrowed.TanX, 3);
+    }
+
     [Fact]
     public void TheFirstEntryOfTheCycleThePlayerCarriesEndsUpInHand()
     {

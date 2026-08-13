@@ -85,9 +85,11 @@ public sealed class PlayerWeapons
     private bool _throwReleased;
     private int _shotSequence;
     private bool _actionComplete;
+    private bool _medipackUsed;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
     private bool _swapped;
+    private int _lastNonBinocularWeaponId = -1;
 
     /// <summary>Initializes a new instance of the <see cref="PlayerWeapons"/> class.</summary>
     /// <param name="weaponCycle">
@@ -279,6 +281,7 @@ public sealed class PlayerWeapons
     {
         ArgumentNullException.ThrowIfNull(input);
 
+        SelectBinoculars(input);
         SelectCategory(input);
         CycleWeapons(input);
 
@@ -300,6 +303,28 @@ public sealed class PlayerWeapons
         _locomotionAction = locomotionAction;
 
         Step(input);
+    }
+
+    /// <summary>Uses one carried medipack against a human's accumulated damage.</summary>
+    /// <param name="health">The health accumulator owned by the player.</param>
+    /// <returns><see langword="true"/> when one medipack was consumed.</returns>
+    public bool TryUseMedipack(HumanHealth health)
+    {
+        ArgumentNullException.ThrowIfNull(health);
+        if (State != HumanWeaponState.Medipack || _medipackUsed || InHand is not { } held
+            || held.Weapon.Category != (WeaponCategory)MedipackCategory
+            || held.Gun.Ammo is not { } ammo
+            || Ammunition.Count(ammo.AmmoId) <= 0
+            || held.Weapon.Weapon.Values.Count == 0)
+        {
+            return false;
+        }
+
+        Ammunition.Take(ammo.AmmoId, 1);
+        health.HealFraction(held.Weapon.Weapon.Values[0]);
+        _medipackUsed = true;
+        _actionComplete = true;
+        return true;
     }
 
     /// <summary>
@@ -467,6 +492,40 @@ public sealed class PlayerWeapons
         _categoryIndex = wanted;
     }
 
+    private void SelectBinoculars(PlayerInputState input)
+    {
+        if (!input.IsRisingEdge(PlayerInputSlot.Binoculars))
+        {
+            return;
+        }
+
+        int binocularIndex = _carried.FindIndex(
+            carried => carried.Weapon.Category == WeaponCategory.Binocular);
+        if (binocularIndex < 0)
+        {
+            return;
+        }
+
+        if (_heldIndex == binocularIndex)
+        {
+            _pendingWeaponId = IndexOf(_lastNonBinocularWeaponId);
+            if (_pendingWeaponId < 0)
+            {
+                _pendingWeaponId = _carried.FindIndex(
+                    carried => carried.Weapon.Category != WeaponCategory.Binocular);
+            }
+
+            if (_pendingWeaponId >= 0)
+            {
+                _pendingWeaponId = _carried[_pendingWeaponId].Weapon.WeaponId;
+            }
+        }
+        else
+        {
+            _pendingWeaponId = _carried[binocularIndex].Weapon.WeaponId;
+        }
+    }
+
     // 0x40F760, reduced to the edges that reach it in practice.
     private void CycleWeapons(PlayerInputState input)
     {
@@ -552,6 +611,7 @@ public sealed class PlayerWeapons
         HumanWeaponState.ChangingWeapon => ChangingWeapon(),
         HumanWeaponState.Peeking => Peeking(input),
         HumanWeaponState.Throwing => Throwing(input),
+        HumanWeaponState.Medipack => Medipack(),
         _ => Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) ? HumanWeaponState.Ready : State,
     };
 
@@ -779,6 +839,11 @@ public sealed class PlayerWeapons
         return HumanWeaponState.Ready;
     }
 
+    private HumanWeaponState Medipack() =>
+        Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) || _medipackUsed
+            ? HumanWeaponState.Ready
+            : HumanWeaponState.Medipack;
+
     // 0x40F280 into 0x40F300, and it is two phases rather than one.
     //
     // Phase one waits for the rig to finish tipping out of the frame -- the entry sent it there -- and
@@ -796,6 +861,11 @@ public sealed class PlayerWeapons
             int index = IndexOf(_pendingWeaponId);
             if (index >= 0)
             {
+                if (InHand is { Weapon.Category: not WeaponCategory.Binocular } previous)
+                {
+                    _lastNonBinocularWeaponId = previous.Weapon.WeaponId;
+                }
+
                 _heldIndex = index;
             }
 
@@ -875,6 +945,11 @@ public sealed class PlayerWeapons
             case HumanWeaponState.Throwing:
                 _throwChargeTicks = 0;
                 _throwReleased = false;
+                Request(WeaponAction.Fire);
+                break;
+
+            case HumanWeaponState.Medipack:
+                _medipackUsed = false;
                 Request(WeaponAction.Fire);
                 break;
 
