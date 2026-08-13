@@ -80,6 +80,7 @@ public static class SpriteLoader
 
         uint firstField = BinaryPrimitives.ReadUInt32LittleEndian(fnth);
         int glyphCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(fnth[4..]);
+        int lineHeight = (int)BinaryPrimitives.ReadUInt32LittleEndian(fnth[8..]);
         int defaultAdvance = (int)BinaryPrimitives.ReadUInt32LittleEndian(fnth[12..]);
         int defaultWidth = (int)BinaryPrimitives.ReadUInt32LittleEndian(fnth[16..]);
         int defaultHeight = (int)BinaryPrimitives.ReadUInt32LittleEndian(fnth[20..]);
@@ -102,7 +103,8 @@ public static class SpriteLoader
             flags,
             palette: null,
             characterMap,
-            tileLayout: null);
+            tileLayout: null,
+            lineHeight);
     }
 
     /// <summary>Reads the 40-byte <c>ANMF</c> glyph records. Mirrors the font branch of <c>0x4B6720</c>.</summary>

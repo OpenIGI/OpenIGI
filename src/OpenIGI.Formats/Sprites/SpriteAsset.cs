@@ -18,6 +18,7 @@ public sealed class SpriteAsset
     private readonly SpriteFrame[] _frames;
     private readonly byte[]? _characterMap;
     private readonly Bgra32[]? _palette;
+    private readonly int _lineHeight;
 
     internal SpriteAsset(
         string name,
@@ -30,7 +31,8 @@ public sealed class SpriteAsset
         uint flags,
         Bgra32[]? palette,
         byte[]? characterMap,
-        SpriteTileLayout? tileLayout)
+        SpriteTileLayout? tileLayout,
+        int lineHeight = 0)
     {
         Name = name;
         Kind = kind;
@@ -40,6 +42,7 @@ public sealed class SpriteAsset
         DefaultWidth = defaultWidth;
         DefaultHeight = defaultHeight;
         DefaultAdvance = defaultAdvance;
+        _lineHeight = lineHeight;
         Flags = flags;
         _palette = palette;
         _characterMap = characterMap;
@@ -85,6 +88,19 @@ public sealed class SpriteAsset
 
     /// <summary>Gets the sprite-wide default advance in pixels. For a font, the fallback character advance.</summary>
     public int DefaultAdvance { get; }
+
+    /// <summary>
+    /// Gets the font's line height in pixels: the vertical step between lines of text. Read from the
+    /// FNTH chunk's third dword (<c>+8</c>).
+    /// </summary>
+    /// <remarks>
+    /// The retail game stores all six FNTH dwords in its 24-byte font object, and the reference
+    /// decoder (<c>fnt_parser.cpp</c>) reads <c>+8</c> as the line height and uses it for line
+    /// stepping. This is distinct from <see cref="DefaultHeight"/> (<c>+20</c>), which is the glyph
+    /// face size: for <c>font1.fnt</c> that is 18 while the line height is 32. Non-font sprites have
+    /// no line-height field, so this falls back to <see cref="DefaultHeight"/> to stay safe.
+    /// </remarks>
+    public int LineHeight => _lineHeight > 0 ? _lineHeight : DefaultHeight;
 
     /// <summary>Gets the sprite's flag word.</summary>
     public uint Flags { get; }

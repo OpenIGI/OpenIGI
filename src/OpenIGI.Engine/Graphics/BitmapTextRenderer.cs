@@ -46,7 +46,12 @@ public sealed class BitmapTextRenderer
     public SpriteResource Font => _font;
 
     /// <summary>Gets the height of one line in pixels at scale 1.</summary>
-    public int LineHeight => _font.Asset.DefaultHeight;
+    /// <remarks>
+    /// This is the FNTH <c>+8</c> line height (e.g. 32 for retail <c>font1.fnt</c>), not the glyph
+    /// face size in <c>+20</c>, so multi-line text steps between lines exactly as the retail
+    /// renderer does.
+    /// </remarks>
+    public int LineHeight => _font.Asset.LineHeight;
 
     /// <summary>Measures a string without drawing it.</summary>
     /// <param name="text">The text to measure.</param>
