@@ -86,6 +86,7 @@ public sealed class PlayerWeapons
     private int _shotSequence;
     private bool _actionComplete;
     private bool _medipackUsed;
+    private bool _medipackAwaitingRelease;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
     private bool _swapped;
@@ -316,6 +317,10 @@ public sealed class PlayerWeapons
         RequestedFireVariant = 0;
         _wantFire = false;
         _actionComplete = false;
+        if (!input.IsSet(PlayerInputSlot.Fire))
+        {
+            _medipackAwaitingRelease = false;
+        }
         _locomotionAction = locomotionAction;
 
         Step(input);
@@ -328,18 +333,29 @@ public sealed class PlayerWeapons
     {
         ArgumentNullException.ThrowIfNull(health);
         if (State != HumanWeaponState.Medipack || _medipackUsed || InHand is not { } held
-            || held.Weapon.Category != (WeaponCategory)MedipackCategory
-            || held.Gun.Ammo is not { } ammo
+            || held.Weapon.Category != (WeaponCategory)MedipackCategory)
+        {
+            return false;
+        }
+
+        _medipackUsed = true;
+        _medipackAwaitingRelease = true;
+        _actionComplete = true;
+
+        if (held.Gun.Ammo is not { } ammo
             || Ammunition.Count(ammo.AmmoId) <= 0
             || held.Weapon.Weapon.Values.Count == 0)
         {
             return false;
         }
 
+        float healed = health.HealFraction(held.Weapon.Weapon.Values[0]);
+        if (healed <= 0f)
+        {
+            return false;
+        }
+
         Ammunition.Take(ammo.AmmoId, 1);
-        health.HealFraction(held.Weapon.Weapon.Values[0]);
-        _medipackUsed = true;
-        _actionComplete = true;
         return true;
     }
 
@@ -665,6 +681,11 @@ public sealed class PlayerWeapons
                         return HumanWeaponState.Placing;
 
                     case (WeaponCategory)MedipackCategory:
+                        if (_medipackAwaitingRelease)
+                        {
+                            break;
+                        }
+
                         return HumanWeaponState.Medipack;
 
                     case (WeaponCategory)ThrownCategory:

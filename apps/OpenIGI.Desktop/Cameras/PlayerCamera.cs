@@ -131,6 +131,9 @@ public sealed class PlayerCamera
     /// <summary>Gets the body being driven.</summary>
     public PlayerBody Body => _body;
 
+    /// <summary>Uses the owning runtime's live player-health accumulator.</summary>
+    public void UseHealth(HumanHealth health) => _body.UseHealth(health);
+
     /// <summary>Gets the first-person rig the held weapon hangs off, once one has been given.</summary>
     public HumanView? View => _view;
 

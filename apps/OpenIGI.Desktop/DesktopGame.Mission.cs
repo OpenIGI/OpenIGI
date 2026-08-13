@@ -930,7 +930,7 @@ internal sealed partial class DesktopGame
             // default health exists for standalone physics use; the desktop must give it the exact
             // accumulator the HUD, guard hits and death state already share. The sink crosses the
             // presentation boundary for sound, the red wash, AI hearing and lethal-fall death.
-            candidate.Body.UseHealth(_playerHealth);
+            candidate.UseHealth(_playerHealth);
             candidate.Body.SetFallImpactSink(impact => ResolvePlayerFallImpact(candidate, impact));
 
             // The first-person rig. Every Human builds one in its constructor and gives it skeleton 5

@@ -152,6 +152,65 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void FullHealthMedipackDoesNotConsumeOrRemainArmed()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+
+        Assert.False(weapons.TryUseMedipack(health));
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+
+        Tick(weapons, input, Frame());
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+    }
+
+    [Fact]
+    public void HoldingFireCannotUseMoreThanOneMedipackUntilReleased()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 2);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        PlayerInputState input = new();
+        PlayerInputFrame fire = Frame(PlayerInputSlot.Fire);
+
+        Tick(weapons, input, fire);
+        Assert.True(weapons.TryUseMedipack(health));
+        Tick(weapons, input, fire);
+        Assert.False(weapons.TryUseMedipack(health));
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+
+        Tick(weapons, input, Frame());
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+    }
+
+    [Fact]
+    public void EmptyMedipackReserveCannotBeConsumedAndActionReturnsReady()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+
+        Assert.False(weapons.TryUseMedipack(health));
+        Assert.Equal(0.75f, health.Damage, 3);
+        Tick(weapons, input, Frame());
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+    }
+
+    [Fact]
     public void BinocularViewUsesAuthoredDefaultAndClampsZoomToAuthoredBounds()
     {
         BinocularsView view = new();
