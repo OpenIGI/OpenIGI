@@ -58,13 +58,18 @@ public sealed class StatusScreenRenderer : IDisposable
     /// </remarks>
     public const string FontResource = "font3.fnt";
 
-    /// <summary>The tall white shipped face used by the cutscene subtitle text objects.</summary>
+    /// <summary>The shipped face used by the cutscene subtitle text objects.</summary>
     /// <remarks>
-    /// <c>font3.fnt</c> is the nine-pixel green computer/status face. The retail subtitle is
-    /// <c>font1.fnt</c>: an eighteen-pixel greyscale face whose glyph texture can actually produce
-    /// white. A white vertex colour cannot turn font3's baked-green pixels white.
+    /// This is deliberately not resolved from <see cref="LocalFontArchive"/>. The retail
+    /// <c>StatusMessageScreen::GetFont</c> selects <c>font4.fnt</c> for cutscenes through the menu
+    /// font loader; in the IGI installation that file is the standalone asset at
+    /// <see cref="SubtitleFontPath"/>. <c>computer.res</c> happens to contain another font with the
+    /// same name, but it is not the subtitle face.
     /// </remarks>
-    public const string SubtitleFontResource = "font1.fnt";
+    public const string SubtitleFontResource = "font4.fnt";
+
+    /// <summary>The standalone retail cutscene font selected by the original menu-font loader.</summary>
+    public const string SubtitleFontPath = "LOCAL:screens/intro/font4.fnt";
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
@@ -74,6 +79,7 @@ public sealed class StatusScreenRenderer : IDisposable
     private IresArchive? _spriteArchive;
     private BitmapTextRenderer? _font;
     private BitmapTextRenderer? _subtitleFont;
+    private SpriteResource? _subtitleFontResource;
     private float _actionPulsePhase;
     private bool _disposed;
 
@@ -142,6 +148,8 @@ public sealed class StatusScreenRenderer : IDisposable
             {
                 _logger.Warning(LogCategory, $"No sprite archive at {SpriteArchive}; the scope overlay is absent.");
             }
+
+            LoadSubtitleFont(fileSystem);
 
             return true;
         }
@@ -417,6 +425,8 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         _sprites.Clear();
+        _subtitleFontResource?.Dispose();
+        _subtitleFontResource = null;
         _font = null;
         _subtitleFont = null;
         _archive = null;
@@ -519,7 +529,7 @@ public sealed class StatusScreenRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(batch);
         ArgumentNullException.ThrowIfNull(messages);
         BitmapTextRenderer? font = Font();
-        BitmapTextRenderer? subtitleFont = SubtitleFont() ?? font;
+        BitmapTextRenderer? subtitleFont = SubtitleFont();
         if (font is null && subtitleFont is null)
         {
             return;
@@ -695,8 +705,10 @@ public sealed class StatusScreenRenderer : IDisposable
         Bgra32 ink;
         if (cutscene)
         {
-            // StatusMessageScreen selects the white subtitle pen for its cutscene branch. The green
-            // status-feed colour belongs only to the ordinary expanding message panels.
+            // The original's text-object colour uses a different 128-based modulation convention.
+            // Our sprite shader uses ordinary 0-255 multiplication, so preserving that literal value
+            // incorrectly halves the supplied retail font's brightness. Full white preserves the
+            // source pixels; unlike the old code this remains a single pass, with no soft shadow.
             ink = new Bgra32(255, 255, 255, 255);
         }
         else
@@ -722,7 +734,10 @@ public sealed class StatusScreenRenderer : IDisposable
             if (font.Measure(text[lineStart..i], scale, scale).Width > maxWidth && lastBreak > lineStart)
             {
                 ReadOnlySpan<char> line = text[lineStart..lastBreak];
-                font.Draw(batch, line, x + scale, y + scale, shadow, scale, scale);
+                if (!cutscene)
+                {
+                    font.Draw(batch, line, x + scale, y + scale, shadow, scale, scale);
+                }
                 font.Draw(batch, line, x, y, ink, scale, scale);
                 y += step;
                 lineStart = lastBreak + 1;
@@ -734,7 +749,10 @@ public sealed class StatusScreenRenderer : IDisposable
         if (lineStart < text.Length)
         {
             ReadOnlySpan<char> tail = text[lineStart..];
-            font.Draw(batch, tail, x + scale, y + scale, shadow, scale, scale);
+            if (!cutscene)
+            {
+                font.Draw(batch, tail, x + scale, y + scale, shadow, scale, scale);
+            }
             font.Draw(batch, tail, x, y, ink, scale, scale);
         }
     }
@@ -885,18 +903,38 @@ public sealed class StatusScreenRenderer : IDisposable
     }
 
     private BitmapTextRenderer? SubtitleFont()
+        => _subtitleFont;
+
+    private void LoadSubtitleFont(VirtualFileSystem fileSystem)
     {
-        if (_subtitleFont is not null || _archive is null)
+        _subtitleFont = null;
+        _subtitleFontResource?.Dispose();
+        _subtitleFontResource = null;
+
+        if (!fileSystem.Exists(SubtitleFontPath))
         {
-            return _subtitleFont;
+            _logger.Warning(LogCategory, $"No cutscene subtitle font at {SubtitleFontPath}; cutscene text is absent.");
+            return;
         }
 
-        if (Sprite(SubtitleFontResource) is { IsFont: true } font)
+        try
         {
-            _subtitleFont = new BitmapTextRenderer(font);
-        }
+            SpriteAsset asset = SpriteLoader.Load(
+                fileSystem.ReadAllBytes(SubtitleFontPath),
+                Path.GetFileName(SubtitleFontPath));
+            if (!asset.IsFont)
+            {
+                _logger.Warning(LogCategory, $"Cutscene subtitle asset at {SubtitleFontPath} is not a font.");
+                return;
+            }
 
-        return _subtitleFont;
+            _subtitleFontResource = SpriteResource.Upload(_device, asset);
+            _subtitleFont = new BitmapTextRenderer(_subtitleFontResource);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or EngineFatalException)
+        {
+            _logger.Warning(LogCategory, $"Could not read cutscene subtitle font at {SubtitleFontPath}: {ex.Message}");
+        }
     }
 
     private SpriteResource? Sprite(string name)

@@ -346,6 +346,17 @@ public sealed class RetailTextureGoldenTests
     }
 
     [RequiresGameDataFact]
+    public void FontDefaultHeightComesFromTheRetailFnthPlusTwentyField()
+    {
+        IresArchive archive = IresArchive.Read(File.ReadAllBytes(GameData.Resolve("menusystem/menusystem.res")));
+        SpriteAsset font = LoadEntry(archive, "font1.fnt");
+
+        // The retail FNTH loader writes the default frame height from +20. FontText uses that frame
+        // when advancing its lines; +8 is a different header field and must not be substituted here.
+        Assert.Equal(11, font.DefaultHeight);
+    }
+
+    [RequiresGameDataFact]
     public void SingleFrameSpritesCarryAOneByOneTileGrid()
     {
         IresArchive archive = IresArchive.Read(File.ReadAllBytes(GameData.Resolve("menusystem/menusystem.res")));
