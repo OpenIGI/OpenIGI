@@ -52,6 +52,15 @@ public sealed class LevelPositionVerificationTests
                 AssertFinite(placement.Position, $"mission {missionId} {placement}");
                 AssertOrthonormal(placement.Orientation, $"mission {missionId} {placement}");
 
+                // Attached children inherit their parent's transform plus their authored attachment
+                // offset, and spline segments are generated between waypoint tasks. In both cases the
+                // Owner's direct Position is not the placement's expected world position. They are still
+                // covered by the finite/orthonormal checks above.
+                if (placement.IsAttached || placement.TaskName.StartsWith("spline:", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 if (placement.Owner is not DeclaredTask declared
                     || !TryReadAuthored(declared, out AuthoredLevelObjectTransform authored))
                 {
@@ -103,6 +112,7 @@ public sealed class LevelPositionVerificationTests
             {
                 Vector3f angles => WorldScene.ToOrientation(angles),
                 Matrix3f matrix => matrix,
+                float orientationGamma => Matrix3f.RotationZ(orientationGamma),
                 _ => Matrix3f.Identity,
             }
             : task.TryGetValue("Gamma", out object? gammaValue) && gammaValue is float gamma
@@ -136,4 +146,5 @@ public sealed class LevelPositionVerificationTests
 
     private static float Dot(Vector3f left, Vector3f right) =>
         (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
+
 }
