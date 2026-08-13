@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -80,7 +81,40 @@ public sealed class LevelPositionVerificationTests
         Assert.True(checkedObjects > 100, $"expected authored transforms across the campaign, checked {checkedObjects}");
     }
 
-    private static WorldScene Build(int missionId)
+    [RequiresGameDataFact]
+    public void EveryCampaignMissionEmitsReferenceLevelLoaderRecordsWithoutPlacementMismatches()
+    {
+        List<string> records = [];
+        RecordingLogger logger = new(records);
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            _ = Build(missionId, logger);
+        }
+
+        string[] loaded = records
+            .Where(line => line.Contains("[LevelLoader] Object Loaded:", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(loaded.Length > 1000, $"expected reference placement records, got {loaded.Length}");
+        string[] mismatches = records
+            .Where(line => line.Contains("Verification=MISMATCH", StringComparison.Ordinal))
+            .ToArray();
+        Assert.True(mismatches.Length == 0, string.Join(Environment.NewLine, mismatches.Take(10)));
+        Assert.All(
+            loaded,
+            line =>
+            {
+                Assert.Contains("ModelID=", line, StringComparison.Ordinal);
+                Assert.Contains("Pos=(", line, StringComparison.Ordinal);
+                Assert.Contains("Ori=(", line, StringComparison.Ordinal);
+                Assert.Contains("Tex=", line, StringComparison.Ordinal);
+                Assert.Contains("Model=", line, StringComparison.Ordinal);
+                Assert.Contains("Source=LOCAL:missions/", line, StringComparison.Ordinal);
+            });
+    }
+
+    private static WorldScene Build(int missionId, IIgiLogger? logger = null)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -96,7 +130,7 @@ public sealed class LevelPositionVerificationTests
         LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
         LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader).Load(missionId);
         new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
-        return WorldScene.Build(mission, levelRoot);
+        return WorldScene.Build(mission, levelRoot, logger: logger);
     }
 
     private static bool TryReadAuthored(DeclaredTask task, out AuthoredLevelObjectTransform transform)
@@ -146,5 +180,13 @@ public sealed class LevelPositionVerificationTests
 
     private static float Dot(Vector3f left, Vector3f right) =>
         (left.X * right.X) + (left.Y * right.Y) + (left.Z * right.Z);
+
+    private sealed class RecordingLogger(List<string> records) : IIgiLogger
+    {
+        public bool IsEnabled(LogLevel level) => true;
+
+        public void Log(LogLevel level, string category, string message, Exception? exception = null) =>
+            records.Add(message);
+    }
 
 }

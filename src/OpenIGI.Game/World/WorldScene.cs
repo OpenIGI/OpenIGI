@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Engine.World;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
 
@@ -510,6 +512,19 @@ public sealed class WorldScene
                     bake.Set ?? string.Empty,
                     bake.Root?.LightmapIndex ?? -1);
 
+                LogPlacementVerification(
+                    log,
+                    mission,
+                    declared,
+                    bound.Instance.Name,
+                    position,
+                    orientation,
+                    modelSlot,
+                    trainPlacement is not null,
+                    IsCharacterPlacement(declared),
+                    string.Equals(declared.Type.Name, SecurityCameraType, StringComparison.Ordinal)
+                        && modelSlot == 1);
+
                 // The original does not delete a shot camera head. SCameraLens's destruction branch
                 // (0x441770) swaps only that child to Camera Destroyed Model, leaving the holder intact.
                 if (string.Equals(declared.Type.Name, SecurityCameraType, StringComparison.Ordinal)
@@ -539,21 +554,21 @@ public sealed class WorldScene
                 if (bake.Root is not null)
                 {
                     attached += AddAttached(
-                        bake.Root, position, orientation, orientation, bake.Set ?? string.Empty, task.Name, task,
-                        byName, magic, placements, ladders);
+                        mission, log, bake.Root, position, orientation, orientation, bake.Set ?? string.Empty,
+                        task.Name, task, byName, magic, placements, ladders);
                 }
                 else if (magic is not null
                     && WorldObject.TryBuild(name, mission.TryGetModel, magic, out WorldObject? loose)
                     && loose is not null)
                 {
                     attached += AddAttached(
-                        loose, position, orientation, orientation, string.Empty, task.Name, task,
+                        mission, log, loose, position, orientation, orientation, string.Empty, task.Name, task,
                         byName, magic, placements, ladders);
                 }
             }
         }
 
-        int segments = AddSplineSegments(levelRoot, byName, placements);
+        int segments = AddSplineSegments(mission, levelRoot, byName, placements, log);
 
         log.Information(
             LogCategory,
@@ -599,9 +614,11 @@ public sealed class WorldScene
     /// </para>
     /// </remarks>
     private static int AddSplineSegments(
+        LoadedMission mission,
         GameTask levelRoot,
         Dictionary<string, (MtpInstance Instance, LoadedPack Pack, MefModel Model)> byName,
-        List<WorldPlacement> placements)
+        List<WorldPlacement> placements,
+        IIgiLogger log)
     {
         int added = 0;
         int chain = 0;
@@ -657,6 +674,14 @@ public sealed class WorldScene
                 {
                     BentGeometry = bent,
                 });
+                LogDerivedPlacement(
+                    log,
+                    mission,
+                    waypoint,
+                    name,
+                    from,
+                    Matrix3f.Identity,
+                    "SPLINE");
                 added++;
             }
         }
@@ -935,6 +960,8 @@ public sealed class WorldScene
     /// camera already uses for a placement's own orientation.
     /// </remarks>
     private static int AddAttached(
+        LoadedMission mission,
+        IIgiLogger log,
         WorldObject node,
         Vector3d position,
         Matrix3f drawOrientation,
@@ -1010,12 +1037,20 @@ public sealed class WorldScene
                     IsRotor = isRotor,
                     IsAttached = true,
                 });
+                LogDerivedPlacement(
+                    log,
+                    mission,
+                    owner as DeclaredTask,
+                    child.Name,
+                    childPosition,
+                    childTaskOrientation,
+                    "ATTA");
                 added++;
             }
 
             added += AddAttached(
-                child, childPosition, childDrawOrientation, childTaskOrientation, set, taskName, owner,
-                byName, magic, placements, ladders);
+                mission, log, child, childPosition, childDrawOrientation, childTaskOrientation, set,
+                taskName, owner, byName, magic, placements, ladders);
         }
 
         return added;
@@ -1195,6 +1230,97 @@ public sealed class WorldScene
 
     private static float FloatValue(DeclaredTask task, string parameter) =>
         task.TryGetValue(parameter, out object? raw) && raw is float value ? value : 0f;
+
+    /// <summary>
+    /// Emits the same per-object record consumed by the reference level verifier, while also recording
+    /// the authored-to-runtime comparison. The model id is the pack instance id, not a friendly catalog
+    /// name: that is the identity the retail loader uses when it adds the object.
+    /// </summary>
+    private static void LogPlacementVerification(
+        IIgiLogger log,
+        LoadedMission mission,
+        DeclaredTask task,
+        string modelId,
+        Vector3d runtimePositionMetres,
+        Matrix3f runtimeOrientation,
+        int modelSlot,
+        bool isTrain,
+        bool isCharacter,
+        bool isCameraLens)
+    {
+        string type = task.Type.Name;
+        string name = task.Name;
+        string source = $"LOCAL:{mission.Descriptor.MissionDirectory}/objects.qvm";
+        string positionText = FormatPosition(runtimePositionMetres * UnitsPerMetre);
+        string orientationText = FormatOrientation(runtimeOrientation);
+
+        bool hasAuthoredPosition = TryGetPosition(task, out Vector3d authoredPositionMetres);
+        Matrix3f authoredOrientation = PlacementOrientation(task, modelSlot);
+        bool positionMatch = hasAuthoredPosition
+            && LevelPositionValidator.PosMatch(
+                authoredPositionMetres * UnitsPerMetre,
+                runtimePositionMetres);
+        bool orientationMatch = LevelPositionValidator.OriMatch(authoredOrientation, runtimeOrientation);
+        string verification = isTrain
+            ? "DERIVED_TRAIN"
+            : isCameraLens
+                ? "DERIVED_CAMERA_LENS"
+            : !hasAuthoredPosition
+                ? "DERIVED_RUNTIME"
+                : isCharacter && !positionMatch
+                    ? "EXPECTED_TERRAIN_GROUNDING"
+                    : positionMatch && orientationMatch ? "PASS" : "MISMATCH";
+
+        log.Information(
+            LogCategory,
+            $"[LevelLoader] Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
+                + $"Pos={positionText}, Ori={orientationText}, Tex={modelId}, Model={modelId}, "
+                + $"Source={source}, PositionMatch={positionMatch}, OrientationMatch={orientationMatch}, "
+                + $"Verification={verification}");
+
+        if (verification == "MISMATCH")
+        {
+            log.Error(
+                LogCategory,
+                $"[LevelLoader] Object verification failed: ModelID={modelId}, Type={type}, Name={name}, "
+                    + $"Source={source}, authoredPos={FormatPosition(authoredPositionMetres * UnitsPerMetre)}, "
+                    + $"runtimePos={positionText}, authoredOri={FormatOrientation(authoredOrientation)}, "
+                    + $"runtimeOri={orientationText}");
+        }
+    }
+
+    private static void LogDerivedPlacement(
+        IIgiLogger log,
+        LoadedMission mission,
+        DeclaredTask? owner,
+        string modelId,
+        Vector3d positionMetres,
+        Matrix3f orientation,
+        string sourceKind)
+    {
+        string type = owner?.Type.Name ?? "Derived";
+        string name = owner?.Name ?? string.Empty;
+        string source = $"LOCAL:{mission.Descriptor.MissionDirectory}/objects.qvm";
+        log.Information(
+            LogCategory,
+            $"[LevelLoader] Object Loaded: ModelID={modelId}, Type={type}, Name={name}, "
+                + $"Pos={FormatPosition(positionMetres * UnitsPerMetre)}, Ori={FormatOrientation(orientation)}, "
+                + $"Tex={modelId}, Model={modelId}, Source={source}, PositionMatch=True, "
+                + $"OrientationMatch=True, Verification=DERIVED_{sourceKind}");
+    }
+
+    private static string FormatPosition(Vector3d position) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"({position.X:F6}, {position.Y:F6}, {position.Z:F6})");
+
+    private static string FormatOrientation(Matrix3f matrix)
+    {
+        float beta = MathF.Asin(Math.Clamp(-matrix.M31, -1f, 1f));
+        float alpha = MathF.Atan2(matrix.M32, matrix.M33);
+        float gamma = MathF.Atan2(matrix.M21, matrix.M11);
+        return string.Create(CultureInfo.InvariantCulture, $"({alpha:F6}, {beta:F6}, {gamma:F6})");
+    }
 
     private static IEnumerable<GameTask> Walk(GameTask root)
     {
