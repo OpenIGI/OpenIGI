@@ -29,6 +29,8 @@ public sealed class LevelPositionVerificationTests
 
         Assert.True(LevelPositionValidator.PosMatch(authored, runtime));
         Assert.False(LevelPositionValidator.PosMatch(new Vector3d(authored.X + 1, authored.Y, authored.Z), runtime));
+        Assert.True(LevelPositionValidator.PosMatch(new Vector3d(authored.X + 1, authored.Y, authored.Z), runtime, 1));
+        Assert.False(LevelPositionValidator.PosMatch(new Vector3d(authored.X + 2, authored.Y, authored.Z), runtime, 1));
 
         Matrix3f authoredOrientation = Matrix3f.RotationZ(1.5708f);
         Assert.True(LevelPositionValidator.OriMatch(authoredOrientation, authoredOrientation));
