@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -107,7 +108,112 @@ public sealed class ElevatorSwitchInteractionTests
         Assert.True(elevatorsTested > 0, "no callable elevator switch was found");
     }
 
-    /// <summary>Parks the lift on its authored start floor and returns that floor index.</summary>
+    /// <summary>
+    /// Exercises the real player-facing activation path rather than a direct task-id press: the player
+    /// stands ~1.5 m in front of a floor's hall call switch and looks at it, <see cref="WorldInteractionRegistry.Resolve"/>
+    /// must offer that switch, and pressing the resolved switch must bring the lift to that floor and
+    /// open its doors. This is the flow the reported bug (only L3/L8 call switches worked in gameplay)
+    /// depends on, so it must work on every level that exposes a callable lift.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void ResolvePathFindsAndActivatesCallSwitchOnAllLevels()
+    {
+        int levelsTested = 0;
+        int elevatorsTested = 0;
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
+            DoorRegistry doors = DoorRegistry.Build(root);
+            ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+            WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+                root, mission, doors, variables, elevators);
+
+            bool levelHasCallableElevator = false;
+
+            foreach (PlacedElevator elevator in elevators.Elevators)
+            {
+                if (elevator.Task is not DeclaredTask declared)
+                {
+                    continue;
+                }
+
+                int settleFloor = Settle(elevator, interactions, elevators, doors);
+                int playerFloor = settleFloor == 0 && elevator.State.FloorCount > 1
+                    ? elevator.State.FloorCount - 1
+                    : 0;
+                if (playerFloor == settleFloor || playerFloor >= elevator.State.FloorCount)
+                {
+                    continue; // single-floor lift or no distinct floor to call from.
+                }
+
+                WorldInteraction? callSwitch = FindCallSwitch(interactions, declared, playerFloor, elevator);
+                if (callSwitch is null)
+                {
+                    continue; // no authored call switch for that floor.
+                }
+
+                levelHasCallableElevator = true;
+                elevatorsTested++;
+
+                // Stand ~1.5 m in front of the switch along its authored facing and aim back at it. This
+                // is the realistic eye/yaw that the desktop Resolve runs every frame.
+                Vector3d forward = new(Math.Sin(callSwitch.Facing), Math.Cos(callSwitch.Facing), 0.0);
+                const double standOffUnits = 6144.0; // 1.5 m, inside the 2 m ActivateRadius.
+                Vector3d eye = callSwitch.Anchor + (forward * standOffUnits);
+                float yaw = callSwitch.Facing + MathF.PI; // the look ray points back at the switch.
+
+                WorldInteraction? resolved = interactions.Resolve(eye, yaw, 0f, out _);
+                Assert.True(
+                    ReferenceEquals(resolved, callSwitch),
+                    $"[M{missionId}] {elevator.Task.Name} floor {playerFloor} call switch {callSwitch.Task.Name} " +
+                    $"was not resolved by the player aim at {eye}");
+
+                resolved.Press();
+
+                bool arrived = false;
+                for (int tick = 0; tick < 3000; tick++)
+                {
+                    elevators.Tick();
+                    interactions.Tick();
+                    doors.Tick();
+                    if (elevator.State.CurrentFloorIndex == playerFloor && !elevator.State.IsMoving)
+                    {
+                        arrived = true;
+                        break;
+                    }
+                }
+
+                Assert.True(
+                    arrived,
+                    $"[M{missionId}] {elevator.Task.Name} did not arrive at floor {playerFloor} " +
+                    $"after resolving and pressing {callSwitch.Task.Name}");
+
+                for (int tick = 0; tick < 600 && !ArrivalFloorDoorOpen(doors, elevator.Task, playerFloor); tick++)
+                {
+                    elevators.Tick();
+                    interactions.Tick();
+                    doors.Tick();
+                }
+
+                Assert.True(
+                    ArrivalFloorDoorOpen(doors, elevator.Task, playerFloor),
+                    $"[M{missionId}] {elevator.Task.Name} arrival floor {playerFloor} doors did not open " +
+                    $"after resolving and pressing {callSwitch.Task.Name}");
+            }
+
+            if (levelHasCallableElevator)
+            {
+                levelsTested++;
+            }
+        }
+
+        Assert.True(levelsTested > 0, "no level exposed a callable elevator switch in the retail campaign");
+        Assert.True(elevatorsTested > 0, "no callable elevator switch was found");
+    }
+
+    /// <summary>
+    /// Parks the lift on its authored start floor and returns that floor index.</summary>
     private static int Settle(
         PlacedElevator elevator,
         WorldInteractionRegistry interactions,

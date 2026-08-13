@@ -2075,6 +2075,13 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (PlacedDoor door in doors.Doors)
                 {
+                    // A fully-open door is passable regardless of how its leaf is authored to clear the
+                    // opening. Sliding leaves (nonzero Stop*) are moved out of the way by UpdateTransform
+                    // below, but cab doors that animate inside their model (Stop* == 0, e.g. Elevator_330's
+                    // leaves) never change placement, so their static mesh would keep the doorway solid for
+                    // ever; toggling passability on the open state makes both kinds behave like retail.
+                    solids.SetPassable(door.Task, door.State.IsFullyOpen);
+
                     // Closed/open doors spend nearly all their life stationary, unless they ride a
                     // moving elevator: keep collision synchronized with the rendered displacement.
                     Vector3d elevatorDisplacement = default;
