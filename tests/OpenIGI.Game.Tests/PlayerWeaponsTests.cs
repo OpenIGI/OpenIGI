@@ -127,6 +127,7 @@ public sealed class PlayerWeaponsTests
         }
 
         Assert.Equal("WEAPON_ID_BINOCULARS", weapons.InHand?.Weapon.ScriptId);
+        Assert.True(weapons.ConsumeBinocularToggle());
     }
 
     [Fact]
@@ -149,6 +150,25 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
         Assert.Equal(0.5f, health.Damage, 3);
         Assert.False(weapons.TryUseMedipack(health));
+    }
+
+    [Fact]
+    public void MedipackStillActivatesWhenOutgoingClipAlreadyEnded()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        input.Accept(Frame(PlayerInputSlot.Fire));
+        weapons.Tick(input, clipEnded: true, onGround: true);
+
+        Assert.True(weapons.TryUseMedipack(health));
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(0.5f, health.Damage, 3);
     }
 
     [Fact]

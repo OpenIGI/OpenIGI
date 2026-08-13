@@ -86,6 +86,7 @@ public sealed class PlayerWeapons
     private int _shotSequence;
     private bool _actionComplete;
     private bool _medipackUsed;
+    private bool _medipackAdvanced;
     private bool _medipackAwaitingRelease;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
@@ -878,10 +879,21 @@ public sealed class PlayerWeapons
         return HumanWeaponState.Ready;
     }
 
-    private HumanWeaponState Medipack() =>
-        Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) || _medipackUsed
+    private HumanWeaponState Medipack()
+    {
+        // ClipEnded belongs to the outgoing animation on the tick that enters this state. Let the
+        // medipack advance once before accepting that flag, otherwise a completed outgoing clip
+        // prevents the newly requested healing animation from being used.
+        if (!_medipackAdvanced)
+        {
+            _medipackAdvanced = true;
+            return HumanWeaponState.Medipack;
+        }
+
+        return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) || _medipackUsed
             ? HumanWeaponState.Ready
             : HumanWeaponState.Medipack;
+    }
 
     // 0x40F280 into 0x40F300, and it is two phases rather than one.
     //
@@ -989,6 +1001,7 @@ public sealed class PlayerWeapons
 
             case HumanWeaponState.Medipack:
                 _medipackUsed = false;
+                _medipackAdvanced = false;
                 Request(WeaponAction.Fire);
                 break;
 
