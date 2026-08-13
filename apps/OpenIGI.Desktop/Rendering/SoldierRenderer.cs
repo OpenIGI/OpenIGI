@@ -2077,8 +2077,9 @@ public sealed class SoldierRenderer : IDisposable
                 {
                     // Closed/open doors spend nearly all their life stationary, unless they ride a
                     // moving elevator: keep collision synchronized with the rendered displacement.
+                    Vector3d elevatorDisplacement = default;
                     bool onMovingElevator = _elevators?.TryGetDisplacement(
-                        door.Task, tickFraction: 1f, smooth: false, out Vector3d elevatorDisplacement) == true;
+                        door.Task, tickFraction: 1f, smooth: false, out elevatorDisplacement) == true;
                     if (door.State.TransformChangedThisTick || onMovingElevator)
                     {
                         Vector3d position = onMovingElevator

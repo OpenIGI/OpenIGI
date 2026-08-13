@@ -81,9 +81,13 @@ public sealed class RetailElevatorTests
             Assert.InRange(Math.Abs(actualOffset.Y - expectedOffset.Y), 0.0, 1e-8);
             Assert.InRange(Math.Abs(actualOffset.Z - expectedOffset.Z), 0.0, 1e-8);
 
+            // The real game ticks the interaction registry every frame (PlayerCamera.Tick), so the
+            // switch's dynamic anchor is re-evaluated against the live platform displacement each
+            // tick. Driving only the elevator state leaves the anchor's cached offset stale.
             for (int i = 0; i < 10000 && elevator.State.IsMoving; i++)
             {
                 elevator.State.Tick(canStart: true, floorUp: false, floorDown: false);
+                interactions.Tick();
             }
 
             Assert.False(elevator.State.IsMoving, "the authored elevator did not reach its requested floor");
@@ -127,9 +131,20 @@ public sealed class RetailElevatorTests
                 .ToArray();
 
             Assert.True(interactions.ActivateFromAi(switchTask.Id));
-            elevators.Tick();
 
-            Assert.True(elevator.State.IsMoving, "the elevator switch did not start a floor request");
+            // Retail wanted-floor expressions gate on Switch.isLastPressed, the falling-edge pulse
+            // the switch publishes after its three-tick press hold expires (Switch::Run/EndPulse).
+            // The real game drives interactions and elevators together every frame, so the request
+            // lands a few ticks after the press rather than on the same tick.
+            bool started = false;
+            for (int tick = 0; tick < 8 && !started; tick++)
+            {
+                elevators.Tick();
+                interactions.Tick();
+                started = elevator.State.IsMoving;
+            }
+
+            Assert.True(started, "the elevator switch did not start a floor request");
             Assert.All(doorStates, door =>
             {
                 Assert.Equal(door.WasOpen, door.State.IsFullyOpen);

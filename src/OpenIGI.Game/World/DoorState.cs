@@ -23,8 +23,9 @@ namespace OpenIGI.Game.World;
 /// The registry evaluates the task's authored conditions around this state machine: the open
 /// expression only while fully closed, the close expression only while fully open, and the locked
 /// expression every tick. The ticks-open counter (<c>+664</c>) is exposed for those conditions.
-/// Not modelled: the mid-swing doorway ray that re-opens a closing door off a human standing in it
-/// and the three sounds — each recorded in the original.
+/// The mid-swing doorway ray that re-opens a closing door off a human standing in it is driven by
+/// <see cref="DoorRegistry.SetDoorwayBlockedQuery"/>; the three sounds are recorded in
+/// the original.
 /// </para>
 /// </remarks>
 public sealed class DoorState

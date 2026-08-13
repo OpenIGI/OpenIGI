@@ -333,6 +333,7 @@ internal sealed partial class DesktopGame
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
         _doors.SetSoundSink(PlayDoorSound);
+        _doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
         _elevators.SetSoundSink(PlayElevatorSound);
         world.Doors = _doors;
         world.Elevators = _elevators;
@@ -1170,6 +1171,73 @@ internal sealed partial class DesktopGame
             $"Promoted the backdrop for mission {preview.MissionId} in {clock.Elapsed.TotalMilliseconds:F1} ms "
                 + "on the render thread.");
         return true;
+    }
+
+    /// <summary>
+    /// The mid-swing doorway ray: whether a human currently stands in the opening between the two
+    /// doorway endpoints.
+    /// </summary>
+    /// <param name="from">One end of the doorway segment, in metres.</param>
+    /// <param name="to">The other end of the doorway segment, in metres.</param>
+    /// <remarks>
+    /// This is the player body and every living AI soldier, tested against the doorway segment the
+    /// door spans. The retail ray (0x446D10 at 0x447302) casts across the doorway at roughly body
+    /// height; we test each human's feet against the segment with a generous half-metre radius, which
+    /// finds a body standing in the opening whether it is at waist, chest or head.
+    /// </remarks>
+    private bool DoorwayIsBlockedByHuman(Vector3d from, Vector3d to)
+    {
+        if (HumanStandsInSegment(_player?.Body.Position, from, to))
+        {
+            return true;
+        }
+
+        if (_soldiers is { } soldiers)
+        {
+            foreach (Vector3d feet in soldiers.MapContacts())
+            {
+                if (HumanStandsInSegment(feet, from, to))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether a human's feet (world units) stand within a half metre of the doorway segment (metres).</summary>
+    private static bool HumanStandsInSegment(Vector3d? feetWorld, Vector3d from, Vector3d to)
+    {
+        if (feetWorld is not { } feet)
+        {
+            return false;
+        }
+
+        Vector3d point = new(
+            feet.X / WorldScene.UnitsPerMetre,
+            feet.Y / WorldScene.UnitsPerMetre,
+            feet.Z / WorldScene.UnitsPerMetre);
+        Vector3d closest = ClosestPointOnSegment(from, to, point);
+        return Vector3d.Distance(closest, point) <= 0.5;
+    }
+
+    private static Vector3d ClosestPointOnSegment(Vector3d start, Vector3d end, Vector3d point)
+    {
+        double dx = end.X - start.X;
+        double dy = end.Y - start.Y;
+        double dz = end.Z - start.Z;
+        double lengthSquared = (dx * dx) + (dy * dy) + (dz * dz);
+        if (lengthSquared <= 0.0)
+        {
+            return start;
+        }
+
+        double t = (((point.X - start.X) * dx)
+            + ((point.Y - start.Y) * dy)
+            + ((point.Z - start.Z) * dz)) / lengthSquared;
+        t = Math.Clamp(t, 0.0, 1.0);
+        return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
     private void ReleasePlayedMission()
