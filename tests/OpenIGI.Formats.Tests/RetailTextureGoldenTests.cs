@@ -346,6 +346,21 @@ public sealed class RetailTextureGoldenTests
     }
 
     [RequiresGameDataFact]
+    public void FontLineHeightComesFromTheFnthPlusEightFieldNotTheFaceSize()
+    {
+        IresArchive archive = IresArchive.Read(File.ReadAllBytes(GameData.Resolve("menusystem/menusystem.res")));
+        SpriteAsset font = LoadEntry(archive, "font1.fnt");
+
+        // The retail FNTH chunk is six dwords: glyph count, then +8 line height, +12 default
+        // advance, +16 default width, +20 default height. The line box (+8) is a constant 32 across
+        // every retail face, while the glyph face size (+20) is what varies (here 11). The cutscene
+        // renderer must step between lines by the line height, not by the face size.
+        Assert.Equal(32, font.LineHeight);
+        Assert.Equal(11, font.DefaultHeight);
+        Assert.NotEqual(font.LineHeight, font.DefaultHeight);
+    }
+
+    [RequiresGameDataFact]
     public void SingleFrameSpritesCarryAOneByOneTileGrid()
     {
         IresArchive archive = IresArchive.Read(File.ReadAllBytes(GameData.Resolve("menusystem/menusystem.res")));
