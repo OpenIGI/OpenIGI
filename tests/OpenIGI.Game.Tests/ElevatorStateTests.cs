@@ -133,4 +133,47 @@ public sealed class ElevatorStateTests
         Assert.False(elevator.IsMoving);
         Assert.Equal(new Vector3d(20, 0, 0), elevator.Position);
     }
+
+    [Fact]
+    public void DuplicateRequestWhileMovingDoesNotCancelTheCurrentTrip()
+    {
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors:
+            [
+                new ElevatorFloor(10, new Vector3d(0, 0, 0)),
+                new ElevatorFloor(20, new Vector3d(0, 0, 10)),
+                new ElevatorFloor(30, new Vector3d(0, 0, 20)),
+            ],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.RequestFloor(2);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Vector3d positionDuringTrip = elevator.Position;
+
+        elevator.RequestFloor(1);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+
+        Assert.Equal(2, elevator.TargetFloorIndex);
+        Assert.True(elevator.Position != positionDuringTrip);
+    }
+
+    [Fact]
+    public void RequestingTheCurrentFloorDoesNotStartMovement()
+    {
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 10))],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.RequestFloor(0);
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+
+        Assert.False(elevator.IsMoving);
+        Assert.Equal(0, elevator.CurrentFloorIndex);
+        Assert.Equal(new Vector3d(0, 0, 0), elevator.Position);
+    }
 }

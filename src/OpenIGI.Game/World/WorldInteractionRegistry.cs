@@ -21,6 +21,7 @@ public sealed class WorldInteraction
     private Func<bool>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
+    private Action? _onPress;
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
     private Func<Vector3d>? _dynamicOffset;
@@ -287,6 +288,7 @@ public sealed class WorldInteraction
     {
         Pressed.Value = true;
         _pressedTicks = 3;
+        _onPress?.Invoke();
     }
 
     public void BeginUse()
@@ -377,6 +379,8 @@ public sealed class WorldInteraction
     }
 
     internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
+
+    internal void SetPressHandler(Action handler) => _onPress = handler;
 }
 
 /// <summary>
@@ -597,6 +601,10 @@ public sealed class WorldInteractionRegistry
                 // Interaction anchors, activation radii and player positions are engine units. The
                 // render path uses metres, so do not reuse its converted elevator displacement here.
                 item.SetDynamicOffset(() => elevators.GetCurrentDisplacementInUnits(item.Task));
+                if (type == InteractionActivateType.Switch)
+                {
+                    item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
+                }
             }
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);

@@ -81,6 +81,61 @@ public sealed class RetailElevatorTests
             Assert.InRange(Math.Abs(actualOffset.X - expectedOffset.X), 0.0, 1e-8);
             Assert.InRange(Math.Abs(actualOffset.Y - expectedOffset.Y), 0.0, 1e-8);
             Assert.InRange(Math.Abs(actualOffset.Z - expectedOffset.Z), 0.0, 1e-8);
+
+            for (int i = 0; i < 10000 && elevator.State.IsMoving; i++)
+            {
+                elevator.State.Tick(canStart: true, floorUp: false, floorDown: false);
+            }
+
+            Assert.False(elevator.State.IsMoving, "the authored elevator did not reach its requested floor");
+            Vector3d travelledOffset = interaction.Anchor - authoredAnchor;
+            Vector3d finalExpectedOffset = elevator.State.Position - elevator.State.StartPosition;
+            Assert.Equal(finalExpectedOffset, travelledOffset);
+            Assert.True(interaction.IsAvailable, "the elevator switch must remain usable after travel");
+            return;
+        }
+
+        Assert.Fail("mission 14 contains no active elevator-owned switch interaction");
+    }
+
+    [RequiresGameDataFact]
+    public void ElevatorOwnedSwitchRequestsTheLiftWithoutTogglingItsDoors()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, doors, variables, elevators);
+
+        foreach (PlacedElevator elevator in elevators.Elevators)
+        {
+            DeclaredTask? switchTask = Descendants(elevator.Task)
+                .OfType<DeclaredTask>()
+                .FirstOrDefault(static task => string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal));
+            if (switchTask is null)
+            {
+                continue;
+            }
+
+            IReadOnlyList<(DoorState State, bool WasOpen, bool WasClosed)> doorStates = Descendants(elevator.Task)
+                .OfType<DeclaredTask>()
+                .Where(static task => string.Equals(task.Type.Name, "Door", StringComparison.Ordinal))
+                .Select(task =>
+                {
+                    DoorState state = doors.Doors.First(door => ReferenceEquals(door.Task, task)).State;
+                    return (state, state.IsFullyOpen, state.IsFullyClosed);
+                })
+                .ToArray();
+
+            Assert.True(interactions.ActivateFromAi(switchTask.Id));
+            elevators.Tick();
+
+            Assert.True(elevator.State.IsMoving, "the elevator switch did not start a floor request");
+            Assert.All(doorStates, door =>
+            {
+                Assert.Equal(door.WasOpen, door.State.IsFullyOpen);
+                Assert.Equal(door.WasClosed, door.State.IsFullyClosed);
+            });
             return;
         }
 

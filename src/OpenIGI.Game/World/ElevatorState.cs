@@ -129,7 +129,9 @@ public sealed class ElevatorState
     /// <summary>Requests a specific authored floor, subject to the normal start gate.</summary>
     public void RequestFloor(int floorIndex)
     {
-        if ((uint)floorIndex < (uint)_floors.Count)
+        if ((uint)floorIndex < (uint)_floors.Count
+            && TargetFloorIndex is null
+            && _pendingTargetFloor is null)
         {
             _pendingDirection = 0;
             _pendingTargetFloor = floorIndex;

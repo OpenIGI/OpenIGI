@@ -83,6 +83,28 @@ public sealed class ElevatorRegistry
         }
     }
 
+    /// <summary>Converts an elevator-owned switch pulse into its authored floor request.</summary>
+    /// <remarks>
+    /// The switch task remains a normal <c>Switch</c>: it publishes its three-tick script pulse, but
+    /// the lift must also receive the request immediately. Door children are deliberately not involved
+    /// in this route; their own interaction dispatch remains responsible for opening a door.
+    /// </remarks>
+    public bool RequestFromSwitch(DeclaredTask switchTask)
+    {
+        ArgumentNullException.ThrowIfNull(switchTask);
+
+        foreach (ElevatorCommand command in _commands)
+        {
+            if (IsDescendantOf(switchTask, command.Elevator.Task)
+                && command.RequestFromSwitch())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Gets the displacement to apply to a passenger standing on a moving platform.</summary>
     /// <param name="passenger">The passenger feet position in engine units.</param>
     /// <param name="displacement">The platform displacement in engine units.</param>
@@ -282,6 +304,20 @@ public sealed class ElevatorRegistry
         public Func<bool> FloorDown { get; } = FloorDown;
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
         public bool[] LastWantedFloors { get; } = new bool[WantedFloors.Count];
+
+        public bool RequestFromSwitch()
+        {
+            for (int i = 0; i < WantedFloors.Count; i++)
+            {
+                if (WantedFloors[i]())
+                {
+                    Elevator.State.RequestFloor(i);
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 
     private static GameTask? FindById(GameTask task, int id)
