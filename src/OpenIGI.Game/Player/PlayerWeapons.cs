@@ -90,6 +90,7 @@ public sealed class PlayerWeapons
     private int _categoryPick = -1;
     private bool _swapped;
     private int _lastNonBinocularWeaponId = -1;
+    private bool _binocularTogglePending;
 
     /// <summary>Initializes a new instance of the <see cref="PlayerWeapons"/> class.</summary>
     /// <param name="weaponCycle">
@@ -141,6 +142,21 @@ public sealed class PlayerWeapons
 
     /// <summary>Gets everything the player carries, in the order it was given.</summary>
     public IReadOnlyList<CarriedWeapon> Carried => _carried;
+
+    /// <summary>
+    /// Consumes a binocular toggle after the requested weapon has reached the hand. The request is
+    /// retained across the equip transition, matching the original's one-tick action hand-off.
+    /// </summary>
+    public bool ConsumeBinocularToggle()
+    {
+        if (!_binocularTogglePending || InHand?.Weapon.Category != WeaponCategory.Binocular)
+        {
+            return false;
+        }
+
+        _binocularTogglePending = false;
+        return true;
+    }
 
     /// <summary>Gets the weapon in hand, or <see langword="null"/> before one has been selected.</summary>
     /// <remarks>Slot 0 of the original's three-pointer array at <c>Human+1220</c>.</remarks>
@@ -505,6 +521,8 @@ public sealed class PlayerWeapons
         {
             return;
         }
+
+        _binocularTogglePending = true;
 
         if (_heldIndex == binocularIndex)
         {

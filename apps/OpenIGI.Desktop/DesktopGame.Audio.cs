@@ -161,6 +161,18 @@ internal sealed partial class DesktopGame
         }
     }
 
+    /// <summary>Plays the retail binocular device cue on the same transition as the view latch.</summary>
+    /// <remarks><c>COMMON/SOUNDS/SOUNDS.RES</c> authors this cue as <c>bin_zoom_1.wav</c>.</remarks>
+    private void PlayBinocularTransitionSound()
+    {
+        if (_player is not { } player || (!player.BinocularsOpenedThisTick && !player.BinocularsClosedThisTick))
+        {
+            return;
+        }
+
+        _sounds?.PlayDefinition("bin_zoom_1", priority: 180);
+    }
+
     /// <summary>Plays the retail world-weapon cue after a <c>GunPickup</c> reaches the player.</summary>
     private void PlayGunPickupSound(GunPickup pickup)
     {

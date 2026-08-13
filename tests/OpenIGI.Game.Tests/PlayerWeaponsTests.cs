@@ -165,6 +165,8 @@ public sealed class PlayerWeaponsTests
             viewModelTanX: HumanView.DefaultViewModelTanX);
 
         Assert.True(view.IsOpen);
+        Assert.True(view.OpenedThisTick);
+        Assert.False(view.ClosedThisTick);
         Assert.Equal(0.5f, opened.TanX);
 
         SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
@@ -175,6 +177,17 @@ public sealed class PlayerWeaponsTests
         }
 
         Assert.Equal(0.1f, narrowed.TanX, 3);
+
+        view.Tick(
+            binoculars,
+            togglePressed: true,
+            zoomInHeld: false,
+            zoomOutHeld: false,
+            tanX: narrowed.TanX,
+            viewModelTanX: narrowed.ViewModelTanX);
+        Assert.False(view.IsOpen);
+        Assert.False(view.OpenedThisTick);
+        Assert.True(view.ClosedThisTick);
     }
 
     [Fact]

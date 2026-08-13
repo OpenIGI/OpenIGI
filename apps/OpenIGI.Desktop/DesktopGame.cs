@@ -1706,6 +1706,8 @@ internal sealed partial class DesktopGame : IDisposable
                         _player.Tick(_window.Input, _playerTerrain);
                     }
 
+                    PlayBinocularTransitionSound();
+
                     // Hearing is emitted once per round, not once per projectile intersection. The weapon
                     // row carries the exact retail radius (for example 4096 for suppressed fire and
                     // 122880 for an ordinary rifle), so shotguns do not post duplicate noise events and
@@ -2932,7 +2934,16 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.Begin();
                     // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
                     // never calls the parent handler.
-                    if (_player.IsSniperScoped)
+                    if (_player.IsBinocularsOpen)
+                    {
+                        retailHud.DrawBinocularOverlay(
+                            batch,
+                            _window.Width,
+                            _window.Height,
+                            _player.Yaw,
+                            _player.View?.TanX ?? HumanView.DefaultTanX);
+                    }
+                    else if (_player.IsSniperScoped)
                     {
                         retailHud.DrawSniperScope(batch, _window.Width, _window.Height);
                     }
@@ -3190,7 +3201,25 @@ internal sealed partial class DesktopGame : IDisposable
 
                 if (remasterHud
                     && showFirstPersonHud
+                    && _player is { IsBinocularsOpen: true }
+                    && _player.View is { } binocularView
+                    && _remasteredHud is { IsReady: true } binocularHud)
+                {
+                    _device.Set2DProjection(_window.Width, _window.Height);
+                    batch.Begin();
+                    binocularHud.DrawBinocularOverlay(
+                        batch,
+                        _player.Yaw,
+                        binocularView.TanX,
+                        _window.Width,
+                        _window.Height);
+                    batch.End();
+                }
+
+                if (remasterHud
+                    && showFirstPersonHud
                     && _player is { Weapons: { } modernCarried }
+                    && !_player.IsBinocularsOpen
                     && _remasteredHud is { IsReady: true } modernHud)
                 {
                     CarriedWeapon? inHand = modernCarried.InHand;

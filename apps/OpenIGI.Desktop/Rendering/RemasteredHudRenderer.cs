@@ -77,6 +77,48 @@ internal sealed class RemasteredHudRenderer : IDisposable
         DrawInteraction(painter, context, body, snapshot.ActionSprite);
     }
 
+    /// <summary>Draws the enhanced computer/map-themed binocular presentation.</summary>
+    /// <remarks>Only presentation changes here; the shared player camera owns all binocular behavior.</remarks>
+    public void DrawBinocularOverlay(
+        SpriteBatch batch,
+        float headingRadians,
+        float tanX,
+        int screenWidth,
+        int screenHeight)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_body is not { } body)
+        {
+            return;
+        }
+
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+        var painter = new UiPainter(batch, context);
+        painter.FillRect(new UiRect(0f, 0f, context.SafeRect.Width, context.SafeRect.Height), Bgra32.FromRgba(2, 8, 7, 74));
+
+        float inset = context.Px(30f);
+        UiRect frame = new(inset, inset, context.SafeRect.Width - (inset * 2f), context.SafeRect.Height - (inset * 2f));
+        painter.FillRect(frame, Bgra32.FromRgba(8, 24, 22, 95));
+        painter.FillRect(new UiRect(frame.X, frame.Y, frame.Width, context.Px(2f)), Signal.WithAlpha(220));
+        painter.FillRect(new UiRect(frame.X, frame.Bottom - context.Px(2f), frame.Width, context.Px(2f)), Signal.WithAlpha(150));
+
+        DrawCompass(painter, context, body, headingRadians);
+
+        float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
+        float centreY = context.SafeRect.Y + (context.SafeRect.Height * 0.5f);
+        float arm = context.Px(24f);
+        float gap = context.Px(8f);
+        float weight = MathF.Max(1f, context.Px(2f));
+        painter.FillRect(new UiRect(centreX - arm - gap, centreY - (weight * 0.5f), arm, weight), Signal);
+        painter.FillRect(new UiRect(centreX + gap, centreY - (weight * 0.5f), arm, weight), Signal);
+        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY - arm - gap, weight, arm), Signal);
+        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY + gap, weight, arm), Signal);
+        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY - (weight * 0.5f), weight, weight), Accent);
+
+        painter.DrawText(body, "OPTICS // BINOCULAR", new UiVec2(frame.X + context.Px(18f), frame.Bottom - context.Px(48f)), context.Px(16f), Text);
+        painter.DrawText(body, $"RANGE  --    ZOOM  {tanX:0.00}", new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(14f), Muted);
+    }
+
     /// <summary>Draws the modern presentation of the same timed state progress the retail HUD exposes.</summary>
     public void DrawInteractionProgress(SpriteBatch batch, float progress, int screenWidth, int screenHeight)
     {
@@ -350,6 +392,7 @@ internal sealed class RemasteredHudRenderer : IDisposable
     private static Bgra32 Text => Bgra32.FromRgb(245, 248, 250);
     private static Bgra32 Muted => Bgra32.FromRgb(202, 213, 220);
     private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
+    private static Bgra32 Signal => Bgra32.FromRgb(140, 245, 200);
 }
 
 /// <summary>Everything the remaster HUD needs for one draw, collected without mutable renderer state.</summary>

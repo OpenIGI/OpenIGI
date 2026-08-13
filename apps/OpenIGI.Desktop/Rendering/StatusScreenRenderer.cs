@@ -410,6 +410,50 @@ public sealed class StatusScreenRenderer : IDisposable
         }
     }
 
+    /// <summary>Draws the retail binocular task overlay, including its authored device frame.</summary>
+    /// <remarks>
+    /// Ghidra identifies the retail task as <c>BinocularOverlay_Draw</c>, with separate compass and
+    /// distance handlers. The binocular sprite is therefore drawn in place of the ordinary weapon HUD;
+    /// the camera and zoom state remain owned by <see cref="OpenIGI.Game.Player.BinocularsView"/>.
+    /// </remarks>
+    public void DrawBinocularOverlay(
+        SpriteBatch batch,
+        int screenWidth,
+        int screenHeight,
+        float headingRadians,
+        float tanX)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(batch);
+
+        if (Sprite("binoculars.spr") is { } frameResource && frameResource.Asset.Frames.Count > 0)
+        {
+            SpriteFrame frame = frameResource.Asset.Frames[0];
+            frameResource.DrawFrame(
+                batch,
+                frame,
+                0f,
+                0f,
+                (float)screenWidth / frame.Width,
+                (float)screenHeight / frame.Height,
+                BitmapTextRenderer.NeutralColor);
+        }
+
+        float centreX = screenWidth * 0.5f;
+        float centreY = screenHeight * 0.5f;
+        Bgra32 signal = new(64, 160, 64, 210);
+        batch.FillRect(new RectF(centreX - 1f, centreY - 18f, 2f, 36f), signal);
+        batch.FillRect(new RectF(centreX - 18f, centreY - 1f, 36f, 2f), signal);
+
+        if (Font() is { } font)
+        {
+            int degrees = ((int)MathF.Round(headingRadians * (180f / MathF.PI)) % 360 + 360) % 360;
+            string readout = $"BINOCULAR  {degrees:000}°  ZOOM {tanX:0.00}";
+            (float width, _) = font.Measure(readout, 1f, 1f);
+            font.Draw(batch, readout, (screenWidth - width) * 0.5f, 18f, signal);
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

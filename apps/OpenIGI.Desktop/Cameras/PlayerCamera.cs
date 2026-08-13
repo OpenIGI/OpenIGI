@@ -158,6 +158,15 @@ public sealed class PlayerCamera
     /// <summary>Gets whether the Dragunov's scope is open, for the HUD's overlay.</summary>
     public bool IsSniperScoped => _dragunovScope.IsScoped;
 
+    /// <summary>Gets whether the binocular overlay is open.</summary>
+    public bool IsBinocularsOpen => _binocularsView.IsOpen;
+
+    /// <summary>Gets whether binoculars opened on the last simulation tick.</summary>
+    public bool BinocularsOpenedThisTick => _binocularsView.OpenedThisTick;
+
+    /// <summary>Gets whether binoculars closed on the last simulation tick.</summary>
+    public bool BinocularsClosedThisTick => _binocularsView.ClosedThisTick;
+
     /// <summary>Gets the grenades in the air, both the player's and the AI's.</summary>
     /// <remarks>
     /// One simulation for both throwers so there is one place to tick, draw and detonate from — the
@@ -1656,7 +1665,7 @@ public sealed class PlayerCamera
                 zoom = heldWeapon?.Category == WeaponCategory.Binocular
                     ? _binocularsView.Tick(
                         heldWeapon,
-                        _input.IsRisingEdge(PlayerInputSlot.Binoculars),
+                        _weapons?.ConsumeBinocularToggle() == true,
                         _input.IsSet(PlayerInputSlot.ZoomIn),
                         _input.IsSet(PlayerInputSlot.ZoomOut),
                         _view.TanX,

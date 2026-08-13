@@ -21,6 +21,12 @@ public sealed class BinocularsView
     /// <summary>Gets whether the binocular view is active.</summary>
     public bool IsOpen { get; private set; }
 
+    /// <summary>Gets whether this tick opened the view.</summary>
+    public bool OpenedThisTick { get; private set; }
+
+    /// <summary>Gets whether this tick closed the view.</summary>
+    public bool ClosedThisTick { get; private set; }
+
     /// <summary>Advances the binocular toggle and zoom state by one simulation tick.</summary>
     public SightZoomFrame Tick(
         WeaponType? weapon,
@@ -30,8 +36,16 @@ public sealed class BinocularsView
         float tanX,
         float viewModelTanX)
     {
+        OpenedThisTick = false;
+        ClosedThisTick = false;
+
         if (!ReferenceEquals(_weapon, weapon))
         {
+            if (IsOpen)
+            {
+                ClosedThisTick = true;
+            }
+
             _weapon = weapon;
             IsOpen = false;
         }
@@ -45,6 +59,8 @@ public sealed class BinocularsView
         if (togglePressed)
         {
             IsOpen = !IsOpen;
+            OpenedThisTick = IsOpen;
+            ClosedThisTick = !IsOpen;
             if (!IsOpen)
             {
                 return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
