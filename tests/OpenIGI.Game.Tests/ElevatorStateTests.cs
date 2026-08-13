@@ -176,4 +176,36 @@ public sealed class ElevatorStateTests
         Assert.Equal(0, elevator.CurrentFloorIndex);
         Assert.Equal(new Vector3d(0, 0, 0), elevator.Position);
     }
+
+    [Fact]
+    public void PassengerDisplacementSkipsAnOverlappingStationaryElevator()
+    {
+        ElevatorState stationaryState = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0))],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+        ElevatorState movingState = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [
+                new ElevatorFloor(20, new Vector3d(0, 0, 0)),
+                new ElevatorFloor(30, new Vector3d(0, 0, 100)),
+            ],
+            maxSpeedUnitsPerSecond: 300,
+            speedInertiaUnitsPerSecondSquared: 300);
+        movingState.RequestFloor(1);
+        movingState.Tick(canStart: true, floorUp: false, floorDown: false);
+
+        ElevatorRegistry registry = new([
+            new PlacedElevator(new OpenIGI.Engine.Tasks.LevelTask(), stationaryState,
+                Matrix3f.Identity, "stationary", "", "", ""),
+            new PlacedElevator(new OpenIGI.Engine.Tasks.LevelTask(), movingState,
+                Matrix3f.Identity, "moving", "", "", ""),
+        ]);
+
+        Assert.True(registry.TryGetPassengerDisplacement(
+            new Vector3d(0, 0, 0), out Vector3d displacement));
+        Assert.Equal(movingState.Position - movingState.PreviousPosition, displacement);
+        Assert.NotEqual(Vector3d.Zero, displacement);
+    }
 }

@@ -36,6 +36,16 @@ public sealed class ElevatorRegistry
     private readonly List<ElevatorCommand> _commands = [];
     private Action<PlacedElevator, ElevatorSoundEvent>? _sounds;
 
+    public ElevatorRegistry()
+    {
+    }
+
+    public ElevatorRegistry(IEnumerable<PlacedElevator> elevators)
+    {
+        ArgumentNullException.ThrowIfNull(elevators);
+        _elevators.AddRange(elevators);
+    }
+
     public IReadOnlyList<PlacedElevator> Elevators => _elevators;
 
     /// <summary>Sets the callback for elevator start/stop sounds.</summary>
@@ -119,7 +129,10 @@ public sealed class ElevatorRegistry
             if (Math.Abs(passenger.Z - previous.Z) <= 1024.0 && horizontal.Length <= 4096.0)
             {
                 displacement = current - previous;
-                return displacement != Vector3d.Zero;
+                if (displacement != Vector3d.Zero)
+                {
+                    return true;
+                }
             }
         }
 
