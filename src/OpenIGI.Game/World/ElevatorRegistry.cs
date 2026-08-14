@@ -443,11 +443,10 @@ public sealed class ElevatorRegistry
                 // Elevator_BindExports (0x43D0E0): vFloor +0x1A0, vLastFloor +0x1A8,
                 // isWantedFloorN +0x1B0, nInactive +0x1BC, nWantedFloor +0x19C,
                 // isMoving +0x5D6, isStart +0x5D7, isStop +0x5D8.
-                variables.BindReal(
-                    declared,
-                    "vFloor",
-                    () => state.FloorPosition,
-                    value => state.RequestFloor((int)value));
+                // Activate overwrites +0x1A0 after motion. A script store into vFloor does not
+                // change nWantedFloor (+0x19C); that write used to retarget the car back to the
+                // departure integer on the first moving tick.
+                variables.BindReal(declared, "vFloor", () => state.FloorPosition, _ => { });
                 variables.BindReal(declared, "vLastFloor", () => state.LastFloorPosition, _ => { });
                 variables.BindInt(declared, "nWantedFloor", () => state.WantedFloorIndex, value =>
                 {
