@@ -2839,7 +2839,8 @@ internal sealed partial class DesktopGame : IDisposable
                             _window.Height,
                             _loop.Clock.TickCount)
                         : [];
-                if (showFirstPersonHud && _player is { View: { } rig })
+                bool binocularsOpen = _player is { IsBinocularsOpen: true };
+                if (showFirstPersonHud && _player is { View: { } rig } && !binocularsOpen)
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                     // than the frame.
