@@ -7,6 +7,8 @@ namespace OpenIGI.Desktop.Infrastructure;
 /// <summary>Mirrors desktop diagnostics to the console and a per-session file.</summary>
 internal sealed class PersistentLogger : IIgiLogger, IDisposable
 {
+    internal const string LogFileName = "runtime.log";
+
     private readonly ConsoleLogger _console;
     private readonly StreamWriter _file;
     private readonly object _gate = new();

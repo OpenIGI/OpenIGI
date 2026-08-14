@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
+using OpenIGI.Desktop.Infrastructure;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Platform;
@@ -21,11 +22,19 @@ catch (ArgumentException ex)
     return 2;
 }
 
-string logPath = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-    "OpenIGI",
-    "runtime.log");
-using OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger = new(logPath);
+OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger;
+try
+{
+    persistentLogger = new(RuntimePaths.GetLogPath());
+}
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+{
+    Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
+    return 2;
+}
+
+using (persistentLogger)
+{
 IIgiLogger logger = persistentLogger;
 
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
@@ -112,4 +121,5 @@ using (window)
 
     using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);
     return game.Run();
+}
 }

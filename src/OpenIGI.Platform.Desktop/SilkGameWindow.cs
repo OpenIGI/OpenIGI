@@ -74,10 +74,6 @@ public sealed class SilkGameWindow : IGameWindow
             WindowBorder = settings.Mode == WindowMode.BorderlessFullscreen
                 ? WindowBorder.Hidden
                 : WindowOptions.Default.WindowBorder,
-            Position = settings.Mode == WindowMode.BorderlessFullscreen
-                ? display.Origin
-                : WindowOptions.Default.Position,
-
             // Asked for only when the display mode is actually ours to set. A borderless window that
             // names a video mode is asking the backend to switch the monitor, which is the one thing
             // borderless exists not to do.
@@ -89,7 +85,7 @@ public sealed class SilkGameWindow : IGameWindow
             // A windowed macOS OpenGL context reports a zero framebuffer until the window is visible;
             // borderless remains hidden until Show(), while exclusive fullscreen must be visible for
             // the monitor state to take.
-            IsVisible = settings.Mode != WindowMode.BorderlessFullscreen,
+            IsVisible = settings.Mode == WindowMode.ExclusiveFullscreen,
             ShouldSwapAutomatically = false,
         };
 
@@ -197,12 +193,12 @@ public sealed class SilkGameWindow : IGameWindow
     /// <inheritdoc/>
     public int Width => _window.FramebufferSize.X > 0
         ? _window.FramebufferSize.X
-        : _window.Size.X > 0 ? _window.Size.X : _windowedSize.X;
+        : _window.Size.X > 0 ? _window.Size.X : Display.Size.X;
 
     /// <inheritdoc/>
     public int Height => _window.FramebufferSize.Y > 0
         ? _window.FramebufferSize.Y
-        : _window.Size.Y > 0 ? _window.Size.Y : _windowedSize.Y;
+        : _window.Size.Y > 0 ? _window.Size.Y : Display.Size.Y;
 
     /// <summary>Gets what the monitor this window opened on reports, and what was chosen from it.</summary>
     public DesktopDisplay Display { get; }
@@ -324,6 +320,20 @@ public sealed class SilkGameWindow : IGameWindow
         ObjectDisposedException.ThrowIf(_disposed, this);
         _window.IsVisible = true;
 
+        if (OperatingSystem.IsMacOS() && _mode == WindowMode.Windowed)
+        {
+            _window.Size = _windowedSize;
+            _window.Position = new Vector2D<int>(100, 100);
+        }
+        _window.DoEvents();
+
+        if (OperatingSystem.IsMacOS() && _mode == WindowMode.BorderlessFullscreen)
+        {
+            _window.Position = Display.Origin;
+            _window.DoEvents();
+        }
+        _window.Focus();
+
         // Exclusive fullscreen has to be asked for again now that the window is on screen.
         //
         // The window is created hidden, and the other two modes survive that because they are not
@@ -412,7 +422,10 @@ public sealed class SilkGameWindow : IGameWindow
                 // because dropping it moves the client area by the old border's thickness.
                 _window.WindowState = WindowState.Normal;
                 _window.WindowBorder = WindowBorder.Hidden;
-                _window.Position = Display.Origin;
+                if (!OperatingSystem.IsMacOS() || _window.IsVisible)
+                {
+                    _window.Position = Display.Origin;
+                }
                 _window.Size = BorderlessSize(Display);
                 break;
 
