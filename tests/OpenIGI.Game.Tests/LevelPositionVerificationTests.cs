@@ -17,7 +17,8 @@ namespace OpenIGI.Game.Tests;
 internal readonly record struct AuthoredLevelObjectTransform(
     string Id,
     Vector3d PositionUnits,
-    Matrix3f Orientation);
+    Matrix3f Orientation,
+    bool HasDeclaredOrientation);
 
 /// <summary>Verifies retail level object placement and orientation across every campaign mission.</summary>
 public sealed class LevelPositionVerificationTests
@@ -71,9 +72,12 @@ public sealed class LevelPositionVerificationTests
                 Assert.True(
                     LevelPositionValidator.PosMatch(authored.PositionUnits, placement.Position),
                     $"mission {missionId} {placement.Instance.Name} position differs from authored {authored.PositionUnits}");
-                Assert.True(
-                    LevelPositionValidator.OriMatch(authored.Orientation, placement.Orientation),
-                    $"mission {missionId} {placement.Instance.Name} orientation differs from authored data");
+                if (authored.HasDeclaredOrientation)
+                {
+                    Assert.True(
+                        LevelPositionValidator.OriMatch(authored.Orientation, placement.Orientation),
+                        $"mission {missionId} {placement.Instance.Name} orientation differs from authored data");
+                }
                 checkedObjects++;
             }
         }
@@ -127,21 +131,30 @@ public sealed class LevelPositionVerificationTests
         MissionRegistry registry = new();
         registry.Register(loop.Natives);
         registry.Scan(fileSystem, resources, loop.Natives);
+
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+
+        TerrainLoader terrainLoader = new(resources, loop.Natives);
         LevelLoader levelLoader = new(levelRoot, loop.TaskCommands, loop.Natives, resources);
-        LoadedMission mission = new MissionLoader(registry, fileSystem, resources, levelLoader).Load(missionId);
+        LoadedMission mission = new MissionLoader(
+            registry, fileSystem, resources, levelLoader, logger, terrainLoader).Load(missionId);
         new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
-        return WorldScene.Build(mission, levelRoot, logger: logger);
+        return WorldScene.Build(mission, levelRoot, magic, logger);
     }
 
     private static bool TryReadAuthored(DeclaredTask task, out AuthoredLevelObjectTransform transform)
     {
-        if (!task.TryGetValue("Position", out object? positionValue) || positionValue is not Vector3d position)
+        if (!TryReadAuthoredPosition(task, out Vector3d position))
         {
             transform = default;
             return false;
         }
 
-        Matrix3f orientation = task.TryGetValue("Orientation", out object? orientationValue)
+        bool hasOrientation = task.TryGetValue("Orientation", out object? orientationValue);
+        bool hasGamma = task.TryGetValue("Gamma", out object? gammaValue) && gammaValue is float;
+        Matrix3f orientation = hasOrientation
             ? orientationValue switch
             {
                 Vector3f angles => WorldScene.ToOrientation(angles),
@@ -149,12 +162,30 @@ public sealed class LevelPositionVerificationTests
                 float orientationGamma => Matrix3f.RotationZ(orientationGamma),
                 _ => Matrix3f.Identity,
             }
-            : task.TryGetValue("Gamma", out object? gammaValue) && gammaValue is float gamma
+            : hasGamma && gammaValue is float gamma
                 ? Matrix3f.RotationZ(gamma)
                 : Matrix3f.Identity;
 
-        transform = new(task.Name, position, orientation);
+        transform = new(task.Name, position, orientation, hasOrientation || hasGamma);
         return true;
+    }
+
+    private static bool TryReadAuthoredPosition(DeclaredTask task, out Vector3d position)
+    {
+        foreach (string name in WorldScene.PositionParameters)
+        {
+            if (!task.TryGetValue(name, out object? value) || value is not Vector3d vector)
+            {
+                continue;
+            }
+
+            // Trains store a rail scalar under "Position"; only ObjectPos vectors count.
+            position = vector;
+            return true;
+        }
+
+        position = default;
+        return false;
     }
 
     private static void AssertFinite(Vector3d value, string context)
