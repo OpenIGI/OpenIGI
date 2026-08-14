@@ -385,7 +385,7 @@ public sealed class PlayerWeaponsTests
 
         Assert.Equal(0.1f, narrowed.TanX, 3);
 
-        view.Tick(
+        SightZoomFrame closing = view.Tick(
             binoculars,
             togglePressed: true,
             zoomInHeld: false,
@@ -396,6 +396,11 @@ public sealed class PlayerWeaponsTests
         Assert.False(view.OpenedThisTick);
         Assert.True(view.ClosedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
+
+        // FUN_00431E30 keeps integrating the current tangent toward the restored gameplay target;
+        // closing the device does not snap the world camera back in one tick.
+        Assert.Equal(0.18f, closing.TanX, 3);
+        Assert.Equal(HumanView.DefaultViewModelTanX, closing.ViewModelTanX);
     }
 
     [Fact]

@@ -89,7 +89,9 @@ public sealed class BinocularsView
         {
             IsOpen = false;
             _targetTanX = HumanView.DefaultTanX;
-            return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+            float restoredTanX = MoveToward(tanX, _targetTanX, NativeZoomSpeed);
+            ZoomChangedThisTick = restoredTanX != tanX;
+            return new SightZoomFrame(restoredTanX, HumanView.DefaultViewModelTanX);
         }
 
         if (togglePressed)
@@ -101,7 +103,6 @@ public sealed class BinocularsView
             {
                 _targetTanX = HumanView.DefaultTanX;
                 ZoomTargetChangedThisTick = true;
-                return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
             }
 
             // The native binocular task writes the camera's target field (+730); the camera update
@@ -118,7 +119,9 @@ public sealed class BinocularsView
         if (!IsOpen)
         {
             _targetTanX = HumanView.DefaultTanX;
-            return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+            float restoredTanX = MoveToward(tanX, _targetTanX, NativeZoomSpeed);
+            ZoomChangedThisTick = restoredTanX != tanX;
+            return new SightZoomFrame(restoredTanX, HumanView.DefaultViewModelTanX);
         }
 
         float previousTanX = tanX;
