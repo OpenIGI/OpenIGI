@@ -453,20 +453,27 @@ public sealed class StatusScreenRenderer : IDisposable
         // widget is a range readout (weapons/strings/Binoculars/range), not a compass strip.
         DrawNativeBinocularRange(batch, screenWidth, screenHeight, targets);
 
-        // RetailBinocularOverlayBuilder (0x00471480) draws the reticle from normalized video
-        // dimensions, not fixed 640x480 pixels: the horizontal arms begin 9.375% from the centre,
-        // use a 1.5625% width, and the vertical texture uses a 2.0833334% height.  The old port's
-        // fixed 36-pixel cross was the green block that became visibly wrong at widescreen sizes.
+        // RetailBinocularOverlayBuilder (0x00471480) emits two textured horizontal quads through
+        // FUN_004B5860.  Its vertex data is (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5): the
+        // anchors are +/-18.75% of the video width, the texture scale is 1.5625% by 2.0833334%,
+        // and the negative scale on the right mirrors the left quad.  The old port's four short
+        // bars were not the retail geometry and produced the green central block at widescreen
+        // resolutions.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
-        float horizontalGap = screenWidth * 0.09375f;
-        float horizontalArm = MathF.Max(1f, screenWidth * 0.015625f);
-        float verticalArm = MathF.Max(1f, screenHeight * 0.020833334f);
         Bgra32 signal = new(64, 160, 64, 210);
-        batch.FillRect(new RectF(centreX - horizontalGap - horizontalArm, centreY - 1f, horizontalArm, 2f), signal);
-        batch.FillRect(new RectF(centreX + horizontalGap, centreY - 1f, horizontalArm, 2f), signal);
-        batch.FillRect(new RectF(centreX - 1f, centreY - horizontalGap - verticalArm, 2f, verticalArm), signal);
-        batch.FillRect(new RectF(centreX - 1f, centreY + horizontalGap, 2f, verticalArm), signal);
+        float armAnchor = screenWidth * 0.1875f;
+        float armScaleX = MathF.Max(1f, screenWidth * 0.015625f);
+        float armScaleY = MathF.Max(1f, screenHeight * 0.020833334f);
+        float armWidth = armScaleX * 1.5f;
+        float armHeight = armScaleY * 5f;
+        float armInset = armScaleX * 0.5f;
+        batch.FillRect(
+            new RectF(centreX - armAnchor - (armScaleX * 2f), centreY - (armHeight * 0.5f), armWidth, armHeight),
+            signal);
+        batch.FillRect(
+            new RectF(centreX + armAnchor + armInset, centreY - (armHeight * 0.5f), armWidth, armHeight),
+            signal);
 
         // FUN_00471480 emits two additional D3D line-list primitives through FUN_004B5730. The
         // first joins (0, centreY) to (screenWidth, centreY), and the second joins

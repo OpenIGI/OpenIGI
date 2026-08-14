@@ -126,6 +126,23 @@ public sealed class StatusScreenRendererTests
             draw => draw.Texture == TextureHandle.None
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 300f) < 0.01f));
 
+        // FUN_004B5860 uses the native vertex strip and 1.5625% x 2.0833334% scales. At
+        // 640x480 that produces the two 15x50 horizontal quads at x=180 and x=445.
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 180f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 195f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 215f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 265f) < 0.01f));
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 445f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 460f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 215f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 265f) < 0.01f));
+
         // The retail builder also emits full-width and full-height line-list axes through
         // FUN_004B5730; keep the native center geometry from regressing to short arms only.
         Assert.Contains(
