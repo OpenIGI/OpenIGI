@@ -39,6 +39,38 @@ public sealed class RetailElevatorTests
     }
 
     [RequiresGameDataFact]
+    public void ElevatorSwitchesOfferFromTheirOrientedFront()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables, elevators);
+
+        bool found = false;
+        foreach (PlacedElevator elevator in elevators.Elevators)
+        {
+            foreach (DeclaredTask switchTask in Descendants(elevator.Task)
+                         .OfType<DeclaredTask>()
+                         .Where(static task => string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal)))
+            {
+                WorldInteraction interaction = Assert.Single(
+                    interactions.Items,
+                    item => ReferenceEquals(item.Task, switchTask));
+                Vector3d front = interaction.Anchor + interaction.Orientation.Transposed().Transform(
+                    new Vector3d(0.0, 4096.0, 0.0));
+                Vector3d rear = interaction.Anchor + interaction.Orientation.Transposed().Transform(
+                    new Vector3d(0.0, -4096.0, 0.0));
+
+                Assert.True(interaction.CanOfferFrom(front));
+                Assert.False(interaction.CanOfferFrom(rear));
+                found = true;
+            }
+        }
+
+        Assert.True(found, "mission 14 contains no elevator-owned switch interaction");
+    }
+
+    [RequiresGameDataFact]
     public void ElevatorOwnedInteractionAnchorsFollowTheMovingPlatform()
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);

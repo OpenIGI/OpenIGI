@@ -57,6 +57,38 @@ public sealed class ElevatorState
     public int FloorCount => _floors.Count;
     public int? TargetFloorIndex { get; private set; }
     public bool IsMoving => TargetFloorIndex is not null;
+
+    /// <summary>True while a travel request is queued or the car is on the spline (native +0x5D6).</summary>
+    public bool HasMovementRequest => TargetFloorIndex is not null
+        || (_pendingTargetFloor is int pending && pending != CurrentFloorIndex)
+        || (_pendingDirection > 0 && CurrentFloorIndex + 1 < _floors.Count)
+        || (_pendingDirection < 0 && CurrentFloorIndex > 0);
+
+    /// <summary>Continuous spline coordinate exported as <c>vFloor</c> (Activate at 0x43C440).</summary>
+    public double FloorPosition
+    {
+        get
+        {
+            if (TargetFloorIndex is not int target || target == CurrentFloorIndex)
+            {
+                return CurrentFloorIndex;
+            }
+
+            int direction = target > CurrentFloorIndex ? 1 : -1;
+            int nextIndex = CurrentFloorIndex + direction;
+            Vector3d start = _floors[CurrentFloorIndex].Position;
+            Vector3d finish = _floors[nextIndex].Position;
+            double segmentLength = Vector3d.Distance(start, finish);
+            if (segmentLength == 0.0)
+            {
+                return nextIndex;
+            }
+
+            double fraction = Math.Clamp(Vector3d.Distance(start, Position) / segmentLength, 0.0, 1.0);
+            return CurrentFloorIndex + (direction * fraction);
+        }
+    }
+
     public bool TransformChangedThisTick => Position != PreviousPosition;
     public double SpeedUnitsPerSecond => _speed;
 

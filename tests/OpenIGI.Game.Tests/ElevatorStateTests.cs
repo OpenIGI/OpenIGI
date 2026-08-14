@@ -226,6 +226,27 @@ public sealed class ElevatorStateTests
     }
 
     [Fact]
+    public void ExportedFloorPositionLeavesTheDepartureIntegerOnTheFirstMovementTick()
+    {
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 100))],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.RequestFloor(1);
+        Assert.Equal(0.0, elevator.FloorPosition);
+
+        elevator.Tick(canStart: false, floorUp: false, floorDown: false);
+        Assert.Equal(0.0, elevator.FloorPosition);
+        Assert.True(elevator.HasMovementRequest);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.InRange(elevator.FloorPosition, double.Epsilon, 1.0 - double.Epsilon);
+        Assert.Equal(0, elevator.CurrentFloorIndex);
+    }
+
+    [Fact]
     public void PassengerDisplacementCarriesFeetOffTheTaskOrigin()
     {
         ElevatorState movingState = new(

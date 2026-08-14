@@ -269,18 +269,24 @@ public sealed class WorldInteraction
             return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
         }
 
+        if (Type == InteractionActivateType.Switch)
+        {
+            // Switch::GetActivate 0x444500: offer from magic-vertex 0 (already in Anchor).
+            // Local Y is the panel front (orientation column 1); local X is the 3072-unit strip
+            // (DAT_00531890). Facing/sin-cos reverses that side for many authored gammas.
+            Vector3d local = Orientation.Transform(from - Anchor);
+            return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
+        }
+
         Vector3d toHuman = from - Anchor;
         Vector3d forward = new(Math.Sin(Facing), Math.Cos(Facing), 0.0);
         Vector3d right = new(Math.Cos(Facing), -Math.Sin(Facing), 0.0);
         double inFront = Vector3d.Dot(toHuman, forward);
         double lateral = Math.Abs(Vector3d.Dot(toHuman, right));
 
-        // Retail switch interaction is head-on: the player must be in front of the panel and
-        // within a body-width laterally. A switch authored into a wall is reachable through the
-        // leaf, so the gate stays generous.
         return Type switch
         {
-            InteractionActivateType.Switch or InteractionActivateType.Cabinet
+            InteractionActivateType.Cabinet
                 or InteractionActivateType.Generic
                 or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,

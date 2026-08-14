@@ -162,12 +162,12 @@ public sealed class ElevatorSwitchInteractionTests
                 levelHasCallableElevator = true;
                 elevatorsTested++;
 
-                // Stand ~1.5 m in front of the switch along its authored facing and aim back at it. This
-                // is the realistic eye/yaw that the desktop Resolve runs every frame.
-                Vector3d forward = new(Math.Sin(callSwitch.Facing), Math.Cos(callSwitch.Facing), 0.0);
+                // Switch::GetActivate (0x444500) uses orientation local +Y as the panel front.
                 const double standOffUnits = 6144.0; // 1.5 m, inside the 2 m ActivateRadius.
-                Vector3d eye = callSwitch.Anchor + (forward * standOffUnits);
-                float yaw = callSwitch.Facing + MathF.PI; // the look ray points back at the switch.
+                Vector3d front = callSwitch.Orientation.Transposed().Transform(
+                    new Vector3d(0.0, standOffUnits, 0.0));
+                Vector3d eye = callSwitch.Anchor + front;
+                float yaw = (float)Math.Atan2(-front.X, -front.Y);
 
                 WorldInteraction? resolved = interactions.Resolve(eye, yaw, 0f, out _);
                 Assert.True(

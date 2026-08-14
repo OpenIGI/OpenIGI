@@ -426,8 +426,14 @@ public sealed class ElevatorRegistry
                     () => expressions.EvaluateCondition(floorDown, emptyValue: false),
                     wantedFloors,
                     exteriorCalls));
-                variables.BindInt(declared, "vFloor", () => state.CurrentFloorIndex, value => state.RequestFloor(value));
-                variables.BindBool(declared, "isMoving", () => state.IsMoving, _ => { });
+                // Elevator_Activate writes a double spline coordinate at +0x1A0 and binds %s.vFloor.
+                // An integer last-floor export makes landing-door "vFloor == N" true on the first step.
+                variables.BindReal(
+                    declared,
+                    "vFloor",
+                    () => state.FloorPosition,
+                    value => state.RequestFloor((int)value));
+                variables.BindBool(declared, "isMoving", () => state.HasMovementRequest, _ => { });
             }
         }
 
