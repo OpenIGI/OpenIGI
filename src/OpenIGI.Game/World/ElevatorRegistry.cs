@@ -66,14 +66,14 @@ public sealed class ElevatorRegistry
     /// </remarks>
     public void SetPlayerPositionProvider(Func<Vector3d>? provider) => _playerPositionProvider = provider;
 
-    public static ElevatorRegistry Build(GameTask root, ScriptVarRegistry variables, DoorRegistry? doors = null)
+    public static ElevatorRegistry Build(GameTask root, ScriptVarRegistry variables)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
 
         ElevatorRegistry registry = new();
         LevelExpressionRuntime expressions = new(variables);
-        Collect(root, root, registry, expressions, variables, doors);
+        Collect(root, root, registry, expressions, variables);
         return registry;
     }
 
@@ -203,29 +203,7 @@ public sealed class ElevatorRegistry
         return false;
     }
 
-    /// <summary>Checks whether every door referenced by an elevator is fully closed.</summary>
-    /// <remarks>
-    /// The lift must not move while any door is open or mid-swing — retail doors physically block the
-    /// shaft, and a moving car with an open leaf is the "can't go" bug this guards.
-    /// </remarks>
-    public static bool AreAllDoorsFullyClosed(GameTask elevatorTask, DoorRegistry doors)
-    {
-        foreach (PlacedDoor door in doors.Doors)
-        {
-            if (IsDescendantOf(door.Task, elevatorTask) && !door.State.IsFullyClosed)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>Checks whether every door referenced by an elevator is fully closed.</summary>
-    /// <remarks>
-    /// The lift must not move while any door is open or mid-swing — retail doors physically block the
-    /// shaft, and a moving car with an open leaf is the "can't go" bug this guards.
-    /// </remarks>
+    /// <summary>Gets the world transform for an elevator-owned task.</summary>
     public bool TryGetDrawTransform(
         GameTask task,
         Vector3d authoredPosition,
@@ -336,8 +314,7 @@ public sealed class ElevatorRegistry
         GameTask task,
         ElevatorRegistry registry,
         LevelExpressionRuntime expressions,
-        ScriptVarRegistry variables,
-        DoorRegistry? doors = null)
+        ScriptVarRegistry variables)
     {
         if (task is DeclaredTask declared
             && string.Equals(declared.Type.Name, "Elevator", StringComparison.Ordinal))
@@ -375,22 +352,18 @@ public sealed class ElevatorRegistry
                     .Select(expression => (Func<bool>)(() => expressions.EvaluateCondition(
                         expression, emptyValue: false)))
                     .ToList();
-                string canStart = ReadString(declared, "Can start");
                 string floorUp = ReadString(declared, "Floor up");
                 string floorDown = ReadString(declared, "Floor down");
                 DeclaredTask elevatorTask = declared;
                 ElevatorRegistry registryCapture = registry;
-                Func<bool>? doorsClosedFn = doors is null ? null : (() => AreAllDoorsFullyClosed(elevatorTask, doors));
                 registry._commands.Add(new ElevatorCommand(
                     elevator,
-                    () => (registryCapture._playerPositionProvider is not null
-                            && registryCapture.IsPlayerInsideElevator(
-                                registryCapture._playerPositionProvider(), out _))
-                        && (doorsClosedFn is null || doorsClosedFn()),
+                    () => registryCapture._playerPositionProvider is not null
+                        && registryCapture.IsPlayerInsideElevator(
+                            registryCapture._playerPositionProvider(), out _),
                     () => expressions.EvaluateCondition(floorUp, emptyValue: false),
                     () => expressions.EvaluateCondition(floorDown, emptyValue: false),
-                    wantedFloors,
-                    doorsClosedFn));
+                    wantedFloors));
                 variables.BindInt(declared, "vFloor", () => state.CurrentFloorIndex, value => state.RequestFloor(value));
                 variables.BindBool(declared, "isMoving", () => state.IsMoving, _ => { });
             }
@@ -398,7 +371,7 @@ public sealed class ElevatorRegistry
 
         foreach (GameTask child in task.Children)
         {
-            Collect(root, child, registry, expressions, variables, doors);
+            Collect(root, child, registry, expressions, variables);
         }
     }
 
@@ -407,8 +380,7 @@ public sealed class ElevatorRegistry
         Func<bool> CanStart,
         Func<bool> FloorUp,
         Func<bool> FloorDown,
-        List<Func<bool>> WantedFloors,
-        Func<bool>? DoorsClosed = null)
+        List<Func<bool>> WantedFloors)
     {
         public PlacedElevator Elevator { get; } = Elevator;
         public Func<bool> CanStart { get; } = CanStart;
@@ -416,7 +388,6 @@ public sealed class ElevatorRegistry
         public Func<bool> FloorDown { get; } = FloorDown;
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
         public bool[] LastWantedFloors { get; } = new bool[WantedFloors.Count];
-        internal Func<bool>? DoorsClosed { get; } = DoorsClosed;
 
         public bool RequestFromSwitch()
         {

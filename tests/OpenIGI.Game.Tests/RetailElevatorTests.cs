@@ -106,7 +106,7 @@ public sealed class RetailElevatorTests
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
         DoorRegistry doors = DoorRegistry.Build(root);
-        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
             root, mission, doors, variables, elevators);
 

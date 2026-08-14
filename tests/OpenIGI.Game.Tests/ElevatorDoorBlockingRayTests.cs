@@ -176,7 +176,7 @@ public sealed class ElevatorDoorBlockingRayTests
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
         DoorRegistry doors = DoorRegistry.Build(root);
-        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables, elevators);
 
         PlacedElevator? withDoor = null;
@@ -260,7 +260,7 @@ public sealed class ElevatorDoorBlockingRayTests
         ScriptVarRegistry variables,
         DoorRegistry doors)
     {
-        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
         foreach (PlacedElevator elevator in elevators.Elevators)
         {
             PlacedDoor? owned = Descendants(elevator.Task)
