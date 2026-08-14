@@ -2829,8 +2829,12 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { IsBinocularsOpen: true }
                     && _soldiers is { } binocularSoldiers
                         ? binocularSoldiers.BinocularTargets(
-                            _player.Camera,
-                            _player.View?.TanX ?? HumanView.DefaultTanX,
+                            // Use the same presented eye that rendered the world. The detector owns
+                            // authoritative slot lifetime, but its screen rectangle must be projected
+                            // through the frame's smoothed camera or moving/zooming binoculars make the
+                            // box visibly lag behind the soldier it is meant to surround.
+                            eye,
+                            sight.TanX,
                             _window.Width,
                             _window.Height,
                             _loop.Clock.TickCount)

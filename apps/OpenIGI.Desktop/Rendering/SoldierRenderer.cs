@@ -579,13 +579,28 @@ public sealed class SoldierRenderer : IDisposable
         float top = float.PositiveInfinity;
         float bottom = float.NegativeInfinity;
         int projected = 0;
+        // The detector is evaluated during the render pass, after SoldierRenderer.BeginFrame has
+        // resolved the same tick-pair interpolation used by Draw. Projecting from SoldierView's
+        // authoritative tick pose here makes boxes lag behind moving guards and is especially visible
+        // while binoculars are zooming. Use the presented transform and keep the authoritative pose as
+        // the fallback for the first frame before presentation state exists.
+        Vector3d presentedPosition = member?.HasFrameState == true
+            ? member.DrawnWhere
+            : new Vector3d(
+                view.Position.X / WorldScene.UnitsPerMetre,
+                view.Position.Y / WorldScene.UnitsPerMetre,
+                view.Position.Z / WorldScene.UnitsPerMetre);
+        Matrix3f presentedOrientation = member?.HasFrameState == true
+            ? member.DrawnOrientation
+            : view.Orientation;
+
         foreach (Vertex3D vertex in skin)
         {
-            Vector3f local = view.Orientation.Transform(vertex.Position);
+            Vector3f local = presentedOrientation.Transform(vertex.Position);
             Vector3d world = new(
-                view.Position.X / WorldScene.UnitsPerMetre + local.X,
-                view.Position.Y / WorldScene.UnitsPerMetre + local.Y,
-                view.Position.Z / WorldScene.UnitsPerMetre + local.Z);
+                presentedPosition.X + local.X,
+                presentedPosition.Y + local.Y,
+                presentedPosition.Z + local.Z);
             Vector3d relative = new(
                 world.X - camera.Position.X,
                 world.Y - camera.Position.Y,
