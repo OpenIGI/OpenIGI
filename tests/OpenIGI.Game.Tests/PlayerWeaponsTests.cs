@@ -404,6 +404,32 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void BinocularViewUsesTheNativeWideOrNarrowCameraRateAtTheRetailThreshold()
+    {
+        RetailFovTransitionRates rates = new(WideFieldRate: 0.2f, NarrowFieldRate: 0.05f);
+        BinocularsView view = new(rates);
+        WeaponType binoculars = Binoculars;
+
+        SightZoomFrame opened = view.Tick(
+            binoculars,
+            togglePressed: true,
+            zoomInHeld: false,
+            zoomOutHeld: false,
+            tanX: HumanView.DefaultTanX,
+            viewModelTanX: HumanView.DefaultViewModelTanX);
+        Assert.Equal(0.8f, opened.TanX, precision: 5);
+
+        SightZoomFrame belowThreshold = view.Tick(
+            binoculars,
+            togglePressed: false,
+            zoomInHeld: true,
+            zoomOutHeld: false,
+            tanX: 0.79f,
+            viewModelTanX: HumanView.DefaultViewModelTanX);
+        Assert.Equal(0.74f, belowThreshold.TanX, precision: 5);
+    }
+
+    [Fact]
     public void OpticalLatchesCanBeResetWhenFirstPersonControlEnds()
     {
         BinocularsView binoculars = new();

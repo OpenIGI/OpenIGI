@@ -109,7 +109,7 @@ public sealed class GenericPickupRegistry
             && TryReadPosition(declared, out Vector3d position))
         {
             string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model
-                ? model
+                ? ResolveModelName(model)
                 : declared.TryGetValue("ID", out object? rawId) && rawId is string id
                     ? AmmoPickupCatalog.ModelNameForScriptId(id)
                     : string.Empty;
@@ -141,4 +141,9 @@ public sealed class GenericPickupRegistry
         position = default;
         return false;
     }
+
+    private static string ResolveModelName(string model) =>
+        AmmoPickupCatalog.ModelNameForScriptId(model) is { Length: > 0 } ammoModel
+            ? ammoModel
+            : model;
 }

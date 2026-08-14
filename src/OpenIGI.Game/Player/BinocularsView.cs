@@ -13,7 +13,11 @@ public sealed class BinocularsView
     /// <summary>The weapon task type that publishes binocular view parameters.</summary>
     public const string TaskType = "TASKTYPE_BINOCULAR";
 
-    /// <summary>The native FOV transition rate used by the retail view task when no runtime override is supplied.</summary>
+    /// <summary>The native current-tangent threshold at which the camera chooses its wide-field rate.</summary>
+    /// <remarks><c>FUN_00431E30</c> compares the current tangent with the retail double <c>0.8</c>.</remarks>
+    public const float NativeWideFieldThreshold = 0.8f;
+
+    /// <summary>The fallback rate used when the host has not supplied the camera's two runtime rates.</summary>
     /// <remarks>
     /// The executable keeps the transition rate in the view configuration, not in the three binocular
     /// weapon arguments. The managed weapon record therefore cannot recover it from the QVM alone. Keep
@@ -27,6 +31,17 @@ public sealed class BinocularsView
 
     private WeaponType? _weapon;
     private float _targetTanX;
+    private readonly RetailFovTransitionRates _transitionRates;
+
+    /// <summary>Initializes binocular state with the retail camera convergence rates.</summary>
+    /// <param name="transitionRates">
+    /// The two rates read by the native camera config at <c>+0x20</c> and <c>+0x24</c>. When omitted,
+    /// both use the compatibility fallback until the desktop host wires its loaded camera profile.
+    /// </param>
+    public BinocularsView(RetailFovTransitionRates? transitionRates = null)
+    {
+        _transitionRates = transitionRates ?? RetailFovTransitionRates.Fallback;
+    }
 
     /// <summary>Gets whether the binocular view is active.</summary>
     public bool IsOpen { get; private set; }
@@ -89,7 +104,7 @@ public sealed class BinocularsView
         {
             IsOpen = false;
             _targetTanX = HumanView.DefaultTanX;
-            float restoredTanX = MoveToward(tanX, _targetTanX, NativeZoomSpeed);
+            float restoredTanX = MoveToward(tanX, _targetTanX);
             ZoomChangedThisTick = restoredTanX != tanX;
             return new SightZoomFrame(restoredTanX, HumanView.DefaultViewModelTanX);
         }
@@ -119,7 +134,7 @@ public sealed class BinocularsView
         if (!IsOpen)
         {
             _targetTanX = HumanView.DefaultTanX;
-            float restoredTanX = MoveToward(tanX, _targetTanX, NativeZoomSpeed);
+            float restoredTanX = MoveToward(tanX, _targetTanX);
             ZoomChangedThisTick = restoredTanX != tanX;
             return new SightZoomFrame(restoredTanX, HumanView.DefaultViewModelTanX);
         }
@@ -145,14 +160,15 @@ public sealed class BinocularsView
         // FUN_00431E30 moves the current tangent toward its target by the configured rate and clamps
         // to the target. The binocular task owns only that world-FOV target; leave the view-model
         // tangent untouched just as the native task does.
-        tanX = MoveToward(tanX, _targetTanX, NativeZoomSpeed);
+        tanX = MoveToward(tanX, _targetTanX);
         ZoomChangedThisTick = tanX != previousTanX;
 
         return new SightZoomFrame(tanX, HumanView.DefaultViewModelTanX);
     }
 
-    private static float MoveToward(float current, float target, float amount)
+    private float MoveToward(float current, float target)
     {
+        float amount = _transitionRates.ForCurrentTangent(current);
         if (current < target)
         {
             return Math.Min(target, current + amount);
@@ -180,4 +196,21 @@ public sealed class BinocularsView
         maximum = weapon.Weapon.Values[2];
         return minimum <= authoredDefault && authoredDefault <= maximum;
     }
+}
+
+/// <summary>The two runtime tangent rates selected by retail's human-camera configuration.</summary>
+/// <remarks>
+/// The native integrator at <c>0x00431E30</c> reads <c>cameraConfig+0x20</c> when the current tangent
+/// is at or above <c>0.8</c>, otherwise it reads <c>cameraConfig+0x24</c>. These are rates per simulation
+/// update, not weapon-QVM arguments. Keeping them as a value makes the selection testable and prevents
+/// the binocular task from silently growing a second hardcoded zoom algorithm.
+/// </remarks>
+public readonly record struct RetailFovTransitionRates(float WideFieldRate, float NarrowFieldRate)
+{
+    /// <summary>Compatibility fallback used until the host supplies its loaded camera profile.</summary>
+    public static RetailFovTransitionRates Fallback => new(BinocularsView.NativeZoomSpeed, BinocularsView.NativeZoomSpeed);
+
+    /// <summary>Returns the native rate selected for the supplied current tangent.</summary>
+    public float ForCurrentTangent(float currentTangent) =>
+        currentTangent >= BinocularsView.NativeWideFieldThreshold ? WideFieldRate : NarrowFieldRate;
 }

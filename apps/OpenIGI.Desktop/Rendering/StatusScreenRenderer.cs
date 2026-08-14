@@ -443,16 +443,25 @@ public sealed class StatusScreenRenderer : IDisposable
                 BitmapTextRenderer.NeutralColor);
         }
 
-        // BinocularOverlay_DrawCompass (native entry 0x0051AA50; Ghidra's containing function begins at
-        // 0x0051A8C0) emits the scrolling compass strip. It is part of the retail binocular task, not
-        // the remastered computer-themed presentation.
-        DrawNativeBinocularCompass(batch, screenWidth, screenHeight, headingRadians);
+        // RetailBinocularUpdater (0x0051A8C0) updates the holder's path; the overlay builder at
+        // 0x00471480 then draws the authored binocular frame, reticle and range labels. The native
+        // widget is a range readout (weapons/strings/Binoculars/range), not a compass strip.
+        DrawNativeBinocularRange(batch, screenWidth, screenHeight, targets);
 
+        // RetailBinocularOverlayBuilder (0x00471480) draws the reticle from normalized video
+        // dimensions, not fixed 640x480 pixels: the horizontal arms begin 9.375% from the centre,
+        // use a 1.5625% width, and the vertical texture uses a 2.0833334% height.  The old port's
+        // fixed 36-pixel cross was the green block that became visibly wrong at widescreen sizes.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
+        float horizontalGap = screenWidth * 0.09375f;
+        float horizontalArm = MathF.Max(1f, screenWidth * 0.015625f);
+        float verticalArm = MathF.Max(1f, screenHeight * 0.020833334f);
         Bgra32 signal = new(64, 160, 64, 210);
-        batch.FillRect(new RectF(centreX - 1f, centreY - 18f, 2f, 36f), signal);
-        batch.FillRect(new RectF(centreX - 18f, centreY - 1f, 36f, 2f), signal);
+        batch.FillRect(new RectF(centreX - horizontalGap - horizontalArm, centreY - 1f, horizontalArm, 2f), signal);
+        batch.FillRect(new RectF(centreX + horizontalGap, centreY - 1f, horizontalArm, 2f), signal);
+        batch.FillRect(new RectF(centreX - 1f, centreY - horizontalGap - verticalArm, 2f, verticalArm), signal);
+        batch.FillRect(new RectF(centreX - 1f, centreY + horizontalGap, 2f, verticalArm), signal);
 
         if (targets is not null)
         {
@@ -479,68 +488,47 @@ public sealed class StatusScreenRenderer : IDisposable
         batch.FillRect(new RectF(target.Right - thickness, target.Top + thickness, thickness, MathF.Max(0f, height - (thickness * 2f))), faded);
     }
 
-    private void DrawNativeBinocularCompass(
+    private void DrawNativeBinocularRange(
         SpriteBatch batch,
         int screenWidth,
         int screenHeight,
-        float headingRadians)
+        IReadOnlyList<EnemyOverlayBox>? targets)
     {
         if (screenWidth <= 0 || screenHeight <= 0)
         {
             return;
         }
 
-        // The native update walks a 40-point compass buffer. Each point is refined from a 100-sample
-        // spline pass (after a 500-sample pass builds the source path); it is not a 64-tick sprite strip.
-        // The renderer has no native callback/resource bridge, so these are the same 40 projected sample
-        // positions represented as a screen-space strip. Keeping the native sample count is important:
-        // it prevents the retail compass from presenting a denser, invented 64-mark scale.
-        const int sampleCount = 40;
-        float stripWidth = screenWidth * 0.28125f;
-        float spacing = stripWidth / sampleCount;
-        float originX = screenWidth * 0.625f;
-        float baseline = screenHeight * 0.7916667f;
-        float phase = (headingRadians / MathF.Tau) * stripWidth;
-        phase -= MathF.Floor(phase / stripWidth) * stripWidth;
-        float pixel = MathF.Max(1f, screenWidth / 640f);
-        Bgra32 minor = Bgra32.FromRgb(0, 64, 0);
-        Bgra32 major = Bgra32.FromRgb(0, 128, 0);
-
-        for (int index = 0; index < sampleCount; index++)
+        if (Font() is not { } font)
         {
-            float x = originX + phase + (index * spacing);
-            if (x >= originX + stripWidth)
-            {
-                x -= stripWidth;
-            }
-
-            bool isMajor = index % 10 == 0;
-            bool isMedium = !isMajor && index % 5 == 0;
-            float height = (isMajor ? 12f : isMedium ? 8f : 4f) * pixel;
-            batch.FillRect(
-                new RectF(x - (pixel * 0.5f), baseline - height, pixel, height),
-                isMajor ? major : minor);
-
-            if (isMajor && Font() is { } font)
-            {
-                int cardinal = (int)MathF.Round(((index * 360f / sampleCount) +
-                    (headingRadians * 180f / MathF.PI)) / 90f) * 90;
-                string label = (((cardinal % 360) + 360) % 360) switch
-                {
-                    0 => "N",
-                    90 => "E",
-                    180 => "S",
-                    270 => "W",
-                    _ => string.Empty,
-                };
-                if (label.Length > 0)
-                {
-                    float scale = MathF.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
-                    float labelWidth = font.Measure(label, scale, scale).Width;
-                    font.Draw(batch, label, x - (labelWidth * 0.5f), baseline - height - (font.LineHeight * scale), major, scale, scale);
-                }
-            }
+            return;
         }
+
+        // The builder uses the video dimensions directly: x=12.5% and y=76.25% for the range
+        // holder. Its distance source is the refined native path; until that holder is exposed to the
+        // renderer, the closest visible detector slot is the faithful managed source.
+        EnemyOverlayBox? nearest = targets is null
+            ? null
+            : targets
+                .Where(static target => target.DistanceMetres > 0f && float.IsFinite(target.DistanceMetres))
+                .OrderBy(static target => target.DistanceMetres)
+                .Select(static target => (EnemyOverlayBox?)target)
+                .FirstOrDefault();
+        if (nearest is not { } target)
+        {
+            return;
+        }
+
+        float scale = MathF.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
+        string range = $"RANGE: {MathF.Round(target.DistanceMetres):0}M";
+        font.Draw(
+            batch,
+            range,
+            screenWidth * 0.125f,
+            (screenHeight * 0.7625f) - (font.LineHeight * scale),
+            new Bgra32(0, 128, 0, 255),
+            scale,
+            scale);
     }
 
     /// <inheritdoc/>
