@@ -74,6 +74,22 @@ public sealed class RetailSoundDefinitionTests
     }
 
     [RequiresGameDataFact]
+    public void BinocularAndMedipackGameplayCuesExistInTheRetailSoundBank()
+    {
+        SoundDefinitionRegistry registry = Load();
+
+        Assert.True(registry.TryResolve("bin_zoom_1", out SoundDefinition? binocular));
+        Assert.NotNull(binocular);
+        Assert.Equal(SoundDefinitionKind.Sound, binocular.Kind);
+        Assert.True(binocular.Loop);
+
+        Assert.True(registry.TryResolve("syringe", out SoundDefinition? medipack));
+        Assert.NotNull(medipack);
+        Assert.Equal(SoundDefinitionKind.Sound, medipack.Kind);
+        Assert.False(medipack.Loop);
+    }
+
+    [RequiresGameDataFact]
     public void TheVariantHelperDrawsOneNameThatWasNeverDefined()
     {
         // 0x4B47C0 is four instructions ending in an unsigned `div`, so the draw is [0, count-1] while

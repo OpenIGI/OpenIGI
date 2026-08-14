@@ -47,6 +47,7 @@ internal sealed partial class DesktopGame
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
+    private AudioVoiceHandle _binocularZoomVoice;
 
     private void SetCutsceneSound(CutsceneSoundEvent sound)
     {
@@ -161,19 +162,37 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Plays the retail binocular device cue on view and zoom-target transitions.</summary>
-    /// <remarks><c>COMMON/SOUNDS/SOUNDS.RES</c> authors this cue as <c>bin_zoom_1.wav</c>.</remarks>
+    /// <summary>Maintains the retail binocular zoom cue across view and zoom-target transitions.</summary>
+    /// <remarks>
+    /// <c>COMMON/SOUNDS/SOUNDS.RES</c> authors <c>bin_zoom_1</c> as a loop. Start it on the first
+    /// binocular/zoom edge and stop it when the view closes; treating it as a one-shot leaves the
+    /// authored loop running forever, while restarting it on every convergence tick causes clicks.
+    /// </remarks>
     private void PlayBinocularTransitionSound()
     {
-        if (_player is not { } player
-            || (!player.BinocularsOpenedThisTick
-                && !player.BinocularsClosedThisTick
-                && !player.BinocularZoomTargetChangedThisTick))
+        if (_sounds is null || _player is not { } player)
         {
             return;
         }
 
-        _sounds?.PlayDefinition("bin_zoom_1", priority: 180);
+        if (player.BinocularsClosedThisTick || !player.IsBinocularsOpen)
+        {
+            if (_binocularZoomVoice.IsValidHandle)
+            {
+                _sounds.Stop(_binocularZoomVoice);
+                _binocularZoomVoice = AudioVoiceHandle.None;
+            }
+
+            return;
+        }
+
+        if ((!player.BinocularsOpenedThisTick && !player.BinocularZoomTargetChangedThisTick)
+            || (_binocularZoomVoice.IsValidHandle && _sounds.IsPlaying(_binocularZoomVoice)))
+        {
+            return;
+        }
+
+        _binocularZoomVoice = _sounds.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
     }
 
     /// <summary>Plays the authored syringe cue when the first healing dose is injected.</summary>
