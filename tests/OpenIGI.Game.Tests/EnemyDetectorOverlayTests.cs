@@ -28,7 +28,7 @@ public sealed class EnemyDetectorOverlayTests
     }
 
     [Fact]
-    public void NativePulseStartsLargeAndContractsToTheAuthoredBounds()
+    public void NativeAnimationPulseDoesNotResizeProjectedTargetGeometry()
     {
         EnemyDetectorOverlay detector = new();
         detector.Upsert(3, 20f, 1, 320f, 240f, 0, 0, 0, 1000, 10f, 20f);
@@ -36,9 +36,9 @@ public sealed class EnemyDetectorOverlayTests
         EnemyOverlayBox initial = Assert.Single(detector.OverlayBoxes(1000));
         EnemyOverlayBox settled = Assert.Single(detector.OverlayBoxes(1250));
 
-        Assert.Equal(110f, initial.Right - initial.Left, 3);
+        Assert.Equal(10f, initial.Right - initial.Left, 3);
         Assert.Equal(10f, settled.Right - settled.Left, 3);
-        Assert.Equal(220f, initial.Bottom - initial.Top, 3);
+        Assert.Equal(20f, initial.Bottom - initial.Top, 3);
         Assert.Equal(20f, settled.Bottom - settled.Top, 3);
     }
 }

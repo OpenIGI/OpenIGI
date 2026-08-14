@@ -443,7 +443,7 @@ public sealed class StatusScreenRenderer : IDisposable
                 BitmapTextRenderer.NeutralColor);
         }
 
-        // FUN_00472050 emits a 64-slot scrolling compass strip. It is part of the retail
+        // BinocularOverlay_DrawCompass (0x0051AA50) emits the scrolling compass strip. It is part of the retail
         // binocular task, not the remastered computer-themed presentation.
         DrawNativeBinocularCompass(batch, screenWidth, screenHeight, headingRadians);
 

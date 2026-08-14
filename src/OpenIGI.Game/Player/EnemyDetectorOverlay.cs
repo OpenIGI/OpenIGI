@@ -29,8 +29,6 @@ public sealed class EnemyDetectorOverlay
     public const int NativeDistanceFieldOffset = 0x2C5C;
 
     private const int NativeRetentionTicks = 3000;
-    private const float NativePulseDurationTicks = 250f;
-
     private readonly TargetSlot[] _slots = new TargetSlot[SlotCount];
 
     /// <summary>Gets the records in native slot order.</summary>
@@ -126,9 +124,11 @@ public sealed class EnemyDetectorOverlay
                 continue;
             }
 
-            float pulse = slot.NativePulseScale(tick);
-            float width = slot.BoxWidth * pulse;
-            float height = slot.BoxHeight * pulse;
+            // The native pulse helper drives the overlay resource animation/fade.  It does not
+            // resize the projected target geometry.  Box growth comes from the model projection
+            // and therefore changes naturally with distance and the current binocular tangent.
+            float width = slot.BoxWidth;
+            float height = slot.BoxHeight;
             boxes.Add(new EnemyOverlayBox(
                 slot.TargetId,
                 slot.ScreenX - (width * 0.5f),
@@ -160,11 +160,6 @@ public sealed class EnemyDetectorOverlay
         public bool Occupied => TargetId != 0;
         public bool Drawable => Occupied && Active && EventParam == 0;
 
-        public int NativePulseAge(int tick) =>
-            Math.Clamp(unchecked(tick - LastUsedTick), 0, (int)NativePulseDurationTicks);
-
-        public float NativePulseScale(int tick) =>
-            1f + ((NativePulseDurationTicks - NativePulseAge(tick)) * 0.04f);
     }
 
     /// <summary>Projects the legacy contact list for callers that do not own the live detector.</summary>

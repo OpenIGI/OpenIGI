@@ -517,6 +517,8 @@ public sealed class SoldierRenderer : IDisposable
                     verticalTangent,
                     screenWidth,
                     screenHeight,
+                    out float projectedCentreX,
+                    out float projectedCentreY,
                     out float boxWidth,
                     out float boxHeight))
             {
@@ -524,6 +526,15 @@ public sealed class SoldierRenderer : IDisposable
                     / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
                 boxHeight = (float)(HumanSeparation.HeightInUnits * screenHeight
                     / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
+            }
+            else
+            {
+                // Native BinocularOverlay_PositionOverlayHandler projects the target model's
+                // transformed corners and draws around that projected rectangle.  The chest point
+                // is only the detector query point; using it as the rectangle centre visibly shifts
+                // large/animated soldiers away from their overlay.
+                screenX = projectedCentreX;
+                screenY = projectedCentreY;
             }
 
             _binocularOverlay.Upsert(
@@ -552,10 +563,12 @@ public sealed class SoldierRenderer : IDisposable
         float verticalTangent,
         int screenWidth,
         int screenHeight,
+        out float centreX,
+        out float centreY,
         out float width,
         out float height)
     {
-        width = height = 0f;
+        centreX = centreY = width = height = 0f;
         if (member?.SkinScratch is not { Length: > 0 } skin)
         {
             return false;
@@ -601,7 +614,15 @@ public sealed class SoldierRenderer : IDisposable
 
         width = right - left;
         height = bottom - top;
-        return projected > 0 && float.IsFinite(width) && float.IsFinite(height) && width > 0.5f && height > 0.5f;
+        centreX = (left + right) * 0.5f;
+        centreY = (top + bottom) * 0.5f;
+        return projected > 0
+            && float.IsFinite(centreX)
+            && float.IsFinite(centreY)
+            && float.IsFinite(width)
+            && float.IsFinite(height)
+            && width > 0.5f
+            && height > 0.5f;
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
