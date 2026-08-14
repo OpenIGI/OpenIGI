@@ -423,10 +423,11 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.ZoomChangedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
         narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
-        // The native view keeps moving toward the selected target after the zoom key is released.
-        Assert.Equal(0.9216f * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
+        // The native handler only multiplies while its zoom input is active; releasing the key holds
+        // the current magnification instead of continuing toward the last target.
+        Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
-        Assert.True(view.ZoomChangedThisTick);
+        Assert.False(view.ZoomChangedThisTick);
         Assert.False(view.ZoomTargetChangedThisTick);
         for (int i = 0; i < 100; i++)
         {
@@ -447,8 +448,8 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.ClosedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
 
-        // Retail multiplies the current tangent while returning to the gameplay target; closing the
-        // device does not snap the world camera back in one tick.
+        // Closing starts the authored return transition; it does not snap the world camera back in one
+        // tick.
         Assert.Equal(0.1f * BinocularsView.ZoomOutFactor, closing.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, closing.ViewModelTanX);
     }

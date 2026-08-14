@@ -1697,7 +1697,17 @@ public sealed class PlayerCamera
             else
             {
                 _ = _dragunovScope.Tick(heldWeapon, false, false, false, false, _view.TanX, _view.ViewModelTanX);
-                zoom = heldWeapon?.Category == WeaponCategory.Binocular
+                bool binocular = heldWeapon?.Category == WeaponCategory.Binocular;
+                if (!binocular && _binocularsView.HasOpticsState)
+                {
+                    // Binoculars are not ticked once the weapon swap has selected another weapon.
+                    // Clear their latch and restore the camera before MP5/other sight zoom is applied.
+                    _binocularsView.Reset();
+                    _view.TanX = HumanView.DefaultTanX;
+                    _view.ViewModelTanX = HumanView.DefaultViewModelTanX;
+                }
+
+                zoom = binocular
                     ? _binocularsView.Tick(
                         heldWeapon,
                         _weapons?.ConsumeBinocularToggle() == true,

@@ -23,8 +23,19 @@ public sealed class BinocularsView
 
     private WeaponType? _weapon;
     private float _targetTanX;
+    private bool _settlingToDefault;
+    private bool _settlingClosed;
     /// <summary>Gets whether the binocular view is active.</summary>
     public bool IsOpen { get; private set; }
+
+    /// <summary>
+    /// Gets whether binocular state still owns or is restoring the camera field of view.
+    /// </summary>
+    /// <remarks>
+    /// The camera only ticks this state machine while binoculars are held. The transition therefore
+    /// has to be explicitly discarded when a weapon swap selects another optical device.
+    /// </remarks>
+    public bool HasOpticsState => IsOpen || _settlingToDefault || _settlingClosed;
 
     /// <summary>Gets whether this tick opened the view.</summary>
     public bool OpenedThisTick { get; private set; }
@@ -47,6 +58,8 @@ public sealed class BinocularsView
     {
         _weapon = null;
         _targetTanX = HumanView.DefaultTanX;
+        _settlingToDefault = false;
+        _settlingClosed = false;
         IsOpen = false;
         OpenedThisTick = false;
         ClosedThisTick = false;
@@ -78,13 +91,21 @@ public sealed class BinocularsView
             _weapon = weapon;
             IsOpen = false;
             _targetTanX = HumanView.DefaultTanX;
+            _settlingToDefault = false;
+            _settlingClosed = false;
         }
 
         if (!TryGetBounds(weapon, out float minimum, out float maximum, out float authoredDefault))
         {
             IsOpen = false;
             _targetTanX = HumanView.DefaultTanX;
+            _settlingToDefault = false;
+            _settlingClosed = true;
             float restoredTanX = MoveToward(tanX, _targetTanX);
+            if (restoredTanX == _targetTanX)
+            {
+                _settlingClosed = false;
+            }
             ZoomChangedThisTick = restoredTanX != tanX;
             return new SightZoomFrame(restoredTanX, HumanView.DefaultViewModelTanX);
         }
@@ -97,6 +118,8 @@ public sealed class BinocularsView
             if (!IsOpen)
             {
                 _targetTanX = HumanView.DefaultTanX;
+                _settlingToDefault = false;
+                _settlingClosed = true;
                 ZoomTargetChangedThisTick = true;
             }
 
@@ -107,6 +130,7 @@ public sealed class BinocularsView
             if (_targetTanX != authoredDefault)
             {
                 _targetTanX = authoredDefault;
+                _settlingToDefault = true;
                 ZoomTargetChangedThisTick = true;
             }
         }
@@ -114,7 +138,11 @@ public sealed class BinocularsView
         if (!IsOpen)
         {
             _targetTanX = HumanView.DefaultTanX;
-            float restoredTanX = MoveToward(tanX, _targetTanX);
+            float restoredTanX = _settlingClosed ? MoveToward(tanX, _targetTanX) : tanX;
+            if (restoredTanX == _targetTanX)
+            {
+                _settlingClosed = false;
+            }
             ZoomChangedThisTick = restoredTanX != tanX;
             return new SightZoomFrame(restoredTanX, HumanView.DefaultViewModelTanX);
         }
@@ -122,25 +150,37 @@ public sealed class BinocularsView
         float previousTanX = tanX;
         if (zoomInHeld)
         {
+            _settlingToDefault = false;
             if (_targetTanX != minimum)
             {
                 _targetTanX = minimum;
                 ZoomTargetChangedThisTick = true;
             }
+
+            tanX = Math.Max(minimum, tanX * ZoomInFactor);
         }
         else if (zoomOutHeld)
         {
+            _settlingToDefault = false;
             if (_targetTanX != maximum)
             {
                 _targetTanX = maximum;
                 ZoomTargetChangedThisTick = true;
             }
-        }
 
-        // The retail binocular handler multiplies the current tangent by one of the two constants
-        // above, then clamps to its current target. The task owns only this world-FOV tangent; leave
-        // the view-model tangent untouched just as the native task does.
-        tanX = MoveToward(tanX, _targetTanX);
+            tanX = Math.Min(maximum, tanX * ZoomOutFactor);
+        }
+        else if (_settlingToDefault)
+        {
+            // Opening uses the task's authored default as a one-time camera transition. Once a zoom
+            // key has been used, the native handler leaves the current magnification where it is until
+            // another zoom input arrives; it does not keep chasing the last min/max target.
+            tanX = MoveToward(tanX, _targetTanX);
+            if (tanX == _targetTanX)
+            {
+                _settlingToDefault = false;
+            }
+        }
         ZoomChangedThisTick = tanX != previousTanX;
 
         return new SightZoomFrame(tanX, HumanView.DefaultViewModelTanX);
