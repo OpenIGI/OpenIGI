@@ -88,6 +88,7 @@ public sealed class SoldierRenderer : IDisposable
     // a corpse there would keep standing in the group's idle animation. Each gets its own single-member
     // group instead, ticked and re-skinned from its own rig, which is what lets it fall.
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
+    private readonly EnemyDetectorOverlay _binocularOverlay = new();
 
     // One prepared rig per skeleton, shared by every corpse wearing it. Building it walks the whole bone
     // graph twice, so it must not happen per death -- and it holds no live state, so it need not.
@@ -96,6 +97,7 @@ public sealed class SoldierRenderer : IDisposable
 
     private TerrainData? _terrain;
     private WorldRayCast? _cast;
+    private WorldRayCast? _sight;
     private SoldierRound? _onRound;
     private string _lastCombatReport = string.Empty;
     private readonly HashSet<SoldierView> _combatClipMissing = [];
@@ -446,6 +448,160 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         return false;
+    }
+
+    /// <summary>Projects living, visible soldiers through the native ten-slot binocular detector.</summary>
+    public IReadOnlyList<EnemyOverlayBox> BinocularTargets(
+        Camera3D camera,
+        float horizontalTangent,
+        int screenWidth,
+        int screenHeight,
+        int tick)
+    {
+        if (horizontalTangent <= 0f)
+        {
+            _binocularOverlay.Clear();
+            return [];
+        }
+
+        _binocularOverlay.BeginScan();
+        float verticalTangent = horizontalTangent * screenHeight / Math.Max(1f, screenWidth);
+        Vector3d eyeUnits = new(
+            camera.Position.X * WorldScene.UnitsPerMetre,
+            camera.Position.Y * WorldScene.UnitsPerMetre,
+            camera.Position.Z * WorldScene.UnitsPerMetre);
+
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (view.IsDead || !ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            Vector3d targetUnits = new(view.Position.X, view.Position.Y, view.Position.Z + PickChestUnits);
+            Vector3d delta = new(
+                targetUnits.X / WorldScene.UnitsPerMetre - camera.Position.X,
+                targetUnits.Y / WorldScene.UnitsPerMetre - camera.Position.Y,
+                targetUnits.Z / WorldScene.UnitsPerMetre - camera.Position.Z);
+            Vector3d viewPosition = camera.Orientation.Transposed().Transform(delta);
+            if (viewPosition.Z <= 0f)
+            {
+                continue;
+            }
+
+            float screenX = screenWidth * 0.5f
+                + (float)(viewPosition.X / (viewPosition.Z * horizontalTangent) * screenWidth * 0.5f);
+            float screenY = screenHeight * 0.5f
+                - (float)(viewPosition.Y / (viewPosition.Z * verticalTangent) * screenHeight * 0.5f);
+            if (screenX < -8f || screenX > screenWidth + 8f || screenY < -8f || screenY > screenHeight + 8f)
+            {
+                continue;
+            }
+
+            // Native FUN_00471B60 only inserts a target after its world visibility query is clear.
+            if (_sight is not null && _sight(eyeUnits, targetUnits, out _))
+            {
+                continue;
+            }
+
+            double dx = targetUnits.X - eyeUnits.X;
+            double dy = targetUnits.Y - eyeUnits.Y;
+            double dz = targetUnits.Z - eyeUnits.Z;
+            float distance = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+            Member? member = FindMember(view);
+            if (!TryGetProjectedModelBounds(
+                    member,
+                    view,
+                    camera,
+                    horizontalTangent,
+                    verticalTangent,
+                    screenWidth,
+                    screenHeight,
+                    out float boxWidth,
+                    out float boxHeight))
+            {
+                boxWidth = (float)(HumanSeparation.RadiusInUnits * screenWidth
+                    / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
+                boxHeight = (float)(HumanSeparation.HeightInUnits * screenHeight
+                    / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
+            }
+
+            _binocularOverlay.Upsert(
+                brain.RuntimeId,
+                distance,
+                configFlag: 1,
+                screenX,
+                screenY,
+                eventParam: 0,
+                extraParam1: 0,
+                extraParam2: 0,
+                tick,
+                boxWidth,
+                boxHeight);
+        }
+
+        _binocularOverlay.ExpireInactive(tick);
+        return _binocularOverlay.OverlayBoxes(tick);
+    }
+
+    private static bool TryGetProjectedModelBounds(
+        Member? member,
+        SoldierView view,
+        Camera3D camera,
+        float horizontalTangent,
+        float verticalTangent,
+        int screenWidth,
+        int screenHeight,
+        out float width,
+        out float height)
+    {
+        width = height = 0f;
+        if (member?.SkinScratch is not { Length: > 0 } skin)
+        {
+            return false;
+        }
+
+        float left = float.PositiveInfinity;
+        float right = float.NegativeInfinity;
+        float top = float.PositiveInfinity;
+        float bottom = float.NegativeInfinity;
+        int projected = 0;
+        foreach (Vertex3D vertex in skin)
+        {
+            Vector3f local = view.Orientation.Transform(vertex.Position);
+            Vector3d world = new(
+                view.Position.X / WorldScene.UnitsPerMetre + local.X,
+                view.Position.Y / WorldScene.UnitsPerMetre + local.Y,
+                view.Position.Z / WorldScene.UnitsPerMetre + local.Z);
+            Vector3d relative = new(
+                world.X - camera.Position.X,
+                world.Y - camera.Position.Y,
+                world.Z - camera.Position.Z);
+            Vector3d viewPosition = camera.Orientation.Transposed().Transform(relative);
+            if (viewPosition.Z <= 0.001)
+            {
+                continue;
+            }
+
+            float x = screenWidth * 0.5f
+                + (float)(viewPosition.X / (viewPosition.Z * horizontalTangent) * screenWidth * 0.5f);
+            float y = screenHeight * 0.5f
+                - (float)(viewPosition.Y / (viewPosition.Z * verticalTangent) * screenHeight * 0.5f);
+            if (!float.IsFinite(x) || !float.IsFinite(y))
+            {
+                continue;
+            }
+
+            left = MathF.Min(left, x);
+            right = MathF.Max(right, x);
+            top = MathF.Min(top, y);
+            bottom = MathF.Max(bottom, y);
+            projected++;
+        }
+
+        width = right - left;
+        height = bottom - top;
+        return projected > 0 && float.IsFinite(width) && float.IsFinite(height) && width > 0.5f && height > 0.5f;
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
@@ -910,6 +1066,7 @@ public sealed class SoldierRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(graphs);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        _sight = sight;
         _brains.Clear();
         _lastDetectionShoutTick = -1;
         _combat.Clear();
@@ -4441,6 +4598,8 @@ public sealed class SoldierRenderer : IDisposable
         _weapons.Clear();
         _groups.Clear();
         _health.Clear();
+        _cast = null;
+        _sight = null;
         ReleasePlayerBody();
         Count = 0;
     }

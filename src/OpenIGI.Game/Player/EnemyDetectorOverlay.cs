@@ -3,7 +3,9 @@ using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.Player;
 
-/// <summary>One projected enemy rectangle emitted by the binocular detector.</summary>
+#pragma warning disable CS1591
+
+/// <summary>One projected enemy rectangle emitted by the native binocular detector.</summary>
 public readonly record struct EnemyOverlayBox(
     int TargetId,
     float Left,
@@ -13,26 +15,159 @@ public readonly record struct EnemyOverlayBox(
     float DistanceMetres,
     float Alpha);
 
-/// <summary>Projects living soldier contacts into the native ten-slot binocular overlay.</summary>
+/// <summary>Managed equivalent of the retail ten-slot binocular detector.</summary>
 /// <remarks>
-/// The retail detector keeps ten records at <c>Human+0x2C4C</c>, stores the projected screen position,
-/// distance and a last-seen timestamp, then draws a target rectangle rather than a point. This helper
-/// preserves that presentation contract: contacts are bounded by a standing human's authored body box,
-/// sorted nearest-first, and capped at the native ten targets. Occlusion remains owned by the soldier
-/// contact provider, so the renderer never invents a target from a dead or missing actor.
+/// <c>FUN_00471B60</c> scans living, active humans and calls <c>FUN_00471F60</c>; the latter owns ten
+/// records at <c>Human+0x2C44</c>, each 0x2C bytes wide. This class keeps that stateful reuse and
+/// three-second retention behavior instead of rebuilding a transient list every render frame.
 /// </remarks>
-public static class EnemyDetectorOverlay
+public sealed class EnemyDetectorOverlay
 {
-    /// <summary>Maximum number of detector records retained by the retail task.</summary>
-    public const int NativeSlotCount = 10;
+    public const int SlotCount = 10;
+    public const int SlotStrideBytes = 0x2C;
+    public const int NativeSlotTableOffset = 0x2C44;
+    public const int NativeDistanceFieldOffset = 0x2C5C;
 
-    /// <summary>Authored standing-human width used to form the detector rectangle.</summary>
-    public const float HumanWidthMetres = 0.72f;
+    private const int NativeRetentionTicks = 3000;
+    private const float NativePulseDurationTicks = 250f;
 
-    /// <summary>Authored standing-human height used to form the detector rectangle.</summary>
-    public const float HumanHeightMetres = 1.8f;
+    private readonly TargetSlot[] _slots = new TargetSlot[SlotCount];
 
-    /// <summary>Projects contacts and returns the visible native-capacity target boxes.</summary>
+    /// <summary>Gets the records in native slot order.</summary>
+    public IReadOnlyList<TargetSlot> Slots => _slots;
+
+    public void BeginScan()
+    {
+        for (int index = 0; index < _slots.Length; index++)
+        {
+            if (_slots[index].Occupied)
+            {
+                _slots[index] = _slots[index] with { Active = false };
+            }
+        }
+    }
+
+    /// <summary>Updates or allocates one native detector record.</summary>
+    public bool Upsert(
+        int targetId,
+        float sortingDistance,
+        int configFlag,
+        float screenX,
+        float screenY,
+        int eventParam,
+        int extraParam1,
+        int extraParam2,
+        int tick,
+        float boxWidth,
+        float boxHeight)
+    {
+        if (targetId == 0)
+        {
+            return false;
+        }
+
+        int index = Array.FindIndex(_slots, slot => slot.TargetId == targetId);
+        bool existing = index >= 0;
+        if (index < 0)
+        {
+            index = Array.FindIndex(_slots, slot => slot.TargetId == 0);
+        }
+
+        if (index < 0)
+        {
+            // FUN_00471F60 advances while slot distance <= the new distance and chooses the first
+            // greater distance. The unusual comparison is deliberately retained.
+            index = Array.FindIndex(_slots, slot => slot.Distance > sortingDistance);
+            if (index < 0)
+            {
+                return false;
+            }
+        }
+
+        _slots[index] = new TargetSlot(
+            targetId,
+            sortingDistance,
+            configFlag,
+            screenX,
+            screenY,
+            eventParam,
+            extraParam1,
+            extraParam2,
+            existing ? _slots[index].LastUsedTick : tick,
+            tick,
+            true,
+            MathF.Max(0f, boxWidth),
+            MathF.Max(0f, boxHeight));
+        return true;
+    }
+
+    public void ExpireInactive(int tick)
+    {
+        for (int index = 0; index < _slots.Length; index++)
+        {
+            TargetSlot slot = _slots[index];
+            if (slot.Occupied && !slot.Active && unchecked(tick - slot.ActivatedTick) > NativeRetentionTicks)
+            {
+                _slots[index] = default;
+            }
+        }
+    }
+
+    public void Clear() => Array.Clear(_slots);
+
+    /// <summary>Converts drawable native records into the rectangle contract used by both HUDs.</summary>
+    public IReadOnlyList<EnemyOverlayBox> OverlayBoxes(int tick)
+    {
+        List<EnemyOverlayBox> boxes = [];
+        foreach (TargetSlot slot in _slots)
+        {
+            if (!slot.Drawable || slot.BoxWidth <= 0f || slot.BoxHeight <= 0f)
+            {
+                continue;
+            }
+
+            float pulse = slot.NativePulseScale(tick);
+            float width = slot.BoxWidth * pulse;
+            float height = slot.BoxHeight * pulse;
+            boxes.Add(new EnemyOverlayBox(
+                slot.TargetId,
+                slot.ScreenX - (width * 0.5f),
+                slot.ScreenY - (height * 0.5f),
+                slot.ScreenX + (width * 0.5f),
+                slot.ScreenY + (height * 0.5f),
+                slot.Distance / (float)OpenIGI.Game.World.WorldScene.UnitsPerMetre,
+                1f));
+        }
+
+        return boxes;
+    }
+
+    public readonly record struct TargetSlot(
+        int TargetId,
+        float Distance,
+        int ConfigFlag,
+        float ScreenX,
+        float ScreenY,
+        int EventParam,
+        int ExtraParam1,
+        int ExtraParam2,
+        int LastUsedTick,
+        int ActivatedTick,
+        bool Active,
+        float BoxWidth,
+        float BoxHeight)
+    {
+        public bool Occupied => TargetId != 0;
+        public bool Drawable => Occupied && Active && EventParam == 0;
+
+        public int NativePulseAge(int tick) =>
+            Math.Clamp(unchecked(tick - LastUsedTick), 0, (int)NativePulseDurationTicks);
+
+        public float NativePulseScale(int tick) =>
+            1f + ((NativePulseDurationTicks - NativePulseAge(tick)) * 0.04f);
+    }
+
+    /// <summary>Projects the legacy contact list for callers that do not own the live detector.</summary>
     public static IReadOnlyList<EnemyOverlayBox> Project(
         IReadOnlyList<Vector3d> contacts,
         in Camera3D camera,
@@ -48,66 +183,44 @@ public static class EnemyDetectorOverlay
         }
 
         List<EnemyOverlayBox> boxes = [];
-        for (int index = 0; index < contacts.Count; index++)
+        foreach ((Vector3d feet, int index) in contacts.Select((position, index) => (position, index)))
         {
-            Vector3d feet = contacts[index];
-            float halfWidth = HumanWidthMetres * 0.5f;
+            Matrix4f targetProjection = projection * camera.CreateModelView(feet);
             float minX = float.PositiveInfinity;
             float minY = float.PositiveInfinity;
             float maxX = float.NegativeInfinity;
             float maxY = float.NegativeInfinity;
-            bool visible = false;
-
             for (int x = -1; x <= 1; x += 2)
             {
                 for (int y = -1; y <= 1; y += 2)
                 {
                     for (int z = 0; z <= 1; z++)
                     {
-                        // CreateModelView expects the model origin in double precision.  Transform
-                        // the local body corner after that origin is made camera-relative; feeding
-                        // absolute world coordinates through a float matrix produces bad boxes on
-                        // the large retail maps.
-                        Matrix4f targetProjection = projection * camera.CreateModelView(feet);
-                        Vector3f projected = targetProjection.TransformPoint(new Vector3f(
-                            x * halfWidth,
-                            y * halfWidth,
-                            z * HumanHeightMetres));
-                        if (!float.IsFinite(projected.X) || !float.IsFinite(projected.Y)
-                            || projected.Z < 0f || projected.Z > 1f)
+                        Vector3f point = targetProjection.TransformPoint(new Vector3f(
+                            x * 0.36f, y * 0.36f, z * 1.8f));
+                        if (!float.IsFinite(point.X) || !float.IsFinite(point.Y)
+                            || point.Z < 0f || point.Z > 1f)
                         {
                             continue;
                         }
 
-                        visible = true;
-                        float px = (projected.X * 0.5f + 0.5f) * screenWidth;
-                        float py = (1f - (projected.Y * 0.5f + 0.5f)) * screenHeight;
-                        minX = MathF.Min(minX, px);
-                        minY = MathF.Min(minY, py);
-                        maxX = MathF.Max(maxX, px);
-                        maxY = MathF.Max(maxY, py);
+                        minX = MathF.Min(minX, (point.X * 0.5f + 0.5f) * screenWidth);
+                        minY = MathF.Min(minY, (1f - (point.Y * 0.5f + 0.5f)) * screenHeight);
+                        maxX = MathF.Max(maxX, (point.X * 0.5f + 0.5f) * screenWidth);
+                        maxY = MathF.Max(maxY, (1f - (point.Y * 0.5f + 0.5f)) * screenHeight);
                     }
                 }
             }
 
-            if (!visible || maxX <= minX || maxY <= minY)
+            if (float.IsFinite(minX) && maxX > minX && maxY > minY)
             {
-                continue;
+                boxes.Add(new EnemyOverlayBox(index + 1, minX, minY, maxX, maxY, 0f,
+                    ((tick / 8) & 1) == 0 ? 1f : 0.72f));
             }
-
-            double dx = feet.X - camera.Position.X;
-            double dy = feet.Y - camera.Position.Y;
-            double dz = feet.Z - camera.Position.Z;
-            float distance = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-            // Native slots pulse their active marker while a target is retained. Keep the phase
-            // deterministic and shared by both HUD flavours instead of using wall-clock render time.
-            float alpha = ((tick / 8) & 1) == 0 ? 1f : 0.72f;
-            boxes.Add(new EnemyOverlayBox(index + 1, minX, minY, maxX, maxY, distance, alpha));
         }
 
-        return boxes
-            .OrderBy(box => box.DistanceMetres)
-            .Take(NativeSlotCount)
-            .ToArray();
+        return boxes.Take(SlotCount).ToArray();
     }
 }
+
+#pragma warning restore CS1591

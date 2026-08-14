@@ -2827,10 +2827,9 @@ internal sealed partial class DesktopGame : IDisposable
                     showFirstPersonHud
                     && _player is { IsBinocularsOpen: true }
                     && _soldiers is { } binocularSoldiers
-                        ? EnemyDetectorOverlay.Project(
-                            binocularSoldiers.MapContacts(),
-                            eye,
-                            projection,
+                        ? binocularSoldiers.BinocularTargets(
+                            _player.Camera,
+                            _player.View?.TanX ?? HumanView.DefaultTanX,
                             _window.Width,
                             _window.Height,
                             _loop.Clock.TickCount)
