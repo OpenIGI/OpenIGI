@@ -14,6 +14,56 @@ namespace OpenIGI.Game.Tests;
 public sealed class RetailElevatorTests
 {
     [RequiresGameDataFact]
+    public void Mission5DepartureLandingDoorStaysClosedWhenTheElevatorStartsMoving()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(5);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, doors, variables, elevators);
+        PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
+        PlacedDoor departureDoor = Assert.Single(doors.Doors, item => item.Task.Id == 45);
+        elevators.SetPlayerPositionProvider(() => elevator.State.Position);
+
+        // Door_45 is the floor-zero landing door. Its retail open expression is
+        // "Elevator_51.vFloor == 0"; Switch_49 is the button inside the car.
+        for (int tick = 0; tick < 60; tick++)
+        {
+            elevators.Tick();
+            interactions.Tick();
+            doors.Tick();
+        }
+
+        Assert.True(departureDoor.State.IsFullyOpen);
+        Assert.True(interactions.ActivateFromAi(49));
+
+        bool travelled = false;
+        for (int tick = 0; tick < 10000; tick++)
+        {
+            elevators.Tick();
+            interactions.Tick();
+            doors.Tick();
+            if (elevator.State.TransformChangedThisTick)
+            {
+                travelled = true;
+                Assert.True(departureDoor.State.IsFullyClosed,
+                    "Mission 5's departure landing door reopened as the car began moving");
+            }
+
+            if (travelled
+                && !elevator.State.HasMovementRequest
+                && !elevator.State.TransformChangedThisTick)
+            {
+                break;
+            }
+        }
+
+        Assert.True(travelled, "Mission 5's cabin switch did not start the elevator");
+        Assert.Equal(1, elevator.State.CurrentFloorIndex);
+        Assert.True(departureDoor.State.IsFullyClosed);
+    }
+
+    [RequiresGameDataFact]
     public void AuthoredElevatorsExposeSplineFloorsAndLiveScriptVariables()
     {
         int liftCount = 0;
@@ -30,6 +80,8 @@ public sealed class RetailElevatorTests
                 Assert.False(elevator.State.IsMoving);
                 Assert.InRange(elevator.State.CurrentFloorIndex, 0, elevator.State.FloorCount - 1);
                 Assert.Contains($"{elevator.Task.Name}.vFloor", variables.GetBoundNames(elevator.Task));
+                Assert.Equal(OpenIGI.Scripting.Runtime.QvmValueKind.Float,
+                    variables.GetValueKind($"{elevator.Task.Name}.vFloor"));
                 Assert.Contains($"{elevator.Task.Name}.vLastFloor", variables.GetBoundNames(elevator.Task));
                 Assert.Contains($"{elevator.Task.Name}.nWantedFloor", variables.GetBoundNames(elevator.Task));
                 Assert.Contains($"{elevator.Task.Name}.isWantedFloor0", variables.GetBoundNames(elevator.Task));

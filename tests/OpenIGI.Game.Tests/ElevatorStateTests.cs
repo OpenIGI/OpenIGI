@@ -256,6 +256,35 @@ public sealed class ElevatorStateTests
     }
 
     [Fact]
+    public void TravelVoiceLookupKeepsElevatorIdentityWhenSoundStateChanges()
+    {
+        ElevatorState state = new(
+            startPosition: Vector3d.Zero,
+            floors: [new ElevatorFloor(10, Vector3d.Zero)],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+        PlacedElevator elevator = new(
+            new OpenIGI.Engine.Tasks.LevelTask(),
+            state,
+            Matrix3f.Identity,
+            "lift",
+            "",
+            "",
+            "");
+        Dictionary<PlacedElevator, string> voices = new(ReferenceEqualityComparer.Instance)
+        {
+            [elevator] = "voice",
+        };
+
+        // PlacedElevator is a mutable record. The travel sound flips this flag immediately before
+        // removing the voice, so the audio dictionary must not use the record's value hash.
+        elevator.IsSounding = true;
+        elevator.IsSounding = false;
+
+        Assert.True(voices.Remove(elevator));
+    }
+
+    [Fact]
     public void IsStartFiresOnlyWhenDepartingTheParkedWantedFloorThisTick()
     {
         ElevatorState elevator = new(

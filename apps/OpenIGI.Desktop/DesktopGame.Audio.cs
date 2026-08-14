@@ -43,7 +43,8 @@ internal sealed partial class DesktopGame
 
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
-    private readonly Dictionary<PlacedElevator, AudioVoiceHandle> _elevatorVoices = [];
+    private readonly Dictionary<PlacedElevator, AudioVoiceHandle> _elevatorVoices =
+        new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
 
@@ -989,6 +990,11 @@ internal sealed partial class DesktopGame
     }
 
     /// <summary>Plays an elevator's start, travel and stop definitions.</summary>
+    /// <remarks>
+    /// The travel definition owns its loop flag.  Elevator::Run starts it through the ordinary
+    /// definition path (IGI.exe 0x43D590), so forcing a loop at this call site can turn an authored
+    /// one-shot into a permanent sound even after its car has stopped.
+    /// </remarks>
     private void PlayElevatorSound(PlacedElevator elevator, ElevatorSoundEvent what)
     {
         if (_sounds is null)
@@ -998,10 +1004,7 @@ internal sealed partial class DesktopGame
 
         if (what == ElevatorSoundEvent.Stopped)
         {
-            if (_elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
-            {
-                _sounds.Stop(running);
-            }
+            StopElevatorTravelVoice(elevator);
 
             if (elevator.StopSound.Length > 0)
             {
@@ -1023,15 +1026,26 @@ internal sealed partial class DesktopGame
 
         if (elevator.MoveSound.Length > 0)
         {
+            // A repeat start can happen after a scripted retarget. Retire the old voice first so a
+            // replaced dictionary entry can never leave an untracked, permanently looping sample.
+            StopElevatorTravelVoice(elevator);
             AudioVoiceHandle voice = _sounds.PlayDefinition(
                 elevator.MoveSound,
                 elevator.State.Position,
-                priority: 120,
-                looping: true);
+                priority: 120);
             if (voice.IsValidHandle)
             {
                 _elevatorVoices[elevator] = voice;
             }
+        }
+    }
+
+    /// <summary>Stops and forgets the one travel voice currently owned by an elevator.</summary>
+    private void StopElevatorTravelVoice(PlacedElevator elevator)
+    {
+        if (_sounds is not null && _elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
+        {
+            _sounds.Stop(running);
         }
     }
 
@@ -1052,8 +1066,8 @@ internal sealed partial class DesktopGame
 
             if (!elevator.State.HasMovementRequest)
             {
-                // The state transition normally removes this voice. This reconciliation also covers
-                // a voice that was retained across a task transition or reclaimed by the audio pool.
+                // Retail owns this handle from request acceptance through arrival, including the
+                // door-close gate before physical travel (IGI.exe 0x43D58E-0x43D5C8).
                 _sounds.Stop(voice);
                 _elevatorVoices.Remove(elevator);
                 continue;
@@ -1069,8 +1083,7 @@ internal sealed partial class DesktopGame
                 elevator.MoveSound,
                 voice,
                 elevator.State.Position,
-                priority: 120,
-                looping: true);
+                priority: 120);
         }
     }
 
