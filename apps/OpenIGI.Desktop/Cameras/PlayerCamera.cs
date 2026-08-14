@@ -1654,11 +1654,23 @@ public sealed class PlayerCamera
 
         if (_weapons.State == HumanWeaponState.Medipack)
         {
-            // The native medipack task applies its fraction as the authored injection clip advances.
-            // The view clip is sampled before this tick's BoneObject.Tick below, matching the game's
-            // state-machine-before-animation order and keeping the left-arm pose, health and ammo in
-            // lockstep.
-            _ = _weapons.TryUseMedipack(_body.Health, _view?.ClipProgress ?? 0f);
+            // Retail FUN_00470570 is a no-op at 100% health: it does not heal, does not
+            // consume a charge, and must not leave the left arm detached from the rig.
+            // Apply the syringe fraction first; if no heal occurred and no effect
+            // started, force the rig back to the stand pose on the same tick so the
+            // arm does not vanish (the 3.0 float is the health accumulator's max).
+            float progress = _view?.ClipProgress ?? 0f;
+            bool healed = _weapons.TryUseMedipack(_body.Health, progress);
+            // If the injection did not heal and no charge was taken (full
+            // health: Health 3.0/100% caps `TryUseMedipack` early), keep the
+            // rig on the stand pose on the same tick so the arm never detaches.
+            if (!healed && !_weapons.MedipackUsedThisTick && _view is not null)
+            {
+                if (_weapons.InHand is { } enteredMedipackWeapon)
+                {
+                    PlayWeaponAction(enteredMedipackWeapon.Weapon, WeaponAction.Stand);
+                }
+            }
         }
 
         if (_weapons.InHand is { } held && _weapons.RequestedAction is { } action)
