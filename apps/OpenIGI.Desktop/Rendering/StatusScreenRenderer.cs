@@ -463,6 +463,13 @@ public sealed class StatusScreenRenderer : IDisposable
         batch.FillRect(new RectF(centreX - 1f, centreY - horizontalGap - verticalArm, 2f, verticalArm), signal);
         batch.FillRect(new RectF(centreX - 1f, centreY + horizontalGap, 2f, verticalArm), signal);
 
+        // FUN_00471480 emits two additional D3D line-list primitives through FUN_004B5730. The
+        // first joins (0, centreY) to (screenWidth, centreY), and the second joins
+        // (centreX, 0) to (centreX, screenHeight). They are the native binocular sight axes; the
+        // short textured arms above are separate geometry and must not replace these lines.
+        batch.FillRect(new RectF(0f, centreY - 0.5f, screenWidth, 1f), signal);
+        batch.FillRect(new RectF(centreX - 0.5f, 0f, 1f, screenHeight), signal);
+
         if (targets is not null)
         {
             foreach (EnemyOverlayBox target in targets)

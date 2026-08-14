@@ -115,6 +115,19 @@ public sealed class StatusScreenRendererTests
             device.Draws,
             draw => draw.Texture == TextureHandle.None
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 300f) < 0.01f));
+
+        // The retail builder also emits full-width and full-height line-list axes through
+        // FUN_004B5730; keep the native center geometry from regressing to short arms only.
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X) < 0.01f && vertex.Y is > 239f and < 241f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 640f) < 0.01f && vertex.Y is > 239f and < 241f));
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y) < 0.01f)
+                && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y - 480f) < 0.01f));
     }
 
     [RequiresGameDataFact]
