@@ -86,14 +86,10 @@ public sealed class SilkGameWindow : IGameWindow
                 : WindowOptions.Default.VideoMode,
             VSync = settings.VSync,
 
-            // Created hidden so nothing sees a half-initialised window -- except in exclusive
-            // fullscreen, which cannot be created hidden at all. The platform grants the fullscreen
-            // state against a monitor and will not grant one to an invisible window, so a hidden
-            // exclusive window comes up decorated and is never corrected. That matters beyond how it
-            // looks: the caller reads Width and Height straight after construction to size the
-            // graphics device, so a window still pretending to be 2560x1421 when the framebuffer is
-            // really 2560x1440 leaves a strip along one edge that nothing ever renders into.
-            IsVisible = settings.Mode == WindowMode.ExclusiveFullscreen,
+            // A windowed macOS OpenGL context reports a zero framebuffer until the window is visible;
+            // borderless remains hidden until Show(), while exclusive fullscreen must be visible for
+            // the monitor state to take.
+            IsVisible = settings.Mode != WindowMode.BorderlessFullscreen,
             ShouldSwapAutomatically = false,
         };
 
@@ -105,12 +101,11 @@ public sealed class SilkGameWindow : IGameWindow
         // fragment passes over a fullscreen quad. 3.3 is the floor and is what the web and mobile
         // backends will target; the game runs on it, only with the cheaper implementations of those
         // effects. Nothing below 3.3 is supported at all.
-        APIVersion[] wanted =
-        [
-            new APIVersion(4, 6),
-            new APIVersion(4, 3),
-            new APIVersion(3, 3),
-        ];
+        // Apple exposes OpenGL 4.1 as its ceiling. Asking GLFW for 4.6/4.3 first can fail before a
+        // native window exists, and Silk.NET 2.22 then attempts to position that null handle on macOS.
+        APIVersion[] wanted = OperatingSystem.IsMacOS()
+            ? [new APIVersion(4, 1), new APIVersion(3, 3)]
+            : [new APIVersion(4, 6), new APIVersion(4, 3), new APIVersion(3, 3)];
 
         Exception? lastFailure = null;
 
@@ -200,10 +195,14 @@ public sealed class SilkGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
-    public int Width => _window.FramebufferSize.X;
+    public int Width => _window.FramebufferSize.X > 0
+        ? _window.FramebufferSize.X
+        : _window.Size.X > 0 ? _window.Size.X : _windowedSize.X;
 
     /// <inheritdoc/>
-    public int Height => _window.FramebufferSize.Y;
+    public int Height => _window.FramebufferSize.Y > 0
+        ? _window.FramebufferSize.Y
+        : _window.Size.Y > 0 ? _window.Size.Y : _windowedSize.Y;
 
     /// <summary>Gets what the monitor this window opened on reports, and what was chosen from it.</summary>
     public DesktopDisplay Display { get; }
