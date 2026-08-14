@@ -176,6 +176,56 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void MedipackAppliesHealingProgressivelyWithTheInjectionClip()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        input.Accept(Frame(PlayerInputSlot.Fire));
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.True(weapons.MedipackStartedThisTick);
+
+        // The first-person clip is sampled before the next animation advance. Healing is the
+        // authored fraction times the newly displayed clip progress, not a full instant dose.
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.25f));
+        Assert.Equal(0.6875f, health.Damage, 3);
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.75f));
+        Assert.Equal(0.5625f, health.Damage, 3);
+
+        weapons.Tick(input, clipEnded: true, onGround: true);
+        Assert.True(weapons.TryUseMedipack(health, animationProgress: 1f));
+        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.False(weapons.TryUseMedipack(health, animationProgress: 1f));
+    }
+
+    [Fact]
+    public void MedipackAtFullHealthDoesNotConsumeACharge()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        input.Accept(Frame(PlayerInputSlot.Fire));
+        weapons.Tick(input, clipEnded: false, onGround: true);
+        weapons.Tick(input, clipEnded: false, onGround: true);
+
+        Assert.False(weapons.TryUseMedipack(health, animationProgress: 0.5f));
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+    }
+
+    [Fact]
     public void ASingleMedipackPickupUsesItsLoadedChargeBeforeReserve()
     {
         PlayerWeapons weapons = new([31]);
