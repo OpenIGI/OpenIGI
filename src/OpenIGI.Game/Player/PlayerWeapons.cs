@@ -788,6 +788,12 @@ public sealed class PlayerWeapons
 
                         return HumanWeaponState.Medipack;
 
+                    case WeaponCategory.Binocular:
+                        // Binoculars have no firearm action. Fire, reload and peek are ignored while
+                        // the overlay is held; otherwise the generic default would request a gun
+                        // animation behind the device frame and could emit a phantom shot.
+                        break;
+
                     case (WeaponCategory)ThrownCategory:
                     case (WeaponCategory)PlacedCategory:
                         break;
@@ -805,7 +811,9 @@ public sealed class PlayerWeapons
                 return HumanWeaponState.Reloading;
             }
 
-            if (Flags.HasFlag(HumanWeaponFlagWord.Peek) && Flags.HasFlag(HumanWeaponFlagWord.OnGround))
+            if (held.Weapon.Category != WeaponCategory.Binocular
+                && Flags.HasFlag(HumanWeaponFlagWord.Peek)
+                && Flags.HasFlag(HumanWeaponFlagWord.OnGround))
             {
                 return HumanWeaponState.Peeking;
             }

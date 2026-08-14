@@ -131,6 +131,27 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void BinocularsIgnoreFireReloadAndPeekActions()
+    {
+        PlayerWeapons weapons = new([30]);
+        weapons.Carry(Binoculars);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        PlayerInputFrame actions = default;
+        actions[(int)PlayerInputSlot.Fire] = 1f;
+        actions[(int)PlayerInputSlot.Reload] = 1f;
+        actions[(int)PlayerInputSlot.Peek] = 1f;
+        input.Accept(actions);
+
+        weapons.Tick(input, clipEnded: true, onGround: true);
+
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Assert.False(weapons.FiredThisTick);
+        Assert.Null(weapons.RequestedAction);
+    }
+
+    [Fact]
     public void MedipackConsumesOneReserveAndRestoresAuthoredHealthFraction()
     {
         PlayerWeapons weapons = new([31]);

@@ -1707,6 +1707,7 @@ internal sealed partial class DesktopGame : IDisposable
                     }
 
                     PlayBinocularTransitionSound();
+                    PlayMedipackSound();
 
                     // Hearing is emitted once per round, not once per projectile intersection. The weapon
                     // row carries the exact retail radius (for example 4096 for suppressed fire and

@@ -173,6 +173,20 @@ internal sealed partial class DesktopGame
         _sounds?.PlayDefinition("bin_zoom_1", priority: 180);
     }
 
+    /// <summary>Plays the authored syringe cue when the first healing dose is injected.</summary>
+    /// <remarks>
+    /// The native medipack action consumes one charge on the first positive health delta, not when
+    /// the weapon state is entered. <c>MedipackUsedThisTick</c> is that edge, so the cue cannot
+    /// repeat on every animation tick or play for an empty/full-health attempt.
+    /// </remarks>
+    private void PlayMedipackSound()
+    {
+        if (_player?.Weapons?.MedipackUsedThisTick == true)
+        {
+            _sounds?.PlayDefinition("syringe", priority: 180);
+        }
+    }
+
     /// <summary>Plays the retail world-weapon cue after a <c>GunPickup</c> reaches the player.</summary>
     private void PlayGunPickupSound(GunPickup pickup)
     {

@@ -426,7 +426,10 @@ public sealed class StatusScreenRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
 
-        if (Sprite("binoculars.spr") is { } frameResource && frameResource.Asset.Frames.Count > 0)
+        // The status archive also contains a small weapon icon with this filename. The native
+        // binocular task uses the common/global 256x256 device frame, so resolve this one from the
+        // global sprite archive or the result collapses into the green pixelated icon reported in-game.
+        if (GlobalSprite("binoculars.spr") is { } frameResource && frameResource.Asset.Frames.Count > 0)
         {
             SpriteFrame frame = frameResource.Asset.Frames[0];
             frameResource.DrawFrame(
@@ -1025,6 +1028,33 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         _sprites[name] = resource;
+        return resource;
+    }
+
+    private SpriteResource? GlobalSprite(string name)
+    {
+        string cacheKey = $"global:{name}";
+        if (_sprites.TryGetValue(cacheKey, out SpriteResource? cached))
+        {
+            return cached;
+        }
+
+        SpriteResource? resource = null;
+        IresEntry? entry = Find(_spriteArchive, name);
+        if (entry is not null)
+        {
+            try
+            {
+                SpriteAsset asset = SpriteLoader.Load(entry.Data, name);
+                resource = SpriteResource.Upload(_device, asset);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
+            {
+                _logger.Warning(LogCategory, $"Could not read the global HUD sprite '{name}': {ex.Message}");
+            }
+        }
+
+        _sprites[cacheKey] = resource;
         return resource;
     }
 

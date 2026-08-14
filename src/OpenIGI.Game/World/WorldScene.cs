@@ -99,6 +99,16 @@ public sealed class WorldScene
             yield return name;
         }
 
+        // AmmoPickup stores its visual identity in ID and its quantity in Ammo; it has no Model
+        // parameter. The native AmmoType record supplies the same mesh name used by the retail scene.
+        if (string.Equals(task.Type.Name, "AmmoPickup", StringComparison.Ordinal)
+            && task.TryGetValue("ID", out object? rawAmmoId)
+            && rawAmmoId is string ammoId
+            && AmmoPickupCatalog.ModelNameForScriptId(ammoId) is { Length: > 0 } ammoModel)
+        {
+            yield return ammoModel;
+        }
+
         if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
         {
             for (int i = 0; i < SecurityCameraModelParameters.Count; i++)

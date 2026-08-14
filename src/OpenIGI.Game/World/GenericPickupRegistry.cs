@@ -110,7 +110,9 @@ public sealed class GenericPickupRegistry
         {
             string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model
                 ? model
-                : string.Empty;
+                : declared.TryGetValue("ID", out object? rawId) && rawId is string id
+                    ? AmmoPickupCatalog.ModelNameForScriptId(id)
+                    : string.Empty;
             Matrix3f orientation = declared.TryGetValue("Orientation", out object? rawOrientation)
                 && rawOrientation is Vector3f angles
                     ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)

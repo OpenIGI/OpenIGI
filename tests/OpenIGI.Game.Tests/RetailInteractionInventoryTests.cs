@@ -7,6 +7,7 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -90,6 +91,7 @@ public sealed class RetailInteractionInventoryTests
     public void EveryRetailDirectInteractionHasARegisteredActivateType()
     {
         Dictionary<string, int> totals = InteractiveTypes.ToDictionary(static name => name, static _ => 0);
+        AmmoTypeRegistry ammoTypes = LoadAmmoTypes();
         int genericPickupTotal = 0;
         for (int missionId = 1; missionId <= 14; missionId++)
         {
@@ -108,18 +110,34 @@ public sealed class RetailInteractionInventoryTests
             DoorRegistry doors = DoorRegistry.Build(root);
             WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
                 root, mission, doors, variables);
-            List<DeclaredTask> genericTasks = Walk(root)
+            List<DeclaredTask> pickupTasks = Walk(root)
                 .OfType<DeclaredTask>()
-                .Where(static task => string.Equals(task.Type.Name, "GenericPickup", StringComparison.Ordinal))
+                .Where(static task => string.Equals(task.Type.Name, "GenericPickup", StringComparison.Ordinal)
+                    || string.Equals(task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
                 .ToList();
             GenericPickupRegistry genericPickups = GenericPickupRegistry.Build(root, variables);
-            genericPickupTotal += genericTasks.Count;
-            Assert.Equal(genericTasks.Count, genericPickups.Items.Count);
+            genericPickupTotal += pickupTasks.Count;
+            Assert.Equal(pickupTasks.Count, genericPickups.Items.Count);
             foreach (GenericPickup pickup in genericPickups.Items)
             {
-                Assert.Contains(pickup.Task, genericTasks);
+                Assert.Contains(pickup.Task, pickupTasks);
                 Assert.True(variables.TryRead($"{pickup.Task.Name}.isPickedUp", out var pickedUp));
                 Assert.Equal(0, pickedUp.Integer);
+
+                if (string.Equals(pickup.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal))
+                {
+                    Assert.True(AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo));
+                    Assert.Equal(ammo.Model, pickup.ModelName);
+                    Assert.True(pickup.Task.TryGetValue("Ammo", out object? rawQuantity));
+                    int quantity = rawQuantity switch
+                    {
+                        short value => value,
+                        int value => value,
+                        _ => -1,
+                    };
+                    Assert.True(quantity > 0);
+                    Assert.Equal(quantity, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
+                }
             }
             WorldScene scene = WorldScene.Build(mission, root, magic);
             Assert.Equal(found.Values.Sum(static tasks => tasks.Count), interactions.Items.Count);
@@ -306,6 +324,18 @@ public sealed class RetailInteractionInventoryTests
         TerrainLoader? terrain = loadTerrain ? new TerrainLoader(resources, loop.Natives) : null;
         LoadedMission mission = new MissionLoader(missions, fileSystem, resources, level, null, terrain).Load(missionId);
         return (root, magic, mission, loop.Variables);
+    }
+
+    private static AmmoTypeRegistry LoadAmmoTypes()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        AmmoTypeRegistry ammo = new();
+        ammo.Register(loop.Natives);
+        ammo.Load(fileSystem, resources, loop.Natives);
+        return ammo;
     }
 
     private static IEnumerable<GameTask> Walk(GameTask root)
