@@ -170,5 +170,6 @@ public static class BasicGraphics
         "r_motion_blur",
         "r_grain",
         "r_remastered_hud",
+        "r_computer_tactical",
     ];
 }

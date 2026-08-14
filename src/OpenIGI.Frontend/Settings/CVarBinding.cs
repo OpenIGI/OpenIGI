@@ -73,6 +73,11 @@ public static class CVarBinding
     public static string Humanize(string name)
     {
         ArgumentNullException.ThrowIfNull(name);
+        if (name.Equals("r_computer_tactical", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Tactical Computer";
+        }
+
         string[] parts = name.Split('_', StringSplitOptions.RemoveEmptyEntries);
         int start = parts.Length > 1 && Array.Exists(KnownPrefixes, p => p == parts[0]) ? 1 : 0;
 
