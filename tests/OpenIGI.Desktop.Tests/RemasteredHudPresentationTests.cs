@@ -93,6 +93,27 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(expected, RemasteredHudPresentation.UsesRemasteredOptics(tacticalComputerEnabled));
 
     [Theory]
+    [InlineData(false, false, false, true)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(false, false, true, true)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, true, true, false)]
+    public void RetailAndEnhancedBinocularLayersAreMutuallyExclusive(
+        bool remasteredHudEnabled,
+        bool binocularsOpen,
+        bool remasteredOpticsEnabled,
+        bool expectedRetailLayer)
+        => Assert.Equal(
+            expectedRetailLayer,
+            RemasteredHudPresentation.UsesRetailWeaponHud(
+                remasteredHudEnabled,
+                binocularsOpen,
+                remasteredOpticsEnabled));
+
+    [Theory]
     [InlineData(true, true, true)]
     [InlineData(true, false, false)]
     [InlineData(false, true, false)]

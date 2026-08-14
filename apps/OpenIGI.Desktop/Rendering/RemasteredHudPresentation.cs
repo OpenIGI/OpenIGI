@@ -14,6 +14,18 @@ public static class RemasteredHudPresentation
     /// <summary>Whether binoculars use the enhanced optics interface paired with the tactical computer.</summary>
     public static bool UsesRemasteredOptics(bool tacticalComputerEnabled) => tacticalComputerEnabled;
 
+    /// <summary>Whether the retail weapon layer owns the current binocular presentation.</summary>
+    /// <remarks>
+    /// The tactical optics switch is independent of the ordinary remastered HUD switch. When the
+    /// player is looking through binoculars, exactly one optics layer must win; outside binoculars,
+    /// the ordinary HUD setting continues to choose the weapon layer.
+    /// </remarks>
+    public static bool UsesRetailWeaponHud(
+        bool remasteredHudEnabled,
+        bool binocularsOpen,
+        bool remasteredOpticsEnabled)
+        => binocularsOpen ? !remasteredOpticsEnabled : !remasteredHudEnabled;
+
     /// <summary>Whether messages use the remaster's tactical-card presentation.</summary>
     public static bool UsesTacticalMessages(bool remasteredHudEnabled, bool tacticalMessagesEnabled)
         => remasteredHudEnabled && tacticalMessagesEnabled;

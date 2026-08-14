@@ -2938,7 +2938,10 @@ internal sealed partial class DesktopGame : IDisposable
                 // captured scene so camera motion blur, depth of field, bloom and tone mapping can only
                 // affect the world and first-person rig. The damage and flash washes intentionally remain
                 // later in the draw order and still cover the HUD exactly as they did before this separation.
-                if ((!remasterHud || (_player?.IsBinocularsOpen == true && !remasteredOptics))
+                if (RemasteredHudPresentation.UsesRetailWeaponHud(
+                        remasterHud,
+                        _player?.IsBinocularsOpen == true,
+                        remasteredOptics)
                     && showFirstPersonHud
                     && _player is { Weapons: { } carried }
                     && _hud is { IsReady: true } retailHud)
