@@ -176,6 +176,26 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void MedipackIgnoresReloadInputBecauseItIsAnInjectionAction()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 2);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        PlayerInputFrame reload = default;
+        reload[(int)PlayerInputSlot.Reload] = 1f;
+        input.Accept(reload);
+
+        weapons.Tick(input, clipEnded: true, onGround: true);
+
+        Assert.NotEqual(HumanWeaponState.Reloading, weapons.State);
+        Assert.Null(weapons.RequestedAction);
+        Assert.Equal(2, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+    }
+
+    [Fact]
     public void MedipackAppliesHealingProgressivelyWithTheInjectionClip()
     {
         PlayerWeapons weapons = new([31]);

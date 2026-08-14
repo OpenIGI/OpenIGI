@@ -136,7 +136,9 @@ internal sealed class RemasteredHudRenderer : IDisposable
     private static void DrawTargetBox(UiPainter painter, LayoutContext context, EnemyOverlayBox target)
     {
         float thickness = MathF.Max(1f, context.Px(2f));
-        Bgra32 colour = Signal.WithAlpha((byte)(220f * Math.Clamp(target.Alpha, 0f, 1f)));
+        // Hostile contacts use a red marker in the retail binocular task. The enhanced
+        // presentation may change framing, but it must not change contact semantics.
+        Bgra32 colour = Bgra32.FromRgb(240, 64, 64).WithAlpha((byte)(220f * Math.Clamp(target.Alpha, 0f, 1f)));
         float corner = MathF.Min(context.Px(12f), MathF.Min(target.Right - target.Left, target.Bottom - target.Top) * 0.24f);
         painter.FillRect(new UiRect(target.Left, target.Top, corner, thickness), colour);
         painter.FillRect(new UiRect(target.Left, target.Top, thickness, corner), colour);

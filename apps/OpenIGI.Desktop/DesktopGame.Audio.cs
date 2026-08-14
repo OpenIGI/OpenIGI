@@ -215,13 +215,10 @@ internal sealed partial class DesktopGame
     {
         if (_player?.Weapons is { MedipackUsedThisTick: true } weapons)
         {
-            // The retail MEDIPACK weapon script names glock_shot_1 as its FireSound. It is an odd
-            // resource name, but it is the authored cue the original plays for this action. Keep the
-            // standalone syringe cue only for custom weapon records that omit FireSound.
-            string sound = weapons.InHand?.Weapon.FireSound is { Length: > 0 } authored
-                ? authored
-                : "syringe";
-            _sounds?.PlayDefinition(sound, priority: 180);
+            // A medipack is an injection action, not a gun shot. Some weapon records carry a
+            // legacy firearm FireSound field (which produces the shotgun/pistol report); the
+            // retail medipack cue is the standalone syringe sound and is always used here.
+            _sounds?.PlayDefinition("syringe", priority: 180);
         }
     }
 

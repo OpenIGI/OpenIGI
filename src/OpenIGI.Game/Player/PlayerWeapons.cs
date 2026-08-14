@@ -808,8 +808,13 @@ public sealed class PlayerWeapons
 
             // The manual reload and the automatic one are the same branch -- the `clip == 0` disjunct
             // is why an empty magazine tops itself up without being asked.
+            // The medipack's one-slot count is a use charge, not a firearm magazine. It
+            // has an authored injection action and must never enter the generic reload
+            // animation or transfer a charge from the reserve pool.
+            bool reloadable = held.Weapon.Category is not WeaponCategory.Binocular
+                and not (WeaponCategory)MedipackCategory;
             bool asked = Flags.HasFlag(HumanWeaponFlagWord.Reload) || clip == 0;
-            if (asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)
+            if (reloadable && asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)
             {
                 return HumanWeaponState.Reloading;
             }
@@ -847,8 +852,10 @@ public sealed class PlayerWeapons
 
         if (!triggerDown)
         {
+            bool reloadable = InHand?.Weapon.Category is not WeaponCategory.Binocular
+                and not (WeaponCategory)MedipackCategory;
             bool asked = input.IsSet(PlayerInputSlot.Reload) || clip == 0;
-            if (asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)
+            if (reloadable && asked && reserve != 0 && clip < held.Weapon.RoundsPerClip)
             {
                 return HumanWeaponState.Reloading;
             }
