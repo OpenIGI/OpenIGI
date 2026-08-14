@@ -500,6 +500,10 @@ public sealed class StatusScreenRenderer : IDisposable
 
     private static void DrawTargetBox(SpriteBatch batch, EnemyOverlayBox target, Bgra32 colour)
     {
+        // Retail FUN_00471B60 passes DAT_005340B0 (a five-point rectangle strip) to FUN_004B5860;
+        // the helper expands each adjacent pair into a textured quad. The managed batch has no
+        // access to that runtime-bound material, so preserve the native four-edge geometry and
+        // apply the detector alpha to each edge instead of substituting an unrelated map sprite.
         float thickness = Math.Clamp((target.Bottom - target.Top) * 0.055f, 1f, 3f);
         Bgra32 faded = colour.WithAlpha((byte)(colour.A * Math.Clamp(target.Alpha, 0f, 1f)));
         float width = MathF.Max(2f, target.Right - target.Left);
