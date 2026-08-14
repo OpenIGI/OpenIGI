@@ -134,7 +134,10 @@ public sealed class EnemyDetectorOverlay
         for (int index = 0; index < _slots.Length; index++)
         {
             TargetSlot slot = _slots[index];
-            if (slot.Occupied && !slot.Active && unchecked(tick - slot.ActivatedTick) > NativeRetentionTicks)
+            // FUN_00471B60 compares the current tick with slot[8] (+0x20), which is written only when
+            // a slot is allocated or evicted.  slot[7] (+0x1c) is refreshed on every successful scan
+            // and is not the native retention clock.
+            if (slot.Occupied && !slot.Active && unchecked(tick - slot.LastUsedTick) > NativeRetentionTicks)
             {
                 _slots[index] = default;
             }

@@ -20,10 +20,12 @@ public sealed class EnemyDetectorOverlayTests
         Assert.Equal(120, slot.ActivatedTick);
 
         detector.BeginScan();
-        detector.ExpireInactive(3119);
+        detector.ExpireInactive(3099);
         Assert.Contains(detector.Slots, static item => item.Occupied);
 
-        detector.ExpireInactive(3121);
+        // Re-seeing the target refreshed slot[7], but native retention uses slot[8], the original
+        // allocation timestamp.  It therefore expires at 3101, not three seconds after the scan.
+        detector.ExpireInactive(3101);
         Assert.DoesNotContain(detector.Slots, static item => item.Occupied);
     }
 
