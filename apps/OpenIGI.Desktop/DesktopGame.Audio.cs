@@ -161,11 +161,14 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Plays the retail binocular device cue on the same transition as the view latch.</summary>
+    /// <summary>Plays the retail binocular device cue on view and zoom-target transitions.</summary>
     /// <remarks><c>COMMON/SOUNDS/SOUNDS.RES</c> authors this cue as <c>bin_zoom_1.wav</c>.</remarks>
     private void PlayBinocularTransitionSound()
     {
-        if (_player is not { } player || (!player.BinocularsOpenedThisTick && !player.BinocularsClosedThisTick))
+        if (_player is not { } player
+            || (!player.BinocularsOpenedThisTick
+                && !player.BinocularsClosedThisTick
+                && !player.BinocularZoomTargetChangedThisTick))
         {
             return;
         }

@@ -40,6 +40,13 @@ public sealed class BinocularsView
     /// <summary>Gets whether a zoom step changed the authored field of view this tick.</summary>
     public bool ZoomChangedThisTick { get; private set; }
 
+    /// <summary>Gets whether the native zoom target changed this tick.</summary>
+    /// <remarks>
+    /// The retail device cue is an edge-triggered sound: holding a zoom key must not restart it on
+    /// every fixed tick while the camera converges on the target tangent.
+    /// </remarks>
+    public bool ZoomTargetChangedThisTick { get; private set; }
+
     /// <summary>Returns the binocular state to its closed/default state.</summary>
     public void Reset()
     {
@@ -49,6 +56,7 @@ public sealed class BinocularsView
         OpenedThisTick = false;
         ClosedThisTick = false;
         ZoomChangedThisTick = false;
+        ZoomTargetChangedThisTick = false;
     }
 
     /// <summary>Advances the binocular toggle and zoom state by one simulation tick.</summary>
@@ -63,6 +71,7 @@ public sealed class BinocularsView
         OpenedThisTick = false;
         ClosedThisTick = false;
         ZoomChangedThisTick = false;
+        ZoomTargetChangedThisTick = false;
 
         if (!ReferenceEquals(_weapon, weapon))
         {
@@ -91,6 +100,7 @@ public sealed class BinocularsView
             if (!IsOpen)
             {
                 _targetTanX = HumanView.DefaultTanX;
+                ZoomTargetChangedThisTick = true;
                 return new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
             }
 
@@ -98,7 +108,11 @@ public sealed class BinocularsView
             // then moves its current field (+720) toward that target. Do not snap the current FOV on
             // entry, or the opening transition is visibly faster than retail. The task also does not
             // replace the first-person rig's independently authored view-model tangent.
-            _targetTanX = authoredDefault;
+            if (_targetTanX != authoredDefault)
+            {
+                _targetTanX = authoredDefault;
+                ZoomTargetChangedThisTick = true;
+            }
         }
 
         if (!IsOpen)
@@ -110,11 +124,19 @@ public sealed class BinocularsView
         float previousTanX = tanX;
         if (zoomInHeld)
         {
-            _targetTanX = minimum;
+            if (_targetTanX != minimum)
+            {
+                _targetTanX = minimum;
+                ZoomTargetChangedThisTick = true;
+            }
         }
         else if (zoomOutHeld)
         {
-            _targetTanX = maximum;
+            if (_targetTanX != maximum)
+            {
+                _targetTanX = maximum;
+                ZoomTargetChangedThisTick = true;
+            }
         }
 
         // FUN_00431E30 moves the current tangent toward its target by the configured rate and clamps

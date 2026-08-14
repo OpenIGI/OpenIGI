@@ -364,17 +364,20 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.IsOpen);
         Assert.True(view.OpenedThisTick);
         Assert.False(view.ClosedThisTick);
+        Assert.True(view.ZoomTargetChangedThisTick);
         Assert.Equal(0.92f, opened.TanX, 3);
         Assert.Equal(HumanView.DefaultViewModelTanX, opened.ViewModelTanX);
 
         SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
         Assert.Equal(0.84f, narrowed.TanX, 3);
         Assert.True(view.ZoomChangedThisTick);
+        Assert.True(view.ZoomTargetChangedThisTick);
         narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
         // The native view keeps moving toward the selected target after the zoom key is released.
         Assert.Equal(0.76f, narrowed.TanX, 3);
         Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
         Assert.True(view.ZoomChangedThisTick);
+        Assert.False(view.ZoomTargetChangedThisTick);
         for (int i = 0; i < 20; i++)
         {
             narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
@@ -392,6 +395,7 @@ public sealed class PlayerWeaponsTests
         Assert.False(view.IsOpen);
         Assert.False(view.OpenedThisTick);
         Assert.True(view.ClosedThisTick);
+        Assert.True(view.ZoomTargetChangedThisTick);
     }
 
     [Fact]

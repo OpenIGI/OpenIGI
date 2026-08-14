@@ -170,6 +170,9 @@ public sealed class PlayerCamera
     /// <summary>Gets whether binoculars closed on the last simulation tick.</summary>
     public bool BinocularsClosedThisTick => _binocularsView.ClosedThisTick;
 
+    /// <summary>Gets whether the binocular zoom target changed on the last simulation tick.</summary>
+    public bool BinocularZoomTargetChangedThisTick => _binocularsView.ZoomTargetChangedThisTick;
+
     /// <summary>Gets the grenades in the air, both the player's and the AI's.</summary>
     /// <remarks>
     /// One simulation for both throwers so there is one place to tick, draw and detonate from — the
@@ -1689,6 +1692,14 @@ public sealed class PlayerCamera
         }
 
         if (_weapons is null || _view is null)
+        {
+            return;
+        }
+
+        // Binoculars are an optical device, not a gun. The weapon state machine ignores Fire while
+        // they are held, and this guard keeps a stale trigger/request from reaching the generic gun
+        // resolver if the input changes during the weapon-swap transition.
+        if (_weapons.InHand?.Weapon.Category == WeaponCategory.Binocular)
         {
             return;
         }
