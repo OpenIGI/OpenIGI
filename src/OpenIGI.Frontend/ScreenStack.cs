@@ -121,7 +121,9 @@ public sealed class ScreenStack
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(input);
 
-        _navigation.Update(input, elapsedSeconds);
+        bool consumeQueuedNavigation = TopIndex < 0
+            || !_screens[TopIndex].CapturesQueuedNavigation;
+        _navigation.Update(input, elapsedSeconds, consumeQueuedNavigation);
 
         // Track the pointer for the drawn cursor, and let the last input device decide whether it shows:
         // moving the mouse brings the cursor up, a directional or accept press from keyboard/pad hides it.

@@ -33,6 +33,26 @@ public sealed class KeyboardPressQueueTests
     }
 
     [Fact]
+    public void DequeueingANavigationPressKeepsUnrelatedPressesInArrivalOrder()
+    {
+        KeyboardState keyboard = new();
+
+        keyboard.SetKey(KeyCode.A, down: true);
+        keyboard.SetKey(KeyCode.A, down: false);
+        keyboard.SetKey(KeyCode.Return, down: true);
+        keyboard.SetKey(KeyCode.Return, down: false);
+        keyboard.SetKey(KeyCode.B, down: true);
+        keyboard.SetKey(KeyCode.B, down: false);
+
+        Assert.True(keyboard.TryDequeueNavigationPress(out KeyCode navigation));
+        Assert.Equal(KeyCode.Return, navigation);
+        Assert.True(keyboard.TryDequeuePress(out KeyCode first));
+        Assert.True(keyboard.TryDequeuePress(out KeyCode second));
+        Assert.Equal(KeyCode.A, first);
+        Assert.Equal(KeyCode.B, second);
+    }
+
+    [Fact]
     public void PressesComeBackInTheOrderTheyArrived()
     {
         KeyboardState keyboard = new();

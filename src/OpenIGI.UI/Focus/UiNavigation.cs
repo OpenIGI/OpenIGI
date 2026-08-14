@@ -41,7 +41,17 @@ public sealed class UiNavigation
     /// <param name="input">The frame's input.</param>
     /// <param name="elapsedSeconds">The real seconds since the last read, for repeat timing.</param>
     /// <exception cref="ArgumentNullException"><paramref name="input"/> is <see langword="null"/>.</exception>
-    public void Update(InputState input, float elapsedSeconds)
+    public void Update(InputState input, float elapsedSeconds) =>
+        Update(input, elapsedSeconds, consumeQueuedNavigation: true);
+
+    /// <summary>Reads a frame of input into the navigation intents.</summary>
+    /// <param name="input">The frame's input.</param>
+    /// <param name="elapsedSeconds">The real seconds since the last read, for repeat timing.</param>
+    /// <param name="consumeQueuedNavigation">
+    /// When <see langword="false"/>, queued Enter/Space/arrows stay in the press queue so a listening
+    /// settings row can bind them. Direction and accept still come from the live key state.
+    /// </param>
+    public void Update(InputState input, float elapsedSeconds, bool consumeQueuedNavigation)
     {
         ArgumentNullException.ThrowIfNull(input);
 
@@ -69,7 +79,21 @@ public sealed class UiNavigation
 
         KeyboardState keyboard = input.Keyboard;
         GamepadState pad = input.Gamepad;
-        Accept = keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter)
+        while (consumeQueuedNavigation && input.Keyboard.TryDequeueNavigationPress(out KeyCode pressed))
+        {
+            switch (pressed)
+            {
+                case KeyCode.Up: Direction = NavDirection.Up; break;
+                case KeyCode.Down: Direction = NavDirection.Down; break;
+                case KeyCode.Left: Direction = NavDirection.Left; break;
+                case KeyCode.Right: Direction = NavDirection.Right; break;
+                case KeyCode.Return:
+                case KeyCode.NumpadEnter:
+                case KeyCode.Space: Accept = true; break;
+            }
+        }
+
+        Accept |= keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter)
             || keyboard.WasPressed(KeyCode.Space) || pad.WasPressed(GamepadButton.South);
         Back = keyboard.WasPressed(KeyCode.Escape) || pad.WasPressed(GamepadButton.East);
     }

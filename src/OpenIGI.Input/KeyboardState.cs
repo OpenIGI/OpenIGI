@@ -137,6 +137,45 @@ public sealed class KeyboardState
         return true;
     }
 
+    /// <summary>Takes the oldest queued navigation key while preserving unrelated key presses.</summary>
+    /// <param name="key">Receives the navigation key.</param>
+    /// <returns><see langword="true"/> when a navigation key was waiting.</returns>
+    public bool TryDequeueNavigationPress(out KeyCode key)
+    {
+        if (Captured || _presses.Count == 0)
+        {
+            key = default;
+            return false;
+        }
+
+        int count = _presses.Count;
+        KeyCode[] remaining = new KeyCode[count];
+        int remainingCount = 0;
+        bool found = false;
+        key = default;
+        for (int i = 0; i < count; i++)
+        {
+            KeyCode candidate = _presses.Dequeue();
+            if (!found && candidate is KeyCode.Return or KeyCode.NumpadEnter or KeyCode.Space
+                or KeyCode.Up or KeyCode.Numpad8 or KeyCode.Down or KeyCode.Numpad2
+                or KeyCode.Left or KeyCode.Numpad4 or KeyCode.Right or KeyCode.Numpad6)
+            {
+                key = candidate;
+                found = true;
+                continue;
+            }
+
+            remaining[remainingCount++] = candidate;
+        }
+
+        for (int i = 0; i < remainingCount; i++)
+        {
+            _presses.Enqueue(remaining[i]);
+        }
+
+        return found;
+    }
+
     /// <summary>Records a typed character.</summary>
     /// <param name="character">The character the platform decoded.</param>
     /// <remarks>

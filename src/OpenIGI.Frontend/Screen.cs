@@ -43,6 +43,12 @@ public enum ScreenPhase
 /// </remarks>
 public abstract class Screen
 {
+    /// <summary>
+    /// Gets whether this screen is capturing the keyboard press queue for something other than
+    /// navigation, so the stack must not drain Enter/Space/arrows first.
+    /// </summary>
+    public virtual bool CapturesQueuedNavigation => false;
+
     /// <summary>The delay added per control for the staggered entrance, in seconds.</summary>
     public const float EntranceStagger = 0.04f;
 
