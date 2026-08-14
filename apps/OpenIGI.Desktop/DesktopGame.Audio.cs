@@ -486,6 +486,17 @@ internal sealed partial class DesktopGame
         }
     }
 
+    /// <summary>Plays the retail jump cue on the take-off tick.</summary>
+    /// <remarks>
+    /// Locomotion state 28's entry at <c>0x40BBF7</c> pushes <c>"jump_1"</c> (<c>0x00536DC4</c>)
+    /// into <c>0x4DD750</c>. Like the player's fall and death cues it belongs to the listener, so
+    /// it is not world-panned.
+    /// </remarks>
+    private void PlayJumpSound()
+    {
+        _sounds?.PlayDefinition(PlayerBody.JumpSoundName, priority: 200);
+    }
+
     /// <summary>Plays a footstep where it landed.</summary>
     /// <param name="step">The step, already resolved against the ground it landed on.</param>
     /// <remarks>

@@ -1686,6 +1686,12 @@ internal sealed partial class DesktopGame : IDisposable
                     // so its crossed-event interval is ready to dispatch here.
                     PlayPlayerAnimationSounds();
 
+                    // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
+                    if (_player.Body.TookOffThisTick)
+                    {
+                        PlayJumpSound();
+                    }
+
                     // And the player's own feet. Positional like anyone else's, and placed where the
                     // foot landed rather than on the listener, because the sound belongs to the ground.
                     if (_player.TakeFootstep() is { } step)
