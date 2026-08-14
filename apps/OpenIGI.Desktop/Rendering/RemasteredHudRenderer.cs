@@ -84,7 +84,8 @@ internal sealed class RemasteredHudRenderer : IDisposable
         float headingRadians,
         float tanX,
         int screenWidth,
-        int screenHeight)
+        int screenHeight,
+        IReadOnlyList<EnemyOverlayBox>? targets = null)
     {
         ArgumentNullException.ThrowIfNull(batch);
         if (_body is not { } body)
@@ -115,8 +116,31 @@ internal sealed class RemasteredHudRenderer : IDisposable
         painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY + gap, weight, arm), Signal);
         painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY - (weight * 0.5f), weight, weight), Accent);
 
+        if (targets is not null)
+        {
+            foreach (EnemyOverlayBox target in targets)
+            {
+                DrawTargetBox(painter, context, target);
+            }
+        }
+
         painter.DrawText(body, "OPTICS // BINOCULAR", new UiVec2(frame.X + context.Px(18f), frame.Bottom - context.Px(48f)), context.Px(16f), Text);
         painter.DrawText(body, $"RANGE  --    ZOOM  {tanX:0.00}", new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(14f), Muted);
+    }
+
+    private static void DrawTargetBox(UiPainter painter, LayoutContext context, EnemyOverlayBox target)
+    {
+        float thickness = MathF.Max(1f, context.Px(2f));
+        Bgra32 colour = Signal.WithAlpha((byte)(220f * Math.Clamp(target.Alpha, 0f, 1f)));
+        float corner = MathF.Min(context.Px(12f), MathF.Min(target.Right - target.Left, target.Bottom - target.Top) * 0.24f);
+        painter.FillRect(new UiRect(target.Left, target.Top, corner, thickness), colour);
+        painter.FillRect(new UiRect(target.Left, target.Top, thickness, corner), colour);
+        painter.FillRect(new UiRect(target.Right - corner, target.Top, corner, thickness), colour);
+        painter.FillRect(new UiRect(target.Right - thickness, target.Top, thickness, corner), colour);
+        painter.FillRect(new UiRect(target.Left, target.Bottom - thickness, corner, thickness), colour);
+        painter.FillRect(new UiRect(target.Left, target.Bottom - corner, thickness, corner), colour);
+        painter.FillRect(new UiRect(target.Right - corner, target.Bottom - thickness, corner, thickness), colour);
+        painter.FillRect(new UiRect(target.Right - thickness, target.Bottom - corner, thickness, corner), colour);
     }
 
     /// <summary>Draws the modern presentation of the same timed state progress the retail HUD exposes.</summary>

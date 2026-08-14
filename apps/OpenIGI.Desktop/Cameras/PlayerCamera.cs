@@ -1626,7 +1626,11 @@ public sealed class PlayerCamera
 
         if (_weapons.State == HumanWeaponState.Medipack)
         {
-            _ = _weapons.TryUseMedipack(_body.Health);
+            // The native medipack task applies its fraction as the authored injection clip advances.
+            // The view clip is sampled before this tick's BoneObject.Tick below, matching the game's
+            // state-machine-before-animation order and keeping the left-arm pose, health and ammo in
+            // lockstep.
+            _ = _weapons.TryUseMedipack(_body.Health, _view?.ClipProgress ?? 0f);
         }
 
         if (_weapons.InHand is { } held && _weapons.RequestedAction is { } action)

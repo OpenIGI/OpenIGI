@@ -208,6 +208,27 @@ public sealed class HumanView
     /// </remarks>
     public bool ClipEnded => _bones.SourceOf(0)?.EndedThisTick ?? false;
 
+    /// <summary>Gets the normalized progress of the active whole-rig weapon clip.</summary>
+    /// <remarks>
+    /// The weapon state machine consumes the medipack at the same time as the first-person syringe
+    /// animation advances. Reading the clip before <see cref="BoneObject.Tick"/> preserves the native
+    /// update order: the health accumulator sees the frame that was visibly displayed during the
+    /// previous tick, rather than jumping to the end of the injection on its first update.
+    /// </remarks>
+    public float ClipProgress
+    {
+        get
+        {
+            BoneClip? clip = _bones.SourceOf(0);
+            if (clip is null || clip.Animation.Duration <= 0f)
+            {
+                return 0f;
+            }
+
+            return Math.Clamp(clip.Time / clip.Animation.Duration, 0f, 1f);
+        }
+    }
+
     /// <summary>Gets whether the first-person rig crossed an authored event on its last tick.</summary>
     /// <param name="eventId">The event id stored in the active weapon animation.</param>
     /// <returns><see langword="true"/> when the active whole-rig clip crossed the event this tick.</returns>

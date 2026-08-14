@@ -6,6 +6,7 @@ using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Player;
 using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
@@ -419,7 +420,8 @@ public sealed class StatusScreenRenderer : IDisposable
     public void DrawBinocularOverlay(
         SpriteBatch batch,
         int screenWidth,
-        int screenHeight)
+        int screenHeight,
+        IReadOnlyList<EnemyOverlayBox>? targets = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
@@ -430,10 +432,10 @@ public sealed class StatusScreenRenderer : IDisposable
             frameResource.DrawFrame(
                 batch,
                 frame,
-                0f,
-                0f,
-                (float)screenWidth / frame.Width,
-                (float)screenHeight / frame.Height,
+                (screenWidth - frame.Width) * 0.5f,
+                (screenHeight - frame.Height) * 0.5f,
+                1f,
+                1f,
                 BitmapTextRenderer.NeutralColor);
         }
 
@@ -443,9 +445,34 @@ public sealed class StatusScreenRenderer : IDisposable
         batch.FillRect(new RectF(centreX - 1f, centreY - 18f, 2f, 36f), signal);
         batch.FillRect(new RectF(centreX - 18f, centreY - 1f, 36f, 2f), signal);
 
+        if (targets is not null)
+        {
+            foreach (EnemyOverlayBox target in targets)
+            {
+                DrawTargetBox(batch, target, signal);
+            }
+        }
+
         // The retail task draws its authored device overlay and range widget here. Do not expose
         // internal tangent/heading diagnostics in the retail presentation; those values are camera
         // state and belong only to the enhanced themed presentation.
+    }
+
+    private static void DrawTargetBox(SpriteBatch batch, EnemyOverlayBox target, Bgra32 colour)
+    {
+        float thickness = 2f;
+        Bgra32 faded = colour.WithAlpha((byte)(colour.A * Math.Clamp(target.Alpha, 0f, 1f)));
+        float width = MathF.Max(2f, target.Right - target.Left);
+        float height = MathF.Max(2f, target.Bottom - target.Top);
+        float corner = MathF.Min(12f, MathF.Min(width, height) * 0.24f);
+        batch.FillRect(new RectF(target.Left, target.Top, corner, thickness), faded);
+        batch.FillRect(new RectF(target.Left, target.Top, thickness, corner), faded);
+        batch.FillRect(new RectF(target.Right - corner, target.Top, corner, thickness), faded);
+        batch.FillRect(new RectF(target.Right - thickness, target.Top, thickness, corner), faded);
+        batch.FillRect(new RectF(target.Left, target.Bottom - thickness, corner, thickness), faded);
+        batch.FillRect(new RectF(target.Left, target.Bottom - corner, thickness, corner), faded);
+        batch.FillRect(new RectF(target.Right - corner, target.Bottom - thickness, corner, thickness), faded);
+        batch.FillRect(new RectF(target.Right - thickness, target.Bottom - corner, thickness, corner), faded);
     }
 
     /// <inheritdoc/>

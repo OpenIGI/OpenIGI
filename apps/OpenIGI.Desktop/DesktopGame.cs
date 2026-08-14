@@ -2822,6 +2822,18 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { View: not null };
                 bool showFirstPersonHud = showPlayerHud
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+                IReadOnlyList<EnemyOverlayBox> binocularTargets =
+                    showFirstPersonHud
+                    && _player is { IsBinocularsOpen: true }
+                    && _soldiers is { } binocularSoldiers
+                        ? EnemyDetectorOverlay.Project(
+                            binocularSoldiers.MapContacts(),
+                            eye,
+                            projection,
+                            _window.Width,
+                            _window.Height,
+                            _loop.Clock.TickCount)
+                        : [];
                 if (showFirstPersonHud && _player is { View: { } rig })
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
@@ -2939,7 +2951,8 @@ internal sealed partial class DesktopGame : IDisposable
                         retailHud.DrawBinocularOverlay(
                             batch,
                             _window.Width,
-                            _window.Height);
+                            _window.Height,
+                            binocularTargets);
                     }
                     else if (_player.IsSniperScoped)
                     {
@@ -3210,7 +3223,8 @@ internal sealed partial class DesktopGame : IDisposable
                         _player.Yaw,
                         binocularView.TanX,
                         _window.Width,
-                        _window.Height);
+                        _window.Height,
+                        binocularTargets);
                     batch.End();
                 }
 

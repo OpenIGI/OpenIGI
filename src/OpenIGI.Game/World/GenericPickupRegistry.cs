@@ -104,7 +104,8 @@ public sealed class GenericPickupRegistry
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
         if (task is DeclaredTask declared
-            && string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
+            && (string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
+                || string.Equals(declared.Type.Name, "AmmoPickup", StringComparison.Ordinal))
             && TryReadPosition(declared, out Vector3d position))
         {
             string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model

@@ -189,6 +189,17 @@ internal sealed partial class DesktopGame
     private void PlayGenericPickupSound(GenericPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
+
+        // Ammo pickups are authored as GenericPickup/AmmoPickup world objects. Resolve and award them
+        // at the same collection edge as the retail pickup cue, so the object, inventory count and sound
+        // cannot drift apart. An explicit task payload wins over the catalog fallback.
+        if (_player?.Weapons is { } weapons
+            && _ammoTypes is { } ammoTypes
+            && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
+        {
+            weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
+        }
+
         _sounds?.PlayDefinition("pickup", priority: 180);
     }
 

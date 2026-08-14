@@ -66,6 +66,20 @@ public sealed class RetailHumanViewTests
     }
 
     [RequiresGameDataFact]
+    public void TheViewExposesTheCurrentWholeRigClipProgress()
+    {
+        HumanView view = new(ViewSet());
+        view.PlayWeaponAnimation(Knife().StandAnimation, loops: true);
+
+        Assert.Equal(0f, view.ClipProgress);
+
+        view.Bones.Tick();
+
+        Assert.InRange(view.ClipProgress, 0.0f, 1.0f);
+        Assert.True(view.ClipProgress > 0f);
+    }
+
+    [RequiresGameDataFact]
     public void EveryFullBodyWeaponAnimationOfEveryWeaponResolvesInTheViewRigsSet()
     {
         BoneAnimationSet view = ViewSet();
