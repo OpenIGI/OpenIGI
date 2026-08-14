@@ -48,6 +48,7 @@ public sealed class ElevatorState
         Position = startPosition;
         PreviousPosition = startPosition;
         CurrentFloorIndex = FindStartFloor(startPosition, startFloorTaskId);
+        LastFloorPosition = CurrentFloorIndex;
     }
 
     public Vector3d StartPosition { get; }
@@ -57,6 +58,36 @@ public sealed class ElevatorState
     public int FloorCount => _floors.Count;
     public int? TargetFloorIndex { get; private set; }
     public bool IsMoving => TargetFloorIndex is not null;
+
+    /// <summary>Previous tick's <see cref="FloorPosition"/>, exported as <c>vLastFloor</c> (+0x1A8).</summary>
+    public double LastFloorPosition { get; private set; }
+
+    /// <summary>
+    /// Native <c>nWantedFloor</c> at +0x19C: the destination index, including a request that is
+    /// still waiting on Can start.
+    /// </summary>
+    public int WantedFloorIndex
+    {
+        get
+        {
+            if (TargetFloorIndex is int target)
+            {
+                return target;
+            }
+
+            if (_pendingTargetFloor is int pending)
+            {
+                return pending;
+            }
+
+            if (_pendingDirection != 0)
+            {
+                return Math.Clamp(CurrentFloorIndex + _pendingDirection, 0, _floors.Count - 1);
+            }
+
+            return CurrentFloorIndex;
+        }
+    }
 
     /// <summary>True while a travel request is queued or the car is on the spline (native +0x5D6).</summary>
     public bool HasMovementRequest => TargetFloorIndex is not null
@@ -94,6 +125,7 @@ public sealed class ElevatorState
 
     public void Tick(bool canStart, bool floorUp, bool floorDown)
     {
+        LastFloorPosition = FloorPosition;
         PreviousPosition = Position;
 
         bool upPulse = floorUp && !_lastUp;

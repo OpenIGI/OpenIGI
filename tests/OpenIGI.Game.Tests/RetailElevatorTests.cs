@@ -30,6 +30,9 @@ public sealed class RetailElevatorTests
                 Assert.False(elevator.State.IsMoving);
                 Assert.InRange(elevator.State.CurrentFloorIndex, 0, elevator.State.FloorCount - 1);
                 Assert.Contains($"{elevator.Task.Name}.vFloor", variables.GetBoundNames(elevator.Task));
+                Assert.Contains($"{elevator.Task.Name}.vLastFloor", variables.GetBoundNames(elevator.Task));
+                Assert.Contains($"{elevator.Task.Name}.nWantedFloor", variables.GetBoundNames(elevator.Task));
+                Assert.Contains($"{elevator.Task.Name}.isWantedFloor0", variables.GetBoundNames(elevator.Task));
                 Assert.Contains($"{elevator.Task.Name}.isMoving", variables.GetBoundNames(elevator.Task));
                 Assert.True(elevator.State.FloorCount > 0);
             }

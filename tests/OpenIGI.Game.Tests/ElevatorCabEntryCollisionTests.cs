@@ -286,6 +286,37 @@ public sealed class ElevatorCabEntryCollisionTests
         }
     }
 
+    [RequiresGameDataFact]
+    public void ApplyCollisionRunsOnTheShippedPathAfterAMovementTick()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(5);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        MagicObjectRegistry magic = MagicFor(root);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
+        int target = elevator.State.CurrentFloorIndex == 0 ? 1 : 0;
+        elevator.State.RequestFloor(target);
+
+        bool moved = false;
+        for (int i = 0; i < 60 && !moved; i++)
+        {
+            elevator.State.Tick(canStart: true, floorUp: false, floorDown: false);
+            if (!elevator.State.TransformChangedThisTick)
+            {
+                continue;
+            }
+
+            moved = true;
+            Vector3d feet = elevator.State.PreviousPosition + new Vector3d(6000.0, 0.0, 2000.0);
+            Assert.True(elevators.TryGetPassengerDisplacement(feet, solids, out Vector3d carry));
+            Assert.Equal(elevator.State.Position - elevator.State.PreviousPosition, carry);
+            Assert.True(elevators.ApplyCollision(solids) >= 0);
+        }
+
+        Assert.True(moved, "mission 5 Elevator_51 did not leave its waypoint");
+    }
+
     private static MagicObjectRegistry MagicFor(LevelTask root)
     {
         VirtualFileSystem fileSystem = new();

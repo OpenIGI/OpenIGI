@@ -87,10 +87,13 @@ public sealed class ElevatorStateTests
         elevator.RequestFloor(1);
         elevator.Tick(canStart: false, floorUp: false, floorDown: false);
         Assert.False(elevator.IsMoving);
+        Assert.Equal(1, elevator.WantedFloorIndex);
+        Assert.True(elevator.HasMovementRequest);
 
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
         Assert.True(elevator.IsMoving);
         Assert.Equal(1, elevator.TargetFloorIndex);
+        Assert.Equal(1, elevator.WantedFloorIndex);
     }
 
     [Fact]
@@ -243,6 +246,8 @@ public sealed class ElevatorStateTests
 
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
         Assert.InRange(elevator.FloorPosition, double.Epsilon, 1.0 - double.Epsilon);
+        Assert.Equal(0.0, elevator.LastFloorPosition);
+        Assert.Equal(1, elevator.WantedFloorIndex);
         Assert.Equal(0, elevator.CurrentFloorIndex);
     }
 
