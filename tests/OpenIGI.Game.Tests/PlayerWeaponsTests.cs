@@ -190,20 +190,20 @@ public sealed class PlayerWeaponsTests
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.MedipackStartedThisTick);
 
-        // The first-person clip is sampled before the next animation advance. Healing is the
-        // authored fraction times the newly displayed clip progress, not a full instant dose.
+        // The first-person clip is sampled before the next animation advance. The native factor is
+        // applied once for each newly displayed simulation tick, rather than multiplied by clip span.
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.25f));
-        Assert.Equal(0.6875f, health.Damage, 3);
+        Assert.Equal(0.5f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.75f));
-        Assert.Equal(0.5625f, health.Damage, 3);
+        Assert.Equal(0.25f, health.Damage, 3);
 
         weapons.Tick(input, clipEnded: true, onGround: true);
         Assert.True(weapons.TryUseMedipack(health, animationProgress: 1f));
-        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.Equal(0f, health.Damage, 3);
         Assert.False(weapons.TryUseMedipack(health, animationProgress: 1f));
     }
 
@@ -369,12 +369,12 @@ public sealed class PlayerWeaponsTests
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire));
         Assert.True(weapons.TryUseMedipack(health, 0.5f));
-        Assert.Equal(0.625f, health.Damage, 3);
+        Assert.Equal(0.5f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health, 1f));
-        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.Equal(0.25f, health.Damage, 3);
     }
 
     [Fact]
