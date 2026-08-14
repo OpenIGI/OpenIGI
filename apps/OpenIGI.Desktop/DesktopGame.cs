@@ -2814,6 +2814,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
                 bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
+                bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(TacticalComputer is not null);
                 bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
                     remasterHud,
                     RenderCVars.TacticalMessages.Value);
@@ -2937,7 +2938,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // captured scene so camera motion blur, depth of field, bloom and tone mapping can only
                 // affect the world and first-person rig. The damage and flash washes intentionally remain
                 // later in the draw order and still cover the HUD exactly as they did before this separation.
-                if (!remasterHud
+                if ((!remasterHud || (_player?.IsBinocularsOpen == true && !remasteredOptics))
                     && showFirstPersonHud
                     && _player is { Weapons: { } carried }
                     && _hud is { IsReady: true } retailHud)
@@ -3211,7 +3212,7 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
-                if (remasterHud
+                if (remasteredOptics
                     && showFirstPersonHud
                     && _player is { IsBinocularsOpen: true }
                     && _player.View is { } binocularView

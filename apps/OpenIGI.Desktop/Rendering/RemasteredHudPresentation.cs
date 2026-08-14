@@ -11,6 +11,9 @@ public static class RemasteredHudPresentation
     /// <summary>Whether the dedicated HUD setting selects the remaster presentation.</summary>
     public static bool UsesRemasteredHud(bool remasteredHudEnabled) => remasteredHudEnabled;
 
+    /// <summary>Whether binoculars use the enhanced optics interface paired with the tactical computer.</summary>
+    public static bool UsesRemasteredOptics(bool tacticalComputerEnabled) => tacticalComputerEnabled;
+
     /// <summary>Whether messages use the remaster's tactical-card presentation.</summary>
     public static bool UsesTacticalMessages(bool remasteredHudEnabled, bool tacticalMessagesEnabled)
         => remasteredHudEnabled && tacticalMessagesEnabled;
