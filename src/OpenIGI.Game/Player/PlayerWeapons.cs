@@ -47,6 +47,14 @@ public sealed class PlayerWeapons
     /// <summary>The category that heals.</summary>
     public const int MedipackCategory = 6;
 
+    /// <summary>The native ammo id published by <c>AMMO_ID_MEDIPACK</c>.</summary>
+    /// <remarks>
+    /// The shipped <c>AMMO/MEDIPACK/AMMO.QVM</c> passes 12 as DefineAmmoType's first argument.
+    /// This is distinct from the medipack weapon category (6); using the category here makes a
+    /// collected medipack appear as zero reserve and prevents the injection from consuming it.
+    /// </remarks>
+    public const int MedipackAmmoId = 12;
+
     /// <summary>The category that is placed rather than fired.</summary>
     public const int PlacedCategory = 7;
 
@@ -88,11 +96,15 @@ public sealed class PlayerWeapons
     private bool _medipackUsed;
     private bool _medipackAdvanced;
     private bool _medipackAwaitingRelease;
+    private bool _medipackEffectStarted;
+    private bool _medipackClipCompletionPending;
+    private float _medipackAppliedProgress;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
     private bool _swapped;
     private int _lastNonBinocularWeaponId = -1;
     private bool _binocularTogglePending;
+    private bool _binocularOpenPending;
 
     /// <summary>Initializes a new instance of the <see cref="PlayerWeapons"/> class.</summary>
     /// <param name="weaponCycle">
@@ -151,12 +163,14 @@ public sealed class PlayerWeapons
     /// </summary>
     public bool ConsumeBinocularToggle()
     {
-        if (!_binocularTogglePending || InHand?.Weapon.Category != WeaponCategory.Binocular)
+        if ((!_binocularTogglePending && !_binocularOpenPending)
+            || InHand?.Weapon.Category != WeaponCategory.Binocular)
         {
             return false;
         }
 
         _binocularTogglePending = false;
+        _binocularOpenPending = false;
         return true;
     }
 
@@ -195,6 +209,17 @@ public sealed class PlayerWeapons
     /// is most of them.
     /// </remarks>
     public IReadOnlyList<GunProjectile> Shots => _shots;
+
+    /// <summary>Gets whether a medipack was consumed during the most recent weapon tick.</summary>
+    public bool MedipackUsedThisTick { get; private set; }
+
+    /// <summary>Gets whether the medipack animation was started during the most recent weapon tick.</summary>
+    /// <remarks>
+    /// Healing is deliberately not allowed on this tick. The retail task raises the syringe action
+    /// first and only consumes the medipack once that action has advanced; otherwise the health bar,
+    /// reserve count and sound lead the visible left-arm injection by one animation.
+    /// </remarks>
+    public bool MedipackStartedThisTick { get; private set; }
 
     /// <summary>Gets the weapon action the rig should be playing, or <see langword="null"/>.</summary>
     /// <remarks>
@@ -318,6 +343,8 @@ public sealed class PlayerWeapons
         RequestedFireVariant = 0;
         _wantFire = false;
         _actionComplete = false;
+        MedipackUsedThisTick = false;
+        MedipackStartedThisTick = false;
         if (!input.IsSet(PlayerInputSlot.Fire))
         {
             _medipackAwaitingRelease = false;
@@ -327,37 +354,106 @@ public sealed class PlayerWeapons
         Step(input);
     }
 
-    /// <summary>Uses one carried medipack against a human's accumulated damage.</summary>
+    /// <summary>Advances the medipack injection and applies its authored healing over the animation.</summary>
     /// <param name="health">The health accumulator owned by the player.</param>
     /// <returns><see langword="true"/> when one medipack was consumed.</returns>
-    public bool TryUseMedipack(HumanHealth health)
+    /// <param name="animationProgress">The first-person injection clip progress, from zero to one.</param>
+    public bool TryUseMedipack(HumanHealth health, float animationProgress = 1f)
     {
         ArgumentNullException.ThrowIfNull(health);
         if (State != HumanWeaponState.Medipack || _medipackUsed || InHand is not { } held
-            || held.Weapon.Category != (WeaponCategory)MedipackCategory)
+            || held.Weapon.Category != (WeaponCategory)MedipackCategory
+            || MedipackStartedThisTick)
         {
             return false;
         }
 
+        // The native action is a no-op as soon as the health accumulator reaches its ceiling; it
+        // does not keep the syringe pose armed until the authored clip's last frame. This also
+        // handles a player who was already at 100% when the animation advanced for the first time.
+        if (health.RemainingFraction >= 1f)
+        {
+            CompleteMedipackAttempt();
+            return false;
+        }
+
+        animationProgress = Math.Clamp(animationProgress, 0f, 1f);
+        if (animationProgress <= _medipackAppliedProgress)
+        {
+            if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
+            {
+                CompleteMedipackAttempt();
+            }
+
+            return false;
+        }
+
+        int ammoId = held.Gun.Ammo?.AmmoId ?? MedipackAmmoId;
+        // The sentinel means the carried gun has not reached its first per-tick load yet. A real
+        // pickup writes its payload into RoundsInClip, so only a concrete clip count is spendable
+        // here; this keeps a merely equipped, uninitialised medipack from inventing a charge.
+        int clip = held.Gun.RoundsInClip == GunTiming.UnloadedClipSentinel
+            ? 0
+            : held.Gun.RoundsInClip;
+        bool hasClipPack = clip > 0;
+        bool hasReservePack = Ammunition.Count(ammoId) > 0;
+        if ((!_medipackEffectStarted && !hasClipPack && !hasReservePack)
+            || held.Weapon.Weapon.Values.Count == 0)
+        {
+            CompleteMedipackAttempt();
+            return false;
+        }
+
+        float progressDelta = animationProgress - _medipackAppliedProgress;
+        float healed = health.HealFraction(held.Weapon.Weapon.Values[0] * progressDelta);
+        if (healed <= 0f)
+        {
+            _medipackAppliedProgress = animationProgress;
+            if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
+            {
+                CompleteMedipackAttempt();
+            }
+
+            return false;
+        }
+
+        if (!_medipackEffectStarted)
+        {
+            // A pickup starts in the medipack's one-slot magazine. Only subsequent pickups enter the
+            // loose pool, so the first pickup must be usable without a second reserve pickup.
+            if (hasClipPack)
+            {
+                held.Gun.State.RoundsInClip = clip - 1;
+            }
+            else
+            {
+                Ammunition.Take(ammoId, 1);
+            }
+            _medipackEffectStarted = true;
+            MedipackUsedThisTick = true;
+        }
+
+        _medipackAppliedProgress = animationProgress;
+        if (health.RemainingFraction >= 1f)
+        {
+            _medipackClipCompletionPending = true;
+            CompleteMedipackAttempt();
+        }
+        if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
+        {
+            CompleteMedipackAttempt();
+        }
+
+        return true;
+    }
+
+    private void CompleteMedipackAttempt()
+    {
+        // The native task exits after a no-op attempt (empty reserve or full health); it does not
+        // leave the fire edge armed for the next simulation tick.
         _medipackUsed = true;
         _medipackAwaitingRelease = true;
         _actionComplete = true;
-
-        if (held.Gun.Ammo is not { } ammo
-            || Ammunition.Count(ammo.AmmoId) <= 0
-            || held.Weapon.Weapon.Values.Count == 0)
-        {
-            return false;
-        }
-
-        float healed = health.HealFraction(held.Weapon.Weapon.Values[0]);
-        if (healed <= 0f)
-        {
-            return false;
-        }
-
-        Ammunition.Take(ammo.AmmoId, 1);
-        return true;
     }
 
     /// <summary>
@@ -539,10 +635,10 @@ public sealed class PlayerWeapons
             return;
         }
 
-        _binocularTogglePending = true;
-
         if (_heldIndex == binocularIndex)
         {
+            _binocularTogglePending = true;
+            _binocularOpenPending = false;
             _pendingWeaponId = IndexOf(_lastNonBinocularWeaponId);
             if (_pendingWeaponId < 0)
             {
@@ -557,6 +653,8 @@ public sealed class PlayerWeapons
         }
         else
         {
+            _binocularTogglePending = false;
+            _binocularOpenPending = true;
             _pendingWeaponId = _carried[binocularIndex].Weapon.WeaponId;
         }
     }
@@ -610,6 +708,7 @@ public sealed class PlayerWeapons
                 if (candidate != heldId)
                 {
                     _pendingWeaponId = candidate;
+                    SetBinocularOpenPending(candidate);
                 }
 
                 return;
@@ -714,6 +813,7 @@ public sealed class PlayerWeapons
 
         if (_pendingWeaponId != -1)
         {
+            SetBinocularOpenPending(_pendingWeaponId);
             return HumanWeaponState.ChangingWeapon;
         }
 
@@ -890,9 +990,39 @@ public sealed class PlayerWeapons
             return HumanWeaponState.Medipack;
         }
 
-        return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) || _medipackUsed
-            ? HumanWeaponState.Ready
-            : HumanWeaponState.Medipack;
+        // Keep the state alive until the authored injection clip ends. The consume latch only blocks
+        // a second use; it must not shorten the animation or the healing clip is cut off next tick.
+        if (_medipackUsed && !_medipackEffectStarted)
+        {
+            return HumanWeaponState.Ready;
+        }
+
+        // Defer the transition by one machine tick. PlayerCamera samples the clip and applies the
+        // final healing fraction after PlayerWeapons.Tick has observed ClipEnded; returning Ready
+        // immediately would hide that completion tick.
+        if (_medipackClipCompletionPending)
+        {
+            return HumanWeaponState.Ready;
+        }
+
+        if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded) && _medipackEffectStarted)
+        {
+            _medipackClipCompletionPending = true;
+        }
+
+        return HumanWeaponState.Medipack;
+    }
+
+    private void SetBinocularOpenPending(int weaponId)
+    {
+        if (IndexOf(weaponId) >= 0 && _carried[IndexOf(weaponId)].Weapon.Category == WeaponCategory.Binocular)
+        {
+            _binocularOpenPending = true;
+        }
+        else
+        {
+            _binocularOpenPending = false;
+        }
     }
 
     // 0x40F280 into 0x40F300, and it is two phases rather than one.
@@ -1002,6 +1132,10 @@ public sealed class PlayerWeapons
             case HumanWeaponState.Medipack:
                 _medipackUsed = false;
                 _medipackAdvanced = false;
+                _medipackEffectStarted = false;
+                _medipackClipCompletionPending = false;
+                _medipackAppliedProgress = 0f;
+                MedipackStartedThisTick = true;
                 Request(WeaponAction.Fire);
                 break;
 

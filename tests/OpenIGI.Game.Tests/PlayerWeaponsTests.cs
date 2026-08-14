@@ -103,7 +103,7 @@ public sealed class PlayerWeaponsTests
         Weapon = new WeaponTaskBinding("TASKTYPE_MEDIPACK", 0, [0.25f], string.Empty, 0),
     };
 
-    private static AmmoType MedipackAmmo => new() { AmmoId = 6, ScriptId = "AMMO_ID_MEDIPACK", CalibreId = 10005 };
+    private static AmmoType MedipackAmmo => new() { AmmoId = 12, ScriptId = "AMMO_ID_MEDIPACK", CalibreId = 10005 };
 
     [Fact]
     public void BinocularBindingSelectsTheCarriedBinoculars()
@@ -145,11 +145,33 @@ public sealed class PlayerWeaponsTests
         firePress[(int)PlayerInputSlot.Fire] = 1f;
         input.Accept(firePress);
         weapons.Tick(input, clipEnded: false, onGround: true);
+        Assert.True(weapons.MedipackStartedThisTick);
+        weapons.Tick(input, clipEnded: true, onGround: true);
         Assert.True(weapons.TryUseMedipack(health));
 
         Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
         Assert.Equal(0.5f, health.Damage, 3);
         Assert.False(weapons.TryUseMedipack(health));
+    }
+
+    [Fact]
+    public void ASingleMedipackPickupUsesItsLoadedChargeBeforeReserve()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.PickUp(Medipack, MedipackAmmo, rounds: 1);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.False(weapons.TryUseMedipack(health));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+
+        Assert.True(weapons.TryUseMedipack(health));
+        Assert.Equal(0, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(0.5f, health.Damage, 3);
     }
 
     [Fact]
@@ -166,6 +188,8 @@ public sealed class PlayerWeaponsTests
         input.Accept(Frame(PlayerInputSlot.Fire));
         weapons.Tick(input, clipEnded: true, onGround: true);
 
+        Assert.False(weapons.TryUseMedipack(health));
+        weapons.Tick(input, clipEnded: true, onGround: true);
         Assert.True(weapons.TryUseMedipack(health));
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
         Assert.Equal(0.5f, health.Damage, 3);
@@ -186,6 +210,8 @@ public sealed class PlayerWeaponsTests
         Assert.False(weapons.TryUseMedipack(health));
         Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health));
         Tick(weapons, input, Frame());
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
     }
@@ -203,8 +229,10 @@ public sealed class PlayerWeaponsTests
         PlayerInputFrame fire = Frame(PlayerInputSlot.Fire);
 
         Tick(weapons, input, fire);
+        Assert.False(weapons.TryUseMedipack(health));
+        Tick(weapons, input, fire, clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health));
-        Tick(weapons, input, fire);
+        Tick(weapons, input, fire, clipEnded: true);
         Assert.False(weapons.TryUseMedipack(health));
         Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
@@ -225,9 +253,78 @@ public sealed class PlayerWeaponsTests
         Tick(weapons, input, Frame(PlayerInputSlot.Fire));
 
         Assert.False(weapons.TryUseMedipack(health));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health));
         Assert.Equal(0.75f, health.Damage, 3);
         Tick(weapons, input, Frame());
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
+    }
+
+    [Fact]
+    public void MedipackUsesNativeSpecialAmmoWhenItsCachedBindingIsMissing()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, ammo: null);
+        weapons.Ammunition.Add(PlayerWeapons.MedipackAmmoId, 1);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+
+        Assert.False(weapons.TryUseMedipack(health));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+        Assert.True(weapons.TryUseMedipack(health));
+        Assert.True(weapons.MedipackUsedThisTick);
+        Assert.Equal(0, weapons.Ammunition.Count(PlayerWeapons.MedipackAmmoId));
+        Assert.Equal(0.5f, health.Damage, 3);
+    }
+
+    [Fact]
+    public void MedipackAppliesHealingAsTheInjectionClipAdvances()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.False(weapons.TryUseMedipack(health, 0.25f));
+        Assert.Equal(0.75f, health.Damage, 3);
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.True(weapons.TryUseMedipack(health, 0.5f));
+        Assert.Equal(0.625f, health.Damage, 3);
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+        Assert.True(weapons.TryUseMedipack(health, 1f));
+        Assert.Equal(0.5f, health.Damage, 3);
+    }
+
+    [Fact]
+    public void MedipackStopsWhenAnInjectionReachesFullHealth()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.1f);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.True(weapons.TryUseMedipack(health, 0.5f));
+        Assert.Equal(1f, health.RemainingFraction, 3);
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
     }
 
     [Fact]
@@ -246,10 +343,17 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.IsOpen);
         Assert.True(view.OpenedThisTick);
         Assert.False(view.ClosedThisTick);
-        Assert.Equal(0.5f, opened.TanX);
+        Assert.Equal(0.92f, opened.TanX, 3);
+        Assert.Equal(HumanView.DefaultViewModelTanX, opened.ViewModelTanX);
 
         SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
-        Assert.Equal(0.42f, narrowed.TanX, 3);
+        Assert.Equal(0.84f, narrowed.TanX, 3);
+        Assert.True(view.ZoomChangedThisTick);
+        narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
+        // The native view keeps moving toward the selected target after the zoom key is released.
+        Assert.Equal(0.76f, narrowed.TanX, 3);
+        Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
+        Assert.True(view.ZoomChangedThisTick);
         for (int i = 0; i < 20; i++)
         {
             narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
