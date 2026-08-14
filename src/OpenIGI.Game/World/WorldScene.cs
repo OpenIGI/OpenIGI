@@ -94,13 +94,16 @@ public sealed class WorldScene
     {
         ArgumentNullException.ThrowIfNull(task);
 
+        string? declaredModelName = null;
+
         if (task.TryGetValue(ModelParameter, out object? raw) && raw is string name && name.Length > 0)
         {
             // A few authored level revisions put the ammo script symbol in Model rather than in
             // ID.  It is an inventory identity, not a world mesh name; the native AmmoPickup
             // constructor resolves it through the ammo roster before creating the placement.
             string resolved = AmmoPickupCatalog.ModelNameForScriptId(name);
-            yield return resolved.Length > 0 ? resolved : name;
+            declaredModelName = resolved.Length > 0 ? resolved : name;
+            yield return declaredModelName;
         }
 
         // AmmoPickup stores its visual identity in ID and its quantity in Ammo; it has no Model
@@ -110,12 +113,19 @@ public sealed class WorldScene
             && rawAmmoId is string ammoId
             && AmmoPickupCatalog.ModelNameForScriptId(ammoId) is { Length: > 0 } ammoModel)
         {
-            yield return ammoModel;
+            // Some shipped AmmoPickup tasks carry both fields. The native constructor resolves the
+            // ID as a fallback, not as a second object; emitting both creates duplicate meshes at the
+            // same coordinates and makes one pickup appear missing/incorrect in the live scene.
+            if (!string.Equals(declaredModelName, ammoModel, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return ammoModel;
+            }
         }
 
         // GenericPickup revisions can carry the ammo identity in ID while omitting Model.  Keep
         // that form drawable as well; collection already resolves the same identity from the task.
-        if (!task.TryGetValue(ModelParameter, out _)
+        if (string.Equals(task.Type.Name, "GenericPickup", StringComparison.Ordinal)
+            && !task.TryGetValue(ModelParameter, out _)
             && task.TryGetValue("ID", out object? rawGenericId)
             && rawGenericId is string genericId
             && AmmoPickupCatalog.ModelNameForScriptId(genericId) is { Length: > 0 } genericAmmoModel)
