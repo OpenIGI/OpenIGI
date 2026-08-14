@@ -13,7 +13,37 @@ public readonly record struct EnemyOverlayBox(
     float Right,
     float Bottom,
     float DistanceMetres,
-    float Alpha);
+    float Alpha)
+{
+    /// <summary>
+    /// Clips the projected rectangle to the display viewport, matching the native status-display
+    /// handler's per-scanline bounds clamps. Returns <see langword="false"/> when no visible area
+    /// remains.
+    /// </summary>
+    public bool TryClipToViewport(int viewportWidth, int viewportHeight, out EnemyOverlayBox clipped)
+    {
+        clipped = default;
+        if (viewportWidth <= 0 || viewportHeight <= 0
+            || !float.IsFinite(Left) || !float.IsFinite(Top)
+            || !float.IsFinite(Right) || !float.IsFinite(Bottom)
+            || Right <= Left || Bottom <= Top)
+        {
+            return false;
+        }
+
+        float left = Math.Clamp(Left, 0f, viewportWidth);
+        float top = Math.Clamp(Top, 0f, viewportHeight);
+        float right = Math.Clamp(Right, 0f, viewportWidth);
+        float bottom = Math.Clamp(Bottom, 0f, viewportHeight);
+        if (right <= left || bottom <= top)
+        {
+            return false;
+        }
+
+        clipped = this with { Left = left, Top = top, Right = right, Bottom = bottom };
+        return true;
+    }
+}
 
 /// <summary>Managed equivalent of the retail ten-slot binocular detector.</summary>
 /// <remarks>

@@ -41,4 +41,25 @@ public sealed class EnemyDetectorOverlayTests
         Assert.Equal(20f, initial.Bottom - initial.Top, 3);
         Assert.Equal(20f, settled.Bottom - settled.Top, 3);
     }
+
+    [Fact]
+    public void NativeStyleTargetRectanglesAreClippedToTheViewport()
+    {
+        EnemyOverlayBox target = new(7, -40f, 120f, 140f, 520f, 18f, 1f);
+
+        Assert.True(target.TryClipToViewport(1280, 480, out EnemyOverlayBox clipped));
+        Assert.Equal(0f, clipped.Left);
+        Assert.Equal(120f, clipped.Top);
+        Assert.Equal(140f, clipped.Right);
+        Assert.Equal(480f, clipped.Bottom);
+        Assert.Equal(target.DistanceMetres, clipped.DistanceMetres);
+    }
+
+    [Fact]
+    public void FullyOffscreenTargetRectangleIsNotDrawable()
+    {
+        EnemyOverlayBox target = new(7, -120f, 20f, -5f, 90f, 18f, 1f);
+
+        Assert.False(target.TryClipToViewport(1280, 480, out _));
+    }
 }

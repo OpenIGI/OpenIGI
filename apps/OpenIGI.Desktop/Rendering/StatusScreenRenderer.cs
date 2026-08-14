@@ -486,7 +486,10 @@ public sealed class StatusScreenRenderer : IDisposable
         {
             foreach (EnemyOverlayBox target in targets)
             {
-                DrawTargetBox(batch, target, signal);
+                if (target.TryClipToViewport(screenWidth, screenHeight, out EnemyOverlayBox clipped))
+                {
+                    DrawTargetBox(batch, clipped, signal);
+                }
             }
         }
 

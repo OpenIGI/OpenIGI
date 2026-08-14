@@ -120,7 +120,10 @@ internal sealed class RemasteredHudRenderer : IDisposable
         {
             foreach (EnemyOverlayBox target in targets)
             {
-                DrawTargetBox(painter, context, target);
+                if (target.TryClipToViewport(screenWidth, screenHeight, out EnemyOverlayBox clipped))
+                {
+                    DrawTargetBox(painter, context, clipped);
+                }
             }
         }
 
