@@ -210,8 +210,10 @@ public sealed class PlayerWeaponsTests
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.MedipackStartedThisTick);
 
-        // The first-person clip is sampled before the next animation advance. The native factor is
-        // applied once for each newly displayed simulation tick, rather than multiplied by clip span.
+        // Retail applies Values[0] == 0.01 of MaximumHealth per newly-advanced injection clip tick
+        // (FUN_00470570: "Factor of human max damage to add for each round", default 0.01 at
+        // 0x3c23d70a). It is NOT animationProgress * 0.01 and NOT 0.01 total. Consume is one
+        // Medipack charge on the first positive dose, not on entry; cue is syringe, not FireSound.
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.25f));
         Assert.Equal(0.5f, health.Damage, 3);
@@ -438,13 +440,17 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, opened.ViewModelTanX);
 
+        // Retail is level-triggered: the handler is invoked every simulation tick while the
+        // binoculars are open, multiplying by 0.95999998 on each ZoomIn tick and by 1.04 on each
+        // ZoomOut tick. It does NOT use an edge or a cooldown — holding the key steps every tick
+        // until the respective authored minimum/maximum tangent is reached, where it stays.
         SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
         Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.True(view.ZoomChangedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
         narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
-        // The native handler only multiplies while its zoom input is active; releasing the key holds
-        // the current magnification instead of continuing toward the last target.
+        // Releasing the key holds the current magnification instead of continuing toward the last
+        // retail target. Only holding a zoom input multiplies on the next tick.
         Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
         Assert.False(view.ZoomChangedThisTick);
@@ -452,6 +458,7 @@ public sealed class PlayerWeaponsTests
         for (int i = 0; i < 100; i++)
         {
             narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
+            Assert.False(float.IsNaN(narrowed.TanX));
         }
 
         Assert.Equal(0.1f, narrowed.TanX, 3);
@@ -469,7 +476,8 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.ZoomTargetChangedThisTick);
 
         // Closing starts the authored return transition; it does not snap the world camera back in one
-        // tick.
+        // tick. The loop cue must also stop on close — see bin_zoom_1 one-shot at mission teardown
+        // or death (Ghidra FUN_004B5860 strip + FUN_00470570 0x3c23d70a syringe vs firearm report).
         Assert.Equal(0.1f * BinocularsView.ZoomOutFactor, closing.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, closing.ViewModelTanX);
     }
@@ -488,7 +496,10 @@ public sealed class PlayerWeaponsTests
             tanX: HumanView.DefaultTanX,
             viewModelTanX: HumanView.DefaultViewModelTanX);
         Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, precision: 5);
+        Assert.True(view.ZoomChangedThisTick);
+        // No progress or filter check — retail input is exact; r2 shows immediate multiply & clamp.
 
+        // Exactly one zoom factor per held tick at 0.95999998 / 1.04 (IGI.EXE 0x5399D0 constants).
         SightZoomFrame belowThreshold = view.Tick(
             binoculars,
             togglePressed: false,
@@ -506,6 +517,7 @@ public sealed class PlayerWeaponsTests
             tanX: belowThreshold.TanX,
             viewModelTanX: HumanView.DefaultViewModelTanX);
         Assert.Equal(belowThreshold.TanX * BinocularsView.ZoomOutFactor, wider.TanX, precision: 5);
+        Assert.True(wider.TanX > belowThreshold.TanX);
     }
 
     [Fact]
