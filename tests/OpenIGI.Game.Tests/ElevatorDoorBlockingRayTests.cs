@@ -260,7 +260,7 @@ public sealed class ElevatorDoorBlockingRayTests
         ScriptVarRegistry variables,
         DoorRegistry doors)
     {
-        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
         foreach (PlacedElevator elevator in elevators.Elevators)
         {
             PlacedDoor? owned = Descendants(elevator.Task)

@@ -275,11 +275,14 @@ public sealed class WorldInteraction
         double inFront = Vector3d.Dot(toHuman, forward);
         double lateral = Math.Abs(Vector3d.Dot(toHuman, right));
 
+        // Retail switch interaction is head-on: the player must be in front of the panel and
+        // within a body-width laterally. A switch authored into a wall is reachable through the
+        // leaf, so the gate stays generous.
         return Type switch
         {
             InteractionActivateType.Switch or InteractionActivateType.Cabinet
                 or InteractionActivateType.Generic
-                or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 3072.0,
+                or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
             _ => true,
         };
