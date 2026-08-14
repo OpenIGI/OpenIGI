@@ -151,6 +151,7 @@ public sealed class RetailInteractionInventoryTests
                     candidate => ReferenceEquals(candidate.Owner, pickup.Task)
                         && string.Equals(candidate.Instance.Name, pickup.ModelName, StringComparison.OrdinalIgnoreCase));
                 Assert.Equal(pickup.Position / WorldScene.UnitsPerMetre, placement.Position);
+                Assert.NotNull(MefMeshBuilder.Build(placement.Model));
             }
             Assert.Equal(found.Values.Sum(static tasks => tasks.Count), interactions.Items.Count);
             foreach (WorldInteraction interaction in interactions.Items.Where(static item => item.Type is
