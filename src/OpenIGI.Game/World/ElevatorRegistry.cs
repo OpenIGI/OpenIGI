@@ -383,8 +383,7 @@ public sealed class ElevatorRegistry
                 Func<bool>? doorsClosedFn = doors is null ? null : (() => AreAllDoorsFullyClosed(elevatorTask, doors));
                 registry._commands.Add(new ElevatorCommand(
                     elevator,
-                    () => expressions.EvaluateCondition(canStart, emptyValue: true)
-                        && (registryCapture._playerPositionProvider is not null
+                    () => (registryCapture._playerPositionProvider is not null
                             && registryCapture.IsPlayerInsideElevator(
                                 registryCapture._playerPositionProvider(), out _))
                         && (doorsClosedFn is null || doorsClosedFn()),
