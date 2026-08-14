@@ -140,6 +140,18 @@ public sealed class RetailInteractionInventoryTests
                 }
             }
             WorldScene scene = WorldScene.Build(mission, root, magic);
+            foreach (GenericPickup pickup in genericPickups.Items.Where(
+                         static item => string.Equals(item.Task.Type.Name, "AmmoPickup", StringComparison.Ordinal)))
+            {
+                // Inventory resolution alone is not enough: an AmmoPickup must also survive the
+                // scene walk as a drawable placement, otherwise the player can never see or collect
+                // the authored object in-game.
+                WorldPlacement placement = Assert.Single(
+                    scene.Placements,
+                    candidate => ReferenceEquals(candidate.Owner, pickup.Task)
+                        && string.Equals(candidate.Instance.Name, pickup.ModelName, StringComparison.OrdinalIgnoreCase));
+                Assert.Equal(pickup.Position / WorldScene.UnitsPerMetre, placement.Position);
+            }
             Assert.Equal(found.Values.Sum(static tasks => tasks.Count), interactions.Items.Count);
             foreach (WorldInteraction interaction in interactions.Items.Where(static item => item.Type is
                          InteractionActivateType.Door or InteractionActivateType.Cabinet
