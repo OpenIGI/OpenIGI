@@ -443,8 +443,9 @@ public sealed class StatusScreenRenderer : IDisposable
                 BitmapTextRenderer.NeutralColor);
         }
 
-        // BinocularOverlay_DrawCompass (0x0051AA50) emits the scrolling compass strip. It is part of the retail
-        // binocular task, not the remastered computer-themed presentation.
+        // BinocularOverlay_DrawCompass (native entry 0x0051AA50; Ghidra's containing function begins at
+        // 0x0051A8C0) emits the scrolling compass strip. It is part of the retail binocular task, not
+        // the remastered computer-themed presentation.
         DrawNativeBinocularCompass(batch, screenWidth, screenHeight, headingRadians);
 
         float centreX = screenWidth * 0.5f;
@@ -489,11 +490,14 @@ public sealed class StatusScreenRenderer : IDisposable
             return;
         }
 
-        // These values are the retail constants read through Ghidra from FUN_00472050:
-        // strip origin=.625*width, strip width=.28125*width, baseline=.7916667*height.
-        const int tickCount = 64;
+        // The native update walks a 40-point compass buffer. Each point is refined from a 100-sample
+        // spline pass (after a 500-sample pass builds the source path); it is not a 64-tick sprite strip.
+        // The renderer has no native callback/resource bridge, so these are the same 40 projected sample
+        // positions represented as a screen-space strip. Keeping the native sample count is important:
+        // it prevents the retail compass from presenting a denser, invented 64-mark scale.
+        const int sampleCount = 40;
         float stripWidth = screenWidth * 0.28125f;
-        float spacing = stripWidth / tickCount;
+        float spacing = stripWidth / sampleCount;
         float originX = screenWidth * 0.625f;
         float baseline = screenHeight * 0.7916667f;
         float phase = (headingRadians / MathF.Tau) * stripWidth;
@@ -502,7 +506,7 @@ public sealed class StatusScreenRenderer : IDisposable
         Bgra32 minor = Bgra32.FromRgb(0, 64, 0);
         Bgra32 major = Bgra32.FromRgb(0, 128, 0);
 
-        for (int index = 0; index < tickCount; index++)
+        for (int index = 0; index < sampleCount; index++)
         {
             float x = originX + phase + (index * spacing);
             if (x >= originX + stripWidth)
@@ -510,8 +514,8 @@ public sealed class StatusScreenRenderer : IDisposable
                 x -= stripWidth;
             }
 
-            bool isMajor = (index & 15) == 0;
-            bool isMedium = !isMajor && (index & 7) == 0;
+            bool isMajor = index % 10 == 0;
+            bool isMedium = !isMajor && index % 5 == 0;
             float height = (isMajor ? 12f : isMedium ? 8f : 4f) * pixel;
             batch.FillRect(
                 new RectF(x - (pixel * 0.5f), baseline - height, pixel, height),
@@ -519,12 +523,14 @@ public sealed class StatusScreenRenderer : IDisposable
 
             if (isMajor && Font() is { } font)
             {
-                string label = index switch
+                int cardinal = (int)MathF.Round(((index * 360f / sampleCount) +
+                    (headingRadians * 180f / MathF.PI)) / 90f) * 90;
+                string label = (((cardinal % 360) + 360) % 360) switch
                 {
                     0 => "N",
-                    16 => "E",
-                    32 => "S",
-                    48 => "W",
+                    90 => "E",
+                    180 => "S",
+                    270 => "W",
                     _ => string.Empty,
                 };
                 if (label.Length > 0)
