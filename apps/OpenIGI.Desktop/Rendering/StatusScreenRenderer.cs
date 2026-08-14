@@ -33,6 +33,11 @@ namespace OpenIGI.Desktop;
 public sealed class StatusScreenRenderer : IDisposable
 {
     private const string LogCategory = "Hud";
+    // 0x0046ff00 (LaserDesignatorOverlay_StatusDisplayHandler) positions the native range holder at
+    // these normalized video coordinates. They are separate from the 0.7625 y-coordinate used by the
+    // binocular reticle line group.
+    private const float BinocularRangeX = 0.378125f;
+    private const float BinocularRangeY = 0.55f;
 
     /// <summary>The archive the HUD's font comes out of.</summary>
     /// <remarks>
@@ -511,9 +516,9 @@ public sealed class StatusScreenRenderer : IDisposable
             return;
         }
 
-        // The builder uses the video dimensions directly: x=12.5% and y=76.25% for the range
-        // holder. Its distance source is the refined native path; until that holder is exposed to the
-        // renderer, the closest visible detector slot is the faithful managed source.
+        // The native holder uses the video dimensions directly: x=37.8125% and y=55%, with the
+        // text height subtracted from y. Its distance source is the refined native path; until that
+        // holder is exposed to the renderer, the closest visible detector slot is the faithful managed source.
         EnemyOverlayBox? nearest = targets is null
             ? null
             : targets
@@ -531,8 +536,8 @@ public sealed class StatusScreenRenderer : IDisposable
         font.Draw(
             batch,
             range,
-            screenWidth * 0.125f,
-            (screenHeight * 0.7625f) - (font.LineHeight * scale),
+            screenWidth * BinocularRangeX,
+            (screenHeight * BinocularRangeY) - (font.LineHeight * scale),
             new Bgra32(0, 128, 0, 255),
             scale,
             scale);
