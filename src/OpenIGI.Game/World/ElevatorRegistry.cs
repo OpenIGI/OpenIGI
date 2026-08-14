@@ -66,15 +66,38 @@ public sealed class ElevatorRegistry
     /// </remarks>
     public void SetPlayerPositionProvider(Func<Vector3d>? provider) => _playerPositionProvider = provider;
 
-    public static ElevatorRegistry Build(GameTask root, ScriptVarRegistry variables)
+    public static ElevatorRegistry Build(GameTask root, ScriptVarRegistry variables) =>
+        Build(root, variables, doors: null);
+
+    public static ElevatorRegistry Build(
+        GameTask root,
+        ScriptVarRegistry variables,
+        DoorRegistry? doors)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(variables);
+        _ = doors;
 
         ElevatorRegistry registry = new();
         LevelExpressionRuntime expressions = new(variables);
         Collect(root, root, registry, expressions, variables);
         return registry;
+    }
+
+    /// <summary>True when every door parented to the lift is fully shut.</summary>
+    public static bool AreAllDoorsFullyClosed(GameTask elevator, DoorRegistry doors)
+    {
+        ArgumentNullException.ThrowIfNull(elevator);
+        ArgumentNullException.ThrowIfNull(doors);
+        foreach (PlacedDoor door in doors.Doors)
+        {
+            if (IsDescendantOf(door.Task, elevator) && !door.State.IsFullyClosed)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public void Tick()
@@ -120,6 +143,11 @@ public sealed class ElevatorRegistry
 
         foreach (ElevatorCommand command in _commands)
         {
+            if (command.TryRequestFromExteriorSwitch(switchTask))
+            {
+                return true;
+            }
+
             if (IsDescendantOf(switchTask, command.Elevator.Task)
                 && command.RequestFromSwitch())
             {
@@ -149,25 +177,57 @@ public sealed class ElevatorRegistry
         return null;
     }
 
+    /// <summary>
+    /// Writes this tick's elevator and non-door child collision before the player settles.
+    /// </summary>
+    public int ApplyCollision(ObjectCollisionIndex solids)
+    {
+        ArgumentNullException.ThrowIfNull(solids);
+        int updated = 0;
+        foreach (PlacedElevator elevator in _elevators)
+        {
+            if (!elevator.State.TransformChangedThisTick)
+            {
+                continue;
+            }
+
+            Vector3d increment = (elevator.State.Position - elevator.State.PreviousPosition)
+                / WorldScene.UnitsPerMetre;
+            if (solids.UpdateTransform(elevator.Task, elevator.DrawPosition, elevator.Orientation))
+            {
+                updated++;
+            }
+
+            updated += solids.UpdateDescendantTranslation(elevator.Task, increment, IsDoorTask);
+        }
+
+        return updated;
+    }
+
     /// <summary>Gets the displacement to apply to a passenger standing on a moving platform.</summary>
-    /// <param name="passenger">The passenger feet position in engine units.</param>
-    /// <param name="displacement">The platform displacement in engine units.</param>
-    /// <returns><see langword="true"/> when the passenger was on a platform during this tick.</returns>
-    public bool TryGetPassengerDisplacement(Vector3d passenger, out Vector3d displacement)
+    public bool TryGetPassengerDisplacement(Vector3d passenger, out Vector3d displacement) =>
+        TryGetPassengerDisplacement(passenger, solids: null, out displacement);
+
+    /// <summary>Gets the displacement for a passenger, using live collision when available.</summary>
+    /// <remarks>
+    /// Retail attaches from BoneDynCubeObj / ground-hit owner (0x4626E1 / 0x463310), not a 1 m
+    /// sphere around the task origin.
+    /// </remarks>
+    public bool TryGetPassengerDisplacement(
+        Vector3d passenger,
+        ObjectCollisionIndex? solids,
+        out Vector3d displacement)
     {
         foreach (PlacedElevator elevator in _elevators)
         {
-            Vector3d previous = elevator.State.PreviousPosition;
-            Vector3d current = elevator.State.Position;
-            Vector3d horizontal = new(passenger.X - previous.X, passenger.Y - previous.Y, 0.0);
-            if (Math.Abs(passenger.Z - previous.Z) <= 1024.0 && horizontal.Length <= 4096.0)
+            Vector3d delta = elevator.State.Position - elevator.State.PreviousPosition;
+            if (delta == Vector3d.Zero || !IsPassengerOn(elevator, passenger, solids))
             {
-                displacement = current - previous;
-                if (displacement != Vector3d.Zero)
-                {
-                    return true;
-                }
+                continue;
             }
+
+            displacement = delta;
+            return true;
         }
 
         displacement = default;
@@ -347,23 +407,25 @@ public sealed class ElevatorRegistry
                     ReadString(declared, "Stop sound"),
                     ReadString(declared, "Move sound"));
                 registry._elevators.Add(elevator);
-                List<Func<bool>> wantedFloors = Enumerable.Range(0, 10)
+                List<string> wantedExpressions = Enumerable.Range(0, 10)
                     .Select(i => ReadString(declared, $"Wanted floor {i}"))
+                    .ToList();
+                List<Func<bool>> wantedFloors = wantedExpressions
                     .Select(expression => (Func<bool>)(() => expressions.EvaluateCondition(
                         expression, emptyValue: false)))
                     .ToList();
+                string canStart = ReadString(declared, "Can start");
                 string floorUp = ReadString(declared, "Floor up");
                 string floorDown = ReadString(declared, "Floor down");
-                DeclaredTask elevatorTask = declared;
-                ElevatorRegistry registryCapture = registry;
+                List<ExteriorSwitchCall> exteriorCalls = FindExteriorSwitchCalls(
+                    root, declared, floors, wantedExpressions);
                 registry._commands.Add(new ElevatorCommand(
                     elevator,
-                    () => registryCapture._playerPositionProvider is not null
-                        && registryCapture.IsPlayerInsideElevator(
-                            registryCapture._playerPositionProvider(), out _),
+                    () => expressions.EvaluateCondition(canStart, emptyValue: true),
                     () => expressions.EvaluateCondition(floorUp, emptyValue: false),
                     () => expressions.EvaluateCondition(floorDown, emptyValue: false),
-                    wantedFloors));
+                    wantedFloors,
+                    exteriorCalls));
                 variables.BindInt(declared, "vFloor", () => state.CurrentFloorIndex, value => state.RequestFloor(value));
                 variables.BindBool(declared, "isMoving", () => state.IsMoving, _ => { });
             }
@@ -380,7 +442,8 @@ public sealed class ElevatorRegistry
         Func<bool> CanStart,
         Func<bool> FloorUp,
         Func<bool> FloorDown,
-        List<Func<bool>> WantedFloors)
+        List<Func<bool>> WantedFloors,
+        List<ExteriorSwitchCall> ExteriorCalls)
     {
         public PlacedElevator Elevator { get; } = Elevator;
         public Func<bool> CanStart { get; } = CanStart;
@@ -388,6 +451,21 @@ public sealed class ElevatorRegistry
         public Func<bool> FloorDown { get; } = FloorDown;
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
         public bool[] LastWantedFloors { get; } = new bool[WantedFloors.Count];
+        public List<ExteriorSwitchCall> ExteriorCalls { get; } = ExteriorCalls;
+
+        public bool TryRequestFromExteriorSwitch(DeclaredTask switchTask)
+        {
+            foreach (ExteriorSwitchCall call in ExteriorCalls)
+            {
+                if (ReferenceEquals(call.Switch, switchTask))
+                {
+                    Elevator.State.RequestFloor(call.FloorIndex);
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         public bool RequestFromSwitch()
         {
@@ -401,6 +479,158 @@ public sealed class ElevatorRegistry
             }
 
             return false;
+        }
+    }
+
+    private sealed record ExteriorSwitchCall(DeclaredTask Switch, int FloorIndex);
+
+    private static bool IsPassengerOn(
+        PlacedElevator elevator,
+        Vector3d passenger,
+        ObjectCollisionIndex? solids)
+    {
+        if (solids is not null)
+        {
+            Vector3d shin = new(passenger.X, passenger.Y, passenger.Z + 2048.0);
+            if (solids.IsPointInTaskVolume(passenger, elevator.Task)
+                || solids.IsPointInTaskVolume(shin, elevator.Task)
+                || (solids.TryFindContainingDynamicOwner(passenger, includeInactiveOwners: false, out GameTask? owner)
+                    && owner is not null
+                    && IsSelfOrDescendant(owner, elevator.Task))
+                || (solids.TryFindContainingDynamicOwner(shin, includeInactiveOwners: false, out GameTask? lifted)
+                    && lifted is not null
+                    && IsSelfOrDescendant(lifted, elevator.Task)))
+            {
+                return true;
+            }
+        }
+
+        Vector3d previous = elevator.State.PreviousPosition;
+        double dx = passenger.X - previous.X;
+        double dy = passenger.Y - previous.Y;
+        double dz = passenger.Z - previous.Z;
+        double horizontal = Math.Sqrt((dx * dx) + (dy * dy));
+        return horizontal <= PlayerInsideHorizontalRadius
+            && dz >= -PlayerInsideVerticalTolerance
+            && dz <= PlayerInsideVerticalTolerance;
+    }
+
+    private static bool IsDoorTask(GameTask task) =>
+        task is DeclaredTask declared
+        && string.Equals(declared.Type.Name, "Door", StringComparison.Ordinal);
+
+    private static bool IsSelfOrDescendant(GameTask owner, GameTask ancestor)
+    {
+        for (GameTask? current = owner; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static List<ExteriorSwitchCall> FindExteriorSwitchCalls(
+        GameTask root,
+        DeclaredTask elevator,
+        List<ElevatorFloor> floors,
+        List<string> wantedExpressions)
+    {
+        string elevatorName = elevator.Name;
+        string[] doorExpressions = Descendants(root)
+            .OfType<DeclaredTask>()
+            .Where(static task => string.Equals(task.Type.Name, "Door", StringComparison.Ordinal))
+            .SelectMany(task =>
+            {
+                string[] expressions =
+                [
+                    ReadString(task, "Close door expression"),
+                    ReadString(task, "Open door expression"),
+                ];
+                bool owned = IsDescendantOf(task, elevator);
+                bool mentionsElevator = expressions.Any(expression =>
+                    expression.Contains(elevatorName, StringComparison.Ordinal));
+                return owned || mentionsElevator
+                    ? expressions.Where(static expression => expression.Length > 0)
+                    : [];
+            })
+            .ToArray();
+
+        List<DeclaredTask> switches = Descendants(root)
+            .OfType<DeclaredTask>()
+            .Where(static task => string.Equals(task.Type.Name, "Switch", StringComparison.Ordinal))
+            .ToList();
+        Dictionary<DeclaredTask, int> floorsBySwitch = new(ReferenceEqualityComparer.Instance);
+        for (int floor = 0; floor < wantedExpressions.Count; floor++)
+        {
+            string wanted = wantedExpressions[floor];
+            if (wanted.Length == 0)
+            {
+                continue;
+            }
+
+            foreach (DeclaredTask switchTask in switches)
+            {
+                if (IsDescendantOf(switchTask, elevator)
+                    || !wanted.Contains($"{switchTask.Name}.isLastPressed", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                floorsBySwitch[switchTask] = floor;
+            }
+        }
+
+        List<ExteriorSwitchCall> calls = [];
+        foreach (DeclaredTask switchTask in switches)
+        {
+            if (IsDescendantOf(switchTask, elevator))
+            {
+                continue;
+            }
+
+            if (floorsBySwitch.TryGetValue(switchTask, out int authoredFloor))
+            {
+                calls.Add(new ExteriorSwitchCall(switchTask, authoredFloor));
+                continue;
+            }
+
+            if (!doorExpressions.Any(expression => expression.Contains(
+                    $"{switchTask.Name}.isLastPressed", StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            Vector3d position = ReadPosition(switchTask, "Position", default);
+            int floor = 0;
+            double distance = double.MaxValue;
+            for (int i = 0; i < floors.Count; i++)
+            {
+                double candidate = Vector3d.Distance(position, floors[i].Position);
+                if (candidate < distance)
+                {
+                    distance = candidate;
+                    floor = i;
+                }
+            }
+
+            calls.Add(new ExteriorSwitchCall(switchTask, floor));
+        }
+
+        return calls;
+    }
+
+    private static IEnumerable<GameTask> Descendants(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (GameTask descendant in Descendants(child))
+            {
+                yield return descendant;
+            }
         }
     }
 

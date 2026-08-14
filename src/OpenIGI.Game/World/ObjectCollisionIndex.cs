@@ -135,7 +135,19 @@ public sealed class ObjectCollisionIndex
     /// <param name="parent">The parent task whose children are moving.</param>
     /// <param name="displacementMetres">The incremental world translation in metres.</param>
     /// <returns>The number of collision entries translated.</returns>
-    public int UpdateDescendantTranslation(GameTask parent, Vector3d displacementMetres)
+    public int UpdateDescendantTranslation(GameTask parent, Vector3d displacementMetres) =>
+        UpdateDescendantTranslation(parent, displacementMetres, skip: null);
+
+    /// <summary>Translates indexed children of a moving parent, optionally skipping some owners.</summary>
+    /// <remarks>
+    /// Elevator-owned doors keep an absolute owner transform from their live swing plus the
+    /// car's total offset. Incremental translation of those same doors would write the ride
+    /// twice (IGI.exe parents the door mesh; it does not add the car step on top).
+    /// </remarks>
+    public int UpdateDescendantTranslation(
+        GameTask parent,
+        Vector3d displacementMetres,
+        Func<GameTask, bool>? skip)
     {
         ArgumentNullException.ThrowIfNull(parent);
         Vector3d units = displacementMetres * WorldScene.UnitsPerMetre;
@@ -145,6 +157,11 @@ public sealed class ObjectCollisionIndex
         {
             foreach (Entry entry in set)
             {
+                if (skip?.Invoke(entry.Owner) == true)
+                {
+                    continue;
+                }
+
                 for (GameTask? current = entry.Owner.Parent; current is not null; current = current.Parent)
                 {
                     if (!ReferenceEquals(current, parent))
@@ -160,6 +177,54 @@ public sealed class ObjectCollisionIndex
         }
 
         return updated;
+    }
+
+    /// <summary>
+    /// True when <paramref name="position"/> sits in a collision volume owned by
+    /// <paramref name="ancestor"/> or one of its descendants.
+    /// </summary>
+    /// <remarks>
+    /// Retail Human_SetParent (0x463310) takes the BoneDynCubeObj / ground-hit owner.
+    /// </remarks>
+    public bool IsPointInTaskVolume(Vector3d position, GameTask ancestor)
+    {
+        ArgumentNullException.ThrowIfNull(ancestor);
+        foreach (Entry[] set in new[] { _entries, _playerEntries })
+        {
+            foreach (Entry entry in set)
+            {
+                if (!IsSelfOrDescendant(entry.Owner, ancestor)
+                    || _passable.Contains(entry.Owner)
+                    || !ConditionalContainerGate.IsTaskActive(entry.Owner)
+                    || entry.Radius <= 0.0)
+                {
+                    continue;
+                }
+
+                double dx = position.X - entry.Centre.X;
+                double dy = position.Y - entry.Centre.Y;
+                double dz = position.Z - entry.Centre.Z;
+                if (((dx * dx) + (dy * dy) + (dz * dz)) <= (entry.Radius * entry.Radius))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsSelfOrDescendant(GameTask owner, GameTask ancestor)
+    {
+        for (GameTask? current = owner; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Updates one model placement owned by a multi-model task.</summary>

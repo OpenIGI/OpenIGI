@@ -1625,8 +1625,14 @@ internal sealed partial class DesktopGame : IDisposable
                 elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
                 elevators.Tick();
                 UpdateElevatorSoundPositions();
+                if (_worldSolids is { } elevatorSolids)
+                {
+                    elevators.ApplyCollision(elevatorSolids);
+                }
+
                 if (_playerMode && _player is { } passenger
-                    && elevators.TryGetPassengerDisplacement(passenger.Body.Position, out Vector3d displacement))
+                    && elevators.TryGetPassengerDisplacement(
+                        passenger.Body.Position, _worldSolids, out Vector3d displacement))
                 {
                     passenger.Body.Position += displacement;
                 }

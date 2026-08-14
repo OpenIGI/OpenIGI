@@ -67,6 +67,14 @@ public sealed class ElevatorRideInteractionTests
                     continue;
                 }
 
+                // Mission 12's Elevator_1667 is a scripted shaft whose Floor-up expression is
+                // live without a switch pulse. Retail still moves that car; this test is about
+                // idle hall/cabin lifts, not that scripted ride.
+                if (elevator.Task.Id == 1667)
+                {
+                    continue;
+                }
+
                 // No player position provider wired — the lift must not move.
                 for (int t = 0; t < 300; t++)
                 {

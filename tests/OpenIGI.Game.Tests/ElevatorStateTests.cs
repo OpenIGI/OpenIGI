@@ -224,4 +224,28 @@ public sealed class ElevatorStateTests
         Assert.Equal(movingState.Position - movingState.PreviousPosition, displacement);
         Assert.NotEqual(Vector3d.Zero, displacement);
     }
+
+    [Fact]
+    public void PassengerDisplacementCarriesFeetOffTheTaskOrigin()
+    {
+        ElevatorState movingState = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [
+                new ElevatorFloor(20, new Vector3d(0, 0, 0)),
+                new ElevatorFloor(30, new Vector3d(0, 0, 100)),
+            ],
+            maxSpeedUnitsPerSecond: 300,
+            speedInertiaUnitsPerSecondSquared: 300);
+        movingState.RequestFloor(1);
+        movingState.Tick(canStart: true, floorUp: false, floorDown: false);
+
+        ElevatorRegistry registry = new([
+            new PlacedElevator(new OpenIGI.Engine.Tasks.LevelTask(), movingState,
+                Matrix3f.Identity, "moving", "", "", ""),
+        ]);
+
+        Vector3d offCentre = new(6000.0, -4000.0, 2000.0);
+        Assert.True(registry.TryGetPassengerDisplacement(offCentre, out Vector3d displacement));
+        Assert.Equal(movingState.Position - movingState.PreviousPosition, displacement);
+    }
 }

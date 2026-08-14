@@ -2084,40 +2084,19 @@ public sealed class SoldierRenderer : IDisposable
 
                     // Closed/open doors spend nearly all their life stationary, unless they ride a
                     // moving elevator: keep collision synchronized with the rendered displacement.
-                    Vector3d elevatorDisplacement = default;
-                    bool onMovingElevator = _elevators?.TryGetDisplacement(
-                        door.Task, tickFraction: 1f, smooth: false, out elevatorDisplacement) == true;
-                    if (door.State.TransformChangedThisTick || onMovingElevator)
+                    Vector3d elevatorOffset = _elevators?.GetCurrentDisplacement(door.Task) ?? default;
+                    if (door.State.TransformChangedThisTick || elevatorOffset != default)
                     {
-                        Vector3d position = onMovingElevator
-                            ? door.DrawPosition + elevatorDisplacement
-                            : door.DrawPosition;
-
-                        solids.UpdateTransform(door.Task, position, door.DrawOrientation);
-                    }
-                }
-            }
-        }
-
-        if (_elevators is { } elevators)
-        {
-            if (_solids is { } solids)
-            {
-                foreach (PlacedElevator elevator in elevators.Elevators)
-                {
-                    if (elevator.State.TransformChangedThisTick)
-                    {
-                        Vector3d displacement = (elevator.State.Position - elevator.State.PreviousPosition)
-                            / WorldScene.UnitsPerMetre;
                         solids.UpdateTransform(
-                            elevator.Task,
-                            elevator.DrawPosition,
-                            elevator.Orientation);
-                        solids.UpdateDescendantTranslation(elevator.Task, displacement);
+                            door.Task, door.DrawPosition + elevatorOffset, door.DrawOrientation);
                     }
                 }
             }
         }
+
+        // Elevator and non-door child collision is applied in DesktopGame immediately after
+        // elevators.Tick(), before passenger carry and Settle. Re-applying descendant translation
+        // here wrote elevator-owned doors twice.
 
         // Child Train collision starts at its authored placeholder and receives its derived consist
         // transform from DesktopGame immediately before this tick. Retry registration here so the
