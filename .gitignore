@@ -94,5 +94,7 @@ a probe of the running original
 
 # Scratch space for local build/run scripts and throwaway work.
 /scratch/
+/scratch/macos/*.sh
+/scratch/macos/*.bash
 NuGetPackages.config
 NuGet.config

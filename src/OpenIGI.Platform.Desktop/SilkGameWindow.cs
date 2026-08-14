@@ -45,6 +45,7 @@ public sealed class SilkGameWindow : IGameWindow
     // one and contributes no motion, which is how a pointer that has been moved out from under us
     // arrives as a new starting point rather than as a movement the player never made.
     private Vector2? _pointerBaseline;
+    private Vector2 _virtualPointer;
 
     internal SilkGameWindow(in WindowSettings settings)
     {
@@ -525,11 +526,22 @@ public sealed class SilkGameWindow : IGameWindow
                 // report's worth of motion, which is nothing, and is what ApplyCursorMode does below.
                 if (_pointerBaseline is { } previous)
                 {
-                    Input.Mouse.AddMotion(position.X - previous.X, position.Y - previous.Y);
+                    float deltaX = position.X - previous.X;
+                    float deltaY = position.Y - previous.Y;
+                    Input.Mouse.AddMotion(deltaX, deltaY);
+
+                    if (OperatingSystem.IsMacOS() && !_cursorLocked)
+                    {
+                        _virtualPointer = new Vector2(
+                            Math.Clamp(_virtualPointer.X + deltaX, 0f, Math.Max(1, Width - 1)),
+                            Math.Clamp(_virtualPointer.Y + deltaY, 0f, Math.Max(1, Height - 1)));
+                    }
                 }
 
                 _pointerBaseline = position;
-                Input.Mouse.SetPosition(position.X, position.Y);
+                Input.Mouse.SetPosition(
+                    OperatingSystem.IsMacOS() && !_cursorLocked ? _virtualPointer.X : position.X,
+                    OperatingSystem.IsMacOS() && !_cursorLocked ? _virtualPointer.Y : position.Y);
             };
             mouse.Scroll += (_, wheel) => Input.Mouse.AddWheel(wheel.Y);
         }
@@ -569,6 +581,11 @@ public sealed class SilkGameWindow : IGameWindow
         // new starting point, not a movement.
         _pointerBaseline = null;
 
+        if (OperatingSystem.IsMacOS() && !_cursorLocked)
+        {
+            _virtualPointer = new Vector2(Math.Max(1, Width - 1) / 2f, Math.Max(1, Height - 1) / 2f);
+        }
+
         foreach (IMouse mouse in _input.Mice)
         {
             // Raw is the same lock as Disabled but without the desktop's pointer acceleration applied,
@@ -576,7 +593,9 @@ public sealed class SilkGameWindow : IGameWindow
             // fallback and both hide the cursor on their own.
             mouse.Cursor.CursorMode = _cursorLocked
                 ? (mouse.Cursor.IsSupported(CursorMode.Raw) ? CursorMode.Raw : CursorMode.Disabled)
-                : _cursorVisible ? CursorMode.Normal : CursorMode.Hidden;
+                : OperatingSystem.IsMacOS()
+                    ? CursorMode.Disabled
+                    : _cursorVisible ? CursorMode.Normal : CursorMode.Hidden;
         }
     }
 }

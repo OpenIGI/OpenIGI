@@ -114,9 +114,11 @@ using (window)
 
     GL gl = GL.GetApi(window.GLContext);
 
+    int width = window.Width > 0 ? window.Width : options.Width > 0 ? options.Width : 640;
+    int height = window.Height > 0 ? window.Height : options.Height > 0 ? options.Height : 480;
     using GLGraphicsDevice device = new(
         gl,
-        new DisplayMode(window.Width, window.Height, 32, window.RefreshRate),
+        new DisplayMode(width, height, 32, window.RefreshRate),
         window.SwapBuffers,
         logger);
 
