@@ -1394,6 +1394,7 @@ internal sealed partial class DesktopGame
         // player's own hit-zone table, one of its two reactions by rand(2). The player stops taking
         // input from here on -- it is a state, not a message.
         _playerDead = true;
+        _player.ResetOptics();
         _player.StopWeaponsForDeath();
 
         // The player receives no further simulation ticks after death, so the weapon sound player

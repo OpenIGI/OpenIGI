@@ -173,6 +173,31 @@ public sealed class PlayerCamera
     /// <summary>Gets whether the binocular zoom target changed on the last simulation tick.</summary>
     public bool BinocularZoomTargetChangedThisTick => _binocularsView.ZoomTargetChangedThisTick;
 
+    /// <summary>Closes all optical devices and restores both first-person FOV tangents.</summary>
+    /// <remarks>
+    /// The desktop host stops ticking the player as soon as the death camera takes over. Resetting
+    /// here prevents a binocular or sniper latch and its narrowed tangent from surviving outside
+    /// first-person control.
+    /// </remarks>
+    public void ResetOptics()
+    {
+        _binocularsView.Reset();
+        _sightZoom.Reset();
+        _dragunovScope.Reset();
+
+        if (_view is { } view)
+        {
+            view.TanX = HumanView.DefaultTanX;
+            view.ViewModelTanX = HumanView.DefaultViewModelTanX;
+        }
+
+        _prevTickTanX = HumanView.DefaultTanX;
+        _tickTanX = HumanView.DefaultTanX;
+        _prevTickViewModelTanX = HumanView.DefaultViewModelTanX;
+        _tickViewModelTanX = HumanView.DefaultViewModelTanX;
+        HasViewTickPair = false;
+    }
+
     /// <summary>Gets the grenades in the air, both the player's and the AI's.</summary>
     /// <remarks>
     /// One simulation for both throwers so there is one place to tick, draw and detonate from — the

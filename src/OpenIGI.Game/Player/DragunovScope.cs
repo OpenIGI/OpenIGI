@@ -52,6 +52,14 @@ public sealed class DragunovScope
     /// <summary>Gets whether the scope is open.</summary>
     public bool IsScoped { get; private set; }
 
+    /// <summary>Closes the scope without waiting for another input or weapon tick.</summary>
+    /// <remarks>Used when the player leaves first-person control, such as entering the death camera.</remarks>
+    public void Reset()
+    {
+        _weapon = null;
+        IsScoped = false;
+    }
+
     /// <summary>Advances the scope by one simulation tick.</summary>
     /// <param name="weapon">The weapon currently in hand, or <see langword="null"/>.</param>
     /// <param name="alternateHeld">Whether alternate fire is down this tick.</param>

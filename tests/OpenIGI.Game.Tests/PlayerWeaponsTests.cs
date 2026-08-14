@@ -404,6 +404,45 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void OpticalLatchesCanBeResetWhenFirstPersonControlEnds()
+    {
+        BinocularsView binoculars = new();
+        binoculars.Tick(Binoculars, true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        Assert.True(binoculars.IsOpen);
+        binoculars.Reset();
+        Assert.False(binoculars.IsOpen);
+
+        Mp5SightZoom sight = new();
+        WeaponType mp5 = new()
+        {
+            WeaponId = 7,
+            ScriptId = "WEAPON_ID_MP5SD",
+            Category = WeaponCategory.Gun,
+            Weapon = new WeaponTaskBinding("TASKTYPE_GUNMP5SD", 0, [0.1f], string.Empty, 0),
+        };
+        sight.Tick(mp5, true, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        Assert.True(sight.IsActive);
+        sight.Reset();
+        Assert.False(sight.IsActive);
+        SightZoomFrame sightFrame = sight.Tick(mp5, false, 0.2f, 0.2f);
+        Assert.Equal(HumanView.DefaultTanX, sightFrame.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX, sightFrame.ViewModelTanX);
+
+        DragunovScope scope = new();
+        WeaponType dragunov = new()
+        {
+            WeaponId = 32,
+            ScriptId = "WEAPON_ID_DRAGUNOV",
+            Category = WeaponCategory.Gun,
+            Weapon = new WeaponTaskBinding("TASKTYPE_GUNDRAGUNOV", 0, [0.1f], string.Empty, 0),
+        };
+        scope.Tick(dragunov, true, false, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+        Assert.True(scope.IsScoped);
+        scope.Reset();
+        Assert.False(scope.IsScoped);
+    }
+
+    [Fact]
     public void TheFirstEntryOfTheCycleThePlayerCarriesEndsUpInHand()
     {
         // Human+3400 starts at -1, so the first tick advances to cycle index 0. The shipped cycle
