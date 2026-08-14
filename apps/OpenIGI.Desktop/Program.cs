@@ -91,6 +91,13 @@ catch (PlatformException ex)
     return 3;
 }
 
+// macOS reports a zero drawable for a hidden OpenGL window. Show it before querying the context and
+// viewport so runtime captures and the first rendered frame use the real framebuffer dimensions.
+if (OperatingSystem.IsMacOS())
+{
+    window.Show();
+}
+
 using (window)
 {
     DisplayReport.Report(window, options, logger);
