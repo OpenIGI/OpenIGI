@@ -195,7 +195,7 @@ internal sealed partial class DesktopGame
         _binocularZoomVoice = _sounds.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
     }
 
-    /// <summary>Plays the authored syringe cue when the first healing dose is injected.</summary>
+    /// <summary>Plays the medipack's authored fire cue when the first healing dose is injected.</summary>
     /// <remarks>
     /// The native medipack action consumes one charge on the first positive health delta, not when
     /// the weapon state is entered. <c>MedipackUsedThisTick</c> is that edge, so the cue cannot
@@ -203,9 +203,15 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private void PlayMedipackSound()
     {
-        if (_player?.Weapons?.MedipackUsedThisTick == true)
+        if (_player?.Weapons is { MedipackUsedThisTick: true } weapons)
         {
-            _sounds?.PlayDefinition("syringe", priority: 180);
+            // The retail MEDIPACK weapon script names glock_shot_1 as its FireSound. It is an odd
+            // resource name, but it is the authored cue the original plays for this action. Keep the
+            // standalone syringe cue only for custom weapon records that omit FireSound.
+            string sound = weapons.InHand?.Weapon.FireSound is { Length: > 0 } authored
+                ? authored
+                : "syringe";
+            _sounds?.PlayDefinition(sound, priority: 180);
         }
     }
 
