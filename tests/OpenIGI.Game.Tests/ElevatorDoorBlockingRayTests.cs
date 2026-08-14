@@ -176,7 +176,7 @@ public sealed class ElevatorDoorBlockingRayTests
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
         DoorRegistry doors = DoorRegistry.Build(root);
-        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables, elevators);
 
         PlacedElevator? withDoor = null;
@@ -202,6 +202,9 @@ public sealed class ElevatorDoorBlockingRayTests
         {
             return;
         }
+
+        // The lift only moves with the player inside — stand the player in the cab.
+        elevators.SetPlayerPositionProvider(() => withDoor.State.Position);
 
         // Start from a sealed door and no human: the lift should run.
         doors.SetDoorwayBlockedQuery(null);

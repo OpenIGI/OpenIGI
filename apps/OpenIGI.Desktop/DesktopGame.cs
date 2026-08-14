@@ -1620,6 +1620,9 @@ internal sealed partial class DesktopGame : IDisposable
             // The player then moved as fast as the display was quick, which is exactly what it looked like.
             if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
             {
+                // Feed the player's current position to the elevators so their start gate can refuse
+                // to move an empty car or one with an open door. Provider is read every tick.
+                elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
                 elevators.Tick();
                 UpdateElevatorSoundPositions();
                 if (_playerMode && _player is { } passenger
@@ -1627,6 +1630,16 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     passenger.Body.Position += displacement;
                 }
+            }
+
+            // The player cannot jump while standing inside an elevator cab. The elevator registry knows
+            // the player's position (fed above), so it can report whether they're inside.
+            if (_player is { } playerWithJump)
+            {
+                playerWithJump.CanJump = _elevators is { } jumpElevators
+                    ? (Func<bool>)(() => !jumpElevators.IsPlayerInsideElevator(
+                        playerWithJump.Body.Position, out _))
+                    : null;
             }
 
             if (outcome is FrameOutcome.Tick

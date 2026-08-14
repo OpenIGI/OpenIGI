@@ -29,7 +29,7 @@ public sealed class ElevatorSwitchInteractionTests
         {
             (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
-            ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+            ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
             WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
                 root, mission, doors, variables, elevators);
 
@@ -41,6 +41,9 @@ public sealed class ElevatorSwitchInteractionTests
                 {
                     continue;
                 }
+
+                // The lift only moves with the player inside — stand the player in the cab.
+                elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
                 int settleFloor = Settle(elevator, interactions, elevators, doors);
 
@@ -125,7 +128,7 @@ public sealed class ElevatorSwitchInteractionTests
         {
             (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(missionId);
             DoorRegistry doors = DoorRegistry.Build(root);
-            ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+            ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
             WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
                 root, mission, doors, variables, elevators);
 
@@ -137,6 +140,9 @@ public sealed class ElevatorSwitchInteractionTests
                 {
                     continue;
                 }
+
+                // The lift only moves with the player inside — stand the player in the cab.
+                elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
                 int settleFloor = Settle(elevator, interactions, elevators, doors);
                 int playerFloor = settleFloor == 0 && elevator.State.FloorCount > 1

@@ -140,6 +140,13 @@ public sealed class PlayerCamera
     /// <remarks>Empty on every tick nothing was fired, which is most of them.</remarks>
     public IReadOnlyList<GunImpact> Impacts => _impacts;
 
+    /// <summary>Gets or sets a callback that determines whether the player is allowed to jump.</summary>
+    /// <remarks>
+    /// When this returns <see langword="false"/>, the jump input is ignored. Used to suppress jumping
+    /// while the player is inside an elevator cab — retail does not allow jumping while riding a lift.
+    /// </remarks>
+    public Func<bool>? CanJump { get; set; }
+
     /// <summary>Gets the marks rounds have left on the world.</summary>
     public BulletMarks Marks { get; } = new();
 
@@ -888,7 +895,9 @@ public sealed class PlayerCamera
         bool crouch = _input.IsSet(PlayerInputSlot.Crouch);
 
         // Jump is the rising edge, not the level, so holding it does not bounce.
-        bool jump = _input.IsRisingEdge(PlayerInputSlot.Jump);
+        // The player cannot jump while inside an elevator cab — the lift floor is not a surface
+        // the jump integrator expects, and retail does not allow it.
+        bool jump = _input.IsRisingEdge(PlayerInputSlot.Jump) && (CanJump?.Invoke() ?? true);
 
         PlayerCommand command = new(forward, strafe, 0f, 0f, _running, crouch, jump);
 

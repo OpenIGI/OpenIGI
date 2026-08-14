@@ -106,7 +106,7 @@ public sealed class RetailElevatorTests
     {
         (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(14);
         DoorRegistry doors = DoorRegistry.Build(root);
-        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
         WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
             root, mission, doors, variables, elevators);
 
@@ -119,6 +119,9 @@ public sealed class RetailElevatorTests
             {
                 continue;
             }
+
+            // The lift only moves with the player inside — stand the player in the cab.
+            elevators.SetPlayerPositionProvider(() => elevator.State.Position);
 
             IReadOnlyList<(DoorState State, bool WasOpen, bool WasClosed)> doorStates = Descendants(elevator.Task)
                 .OfType<DeclaredTask>()
