@@ -506,19 +506,57 @@ public sealed class StatusScreenRenderer : IDisposable
 
     private static void DrawTargetBox(SpriteBatch batch, EnemyOverlayBox target, Bgra32 colour)
     {
-        // Retail FUN_00471B60 passes DAT_005340B0 (a five-point rectangle strip) to FUN_004B5860;
-        // the helper expands each adjacent pair into a textured quad. The managed batch has no
-        // access to that runtime-bound material, so preserve the native four-edge geometry and
-        // apply the detector alpha to each edge instead of substituting an unrelated map sprite.
-        float thickness = Math.Clamp((target.Bottom - target.Top) * 0.055f, 1f, 3f);
+        // Retail FUN_00471B60 passes DAT_005340B0 (the closed points {-1,-1}, {1,-1}, {1,1},
+        // {-1,1}, {-1,-1}) to FUN_004B5860. That helper rotates and scales each of the four
+        // segments around the projected target centre; keep that pulse instead of replacing it
+        // with four static axis-aligned rectangles.
+        float centreX = (target.Left + target.Right) * 0.5f;
+        float centreY = (target.Top + target.Bottom) * 0.5f;
+        float halfWidth = MathF.Max(1f, (target.Right - target.Left) * 0.5f * target.PulseScale);
+        float halfHeight = MathF.Max(1f, (target.Bottom - target.Top) * 0.5f * target.PulseScale);
+        float cos = MathF.Cos(target.RotationRadians);
+        float sin = MathF.Sin(target.RotationRadians);
+        Point2 TopLeft() => Rotate(centreX, centreY, -halfWidth, -halfHeight, cos, sin);
+        Point2 TopRight() => Rotate(centreX, centreY, halfWidth, -halfHeight, cos, sin);
+        Point2 BottomRight() => Rotate(centreX, centreY, halfWidth, halfHeight, cos, sin);
+        Point2 BottomLeft() => Rotate(centreX, centreY, -halfWidth, halfHeight, cos, sin);
+
+        Point2 a = TopLeft();
+        Point2 b = TopRight();
+        Point2 c = BottomRight();
+        Point2 d = BottomLeft();
+        float thickness = Math.Clamp(MathF.Min(target.Right - target.Left, target.Bottom - target.Top) * 0.055f, 1f, 3f);
         Bgra32 faded = colour.WithAlpha((byte)(colour.A * Math.Clamp(target.Alpha, 0f, 1f)));
-        float width = MathF.Max(2f, target.Right - target.Left);
-        float height = MathF.Max(2f, target.Bottom - target.Top);
-        batch.FillRect(new RectF(target.Left, target.Top, width, thickness), faded);
-        batch.FillRect(new RectF(target.Left, target.Bottom - thickness, width, thickness), faded);
-        batch.FillRect(new RectF(target.Left, target.Top + thickness, thickness, MathF.Max(0f, height - (thickness * 2f))), faded);
-        batch.FillRect(new RectF(target.Right - thickness, target.Top + thickness, thickness, MathF.Max(0f, height - (thickness * 2f))), faded);
+        DrawSegment(batch, a, b, thickness, faded);
+        DrawSegment(batch, b, c, thickness, faded);
+        DrawSegment(batch, c, d, thickness, faded);
+        DrawSegment(batch, d, a, thickness, faded);
     }
+
+    private static Point2 Rotate(float centreX, float centreY, float x, float y, float cos, float sin) =>
+        new(centreX + (x * cos) - (y * sin), centreY + (x * sin) + (y * cos));
+
+    private static void DrawSegment(SpriteBatch batch, Point2 start, Point2 end, float thickness, Bgra32 colour)
+    {
+        float dx = end.X - start.X;
+        float dy = end.Y - start.Y;
+        float length = MathF.Sqrt((dx * dx) + (dy * dy));
+        if (length <= 0.001f)
+        {
+            return;
+        }
+
+        float nx = -dy / length * (thickness * 0.5f);
+        float ny = dx / length * (thickness * 0.5f);
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(start.X + nx, start.Y + ny, 0f, 0f, colour),
+            new Vertex2D(end.X + nx, end.Y + ny, 1f, 0f, colour),
+            new Vertex2D(end.X - nx, end.Y - ny, 1f, 1f, colour),
+            new Vertex2D(start.X - nx, start.Y - ny, 0f, 1f, colour));
+    }
+
+    private readonly record struct Point2(float X, float Y);
 
     private void DrawNativeBinocularRange(
         SpriteBatch batch,

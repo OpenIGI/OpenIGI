@@ -13,7 +13,9 @@ public readonly record struct EnemyOverlayBox(
     float Right,
     float Bottom,
     float DistanceMetres,
-    float Alpha)
+    float Alpha,
+    float RotationRadians = 0f,
+    float PulseScale = 1f)
 {
     /// <summary>
     /// Clips the projected rectangle to the display viewport, matching the native status-display
@@ -59,6 +61,11 @@ public sealed class EnemyDetectorOverlay
     public const int NativeDistanceFieldOffset = 0x2C5C;
 
     private const int NativeRetentionTicks = 3000;
+    // FUN_00471B60 clamps the activation age to 250 ticks, then passes age*0.004*1.5707 as the
+    // marker rotation and ((1-age*0.004)*10)+1 as its scale to FUN_004B5860.
+    private const int NativeMarkerPulseTicks = 250;
+    private const float NativeMarkerProgressPerTick = 0.0040000002f;
+    private const float NativeMarkerQuarterTurn = 1.5707f;
     private readonly TargetSlot[] _slots = new TargetSlot[SlotCount];
 
     /// <summary>Gets the records in native slot order.</summary>
@@ -162,6 +169,8 @@ public sealed class EnemyDetectorOverlay
             // and therefore changes naturally with distance and the current binocular tangent.
             float width = slot.BoxWidth;
             float height = slot.BoxHeight;
+            int age = Math.Clamp(unchecked(tick - slot.ActivatedTick), 0, NativeMarkerPulseTicks);
+            float progress = age * NativeMarkerProgressPerTick;
             boxes.Add(new EnemyOverlayBox(
                 slot.TargetId,
                 slot.ScreenX - (width * 0.5f),
@@ -169,7 +178,9 @@ public sealed class EnemyDetectorOverlay
                 slot.ScreenX + (width * 0.5f),
                 slot.ScreenY + (height * 0.5f),
                 slot.Distance / (float)OpenIGI.Game.World.WorldScene.UnitsPerMetre,
-                1f));
+                1f,
+                progress * NativeMarkerQuarterTurn,
+                ((1f - progress) * 10f) + 1f));
         }
 
         return boxes;

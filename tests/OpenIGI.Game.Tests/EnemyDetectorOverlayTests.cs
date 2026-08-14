@@ -45,6 +45,21 @@ public sealed class EnemyDetectorOverlayTests
     }
 
     [Fact]
+    public void NativeAnimationPulseCarriesTheRotationAndContractionUsedByTheRectangleStrip()
+    {
+        EnemyDetectorOverlay detector = new();
+        detector.Upsert(3, 20f, 1, 320f, 240f, 0, 0, 0, 1000, 10f, 20f);
+
+        EnemyOverlayBox initial = Assert.Single(detector.OverlayBoxes(1000));
+        EnemyOverlayBox settled = Assert.Single(detector.OverlayBoxes(1250));
+
+        Assert.Equal(0f, initial.RotationRadians, 3);
+        Assert.Equal(11f, initial.PulseScale, 3);
+        Assert.Equal(1.5707f, settled.RotationRadians, 3);
+        Assert.Equal(1f, settled.PulseScale, 3);
+    }
+
+    [Fact]
     public void NativeStyleTargetRectanglesAreClippedToTheViewport()
     {
         EnemyOverlayBox target = new(7, -40f, 120f, 140f, 520f, 18f, 1f);
