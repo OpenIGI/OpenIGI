@@ -157,6 +157,12 @@ public sealed class StatusScreenRendererTests
                 && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y - 480f) < 0.01f));
     }
 
+    [Fact]
+    public static void RetailBinocularsKeepTheNativeFallbackRangeWithoutAContact()
+    {
+        Assert.Equal("RANGE: 1000+M", StatusScreenRenderer.BinocularRangeText(null));
+    }
+
     [RequiresGameDataFact]
     public void CutsceneSubtitleUsesTheTallWhiteRetailFaceInsteadOfTheGreenStatusFace()
     {

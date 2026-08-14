@@ -540,13 +540,13 @@ public sealed class StatusScreenRenderer : IDisposable
                 .OrderBy(static target => target.DistanceMetres)
                 .Select(static target => (EnemyOverlayBox?)target)
                 .FirstOrDefault();
-        if (nearest is not { } target)
-        {
-            return;
-        }
 
         float scale = MathF.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
-        string range = FormatBinocularRange(target.DistanceMetres);
+        // FUN_00471480 takes the no-contact branch when the holder has no measured distance and
+        // formats the authored fallback with "%s: %0.f+%s". The retail metric path is 1000+M;
+        // suppressing the label until an enemy is detected leaves the binocular HUD visibly unlike
+        // the original while looking at empty terrain.
+        string range = BinocularRangeText(nearest);
         font.Draw(
             batch,
             range,
@@ -565,6 +565,11 @@ public sealed class StatusScreenRenderer : IDisposable
     internal static string FormatBinocularRange(float distanceMetres) => distanceMetres >= 1000f
         ? "RANGE: 1000+M"
         : $"RANGE: {MathF.Round(MathF.Max(0f, distanceMetres)):0}M";
+
+    /// <summary>Returns the native range label, including the no-contact fallback.</summary>
+    internal static string BinocularRangeText(EnemyOverlayBox? nearest) => nearest is { } target
+        ? FormatBinocularRange(target.DistanceMetres)
+        : "RANGE: 1000+M";
 
     /// <inheritdoc/>
     public void Dispose()
