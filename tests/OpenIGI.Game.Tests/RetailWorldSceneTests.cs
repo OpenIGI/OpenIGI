@@ -70,6 +70,41 @@ public sealed class RetailWorldSceneTests
     }
 
     [RequiresGameDataFact]
+    public void EveryCampaignAmmoPickupHasExactlyOneDrawablePlacement()
+    {
+        List<string> failures = [];
+        int pickups = 0;
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (WorldScene scene, _) = Build(missionId);
+            IGrouping<GameTask, WorldPlacement>[] authored = scene.Placements
+                .Where(placement => placement.Owner.Type.Name is "AmmoPickup" or "GenericPickup")
+                .GroupBy(placement => placement.Owner)
+                .ToArray();
+
+            foreach (IGrouping<GameTask, WorldPlacement> pickup in authored)
+            {
+                pickups++;
+                if (pickup.Count() != 1)
+                {
+                    failures.Add($"mission {missionId} task {pickup.Key.Id} ({pickup.Key.Type.Name}) produced {pickup.Count()} placements");
+                    continue;
+                }
+
+                WorldPlacement placement = pickup.Single();
+                if (placement.Model.IsEmpty || placement.Instance.Name.Length == 0)
+                {
+                    failures.Add($"mission {missionId} task {pickup.Key.Id} ({pickup.Key.Type.Name}) has no drawable model");
+                }
+            }
+        }
+
+        Assert.True(pickups > 0, "the campaign did not expose any authored ammo/generic pickups");
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures.Take(20)));
+    }
+
+    [RequiresGameDataFact]
     public void SecurityCamerasUseTheirHolderTransformAndCarryTheDestroyedHead()
     {
         (WorldScene scene, _) = Build();
