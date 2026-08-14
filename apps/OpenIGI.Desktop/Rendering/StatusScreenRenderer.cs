@@ -527,7 +527,7 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         float scale = MathF.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
-        string range = $"RANGE: {MathF.Round(target.DistanceMetres):0}M";
+        string range = FormatBinocularRange(target.DistanceMetres);
         font.Draw(
             batch,
             range,
@@ -537,6 +537,15 @@ public sealed class StatusScreenRenderer : IDisposable
             scale,
             scale);
     }
+
+    /// <summary>Formats the native binocular holder's two authored range labels.</summary>
+    /// <remarks>
+    /// The retail binary stores <c>RANGE: 1000+M</c> and <c>RANGE: %0.fM</c> as separate strings;
+    /// the holder switches at 1000 metres instead of allowing the formatted value to grow wider.
+    /// </remarks>
+    internal static string FormatBinocularRange(float distanceMetres) => distanceMetres >= 1000f
+        ? "RANGE: 1000+M"
+        : $"RANGE: {MathF.Round(MathF.Max(0f, distanceMetres)):0}M";
 
     /// <inheritdoc/>
     public void Dispose()

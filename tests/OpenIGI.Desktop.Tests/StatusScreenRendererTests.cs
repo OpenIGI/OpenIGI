@@ -15,6 +15,16 @@ namespace OpenIGI.Desktop.Tests;
 /// <summary>Checks the executable-recovered retail HUD against the shipped resources.</summary>
 public sealed class StatusScreenRendererTests
 {
+    [Theory]
+    [InlineData(12.4f, "RANGE: 12M")]
+    [InlineData(999.5f, "RANGE: 1000M")]
+    [InlineData(1000f, "RANGE: 1000+M")]
+    [InlineData(2500f, "RANGE: 1000+M")]
+    public void RetailBinocularRangeUsesTheAuthoredNativeLabels(float metres, string expected)
+    {
+        Assert.Equal(expected, StatusScreenRenderer.FormatBinocularRange(metres));
+    }
+
     [RequiresGameDataFact]
     public void EveryRecoveredAmmoGaugeHasTheFramesItsRetailHandlerCanSelect()
     {
