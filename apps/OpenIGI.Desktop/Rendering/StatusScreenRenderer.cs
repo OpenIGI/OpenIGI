@@ -421,7 +421,8 @@ public sealed class StatusScreenRenderer : IDisposable
         SpriteBatch batch,
         int screenWidth,
         int screenHeight,
-        IReadOnlyList<EnemyOverlayBox>? targets = null)
+        IReadOnlyList<EnemyOverlayBox>? targets = null,
+        float headingRadians = 0f)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
@@ -441,6 +442,10 @@ public sealed class StatusScreenRenderer : IDisposable
                 1f,
                 BitmapTextRenderer.NeutralColor);
         }
+
+        // FUN_00472050 emits a 64-slot scrolling compass strip. It is part of the retail
+        // binocular task, not the remastered computer-themed presentation.
+        DrawNativeBinocularCompass(batch, screenWidth, screenHeight, headingRadians);
 
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
@@ -463,19 +468,73 @@ public sealed class StatusScreenRenderer : IDisposable
 
     private static void DrawTargetBox(SpriteBatch batch, EnemyOverlayBox target, Bgra32 colour)
     {
-        float thickness = 2f;
+        float thickness = Math.Clamp((target.Bottom - target.Top) * 0.055f, 1f, 3f);
         Bgra32 faded = colour.WithAlpha((byte)(colour.A * Math.Clamp(target.Alpha, 0f, 1f)));
         float width = MathF.Max(2f, target.Right - target.Left);
         float height = MathF.Max(2f, target.Bottom - target.Top);
-        float corner = MathF.Min(12f, MathF.Min(width, height) * 0.24f);
-        batch.FillRect(new RectF(target.Left, target.Top, corner, thickness), faded);
-        batch.FillRect(new RectF(target.Left, target.Top, thickness, corner), faded);
-        batch.FillRect(new RectF(target.Right - corner, target.Top, corner, thickness), faded);
-        batch.FillRect(new RectF(target.Right - thickness, target.Top, thickness, corner), faded);
-        batch.FillRect(new RectF(target.Left, target.Bottom - thickness, corner, thickness), faded);
-        batch.FillRect(new RectF(target.Left, target.Bottom - corner, thickness, corner), faded);
-        batch.FillRect(new RectF(target.Right - corner, target.Bottom - thickness, corner, thickness), faded);
-        batch.FillRect(new RectF(target.Right - thickness, target.Bottom - corner, thickness, corner), faded);
+        batch.FillRect(new RectF(target.Left, target.Top, width, thickness), faded);
+        batch.FillRect(new RectF(target.Left, target.Bottom - thickness, width, thickness), faded);
+        batch.FillRect(new RectF(target.Left, target.Top + thickness, thickness, MathF.Max(0f, height - (thickness * 2f))), faded);
+        batch.FillRect(new RectF(target.Right - thickness, target.Top + thickness, thickness, MathF.Max(0f, height - (thickness * 2f))), faded);
+    }
+
+    private void DrawNativeBinocularCompass(
+        SpriteBatch batch,
+        int screenWidth,
+        int screenHeight,
+        float headingRadians)
+    {
+        if (screenWidth <= 0 || screenHeight <= 0)
+        {
+            return;
+        }
+
+        // These values are the retail constants read through Ghidra from FUN_00472050:
+        // strip origin=.625*width, strip width=.28125*width, baseline=.7916667*height.
+        const int tickCount = 64;
+        float stripWidth = screenWidth * 0.28125f;
+        float spacing = stripWidth / tickCount;
+        float originX = screenWidth * 0.625f;
+        float baseline = screenHeight * 0.7916667f;
+        float phase = (headingRadians / MathF.Tau) * stripWidth;
+        phase -= MathF.Floor(phase / stripWidth) * stripWidth;
+        float pixel = MathF.Max(1f, screenWidth / 640f);
+        Bgra32 minor = Bgra32.FromRgb(0, 64, 0);
+        Bgra32 major = Bgra32.FromRgb(0, 128, 0);
+
+        for (int index = 0; index < tickCount; index++)
+        {
+            float x = originX + phase + (index * spacing);
+            if (x >= originX + stripWidth)
+            {
+                x -= stripWidth;
+            }
+
+            bool isMajor = (index & 15) == 0;
+            bool isMedium = !isMajor && (index & 7) == 0;
+            float height = (isMajor ? 12f : isMedium ? 8f : 4f) * pixel;
+            batch.FillRect(
+                new RectF(x - (pixel * 0.5f), baseline - height, pixel, height),
+                isMajor ? major : minor);
+
+            if (isMajor && Font() is { } font)
+            {
+                string label = index switch
+                {
+                    0 => "N",
+                    16 => "E",
+                    32 => "S",
+                    48 => "W",
+                    _ => string.Empty,
+                };
+                if (label.Length > 0)
+                {
+                    float scale = MathF.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
+                    float labelWidth = font.Measure(label, scale, scale).Width;
+                    font.Draw(batch, label, x - (labelWidth * 0.5f), baseline - height - (font.LineHeight * scale), major, scale, scale);
+                }
+            }
+        }
     }
 
     /// <inheritdoc/>

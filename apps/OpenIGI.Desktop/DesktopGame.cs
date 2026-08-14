@@ -2952,7 +2952,8 @@ internal sealed partial class DesktopGame : IDisposable
                             batch,
                             _window.Width,
                             _window.Height,
-                            binocularTargets);
+                            binocularTargets,
+                            _player.Yaw);
                     }
                     else if (_player.IsSniperScoped)
                     {
