@@ -117,21 +117,30 @@ public sealed class ElevatorRegistry
                 }
             }
 
-            bool floorUp = command.FloorUp();
-            bool floorDown = command.FloorDown();
-            if (wantedFloor is int floor && !floorUp && !floorDown)
-            {
-                command.Elevator.State.RequestFloor(floor);
-            }
+            command.Elevator.State.Tick(
+                command.CanStart(),
+                command.FloorUp(),
+                command.FloorDown(),
+                wantedFloor);
 
-            command.Elevator.State.Tick(command.CanStart(), floorUp, floorDown);
-
-            if (_sounds is not null && wasMoving != command.Elevator.State.HasMovementRequest)
+            if (_sounds is not null)
             {
-                command.Elevator.IsSounding = command.Elevator.State.HasMovementRequest;
-                _sounds(command.Elevator, command.Elevator.IsSounding
-                    ? ElevatorSoundEvent.StartedMoving
-                    : ElevatorSoundEvent.StoppedMoving);
+                if (command.Elevator.State.IsStart)
+                {
+                    _sounds(command.Elevator, ElevatorSoundEvent.Started);
+                }
+
+                if (!wasMoving && command.Elevator.State.HasMovementRequest)
+                {
+                    command.Elevator.IsSounding = true;
+                    _sounds(command.Elevator, ElevatorSoundEvent.Traveling);
+                }
+
+                if (command.Elevator.State.IsStop)
+                {
+                    command.Elevator.IsSounding = false;
+                    _sounds(command.Elevator, ElevatorSoundEvent.Stopped);
+                }
             }
         }
     }
@@ -431,9 +440,9 @@ public sealed class ElevatorRegistry
                     () => expressions.EvaluateCondition(floorDown, emptyValue: false),
                     wantedFloors,
                     exteriorCalls));
-                // Elevator_BindExports (0x43D0E0) / Elevator_Activate (0x43C440):
-                // vFloor +0x1A0, vLastFloor +0x1A8, isWantedFloorN +0x1B0, nWantedFloor +0x19C,
-                // isMoving +0x5D6. isStart/isStop are one-shots and are intentionally unbound.
+                // Elevator_BindExports (0x43D0E0): vFloor +0x1A0, vLastFloor +0x1A8,
+                // isWantedFloorN +0x1B0, nInactive +0x1BC, nWantedFloor +0x19C,
+                // isMoving +0x5D6, isStart +0x5D7, isStop +0x5D8.
                 variables.BindReal(
                     declared,
                     "vFloor",
@@ -458,6 +467,9 @@ public sealed class ElevatorRegistry
                 }
 
                 variables.BindBool(declared, "isMoving", () => state.HasMovementRequest, _ => { });
+                variables.BindBool(declared, "isStart", () => state.IsStart, _ => { });
+                variables.BindBool(declared, "isStop", () => state.IsStop, _ => { });
+                variables.BindInt(declared, "nInactive", () => state.InactiveTicks, value => { });
             }
         }
 

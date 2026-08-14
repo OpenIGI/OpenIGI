@@ -32,6 +32,7 @@ public sealed class ElevatorState
     private int? _pendingTargetFloor;
     private bool _lastUp;
     private bool _lastDown;
+    private bool _lastCanStart;
     private double _speed;
 
     public ElevatorState(
@@ -67,6 +68,15 @@ public sealed class ElevatorState
 
     /// <summary>Previous tick's <see cref="FloorPosition"/>, exported as <c>vLastFloor</c> (+0x1A8).</summary>
     public double LastFloorPosition { get; private set; }
+
+    /// <summary>Native <c>isStart</c> at +0x5D7 — true for the tick travel begins from a parked dest.</summary>
+    public bool IsStart { get; private set; }
+
+    /// <summary>Native <c>isStop</c> at +0x5D8 — true for the tick the spline reaches nWantedFloor.</summary>
+    public bool IsStop { get; private set; }
+
+    /// <summary>Native <c>nInactive</c> at +0x1BC — frames spent parked with a stable Can start.</summary>
+    public int InactiveTicks { get; private set; }
 
     /// <summary>
     /// Native <c>nWantedFloor</c> at +0x19C: the destination index, including a request that is
@@ -129,10 +139,14 @@ public sealed class ElevatorState
     public bool TransformChangedThisTick => Position != PreviousPosition;
     public double SpeedUnitsPerSecond => _speed;
 
-    public void Tick(bool canStart, bool floorUp, bool floorDown)
+    public void Tick(bool canStart, bool floorUp, bool floorDown, int? wantedFloor = null)
     {
-        LastFloorPosition = FloorPosition;
+        double paramBefore = FloorPosition;
+        int wantedBefore = WantedFloorIndex;
+        LastFloorPosition = paramBefore;
         PreviousPosition = Position;
+        IsStart = false;
+        IsStop = false;
 
         bool upPulse = floorUp && !_lastUp;
         bool downPulse = floorDown && !_lastDown;
@@ -156,6 +170,10 @@ public sealed class ElevatorState
             {
                 RequestFloor(next);
             }
+        }
+        else if (wantedFloor is int wanted)
+        {
+            RequestFloor(wanted);
         }
 
         if (TargetFloorIndex is null && canStart && _pendingTargetFloor is int requestedTarget)
@@ -182,6 +200,7 @@ public sealed class ElevatorState
             }
 
             _speed = 0.0;
+            FinishExports(paramBefore, wantedBefore, canStart);
             return;
         }
 
@@ -189,6 +208,7 @@ public sealed class ElevatorState
         {
             _speed = 0.0;
             TargetFloorIndex = null;
+            FinishExports(paramBefore, wantedBefore, canStart);
             return;
         }
 
@@ -209,6 +229,25 @@ public sealed class ElevatorState
         }
 
         AdvanceToward(targetIndex, _speed * TickSeconds);
+        FinishExports(paramBefore, wantedBefore, canStart);
+    }
+
+    private void FinishExports(double paramBefore, int wantedBefore, bool canStart)
+    {
+        // Elevator_Activate: isStart when we were sitting on the pre-tick nWantedFloor param and
+        // then left it; isStop when this tick's +0x184 lands on the (possibly rewritten) dest.
+        double paramAfter = FloorPosition;
+        IsStart = paramBefore == wantedBefore && paramBefore != paramAfter;
+        IsStop = paramAfter == WantedFloorIndex && paramBefore != paramAfter;
+
+        if (paramAfter == WantedFloorIndex && !HasMovementRequest && canStart == _lastCanStart)
+        {
+            InactiveTicks++;
+            return;
+        }
+
+        InactiveTicks = 0;
+        _lastCanStart = canStart;
     }
 
     /// <summary>Requests a specific authored floor, subject to the normal start gate.</summary>

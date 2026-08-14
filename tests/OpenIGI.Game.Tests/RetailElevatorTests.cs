@@ -34,6 +34,9 @@ public sealed class RetailElevatorTests
                 Assert.Contains($"{elevator.Task.Name}.nWantedFloor", variables.GetBoundNames(elevator.Task));
                 Assert.Contains($"{elevator.Task.Name}.isWantedFloor0", variables.GetBoundNames(elevator.Task));
                 Assert.Contains($"{elevator.Task.Name}.isMoving", variables.GetBoundNames(elevator.Task));
+                Assert.Contains($"{elevator.Task.Name}.isStart", variables.GetBoundNames(elevator.Task));
+                Assert.Contains($"{elevator.Task.Name}.isStop", variables.GetBoundNames(elevator.Task));
+                Assert.Contains($"{elevator.Task.Name}.nInactive", variables.GetBoundNames(elevator.Task));
                 Assert.True(elevator.State.FloorCount > 0);
             }
         }

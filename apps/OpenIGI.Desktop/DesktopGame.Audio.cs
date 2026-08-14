@@ -985,7 +985,7 @@ internal sealed partial class DesktopGame
             return;
         }
 
-        if (what == ElevatorSoundEvent.StoppedMoving)
+        if (what == ElevatorSoundEvent.Stopped)
         {
             if (_elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
             {
@@ -1000,9 +1000,14 @@ internal sealed partial class DesktopGame
             return;
         }
 
-        if (elevator.StartSound.Length > 0)
+        if (what == ElevatorSoundEvent.Started)
         {
-            _sounds.PlayDefinition(elevator.StartSound, elevator.State.Position, priority: 120);
+            if (elevator.StartSound.Length > 0)
+            {
+                _sounds.PlayDefinition(elevator.StartSound, elevator.State.Position, priority: 120);
+            }
+
+            return;
         }
 
         if (elevator.MoveSound.Length > 0)

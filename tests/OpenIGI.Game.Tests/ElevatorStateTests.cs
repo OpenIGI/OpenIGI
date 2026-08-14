@@ -251,6 +251,58 @@ public sealed class ElevatorStateTests
         Assert.Equal(0.0, elevator.LastFloorPosition);
         Assert.Equal(1, elevator.WantedFloorIndex);
         Assert.Equal(0, elevator.CurrentFloorIndex);
+        Assert.False(elevator.IsStart);
+        Assert.False(elevator.IsStop);
+    }
+
+    [Fact]
+    public void IsStartFiresOnlyWhenDepartingTheParkedWantedFloorThisTick()
+    {
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 100))],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false, wantedFloor: 1);
+        Assert.True(elevator.IsStart);
+        Assert.False(elevator.IsStop);
+        Assert.Equal(0, elevator.InactiveTicks);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.False(elevator.IsStart);
+
+        for (int i = 0; i < 400 && elevator.IsMoving; i++)
+        {
+            elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        }
+
+        Assert.False(elevator.IsMoving);
+        Assert.True(elevator.IsStop);
+        Assert.Equal(1, elevator.InactiveTicks);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.False(elevator.IsStop);
+        Assert.Equal(2, elevator.InactiveTicks);
+    }
+
+    [Fact]
+    public void AQueuedRequestDoesNotSetIsStartUntilTheDestChangesWhileParked()
+    {
+        ElevatorState elevator = new(
+            startPosition: new Vector3d(0, 0, 0),
+            floors: [new ElevatorFloor(10, new Vector3d(0, 0, 0)), new ElevatorFloor(20, new Vector3d(0, 0, 100))],
+            maxSpeedUnitsPerSecond: 30,
+            speedInertiaUnitsPerSecondSquared: 30);
+
+        elevator.RequestFloor(1);
+        elevator.Tick(canStart: false, floorUp: false, floorDown: false);
+        Assert.False(elevator.IsStart);
+        Assert.True(elevator.HasMovementRequest);
+
+        elevator.Tick(canStart: true, floorUp: false, floorDown: false);
+        Assert.False(elevator.IsStart);
+        Assert.True(elevator.IsMoving);
     }
 
     [Fact]
