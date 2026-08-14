@@ -127,19 +127,19 @@ public sealed class StatusScreenRendererTests
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 300f) < 0.01f));
 
         // FUN_004B5860 uses the native vertex strip and 1.5625% x 2.0833334% scales. At
-        // 640x480 that produces the two 15x50 horizontal quads at x=180 and x=445.
+        // 640x480 that produces the two 15x50 horizontal quads at x=240 and x=385.
         Assert.Contains(
             device.Draws,
             draw => draw.Texture == TextureHandle.None
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 180f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 195f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 240f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 255f) < 0.01f)
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 215f) < 0.01f)
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 265f) < 0.01f));
         Assert.Contains(
             device.Draws,
             draw => draw.Texture == TextureHandle.None
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 445f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 460f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 385f) < 0.01f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 400f) < 0.01f)
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 215f) < 0.01f)
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 265f) < 0.01f));
 

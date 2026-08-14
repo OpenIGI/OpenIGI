@@ -455,14 +455,14 @@ public sealed class StatusScreenRenderer : IDisposable
 
         // RetailBinocularOverlayBuilder (0x00471480) emits two textured horizontal quads through
         // FUN_004B5860.  Its vertex data is (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5): the
-        // anchors are +/-18.75% of the video width, the texture scale is 1.5625% by 2.0833334%,
+        // anchors are +/-9.375% of the video width, the texture scale is 1.5625% by 2.0833334%,
         // and the negative scale on the right mirrors the left quad.  The old port's four short
         // bars were not the retail geometry and produced the green central block at widescreen
         // resolutions.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
         Bgra32 signal = new(64, 160, 64, 210);
-        float armAnchor = screenWidth * 0.1875f;
+        float armAnchor = screenWidth * 0.09375f;
         float armScaleX = MathF.Max(1f, screenWidth * 0.015625f);
         float armScaleY = MathF.Max(1f, screenHeight * 0.020833334f);
         float armWidth = armScaleX * 1.5f;
