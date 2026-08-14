@@ -211,15 +211,20 @@ public sealed class StatusScreenRenderer : IDisposable
         float iconWidth = 0f;
 
         // Every part of the readout is gated on the weapon counting its ammunition at all -- the knife
-        // declares AMMODISPLAYTYPE_NONE and gets no name, no icon and no underline.
-        bool counts = weapon.AmmoDisplay != AmmoDisplayType.None;
+        // declares AMMODISPLAYTYPE_NONE and gets no name, no icon and no underline.  Medipack is the
+        // one intentional exception: its native task also declares NONE because it has no firearm
+        // gauge, but its fixed AMMO_ID_MEDIPACK pool is still a consumable inventory count.  Hiding that
+        // pool made collected medipacks appear to have zero charges even though the pickup had awarded
+        // them to the player.
+        bool medipack = weapon.Category == WeaponCategory.Medipack;
+        bool counts = weapon.AmmoDisplay != AmmoDisplayType.None || medipack;
 
         if (counts)
         {
             float ammoY = baseline + (StatusScreenLayout.AmmoDrop * s);
             float ammoRight = right - (StatusScreenLayout.AmmoInset * s);
             bool loadedRocket = weapon.WeaponId == 12 && roundsInClip != 0;
-            int displayedReserve = weapon.WeaponId == 12 && loadedRocket ? reserve + 1 : reserve;
+            int displayedReserve = DisplayedAmmoCount(weapon, roundsInClip, reserve);
             float ammoWidth = DrawRightAligned(
                 batch, StatusScreenLayout.AmmoText(displayedReserve), ammoRight, ammoY, s);
 
@@ -570,6 +575,19 @@ public sealed class StatusScreenRenderer : IDisposable
     internal static string BinocularRangeText(EnemyOverlayBox? nearest) => nearest is { } target
         ? FormatBinocularRange(target.DistanceMetres)
         : "RANGE: 1000+M";
+
+    internal static int DisplayedAmmoCount(WeaponType weapon, int roundsInClip, int reserve)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        if (weapon.Category == WeaponCategory.Medipack)
+        {
+            int loaded = roundsInClip == GunTiming.UnloadedClipSentinel ? 0 : Math.Max(0, roundsInClip);
+            return loaded + Math.Max(0, reserve);
+        }
+
+        bool loadedRocket = weapon.WeaponId == 12 && roundsInClip != 0;
+        return weapon.WeaponId == 12 && loadedRocket ? reserve + 1 : reserve;
+    }
 
     /// <inheritdoc/>
     public void Dispose()

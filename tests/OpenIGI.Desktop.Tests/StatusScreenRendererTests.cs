@@ -163,6 +163,21 @@ public sealed class StatusScreenRendererTests
         Assert.Equal("RANGE: 1000+M", StatusScreenRenderer.BinocularRangeText(null));
     }
 
+    [Fact]
+    public static void MedipackChargesRemainVisibleEvenThoughItsNativeGaugeIsNone()
+    {
+        WeaponType medipack = new() { Category = WeaponCategory.Medipack };
+
+        Assert.Equal(50, StatusScreenRenderer.DisplayedAmmoCount(
+            medipack,
+            roundsInClip: GunTiming.UnloadedClipSentinel,
+            reserve: 50));
+        Assert.Equal(50, StatusScreenRenderer.DisplayedAmmoCount(
+            medipack,
+            roundsInClip: 1,
+            reserve: 49));
+    }
+
     [RequiresGameDataFact]
     public void CutsceneSubtitleUsesTheTallWhiteRetailFaceInsteadOfTheGreenStatusFace()
     {

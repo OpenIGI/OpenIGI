@@ -96,7 +96,11 @@ public static class AmmoPickupCatalog
     /// <remarks>Authored task values take precedence; this keeps malformed/synthetic tasks usable.</remarks>
     public static int DefaultAmount(int ammoId) => ammoId switch
     {
-        PlayerWeapons.MedipackAmmoId => 1,
+        // A medipack pickup is one inventory charge, and the shipped levels normally provide the
+        // exact payload in Ammo (50/100/etc.).  Fifty is the compatibility fallback for older or
+        // synthetic level records that omit that field; returning one made the HUD look empty and
+        // made the first collected medipack effectively unusable.
+        PlayerWeapons.MedipackAmmoId => 50,
         0 or 1 or 5 or 6 => 50,
         _ => 1,
     };

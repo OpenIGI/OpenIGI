@@ -22,6 +22,12 @@ public sealed class RetailInteractionInventoryTests
         "GenericTBA", "PlaceExplosiveTBA", "StationaryGun",
     };
 
+    [Fact]
+    public void MedipackPickupFallbackProvidesAUsableChargeCount()
+    {
+        Assert.Equal(50, AmmoPickupCatalog.DefaultAmount(PlayerWeapons.MedipackAmmoId));
+    }
+
     [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {
