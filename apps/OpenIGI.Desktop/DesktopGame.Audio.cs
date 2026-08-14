@@ -177,12 +177,7 @@ internal sealed partial class DesktopGame
 
         if (player.BinocularsClosedThisTick || !player.IsBinocularsOpen)
         {
-            if (_binocularZoomVoice.IsValidHandle)
-            {
-                _sounds.Stop(_binocularZoomVoice);
-                _binocularZoomVoice = AudioVoiceHandle.None;
-            }
-
+            StopBinocularTransitionSound();
             return;
         }
 
@@ -193,6 +188,21 @@ internal sealed partial class DesktopGame
         }
 
         _binocularZoomVoice = _sounds.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
+    }
+
+    /// <summary>Stops the looping binocular cue when player ticking is suspended.</summary>
+    /// <remarks>
+    /// Death-camera and mission teardown deliberately stop ticking the player. Those paths therefore
+    /// cannot rely on <see cref="PlayBinocularTransitionSound"/> observing a closed-view edge on a
+    /// later player tick; stop the voice at the lifecycle boundary instead.
+    /// </remarks>
+    private void StopBinocularTransitionSound()
+    {
+        if (_binocularZoomVoice.IsValidHandle)
+        {
+            _sounds?.Stop(_binocularZoomVoice);
+            _binocularZoomVoice = AudioVoiceHandle.None;
+        }
     }
 
     /// <summary>Plays the medipack's authored fire cue when the first healing dose is injected.</summary>
@@ -390,6 +400,7 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private void ResetSoundsForMission()
     {
+        StopBinocularTransitionSound();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
         {
