@@ -26,6 +26,30 @@ public static class RemasteredHudPresentation
         return ((degrees % 360f) + 360f) % 360f;
     }
 
+    /// <summary>Returns the nearest finite binocular contact range, or <see langword="null"/>.</summary>
+    public static float? NearestContactRange(IReadOnlyList<EnemyOverlayBox>? targets)
+    {
+        if (targets is null)
+        {
+            return null;
+        }
+
+        float? nearest = null;
+        foreach (EnemyOverlayBox target in targets)
+        {
+            if (target.DistanceMetres <= 0f || !float.IsFinite(target.DistanceMetres))
+            {
+                continue;
+            }
+
+            nearest = nearest is null
+                ? target.DistanceMetres
+                : MathF.Min(nearest.Value, target.DistanceMetres);
+        }
+
+        return nearest;
+    }
+
     /// <summary>Chooses the health colour with deliberately broad warning bands.</summary>
     public static Bgra32 HealthColour(float fraction) => Math.Clamp(fraction, 0f, 1f) switch
     {

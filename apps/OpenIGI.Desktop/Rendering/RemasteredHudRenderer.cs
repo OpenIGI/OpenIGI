@@ -124,8 +124,10 @@ internal sealed class RemasteredHudRenderer : IDisposable
             }
         }
 
+        float? nearestRange = RemasteredHudPresentation.NearestContactRange(targets);
+        string range = nearestRange is { } metres ? $"RANGE  {metres:0}M" : "RANGE  --";
         painter.DrawText(body, "OPTICS // BINOCULAR", new UiVec2(frame.X + context.Px(18f), frame.Bottom - context.Px(48f)), context.Px(16f), Text);
-        painter.DrawText(body, $"RANGE  --    ZOOM  {tanX:0.00}", new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(14f), Muted);
+        painter.DrawText(body, $"{range}    ZOOM  {tanX:0.00}", new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(14f), Muted);
     }
 
     private static void DrawTargetBox(UiPainter painter, LayoutContext context, EnemyOverlayBox target)

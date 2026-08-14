@@ -33,6 +33,21 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(expected, RemasteredHudPresentation.HeadingDegrees(yawRadians), 3);
 
     [Fact]
+    public void NearestContactRangeIgnoresInvalidAndZeroContacts()
+    {
+        IReadOnlyList<EnemyOverlayBox> targets =
+        [
+            new(1, 0f, 0f, 1f, 1f, 0f, 1f),
+            new(2, 0f, 0f, 1f, 1f, float.NaN, 1f),
+            new(3, 0f, 0f, 1f, 1f, 18f, 1f),
+            new(4, 0f, 0f, 1f, 1f, 7.5f, 1f),
+        ];
+
+        Assert.Equal(7.5f, RemasteredHudPresentation.NearestContactRange(targets));
+        Assert.Null(RemasteredHudPresentation.NearestContactRange([]));
+    }
+
+    [Fact]
     public void ObjectivesPreferTheFirstIncomplete()
     {
         MissionObjective[] objectives =
