@@ -415,20 +415,20 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.OpenedThisTick);
         Assert.False(view.ClosedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
-        Assert.Equal(0.92f, opened.TanX, 3);
+        Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, opened.ViewModelTanX);
 
         SightZoomFrame narrowed = view.Tick(binoculars, false, true, false, opened.TanX, opened.ViewModelTanX);
-        Assert.Equal(0.84f, narrowed.TanX, 3);
+        Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.True(view.ZoomChangedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
         narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
         // The native view keeps moving toward the selected target after the zoom key is released.
-        Assert.Equal(0.76f, narrowed.TanX, 3);
+        Assert.Equal(0.9216f * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
         Assert.True(view.ZoomChangedThisTick);
         Assert.False(view.ZoomTargetChangedThisTick);
-        for (int i = 0; i < 20; i++)
+        for (int i = 0; i < 100; i++)
         {
             narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
         }
@@ -447,17 +447,16 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.ClosedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
 
-        // FUN_00431E30 keeps integrating the current tangent toward the restored gameplay target;
-        // closing the device does not snap the world camera back in one tick.
-        Assert.Equal(0.18f, closing.TanX, 3);
+        // Retail multiplies the current tangent while returning to the gameplay target; closing the
+        // device does not snap the world camera back in one tick.
+        Assert.Equal(0.1f * BinocularsView.ZoomOutFactor, closing.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, closing.ViewModelTanX);
     }
 
     [Fact]
-    public void BinocularViewUsesTheNativeWideOrNarrowCameraRateAtTheRetailThreshold()
+    public void BinocularViewUsesTheRetailMultiplicativeZoomFactors()
     {
-        RetailFovTransitionRates rates = new(WideFieldRate: 0.2f, NarrowFieldRate: 0.05f);
-        BinocularsView view = new(rates);
+        BinocularsView view = new();
         WeaponType binoculars = Binoculars;
 
         SightZoomFrame opened = view.Tick(
@@ -467,7 +466,7 @@ public sealed class PlayerWeaponsTests
             zoomOutHeld: false,
             tanX: HumanView.DefaultTanX,
             viewModelTanX: HumanView.DefaultViewModelTanX);
-        Assert.Equal(0.8f, opened.TanX, precision: 5);
+        Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, precision: 5);
 
         SightZoomFrame belowThreshold = view.Tick(
             binoculars,
@@ -476,7 +475,16 @@ public sealed class PlayerWeaponsTests
             zoomOutHeld: false,
             tanX: 0.79f,
             viewModelTanX: HumanView.DefaultViewModelTanX);
-        Assert.Equal(0.74f, belowThreshold.TanX, precision: 5);
+        Assert.Equal(0.79f * BinocularsView.ZoomInFactor, belowThreshold.TanX, precision: 5);
+
+        SightZoomFrame wider = view.Tick(
+            binoculars,
+            togglePressed: false,
+            zoomInHeld: false,
+            zoomOutHeld: true,
+            tanX: belowThreshold.TanX,
+            viewModelTanX: HumanView.DefaultViewModelTanX);
+        Assert.Equal(belowThreshold.TanX * BinocularsView.ZoomOutFactor, wider.TanX, precision: 5);
     }
 
     [Fact]
