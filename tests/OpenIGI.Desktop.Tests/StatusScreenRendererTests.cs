@@ -3,6 +3,7 @@ using OpenIGI.Engine.Graphics;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.Sprites;
+using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
@@ -78,7 +79,46 @@ public sealed class StatusScreenRendererTests
     }
 
     [RequiresGameDataFact]
-    public void CutsceneSubtitleUsesTheTallNarrowRetailFace()
+    public void RetailBinocularsUseTheGlobalDeviceFrameAndOverlayTargetsInScreenSpace()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        RecordingGraphicsDevice device = new();
+        using StatusScreenRenderer renderer = new(device);
+        SpriteBatch batch = new(device);
+
+        Assert.True(renderer.Load(fileSystem));
+        IresArchive global = IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenRenderer.SpriteArchive));
+        SpriteAsset deviceFrame = Asset(global, "binoculars.spr");
+        SpriteFrame frame = Assert.Single(deviceFrame.Frames);
+        Assert.Equal(256, frame.Width);
+        Assert.Equal(256, frame.Height);
+
+        batch.Begin();
+        renderer.DrawBinocularOverlay(
+            batch,
+            screenWidth: 640,
+            screenHeight: 480,
+            targets: [new EnemyOverlayBox(7, 300f, 200f, 340f, 280f, 12f, 1f)],
+            headingRadians: 0f);
+        batch.End();
+
+        Assert.NotEmpty(device.Draws);
+        RecordingGraphicsDevice.DrawCall frameDraw = device.Draws[0];
+        Assert.NotEqual(TextureHandle.None, frameDraw.Texture);
+        Assert.Equal(192f, frameDraw.Vertices[0].X, 3);
+        Assert.Equal(112f, frameDraw.Vertices[0].Y, 3);
+        Assert.Equal(256f, frameDraw.Vertices[1].X - frameDraw.Vertices[0].X, 3);
+        Assert.Equal(256f, frameDraw.Vertices[3].Y - frameDraw.Vertices[0].Y, 3);
+
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 300f) < 0.01f));
+    }
+
+    [RequiresGameDataFact]
+    public void CutsceneSubtitleUsesTheTallWhiteRetailFaceInsteadOfTheGreenStatusFace()
     {
         IresArchive computer = IresArchive.Read(File.ReadAllBytes(
             Path.Combine(GameData.RequireRoot(), "computer", "computer.res")));
