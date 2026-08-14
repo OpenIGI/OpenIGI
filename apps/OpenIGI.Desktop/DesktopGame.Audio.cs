@@ -1034,7 +1034,7 @@ internal sealed partial class DesktopGame
                 continue;
             }
 
-            if (!elevator.State.IsMoving)
+            if (!elevator.State.HasMovementRequest)
             {
                 // The state transition normally removes this voice. This reconciliation also covers
                 // a voice that was retained across a task transition or reclaimed by the audio pool.

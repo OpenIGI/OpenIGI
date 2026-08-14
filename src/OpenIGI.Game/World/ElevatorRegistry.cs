@@ -104,26 +104,31 @@ public sealed class ElevatorRegistry
     {
         foreach (ElevatorCommand command in _commands)
         {
-            bool wasMoving = command.Elevator.State.IsMoving;
+            bool wasMoving = command.Elevator.State.HasMovementRequest;
+            // Elevator_Activate writes isWantedFloor[0..9] then, if there is no up/down pulse,
+            // sets nWantedFloor to the last true index. A held expression is a destination, not a
+            // rising-edge command, and a later floor overwrites an earlier one the same tick.
+            int? wantedFloor = null;
             for (int i = 0; i < command.WantedFloors.Count; i++)
             {
-                bool wanted = command.WantedFloors[i]();
-                if (wanted && !command.LastWantedFloors[i])
+                if (command.WantedFloors[i]())
                 {
-                    command.Elevator.State.RequestFloor(i);
+                    wantedFloor = i;
                 }
-
-                command.LastWantedFloors[i] = wanted;
             }
 
-            command.Elevator.State.Tick(
-                command.CanStart(),
-                command.FloorUp(),
-                command.FloorDown());
-
-            if (_sounds is not null && wasMoving != command.Elevator.State.IsMoving)
+            bool floorUp = command.FloorUp();
+            bool floorDown = command.FloorDown();
+            if (wantedFloor is int floor && !floorUp && !floorDown)
             {
-                command.Elevator.IsSounding = command.Elevator.State.IsMoving;
+                command.Elevator.State.RequestFloor(floor);
+            }
+
+            command.Elevator.State.Tick(command.CanStart(), floorUp, floorDown);
+
+            if (_sounds is not null && wasMoving != command.Elevator.State.HasMovementRequest)
+            {
+                command.Elevator.IsSounding = command.Elevator.State.HasMovementRequest;
                 _sounds(command.Elevator, command.Elevator.IsSounding
                     ? ElevatorSoundEvent.StartedMoving
                     : ElevatorSoundEvent.StoppedMoving);
@@ -475,7 +480,6 @@ public sealed class ElevatorRegistry
         public Func<bool> FloorUp { get; } = FloorUp;
         public Func<bool> FloorDown { get; } = FloorDown;
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
-        public bool[] LastWantedFloors { get; } = new bool[WantedFloors.Count];
         public List<ExteriorSwitchCall> ExteriorCalls { get; } = ExteriorCalls;
 
         public bool TryRequestFromExteriorSwitch(DeclaredTask switchTask)

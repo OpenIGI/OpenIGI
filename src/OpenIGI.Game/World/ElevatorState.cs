@@ -19,6 +19,12 @@ public sealed record ElevatorFloor(int TaskId, Vector3d Position);
 public sealed class ElevatorState
 {
     private const double TickSeconds = 1.0 / 30.0;
+    /// <summary>DAT_0053182c — remaining spline distance that switches UpdatePosition to the brake curve.</summary>
+    private const double BrakeDistanceUnits = 16384.0;
+    /// <summary>DAT_00531828 — <c>2^-14</c>, the native close-range speed gain.</summary>
+    private const double BrakeGain = 1.0 / 16384.0;
+    /// <summary>DAT_005313c8 — 0.1 m/s floor on the braking speed.</summary>
+    private const double MinBrakeSpeedUnits = 0.1 * WorldScene.UnitsPerMetre;
     private readonly IReadOnlyList<ElevatorFloor> _floors;
     private readonly double _maxSpeed;
     private readonly double _inertia;
@@ -133,15 +139,22 @@ public sealed class ElevatorState
         _lastUp = floorUp;
         _lastDown = floorDown;
 
-        if (TargetFloorIndex is null && _pendingTargetFloor is null && _pendingDirection == 0)
+        // Elevator_Activate (0x43C440): Floor-up / Floor-down pulses rewrite nWantedFloor first;
+        // otherwise the last true isWantedFloorN wins. Both apply even while the car is travelling.
+        if (upPulse)
         {
-            if (upPulse)
+            int next = WantedFloorIndex + 1;
+            if (next < _floors.Count)
             {
-                _pendingDirection = 1;
+                RequestFloor(next);
             }
-            else if (downPulse)
+        }
+        else if (downPulse)
+        {
+            int next = WantedFloorIndex - 1;
+            if (next >= 0)
             {
-                _pendingDirection = -1;
+                RequestFloor(next);
             }
         }
 
@@ -161,21 +174,14 @@ public sealed class ElevatorState
             }
         }
 
-        if (TargetFloorIndex is not int targetIndex)
+        if (TargetFloorIndex is not int targetIndex || targetIndex == CurrentFloorIndex)
         {
-            _speed = 0.0;
-            return;
-        }
+            if (TargetFloorIndex == CurrentFloorIndex)
+            {
+                TargetFloorIndex = null;
+            }
 
-        int nextIndex = targetIndex > CurrentFloorIndex
-            ? CurrentFloorIndex + 1
-            : CurrentFloorIndex - 1;
-        Vector3d destination = _floors[nextIndex].Position;
-        Vector3d delta = destination - Position;
-        double distance = delta.Length;
-        if (distance == 0.0)
-        {
-            Arrive(nextIndex, destination);
+            _speed = 0.0;
             return;
         }
 
@@ -186,15 +192,23 @@ public sealed class ElevatorState
             return;
         }
 
-        _speed = Math.Min(_maxSpeed, _speed + (_inertia * TickSeconds));
-        double step = _speed * TickSeconds;
-        if (step >= distance)
+        // Elevator_UpdatePosition (0x43C8A0) walks the spline parameter toward nWantedFloor
+        // without stopping at intermediate waypoints. Speed only zeros on the final node.
+        double remaining = DistanceAlongFloors(CurrentFloorIndex, targetIndex);
+        if (remaining <= BrakeDistanceUnits)
         {
-            Arrive(nextIndex, destination);
-            return;
+            // Native writes the brake curve into +0x190 (m/s). Authored max speed is ~1 m/s; clamp
+            // so a unit-scale test lift cannot be forced above its own Max speed.
+            _speed = Math.Min(
+                _maxSpeed,
+                Math.Max(MinBrakeSpeedUnits, remaining * _maxSpeed * BrakeGain));
+        }
+        else
+        {
+            _speed = Math.Min(_maxSpeed, _speed + (_inertia * TickSeconds));
         }
 
-        Position += (delta / distance) * step;
+        AdvanceToward(targetIndex, _speed * TickSeconds);
     }
 
     /// <summary>Requests a specific authored floor, subject to the normal start gate.</summary>
@@ -206,13 +220,26 @@ public sealed class ElevatorState
     /// </remarks>
     public void RequestFloor(int floorIndex)
     {
-        if ((uint)floorIndex >= (uint)_floors.Count || TargetFloorIndex is not null)
+        if ((uint)floorIndex >= (uint)_floors.Count)
         {
             return;
         }
 
-        // Drop a stale pending request that targets the floor we are already on before evaluating
-        // the new request, so it can take the slot instead of being blocked by the no-op.
+        _pendingDirection = 0;
+        if (TargetFloorIndex is not null)
+        {
+            // Native writes +0x19C every Activate, so a cabin press mid-ride redirects the spline.
+            bool parkedOnFloor = floorIndex == CurrentFloorIndex
+                && Position == _floors[floorIndex].Position;
+            TargetFloorIndex = parkedOnFloor ? null : floorIndex;
+            if (parkedOnFloor)
+            {
+                _speed = 0.0;
+            }
+
+            return;
+        }
+
         if (_pendingTargetFloor == CurrentFloorIndex)
         {
             _pendingTargetFloor = null;
@@ -223,22 +250,53 @@ public sealed class ElevatorState
             return;
         }
 
-        if (_pendingTargetFloor is null)
+        _pendingTargetFloor = floorIndex;
+    }
+
+    private void AdvanceToward(int targetIndex, double stepUnits)
+    {
+        int guard = _floors.Count + 1;
+        while (stepUnits > 0.0 && TargetFloorIndex is int dest && dest != CurrentFloorIndex && guard-- > 0)
         {
-            _pendingDirection = 0;
-            _pendingTargetFloor = floorIndex;
+            int nextIndex = dest > CurrentFloorIndex ? CurrentFloorIndex + 1 : CurrentFloorIndex - 1;
+            Vector3d destination = _floors[nextIndex].Position;
+            Vector3d delta = destination - Position;
+            double distance = delta.Length;
+            if (distance == 0.0 || stepUnits >= distance)
+            {
+                stepUnits = distance == 0.0 ? stepUnits : stepUnits - distance;
+                Position = destination;
+                CurrentFloorIndex = nextIndex;
+                if (nextIndex == dest)
+                {
+                    TargetFloorIndex = null;
+                    _speed = 0.0;
+                    return;
+                }
+
+                continue;
+            }
+
+            Position += (delta / distance) * stepUnits;
+            return;
         }
     }
 
-    private void Arrive(int reachedIndex, Vector3d destination)
+    private double DistanceAlongFloors(int fromIndex, int toIndex)
     {
-        Position = destination;
-        CurrentFloorIndex = reachedIndex;
-        if (TargetFloorIndex == reachedIndex)
+        if (fromIndex == toIndex)
         {
-            TargetFloorIndex = null;
+            return Vector3d.Distance(Position, _floors[toIndex].Position);
         }
-        _speed = 0.0;
+
+        int step = toIndex > fromIndex ? 1 : -1;
+        double total = Vector3d.Distance(Position, _floors[fromIndex + step].Position);
+        for (int index = fromIndex + step; index != toIndex; index += step)
+        {
+            total += Vector3d.Distance(_floors[index].Position, _floors[index + step].Position);
+        }
+
+        return total;
     }
 
     private int FindStartFloor(Vector3d startPosition, int? startFloorTaskId)

@@ -126,6 +126,7 @@ public sealed class ElevatorStateTests
 
         Assert.Equal(1, elevator.CurrentFloorIndex);
         Assert.Equal(2, elevator.TargetFloorIndex);
+        Assert.True(elevator.SpeedUnitsPerSecond > 0.0, "UpdatePosition does not zero speed on an intermediate node");
 
         for (int i = 0; i < 30; i++)
         {
@@ -154,7 +155,7 @@ public sealed class ElevatorStateTests
     }
 
     [Fact]
-    public void DuplicateRequestWhileMovingDoesNotCancelTheCurrentTrip()
+    public void ACabinRequestMidRideRedirectsNWantedFloor()
     {
         ElevatorState elevator = new(
             startPosition: new Vector3d(0, 0, 0),
@@ -172,10 +173,11 @@ public sealed class ElevatorStateTests
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
         Vector3d positionDuringTrip = elevator.Position;
 
+        // Elevator_Activate overwrites +0x19C every frame; a later cabin press is a new destination.
         elevator.RequestFloor(1);
         elevator.Tick(canStart: true, floorUp: false, floorDown: false);
 
-        Assert.Equal(2, elevator.TargetFloorIndex);
+        Assert.Equal(1, elevator.TargetFloorIndex);
         Assert.True(elevator.Position != positionDuringTrip);
     }
 
