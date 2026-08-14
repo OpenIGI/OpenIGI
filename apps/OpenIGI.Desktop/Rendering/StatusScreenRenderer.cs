@@ -443,13 +443,14 @@ public sealed class StatusScreenRenderer : IDisposable
         if (GlobalSprite("binoculars.spr") is { } frameResource && frameResource.Asset.Frames.Count > 0)
         {
             SpriteFrame frame = frameResource.Asset.Frames[0];
+            float scale = UiScale.For(screenWidth, screenHeight);
             frameResource.DrawFrame(
                 batch,
                 frame,
-                (screenWidth - frame.Width) * 0.5f,
-                (screenHeight - frame.Height) * 0.5f,
-                1f,
-                1f,
+                (screenWidth - (frame.Width * scale)) * 0.5f,
+                (screenHeight - (frame.Height * scale)) * 0.5f,
+                scale,
+                scale,
                 BitmapTextRenderer.NeutralColor);
         }
 
@@ -546,7 +547,7 @@ public sealed class StatusScreenRenderer : IDisposable
                 .Select(static target => (EnemyOverlayBox?)target)
                 .FirstOrDefault();
 
-        float scale = MathF.Max(1f, screenWidth / (float)UiScale.AuthoredWidth);
+        float scale = UiScale.For(screenWidth, screenHeight);
         // FUN_00471480 takes the no-contact branch when the holder has no measured distance and
         // formats the authored fallback with "%s: %0.f+%s". The retail metric path is 1000+M;
         // suppressing the label until an enemy is detected leaves the binocular HUD visibly unlike

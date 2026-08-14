@@ -155,6 +155,22 @@ public sealed class StatusScreenRendererTests
             draw => draw.Texture == TextureHandle.None
                 && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y) < 0.01f)
                 && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y - 480f) < 0.01f));
+
+        device.Draws.Clear();
+        batch.Begin();
+        renderer.DrawBinocularOverlay(
+            batch,
+            screenWidth: 1920,
+            screenHeight: 1080,
+            targets: null,
+            headingRadians: 0f);
+        batch.End();
+
+        RecordingGraphicsDevice.DrawCall scaledFrame = device.Draws[0];
+        Assert.Equal(704f, scaledFrame.Vertices[0].X, 3);
+        Assert.Equal(284f, scaledFrame.Vertices[0].Y, 3);
+        Assert.Equal(512f, scaledFrame.Vertices[1].X - scaledFrame.Vertices[0].X, 3);
+        Assert.Equal(512f, scaledFrame.Vertices[3].Y - scaledFrame.Vertices[0].Y, 3);
     }
 
     [Fact]
