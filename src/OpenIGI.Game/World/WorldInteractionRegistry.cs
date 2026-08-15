@@ -259,12 +259,13 @@ public sealed class WorldInteraction
             return true;
         }
 
-        if (Type == InteractionActivateType.Terminal)
+        if (Type is InteractionActivateType.Terminal or InteractionActivateType.Switch)
         {
-            // Terminal::GetActivate (0x443C80) transforms the human-to-magic-vertex-1 delta by
-            // the task's complete orientation. It offers only positive local Y and a 3072-unit
-            // local-X strip. Deriving these axes from Facing reverses the positive side for the
-            // mission-3 keypad authored at gamma 270 degrees.
+            // Terminal::GetActivate (0x443C80) and Switch::GetActivate (0x445730) transform the
+            // human-to-magic-vertex delta by the task's complete orientation. Each offers only
+            // positive local Y and a 3072-unit local-X strip. Deriving these axes from Facing
+            // reverses the positive side for a rotated control (notably the Mission 14 elevator
+            // buttons), placing its activation area beside or behind the visible switch.
             Vector3d local = Orientation.Transform(from - Anchor);
             return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
         }
