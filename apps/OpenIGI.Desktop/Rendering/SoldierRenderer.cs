@@ -508,34 +508,14 @@ public sealed class SoldierRenderer : IDisposable
             double dy = targetUnits.Y - eyeUnits.Y;
             double dz = targetUnits.Z - eyeUnits.Z;
             float distance = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-            Member? member = FindMember(view);
-            if (!TryGetProjectedModelBounds(
-                    member,
-                    view,
-                    camera,
-                    horizontalTangent,
-                    verticalTangent,
-                    screenWidth,
-                    screenHeight,
-                    out float projectedCentreX,
-                    out float projectedCentreY,
-                    out float boxWidth,
-                    out float boxHeight))
-            {
-                boxWidth = (float)(HumanSeparation.RadiusInUnits * screenWidth
-                    / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
-                boxHeight = (float)(HumanSeparation.HeightInUnits * screenHeight
-                    / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
-            }
-            else
-            {
-                // Native BinocularOverlay_PositionOverlayHandler projects the target model's
-                // transformed corners and draws around that projected rectangle.  The chest point
-                // is only the detector query point; using it as the rectangle centre visibly shifts
-                // large/animated soldiers away from their overlay.
-                screenX = projectedCentreX;
-                screenY = projectedCentreY;
-            }
+            // FUN_00471B60 submits the human contact point to FUN_00470EC0, then the marker draw
+            // scales its closed rectangle through FUN_00470F70. It does not walk skinned render
+            // vertices. Keep the outline tied to the authoritative collision cylinder so animation
+            // skinning cannot collapse the detector to a dot or make it drift away from a guard.
+            float boxWidth = (float)(HumanSeparation.RadiusInUnits * screenWidth
+                / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
+            float boxHeight = (float)(HumanSeparation.HeightInUnits * screenHeight
+                / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
 
             _binocularOverlay.Upsert(
                 brain.RuntimeId,
@@ -553,91 +533,6 @@ public sealed class SoldierRenderer : IDisposable
 
         _binocularOverlay.ExpireInactive(tick);
         return _binocularOverlay.OverlayBoxes(tick);
-    }
-
-    private static bool TryGetProjectedModelBounds(
-        Member? member,
-        SoldierView view,
-        Camera3D camera,
-        float horizontalTangent,
-        float verticalTangent,
-        int screenWidth,
-        int screenHeight,
-        out float centreX,
-        out float centreY,
-        out float width,
-        out float height)
-    {
-        centreX = centreY = width = height = 0f;
-        if (member?.SkinScratch is not { Length: > 0 } skin)
-        {
-            return false;
-        }
-
-        float left = float.PositiveInfinity;
-        float right = float.NegativeInfinity;
-        float top = float.PositiveInfinity;
-        float bottom = float.NegativeInfinity;
-        int projected = 0;
-        // The detector is evaluated during the render pass, after SoldierRenderer.BeginFrame has
-        // resolved the same tick-pair interpolation used by Draw. Projecting from SoldierView's
-        // authoritative tick pose here makes boxes lag behind moving guards and is especially visible
-        // while binoculars are zooming. Use the presented transform and keep the authoritative pose as
-        // the fallback for the first frame before presentation state exists.
-        Vector3d presentedPosition = member?.HasFrameState == true
-            ? member.DrawnWhere
-            : new Vector3d(
-                view.Position.X / WorldScene.UnitsPerMetre,
-                view.Position.Y / WorldScene.UnitsPerMetre,
-                view.Position.Z / WorldScene.UnitsPerMetre);
-        Matrix3f presentedOrientation = member?.HasFrameState == true
-            ? member.DrawnOrientation
-            : view.Orientation;
-
-        foreach (Vertex3D vertex in skin)
-        {
-            Vector3f local = presentedOrientation.Transform(vertex.Position);
-            Vector3d world = new(
-                presentedPosition.X + local.X,
-                presentedPosition.Y + local.Y,
-                presentedPosition.Z + local.Z);
-            Vector3d relative = new(
-                world.X - camera.Position.X,
-                world.Y - camera.Position.Y,
-                world.Z - camera.Position.Z);
-            Vector3d viewPosition = camera.Orientation.Transposed().Transform(relative);
-            if (viewPosition.Z <= 0.001)
-            {
-                continue;
-            }
-
-            float x = screenWidth * 0.5f
-                + (float)(viewPosition.X / (viewPosition.Z * horizontalTangent) * screenWidth * 0.5f);
-            float y = screenHeight * 0.5f
-                - (float)(viewPosition.Y / (viewPosition.Z * verticalTangent) * screenHeight * 0.5f);
-            if (!float.IsFinite(x) || !float.IsFinite(y))
-            {
-                continue;
-            }
-
-            left = MathF.Min(left, x);
-            right = MathF.Max(right, x);
-            top = MathF.Min(top, y);
-            bottom = MathF.Max(bottom, y);
-            projected++;
-        }
-
-        width = right - left;
-        height = bottom - top;
-        centreX = (left + right) * 0.5f;
-        centreY = (top + bottom) * 0.5f;
-        return projected > 0
-            && float.IsFinite(centreX)
-            && float.IsFinite(centreY)
-            && float.IsFinite(width)
-            && float.IsFinite(height)
-            && width > 0.5f
-            && height > 0.5f;
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
