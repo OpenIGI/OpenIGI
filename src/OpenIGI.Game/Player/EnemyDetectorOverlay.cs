@@ -128,7 +128,9 @@ public sealed class EnemyDetectorOverlay
             eventParam,
             extraParam1,
             extraParam2,
-            existing ? _slots[index].LastUsedTick : tick,
+            // FUN_00471F60 writes +0x20 only on allocation/eviction. FUN_00471B60 uses it as
+            // the marker's entry-pulse origin, so a rediscovered target keeps this timestamp.
+            existing ? _slots[index].AllocatedTick : tick,
             tick,
             true,
             MathF.Max(0f, boxWidth),
@@ -141,10 +143,9 @@ public sealed class EnemyDetectorOverlay
         for (int index = 0; index < _slots.Length; index++)
         {
             TargetSlot slot = _slots[index];
-            // FUN_00471B60 compares the current tick with slot[8] (+0x20), which is written only when
-            // a slot is allocated or evicted.  slot[7] (+0x1c) is refreshed on every successful scan
-            // and is not the native retention clock.
-            if (slot.Occupied && !slot.Active && unchecked(tick - slot.LastUsedTick) > NativeRetentionTicks)
+            // FUN_00471B60 compares the current tick with slot[7] (+0x1c), which FUN_00471F60
+            // refreshes every successful scan. Slot[8] (+0x20) is only the visual entry-pulse origin.
+            if (slot.Occupied && !slot.Active && unchecked(tick - slot.LastSeenTick) > NativeRetentionTicks)
             {
                 _slots[index] = default;
             }
@@ -169,7 +170,7 @@ public sealed class EnemyDetectorOverlay
             // distance-dependent size.
             float width = slot.BoxWidth;
             float height = slot.BoxHeight;
-            int age = Math.Clamp(unchecked(tick - slot.ActivatedTick), 0, NativeMarkerPulseTicks);
+            int age = Math.Clamp(unchecked(tick - slot.AllocatedTick), 0, NativeMarkerPulseTicks);
             float progress = age * NativeMarkerProgressPerTick;
             boxes.Add(new EnemyOverlayBox(
                 slot.TargetId,
@@ -195,8 +196,8 @@ public sealed class EnemyDetectorOverlay
         int EventParam,
         int ExtraParam1,
         int ExtraParam2,
-        int LastUsedTick,
-        int ActivatedTick,
+            int AllocatedTick,
+            int LastSeenTick,
         bool Active,
         float BoxWidth,
         float BoxHeight)

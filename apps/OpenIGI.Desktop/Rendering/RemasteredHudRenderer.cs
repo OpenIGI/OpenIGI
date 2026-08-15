@@ -135,19 +135,49 @@ internal sealed class RemasteredHudRenderer : IDisposable
 
     private static void DrawTargetBox(UiPainter painter, LayoutContext context, EnemyOverlayBox target)
     {
-        float thickness = MathF.Max(1f, context.Px(2f));
-        // Hostile contacts use a red marker in the retail binocular task. The enhanced
-        // presentation may change framing, but it must not change contact semantics.
+        // Both presentations consume the same detector slots. The enhanced chrome is allowed to differ,
+        // but the tracked contact itself must remain the retail four-segment red rectangle from
+        // FUN_00471B60/FUN_004B5860: its model-derived bounds grow with the target and its 250-tick
+        // entry pulse rotates and expands the complete outline rather than turning it into four dots.
+        float centreX = (target.Left + target.Right) * 0.5f;
+        float centreY = (target.Top + target.Bottom) * 0.5f;
+        float halfWidth = MathF.Max(1f, (target.Right - target.Left) * 0.5f * target.PulseScale);
+        float halfHeight = MathF.Max(1f, (target.Bottom - target.Top) * 0.5f * target.PulseScale);
+        float cos = MathF.Cos(target.RotationRadians);
+        float sin = MathF.Sin(target.RotationRadians);
+        UiVec2 a = Rotate(centreX, centreY, -halfWidth, -halfHeight, cos, sin);
+        UiVec2 b = Rotate(centreX, centreY, halfWidth, -halfHeight, cos, sin);
+        UiVec2 c = Rotate(centreX, centreY, halfWidth, halfHeight, cos, sin);
+        UiVec2 d = Rotate(centreX, centreY, -halfWidth, halfHeight, cos, sin);
+        float thickness = Math.Clamp(MathF.Min(target.Right - target.Left, target.Bottom - target.Top) * 0.055f, 1f, context.Px(3f));
         Bgra32 colour = Bgra32.FromRgb(240, 64, 64).WithAlpha((byte)(220f * Math.Clamp(target.Alpha, 0f, 1f)));
-        float corner = MathF.Min(context.Px(12f), MathF.Min(target.Right - target.Left, target.Bottom - target.Top) * 0.24f);
-        painter.FillRect(new UiRect(target.Left, target.Top, corner, thickness), colour);
-        painter.FillRect(new UiRect(target.Left, target.Top, thickness, corner), colour);
-        painter.FillRect(new UiRect(target.Right - corner, target.Top, corner, thickness), colour);
-        painter.FillRect(new UiRect(target.Right - thickness, target.Top, thickness, corner), colour);
-        painter.FillRect(new UiRect(target.Left, target.Bottom - thickness, corner, thickness), colour);
-        painter.FillRect(new UiRect(target.Left, target.Bottom - corner, thickness, corner), colour);
-        painter.FillRect(new UiRect(target.Right - corner, target.Bottom - thickness, corner, thickness), colour);
-        painter.FillRect(new UiRect(target.Right - thickness, target.Bottom - corner, thickness, corner), colour);
+        DrawSegment(painter, a, b, thickness, colour);
+        DrawSegment(painter, b, c, thickness, colour);
+        DrawSegment(painter, c, d, thickness, colour);
+        DrawSegment(painter, d, a, thickness, colour);
+    }
+
+    private static UiVec2 Rotate(float centreX, float centreY, float x, float y, float cos, float sin) =>
+        new(centreX + (x * cos) - (y * sin), centreY + (x * sin) + (y * cos));
+
+    private static void DrawSegment(UiPainter painter, UiVec2 start, UiVec2 end, float thickness, Bgra32 colour)
+    {
+        float dx = end.X - start.X;
+        float dy = end.Y - start.Y;
+        float length = MathF.Sqrt((dx * dx) + (dy * dy));
+        if (length <= 0.001f)
+        {
+            return;
+        }
+
+        float nx = -dy / length * (thickness * 0.5f);
+        float ny = dx / length * (thickness * 0.5f);
+        painter.FillQuad(
+            new UiVec2(start.X + nx, start.Y + ny),
+            new UiVec2(end.X + nx, end.Y + ny),
+            new UiVec2(end.X - nx, end.Y - ny),
+            new UiVec2(start.X - nx, start.Y - ny),
+            colour);
     }
 
     /// <summary>Draws the modern presentation of the same timed state progress the retail HUD exposes.</summary>

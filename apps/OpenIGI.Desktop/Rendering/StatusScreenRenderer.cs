@@ -439,17 +439,11 @@ public sealed class StatusScreenRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
 
-        // Retail draws the binoculars.spr frame fullscreen, stretched to the
-        // full video dimensions (like the sniper scope quadrants), not as a
-        // centred 256×256 status icon. At 640×480 the retail glass therefore
-        // fills the screen edge to edge.
-        if (GlobalSprite("binoculars.spr") is { } frameResource && frameResource.Asset.Frames.Count > 0)
-        {
-            SpriteFrame frame = frameResource.Asset.Frames[0];
-            float scaleX = (float)screenWidth / Math.Max(1, frame.Width);
-            float scaleY = (float)screenHeight / Math.Max(1, frame.Height);
-            frameResource.DrawFrame(batch, frame, 0f, 0f, scaleX, scaleY, BitmapTextRenderer.NeutralColor);
-        }
+        // The 256x256 STATUSSCREEN:binoculars.spr entry is the ordinary weapon-HUD icon. It is not
+        // the binocular camera mask and must never be stretched across the back buffer. Both r2 and
+        // Ghidra show BinocularOverlay's initializer (0x470fa0) resolving its separate texture by
+        // bare name, then FUN_00471480 using that texture only in two local sprite draws at +0x18.
+        // The rest of the retail overlay is geometry and text drawn below.
 
         // RetailBinocularUpdater (0x0051A8C0) updates the holder's path; the overlay builder at
         // 0x00471480 then draws the authored binocular frame, reticle and range labels. The native
@@ -1196,33 +1190,6 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         _sprites[name] = resource;
-        return resource;
-    }
-
-    private SpriteResource? GlobalSprite(string name)
-    {
-        string cacheKey = $"global:{name}";
-        if (_sprites.TryGetValue(cacheKey, out SpriteResource? cached))
-        {
-            return cached;
-        }
-
-        SpriteResource? resource = null;
-        IresEntry? entry = Find(_spriteArchive, name);
-        if (entry is not null)
-        {
-            try
-            {
-                SpriteAsset asset = SpriteLoader.Load(entry.Data, name);
-                resource = SpriteResource.Upload(_device, asset);
-            }
-            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
-            {
-                _logger.Warning(LogCategory, $"Could not read the global HUD sprite '{name}': {ex.Message}");
-            }
-        }
-
-        _sprites[cacheKey] = resource;
         return resource;
     }
 

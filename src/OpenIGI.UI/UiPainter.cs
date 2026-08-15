@@ -296,6 +296,24 @@ public sealed class UiPainter
             BlendMode.AlphaBlend);
     }
 
+    /// <summary>Fills an arbitrary convex quad, unclipped.</summary>
+    /// <remarks>
+    /// This is the quad counterpart to <see cref="FillTriangle"/>. It is intended for display-space
+    /// markers whose native geometry is rotated around a tracked target, rather than for normal UI
+    /// panels which should continue to use <see cref="FillRect"/> and honour the clip stack.
+    /// </remarks>
+    public void FillQuad(UiVec2 a, UiVec2 b, UiVec2 c, UiVec2 d, Bgra32 color)
+    {
+        Bgra32 faded = Fade(color);
+        _batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(a.X, a.Y, 0f, 0f, faded),
+            new Vertex2D(b.X, b.Y, 1f, 0f, faded),
+            new Vertex2D(c.X, c.Y, 1f, 1f, faded),
+            new Vertex2D(d.X, d.Y, 0f, 1f, faded),
+            BlendMode.AlphaBlend);
+    }
+
     /// <summary>Draws a textured sprite.</summary>
     /// <param name="texture">The texture to sample.</param>
     /// <param name="destination">The destination rectangle in pixels.</param>

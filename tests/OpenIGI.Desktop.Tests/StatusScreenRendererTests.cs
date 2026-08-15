@@ -89,7 +89,7 @@ public sealed class StatusScreenRendererTests
     }
 
     [RequiresGameDataFact]
-    public void RetailBinocularsUseTheGlobalDeviceFrameAndOverlayTargetsInScreenSpace()
+    public void RetailBinocularsDoNotStretchTheStatusIconAndOverlayTargetsInScreenSpace()
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -98,12 +98,6 @@ public sealed class StatusScreenRendererTests
         SpriteBatch batch = new(device);
 
         Assert.True(renderer.Load(fileSystem));
-        IresArchive global = IresArchive.Read(fileSystem.ReadAllBytes(StatusScreenRenderer.SpriteArchive));
-        SpriteAsset deviceFrame = Asset(global, "binoculars.spr");
-        SpriteFrame frame = Assert.Single(deviceFrame.Frames);
-        Assert.Equal(256, frame.Width);
-        Assert.Equal(256, frame.Height);
-
         batch.Begin();
         renderer.DrawBinocularOverlay(
             batch,
@@ -114,12 +108,17 @@ public sealed class StatusScreenRendererTests
         batch.End();
 
         Assert.NotEmpty(device.Draws);
-        RecordingGraphicsDevice.DrawCall frameDraw = device.Draws[0];
-        Assert.NotEqual(TextureHandle.None, frameDraw.Texture);
-        Assert.Equal(0f, frameDraw.Vertices[0].X, 3);
-        Assert.Equal(0f, frameDraw.Vertices[0].Y, 3);
-        Assert.Equal(640f, frameDraw.Vertices[1].X - frameDraw.Vertices[0].X, 3);
-        Assert.Equal(480f, frameDraw.Vertices[3].Y - frameDraw.Vertices[0].Y, 3);
+        // r2 and Ghidra agree that 0x470fa0 resolves its binocular asset separately from
+        // STATUSSCREEN:binoculars.spr. The latter is a 256x256 inventory icon and must not turn
+        // into an opaque fullscreen quad when the player opens the device.
+        Assert.DoesNotContain(
+            device.Draws,
+            draw => draw.Texture != TextureHandle.None
+                && draw.Vertices.Length == 4
+                && Math.Abs(draw.Vertices[0].X) < 0.01f
+                && Math.Abs(draw.Vertices[0].Y) < 0.01f
+                && Math.Abs(draw.Vertices[1].X - 640f) < 0.01f
+                && Math.Abs(draw.Vertices[3].Y - 480f) < 0.01f);
 
         Assert.Contains(
             device.Draws,
@@ -166,11 +165,19 @@ public sealed class StatusScreenRendererTests
             headingRadians: 0f);
         batch.End();
 
-        RecordingGraphicsDevice.DrawCall scaledFrame = device.Draws[0];
-        Assert.Equal(0f, scaledFrame.Vertices[0].X, 3);
-        Assert.Equal(0f, scaledFrame.Vertices[0].Y, 3);
-        Assert.Equal(1920f, scaledFrame.Vertices[1].X - scaledFrame.Vertices[0].X, 3);
-        Assert.Equal(1080f, scaledFrame.Vertices[3].Y - scaledFrame.Vertices[0].Y, 3);
+        Assert.DoesNotContain(
+            device.Draws,
+            draw => draw.Texture != TextureHandle.None
+                && draw.Vertices.Length == 4
+                && Math.Abs(draw.Vertices[0].X) < 0.01f
+                && Math.Abs(draw.Vertices[0].Y) < 0.01f
+                && Math.Abs(draw.Vertices[1].X - 1920f) < 0.01f
+                && Math.Abs(draw.Vertices[3].Y - 1080f) < 0.01f);
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X) < 0.01f && vertex.Y is > 539f and < 541f)
+                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 1920f) < 0.01f && vertex.Y is > 539f and < 541f));
     }
 
     [Fact]

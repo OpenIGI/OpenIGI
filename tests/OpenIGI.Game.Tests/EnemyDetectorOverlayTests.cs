@@ -17,15 +17,16 @@ public sealed class EnemyDetectorOverlayTests
         EnemyDetectorOverlay.TargetSlot slot = Assert.Single(detector.Slots, static item => item.Occupied);
         Assert.True(slot.Active);
         Assert.Equal(7, slot.TargetId);
-        Assert.Equal(120, slot.ActivatedTick);
+        Assert.Equal(100, slot.AllocatedTick);
+        Assert.Equal(120, slot.LastSeenTick);
 
         detector.BeginScan();
-        detector.ExpireInactive(3099);
+        detector.ExpireInactive(3120);
         Assert.Contains(detector.Slots, static item => item.Occupied);
 
-        // Re-seeing the target refreshed slot[7], but native retention uses slot[8], the original
-        // allocation timestamp.  It therefore expires at 3101, not three seconds after the scan.
-        detector.ExpireInactive(3101);
+        // Re-seeing the target refreshed slot[7], which is the field FUN_00471B60 compares for
+        // retention. Slot[8] stays at its allocation time and drives only the marker pulse.
+        detector.ExpireInactive(3121);
         Assert.DoesNotContain(detector.Slots, static item => item.Occupied);
     }
 
@@ -42,6 +43,23 @@ public sealed class EnemyDetectorOverlayTests
         Assert.Equal(10f, settled.Right - settled.Left, 3);
         Assert.Equal(20f, initial.Bottom - initial.Top, 3);
         Assert.Equal(20f, settled.Bottom - settled.Top, 3);
+    }
+
+    [Fact]
+    public void RepeatedDetectorScansDoNotRestartTheNativeEntryPulse()
+    {
+        EnemyDetectorOverlay detector = new();
+        detector.Upsert(3, 20f, 1, 320f, 240f, 0, 0, 0, 100, 10f, 20f);
+
+        detector.BeginScan();
+        detector.Upsert(3, 19f, 1, 321f, 240f, 0, 0, 0, 350, 10f, 20f);
+
+        EnemyDetectorOverlay.TargetSlot slot = Assert.Single(detector.Slots, static item => item.Occupied);
+        EnemyOverlayBox settled = Assert.Single(detector.OverlayBoxes(350));
+        Assert.Equal(100, slot.AllocatedTick);
+        Assert.Equal(350, slot.LastSeenTick);
+        Assert.Equal(1f, settled.PulseScale, 3);
+        Assert.Equal(1.5707f, settled.RotationRadians, 3);
     }
 
     [Fact]
