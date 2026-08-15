@@ -426,14 +426,22 @@ public sealed class PlayerWeapons
         MedipackUsedThisTick = true;
         health.HealFraction(held.Weapon.Weapon.Values[0]);
 
-        if (health.RemainingFraction >= 1f)
+        bool hasAnotherClipPack = held.Gun.RoundsInClip > 0;
+        bool hasAnotherReservePack = Ammunition.Count(ammoId) > 0;
+        if (health.RemainingFraction >= 1f || (!hasAnotherClipPack && !hasAnotherReservePack))
         {
+            // Finish the syringe clip which made this final dose visible, then suppress the next
+            // held-fire entry. This is not a firearm reload and does not manufacture a new charge.
             _medipackClipCompletionPending = true;
             CompleteMedipackAttempt();
         }
+        // One completed injection is one charge, not one press. Retail's 0x40FBE0 maintains its
+        // own cooldown and consumes another AMMO_ID_MEDIPACK charge when the held action becomes
+        // eligible again. End this clip, then let Ready re-enter Medipack on the still-held Fire
+        // input so the next dose gets a complete syringe animation of its own.
         if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
         {
-            CompleteMedipackAttempt();
+            _medipackClipCompletionPending = true;
         }
 
         return true;
@@ -441,8 +449,9 @@ public sealed class PlayerWeapons
 
     private void CompleteMedipackAttempt()
     {
-        // The native task exits after a no-op attempt (empty reserve or full health); it does not
-        // leave the fire edge armed for the next simulation tick.
+        // Empty reserve and full health are terminal while Fire remains held. A successful dose is
+        // intentionally different: its completed clip returns through Ready and starts another
+        // injection until Fire is released or one of these terminal conditions is reached.
         _medipackUsed = true;
         _medipackAwaitingRelease = true;
         _actionComplete = true;

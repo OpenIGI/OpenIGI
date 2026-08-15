@@ -308,7 +308,7 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void HoldingFireCannotUseMoreThanOneMedipackUntilReleased()
+    public void HoldingFireStartsAnotherInjectionAfterEachCompletedMedipackDose()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
@@ -325,7 +325,19 @@ public sealed class PlayerWeaponsTests
         Assert.True(weapons.TryUseMedipack(health));
         Tick(weapons, input, fire, clipEnded: true);
         Assert.False(weapons.TryUseMedipack(health));
-        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Tick(weapons, input, fire, clipEnded: true);
+        Assert.True(weapons.TryUseMedipack(health));
+
+        // 0x40FBE0 consumes exactly one charge per eligible injection. Holding Fire does not
+        // repeat one animation frame; it starts a second full syringe cycle once the first ends.
+        Assert.Equal(0.25f, health.Damage, 3);
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+
+        // An empty pack becomes a terminal held-fire state rather than looping a firearm reload.
+        Tick(weapons, input, fire, clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health));
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
 
         Tick(weapons, input, Frame());
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
