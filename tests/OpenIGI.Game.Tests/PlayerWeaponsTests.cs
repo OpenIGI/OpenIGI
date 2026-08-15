@@ -99,7 +99,12 @@ public sealed class PlayerWeaponsTests
         ScriptId = "WEAPON_ID_MEDIPACK",
         Category = WeaponCategory.Medipack,
         CalibreId = 10005,
+        // The shipped medipack fires its healing handler at 120 RPM: one dose per 15 ticks.
+        RoundsPerMinute = 120,
         RoundsPerClip = 1,
+        FireAnimation1 = 77,
+        FireAnimation2 = 78,
+        FireAnimation3 = 79,
         Weapon = new WeaponTaskBinding("TASKTYPE_MEDIPACK", 0, [0.25f], string.Empty, 0),
     };
 
@@ -203,7 +208,7 @@ public sealed class PlayerWeaponsTests
 
         Assert.False(entry.LoopFullBody);
         Assert.True(sustained.LoopFullBody);
-        Assert.Equal(Medipack.FireAnimation1, sustained.FullBody);
+        Assert.Equal(Medipack.FireAnimation2, sustained.FullBody);
     }
 
     [Fact]
@@ -316,12 +321,16 @@ public sealed class PlayerWeaponsTests
 
         Tick(weapons, input, Frame(), clipEnded: true);
         Assert.False(weapons.TryUseMedipack(health));
-        Tick(weapons, input, Frame());
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health));
+        Tick(weapons, input, Frame(), clipEnded: false);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Tick(weapons, input, Frame(), clipEnded: true);
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
     }
 
     [Fact]
-    public void HoldingFireKeepsOneSyringeLoopAndConsumesOneChargePerEligibleTick()
+    public void HoldingFireKeepsOneSyringeLoopAndConsumesChargesAtTheRetailCooldown()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
@@ -336,21 +345,36 @@ public sealed class PlayerWeaponsTests
         Assert.False(weapons.TryUseMedipack(health));
         Tick(weapons, input, fire, clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health));
+
+        // FUN_0040FBE0 sets Human+0xD6C from its 30 Hz (60 / RPM * 30) expression, which is 15 for the retail
+        // medipack. The loop stays visible during those updates but neither charge nor health moves.
+        Tick(weapons, input, fire, clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health));
+        for (int i = 1; i < GunTiming.TicksPerRound(Medipack.RoundsPerMinute); i++)
+        {
+            Tick(weapons, input, fire, clipEnded: true);
+            Assert.False(weapons.TryUseMedipack(health));
+        }
+
         Tick(weapons, input, fire, clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health));
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Assert.Equal(2, weapons.RequestedFireVariant);
 
-        // 0x40FBE0 consumes exactly one charge per eligible handler tick. The ClipEnded input here
-        // is a loop wrap, not a request to leave/re-enter Medipack and replay the one-shot entry.
+        // The ClipEnded input here is a loop wrap, not a request to leave/re-enter Medipack and replay
+        // the one-shot entry.
         Assert.Equal(0.25f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
-        // An empty pack becomes a terminal held-fire state rather than looping a firearm reload.
+        // An empty pack runs FireAnimation3 once, rather than looping a firearm reload.
         Tick(weapons, input, fire, clipEnded: true);
         Assert.False(weapons.TryUseMedipack(health));
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
-        Assert.Equal(HumanWeaponState.Ready, weapons.State);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
 
-        Tick(weapons, input, Frame());
+        Tick(weapons, input, Frame(), clipEnded: false);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Tick(weapons, input, Frame(), clipEnded: true);
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
     }
 
@@ -370,7 +394,12 @@ public sealed class PlayerWeaponsTests
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.False(weapons.TryUseMedipack(health));
         Assert.Equal(0.75f, health.Damage, 3);
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Assert.Equal(2, weapons.RequestedFireVariant);
         Tick(weapons, input, Frame());
+        Tick(weapons, input, Frame(), clipEnded: false);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Tick(weapons, input, Frame(), clipEnded: true);
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
     }
 
@@ -416,6 +445,14 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health, 1f));
+        for (int i = 1; i < GunTiming.TicksPerRound(Medipack.RoundsPerMinute); i++)
+        {
+            Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+            Assert.False(weapons.TryUseMedipack(health, 1f));
+        }
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health, 1f));
         Assert.Equal(0.25f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
@@ -436,10 +473,43 @@ public sealed class PlayerWeaponsTests
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health, 0.5f));
         Assert.Equal(1f, health.RemainingFraction, 3);
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Assert.Equal(2, weapons.RequestedFireVariant);
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: false);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.Equal(HumanWeaponState.Ready, weapons.State);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+    }
+
+    [Fact]
+    public void ReleasingMedipackRunsRetailThirdFireClipBeforeReady()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 2);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        Equip(weapons);
+        PlayerInputState input = new();
+
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
+        Assert.True(weapons.TryUseMedipack(health));
+
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Assert.Equal(2, weapons.RequestedFireVariant);
+        Assert.Equal(Medipack.FireAnimation3, WeaponAnimationTable.Select(Medipack, weapons.RequestedAction!.Value, weapons.RequestedFireVariant).FullBody);
+
+        Tick(weapons, input, Frame(), clipEnded: false);
+        Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.Equal(HumanWeaponState.Ready, weapons.State);
     }
 
     [Fact]

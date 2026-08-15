@@ -146,6 +146,16 @@ public sealed class StatusScreenRendererTests
             draw => draw.Texture == TextureHandle.None
                 && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 300f) < 0.01f));
 
+        // The target strip is hostile red. This guards the BGRA/RGBA channel boundary: a raw
+        // Bgra32(220, 32, 32, ...) literal would render the retail marker blue.
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Count(vertex => vertex.Color.B == 32
+                    && vertex.Color.G == 32
+                    && vertex.Color.R == 220
+                    && vertex.Color.A == 235) >= 16);
+
         // FUN_004B5860 uses the native vertex strip and 1.5625% x 2.0833334% scales. At
         // 640x480 that produces the two 15x50 horizontal quads at x=240 and x=385.
         Assert.Contains(

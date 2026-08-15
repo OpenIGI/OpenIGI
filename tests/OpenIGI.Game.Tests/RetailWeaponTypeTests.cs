@@ -223,6 +223,10 @@ public sealed class RetailWeaponTypeTests
         // 0x470570: the fraction of maximum health one use restores.
         WeaponType medipack = weapons.Weapons.First(w => w.ScriptId == "WEAPON_ID_MEDIPACK");
         Assert.Equal(0.01f, medipack.Weapon.Values[0]);
+        // FUN_0040FBE0 reloads Human+0xD6C with the ordinary 30 Hz gun-clock expression. The
+        // shipped medipack's 120 RPM therefore spaces held doses by 15 simulation updates.
+        Assert.Equal(120, medipack.RoundsPerMinute);
+        Assert.Equal(15, GunTiming.TicksPerRound(medipack.RoundsPerMinute));
 
         // 0x4737F0: M203 muzzle velocity, explosion radius, activate radius.
         WeaponType m16 = weapons.Weapons.First(w => w.ScriptId == "WEAPON_ID_M16A2");

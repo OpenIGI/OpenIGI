@@ -97,6 +97,9 @@ public sealed class PlayerWeapons
     private bool _medipackAdvanced;
     private bool _medipackAwaitingRelease;
     private bool _medipackInjectionLoopStarted;
+    private bool _medipackClosing;
+    private bool _medipackCloseAdvanced;
+    private int _medipackCooldownTicks;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
     private bool _swapped;
@@ -376,7 +379,16 @@ public sealed class PlayerWeapons
         // empty. It is deliberately not a fresh animation/state transition for every charge.
         if (!Flags.HasFlag(HumanWeaponFlagWord.Fire) || health.RemainingFraction >= 1f)
         {
-            CompleteMedipackAttempt();
+            BeginMedipackFinish();
+            return false;
+        }
+
+        // FUN_0040FBE0 tests this before looking up the ammo or touching the damage accumulator.
+        // A non-zero countdown spends the whole handler update merely decrementing Human+0xD6C;
+        // the visible syringe loop continues, but it neither heals nor consumes a charge.
+        if (_medipackCooldownTicks != 0)
+        {
+            _medipackCooldownTicks--;
             return false;
         }
 
@@ -391,19 +403,18 @@ public sealed class PlayerWeapons
         bool hasReservePack = Ammunition.Count(ammoId) > 0;
         if (!hasClipPack && !hasReservePack)
         {
-            CompleteMedipackAttempt();
+            BeginMedipackFinish();
             return false;
         }
 
         if (held.Weapon.Weapon.Values.Count == 0)
         {
-            CompleteMedipackAttempt();
+            BeginMedipackFinish();
             return false;
         }
 
-        // IGI.EXE FUN_0040FBE0 checks the cooldown, an available AMMO_ID_MEDIPACK charge and a
-        // positive damage accumulator. Every eligible handler tick consumes one charge and applies
-        // one clamped MaximumHealth * Values[0] heal while the *same looping animation* continues.
+        // FUN_0040FBE0 consumes one AMMO_ID_MEDIPACK charge, applies the clamped task fraction,
+        // and starts a fresh native cooldown while the *same looping animation* continues.
         if (hasClipPack)
         {
             held.Gun.State.RoundsInClip = clip - 1;
@@ -416,25 +427,34 @@ public sealed class PlayerWeapons
         _medipackUsed = true;
         MedipackUsedThisTick = true;
         health.HealFraction(held.Weapon.Weapon.Values[0]);
+        _medipackCooldownTicks = GunTiming.TicksPerRound(held.Weapon.RoundsPerMinute);
 
         bool hasAnotherClipPack = held.Gun.RoundsInClip > 0;
         bool hasAnotherReservePack = Ammunition.Count(ammoId) > 0;
         if (health.RemainingFraction >= 1f || (!hasAnotherClipPack && !hasAnotherReservePack))
         {
-            CompleteMedipackAttempt();
+            BeginMedipackFinish();
         }
 
         return true;
     }
 
-    private void CompleteMedipackAttempt()
+    private void BeginMedipackFinish()
     {
-        // Empty reserve and full health are terminal while Fire remains held. A successful dose is
-        // intentionally different: its completed clip returns through Ready and starts another
-        // injection until Fire is released or one of these terminal conditions is reached.
+        if (_medipackClosing)
+        {
+            return;
+        }
+
+        // 0x40FBE0 does not jump straight to Ready when Fire is released, health is full, or stock
+        // is empty. It starts Weapon+0x68C (FireAnimation3), then 0x40FD70 waits for that one-shot
+        // clip to end before dispatching the parent state. Keeping that terminal clip separate from
+        // the sustained loop prevents the medipack from looking or sounding like a firearm reload.
         _medipackUsed = true;
         _medipackAwaitingRelease = true;
-        _actionComplete = true;
+        _medipackClosing = true;
+        _medipackCloseAdvanced = false;
+        Request(WeaponAction.Fire, fireVariant: 2);
     }
 
     /// <summary>
@@ -999,9 +1019,27 @@ public sealed class PlayerWeapons
             return HumanWeaponState.Medipack;
         }
 
-        return !Flags.HasFlag(HumanWeaponFlagWord.Fire) || _medipackAwaitingRelease
-            ? HumanWeaponState.Ready
-            : HumanWeaponState.Medipack;
+        if (_medipackClosing)
+        {
+            // The current ClipEnded flag belongs to the outgoing syringe loop on the tick that
+            // starts FireAnimation3. Do not let it complete the newly requested terminal clip.
+            if (!_medipackCloseAdvanced)
+            {
+                _medipackCloseAdvanced = true;
+                return HumanWeaponState.Medipack;
+            }
+
+            return Flags.HasFlag(HumanWeaponFlagWord.ClipEnded)
+                ? HumanWeaponState.Ready
+                : HumanWeaponState.Medipack;
+        }
+
+        if (!Flags.HasFlag(HumanWeaponFlagWord.Fire) || _medipackAwaitingRelease)
+        {
+            BeginMedipackFinish();
+        }
+
+        return HumanWeaponState.Medipack;
     }
 
     private void SetBinocularOpenPending(int weaponId)
@@ -1124,6 +1162,11 @@ public sealed class PlayerWeapons
                 _medipackUsed = false;
                 _medipackAdvanced = false;
                 _medipackInjectionLoopStarted = false;
+                _medipackClosing = false;
+                _medipackCloseAdvanced = false;
+                // 0x40FB6D explicitly clears Human+0xD6C on entry. The first dose therefore occurs
+                // when the entry clip hands off to the loop; only later doses wait for the cadence.
+                _medipackCooldownTicks = 0;
                 MedipackStartedThisTick = true;
                 Request(WeaponAction.Fire);
                 break;

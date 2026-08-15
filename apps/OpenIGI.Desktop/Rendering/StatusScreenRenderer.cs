@@ -483,7 +483,9 @@ public sealed class StatusScreenRenderer : IDisposable
         // The reticle/axes are green in the retail device, but FUN_00471B60's contact
         // marker is the hostile-target colour. Keep the two channels separate so a
         // detected human is a red rectangle rather than an indistinguishable green dot.
-        Bgra32 targetSignal = new(220, 32, 32, 235);
+        // Bgra32's constructor is storage-order (blue, green, red, alpha); use the RGB factory so
+        // the retail hostile marker is red on screen instead of the blue marker the old literal made.
+        Bgra32 targetSignal = Bgra32.FromRgb(220, 32, 32).WithAlpha(235);
         float armAnchor = screenWidth * 0.09375f;
         float armScaleX = MathF.Max(1f, screenWidth * 0.015625f);
         float armScaleY = MathF.Max(1f, screenHeight * 0.020833334f);
