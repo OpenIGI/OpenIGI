@@ -95,7 +95,7 @@ public sealed class DevConsoleTheme
         switch (palette)
         {
             case ConsolePalette.Dim:
-                Ui.Panel = Bgra32.FromRgba(24, 28, 33, 235);
+                Ui.Panel = Bgra32.FromRgb(24, 28, 33);
                 Ui.Surface = Bgra32.FromRgb(33, 38, 44);
                 Ui.SurfaceRaised = Bgra32.FromRgb(41, 47, 54);
                 Ui.Text = Bgra32.FromRgb(222, 228, 234);
@@ -104,7 +104,7 @@ public sealed class DevConsoleTheme
                 break;
 
             case ConsolePalette.Amber:
-                Ui.Panel = Bgra32.FromRgba(8, 7, 4, 240);
+                Ui.Panel = Bgra32.FromRgb(8, 7, 4);
                 Ui.Surface = Bgra32.FromRgb(20, 16, 8);
                 Ui.SurfaceRaised = Bgra32.FromRgb(28, 22, 11);
                 Ui.Text = Bgra32.FromRgb(255, 206, 122);
@@ -118,7 +118,7 @@ public sealed class DevConsoleTheme
 
             case ConsolePalette.Dark:
             default:
-                Ui.Panel = Bgra32.FromRgba(10, 13, 16, 240);
+                Ui.Panel = Bgra32.FromRgb(10, 13, 16);
                 Ui.Surface = Bgra32.FromRgb(17, 22, 27);
                 Ui.SurfaceRaised = Bgra32.FromRgb(23, 29, 36);
                 Ui.Text = Bgra32.FromRgb(232, 238, 242);

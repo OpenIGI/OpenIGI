@@ -330,6 +330,46 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Gets the number of soldiers that resolved and will draw.</summary>
     public int Count { get; private set; }
 
+    /// <summary>
+    /// Lists every resolved soldier for the developer inspector, in a form that outlives them.
+    /// </summary>
+    /// <param name="into">The list to fill; cleared first.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="into"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// A read-only projection rather than access to the soldiers themselves. The inspector runs on the
+    /// far side of an interface that must not see gameplay types, and a panel holding a live
+    /// <c>SoldierView</c> across a mission change would be holding a corpse the loader had forgotten
+    /// about. Everything the panel needs is copied out here, once per frame it draws.
+    /// </para>
+    /// <para>
+    /// The index into the filled list is the handle the inspector's commands use, which is why the
+    /// order is the stable group-then-member walk rather than anything sorted.
+    /// </para>
+    /// </remarks>
+    public void Snapshot(List<SoldierSnapshot> into)
+    {
+        ArgumentNullException.ThrowIfNull(into);
+        into.Clear();
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView view = member.View;
+                bool dead = view.IsDead || (_health.TryGetValue(view, out HumanHealth? health) && health.IsDead);
+
+                into.Add(new SoldierSnapshot(
+                    view.Soldier.Name ?? string.Empty,
+                    view.Position,
+                    dead,
+                    view.CurrentAnimation,
+                    _health.TryGetValue(view, out HumanHealth? hp) ? hp.RemainingFraction : -1f,
+                    member.IsCutsceneActor));
+            }
+        }
+    }
+
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>
     public CutsceneRuntime? Cutscenes { get; set; }
 

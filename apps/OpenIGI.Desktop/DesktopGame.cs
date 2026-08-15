@@ -337,6 +337,10 @@ internal sealed partial class DesktopGame : IDisposable
         console.View.ReadClipboard = () => _window.ClipboardText;
         console.View.WriteClipboard = text => _window.ClipboardText = text;
 
+        // Attached once rather than per mission: the inspector asks for a fresh snapshot every frame
+        // it draws, and the implementation already answers with nothing when no world is loaded.
+        console.View.AttachWorld(this);
+
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
 
@@ -3509,6 +3513,11 @@ internal sealed partial class DesktopGame : IDisposable
             // pinned overlay can never leak into a reference screenshot and break the vanilla gate.
             if (console.WantsDraw)
             {
+                // The wall-clock tracker belongs to this loop, which is the only thing that knows when
+                // a frame began and ended, so the panel is handed the numbers rather than fetching
+                // them. The GPU stage timings it reads straight off the device.
+                console.View.FrameStatistics = framePerformance.Statistics();
+
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);
                 batch.Begin();

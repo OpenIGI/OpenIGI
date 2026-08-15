@@ -31,9 +31,21 @@ public sealed class ConsoleBody : UiElement
     private const int TimeColumns = 13;
     private const int CategoryColumns = 14;
 
+    /// <summary>
+    /// The severities the filter bar offers, which is not every severity there is.
+    /// </summary>
+    /// <remarks>
+    /// Echo is deliberately absent. It is the reader's own submitted line played back, and hiding what
+    /// you just typed is never what anyone wants from a log filter — it would make the scrollback read
+    /// as though commands had run themselves.
+    /// </remarks>
+    private static readonly ConsoleSeverity[] FilterableSeverities =
+        [ConsoleSeverity.Output, ConsoleSeverity.Notice, ConsoleSeverity.Warning, ConsoleSeverity.Error];
+
     private readonly ConsoleModel _model;
     private readonly DevConsoleTheme _theme;
     private readonly VirtualListView _log;
+    private readonly List<UiRect> _toggles = [];
 
     private float _cell = 8f;
     private float _textSize = 14f;
@@ -63,6 +75,25 @@ public sealed class ConsoleBody : UiElement
     /// <summary>Gets how many log lines fit on screen, for page-up and page-down.</summary>
     public int VisibleLines => Math.Max(1, (int)(_log.Bounds.Height / MathF.Max(1f, _log.RowHeight)));
 
+    /// <summary>Gets the editing state of the scrollback's find box.</summary>
+    public TextEditState FindEdit { get; } = new();
+
+    /// <summary>Gets the severity toggles' rectangles, in the order they are drawn.</summary>
+    /// <remarks>Exposed so the shell can hit-test them; the panel itself never reads a device.</remarks>
+    public IReadOnlyList<UiRect> SeverityToggles => _toggles;
+
+    /// <summary>Gets the find box's rectangle, for hit testing.</summary>
+    public UiRect FindRect { get; private set; }
+
+    /// <summary>Returns which severity a toggle at an index controls.</summary>
+    /// <param name="index">The toggle's index.</param>
+    /// <returns>The severity.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index"/> is not a toggle.</exception>
+    public static ConsoleSeverity SeverityAt(int index) =>
+        index >= 0 && index < FilterableSeverities.Length
+            ? FilterableSeverities[index]
+            : throw new ArgumentOutOfRangeException(nameof(index));
+
     /// <summary>Gets the rectangle the completion dropdown occupies, empty when none is showing.</summary>
     /// <remarks>
     /// The dropdown is drawn as an overlay above the window's own children but must still be
@@ -89,6 +120,8 @@ public sealed class ConsoleBody : UiElement
 
     private float PromptHeight => RowHeight + (PromptGap * 2f);
 
+    private float FilterBarHeight => RowHeight + 8f;
+
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
@@ -102,12 +135,12 @@ public sealed class ConsoleBody : UiElement
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
-        float promptHeight = PromptHeight;
+        float top = contentRect.Y + FilterBarHeight;
         _log.Arrange(UiRect.FromEdges(
             contentRect.X,
-            contentRect.Y,
+            top,
             contentRect.Right,
-            MathF.Max(contentRect.Y, contentRect.Bottom - promptHeight)));
+            MathF.Max(top, contentRect.Bottom - PromptHeight)));
     }
 
     /// <inheritdoc/>
@@ -115,7 +148,78 @@ public sealed class ConsoleBody : UiElement
     {
         _log.RowCount = _model.VisibleLineIndices.Count;
         _log.StickToEnd = _model.ScrollOffset == 0;
+        DrawFilterBar(painter);
     }
+
+    /// <summary>
+    /// Draws the severity toggles and the find box across the top of the scrollback.
+    /// </summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <remarks>
+    /// Toggles rather than a dropdown, because the answer to "is anything being hidden from me right
+    /// now" has to be readable at a glance. A dimmed letter says a whole class of output is missing;
+    /// a closed dropdown says nothing at all.
+    /// </remarks>
+    private void DrawFilterBar(UiPainter painter)
+    {
+        var bar = new UiRect(Bounds.X, Bounds.Y, Bounds.Width, FilterBarHeight);
+        painter.FillRect(bar, _theme.Ui.Surface);
+        painter.FillRect(new UiRect(bar.X, bar.Bottom - 1f, bar.Width, 1f), _theme.Ui.Border);
+
+        float y = bar.Y + ((bar.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
+        float x = bar.X + (_cell * 0.75f);
+
+        _toggles.Clear();
+
+        foreach (ConsoleSeverity severity in FilterableSeverities)
+        {
+            bool shown = _model.Filter.IsSeverityShown(severity);
+            var chip = new UiRect(x, bar.Y + 3f, _cell * 4.5f, bar.Height - 7f);
+            _toggles.Add(chip);
+
+            painter.FillRect(chip, shown ? _theme.ColorFor(severity).WithAlpha(45) : _theme.Ui.Panel);
+            painter.StrokeRect(chip, 1f, shown ? _theme.ColorFor(severity).WithAlpha(120) : _theme.Ui.Border);
+
+            painter.DrawText(
+                _theme.Mono,
+                Label(severity),
+                new UiVec2(chip.X + (_cell * 0.6f), y),
+                _textSize,
+                shown ? _theme.ColorFor(severity) : _theme.Ui.TextDisabled);
+
+            x = chip.Right + (_cell * 0.5f);
+        }
+
+        var find = new UiRect(x + (_cell * 0.5f), bar.Y + 3f, MathF.Max(_cell * 10f, bar.Right - x - (_cell * 8f)), bar.Height - 7f);
+        FindRect = find;
+
+        painter.FillRect(find, _theme.Ui.Panel);
+        painter.StrokeRect(find, 1f, _model.Filter.Search.Length > 0 ? _theme.Ui.Accent : _theme.Ui.Border);
+
+        painter.DrawText(_theme.Mono, "find", new UiVec2(find.X + (_cell * 0.6f), y), _textSize, _theme.Ui.TextDisabled);
+        painter.DrawText(_theme.Mono, FindEdit.Text, new UiVec2(find.X + (_cell * 5.5f), y), _textSize, _theme.Ui.Text);
+
+        // How much is being withheld, stated plainly, so a filtered console can never be mistaken for
+        // a quiet one.
+        if (_model.Filter.IsActive)
+        {
+            int hidden = _model.Lines.Count - _model.VisibleLineIndices.Count;
+            painter.DrawText(
+                _theme.Mono,
+                $"{hidden} hidden",
+                new UiVec2(find.Right + (_cell * 0.6f), y),
+                _textSize,
+                _theme.Ui.Accent);
+        }
+    }
+
+    private static string Label(ConsoleSeverity severity) => severity switch
+    {
+        ConsoleSeverity.Notice => "note",
+        ConsoleSeverity.Warning => "warn",
+        ConsoleSeverity.Error => "err",
+        _ => "info",
+    };
 
     /// <inheritdoc/>
     protected override void OnDrawOverlay(UiPainter painter)

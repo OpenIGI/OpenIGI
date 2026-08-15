@@ -58,6 +58,10 @@ public sealed class DesktopConsole : IDisposable
         BuiltInConsoleCommands.Register(System, new DirectoryConsoleFileSystem(configDirectory));
         GraphicsPresetCommands.Register(System);
         RegisterShellCommands();
+
+        // Registered here rather than when the view loads, so a settings file or a +command naming a
+        // panel is understood -- both run before there is a display to show one on.
+        _view.RegisterCommands(System);
     }
 
     /// <summary>Occurs when a console command has asked the game to quit.</summary>
@@ -167,7 +171,7 @@ public sealed class DesktopConsole : IDisposable
         System.Variables.AnyChanged += OnVariableChanged;
         GraphicsPresetRegistry.Default.PresetChanged += OnPresetChanged;
 
-        if (!_view.Load())
+        if (!_view.Load(System))
         {
             _logger.Warning(LogCategory, "The console has no font; it will accept commands but draw nothing.");
         }
