@@ -1721,12 +1721,25 @@ internal sealed partial class DesktopGame : IDisposable
                     // And the sound of it. Driven every tick rather than only on the ones that fire,
                     // because an automatic's loop has to be told when the trigger was RELEASED as much
                     // as when it was pulled -- see WeaponSoundPlayer.
-                    _weaponSounds?.Tick(_player.FiredThisTick, _player.HeldWeaponType);
+                    // FUN_0040FB30/0x40FB90 drives medipack animation tasks directly. A medipack is
+                    // not a firearm, so never feed its weapon record through WeaponSoundPlayer: some
+                    // live rows carry a legacy gun sound and that produced a SPAS-like report. Passing
+                    // null also closes an automatic gun loop when the player switches to the syringe.
+                    WeaponType? weaponForSound = _player.HeldWeaponType?.Category == WeaponCategory.Medipack
+                        ? null
+                        : _player.HeldWeaponType;
+                    _weaponSounds?.Tick(_player.FiredThisTick && weaponForSound is not null, weaponForSound);
 
                     // Reloads and a few other weapon actions name their sounds through BOED animation
                     // events rather than through the weapon record. The rig advanced inside Player.Tick,
                     // so its crossed-event interval is ready to dispatch here.
-                    PlayPlayerAnimationSounds();
+                    // The native medipack callbacks dispatch their own clips and do not enter the
+                    // generic firearm BOED trigger path. Suppress those generic triggers while the
+                    // medipack is held, otherwise a shared animation event can sound like reload/fire.
+                    if (_player.HeldWeaponType?.Category != WeaponCategory.Medipack)
+                    {
+                        PlayPlayerAnimationSounds();
+                    }
 
                     // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
                     if (_player.Body.TookOffThisTick)

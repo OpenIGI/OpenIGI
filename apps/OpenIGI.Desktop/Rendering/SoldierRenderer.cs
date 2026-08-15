@@ -67,10 +67,15 @@ public sealed class SoldierRenderer : IDisposable
     private const double HumanGroundProbeDownInUnits = 40960.0;
 
     /// <summary>
-    /// The normal Human detector's native marker scale. FUN_00471B60 passes the boolean model flag
-    /// as both components of the scale pair consumed by FUN_00470F70; ordinary guards pass one.
+    /// Unit fallback for the detector marker scale.
     /// </summary>
-    private const float NativeDetectorMarkerScale = 1f;
+    /// <remarks>
+    /// Retail FUN_00471B60 passes the human field at <c>Human+0xA0</c> to FUN_00470F70. The current
+    /// managed SoldierView does not expose a field with a validated one-to-one mapping to that native
+    /// value, so keep the geometry finite with a unit fallback until that structure field is recovered.
+    /// This is deliberately not described as the retail scale.
+    /// </remarks>
+    private const float DetectorMarkerScaleFallback = 1f;
 
     private readonly IGraphicsDevice _device;
 
@@ -484,7 +489,11 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            Vector3d targetUnits = new(view.Position.X, view.Position.Y, view.Position.Z + PickChestUnits);
+            // FUN_00471B60 copies the target's six position words from Human+0x20 directly into the
+            // projection input. PickChestUnits belongs to gameplay ray-picking only; adding it here
+            // moved the detector contact above the native target and made the rectangle drift away from
+            // the retail body as the camera moved.
+            Vector3d targetUnits = view.Position;
             Vector3d delta = new(
                 targetUnits.X / WorldScene.UnitsPerMetre - camera.Position.X,
                 targetUnits.Y / WorldScene.UnitsPerMetre - camera.Position.Y,
@@ -523,9 +532,9 @@ public sealed class SoldierRenderer : IDisposable
             // taller than retail and made it vary with a collision constant the native detector never
             // reads. Converting the projected half-size to the full rectangle gives the same
             // screen-space contract while preserving the authored aspect ratio.
-            float boxWidth = (float)(NativeDetectorMarkerScale * screenWidth
+            float boxWidth = (float)(DetectorMarkerScaleFallback * screenWidth
                 / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
-            float boxHeight = (float)(NativeDetectorMarkerScale * screenHeight
+            float boxHeight = (float)(DetectorMarkerScaleFallback * screenHeight
                 / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
 
             _binocularOverlay.Upsert(
