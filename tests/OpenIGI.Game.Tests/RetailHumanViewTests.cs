@@ -80,14 +80,21 @@ public sealed class RetailHumanViewTests
     }
 
     [RequiresGameDataFact]
-    public void TheMedipackLoopActionDrivesTheAuthoredFirstPersonInjectionClip()
+    public void TheMedipackLoopActionUsesTheRawRetailSecondFireSlot()
     {
         WeaponType medipack = RetailWeaponRoster.Value.Weapons.First(
             weapon => weapon.Category == WeaponCategory.Medipack);
         WeaponAnimations action = WeaponAnimationTable.Select(medipack, WeaponAction.MedipackLoop);
-        BoneAnimationSet viewSet = ViewSet();
 
-        Assert.True(action.FullBody > 0, "The medipack has no first-person fire animation.");
+        // The retail medipack record in IGI.EXE has no second full-body fire clip. The native
+        // callback forwards -1 to the animation dispatcher; it does not replay FireAnimation1.
+        Assert.Equal(medipack.FireAnimation2, action.FullBody);
+        if (action.FullBody < 0)
+        {
+            return;
+        }
+
+        BoneAnimationSet viewSet = ViewSet();
         Assert.True(viewSet.TryGet(action.FullBody, out BoneAnimation injection));
         Assert.True(
             injection.Rotations(HumanAttachPoints.FirstPersonWeapon).Count > 1,

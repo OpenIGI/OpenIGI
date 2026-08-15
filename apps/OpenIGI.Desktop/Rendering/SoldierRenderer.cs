@@ -66,17 +66,6 @@ public sealed class SoldierRenderer : IDisposable
     /// </summary>
     private const double HumanGroundProbeDownInUnits = 40960.0;
 
-    /// <summary>
-    /// Unit fallback for the detector marker scale.
-    /// </summary>
-    /// <remarks>
-    /// Retail FUN_00471B60 passes the human field at <c>Human+0xA0</c> to FUN_00470F70. The current
-    /// managed SoldierView does not expose a field with a validated one-to-one mapping to that native
-    /// value, so keep the geometry finite with a unit fallback until that structure field is recovered.
-    /// This is deliberately not described as the retail scale.
-    /// </remarks>
-    private const float DetectorMarkerScaleFallback = 1f;
-
     private readonly IGraphicsDevice _device;
 
     /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
@@ -88,6 +77,10 @@ public sealed class SoldierRenderer : IDisposable
     private readonly List<Group> _groups = [];
     private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
+    // FUN_004D9620 writes Human+0xA0 from FUN_004D0950(model), which reads the authored model bound
+    // at model+0x78. MefMeshBuilder keeps the same unscaled model-space vertices, so this is the
+    // validated managed representation of that native value (converted to metres at read time).
+    private readonly Dictionary<SoldierView, float> _detectorMarkerScaleMetres = [];
     private readonly IgiRandom _aiRandom = new();
 
     // Each soldier's combat row, resolved from its own AIType at the difficulty in force. It is what
@@ -527,15 +520,20 @@ public sealed class SoldierRenderer : IDisposable
             float distance = (float)viewPosition.Z;
 
             // FUN_00470F70 returns the half-extents for the closed {-1,+1} strip used by
-            // FUN_004B5860: projectionScale * nativeMarkerScale / depth. The old implementation
-            // substituted the gameplay separation cylinder here, which made the marker wider and
-            // taller than retail and made it vary with a collision constant the native detector never
-            // reads. Converting the projected half-size to the full rectangle gives the same
-            // screen-space contract while preserving the authored aspect ratio.
-            float boxWidth = (float)(DetectorMarkerScaleFallback * screenWidth
-                / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
-            float boxHeight = (float)(DetectorMarkerScaleFallback * screenHeight
-                / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
+            // FUN_004B5860: projectionScale * Human+0xA0 / depth. Human+0xA0 is the loaded model's
+            // authored bound, not a one-unit HUD constant. The geometry bound above is raw IGI model
+            // space, so convert it once to metres before applying the same perspective division. The
+            // old one-unit fallback was why the red rectangle collapsed to a nearly invisible dot.
+            if (!_detectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
+                || markerScaleMetres <= 0f)
+            {
+                continue;
+            }
+
+            float boxWidth = (float)(markerScaleMetres * screenWidth
+                / (Math.Max(0.001, viewPosition.Z) * horizontalTangent));
+            float boxHeight = (float)(markerScaleMetres * screenHeight
+                / (Math.Max(0.001, viewPosition.Z) * verticalTangent));
 
             _binocularOverlay.Upsert(
                 brain.RuntimeId,
@@ -709,6 +707,11 @@ public sealed class SoldierRenderer : IDisposable
                 ? soldier.Position / WorldScene.UnitsPerMetre
                 : Stand(soldier, group, terrain, cast);
             group.Soldiers.Add(new Member(view, placement, own) { IsCutsceneActor = cutsceneActor });
+            float markerScaleRaw = group.Geometry.Bounds.Radius;
+            if (markerScaleRaw > 0f && float.IsFinite(markerScaleRaw))
+            {
+                _detectorMarkerScaleMetres[view] = markerScaleRaw / (float)WorldScene.UnitsPerMetre;
+            }
             Count++;
         }
 
@@ -4549,6 +4552,7 @@ public sealed class SoldierRenderer : IDisposable
         _weapons.Clear();
         _groups.Clear();
         _health.Clear();
+        _detectorMarkerScaleMetres.Clear();
         _cast = null;
         _sight = null;
         ReleasePlayerBody();

@@ -102,13 +102,13 @@ public static class WeaponAnimationTable
             WeaponAction.Fire =>
                 new(FireClip(weapon, fireVariant), weapon.UpperBodyFireAnimation, false, false, immediate, immediate),
 
-            // 0x40FB90 starts the medipack's second fire clip with the loop flag set after its
-            // one-shot entry clip completes. Some extracted data omits that second clip, so retain
-            // the authored first clip as a safe presentation fallback rather than falling back to a
-            // firearm reload animation.
+            // 0x40FB90 starts the medipack's raw second fire slot with the loop flag set after its
+            // one-shot entry clip completes. Do not substitute FireAnimation1 when that slot is -1:
+            // the retail dispatcher receives the raw value, and replaying the entry clip made a held
+            // medipack look like repeated one-shot injections (and, in some records, a reload).
             WeaponAction.MedipackLoop when weapon.Category == WeaponCategory.Medipack =>
                 new(
-                    weapon.FireAnimation2 >= 0 ? weapon.FireAnimation2 : weapon.FireAnimation1,
+                    weapon.FireAnimation2,
                     weapon.UpperBodyFireAnimation,
                     true,
                     true,

@@ -85,7 +85,8 @@ public sealed class PlayerCameraHealthTests
         }
 
         int doses = 0;
-        int loopFrames = 0;
+        int medipackStateFrames = 0;
+        int retailLoopAnimation = WeaponAnimationTable.Select(medipack, WeaponAction.MedipackLoop).FullBody;
         for (int tick = 0; tick < 180 && doses < 2; tick++)
         {
             input.BeginFrame();
@@ -97,19 +98,20 @@ public sealed class PlayerCameraHealthTests
                 doses++;
             }
 
-            if (camera.Weapons.State == HumanWeaponState.Medipack
-                && camera.View?.Bones.SourceOf(0) is { } clip
-                && clip.Loops)
+            if (camera.Weapons.State == HumanWeaponState.Medipack)
             {
-                loopFrames++;
-                Assert.Equal(
-                    WeaponAnimationTable.Select(medipack, WeaponAction.MedipackLoop).FullBody,
-                    clip.Animation.Id);
+                medipackStateFrames++;
+                if (retailLoopAnimation >= 0)
+                {
+                    BoneClip clip = Assert.IsType<BoneClip>(camera.View?.Bones.SourceOf(0));
+                    Assert.True(clip.Loops);
+                    Assert.Equal(retailLoopAnimation, clip.Animation.Id);
+                }
             }
         }
 
         Assert.True(doses >= 2, "Holding Fire must apply more than one retail medipack dose.");
-        Assert.True(loopFrames > 1, "The syringe animation must remain a looping clip between doses.");
+        Assert.True(medipackStateFrames > 1, "The medipack state must remain active between doses.");
         Assert.True(health.RemainingFraction > 0.5f);
     }
 

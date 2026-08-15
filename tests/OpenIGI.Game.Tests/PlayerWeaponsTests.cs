@@ -212,6 +212,27 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void MedipackDoesNotReplayTheEntryClipWhenRetailLoopSlotIsAbsent()
+    {
+        WeaponType retailWithoutLoop = new()
+        {
+            Category = WeaponCategory.Medipack,
+            FireAnimation1 = Medipack.FireAnimation1,
+            FireAnimation2 = -1,
+            UpperBodyFireAnimation = Medipack.UpperBodyFireAnimation,
+        };
+
+        WeaponAnimations sustained = WeaponAnimationTable.Select(
+            retailWithoutLoop,
+            WeaponAction.MedipackLoop);
+
+        // FUN_0040FB90 forwards the raw slot to FUN_004D61D0. A missing slot is not permission to
+        // turn the entry injection into a repeating one-shot animation.
+        Assert.Equal(-1, sustained.FullBody);
+        Assert.NotEqual(retailWithoutLoop.FireAnimation1, sustained.FullBody);
+    }
+
+    [Fact]
     public void MedipackBeginsDosingOnlyAfterItsOneShotEntryClipEnds()
     {
         PlayerWeapons weapons = new([31]);
