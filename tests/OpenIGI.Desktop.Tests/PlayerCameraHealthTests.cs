@@ -61,6 +61,98 @@ public sealed class PlayerCameraHealthTests
         Assert.False(clip.Loops);
     }
 
+    [RequiresGameDataFact]
+    public void HeldRetailMedipackKeepsItsInjectionClipLoopingAcrossMultipleDoses()
+    {
+        WeaponType medipack = LoadRoster().Weapons.First(
+            weapon => weapon.Category == WeaponCategory.Medipack);
+        PlayerCamera camera = new();
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.5f);
+        camera.UseHealth(health);
+        camera.UseWeaponCycle([medipack.WeaponId]);
+        camera.Carry(medipack, new AmmoType { AmmoId = PlayerWeapons.MedipackAmmoId, CalibreId = 10005 });
+        camera.Weapons!.Ammunition.Add(PlayerWeapons.MedipackAmmoId, 4);
+        camera.UseViewRig(LoadViewSet());
+        camera.UseWalls(ObjectCollisionIndex.Build([]));
+
+        InputState input = new();
+        for (int tick = 0; tick < 60
+            && (camera.Weapons.InHand is null || camera.Weapons.State != HumanWeaponState.Ready); tick++)
+        {
+            input.BeginFrame();
+            camera.Tick(input, terrain: null);
+        }
+
+        int doses = 0;
+        int loopFrames = 0;
+        for (int tick = 0; tick < 180 && doses < 2; tick++)
+        {
+            input.BeginFrame();
+            input.Mouse.SetButton(MouseButton.Left, down: true);
+            camera.Tick(input, terrain: null);
+
+            if (camera.Weapons.MedipackUsedThisTick)
+            {
+                doses++;
+            }
+
+            if (camera.Weapons.State == HumanWeaponState.Medipack
+                && camera.View?.Bones.SourceOf(0) is { } clip
+                && clip.Loops)
+            {
+                loopFrames++;
+                Assert.Equal(
+                    WeaponAnimationTable.Select(medipack, WeaponAction.MedipackLoop).FullBody,
+                    clip.Animation.Id);
+            }
+        }
+
+        Assert.True(doses >= 2, "Holding Fire must apply more than one retail medipack dose.");
+        Assert.True(loopFrames > 1, "The syringe animation must remain a looping clip between doses.");
+        Assert.True(health.RemainingFraction > 0.5f);
+    }
+
+    [RequiresGameDataFact]
+    public void RetailMedipackWithoutAThirdClipReturnsToReadyWithoutReloading()
+    {
+        WeaponType medipack = LoadRoster().Weapons.First(
+            weapon => weapon.Category == WeaponCategory.Medipack);
+        PlayerCamera camera = new();
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.5f);
+        camera.UseHealth(health);
+        camera.UseWeaponCycle([medipack.WeaponId]);
+        camera.Carry(medipack, new AmmoType { AmmoId = PlayerWeapons.MedipackAmmoId, CalibreId = 10005 });
+        camera.Weapons!.Ammunition.Add(PlayerWeapons.MedipackAmmoId, 1);
+        camera.UseViewRig(LoadViewSet());
+        camera.UseWalls(ObjectCollisionIndex.Build([]));
+
+        InputState input = new();
+        for (int tick = 0; tick < 60
+            && (camera.Weapons.InHand is null || camera.Weapons.State != HumanWeaponState.Ready); tick++)
+        {
+            input.BeginFrame();
+            camera.Tick(input, terrain: null);
+        }
+
+        bool used = false;
+        for (int tick = 0; tick < 120 && !used; tick++)
+        {
+            input.BeginFrame();
+            input.Mouse.SetButton(MouseButton.Left, down: true);
+            camera.Tick(input, terrain: null);
+            used = camera.Weapons.MedipackUsedThisTick;
+        }
+
+        Assert.True(used);
+        input.BeginFrame();
+        camera.Tick(input, terrain: null);
+
+        Assert.Equal(HumanWeaponState.Ready, camera.Weapons.State);
+        Assert.NotEqual(WeaponAction.Reload, camera.Weapons.CurrentAction);
+    }
+
     private static BoneAnimationSet LoadViewSet() => BoneAnimationSet.Read(File.ReadAllBytes(
         Path.Combine(GameData.RequireRoot(), "common", "anims", "005.iff")));
 

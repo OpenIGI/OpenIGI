@@ -150,7 +150,10 @@ internal sealed class RemasteredHudRenderer : IDisposable
         UiVec2 c = Rotate(centreX, centreY, halfWidth, halfHeight, cos, sin);
         UiVec2 d = Rotate(centreX, centreY, -halfWidth, halfHeight, cos, sin);
         float thickness = Math.Clamp(MathF.Min(target.Right - target.Left, target.Bottom - target.Top) * 0.055f, 1f, context.Px(3f));
-        Bgra32 colour = Bgra32.FromRgb(240, 64, 64).WithAlpha((byte)(220f * Math.Clamp(target.Alpha, 0f, 1f)));
+        // The target marker is shared retail geometry, not enhanced-HUD chrome. Keep the authored
+        // hostile red identical to StatusScreenRenderer so changing the presentation cannot change
+        // what a detected contact looks like.
+        Bgra32 colour = Bgra32.FromRgb(220, 32, 32).WithAlpha((byte)(235f * Math.Clamp(target.Alpha, 0f, 1f)));
         DrawSegment(painter, a, b, thickness, colour);
         DrawSegment(painter, b, c, thickness, colour);
         DrawSegment(painter, c, d, thickness, colour);

@@ -99,6 +99,7 @@ public sealed class PlayerWeapons
     private bool _medipackInjectionLoopStarted;
     private bool _medipackClosing;
     private bool _medipackCloseAdvanced;
+    private bool _medipackTerminalClipMissing;
     private int _medipackCooldownTicks;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
@@ -454,7 +455,16 @@ public sealed class PlayerWeapons
         _medipackAwaitingRelease = true;
         _medipackClosing = true;
         _medipackCloseAdvanced = false;
-        Request(WeaponAction.Fire, fireVariant: 2);
+        // The retail medipack record currently shipped with IGI.EXE has no FireAnimation3 (-1).
+        // 0x40FBE0 still dispatches that id, but the native animation dispatcher leaves the view
+        // untouched and the callback returns to Ready. Do the same; requesting an unavailable clip
+        // would leave the managed loop waiting forever for a ClipEnded flag that can never arrive.
+        _medipackTerminalClipMissing = InHand is not { } held
+            || WeaponAnimationTable.Select(held.Weapon, WeaponAction.Fire, fireVariant: 2).FullBody < 0;
+        if (!_medipackTerminalClipMissing)
+        {
+            Request(WeaponAction.Fire, fireVariant: 2);
+        }
     }
 
     /// <summary>
@@ -1021,6 +1031,11 @@ public sealed class PlayerWeapons
 
         if (_medipackClosing)
         {
+            if (_medipackTerminalClipMissing)
+            {
+                return HumanWeaponState.Ready;
+            }
+
             // The current ClipEnded flag belongs to the outgoing syringe loop on the tick that
             // starts FireAnimation3. Do not let it complete the newly requested terminal clip.
             if (!_medipackCloseAdvanced)
@@ -1164,6 +1179,7 @@ public sealed class PlayerWeapons
                 _medipackInjectionLoopStarted = false;
                 _medipackClosing = false;
                 _medipackCloseAdvanced = false;
+                _medipackTerminalClipMissing = false;
                 // 0x40FB6D explicitly clears Human+0xD6C on entry. The first dose therefore occurs
                 // when the entry clip hands off to the loop; only later doses wait for the cadence.
                 _medipackCooldownTicks = 0;

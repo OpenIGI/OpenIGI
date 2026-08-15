@@ -498,8 +498,11 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            // Native FUN_00471B60 only inserts a target after its world visibility query is clear.
-            if (_sight is not null && _sight(eyeUnits, targetUnits, out _))
+            // Native FUN_00471B60 only inserts a target after FUN_004D03D0's world visibility query
+            // is clear. A missing cast is not the same as a clear cast: without the level's object and
+            // terrain providers we cannot prove that the human is visible, so fail closed rather than
+            // drawing contacts through buildings or terrain during a partially loaded level.
+            if (_sight is null || _sight(eyeUnits, targetUnits, out _))
             {
                 continue;
             }
