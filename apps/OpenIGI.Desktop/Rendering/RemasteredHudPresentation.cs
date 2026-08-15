@@ -12,7 +12,13 @@ public static class RemasteredHudPresentation
     public static bool UsesRemasteredHud(bool remasteredHudEnabled) => remasteredHudEnabled;
 
     /// <summary>Whether binoculars use the enhanced optics interface paired with the tactical computer.</summary>
-    public static bool UsesRemasteredOptics(bool tacticalComputerEnabled) => tacticalComputerEnabled;
+    /// <remarks>
+    /// The selection must include the actual optics renderer's readiness. A tactical map can be available
+    /// while the independent HUD font atlas failed to initialize; choosing enhanced optics in that state
+    /// would suppress the retail device and leave the player with zoom but no overlay.
+    /// </remarks>
+    public static bool UsesRemasteredOptics(bool tacticalComputerEnabled, bool opticsRendererReady) =>
+        tacticalComputerEnabled && opticsRendererReady;
 
     /// <summary>Whether the retail weapon layer owns the current binocular presentation.</summary>
     /// <remarks>

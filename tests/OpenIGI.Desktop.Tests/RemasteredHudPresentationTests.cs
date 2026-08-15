@@ -87,10 +87,14 @@ public sealed class RemasteredHudPresentationTests
     }
 
     [Theory]
-    [InlineData(true, true)]
-    [InlineData(false, false)]
-    public void BinocularsFollowTheTacticalComputerPresentation(bool tacticalComputerEnabled, bool expected)
-        => Assert.Equal(expected, RemasteredHudPresentation.UsesRemasteredOptics(tacticalComputerEnabled));
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void BinocularsFollowTheTacticalComputerOnlyWhenTheirRendererIsReady(
+        bool tacticalComputerEnabled,
+        bool opticsRendererReady,
+        bool expected) =>
+        Assert.Equal(expected, RemasteredHudPresentation.UsesRemasteredOptics(tacticalComputerEnabled, opticsRendererReady));
 
     [Theory]
     [InlineData(false, false, false, true)]

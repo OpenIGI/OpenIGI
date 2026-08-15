@@ -2814,7 +2814,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
                 bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
-                bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(TacticalComputer is not null);
+                bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
+                    TacticalComputer is not null,
+                    _remasteredHud is { IsReady: true });
                 bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
                     remasterHud,
                     RenderCVars.TacticalMessages.Value);
