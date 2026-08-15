@@ -174,6 +174,36 @@ public sealed class StatusScreenRendererTests
     }
 
     [Fact]
+    public void RetailBinocularsDrawTheRecoveredAnimatedSweepColumns()
+    {
+        RecordingGraphicsDevice device = new();
+        using StatusScreenRenderer renderer = new(device);
+        SpriteBatch batch = new(device);
+        BinocularSweep sweep = new();
+        BinocularSweepColumn expected = sweep.Tick(0).First(column => column.Height > 0f);
+        Bgra32 expectedColour = Bgra32.FromRgb(
+            (byte)Math.Clamp(MathF.Round(expected.Phase * 128f), 0f, 128f),
+            128,
+            0);
+
+        batch.Begin();
+        renderer.DrawBinocularOverlay(batch, 640, 480, simulationTick: 0);
+        batch.End();
+
+        float left = expected.X * 640f;
+        float top = expected.Y * 480f;
+        float right = left + (expected.Width * 640f);
+        float bottom = top + (expected.Height * 480f);
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture == TextureHandle.None
+                && draw.Vertices.Chunk(4).Any(quad =>
+                    quad.All(vertex => vertex.Color == expectedColour)
+                    && quad.Any(vertex => Math.Abs(vertex.X - left) < 0.01f && Math.Abs(vertex.Y - top) < 0.01f)
+                    && quad.Any(vertex => Math.Abs(vertex.X - right) < 0.01f && Math.Abs(vertex.Y - bottom) < 0.01f)));
+    }
+
+    [Fact]
     public static void RetailBinocularsKeepTheNativeFallbackRangeWithoutAContact()
     {
         Assert.Equal("RANGE: 1000+M", StatusScreenRenderer.BinocularRangeText(null));

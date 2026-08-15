@@ -87,6 +87,7 @@ public sealed class StatusScreenRenderer : IDisposable
     private BitmapTextRenderer? _subtitleFont;
     private SpriteResource? _subtitleFontResource;
     private float _actionPulsePhase;
+    private readonly BinocularSweep _binocularSweep = new();
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="StatusScreenRenderer"/> class.</summary>
@@ -432,7 +433,8 @@ public sealed class StatusScreenRenderer : IDisposable
         int screenWidth,
         int screenHeight,
         IReadOnlyList<EnemyOverlayBox>? targets = null,
-        float headingRadians = 0f)
+        float headingRadians = 0f,
+        int simulationTick = 0)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
@@ -454,12 +456,29 @@ public sealed class StatusScreenRenderer : IDisposable
         // widget is a range readout (weapons/strings/Binoculars/range), not a compass strip.
         DrawNativeBinocularRange(batch, screenWidth, screenHeight, targets);
 
+        // The original advances twelve independently gated records before drawing the arms and axes.
+        // FUN_00471A90 turns each phase into a column which grows upward in the lower-left ruler.
+        foreach (BinocularSweepColumn column in _binocularSweep.Tick(simulationTick))
+        {
+            if (column.Height <= 0f)
+            {
+                continue;
+            }
+
+            byte red = (byte)Math.Clamp(MathF.Round(column.Phase * 128f), 0f, 128f);
+            Bgra32 sweepColour = Bgra32.FromRgb(red, 128, 0);
+            batch.FillRect(new RectF(
+                column.X * screenWidth,
+                column.Y * screenHeight,
+                column.Width * screenWidth,
+                column.Height * screenHeight),
+                sweepColour);
+        }
+
         // FUN_00471480 updates and draws twelve live 0x14-byte quad records at context+0x2B54,
-        // then draws two textured arms and the full sight axes. The two arms below are the
-        // confirmed mirrored pair: their vertex data is (-.5,-2.5), (-2,-2.5), (-2,2.5),
-        // (-.5,2.5), with anchors at +/-9.375% of video width. The runtime values for the twelve
-        // records are not present in the port, so this renderer must not be described as a complete
-        // primitive-for-primitive reproduction of that function.
+        // then draws two textured arms and the full sight axes. The sweep state above reproduces
+        // those records; the arms below are the confirmed mirrored pair: their vertex data is
+        // (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5), with anchors at +/-9.375% of video width.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
         Bgra32 signal = new(64, 160, 64, 210);
