@@ -192,6 +192,19 @@ public sealed class ConsoleSystem
         return new ConsoleCompletion(names, LongestCommonPrefix(names, prefix));
     }
 
+    /// <summary>Ranks what the reader might mean by a partially typed line, best first.</summary>
+    /// <param name="input">The line as typed so far.</param>
+    /// <param name="limit">The most candidates to return.</param>
+    /// <returns>The candidates, best first.</returns>
+    /// <remarks>
+    /// The rich counterpart to <see cref="Complete"/>, which is deliberately left alone: that answers
+    /// what Tab may safely insert, this answers what to show while the reader is still deciding. Unlike
+    /// <see cref="Complete"/> it matches loosely, ranks its results, and completes a half-typed
+    /// <em>value</em> once the line has named a variable.
+    /// </remarks>
+    public IReadOnlyList<ConsoleSuggestion> Suggest(string? input, int limit = 32) =>
+        ConsoleSuggester.Suggest(this, input, limit);
+
     /// <summary>Describes a variable the way the console prints it when named without a value.</summary>
     /// <param name="variable">The variable to describe.</param>
     /// <returns>A single line naming the current value, the default, the range and the help text.</returns>

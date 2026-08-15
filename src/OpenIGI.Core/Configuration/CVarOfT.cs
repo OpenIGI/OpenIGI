@@ -76,6 +76,13 @@ public abstract class CVar<T> : ICVar
     public virtual string RangeText => string.Empty;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Empty by default: a variable can only enumerate its values when they form a finite set, which is
+    /// true of a switch and an enumeration and false of a number or free text.
+    /// </remarks>
+    public virtual IReadOnlyList<string> ValueChoices => [];
+
+    /// <inheritdoc/>
     public bool IsDefault => EqualityComparer<T>.Default.Equals(_value, DefaultValue);
 
     /// <inheritdoc/>

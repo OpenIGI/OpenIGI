@@ -22,15 +22,22 @@ public sealed class ConsoleModel : IConsoleOutput
     /// <remarks>Trimming in batches keeps the cost amortised instead of shifting the list on every line.</remarks>
     private const int TrimBatch = 64;
 
+    /// <summary>How many ranked candidates are kept for the dropdown.</summary>
+    /// <remarks>More than a screenful is wasted work on every keystroke; the view shows fewer still.</remarks>
+    private const int SuggestionLimit = 32;
+
     private readonly ConsoleSystem _console;
     private readonly List<ConsoleLine> _lines = [];
     private readonly List<string> _history = [];
     private readonly List<string> _suggestions = [];
+    private readonly List<ConsoleSuggestion> _richSuggestions = [];
+    private readonly List<int> _visible = [];
+    private readonly TextEditState _edit = new();
 
-    private string _input = string.Empty;
-    private int _caret;
     private int _historyCursor = -1;
     private string _historyDraft = string.Empty;
+    private int _suggestionIndex = -1;
+    private bool _visibleDirty = true;
 
     /// <summary>Initialises a new instance of the <see cref="ConsoleModel"/> class.</summary>
     /// <param name="console">The console this view drives.</param>
@@ -45,7 +52,14 @@ public sealed class ConsoleModel : IConsoleOutput
         _console = console;
         ScrollbackCapacity = scrollbackCapacity;
         console.AddOutput(this);
+
+        // Any change to what is shown invalidates the index map; recomputing it lazily keeps a filter
+        // that nobody is touching from costing anything per frame.
+        Filter.Changed += (_, _) => _visibleDirty = true;
     }
+
+    /// <summary>Gets the filter deciding which scrollback lines are shown.</summary>
+    public ConsoleLogFilter Filter { get; } = new();
 
     /// <summary>Gets how many lines are kept before the oldest are dropped.</summary>
     public int ScrollbackCapacity { get; }
@@ -63,15 +77,48 @@ public sealed class ConsoleModel : IConsoleOutput
     /// <remarks>Refreshed on every edit so the view can show them as the player types, not only on Tab.</remarks>
     public IReadOnlyList<string> Suggestions => _suggestions;
 
+    /// <summary>Gets the ranked, described completion candidates for what is currently typed.</summary>
+    /// <remarks>
+    /// The list the dropdown draws: each candidate carries its current value, its accepted range and
+    /// its help, so the reader can choose without running anything. <see cref="Suggestions"/> remains
+    /// the plain-name view of the same moment.
+    /// </remarks>
+    public IReadOnlyList<ConsoleSuggestion> RichSuggestions => _richSuggestions;
+
+    /// <summary>Gets the highlighted candidate's index, or -1 when none is highlighted.</summary>
+    public int SuggestionIndex => _suggestionIndex;
+
+    /// <summary>Gets the editing state behind the input line.</summary>
+    /// <remarks>Exposed so a view can draw the selection; editing still goes through this model's own methods.</remarks>
+    public TextEditState Edit => _edit;
+
+    /// <summary>Gets the indices into <see cref="Lines"/> that pass <see cref="Filter"/>, oldest first.</summary>
+    /// <remarks>
+    /// Recomputed only when the scrollback or the filter has changed. With no filter set this is every
+    /// index in order, so an unfiltered console behaves exactly as it did before filtering existed.
+    /// </remarks>
+    public IReadOnlyList<int> VisibleLineIndices
+    {
+        get
+        {
+            if (_visibleDirty)
+            {
+                RebuildVisible();
+            }
+
+            return _visible;
+        }
+    }
+
     /// <summary>Gets or sets how many lines the view is scrolled back from the newest.</summary>
     /// <remarks>Clamped to the scrollback, so paging up at the top of the buffer does nothing.</remarks>
     public int ScrollOffset { get; set; }
 
     /// <summary>Gets the text being edited.</summary>
-    public string Input => _input;
+    public string Input => _edit.Text;
 
     /// <summary>Gets the caret position, as an index into <see cref="Input"/>.</summary>
-    public int CaretIndex => _caret;
+    public int CaretIndex => _edit.Caret;
 
     /// <inheritdoc/>
     public void Write(ConsoleLine line)
@@ -82,6 +129,8 @@ public sealed class ConsoleModel : IConsoleOutput
         {
             _lines.RemoveRange(0, TrimBatch);
         }
+
+        _visibleDirty = true;
 
         // New output pulls the view back to the bottom unless the player has scrolled up to read.
         if (ScrollOffset > 0)
@@ -94,6 +143,8 @@ public sealed class ConsoleModel : IConsoleOutput
     public void ClearScrollback()
     {
         _lines.Clear();
+        _visible.Clear();
+        _visibleDirty = false;
         ScrollOffset = 0;
     }
 
@@ -102,109 +153,70 @@ public sealed class ConsoleModel : IConsoleOutput
     /// <remarks>The caret moves to the end, which is what completion and history recall both want.</remarks>
     public void SetInput(string? text)
     {
-        _input = text ?? string.Empty;
-        _caret = _input.Length;
+        _edit.SetText(text);
         RefreshSuggestions();
     }
 
-    /// <summary>Inserts text at the caret.</summary>
+    /// <summary>Inserts text at the caret, replacing the selection when there is one.</summary>
     /// <param name="text">The text to insert. Control characters are ignored.</param>
     public void Insert(string? text)
     {
-        if (string.IsNullOrEmpty(text))
+        if (_edit.Insert(text))
         {
-            return;
+            RefreshSuggestions();
         }
-
-        string cleaned = string.Concat(text.Where(static c => !char.IsControl(c)));
-        if (cleaned.Length == 0)
-        {
-            return;
-        }
-
-        _input = _input.Insert(_caret, cleaned);
-        _caret += cleaned.Length;
-        RefreshSuggestions();
     }
 
-    /// <summary>Deletes the character before the caret.</summary>
+    /// <summary>Deletes the selection, or the character before the caret.</summary>
     public void Backspace()
     {
-        if (_caret == 0)
+        if (_edit.Backspace())
         {
-            return;
+            RefreshSuggestions();
         }
-
-        _input = _input.Remove(_caret - 1, 1);
-        _caret--;
-        RefreshSuggestions();
     }
 
-    /// <summary>Deletes the character after the caret.</summary>
+    /// <summary>Deletes the selection, or the character after the caret.</summary>
     public void Delete()
     {
-        if (_caret >= _input.Length)
+        if (_edit.Delete())
         {
-            return;
+            RefreshSuggestions();
         }
-
-        _input = _input.Remove(_caret, 1);
-        RefreshSuggestions();
     }
 
     /// <summary>Moves the caret by a number of characters.</summary>
     /// <param name="delta">How far to move. Negative moves left.</param>
-    public void MoveCaret(int delta) => _caret = Math.Clamp(_caret + delta, 0, _input.Length);
+    /// <param name="extend">Whether to extend the selection.</param>
+    public void MoveCaret(int delta, bool extend = false) => _edit.Move(delta, extend);
 
     /// <summary>Moves the caret by one word.</summary>
     /// <param name="direction">Negative to move left, positive to move right.</param>
-    public void MoveCaretByWord(int direction)
+    /// <param name="extend">Whether to extend the selection.</param>
+    public void MoveCaretByWord(int direction, bool extend = false)
     {
-        if (direction < 0)
+        if (direction != 0)
         {
-            int index = _caret;
-            while (index > 0 && char.IsWhiteSpace(_input[index - 1]))
-            {
-                index--;
-            }
-
-            while (index > 0 && !char.IsWhiteSpace(_input[index - 1]))
-            {
-                index--;
-            }
-
-            _caret = index;
-            return;
-        }
-
-        if (direction > 0)
-        {
-            int index = _caret;
-            while (index < _input.Length && !char.IsWhiteSpace(_input[index]))
-            {
-                index++;
-            }
-
-            while (index < _input.Length && char.IsWhiteSpace(_input[index]))
-            {
-                index++;
-            }
-
-            _caret = index;
+            _edit.MoveByWord(direction, extend);
         }
     }
 
     /// <summary>Moves the caret to the start of the line.</summary>
-    public void CaretToStart() => _caret = 0;
+    /// <param name="extend">Whether to extend the selection.</param>
+    public void CaretToStart(bool extend = false) => _edit.MoveToStart(extend);
 
     /// <summary>Moves the caret to the end of the line.</summary>
-    public void CaretToEnd() => _caret = _input.Length;
+    /// <param name="extend">Whether to extend the selection.</param>
+    public void CaretToEnd(bool extend = false) => _edit.MoveToEnd(extend);
+
+    /// <summary>Selects the whole input line.</summary>
+    public void SelectAll() => _edit.SelectAll();
 
     /// <summary>Runs what is typed, records it in the history and clears the input.</summary>
     /// <returns><see langword="true"/> when the input was understood, or when it was blank.</returns>
     public bool Submit()
     {
-        string line = _input.Trim();
+        string line = _edit.Text.Trim();
         SetInput(string.Empty);
         _historyCursor = -1;
         _historyDraft = string.Empty;
@@ -234,7 +246,7 @@ public sealed class ConsoleModel : IConsoleOutput
 
         if (_historyCursor < 0)
         {
-            _historyDraft = _input;
+            _historyDraft = _edit.Text;
             _historyCursor = _history.Count;
         }
 
@@ -274,7 +286,15 @@ public sealed class ConsoleModel : IConsoleOutput
     /// </remarks>
     public IReadOnlyList<string> Complete()
     {
-        ConsoleCompletion completion = _console.Complete(_input);
+        // A highlighted candidate is an explicit choice and outranks the common prefix: once the
+        // reader has arrowed to something, Tab must take that rather than second-guess them.
+        if (_suggestionIndex >= 0 && _suggestionIndex < _richSuggestions.Count)
+        {
+            AcceptSuggestion();
+            return _suggestions;
+        }
+
+        ConsoleCompletion completion = _console.Complete(_edit.Text);
         if (!completion.HasCandidates)
         {
             return completion.Candidates;
@@ -284,25 +304,110 @@ public sealed class ConsoleModel : IConsoleOutput
         return completion.Candidates;
     }
 
+    /// <summary>Moves the highlight through the suggestion list.</summary>
+    /// <param name="delta">How far to move; negative moves towards the top.</param>
+    /// <remarks>
+    /// Wraps at both ends, and moving up from nothing highlights the last candidate, so the list can
+    /// be reached from either direction without first pressing down.
+    /// </remarks>
+    public void MoveSuggestion(int delta)
+    {
+        if (_richSuggestions.Count == 0 || delta == 0)
+        {
+            return;
+        }
+
+        int count = _richSuggestions.Count;
+        int next = _suggestionIndex < 0
+            ? (delta > 0 ? 0 : count - 1)
+            : _suggestionIndex + delta;
+
+        _suggestionIndex = ((next % count) + count) % count;
+    }
+
+    /// <summary>Drops the highlight without changing the input.</summary>
+    public void ClearSuggestion() => _suggestionIndex = -1;
+
+    /// <summary>Replaces the token being typed with the highlighted candidate.</summary>
+    /// <returns><see langword="true"/> when a candidate was applied.</returns>
+    public bool AcceptSuggestion()
+    {
+        if (_suggestionIndex < 0 || _suggestionIndex >= _richSuggestions.Count)
+        {
+            return false;
+        }
+
+        ConsoleSuggestion chosen = _richSuggestions[_suggestionIndex];
+        string text = _edit.Text;
+
+        // Replace only the token under the caret. A value completion must leave the variable's name
+        // standing, and a name completion must not swallow a value already typed after it.
+        int start = text.LastIndexOfAny([' ', ';'], Math.Max(0, _edit.Caret - 1)) + 1;
+        if (start > text.Length)
+        {
+            start = text.Length;
+        }
+
+        string head = text[..start];
+        string tail = text[_edit.Caret..];
+        bool naming = chosen.Kind != ConsoleSuggestionKind.Value;
+
+        SetInput(head + chosen.Text + (naming ? " " : string.Empty) + tail);
+        return true;
+    }
+
     /// <summary>Scrolls the view.</summary>
     /// <param name="lines">How far to scroll. Positive scrolls back towards older output.</param>
     /// <param name="visibleLines">How many lines the view shows, used to clamp the offset.</param>
+    /// <remarks>Counts shown lines, so scrolling a filtered log moves by what is on screen rather than by what is hidden behind it.</remarks>
     public void Scroll(int lines, int visibleLines)
     {
-        int maximum = Math.Max(0, _lines.Count - Math.Max(1, visibleLines));
+        int maximum = Math.Max(0, VisibleLineIndices.Count - Math.Max(1, visibleLines));
         ScrollOffset = Math.Clamp(ScrollOffset + lines, 0, maximum);
+    }
+
+    private void RebuildVisible()
+    {
+        _visible.Clear();
+
+        if (!Filter.IsActive)
+        {
+            for (int i = 0; i < _lines.Count; i++)
+            {
+                _visible.Add(i);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < _lines.Count; i++)
+            {
+                if (Filter.Matches(_lines[i]))
+                {
+                    _visible.Add(i);
+                }
+            }
+        }
+
+        _visibleDirty = false;
     }
 
     private void RefreshSuggestions()
     {
         _suggestions.Clear();
+        _richSuggestions.Clear();
+        _suggestionIndex = -1;
 
-        if (_input.Length == 0)
+        if (_edit.Text.Length == 0)
         {
             return;
         }
 
-        ConsoleCompletion completion = _console.Complete(_input);
+        ConsoleCompletion completion = _console.Complete(_edit.Text);
         _suggestions.AddRange(completion.Candidates);
+
+        foreach (ConsoleSuggestion suggestion in _console.Suggest(_edit.Text, SuggestionLimit))
+        {
+            _richSuggestions.Add(suggestion);
+        }
     }
 }

@@ -15,6 +15,48 @@ public sealed class TextTests
 
     private static byte[] Saira() => File.ReadAllBytes(FontPath("Saira-Regular.ttf"));
 
+    private static byte[] Mono() => File.ReadAllBytes(FontPath("JetBrainsMono-Regular.ttf"));
+
+    // ---- The developer tools' monospaced face ----
+
+    [Fact]
+    public void Mono_face_packs_at_the_size_the_developer_tools_bake_it()
+    {
+        FontAtlasData atlas = FontAtlasBuilder.Build(Mono(), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.Extended);
+
+        Assert.NotEmpty(atlas.Glyphs);
+        Assert.True(atlas.Width > 0 && atlas.Height > 0);
+    }
+
+    /// <summary>
+    /// The developer console places every column on an integer multiple of one character advance,
+    /// measured once per size rather than per row. That is only correct while the face really is
+    /// fixed-pitch, so assert the invariant rather than trusting the file name: swapping in a
+    /// proportional face would otherwise misalign every table with nothing failing.
+    /// </summary>
+    [Fact]
+    public void Mono_face_advances_every_printable_ascii_glyph_equally()
+    {
+        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Mono(), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.Extended));
+
+        float expected = font.GetGlyph('M').Advance;
+        Assert.True(expected > 0f);
+
+        for (char c = ' '; c <= '~'; c++)
+        {
+            Assert.Equal(expected, font.GetGlyph(c).Advance, 3);
+        }
+    }
+
+    [Fact]
+    public void Mono_face_measures_a_run_as_its_character_count()
+    {
+        var font = UiFont.ForMeasurement(FontAtlasBuilder.Build(Mono(), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.Extended));
+
+        float cell = font.MeasureWidth("0", 14f);
+        Assert.Equal(cell * 8f, font.MeasureWidth("r_vsync ", 14f), 2);
+    }
+
     // ---- Packing (pure) ----
 
     [Fact]

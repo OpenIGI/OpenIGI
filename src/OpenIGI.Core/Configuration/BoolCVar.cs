@@ -13,6 +13,10 @@ public sealed class BoolCVar : CVar<bool>
     private static readonly string[] TrueWords = ["1", "true", "on", "yes", "enabled"];
     private static readonly string[] FalseWords = ["0", "false", "off", "no", "disabled"];
 
+    // The canonical pair only. Completion offers what the variable stores and prints, not every
+    // spelling it will accept -- a menu of five synonyms for "on" is a worse menu, not a richer one.
+    private static readonly string[] CanonicalChoices = ["0", "1"];
+
     /// <summary>Initialises a new instance of the <see cref="BoolCVar"/> class.</summary>
     /// <param name="name">The registry key.</param>
     /// <param name="defaultValue">The value the variable holds until something changes it.</param>
@@ -25,6 +29,9 @@ public sealed class BoolCVar : CVar<bool>
 
     /// <inheritdoc/>
     public override string RangeText => "0 | 1";
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<string> ValueChoices => CanonicalChoices;
 
     /// <inheritdoc/>
     protected override string FriendlyTypeName => "boolean";

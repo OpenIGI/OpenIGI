@@ -14,6 +14,9 @@ public sealed class EnumCVar<TEnum> : CVar<TEnum>
 {
     private static readonly TEnum[] Values = Enum.GetValues<TEnum>();
 
+    // Rendered once: the names are fixed at type level, and completion asks for them on every keystroke.
+    private static readonly string[] RenderedValues = Array.ConvertAll(Values, Render);
+
     /// <summary>Initialises a new instance of the <see cref="EnumCVar{TEnum}"/> class.</summary>
     /// <param name="name">The registry key.</param>
     /// <param name="defaultValue">The value the variable holds until something changes it.</param>
@@ -29,7 +32,11 @@ public sealed class EnumCVar<TEnum> : CVar<TEnum>
     public IReadOnlyList<TEnum> Choices => Values;
 
     /// <inheritdoc/>
-    public override string RangeText => string.Join(" | ", Array.ConvertAll(Values, Render));
+    public override string RangeText => string.Join(" | ", RenderedValues);
+
+    /// <inheritdoc/>
+    /// <remarks>The stored lower-case spellings, so completing one produces text the variable accepts verbatim.</remarks>
+    public override IReadOnlyList<string> ValueChoices => RenderedValues;
 
     /// <inheritdoc/>
     protected override string FriendlyTypeName => typeof(TEnum).Name;

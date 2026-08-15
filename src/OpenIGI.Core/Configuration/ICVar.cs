@@ -36,6 +36,21 @@ public interface ICVar
     /// <remarks>For example <c>"0 .. 4"</c> for a bounded number, or <c>"off | low | high"</c> for an enumeration.</remarks>
     string RangeText { get; }
 
+    /// <summary>Gets every value the variable accepts, or an empty list when they cannot be enumerated.</summary>
+    /// <remarks>
+    /// <para>
+    /// What the console completes a half-typed <em>value</em> from, and the type-agnostic counterpart to
+    /// <see cref="RangeText"/>: that is prose for a human to read, this is the list a picker can offer.
+    /// A boolean yields its two forms and an enumeration its members; a number yields nothing, because a
+    /// range is not a set, and the console shows <see cref="RangeText"/> as a hint instead.
+    /// </para>
+    /// <para>
+    /// Defaulted so that adding it costs no existing implementation anything — a variable that cannot
+    /// enumerate its values simply says so by staying silent.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<string> ValueChoices => [];
+
     /// <summary>Gets a value indicating whether the current value equals the default.</summary>
     bool IsDefault { get; }
 
