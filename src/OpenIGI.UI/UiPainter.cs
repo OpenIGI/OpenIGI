@@ -124,6 +124,156 @@ public sealed class UiPainter
         FillRect(new UiRect(rect.Right - thickness, rect.Y, thickness, rect.Height), color, blend);
     }
 
+    /// <summary>Fills a rectangle whose corners are rounded, using a generated corner sprite.</summary>
+    /// <param name="rect">The rectangle in pixels.</param>
+    /// <param name="slice">The corner sprite, normally <see cref="UiSurfaces.Rounded"/>.</param>
+    /// <param name="color">The fill colour.</param>
+    /// <param name="radius">The corner radius in pixels; clamped so it can never exceed half the rectangle.</param>
+    /// <param name="blend">How the fill combines with what is behind it.</param>
+    /// <remarks>
+    /// <para>
+    /// Nine quads: four mirrored corners, four stretched edges and a flat middle. Every one of them
+    /// goes through the ordinary clipped paths, so a rounded panel inside a scroll view is trimmed
+    /// correctly rather than spilling — the CPU clip earns its keep here.
+    /// </para>
+    /// <para>
+    /// Falls back to a plain <see cref="FillRect"/> when the slice is missing or the radius is zero, so
+    /// a caller never has to check whether the atlas was built.
+    /// </para>
+    /// </remarks>
+    public void FillRoundedRect(
+        UiRect rect,
+        in NineSlice slice,
+        Bgra32 color,
+        float radius,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        float r = MathF.Min(radius, MathF.Min(rect.Width, rect.Height) * 0.5f);
+        if (!slice.IsValid || r <= 0.5f || rect.IsEmpty)
+        {
+            FillRect(rect, color, blend);
+            return;
+        }
+
+        float l = rect.X;
+        float t = rect.Y;
+        float rt = rect.Right;
+        float b = rect.Bottom;
+
+        DrawSprite(slice.Texture, new UiRect(l, t, r, r), slice.Corner(false, false), color, blend);
+        DrawSprite(slice.Texture, new UiRect(rt - r, t, r, r), slice.Corner(true, false), color, blend);
+        DrawSprite(slice.Texture, new UiRect(l, b - r, r, r), slice.Corner(false, true), color, blend);
+        DrawSprite(slice.Texture, new UiRect(rt - r, b - r, r, r), slice.Corner(true, true), color, blend);
+
+        float innerWidth = MathF.Max(0f, rect.Width - (r * 2f));
+        float innerHeight = MathF.Max(0f, rect.Height - (r * 2f));
+
+        if (innerWidth > 0f)
+        {
+            DrawSprite(slice.Texture, new UiRect(l + r, t, innerWidth, r), slice.HorizontalEdge(false), color, blend);
+            DrawSprite(slice.Texture, new UiRect(l + r, b - r, innerWidth, r), slice.HorizontalEdge(true), color, blend);
+        }
+
+        if (innerHeight > 0f)
+        {
+            DrawSprite(slice.Texture, new UiRect(l, t + r, r, innerHeight), slice.VerticalEdge(false), color, blend);
+            DrawSprite(slice.Texture, new UiRect(rt - r, t + r, r, innerHeight), slice.VerticalEdge(true), color, blend);
+        }
+
+        if (innerWidth > 0f && innerHeight > 0f)
+        {
+            FillRect(new UiRect(l + r, t + r, innerWidth, innerHeight), color, blend);
+        }
+    }
+
+    /// <summary>Draws a soft shadow behind a rectangle.</summary>
+    /// <param name="rect">The rectangle casting the shadow, in pixels.</param>
+    /// <param name="slice">The shadow corner sprite, normally <see cref="UiSurfaces.Shadow"/>.</param>
+    /// <param name="color">The shadow colour, normally translucent black.</param>
+    /// <param name="spread">How far the shadow reaches beyond the rectangle, in pixels.</param>
+    /// <param name="offset">How far the shadow is displaced, normally a little downwards.</param>
+    /// <remarks>
+    /// The one cue that separates a floating window from a panel painted onto the background, and the
+    /// only depth the interface has — there is no blur to fake it with, so it is drawn.
+    /// </remarks>
+    public void DrawShadow(
+        UiRect rect,
+        in NineSlice slice,
+        Bgra32 color,
+        float spread,
+        UiVec2 offset = default)
+    {
+        if (!slice.IsValid || spread <= 0f || rect.IsEmpty)
+        {
+            return;
+        }
+
+        UiRect outer = new(
+            rect.X - spread + offset.X,
+            rect.Y - spread + offset.Y,
+            rect.Width + (spread * 2f),
+            rect.Height + (spread * 2f));
+
+        FillRoundedRect(outer, slice, color, spread);
+    }
+
+    /// <summary>Draws a string with extra space between its glyphs.</summary>
+    /// <param name="font">The font to draw with.</param>
+    /// <param name="text">The text; a line feed starts a new line.</param>
+    /// <param name="topLeft">The top-left of the first line, in pixels.</param>
+    /// <param name="sizePx">The text size in pixels.</param>
+    /// <param name="color">The text colour.</param>
+    /// <param name="tracking">Extra pixels added after each glyph.</param>
+    /// <param name="blend">How the glyphs combine with what is behind them.</param>
+    /// <returns>The pen position after the last glyph, in pixels.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="font"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// Small uppercase headings need letterspacing to stop reading as a solid block, and it is the one
+    /// typographic control the plain draw path cannot express. Drawn glyph by glyph rather than by
+    /// scaling, so the letterforms keep their weight.
+    /// </remarks>
+    public UiVec2 DrawTextTracked(
+        UiFont font,
+        ReadOnlySpan<char> text,
+        UiVec2 topLeft,
+        float sizePx,
+        Bgra32 color,
+        float tracking,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+
+        if (tracking == 0f)
+        {
+            return DrawText(font, text, topLeft, sizePx, color, blend);
+        }
+
+        UiVec2 pen = topLeft;
+        Span<char> one = stackalloc char[1];
+
+        foreach (char c in text)
+        {
+            one[0] = c;
+            DrawText(font, one, pen, sizePx, color, blend);
+            pen = new UiVec2(pen.X + (font.GetGlyph(c).Advance * font.ScaleFor(sizePx)) + tracking, pen.Y);
+        }
+
+        return pen;
+    }
+
+    /// <summary>Measures a string drawn with extra space between its glyphs.</summary>
+    /// <param name="font">The font that would draw it.</param>
+    /// <param name="text">The text.</param>
+    /// <param name="sizePx">The text size in pixels.</param>
+    /// <param name="tracking">Extra pixels added after each glyph.</param>
+    /// <returns>The width in pixels.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="font"/> is <see langword="null"/>.</exception>
+    public static float MeasureTracked(UiFont font, ReadOnlySpan<char> text, float sizePx, float tracking)
+    {
+        ArgumentNullException.ThrowIfNull(font);
+        return font.MeasureWidth(text, sizePx) + (tracking * text.Length);
+    }
+
     /// <summary>Fills a triangle, unclipped — for small overlay shapes such as the mouse cursor.</summary>
     /// <param name="a">The first corner.</param>
     /// <param name="b">The second corner.</param>
