@@ -512,7 +512,10 @@ public sealed class SoldierRenderer : IDisposable
             // scales its closed rectangle through FUN_00470F70. It does not walk skinned render
             // vertices. Keep the outline tied to the authoritative collision cylinder so animation
             // skinning cannot collapse the detector to a dot or make it drift away from a guard.
-            float boxWidth = (float)(HumanSeparation.RadiusInUnits * screenWidth
+            // The collision radius is a half-extent. The detector's closed {-1,+1} rectangle
+            // consumes a full width, so projecting only one radius made the red outline half as
+            // wide as the guard it tracks.
+            float boxWidth = (float)((HumanSeparation.RadiusInUnits * 2d) * screenWidth
                 / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
             float boxHeight = (float)(HumanSeparation.HeightInUnits * screenHeight
                 / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));

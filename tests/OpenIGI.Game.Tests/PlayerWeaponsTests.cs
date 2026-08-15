@@ -196,7 +196,18 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void MedipackAppliesOneDiscreteHealAtTheInjectionEvent()
+    public void MedipackUsesOneShotEntryThenALoopingSyringeAction()
+    {
+        WeaponAnimations entry = WeaponAnimationTable.Select(Medipack, WeaponAction.Fire);
+        WeaponAnimations sustained = WeaponAnimationTable.Select(Medipack, WeaponAction.MedipackLoop);
+
+        Assert.False(entry.LoopFullBody);
+        Assert.True(sustained.LoopFullBody);
+        Assert.Equal(Medipack.FireAnimation1, sustained.FullBody);
+    }
+
+    [Fact]
+    public void MedipackBeginsDosingOnlyAfterItsOneShotEntryClipEnds()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
@@ -210,14 +221,16 @@ public sealed class PlayerWeaponsTests
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.MedipackStartedThisTick);
 
-        // IGI.EXE FUN_0040FBE0 decrements one AMMO_ID_MEDIPACK charge and applies exactly one
-        // clamped MaximumHealth * Values[0] heal. It does not dose again as the clip advances.
+        // 0x40FB90 waits for the entry clip, then starts the sustained syringe loop whose handler
+        // is FUN_0040FBE0. A normal advancing entry clip is not yet a dosing tick.
         weapons.Tick(input, clipEnded: false, onGround: true);
-        Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.25f));
+        Assert.False(weapons.TryUseMedipack(health, animationProgress: 0.25f));
+        weapons.Tick(input, clipEnded: true, onGround: true);
+        Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.5f));
         Assert.Equal(0.5f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
-        weapons.Tick(input, clipEnded: false, onGround: true);
+        weapons.Tick(input, clipEnded: true, onGround: true);
         Assert.False(weapons.TryUseMedipack(health, animationProgress: 0.75f));
         Assert.Equal(0.5f, health.Damage, 3);
 
@@ -308,7 +321,7 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void HoldingFireStartsAnotherInjectionAfterEachCompletedMedipackDose()
+    public void HoldingFireKeepsOneSyringeLoopAndConsumesOneChargePerEligibleTick()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
@@ -324,12 +337,10 @@ public sealed class PlayerWeaponsTests
         Tick(weapons, input, fire, clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health));
         Tick(weapons, input, fire, clipEnded: true);
-        Assert.False(weapons.TryUseMedipack(health));
-        Tick(weapons, input, fire, clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health));
 
-        // 0x40FBE0 consumes exactly one charge per eligible injection. Holding Fire does not
-        // repeat one animation frame; it starts a second full syringe cycle once the first ends.
+        // 0x40FBE0 consumes exactly one charge per eligible handler tick. The ClipEnded input here
+        // is a loop wrap, not a request to leave/re-enter Medipack and replay the one-shot entry.
         Assert.Equal(0.25f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
@@ -385,11 +396,11 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void MedipackDoesNotApplyAnotherDoseWhenTheInjectionClipEnds()
+    public void MedipackContinuesDosingWhenItsLoopClipWraps()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
-        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 1);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 2);
         Equip(weapons);
         HumanHealth health = new(HumanHitZoneTable.Player);
         health.ApplyDirect(0, 0.75f);
@@ -399,14 +410,15 @@ public sealed class PlayerWeaponsTests
         Assert.False(weapons.TryUseMedipack(health, 0.25f));
         Assert.Equal(0.75f, health.Damage, 3);
 
-        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health, 0.5f));
         Assert.Equal(0.5f, health.Damage, 3);
-        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
-        Assert.False(weapons.TryUseMedipack(health, 1f));
-        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.True(weapons.TryUseMedipack(health, 1f));
+        Assert.Equal(0.25f, health.Damage, 3);
+        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
     }
 
     [Fact]
@@ -421,7 +433,7 @@ public sealed class PlayerWeaponsTests
         PlayerInputState input = new();
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire));
-        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
         Assert.True(weapons.TryUseMedipack(health, 0.5f));
         Assert.Equal(1f, health.RemainingFraction, 3);
 

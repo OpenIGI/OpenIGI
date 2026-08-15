@@ -80,11 +80,11 @@ public sealed class RetailHumanViewTests
     }
 
     [RequiresGameDataFact]
-    public void TheMedipackFireActionDrivesTheAuthoredFirstPersonInjectionClip()
+    public void TheMedipackLoopActionDrivesTheAuthoredFirstPersonInjectionClip()
     {
         WeaponType medipack = RetailWeaponRoster.Value.Weapons.First(
             weapon => weapon.Category == WeaponCategory.Medipack);
-        WeaponAnimations action = WeaponAnimationTable.Select(medipack, WeaponAction.Fire);
+        WeaponAnimations action = WeaponAnimationTable.Select(medipack, WeaponAction.MedipackLoop);
         BoneAnimationSet viewSet = ViewSet();
 
         Assert.True(action.FullBody > 0, "The medipack has no first-person fire animation.");
@@ -94,7 +94,8 @@ public sealed class RetailHumanViewTests
             "The medipack fire clip does not animate the first-person arm attachment.");
 
         HumanView view = new(viewSet);
-        Assert.NotNull(view.PlayWeaponAnimation(action.FullBody, loops: false));
+        Assert.True(action.LoopFullBody);
+        Assert.NotNull(view.PlayWeaponAnimation(action.FullBody, loops: action.LoopFullBody));
         Assert.Equal(0f, view.ClipProgress);
 
         view.Bones.Tick();

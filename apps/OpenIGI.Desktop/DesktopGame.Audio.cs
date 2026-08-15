@@ -205,16 +205,15 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Plays the medipack's authored fire cue when its one dose is injected.</summary>
+    /// <summary>Plays the medipack's authored cue when its sustained syringe action starts.</summary>
     /// <remarks>
-    /// IGI.EXE's medipack execution state consumes a charge and applies one heal after its damage,
-    /// ammo, and cooldown checks—not when the weapon state is entered. <c>MedipackUsedThisTick</c>
-    /// is that edge, so the cue cannot repeat on later animation ticks or play for an empty/full-health
-    /// attempt.
+    /// IGI.EXE's medipack execution state consumes a charge and applies one heal after its damage and
+    /// ammo checks, while the state keeps one syringe clip looping. The cue belongs to that action
+    /// edge, not to every cooldown-eligible dose, so a fifty-charge pack cannot spam a sound each tick.
     /// </remarks>
     private void PlayMedipackSound()
     {
-        if (_player?.Weapons is { MedipackUsedThisTick: true } weapons)
+        if (_player?.Weapons is { MedipackStartedThisTick: true } weapons)
         {
             // A medipack is an injection action, not a gun shot. Some weapon records carry a
             // legacy firearm FireSound field (which produces the shotgun/pistol report); the
