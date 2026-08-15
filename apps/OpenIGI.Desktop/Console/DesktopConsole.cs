@@ -47,6 +47,13 @@ public sealed class DesktopConsole : IDisposable
         Model = new ConsoleModel(System);
         _view = new DeveloperConsole(device, Model, _logger);
 
+        // Seconds since the console was built, which is near enough to "since launch" for reading a
+        // log and needs no clock of its own. Stopwatch rather than wall time: it cannot go backwards
+        // when the machine's clock is corrected mid-session. Fully qualified because this type's own
+        // `System` property shadows the namespace.
+        long started = global::System.Diagnostics.Stopwatch.GetTimestamp();
+        System.Clock = () => global::System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
+
         string configDirectory = Path.GetDirectoryName(_settingsPath) ?? SettingsPaths.PortableDirectory;
         BuiltInConsoleCommands.Register(System, new DirectoryConsoleFileSystem(configDirectory));
         GraphicsPresetCommands.Register(System);
@@ -449,7 +456,10 @@ public sealed class DesktopConsole : IDisposable
                 _ => ConsoleSeverity.Output,
             };
 
-            console.Write(new ConsoleLine($"[{category}] {message}", severity));
+            // The category rides beside the text rather than inside it. Formatted in, it could not be
+            // filtered on, it matched every search for the subsystem's name, and it came along when a
+            // line was copied.
+            console.Write(new ConsoleLine(message, severity, category, console.Elapsed));
         }
     }
 }

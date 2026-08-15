@@ -57,6 +57,15 @@ public class VirtualListView : UiElement
     /// <summary>Gets or sets a value indicating whether the scrollbar is drawn when the content overflows.</summary>
     public bool ShowScrollBar { get; set; } = true;
 
+    /// <summary>Gets or sets whether content shorter than the viewport sits at its bottom.</summary>
+    /// <remarks>
+    /// What a console wants and a table does not. With a few lines in a tall window, top-aligned text
+    /// leaves a band of nothing between the newest line and the prompt, and the reader's eye has to
+    /// travel back up to find where the output ended. Growing upwards from the prompt keeps the newest
+    /// line where the next one is about to appear.
+    /// </remarks>
+    public bool AnchorToBottom { get; set; }
+
     /// <summary>Gets or sets whether the list sticks to the end as rows are appended.</summary>
     /// <remarks>
     /// What a log wants: new output should arrive in view, unless the reader has scrolled up to read
@@ -121,7 +130,8 @@ public class VirtualListView : UiElement
             return -1;
         }
 
-        int row = (int)((point.Y - Bounds.Y + _scroll.Value) / RowHeight);
+        float shift = AnchorToBottom ? MathF.Max(0f, Bounds.Height - ContentHeight) : 0f;
+        int row = (int)((point.Y - Bounds.Y - shift + _scroll.Value) / RowHeight);
         return row >= 0 && row < RowCount ? row : -1;
     }
 
@@ -181,6 +191,11 @@ public class VirtualListView : UiElement
         // The row window comes from the animated offset, so a glide reveals rows smoothly rather than
         // holding the old set until it settles.
         float offset = _scroll.Value;
+
+        // Short content is pushed down to meet the bottom edge when the list asks for it. This can
+        // only ever apply while everything fits, so it never fights the scroll offset.
+        float shift = AnchorToBottom ? MathF.Max(0f, Bounds.Height - ContentHeight) : 0f;
+
         int first = Math.Max(0, (int)(offset / RowHeight));
         int last = Math.Min(RowCount - 1, (int)((offset + Bounds.Height) / RowHeight));
 
@@ -188,7 +203,7 @@ public class VirtualListView : UiElement
         {
             var rect = new UiRect(
                 Bounds.X,
-                Bounds.Y + (row * RowHeight) - offset,
+                Bounds.Y + shift + (row * RowHeight) - offset,
                 Bounds.Width,
                 RowHeight);
 

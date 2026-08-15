@@ -219,6 +219,7 @@ public class WindowLayer : UiElement
 
         foreach (UiWindow window in _windows)
         {
+            window.PointerPosition = point;
             window.HoveredRegion = hit is { } h && ReferenceEquals(h.Window, window)
                 ? h.Region
                 : WindowRegion.None;

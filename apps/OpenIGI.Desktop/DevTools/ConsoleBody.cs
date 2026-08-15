@@ -26,7 +26,9 @@ namespace OpenIGI.Desktop;
 public sealed class ConsoleBody : UiElement
 {
     private const float PromptGap = 8f;
-    private const int TimeColumns = 12;
+    // Each column is one wider than its widest content, so the gap between columns is the padding.
+    // "00:00:00.000" is exactly twelve characters and would otherwise touch the category beside it.
+    private const int TimeColumns = 13;
     private const int CategoryColumns = 14;
 
     private readonly ConsoleModel _model;
@@ -47,7 +49,7 @@ public sealed class ConsoleBody : UiElement
 
         _model = model;
         _theme = theme;
-        _log = new VirtualListView(theme.Ui) { StickToEnd = true };
+        _log = new VirtualListView(theme.Ui) { StickToEnd = true, AnchorToBottom = true };
         _log.DrawRow = DrawLogRow;
         AddChild(_log);
     }

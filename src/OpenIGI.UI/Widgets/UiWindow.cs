@@ -33,6 +33,7 @@ public class UiWindow : UiElement
     private readonly Spring _focus = new(0f, smoothTime: 0.10f);
     private readonly Spring _hoverEdge = new(0f, smoothTime: 0.12f);
     private UiElement? _content;
+    private UiVec2 _pointer;
 
     /// <summary>Initializes a new instance of the <see cref="UiWindow"/> class.</summary>
     /// <param name="theme">The theme the chrome draws from.</param>
@@ -95,6 +96,14 @@ public class UiWindow : UiElement
 
     /// <summary>Gets or sets the region the pointer is currently over, so an edge can light before it is grabbed.</summary>
     public WindowRegion HoveredRegion { get; set; }
+
+    /// <summary>Gets or sets where the pointer is, so title-bar buttons can light under it.</summary>
+    /// <remarks>Set by <see cref="WindowLayer"/> each frame; a window never reads a device itself.</remarks>
+    public UiVec2 PointerPosition
+    {
+        get => _pointer;
+        set => _pointer = value;
+    }
 
     /// <summary>Gets or sets the single element filling the window below its title bar.</summary>
     public UiElement? Content
@@ -443,19 +452,42 @@ public class UiWindow : UiElement
         }
     }
 
+    /// <summary>
+    /// Draws the close affordance as a multiplication sign from the window's own font.
+    /// </summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <param name="rect">The button's square.</param>
+    /// <remarks>
+    /// A glyph rather than geometry. Two perpendicular bars are the obvious thing to reach for with no
+    /// line primitive, and they draw a plus sign — which says "add", the opposite of what the button
+    /// does. A real diagonal cross would have to be stepped and would read as ragged at this size, so
+    /// the typeface draws it instead, hinted and centred, for one quad.
+    /// </remarks>
     private void DrawCloseButton(UiPainter painter, UiRect rect)
     {
-        float inset = rect.Width * 0.34f;
-        Bgra32 mark = Theme.TextMuted;
+        bool hovered = (HoveredRegion & WindowRegion.Title) != 0 && rect.Contains(_pointer);
 
-        // A cross drawn from two thin bars: there is no line primitive, and at this size a stepped
-        // diagonal would read as ragged rather than as an X.
-        float thickness = MathF.Max(1f, MathF.Round(painter.Context.Scale));
-        UiVec2 centre = rect.Center;
-        float arm = (rect.Width * 0.5f) - inset;
+        if (hovered)
+        {
+            painter.FillRoundedRect(
+                rect.Deflate(new Thickness(rect.Width * 0.18f)),
+                Surfaces?.Rounded ?? default,
+                Theme.Danger.WithAlpha(150),
+                rect.Width * 0.16f);
+        }
 
-        painter.FillRect(new UiRect(centre.X - arm, centre.Y - (thickness * 0.5f), arm * 2f, thickness), mark);
-        painter.FillRect(new UiRect(centre.X - (thickness * 0.5f), centre.Y - arm, thickness, arm * 2f), mark);
+        float size = rect.Height * 0.5f;
+        UiFont font = Theme.Mono;
+        float width = font.MeasureWidth("×", size);
+
+        painter.DrawText(
+            font,
+            "×",
+            new UiVec2(
+                rect.X + ((rect.Width - width) * 0.5f),
+                rect.Y + ((rect.Height - font.LineHeight(size)) * 0.5f)),
+            size,
+            hovered ? Theme.Text : Theme.TextMuted);
     }
 
     /// <summary>
