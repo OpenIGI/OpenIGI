@@ -60,11 +60,14 @@ public sealed class EnemyDetectorOverlay
     public const int NativeSlotTableOffset = 0x2C44;
     public const int NativeDistanceFieldOffset = 0x2C5C;
 
-    private const int NativeRetentionTicks = 3000;
-    // FUN_00471B60 clamps the activation age to 250 ticks, then passes age*0.004*1.5707 as the
-    // marker rotation and ((1-age*0.004)*10)+1 as its scale to FUN_004B5860.
-    private const int NativeMarkerPulseTicks = 250;
-    private const float NativeMarkerProgressPerTick = 0.0040000002f;
+    // FUN_00471F60 and FUN_00471B60 call Sys_GetTickCount/GetTickCount, so these are milliseconds,
+    // not GameClock simulation ticks. Keep the unit in the name because the detector is fed by the
+    // desktop clock's Now property while the sweep HUD remains simulation-tick driven.
+    private const int NativeRetentionMilliseconds = 3000;
+    // FUN_00471B60 clamps the activation age to 250 milliseconds, then passes age*0.004*1.5707 as
+    // the marker rotation and ((1-age*0.004)*10)+1 as its scale to FUN_004B5860.
+    private const int NativeMarkerPulseMilliseconds = 250;
+    private const float NativeMarkerProgressPerMillisecond = 0.0040000002f;
     private const float NativeMarkerQuarterTurn = 1.5707f;
     private readonly TargetSlot[] _slots = new TargetSlot[SlotCount];
 
@@ -145,7 +148,8 @@ public sealed class EnemyDetectorOverlay
             TargetSlot slot = _slots[index];
             // FUN_00471B60 compares the current tick with slot[7] (+0x1c), which FUN_00471F60
             // refreshes every successful scan. Slot[8] (+0x20) is only the visual entry-pulse origin.
-            if (slot.Occupied && !slot.Active && unchecked(tick - slot.LastSeenTick) > NativeRetentionTicks)
+            if (slot.Occupied && !slot.Active
+                && unchecked(tick - slot.LastSeenTick) > NativeRetentionMilliseconds)
             {
                 _slots[index] = default;
             }
@@ -170,8 +174,8 @@ public sealed class EnemyDetectorOverlay
             // distance-dependent size.
             float width = slot.BoxWidth;
             float height = slot.BoxHeight;
-            int age = Math.Clamp(unchecked(tick - slot.AllocatedTick), 0, NativeMarkerPulseTicks);
-            float progress = age * NativeMarkerProgressPerTick;
+            int age = Math.Clamp(unchecked(tick - slot.AllocatedTick), 0, NativeMarkerPulseMilliseconds);
+            float progress = age * NativeMarkerProgressPerMillisecond;
             boxes.Add(new EnemyOverlayBox(
                 slot.TargetId,
                 slot.ScreenX - (width * 0.5f),

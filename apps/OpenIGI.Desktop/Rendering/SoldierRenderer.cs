@@ -66,6 +66,12 @@ public sealed class SoldierRenderer : IDisposable
     /// </summary>
     private const double HumanGroundProbeDownInUnits = 40960.0;
 
+    /// <summary>
+    /// The normal Human detector's native marker scale. FUN_00471B60 passes the boolean model flag
+    /// as both components of the scale pair consumed by FUN_00470F70; ordinary guards pass one.
+    /// </summary>
+    private const float NativeDetectorMarkerScale = 1f;
+
     private readonly IGraphicsDevice _device;
 
     /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
@@ -507,20 +513,19 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            double dx = targetUnits.X - eyeUnits.X;
-            double dy = targetUnits.Y - eyeUnits.Y;
-            double dz = targetUnits.Z - eyeUnits.Z;
-            float distance = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
-            // FUN_00471B60 submits the human contact point to FUN_00470EC0, then the marker draw
-            // scales its closed rectangle through FUN_00470F70. It does not walk skinned render
-            // vertices. Keep the outline tied to the authoritative collision cylinder so animation
-            // skinning cannot collapse the detector to a dot or make it drift away from a guard.
-            // The collision radius is a half-extent. The detector's closed {-1,+1} rectangle
-            // consumes a full width, so projecting only one radius made the red outline half as
-            // wide as the guard it tracks.
-            float boxWidth = (float)((HumanSeparation.RadiusInUnits * 2d) * screenWidth
+            // FUN_00470EC0 writes the transformed depth into the value passed to FUN_00471F60;
+            // the retail slot's distance is view-space Z, not Euclidean eye-to-target distance.
+            float distance = (float)viewPosition.Z;
+
+            // FUN_00470F70 returns the half-extents for the closed {-1,+1} strip used by
+            // FUN_004B5860: projectionScale * nativeMarkerScale / depth. The old implementation
+            // substituted the gameplay separation cylinder here, which made the marker wider and
+            // taller than retail and made it vary with a collision constant the native detector never
+            // reads. Converting the projected half-size to the full rectangle gives the same
+            // screen-space contract while preserving the authored aspect ratio.
+            float boxWidth = (float)(NativeDetectorMarkerScale * screenWidth
                 / (Math.Max(0.001, viewPosition.Z) * horizontalTangent * WorldScene.UnitsPerMetre));
-            float boxHeight = (float)(HumanSeparation.HeightInUnits * screenHeight
+            float boxHeight = (float)(NativeDetectorMarkerScale * screenHeight
                 / (Math.Max(0.001, viewPosition.Z) * verticalTangent * WorldScene.UnitsPerMetre));
 
             _binocularOverlay.Upsert(

@@ -2839,7 +2839,11 @@ internal sealed partial class DesktopGame : IDisposable
                             sight.TanX,
                             _window.Width,
                             _window.Height,
-                            _loop.Clock.TickCount)
+                            // FUN_00471F60/FUN_00471B60 use Sys_GetTickCount (the retail
+                            // millisecond counter), not the 30 Hz simulation index. Passing
+                            // TickCount here stretched the native 250 ms entry pulse and
+                            // 3000 ms retention window by a factor of thirty-three.
+                            _loop.Clock.Now)
                         : [];
                 bool binocularsOpen = _player is { IsBinocularsOpen: true };
                 if (showFirstPersonHud && _player is { View: { } rig } && !binocularsOpen)
