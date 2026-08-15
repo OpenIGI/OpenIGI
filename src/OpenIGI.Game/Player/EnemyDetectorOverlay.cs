@@ -164,9 +164,9 @@ public sealed class EnemyDetectorOverlay
                 continue;
             }
 
-            // The native pulse helper drives the overlay resource animation/fade.  It does not
-            // resize the projected target geometry.  Box growth comes from the model projection
-            // and therefore changes naturally with distance and the current binocular tangent.
+            // The native primitive rotates and scales the model-projected rectangle during its
+            // 250-tick entry pulse. The underlying projected bounds still determine the contact's
+            // distance-dependent size.
             float width = slot.BoxWidth;
             float height = slot.BoxHeight;
             int age = Math.Clamp(unchecked(tick - slot.ActivatedTick), 0, NativeMarkerPulseTicks);

@@ -454,12 +454,11 @@ public sealed class StatusScreenRenderer : IDisposable
         // widget is a range readout (weapons/strings/Binoculars/range), not a compass strip.
         DrawNativeBinocularRange(batch, screenWidth, screenHeight, targets);
 
-        // RetailBinocularOverlayBuilder (0x00471480) emits two textured horizontal quads through
-        // FUN_004B5860.  Its vertex data is (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5): the
-        // anchors are +/-9.375% of the video width, the texture scale is 1.5625% by 2.0833334%,
-        // and the negative scale on the right mirrors the left quad.  The old port's four short
-        // bars were not the retail geometry and produced the green central block at widescreen
-        // resolutions.
+        // FUN_00471480 emits a sequence of twelve authored quads, then two textured arms and the
+        // full sight axes. The two arms below are the confirmed mirrored pair: their vertex data
+        // is (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5), with anchors at +/-9.375% of video width.
+        // The remaining authored quads are not yet individually mapped, so this renderer must not
+        // be described as a complete primitive-for-primitive reproduction of that function.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
         Bgra32 signal = new(64, 160, 64, 210);

@@ -354,7 +354,7 @@ public sealed class PlayerWeapons
         Step(input);
     }
 
-    /// <summary>Advances the medipack injection and applies its authored per-tick healing factor.</summary>
+    /// <summary>Advances the medipack injection and applies its authored healing factor.</summary>
     /// <param name="health">The health accumulator owned by the player.</param>
     /// <returns><see langword="true"/> when one medipack was consumed.</returns>
     /// <param name="animationProgress">The first-person injection clip progress, from zero to one.</param>
@@ -404,10 +404,10 @@ public sealed class PlayerWeapons
             return false;
         }
 
-        // FUN_00470570 publishes "Factor of human max damage to add" with the native default 0.01.
-        // The medipack task consumes that factor once per simulation update while its action advances;
-        // it is not a fraction of the normalized clip progress. Multiplying by progressDelta made a
-        // complete real medipack animation heal only one percent, instead of the authored per-tick dose.
+        // FUN_00470570 registers the authored "Factor of human max damage to add" value and its
+        // default is 0.01. The exact retail weapon-fire callback that consumes the value is still
+        // being traced, so this call deliberately follows the existing authored-action behavior
+        // rather than claiming an unverified native healing cadence.
         float healed = health.HealFraction(held.Weapon.Weapon.Values[0]);
         if (healed <= 0f)
         {
