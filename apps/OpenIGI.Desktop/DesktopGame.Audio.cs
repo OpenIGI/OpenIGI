@@ -43,6 +43,8 @@ internal sealed partial class DesktopGame
 
     /// <summary>The travelling voice of each door currently in motion.</summary>
     private readonly Dictionary<PlacedDoor, AudioVoiceHandle> _doorVoices = [];
+    private readonly Dictionary<PlacedElevator, AudioVoiceHandle> _elevatorVoices =
+        new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
 
@@ -483,6 +485,17 @@ internal sealed partial class DesktopGame
                 }
             }
         }
+    }
+
+    /// <summary>Plays the retail jump cue on the take-off tick.</summary>
+    /// <remarks>
+    /// Locomotion state 28's entry at <c>0x40BBF7</c> pushes <c>"jump_1"</c> (<c>0x00536DC4</c>)
+    /// into <c>0x4DD750</c>. Like the player's fall and death cues it belongs to the listener, so
+    /// it is not world-panned.
+    /// </remarks>
+    private void PlayJumpSound()
+    {
+        _sounds?.PlayDefinition(PlayerBody.JumpSoundName, priority: 200);
     }
 
     /// <summary>Plays a footstep where it landed.</summary>
@@ -973,6 +986,104 @@ internal sealed partial class DesktopGame
         if (what == DoorSoundEvent.StartedMoving && voice != AudioVoiceHandle.None)
         {
             _doorVoices[door] = voice;
+        }
+    }
+
+    /// <summary>Plays an elevator's start, travel and stop definitions.</summary>
+    /// <remarks>
+    /// The travel definition owns its loop flag.  Elevator::Run starts it through the ordinary
+    /// definition path (IGI.exe 0x43D590), so forcing a loop at this call site can turn an authored
+    /// one-shot into a permanent sound even after its car has stopped.
+    /// </remarks>
+    private void PlayElevatorSound(PlacedElevator elevator, ElevatorSoundEvent what)
+    {
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        if (what == ElevatorSoundEvent.Stopped)
+        {
+            StopElevatorTravelVoice(elevator);
+
+            if (elevator.StopSound.Length > 0)
+            {
+                _sounds.PlayDefinition(elevator.StopSound, elevator.State.Position, priority: 120);
+            }
+
+            return;
+        }
+
+        if (what == ElevatorSoundEvent.Started)
+        {
+            if (elevator.StartSound.Length > 0)
+            {
+                _sounds.PlayDefinition(elevator.StartSound, elevator.State.Position, priority: 120);
+            }
+
+            return;
+        }
+
+        if (elevator.MoveSound.Length > 0)
+        {
+            // A repeat start can happen after a scripted retarget. Retire the old voice first so a
+            // replaced dictionary entry can never leave an untracked, permanently looping sample.
+            StopElevatorTravelVoice(elevator);
+            AudioVoiceHandle voice = _sounds.PlayDefinition(
+                elevator.MoveSound,
+                elevator.State.Position,
+                priority: 120);
+            if (voice.IsValidHandle)
+            {
+                _elevatorVoices[elevator] = voice;
+            }
+        }
+    }
+
+    /// <summary>Stops and forgets the one travel voice currently owned by an elevator.</summary>
+    private void StopElevatorTravelVoice(PlacedElevator elevator)
+    {
+        if (_sounds is not null && _elevatorVoices.Remove(elevator, out AudioVoiceHandle running))
+        {
+            _sounds.Stop(running);
+        }
+    }
+
+    /// <summary>Keeps each retail elevator travel loop attached to the moving car.</summary>
+    private void UpdateElevatorSoundPositions()
+    {
+        if (_sounds is null || _elevators is null)
+        {
+            return;
+        }
+
+        foreach (PlacedElevator elevator in _elevators.Elevators)
+        {
+            if (!_elevatorVoices.TryGetValue(elevator, out AudioVoiceHandle voice))
+            {
+                continue;
+            }
+
+            if (!elevator.State.HasMovementRequest)
+            {
+                // Retail owns this handle from request acceptance through arrival, including the
+                // door-close gate before physical travel (IGI.exe 0x43D58E-0x43D5C8).
+                _sounds.Stop(voice);
+                _elevatorVoices.Remove(elevator);
+                continue;
+            }
+
+            if (!_sounds.IsPlaying(voice))
+            {
+                _elevatorVoices.Remove(elevator);
+                continue;
+            }
+
+            _sounds.SetDefinitionVoicePosition(
+                elevator.MoveSound,
+                voice,
+                elevator.State.Position,
+                priority: 120);
         }
     }
 

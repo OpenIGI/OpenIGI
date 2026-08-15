@@ -21,6 +21,11 @@ public sealed class WorldInteraction
     private Func<bool>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
+    private Action? _onPress;
+    private readonly Vector3d _authoredAnchor;
+    private readonly Vector3d _authoredEnd;
+    private Func<Vector3d>? _dynamicOffset;
+    private Vector3d _offset;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -40,8 +45,8 @@ public sealed class WorldInteraction
     {
         Task = task;
         Type = type;
-        Anchor = anchor;
-        End = end;
+        _authoredAnchor = anchor;
+        _authoredEnd = end;
         Orientation = orientation;
         Facing = facing;
         DurationTicks = durationTicks;
@@ -56,8 +61,8 @@ public sealed class WorldInteraction
 
     public DeclaredTask Task { get; }
     public InteractionActivateType Type { get; }
-    public Vector3d Anchor { get; }
-    public Vector3d End { get; }
+    public Vector3d Anchor => _authoredAnchor + _offset;
+    public Vector3d End => _authoredEnd + _offset;
     public Matrix3f Orientation { get; }
     public float Facing { get; }
     public int DurationTicks { get; }
@@ -254,12 +259,22 @@ public sealed class WorldInteraction
             return true;
         }
 
-        if (Type == InteractionActivateType.Terminal)
+        if (Type is InteractionActivateType.Terminal or InteractionActivateType.Switch)
         {
-            // Terminal::GetActivate (0x443C80) transforms the human-to-magic-vertex-1 delta by
-            // the task's complete orientation. It offers only positive local Y and a 3072-unit
-            // local-X strip. Deriving these axes from Facing reverses the positive side for the
-            // mission-3 keypad authored at gamma 270 degrees.
+            // Terminal::GetActivate (0x443C80) and Switch::GetActivate (0x445730) transform the
+            // human-to-magic-vertex delta by the task's complete orientation. Each offers only
+            // positive local Y and a 3072-unit local-X strip. Deriving these axes from Facing
+            // reverses the positive side for a rotated control (notably the Mission 14 elevator
+            // buttons), placing its activation area beside or behind the visible switch.
+            Vector3d local = Orientation.Transform(from - Anchor);
+            return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
+        }
+
+        if (Type == InteractionActivateType.Switch)
+        {
+            // Switch::GetActivate 0x444500: offer from magic-vertex 0 (already in Anchor).
+            // Local Y is the panel front (orientation column 1); local X is the 3072-unit strip
+            // (DAT_00531890). Facing/sin-cos reverses that side for many authored gammas.
             Vector3d local = Orientation.Transform(from - Anchor);
             return local.Y > 0.0 && Math.Abs(local.X) < 3072.0;
         }
@@ -272,9 +287,9 @@ public sealed class WorldInteraction
 
         return Type switch
         {
-            InteractionActivateType.Switch or InteractionActivateType.Cabinet
+            InteractionActivateType.Cabinet
                 or InteractionActivateType.Generic
-                or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 3072.0,
+                or InteractionActivateType.StationaryGun => inFront > 0.0 && lateral < 8192.0,
             InteractionActivateType.PlaceExplosive => inFront > 0.0,
             _ => true,
         };
@@ -284,6 +299,7 @@ public sealed class WorldInteraction
     {
         Pressed.Value = true;
         _pressedTicks = 3;
+        _onPress?.Invoke();
     }
 
     public void BeginUse()
@@ -324,6 +340,7 @@ public sealed class WorldInteraction
 
     internal void EvaluateConditions()
     {
+        _offset = _dynamicOffset?.Invoke() ?? default;
         IsOn = _onCondition?.Invoke() ?? IsOn;
         IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
         // Door_RunHandler only evaluates the open expression while fully closed and the close
@@ -372,6 +389,10 @@ public sealed class WorldInteraction
         IsOn = on?.Invoke() ?? true;
         IsLocked = locked?.Invoke() ?? false;
     }
+
+    internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
+
+    internal void SetPressHandler(Action handler) => _onPress = handler;
 }
 
 /// <summary>
@@ -391,7 +412,8 @@ public sealed class WorldInteractionRegistry
         GameTask root,
         LoadedMission mission,
         DoorRegistry doors,
-        ScriptVarRegistry variables)
+        ScriptVarRegistry variables,
+        ElevatorRegistry? elevators = null)
     {
         ArgumentNullException.ThrowIfNull(root);
         ArgumentNullException.ThrowIfNull(mission);
@@ -402,7 +424,7 @@ public sealed class WorldInteractionRegistry
         LevelExpressionRuntime expressions = new(variables);
         WorldInteractionRegistry registry = new();
         CollectGenerators(root, registry, variables, expressions);
-        Collect(root, registry, models, doors, variables, expressions);
+        Collect(root, registry, models, doors, variables, expressions, elevators);
         return registry;
     }
 
@@ -524,7 +546,8 @@ public sealed class WorldInteractionRegistry
         IReadOnlyDictionary<string, MefModel> models,
         DoorRegistry doors,
         ScriptVarRegistry variables,
-        LevelExpressionRuntime expressions)
+        LevelExpressionRuntime expressions,
+        ElevatorRegistry? elevators)
     {
         if (ConditionalContainerGate.IsDormant(task))
         {
@@ -585,6 +608,16 @@ public sealed class WorldInteractionRegistry
                 DurationOf(declared, type), SpriteOf(declared, type), door,
                 ReadBool(declared, "Pickable"), stationaryGun,
                 localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
+            if (elevators is not null)
+            {
+                // Interaction anchors, activation radii and player positions are engine units. The
+                // render path uses metres, so do not reuse its converted elevator displacement here.
+                item.SetDynamicOffset(() => elevators.GetCurrentDisplacementInUnits(item.Task));
+                if (type == InteractionActivateType.Switch)
+                {
+                    item.SetPressHandler(() => elevators.RequestFromSwitch(item.Task));
+                }
+            }
             string onExpression = ReadString(declared, "On Expression", ReadString(declared, "On", string.Empty));
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
@@ -609,7 +642,7 @@ public sealed class WorldInteractionRegistry
 
         foreach (GameTask child in task.Children)
         {
-            Collect(child, registry, models, doors, variables, expressions);
+            Collect(child, registry, models, doors, variables, expressions, elevators);
         }
     }
 

@@ -428,6 +428,8 @@ public sealed class PlayerBodyTests
 
         player.Tick(jump, terrain, delta);
         Assert.False(player.IsGrounded);
+        Assert.True(player.TookOffThisTick);
+        Assert.Equal("jump_1", PlayerBody.JumpSoundName);
 
         // The horizontal velocity is the take-off speed, not the animation's. The airborne integrator
         // has no damping, so it survives the tick unchanged.

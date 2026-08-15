@@ -18,6 +18,9 @@ public sealed class WorldInteractionTests
         Assert.True(expressions.EvaluateCondition("TRUE && !FALSE", emptyValue: false));
         Assert.True(expressions.EvaluateCondition(string.Empty, emptyValue: true));
         Assert.False(expressions.EvaluateCondition(string.Empty, emptyValue: false));
+
+        natives.RegisterVariable("Lift.vFloor", new QvmFloatVariable(() => 0.00025, _ => { }));
+        Assert.False(expressions.EvaluateCondition("Lift.vFloor == 0", emptyValue: true));
     }
 
     [Fact]

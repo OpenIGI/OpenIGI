@@ -106,6 +106,15 @@ public sealed class PlayerBody
     /// <summary>Gets the most recently processed landing, or <see langword="null"/> before the first.</summary>
     public HumanFallImpact? LastFallImpact { get; private set; }
 
+    /// <summary>
+    /// True for the tick a grounded jump actually left the floor — state 28's entry at
+    /// <c>0x40BBF7</c> plays <c>jump_1</c> on that edge, not while the key is held.
+    /// </summary>
+    public bool TookOffThisTick { get; private set; }
+
+    /// <summary>The retail take-off cue pushed at <c>0x40BBF7</c> into <c>0x4DD750</c>.</summary>
+    public const string JumpSoundName = "jump_1";
+
     /// <summary>Routes landing presentation and AI-hearing effects to the owning runtime.</summary>
     public void SetFallImpactSink(Action<HumanFallImpact>? sink) => _fallImpactSink = sink;
 
@@ -334,6 +343,7 @@ public sealed class PlayerBody
             Position.Z + SlopeSlide.Z);
 
         bool tookOff = false;
+        TookOffThisTick = false;
 
         if (IsGrounded && command.Jump)
         {
@@ -359,6 +369,7 @@ public sealed class PlayerBody
             InheritedVelocity = default;
             IsGrounded = false;
             tookOff = true;
+            TookOffThisTick = true;
         }
 
         // The airborne integrator does not run on the tick you leave the ground. The jump entry

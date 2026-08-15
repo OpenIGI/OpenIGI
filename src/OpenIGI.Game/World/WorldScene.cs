@@ -183,7 +183,7 @@ public sealed class WorldScene
     /// origin — it is skipped and counted, since a stray object at (0,0,0) drags the level's bounds out
     /// by kilometres and takes the camera with it.
     /// </remarks>
-    public static readonly string[] PositionParameters = ["Position", "Position start", "Holder Position"];
+    public static readonly string[] PositionParameters = ["Position", "Position start", "Start Position", "Holder Position"];
 
     /// <summary>The task parameter naming an object's orientation.</summary>
     public const string OrientationParameter = "Orientation";

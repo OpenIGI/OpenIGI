@@ -262,6 +262,55 @@ public sealed class SoundSystem : IDisposable
             return AudioVoiceHandle.None;
         }
 
+        return Play(definition.BankKey, DefinitionParameters(
+            definition,
+            positionInUnits,
+            gain,
+            priority,
+            pitch,
+            looping));
+    }
+
+    /// <summary>Updates a definition-backed voice without restarting its playback.</summary>
+    /// <remarks>
+    /// Retail's sound update asks the owning task for its current transform every tick. Moving
+    /// platforms therefore carry their looped sound with them; updating only at the start leaves a
+    /// multi-floor elevator's travel sound at the floor where it began.
+    /// </remarks>
+    public void SetDefinitionVoicePosition(
+        string name,
+        AudioVoiceHandle voice,
+        Vector3d positionInUnits,
+        float gain = 1f,
+        int priority = 0,
+        float pitch = 1f,
+        bool? looping = null)
+    {
+        if (Definitions is null
+            || !Definitions.TryResolve(name, out SoundDefinition? definition)
+            || definition is null
+            || !definition.IsPlayable)
+        {
+            return;
+        }
+
+        SetVoiceParameters(voice, DefinitionParameters(
+            definition,
+            positionInUnits,
+            gain,
+            priority,
+            pitch,
+            looping));
+    }
+
+    private static VoiceParameters DefinitionParameters(
+        SoundDefinition definition,
+        Vector3d? positionInUnits,
+        float gain,
+        int priority,
+        float pitch,
+        bool? looping)
+    {
         VoiceParameters parameters = VoiceParameters.Default with
         {
             Gain = definition.Volume * gain,
@@ -270,15 +319,12 @@ public sealed class SoundSystem : IDisposable
             Pitch = pitch,
         };
 
-        if (positionInUnits is { } emitter)
-        {
-            parameters = parameters.At(
+        return positionInUnits is { } emitter
+            ? parameters.At(
                 ToMetres(emitter + definition.Offset),
                 definition.MinimumDistanceMetres,
-                definition.MaximumDistanceMetres);
-        }
-
-        return Play(definition.BankKey, parameters);
+                definition.MaximumDistanceMetres)
+            : parameters;
     }
 
     /// <summary>Determines whether a voice is still sounding.</summary>

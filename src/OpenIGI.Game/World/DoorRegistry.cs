@@ -34,6 +34,40 @@ public sealed record PlacedDoor(
     /// </remarks>
     public bool IsSounding { get; set; }
 
+    /// <summary>Gets the door's closed position in metres — the centre of its opening.</summary>
+    public Vector3d ClosedPosition => new(
+        Position.X / WorldScene.UnitsPerMetre,
+        Position.Y / WorldScene.UnitsPerMetre,
+        Position.Z / WorldScene.UnitsPerMetre);
+
+    /// <summary>Gets the two world-space endpoints of the doorway, spanning the opening.</summary>
+    /// <remarks>
+    /// The doorway spans across the door's local X axis (the width axis) at the closed position. A
+    /// human standing anywhere on this segment is inside the opening and keeps a closing door from
+    /// sealing — the mid-swing blocking ray the retail handler casts between its two child-task
+    /// positions (0x446D10 at 0x447302).
+    /// </remarks>
+    public (Vector3d A, Vector3d B) DoorwaySegment
+    {
+        get
+        {
+            Vector3d across = new(Orientation.Column1.X, Orientation.Column1.Y, Orientation.Column1.Z);
+            double length = across.Length;
+            if (length > 0.0)
+            {
+                across /= length;
+            }
+
+            Vector3d centre = ClosedPosition;
+            Vector3d half = across * DoorwayHalfWidth;
+            return (centre - half, centre + half);
+        }
+    }
+
+    /// <summary>Gets or sets the doorway's half width, in metres, spanning the opening.</summary>
+    /// <remarks>Defaults to a one-metre half width — a body standing in the opening is within it.</remarks>
+    public double DoorwayHalfWidth { get; set; } = 1.0;
+
     /// <summary>Gets the door's current drawable position in metres.</summary>
     public Vector3d DrawPosition
         => DrawPositionAt(State.SlideFraction);
@@ -76,6 +110,7 @@ public sealed class DoorRegistry
 {
     private readonly List<PlacedDoor> _doors = [];
     private Action<PlacedDoor, DoorSoundEvent>? _sounds;
+    private Func<Vector3d, Vector3d, bool>? _doorwayBlocked;
 
     /// <summary>Gets the level's doors.</summary>
     public IReadOnlyList<PlacedDoor> Doors => _doors;
@@ -155,12 +190,42 @@ public sealed class DoorRegistry
     /// </remarks>
     public void SetSoundSink(Action<PlacedDoor, DoorSoundEvent>? sink) => _sounds = sink;
 
+    /// <summary>
+    /// Sets the mid-swing doorway ray: a callback answering whether a human currently stands inside the
+    /// door's opening, or <see langword="null"/> to disable the check.
+    /// </summary>
+    /// <param name="query">
+    /// Called for a closing door each tick, with the two world-space doorway endpoints; returns
+    /// <see langword="true"/> when a human blocks the opening.
+    /// </param>
+    /// <remarks>
+    /// This is the retail handler's doorway ray (0x446D10 at 0x447302): a closing door that finds a
+    /// human standing in its opening is forced back open, so it never seals while somebody is in the
+    /// doorway. The elevator's authored <c>Can start</c> (typically <c>Door.isClosed</c>) therefore
+    /// stays false while the door is blocked, which is how the original keeps a lift from running while
+    /// a human is inside it or blocks its door. The caller owns finding humans — typically the player
+    /// body and the AI soldiers' bodies.
+    /// </remarks>
+    public void SetDoorwayBlockedQuery(Func<Vector3d, Vector3d, bool>? query) => _doorwayBlocked = query;
+
     /// <summary>Advances every door one tick.</summary>
     public void Tick()
     {
         foreach (PlacedDoor door in _doors)
         {
             door.State.Tick();
+
+            // The mid-swing doorway ray: a door that is closing (state 3, moving with the latch clear)
+            // and finds a human in its opening is forced back open instead of sealing — the retail
+            // re-open at 0x447323. This keeps a blocked elevator door from ever reaching isClosed.
+            if (_doorwayBlocked is not null && door.State.UseState == 3)
+            {
+                (Vector3d a, Vector3d b) = door.DoorwaySegment;
+                if (_doorwayBlocked(a, b))
+                {
+                    door.State.CommandOpen();
+                }
+            }
 
             if (_sounds is null)
             {

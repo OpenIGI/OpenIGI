@@ -289,13 +289,15 @@ internal sealed partial class DesktopGame
         // Interactions are level systems, not AI systems: build them even when a mission has no usable
         // navigation graph. The same door objects are shared by player use, AI door hops and collision.
         _doors = DoorRegistry.Build(levelRoot);
-        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables);
+        _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
+        _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
         _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
         world.GenericPickups = _genericPickups;
         solids.GenericPickups = _genericPickups;
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
         _soldiers.UseInteractions(_interactions);
         _soldiers.SetDoors(_doors, solids);
+        _soldiers.SetElevators(_elevators);
 
         // The first genuinely world-positioned sound in the port. Its distances are the definition's
         // own -- ai_death_1 is authored 0 to 50 metres -- so a guard dying across the map is silent
@@ -331,13 +333,16 @@ internal sealed partial class DesktopGame
 
         // Doors: door_open_1 / door_close_1 / door_slide_1 in mission 1, all definition names.
         _doors.SetSoundSink(PlayDoorSound);
+        _doors.SetDoorwayBlockedQuery(DoorwayIsBlockedByHuman);
+        _elevators.SetSoundSink(PlayElevatorSound);
         world.Doors = _doors;
+        world.Elevators = _elevators;
         if (_doors.Doors.Count > 0)
         {
             _logger.Information("World", $"{_doors.Doors.Count} door(s) available to players and AI.");
         }
 
-        EndStage("the doors and the world interactions");
+        EndStage("the doors, elevators and world interactions");
 
         // Camera sight uses the same placed-object + terrain trace as HumanAI. Cameras are level
         // objects, not navigation actors, so construct them independently of whether this mission
@@ -1168,6 +1173,73 @@ internal sealed partial class DesktopGame
         return true;
     }
 
+    /// <summary>
+    /// The mid-swing doorway ray: whether a human currently stands in the opening between the two
+    /// doorway endpoints.
+    /// </summary>
+    /// <param name="from">One end of the doorway segment, in metres.</param>
+    /// <param name="to">The other end of the doorway segment, in metres.</param>
+    /// <remarks>
+    /// This is the player body and every living AI soldier, tested against the doorway segment the
+    /// door spans. The retail ray (0x446D10 at 0x447302) casts across the doorway at roughly body
+    /// height; we test each human's feet against the segment with a generous half-metre radius, which
+    /// finds a body standing in the opening whether it is at waist, chest or head.
+    /// </remarks>
+    private bool DoorwayIsBlockedByHuman(Vector3d from, Vector3d to)
+    {
+        if (HumanStandsInSegment(_player?.Body.Position, from, to))
+        {
+            return true;
+        }
+
+        if (_soldiers is { } soldiers)
+        {
+            foreach (Vector3d feet in soldiers.MapContacts())
+            {
+                if (HumanStandsInSegment(feet, from, to))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether a human's feet (world units) stand within a half metre of the doorway segment (metres).</summary>
+    private static bool HumanStandsInSegment(Vector3d? feetWorld, Vector3d from, Vector3d to)
+    {
+        if (feetWorld is not { } feet)
+        {
+            return false;
+        }
+
+        Vector3d point = new(
+            feet.X / WorldScene.UnitsPerMetre,
+            feet.Y / WorldScene.UnitsPerMetre,
+            feet.Z / WorldScene.UnitsPerMetre);
+        Vector3d closest = ClosestPointOnSegment(from, to, point);
+        return Vector3d.Distance(closest, point) <= 0.5;
+    }
+
+    private static Vector3d ClosestPointOnSegment(Vector3d start, Vector3d end, Vector3d point)
+    {
+        double dx = end.X - start.X;
+        double dy = end.Y - start.Y;
+        double dz = end.Z - start.Z;
+        double lengthSquared = (dx * dx) + (dy * dy) + (dz * dz);
+        if (lengthSquared <= 0.0)
+        {
+            return start;
+        }
+
+        double t = (((point.X - start.X) * dx)
+            + ((point.Y - start.Y) * dy)
+            + ((point.Z - start.Z) * dz)) / lengthSquared;
+        t = Math.Clamp(t, 0.0, 1.0);
+        return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
+    }
+
     private void ReleasePlayedMission()
     {
         _computerOpen = false;
@@ -1236,6 +1308,7 @@ internal sealed partial class DesktopGame
         _worldSolids = null;
         _worldMaterials = null;
         _doors = null;
+        _elevators = null;
         _interactions = null;
         _gunPickups = null;
         _genericPickups = null;

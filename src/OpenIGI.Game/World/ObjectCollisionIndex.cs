@@ -131,6 +131,102 @@ public sealed class ObjectCollisionIndex
         return true;
     }
 
+    /// <summary>Translates every indexed child of a moving parent task.</summary>
+    /// <param name="parent">The parent task whose children are moving.</param>
+    /// <param name="displacementMetres">The incremental world translation in metres.</param>
+    /// <returns>The number of collision entries translated.</returns>
+    public int UpdateDescendantTranslation(GameTask parent, Vector3d displacementMetres) =>
+        UpdateDescendantTranslation(parent, displacementMetres, skip: null);
+
+    /// <summary>Translates indexed children of a moving parent, optionally skipping some owners.</summary>
+    /// <remarks>
+    /// Elevator-owned doors keep an absolute owner transform from their live swing plus the
+    /// car's total offset. Incremental translation of those same doors would write the ride
+    /// twice (IGI.exe parents the door mesh; it does not add the car step on top).
+    /// </remarks>
+    public int UpdateDescendantTranslation(
+        GameTask parent,
+        Vector3d displacementMetres,
+        Func<GameTask, bool>? skip)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        Vector3d units = displacementMetres * WorldScene.UnitsPerMetre;
+        int updated = 0;
+
+        foreach (Entry[] set in new[] { _entries, _playerEntries })
+        {
+            foreach (Entry entry in set)
+            {
+                if (skip?.Invoke(entry.Owner) == true)
+                {
+                    continue;
+                }
+
+                for (GameTask? current = entry.Owner.Parent; current is not null; current = current.Parent)
+                {
+                    if (!ReferenceEquals(current, parent))
+                    {
+                        continue;
+                    }
+
+                    entry.Translate(units);
+                    updated++;
+                    break;
+                }
+            }
+        }
+
+        return updated;
+    }
+
+    /// <summary>
+    /// True when <paramref name="position"/> sits in a collision volume owned by
+    /// <paramref name="ancestor"/> or one of its descendants.
+    /// </summary>
+    /// <remarks>
+    /// Retail Human_SetParent (0x463310) takes the BoneDynCubeObj / ground-hit owner.
+    /// </remarks>
+    public bool IsPointInTaskVolume(Vector3d position, GameTask ancestor)
+    {
+        ArgumentNullException.ThrowIfNull(ancestor);
+        foreach (Entry[] set in new[] { _entries, _playerEntries })
+        {
+            foreach (Entry entry in set)
+            {
+                if (!IsSelfOrDescendant(entry.Owner, ancestor)
+                    || _passable.Contains(entry.Owner)
+                    || !ConditionalContainerGate.IsTaskActive(entry.Owner)
+                    || entry.Radius <= 0.0)
+                {
+                    continue;
+                }
+
+                double dx = position.X - entry.Centre.X;
+                double dy = position.Y - entry.Centre.Y;
+                double dz = position.Z - entry.Centre.Z;
+                if (((dx * dx) + (dy * dy) + (dz * dz)) <= (entry.Radius * entry.Radius))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsSelfOrDescendant(GameTask owner, GameTask ancestor)
+    {
+        for (GameTask? current = owner; current is not null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, ancestor))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Updates one model placement owned by a multi-model task.</summary>
     /// <param name="owner">The task owning the placement.</param>
     /// <param name="instanceName">The exact pack-instance name to move.</param>
@@ -262,6 +358,45 @@ public sealed class ObjectCollisionIndex
         }
     }
 
+    /// <summary>
+    /// Gets whether a placement is an invisible elevator-shaft collision volume (instance name
+    /// <c>colbox*</c>, task class <c>EditRigidObj</c>). These authored boxes sit at every elevator
+    /// doorway. Retail does not register them for the human trace — the player boards a lift with its
+    /// door open and the door's own leaf provides the closed-state block — so keeping them solid to
+    /// the player blocks boarding (observed as the "can't enter the cab" bug on M3/M8). They remain in
+    /// the default world collision (level zero) so bullets and visibility still respect them.
+    /// </summary>
+    /// <param name="instanceName">The placement's instance name.</param>
+    /// <returns><see langword="true"/> when the object is an elevator-shaft collision volume.</returns>
+    private static bool IsElevatorShaftVolume(string instanceName) =>
+        instanceName.StartsWith("colbox", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Gets whether any placement is owned by a task descended from an <c>Elevator</c> task.
+    /// </summary>
+    /// <remarks>
+    /// The engine excludes elevator-shaft collision boxes from the human trace so the player can board
+    /// a lift, but only on levels that actually contain elevator machinery. Levels without elevators
+    /// (M9/M10) author <c>colbox*</c> objects as ordinary static collision the player must hit, so this
+    /// level-wide check keeps those solid rather than letting the player walk through them.
+    /// </remarks>
+    private static bool HasElevatorTask(List<WorldPlacement> placements)
+    {
+        foreach (WorldPlacement placement in placements)
+        {
+            for (GameTask? current = placement.Owner; current is not null; current = current.Parent)
+            {
+                if (current is DeclaredTask declared
+                    && string.Equals(declared.Type.Name, "Elevator", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>Builds an index over a scene's placements.</summary>
     /// <param name="placements">The level's placed objects.</param>
     /// <returns>The index; empty when nothing placed carries collision geometry.</returns>
@@ -274,11 +409,14 @@ public sealed class ObjectCollisionIndex
     {
         ArgumentNullException.ThrowIfNull(placements);
 
+        List<WorldPlacement> all = placements.ToList();
+        bool hasElevator = HasElevatorTask(all);
+
         List<Entry> entries = [];
         List<Entry> playerEntries = [];
         Dictionary<MefModel, (MefCollisionMesh? Default, MefCollisionMesh? Player)> cache = [];
 
-        foreach (WorldPlacement placement in placements)
+        foreach (WorldPlacement placement in all)
         {
             if (!cache.TryGetValue(placement.Model, out var meshes))
             {
@@ -309,7 +447,8 @@ public sealed class ObjectCollisionIndex
                     placement.Owner, placement));
             }
 
-            if (meshes.Player is { Faces.Count: > 0 } playerMesh)
+            MefCollisionMesh? playerMesh = meshes.Player;
+            if (playerMesh is { Faces.Count: > 0 } && !(hasElevator && IsElevatorShaftVolume(placement.Instance.Name)))
             {
                 playerEntries.Add(Entry.Create(
                     playerMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
@@ -336,6 +475,18 @@ public sealed class ObjectCollisionIndex
     /// </remarks>
     public bool TryCastForPlayer(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         Cast(_playerEntries, origin, end, honourPassable: true, out hit);
+
+    /// <summary>
+    /// Gets whether the human object trace still contains an entry for the named placed instance.
+    /// </summary>
+    /// <remarks>
+    /// Lets tests assert the elevator-shaft <c>colbox*</c> exclusion is scoped to levels that actually
+    /// have elevators: an elevator level must <em>not</em> contain the shaft volumes in its player
+    /// entries, while a level without elevator machinery must still keep its <c>colbox*</c> solid.
+    /// </remarks>
+    public bool ContainsPlayerEntry(string instanceName) =>
+        _playerEntries.Any(entry =>
+            string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Casts a rich request at the indexed placed objects.</summary>
     public bool TryTrace(in WorldTraceRequest request, out WorldTraceHit hit)
@@ -575,6 +726,63 @@ public sealed class ObjectCollisionIndex
         return found;
     }
 
+    /// <summary>Casts a ray along the human collision trace and names the object it meets.</summary>
+    /// <param name="origin">Where the ray starts, in world units.</param>
+    /// <param name="end">Where it stops.</param>
+    /// <param name="label">Receives the struck object's instance name (and placing task).</param>
+    /// <param name="owner">Receives the struck object's placing task.</param>
+    /// <param name="hit">Receives the nearest contact.</param>
+    /// <returns><see langword="false"/> when the ray reaches its end unobstructed.</returns>
+    /// <remarks>
+    /// The player trace (collision mesh level one) can contain volumes invisible to the default world
+    /// trace — elevator-shaft boxes, door leaves — so this reports who blocks a human body the way
+    /// <see cref="TryIdentify"/> reports who blocks a world ray.
+    /// </remarks>
+    public bool TryIdentifyForPlayer(Vector3d origin, Vector3d end, out string label, out GameTask? owner, out WorldRayHit hit)
+    {
+        hit = default;
+        label = string.Empty;
+        owner = null;
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double length = Math.Sqrt((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return false;
+        }
+
+        double nearest = double.MaxValue;
+        bool found = false;
+
+        foreach (Entry entry in _playerEntries)
+        {
+            if (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))
+            {
+                continue;
+            }
+
+            if (!MeetsSphere(origin, direction, entry.Centre, entry.Radius))
+            {
+                continue;
+            }
+
+            if (entry.TryCast(
+                origin,
+                direction,
+                ref nearest,
+                useClosedTransform: false,
+                out WorldRayHit candidate))
+            {
+                hit = candidate;
+                label = entry.Label;
+                owner = entry.Owner;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
     private static bool MeetsSphere(Vector3d origin, Vector3d direction, Vector3d centre, double radius)
     {
         double ox = origin.X - centre.X;
@@ -643,7 +851,7 @@ public sealed class ObjectCollisionIndex
 
         public Vector3d Centre { get; private set; }
 
-        public Vector3d ClosedCentre { get; }
+        public Vector3d ClosedCentre { get; private set; }
 
         public double Radius { get; }
 
@@ -736,6 +944,19 @@ public sealed class ObjectCollisionIndex
 
             Vector3f centre = rotation.Transform(_rootCentre);
             Centre = new Vector3d(origin.X + centre.X, origin.Y + centre.Y, origin.Z + centre.Z);
+            IsDynamic = true;
+        }
+
+        public void Translate(Vector3d displacementUnits)
+        {
+            for (int i = 0; i < _vertices.Length; i++)
+            {
+                _vertices[i] += displacementUnits;
+                _closedVertices[i] += displacementUnits;
+            }
+
+            Centre += displacementUnits;
+            ClosedCentre += displacementUnits;
             IsDynamic = true;
         }
 

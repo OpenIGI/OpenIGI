@@ -211,6 +211,7 @@ internal sealed partial class DesktopGame : IDisposable
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
     private DoorRegistry? _doors;
+    private ElevatorRegistry? _elevators;
     private WorldInteractionRegistry? _interactions;
     private GunPickupRegistry? _gunPickups;
     private GenericPickupRegistry? _genericPickups;
@@ -1617,6 +1618,36 @@ internal sealed partial class DesktopGame : IDisposable
             // exclusive outcomes - a render is not a tick - so including Render here stepped the player
             // once per drawn frame as well, and at an uncapped frame rate that is several times 30 Hz.
             // The player then moved as fast as the display was quick, which is exactly what it looked like.
+            if (outcome is FrameOutcome.Tick && _elevators is { } elevators)
+            {
+                // Feed the player's current position to the elevators so their start gate can refuse
+                // to move an empty car or one with an open door. Provider is read every tick.
+                elevators.SetPlayerPositionProvider(_player is { } p ? () => p.Body.Position : null);
+                elevators.Tick();
+                UpdateElevatorSoundPositions();
+                if (_worldSolids is { } elevatorSolids)
+                {
+                    elevators.ApplyCollision(elevatorSolids);
+                }
+
+                if (_playerMode && _player is { } passenger
+                    && elevators.TryGetPassengerDisplacement(
+                        passenger.Body.Position, _worldSolids, out Vector3d displacement))
+                {
+                    passenger.Body.Position += displacement;
+                }
+            }
+
+            // The player cannot jump while standing inside an elevator cab. The elevator registry knows
+            // the player's position (fed above), so it can report whether they're inside.
+            if (_player is { } playerWithJump)
+            {
+                playerWithJump.CanJump = _elevators is { } jumpElevators
+                    ? (Func<bool>)(() => !jumpElevators.IsPlayerInsideElevator(
+                        playerWithJump.Body.Position, out _))
+                    : null;
+            }
+
             if (outcome is FrameOutcome.Tick
                 && _cutscenes?.IsPlaying != true
                 && _playerMode && _player is not null)
@@ -1654,6 +1685,12 @@ internal sealed partial class DesktopGame : IDisposable
                     // events rather than through the weapon record. The rig advanced inside Player.Tick,
                     // so its crossed-event interval is ready to dispatch here.
                     PlayPlayerAnimationSounds();
+
+                    // State 28's entry (0x40BBF7) plays jump_1 through 0x4DD750 on the take-off tick.
+                    if (_player.Body.TookOffThisTick)
+                    {
+                        PlayJumpSound();
+                    }
 
                     // And the player's own feet. Positional like anyone else's, and placed where the
                     // foot landed rather than on the listener, because the sound belongs to the ground.
@@ -1741,6 +1778,9 @@ internal sealed partial class DesktopGame : IDisposable
                 }
             }
 
+            // Lifts advance before perception and AI consume this tick's player position. A passenger
+            // standing on the previous platform sample receives the same displacement, which keeps the
+            // body, camera and collision contact together while the platform travels.
             // The soldiers' rigs advance on the tick, not on the render, so their animation runs at the
             // engine's fixed 30 Hz whatever the frame rate is - the determinism contract's whole point.
             //

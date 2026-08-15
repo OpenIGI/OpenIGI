@@ -114,6 +114,7 @@ public sealed class SoldierRenderer : IDisposable
     // The level's doors: ticked here (their update runs on the task pass, before the AIs), queried by
     // each walker's door hop, and switched out of the collision index while they stand open.
     private DoorRegistry? _doors;
+    private ElevatorRegistry? _elevators;
     private ObjectCollisionIndex? _solids;
 
     /// <summary>Gets whether any authored alarm control is sounding on the current simulation tick.</summary>
@@ -136,6 +137,10 @@ public sealed class SoldierRenderer : IDisposable
         // Soldier tick. Ground registration must wait for that publication; probing the build-time
         // placement here can mistake a nearby dormant vehicle for the actor's support.
     }
+
+    /// <summary>Gives the renderer the level's moving elevators.</summary>
+    /// <param name="elevators">The elevator registry, or <see langword="null"/>.</param>
+    public void SetElevators(ElevatorRegistry? elevators) => _elevators = elevators;
 
     /// <summary>Publishes a player-used task to alarm and AI activation conditions.</summary>
     public void ActivateTask(int taskId) => _activatedTasks.Add(taskId);
@@ -2070,15 +2075,28 @@ public sealed class SoldierRenderer : IDisposable
             {
                 foreach (PlacedDoor door in doors.Doors)
                 {
-                    // Closed/open doors spend nearly all their life stationary. Their indexed collision
-                    // already has that pose, so only touch transformed vertices while a channel moved.
-                    if (door.State.TransformChangedThisTick)
+                    // A fully-open door is passable regardless of how its leaf is authored to clear the
+                    // opening. Sliding leaves (nonzero Stop*) are moved out of the way by UpdateTransform
+                    // below, but cab doors that animate inside their model (Stop* == 0, e.g. Elevator_330's
+                    // leaves) never change placement, so their static mesh would keep the doorway solid for
+                    // ever; toggling passability on the open state makes both kinds behave like retail.
+                    solids.SetPassable(door.Task, door.State.IsFullyOpen);
+
+                    // Closed/open doors spend nearly all their life stationary, unless they ride a
+                    // moving elevator: keep collision synchronized with the rendered displacement.
+                    Vector3d elevatorOffset = _elevators?.GetCurrentDisplacement(door.Task) ?? default;
+                    if (door.State.TransformChangedThisTick || elevatorOffset != default)
                     {
-                        solids.UpdateTransform(door.Task, door.DrawPosition, door.DrawOrientation);
+                        solids.UpdateTransform(
+                            door.Task, door.DrawPosition + elevatorOffset, door.DrawOrientation);
                     }
                 }
             }
         }
+
+        // Elevator and non-door child collision is applied in DesktopGame immediately after
+        // elevators.Tick(), before passenger carry and Settle. Re-applying descendant translation
+        // here wrote elevator-owned doors twice.
 
         // Child Train collision starts at its authored placeholder and receives its derived consist
         // transform from DesktopGame immediately before this tick. Retry registration here so the

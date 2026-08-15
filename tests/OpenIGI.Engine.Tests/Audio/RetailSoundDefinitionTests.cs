@@ -209,6 +209,26 @@ public sealed class RetailSoundDefinitionTests
         Assert.Equal(50f, played.MaximumDistance);
     }
 
+    [RequiresGameDataFact]
+    public void UpdatingADefinitionVoiceMovesItsEmitterWithoutRestartingIt()
+    {
+        VirtualFileSystem fileSystem = BuildFileSystem();
+        SoundBank bank = new(fileSystem, null);
+        bank.MountDirectory("LOCAL:common/sounds");
+
+        RecordingAudioDevice device = new();
+        SoundSystem sounds = new(device, bank, fileSystem, null) { Definitions = Load() };
+        AudioVoiceHandle voice = sounds.PlayDefinition("ai_death_1", new(0, 0, 0), priority: 120, looping: true);
+
+        sounds.SetDefinitionVoicePosition("ai_death_1", voice, new(4096 * 3, 0, 0), priority: 120, looping: true);
+
+        Assert.Single(device.Played);
+        Assert.True(sounds.IsPlaying(voice));
+        VoiceParameters current = Assert.NotNull(device.Current(voice));
+        Assert.Equal(3.0, current.Position.X, 6);
+        Assert.True(current.Looping);
+    }
+
     private static void Walk(IReadOnlyList<SoundDefinition> definitions, List<SoundDefinition> into)
     {
         foreach (SoundDefinition definition in definitions)

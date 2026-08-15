@@ -40,7 +40,11 @@ public sealed class LevelExpressionRuntime
             _cache[source] = expression;
         }
 
-        return expression is not null && new ScriptExpressionEvaluator(_context).EvaluateCondition(expression);
+        // Task condition slots are evaluated by sub_4F16E0, which calls Expr_EvalFloat
+        // (IGI.exe 0x4F1725 -> 0x4B9660). Using the integer walk here truncates a departing
+        // elevator's fractional vFloor to its old floor and immediately reopens that landing door.
+        return expression is not null
+            && new ScriptExpressionEvaluator(_context).EvaluateReal(expression) != 0.0;
     }
 
     /// <summary>Evaluates an authored integer expression; an empty expression uses the caller's default.</summary>
