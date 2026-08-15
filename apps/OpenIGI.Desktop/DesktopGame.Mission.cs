@@ -662,6 +662,21 @@ internal sealed partial class DesktopGame
             else
             {
                 _logger.Warning("Ai", $"No nav graph under '{graphDirectory}', so no soldier will patrol.");
+
+                // A missing patrol graph only removes movement.  Retail still registers every
+                // HumanAI as a live human: it can stand, be seen and be selected by the binocular
+                // detector.  Leaving Animate inside the graphs-present branch rendered the guards
+                // but left _brains empty, so BinocularTargets had no contacts to project at all.
+                AiDifficulty effectiveDifficulty = _options.Difficulty
+                    ?? (AiDifficulty)Math.Clamp(
+                        _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
+                        (int)AiDifficulty.Easy,
+                        (int)AiDifficulty.Hard);
+                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace);
+                _soldiers.Animate(
+                    graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
+                    _loop.Variables);
+                EndStage("registering stationary soldiers' brains");
             }
         }
         catch (Exception ex) when (ex is IOException or GraphFormatException)
