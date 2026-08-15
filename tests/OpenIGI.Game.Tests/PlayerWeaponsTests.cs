@@ -379,6 +379,42 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void HeldMedipackDoesNotRestartItsLoopForEachCooldownDose()
+    {
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 3);
+        Equip(weapons);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        PlayerInputState input = new();
+        PlayerInputFrame fire = Frame(PlayerInputSlot.Fire);
+
+        Tick(weapons, input, fire);
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Tick(weapons, input, fire, clipEnded: true);
+        Assert.Equal(WeaponAction.MedipackLoop, weapons.RequestedAction);
+        Assert.True(weapons.TryUseMedipack(health));
+
+        // The native handler keeps the same looping clip alive while Human+0xD6C counts down. A
+        // cooldown tick must therefore raise no new animation action; replaying FireAnimation2 here
+        // would reset the clip to its first frame and make the syringe look like one-shot doses.
+        int cooldown = GunTiming.TicksPerRound(Medipack.RoundsPerMinute);
+        for (int tick = 0; tick < cooldown; tick++)
+        {
+            Tick(weapons, input, fire, clipEnded: true);
+            Assert.Null(weapons.RequestedAction);
+            Assert.Equal(HumanWeaponState.Medipack, weapons.State);
+            Assert.False(weapons.TryUseMedipack(health));
+        }
+
+        Tick(weapons, input, fire, clipEnded: true);
+        Assert.Null(weapons.RequestedAction);
+        Assert.True(weapons.TryUseMedipack(health));
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+    }
+
+    [Fact]
     public void EmptyMedipackReserveCannotBeConsumedAndActionReturnsReady()
     {
         PlayerWeapons weapons = new([31]);

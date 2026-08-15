@@ -156,6 +156,17 @@ public sealed class StatusScreenRendererTests
                     && vertex.Color.R == 220
                     && vertex.Color.A == 235) >= 16);
 
+        var markerVertices = device.Draws
+            .SelectMany(draw => draw.Vertices)
+            .Where(vertex => vertex.Color.B == 32
+                && vertex.Color.G == 32
+                && vertex.Color.R == 220
+                && vertex.Color.A == 235)
+            .ToArray();
+        Assert.True(markerVertices.Length >= 16);
+        Assert.InRange(markerVertices.Max(vertex => vertex.X) - markerVertices.Min(vertex => vertex.X), 39f, 45f);
+        Assert.InRange(markerVertices.Max(vertex => vertex.Y) - markerVertices.Min(vertex => vertex.Y), 79f, 85f);
+
         // FUN_004B5860 uses the native vertex strip and 1.5625% x 2.0833334% scales. At
         // 640x480 that produces the two 15x50 horizontal quads at x=240 and x=385.
         Assert.Contains(

@@ -1652,22 +1652,16 @@ public sealed class PlayerCamera
 
         _weapons.Tick(_input, _view?.ClipEnded ?? false, _body.IsGrounded, locomotion);
 
-        bool medipackNoHealAtFullHealth = false;
         if (_weapons.State == HumanWeaponState.Medipack)
         {
             float progress = _view?.ClipProgress ?? 0f;
-            bool medipackUsed = _weapons.TryUseMedipack(_body.Health, progress);
-            medipackNoHealAtFullHealth =
-                !medipackUsed && !_weapons.MedipackUsedThisTick && _view is not null
-                && _body.Health.RemainingFraction >= 0.999f;
-            if (medipackNoHealAtFullHealth && _weapons.InHand is { } enteredMedipackWeapon)
-            {
-                PlayWeaponAction(enteredMedipackWeapon.Weapon, WeaponAction.Stand);
-            }
+            // The medipack task owns both its entry/loop action and the terminal FireAnimation3
+            // request. In particular, full health is a terminal condition for the task, not a
+            // reason for the presentation layer to replace the newly requested clip with Stand.
+            _ = _weapons.TryUseMedipack(_body.Health, progress);
         }
 
-        if (_weapons.InHand is { } held && _weapons.RequestedAction is { } action
-            && !medipackNoHealAtFullHealth)
+        if (_weapons.InHand is { } held && _weapons.RequestedAction is { } action)
         {
             PlayWeaponAction(held.Weapon, action, _weapons.RequestedFireVariant);
         }
