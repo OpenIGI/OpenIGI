@@ -408,6 +408,20 @@ public sealed class DeveloperConsole : IDisposable
                 };
 
                 window.IsOpen = wanted;
+
+                // The two pinnable panels take their visibility from a variable whenever the console
+                // is shut, so showing one through this command has to set that variable too. Without
+                // it, `con_panel watch on` would work until the console was closed and then lose the
+                // panel, which reads as the command not having stuck.
+                if (string.Equals(name, WatchPanel, StringComparison.OrdinalIgnoreCase))
+                {
+                    DevConsoleCVars.WatchVisible.Value = wanted;
+                }
+                else if (string.Equals(name, StatsPanel, StringComparison.OrdinalIgnoreCase))
+                {
+                    DevConsoleCVars.StatsVisible.Value = wanted;
+                }
+
                 if (wanted)
                 {
                     _layer?.Raise(window);
