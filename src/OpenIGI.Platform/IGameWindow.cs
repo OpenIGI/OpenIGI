@@ -67,6 +67,21 @@ public interface IGameWindow : IDisposable
     /// </remarks>
     bool CursorLocked { get; set; }
 
+    /// <summary>Gets or sets the system clipboard's text.</summary>
+    /// <remarks>
+    /// <para>
+    /// On the window because the clipboard belongs to the windowing system, not to the input devices:
+    /// the platform backend already owns the handle that reaches it, and putting it here keeps every
+    /// layer above free of a platform reference. A host that cannot reach a clipboard returns an empty
+    /// string and discards what is set, so a caller never has to ask whether one exists.
+    /// </para>
+    /// <para>
+    /// Reading is a synchronous call into the window system and is not free; read it when a paste is
+    /// actually asked for rather than polling it.
+    /// </para>
+    /// </remarks>
+    string ClipboardText { get; set; }
+
     /// <summary>Gets a value indicating whether the window has input focus.</summary>
     /// <remarks>
     /// The original releases every key when its input device cannot be read, which is what focus loss

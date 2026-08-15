@@ -331,6 +331,12 @@ internal sealed partial class DesktopGame : IDisposable
         // mirrored into its scrollback, so opening it shows the log rather than an empty panel.
         using DesktopConsole console = new(_device, _logger);
         console.QuitRequested += (_, _) => running = false;
+
+        // The console reaches the system clipboard through the window, which is what owns the handle,
+        // rather than taking a platform reference of its own.
+        console.View.ReadClipboard = () => _window.ClipboardText;
+        console.View.WriteClipboard = text => _window.ClipboardText = text;
+
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
 
@@ -1046,6 +1052,18 @@ internal sealed partial class DesktopGame : IDisposable
             console.Update(_window.Input, Math.Clamp((consoleNow - lastConsoleMilliseconds) / 1000f, 0f, 0.25f));
             lastConsoleMilliseconds = consoleNow;
 
+            // Key bindings fire here, with the console shut. The bind table, the `bind` command and
+            // their tests have existed since the console was written, but nothing ever asked the table
+            // whether a key had been pressed -- so a binding could be declared and saved and would
+            // never once fire. Skipped during a capture run, whose input must stay exactly scripted.
+            if (!console.IsOpen && !console.IsolatedFromSavedSettings && !_window.Input.Captured)
+            {
+                while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode boundKey))
+                {
+                    console.System.ExecuteBind(BindKeyNames.NameOf(boundKey));
+                }
+            }
+
             // The cinematic shell reads the frame's input after the console and, like it, marks the frame
             // captured so the free camera and the game beneath see an idle keyboard and pad. When the console
             // is open it owns the frame and the shell only advances its animation.
@@ -1484,7 +1502,19 @@ internal sealed partial class DesktopGame : IDisposable
                 _deathCamera.LookSettings = look;
                 interactionCamera.LookSettings = look;
 
-                if (pauseMenu)
+                if (console.WantsPointer)
+                {
+                    // The developer console is a pointer-driven tool: its panels are dragged and
+                    // resized. This branch comes first and is repeated every pass for the same reason
+                    // the pause menu's is -- the lock below would otherwise be re-asserted a frame
+                    // later and the cursor would snap back to the centre under the reader's hand.
+                    // HoldStill matters just as much here: taking the cursor back on close warps the
+                    // pointer, and without re-arming the settling frame that warp is read as aim.
+                    _player?.HoldStill();
+                    _window.CursorLocked = false;
+                    _window.CursorVisible = true;
+                }
+                else if (pauseMenu)
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
                     // release is repeated every pass rather than done once on the way in, so nothing can
@@ -3474,7 +3504,10 @@ internal sealed partial class DesktopGame : IDisposable
             }
 
             // The console goes over everything, including the menus, so it is the last thing drawn.
-            if (console.IsOpen)
+            // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up
+            // with the console shut. It is false during a capture run whatever the reader pinned, so a
+            // pinned overlay can never leak into a reference screenshot and break the vanilla gate.
+            if (console.WantsDraw)
             {
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);

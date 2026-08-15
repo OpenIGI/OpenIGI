@@ -61,6 +61,14 @@ public sealed class ConsoleModel : IConsoleOutput
     /// <summary>Gets the filter deciding which scrollback lines are shown.</summary>
     public ConsoleLogFilter Filter { get; } = new();
 
+    /// <summary>Gets the console this view drives.</summary>
+    /// <remarks>
+    /// Exposed so a view can ask what a token means as it is typed — colouring the first word by
+    /// whether it resolves to a command, a variable or nothing at all needs the registries, and going
+    /// back to the shell for them would mean every host wiring the same lookup by hand.
+    /// </remarks>
+    public ConsoleSystem Console => _console;
+
     /// <summary>Gets how many lines are kept before the oldest are dropped.</summary>
     public int ScrollbackCapacity { get; }
 
@@ -327,6 +335,21 @@ public sealed class ConsoleModel : IConsoleOutput
 
     /// <summary>Drops the highlight without changing the input.</summary>
     public void ClearSuggestion() => _suggestionIndex = -1;
+
+    /// <summary>Highlights a candidate outright, as clicking one does.</summary>
+    /// <param name="index">The index to highlight, or -1 to highlight nothing.</param>
+    /// <returns><see langword="true"/> when the index named a candidate.</returns>
+    public bool SelectSuggestion(int index)
+    {
+        if (index < 0 || index >= _richSuggestions.Count)
+        {
+            _suggestionIndex = -1;
+            return false;
+        }
+
+        _suggestionIndex = index;
+        return true;
+    }
 
     /// <summary>Replaces the token being typed with the highlighted candidate.</summary>
     /// <returns><see langword="true"/> when a candidate was applied.</returns>
