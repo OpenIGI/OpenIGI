@@ -437,21 +437,16 @@ public sealed class StatusScreenRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
 
-        // The status archive also contains a small weapon icon with this filename. The native
-        // binocular task uses the common/global 256x256 device frame, so resolve this one from the
-        // global sprite archive or the result collapses into the green pixelated icon reported in-game.
+        // Retail draws the binoculars.spr frame fullscreen, stretched to the
+        // full video dimensions (like the sniper scope quadrants), not as a
+        // centred 256×256 status icon. At 640×480 the retail glass therefore
+        // fills the screen edge to edge.
         if (GlobalSprite("binoculars.spr") is { } frameResource && frameResource.Asset.Frames.Count > 0)
         {
             SpriteFrame frame = frameResource.Asset.Frames[0];
-            float scale = UiScale.For(screenWidth, screenHeight);
-            frameResource.DrawFrame(
-                batch,
-                frame,
-                (screenWidth - (frame.Width * scale)) * 0.5f,
-                (screenHeight - (frame.Height * scale)) * 0.5f,
-                scale,
-                scale,
-                BitmapTextRenderer.NeutralColor);
+            float scaleX = (float)screenWidth / Math.Max(1, frame.Width);
+            float scaleY = (float)screenHeight / Math.Max(1, frame.Height);
+            frameResource.DrawFrame(batch, frame, 0f, 0f, scaleX, scaleY, BitmapTextRenderer.NeutralColor);
         }
 
         // RetailBinocularUpdater (0x0051A8C0) updates the holder's path; the overlay builder at

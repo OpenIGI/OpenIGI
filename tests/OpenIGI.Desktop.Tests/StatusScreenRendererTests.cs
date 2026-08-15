@@ -116,10 +116,10 @@ public sealed class StatusScreenRendererTests
         Assert.NotEmpty(device.Draws);
         RecordingGraphicsDevice.DrawCall frameDraw = device.Draws[0];
         Assert.NotEqual(TextureHandle.None, frameDraw.Texture);
-        Assert.Equal(192f, frameDraw.Vertices[0].X, 3);
-        Assert.Equal(112f, frameDraw.Vertices[0].Y, 3);
-        Assert.Equal(256f, frameDraw.Vertices[1].X - frameDraw.Vertices[0].X, 3);
-        Assert.Equal(256f, frameDraw.Vertices[3].Y - frameDraw.Vertices[0].Y, 3);
+        Assert.Equal(0f, frameDraw.Vertices[0].X, 3);
+        Assert.Equal(0f, frameDraw.Vertices[0].Y, 3);
+        Assert.Equal(640f, frameDraw.Vertices[1].X - frameDraw.Vertices[0].X, 3);
+        Assert.Equal(480f, frameDraw.Vertices[3].Y - frameDraw.Vertices[0].Y, 3);
 
         Assert.Contains(
             device.Draws,
@@ -167,10 +167,10 @@ public sealed class StatusScreenRendererTests
         batch.End();
 
         RecordingGraphicsDevice.DrawCall scaledFrame = device.Draws[0];
-        Assert.Equal(704f, scaledFrame.Vertices[0].X, 3);
-        Assert.Equal(284f, scaledFrame.Vertices[0].Y, 3);
-        Assert.Equal(512f, scaledFrame.Vertices[1].X - scaledFrame.Vertices[0].X, 3);
-        Assert.Equal(512f, scaledFrame.Vertices[3].Y - scaledFrame.Vertices[0].Y, 3);
+        Assert.Equal(0f, scaledFrame.Vertices[0].X, 3);
+        Assert.Equal(0f, scaledFrame.Vertices[0].Y, 3);
+        Assert.Equal(1920f, scaledFrame.Vertices[1].X - scaledFrame.Vertices[0].X, 3);
+        Assert.Equal(1080f, scaledFrame.Vertices[3].Y - scaledFrame.Vertices[0].Y, 3);
     }
 
     [Fact]
