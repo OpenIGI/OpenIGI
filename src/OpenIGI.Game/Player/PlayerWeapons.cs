@@ -98,7 +98,6 @@ public sealed class PlayerWeapons
     private bool _medipackAwaitingRelease;
     private bool _medipackEffectStarted;
     private bool _medipackClipCompletionPending;
-    private float _medipackAppliedProgress;
     private WeaponAction _locomotionAction = WeaponAction.Stand;
     private int _categoryPick = -1;
     private bool _swapped;
@@ -354,7 +353,7 @@ public sealed class PlayerWeapons
         Step(input);
     }
 
-    /// <summary>Advances the medipack injection and applies its authored healing factor.</summary>
+    /// <summary>Executes the medipack injection at its authored animation event.</summary>
     /// <param name="health">The health accumulator owned by the player.</param>
     /// <returns><see langword="true"/> when one medipack was consumed.</returns>
     /// <param name="animationProgress">The first-person injection clip progress, from zero to one.</param>
@@ -378,7 +377,7 @@ public sealed class PlayerWeapons
         }
 
         animationProgress = Math.Clamp(animationProgress, 0f, 1f);
-        if (animationProgress <= _medipackAppliedProgress)
+        if (animationProgress <= 0f)
         {
             if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
             {
@@ -397,46 +396,36 @@ public sealed class PlayerWeapons
             : held.Gun.RoundsInClip;
         bool hasClipPack = clip > 0;
         bool hasReservePack = Ammunition.Count(ammoId) > 0;
-        if ((!_medipackEffectStarted && !hasClipPack && !hasReservePack)
-            || held.Weapon.Weapon.Values.Count == 0)
+        if (!hasClipPack && !hasReservePack)
         {
             CompleteMedipackAttempt();
             return false;
         }
 
-        // FUN_00470570 registers the authored "Factor of human max damage to add" value and its
-        // default is 0.01. The exact retail weapon-fire callback that consumes the value is still
-        // being traced, so this call deliberately follows the existing authored-action behavior
-        // rather than claiming an unverified native healing cadence.
-        float healed = health.HealFraction(held.Weapon.Weapon.Values[0]);
-        if (healed <= 0f)
+        if (held.Weapon.Weapon.Values.Count == 0)
         {
-            _medipackAppliedProgress = animationProgress;
-            if (Flags.HasFlag(HumanWeaponFlagWord.ClipEnded))
-            {
-                CompleteMedipackAttempt();
-            }
-
+            CompleteMedipackAttempt();
             return false;
         }
 
-        if (!_medipackEffectStarted)
+        // IGI.EXE FUN_0040FBE0 checks for a positive damage accumulator and an available
+        // AMMO_ID_MEDIPACK charge, decrements that charge, then applies one clamped
+        // MaximumHealth * Values[0] heal. The action is discrete: later animation frames keep
+        // playing but do not apply additional doses.
+        if (hasClipPack)
         {
-            // A pickup starts in the medipack's one-slot magazine. Only subsequent pickups enter the
-            // loose pool, so the first pickup must be usable without a second reserve pickup.
-            if (hasClipPack)
-            {
-                held.Gun.State.RoundsInClip = clip - 1;
-            }
-            else
-            {
-                Ammunition.Take(ammoId, 1);
-            }
-            _medipackEffectStarted = true;
-            MedipackUsedThisTick = true;
+            held.Gun.State.RoundsInClip = clip - 1;
+        }
+        else
+        {
+            Ammunition.Take(ammoId, 1);
         }
 
-        _medipackAppliedProgress = animationProgress;
+        _medipackEffectStarted = true;
+        _medipackUsed = true;
+        MedipackUsedThisTick = true;
+        health.HealFraction(held.Weapon.Weapon.Values[0]);
+
         if (health.RemainingFraction >= 1f)
         {
             _medipackClipCompletionPending = true;
@@ -1152,7 +1141,6 @@ public sealed class PlayerWeapons
                 _medipackAdvanced = false;
                 _medipackEffectStarted = false;
                 _medipackClipCompletionPending = false;
-                _medipackAppliedProgress = 0f;
                 MedipackStartedThisTick = true;
                 Request(WeaponAction.Fire);
                 break;

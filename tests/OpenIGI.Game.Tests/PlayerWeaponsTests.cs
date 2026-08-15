@@ -196,7 +196,7 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void MedipackAppliesHealingProgressivelyWithTheInjectionClip()
+    public void MedipackAppliesOneDiscreteHealAtTheInjectionEvent()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
@@ -210,22 +210,20 @@ public sealed class PlayerWeaponsTests
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.MedipackStartedThisTick);
 
-        // Retail applies Values[0] == 0.01 of MaximumHealth per newly-advanced injection clip tick
-        // (FUN_00470570: "Factor of human max damage to add for each round", default 0.01 at
-        // 0x3c23d70a). It is NOT animationProgress * 0.01 and NOT 0.01 total. Consume is one
-        // Medipack charge on the first positive dose, not on entry; cue is syringe, not FireSound.
+        // IGI.EXE FUN_0040FBE0 decrements one AMMO_ID_MEDIPACK charge and applies exactly one
+        // clamped MaximumHealth * Values[0] heal. It does not dose again as the clip advances.
         weapons.Tick(input, clipEnded: false, onGround: true);
         Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.25f));
         Assert.Equal(0.5f, health.Damage, 3);
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
         weapons.Tick(input, clipEnded: false, onGround: true);
-        Assert.True(weapons.TryUseMedipack(health, animationProgress: 0.75f));
-        Assert.Equal(0.25f, health.Damage, 3);
+        Assert.False(weapons.TryUseMedipack(health, animationProgress: 0.75f));
+        Assert.Equal(0.5f, health.Damage, 3);
 
         weapons.Tick(input, clipEnded: true, onGround: true);
-        Assert.True(weapons.TryUseMedipack(health, animationProgress: 1f));
-        Assert.Equal(0f, health.Damage, 3);
+        Assert.False(weapons.TryUseMedipack(health, animationProgress: 1f));
+        Assert.Equal(0.5f, health.Damage, 3);
         Assert.False(weapons.TryUseMedipack(health, animationProgress: 1f));
     }
 
@@ -375,7 +373,7 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void MedipackAppliesHealingAsTheInjectionClipAdvances()
+    public void MedipackDoesNotApplyAnotherDoseWhenTheInjectionClipEnds()
     {
         PlayerWeapons weapons = new([31]);
         weapons.Carry(Medipack, MedipackAmmo);
@@ -395,8 +393,8 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
-        Assert.True(weapons.TryUseMedipack(health, 1f));
-        Assert.Equal(0.25f, health.Damage, 3);
+        Assert.False(weapons.TryUseMedipack(health, 1f));
+        Assert.Equal(0.5f, health.Damage, 3);
     }
 
     [Fact]

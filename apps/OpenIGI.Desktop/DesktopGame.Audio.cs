@@ -205,11 +205,12 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Plays the medipack's authored fire cue when the first healing dose is injected.</summary>
+    /// <summary>Plays the medipack's authored fire cue when its one dose is injected.</summary>
     /// <remarks>
-    /// The native medipack action consumes one charge on the first positive health delta, not when
-    /// the weapon state is entered. <c>MedipackUsedThisTick</c> is that edge, so the cue cannot
-    /// repeat on every animation tick or play for an empty/full-health attempt.
+    /// IGI.EXE's medipack execution state consumes a charge and applies one heal after its damage,
+    /// ammo, and cooldown checks—not when the weapon state is entered. <c>MedipackUsedThisTick</c>
+    /// is that edge, so the cue cannot repeat on later animation ticks or play for an empty/full-health
+    /// attempt.
     /// </remarks>
     private void PlayMedipackSound()
     {

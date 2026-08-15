@@ -1656,9 +1656,9 @@ public sealed class PlayerCamera
         if (_weapons.State == HumanWeaponState.Medipack)
         {
             float progress = _view?.ClipProgress ?? 0f;
-            bool healed = _weapons.TryUseMedipack(_body.Health, progress);
+            bool medipackUsed = _weapons.TryUseMedipack(_body.Health, progress);
             medipackNoHealAtFullHealth =
-                !healed && !_weapons.MedipackUsedThisTick && _view is not null
+                !medipackUsed && !_weapons.MedipackUsedThisTick && _view is not null
                 && _body.Health.RemainingFraction >= 0.999f;
             if (medipackNoHealAtFullHealth && _weapons.InHand is { } enteredMedipackWeapon)
             {
