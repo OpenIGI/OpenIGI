@@ -273,10 +273,11 @@ public sealed class PlayerWeapons
     /// <param name="rounds">The pickup's magazine payload.</param>
     /// <returns>Whether a gun was added or reserve ammunition was added.</returns>
     /// <remarks>
-    /// <para>This is <c>Human::GunPickup</c> at <c>0x45FFC0</c>. A weapon the human does not yet own is
-    /// added without selecting it, with the payload in its magazine. When the weapon already exists,
-    /// retail instead adds that payload to the matching loose-ammunition entry and never duplicates the
-    /// gun.</para>
+    /// <para>This is <c>Human::GunPickup</c> at <c>0x45FFC0</c>. A firearm the human does not yet own is
+    /// added without selecting it, with the payload in its magazine. Medipack is the native exception:
+    /// its payload is an <c>AMMO_ID_MEDIPACK</c> reserve count, never a magazine charge. When the weapon
+    /// already exists, retail adds the payload to the matching loose-ammunition entry and never
+    /// duplicates the gun.</para>
     /// <para><c>GunPickup::Update</c> supplies the weapon record's clip size as <paramref name="rounds"/>,
     /// so authored pickups are one full magazine. Keeping the argument explicit preserves the native
     /// message boundary and lets scripted pickups provide a different payload later.</para>
@@ -284,6 +285,24 @@ public sealed class PlayerWeapons
     public WeaponPickupResult PickUp(WeaponType weapon, AmmoType? ammo, int rounds)
     {
         ArgumentNullException.ThrowIfNull(weapon);
+
+        // FUN_0040FBE0 reads and decrements the AMMO_ID_MEDIPACK record directly at +4. It never
+        // reads Gun+RoundsInClip, and HeldGun.Tick deliberately does not fill that field for this
+        // category. Put both first-time and duplicate medipack pickups in that same native reserve
+        // slot so the HUD and the injection handler see the authored 50/100 charge amount.
+        if (weapon.Category == (WeaponCategory)MedipackCategory)
+        {
+            int ammoId = ammo?.AmmoId ?? MedipackAmmoId;
+            if (!_carried.Any(carried => carried.Weapon.WeaponId == weapon.WeaponId))
+            {
+                Carry(weapon, ammo);
+                Ammunition.Add(ammoId, rounds);
+                return new WeaponPickupResult(AddedWeapon: true, AddedReserveRounds: rounds);
+            }
+
+            Ammunition.Add(ammoId, rounds);
+            return new WeaponPickupResult(AddedWeapon: false, AddedReserveRounds: rounds);
+        }
 
         if (_carried.Any(carried => carried.Weapon.WeaponId == weapon.WeaponId))
         {
@@ -394,15 +413,10 @@ public sealed class PlayerWeapons
         }
 
         int ammoId = held.Gun.Ammo?.AmmoId ?? MedipackAmmoId;
-        // The sentinel means the carried gun has not reached its first per-tick load yet. A real
-        // pickup writes its payload into RoundsInClip, so only a concrete clip count is spendable
-        // here; this keeps a merely equipped, uninitialised medipack from inventing a charge.
-        int clip = held.Gun.RoundsInClip == GunTiming.UnloadedClipSentinel
-            ? 0
-            : held.Gun.RoundsInClip;
-        bool hasClipPack = clip > 0;
-        bool hasReservePack = Ammunition.Count(ammoId) > 0;
-        if (!hasClipPack && !hasReservePack)
+        // The native handler resolves AMMO_ID_MEDIPACK and consumes [ammoRecord+4]. A medipack
+        // pickup is therefore never a one-round loaded clip; using RoundsInClip here caused the
+        // first dose to be detached from the reserve HUD count and made later doses disappear.
+        if (Ammunition.Count(ammoId) <= 0)
         {
             BeginMedipackFinish();
             return false;
@@ -416,23 +430,14 @@ public sealed class PlayerWeapons
 
         // FUN_0040FBE0 consumes one AMMO_ID_MEDIPACK charge, applies the clamped task fraction,
         // and starts a fresh native cooldown while the *same looping animation* continues.
-        if (hasClipPack)
-        {
-            held.Gun.State.RoundsInClip = clip - 1;
-        }
-        else
-        {
-            Ammunition.Take(ammoId, 1);
-        }
+        Ammunition.Take(ammoId, 1);
 
         _medipackUsed = true;
         MedipackUsedThisTick = true;
         health.HealFraction(held.Weapon.Weapon.Values[0]);
         _medipackCooldownTicks = GunTiming.TicksPerRound(held.Weapon.RoundsPerMinute);
 
-        bool hasAnotherClipPack = held.Gun.RoundsInClip > 0;
-        bool hasAnotherReservePack = Ammunition.Count(ammoId) > 0;
-        if (health.RemainingFraction >= 1f || (!hasAnotherClipPack && !hasAnotherReservePack))
+        if (health.RemainingFraction >= 1f || Ammunition.Count(ammoId) <= 0)
         {
             BeginMedipackFinish();
         }

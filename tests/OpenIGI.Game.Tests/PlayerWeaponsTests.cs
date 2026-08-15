@@ -264,22 +264,27 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
-    public void ASingleMedipackPickupUsesItsLoadedChargeBeforeReserve()
+    public void ANewMedipackPickupAddsItsAuthoredChargesToNativeReserve()
     {
         PlayerWeapons weapons = new([31]);
-        weapons.PickUp(Medipack, MedipackAmmo, rounds: 1);
+        WeaponPickupResult pickup = weapons.PickUp(Medipack, MedipackAmmo, rounds: 50);
         Equip(weapons);
         HumanHealth health = new(HumanHitZoneTable.Player);
         health.ApplyDirect(0, 0.75f);
         PlayerInputState input = new();
+
+        Assert.True(pickup.AddedWeapon);
+        Assert.Equal(50, pickup.AddedReserveRounds);
+        Assert.Equal(50, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(GunTiming.UnloadedClipSentinel, weapons.InHand!.Value.Gun.RoundsInClip);
 
         Tick(weapons, input, Frame(PlayerInputSlot.Fire));
         Assert.False(weapons.TryUseMedipack(health));
         Tick(weapons, input, Frame(PlayerInputSlot.Fire), clipEnded: true);
 
         Assert.True(weapons.TryUseMedipack(health));
-        Assert.Equal(0, weapons.InHand!.Value.Gun.RoundsInClip);
-        Assert.Equal(0, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+        Assert.Equal(GunTiming.UnloadedClipSentinel, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Equal(49, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
         Assert.Equal(0.5f, health.Damage, 3);
     }
 
