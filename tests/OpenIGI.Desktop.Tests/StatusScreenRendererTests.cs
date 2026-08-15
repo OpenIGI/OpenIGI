@@ -109,7 +109,7 @@ public sealed class StatusScreenRendererTests
 
         Assert.NotEmpty(device.Draws);
         // r2 and Ghidra agree that 0x470fa0 resolves its binocular asset separately from
-        // STATUSSCREEN:binoculars.spr. The latter is a 256x256 inventory icon and must not turn
+        // STATUSSCREEN:binoculars.spr. The latter is a 37x26 inventory icon and must not turn
         // into an opaque fullscreen quad when the player opens the device.
         Assert.DoesNotContain(
             device.Draws,
@@ -119,6 +119,27 @@ public sealed class StatusScreenRendererTests
                 && Math.Abs(draw.Vertices[0].Y) < 0.01f
                 && Math.Abs(draw.Vertices[1].X - 640f) < 0.01f
                 && Math.Abs(draw.Vertices[3].Y - 480f) < 0.01f);
+
+        // FUN_00471480 draws COMMON/SPRITES' 256x256 binocular texture twice through
+        // FUN_004B51F0. At 640x480 its native s = width / 256 overscan is 2.5 pixels: the left
+        // panel runs from (-2.5, -2.5) to (320, 482.5), while the mirrored right panel runs from
+        // (642.5, -2.5) back to the centre. This keeps the original cropped lens/frame layout at
+        // every aspect ratio rather than substituting a flat green placeholder.
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture != TextureHandle.None
+                && draw.Vertices.Chunk(4).Any(quad =>
+                    Math.Abs(quad[0].X + 2.5f) < 0.01f
+                    && Math.Abs(quad[0].Y + 2.5f) < 0.01f
+                    && Math.Abs(quad[1].X - 320f) < 0.01f
+                    && Math.Abs(quad[2].Y - 482.5f) < 0.01f));
+        Assert.Contains(
+            device.Draws,
+            draw => draw.Texture != TextureHandle.None
+                && draw.Vertices.Chunk(4).Any(quad =>
+                    Math.Abs(quad[0].X - 642.5f) < 0.01f
+                    && Math.Abs(quad[1].X - 320f) < 0.01f
+                    && Math.Abs(quad[3].Y - 482.5f) < 0.01f));
 
         Assert.Contains(
             device.Draws,

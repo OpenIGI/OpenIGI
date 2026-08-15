@@ -439,11 +439,12 @@ public sealed class StatusScreenRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
 
-        // The 256x256 STATUSSCREEN:binoculars.spr entry is the ordinary weapon-HUD icon. It is not
-        // the binocular camera mask and must never be stretched across the back buffer. Both r2 and
-        // Ghidra show BinocularOverlay's initializer (0x470fa0) resolving its separate texture by
-        // bare name, then FUN_00471480 using that texture only in two local sprite draws at +0x18.
-        // The rest of the retail overlay is geometry and text drawn below.
+        // STATUSSCREEN:binoculars.spr is the 37x26 ordinary weapon-HUD icon. It is not the camera
+        // mask and must never be stretched across the back buffer. Both r2 and Ghidra show
+        // BinocularOverlay's initializer (0x470fa0) resolving the separate, global 256x256
+        // COMMON/SPRITES binoculars.spr texture, then FUN_00471480 drawing it as two mirrored
+        // quads. Keep that archive selection explicit: Sprite("binoculars.spr") intentionally
+        // prefers the status archive for normal HUD items.
 
         // RetailBinocularUpdater (0x0051A8C0) updates the holder's path; the overlay builder at
         // 0x00471480 then draws the authored binocular frame, reticle and range labels. The native
@@ -469,10 +470,13 @@ public sealed class StatusScreenRenderer : IDisposable
                 sweepColour);
         }
 
+        DrawRetailBinocularFrame(batch, screenWidth, screenHeight);
+
         // FUN_00471480 updates and draws twelve live 0x14-byte quad records at context+0x2B54,
-        // then draws two textured arms and the full sight axes. The sweep state above reproduces
-        // those records; the arms below are the confirmed mirrored pair: their vertex data is
-        // (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5), with anchors at +/-9.375% of video width.
+        // then draws the textured frame, the two reticle arms, and the full sight axes. The sweep
+        // state above reproduces those records; the arms below are the confirmed geometry pair:
+        // their vertex data is (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5), with anchors at
+        // +/-9.375% of video width.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
         Bgra32 signal = new(64, 160, 64, 210);
@@ -514,6 +518,28 @@ public sealed class StatusScreenRenderer : IDisposable
         // The retail task draws its authored device overlay and range widget here. Do not expose
         // internal tangent/heading diagnostics in the retail presentation; those values are camera
         // state and belong only to the enhanced themed presentation.
+    }
+
+    private void DrawRetailBinocularFrame(SpriteBatch batch, int screenWidth, int screenHeight)
+    {
+        if (GlobalSprite("binoculars.spr") is not { Asset.Frames.Count: > 0 } frameSprite)
+        {
+            return;
+        }
+
+        // FUN_00471480 obtains s = videoWidth / spriteWidth, then submits the global 256x256
+        // binocular art twice through FUN_004B51F0. The left quad spans (-s, -s) to
+        // (videoWidth / 2, videoHeight + s); the right has reversed X coordinates from
+        // (videoWidth + s, -s) to (videoWidth / 2, videoHeight + s). The negative second scale
+        // retains that native mirror instead of cropping or stretching the status icon.
+        SpriteFrame frame = frameSprite.Asset.Frames[0];
+        float overscan = screenWidth / (float)frame.Width;
+        float scaleX = ((screenWidth * 0.5f) + overscan) / frame.Width;
+        float scaleY = (screenHeight + (overscan * 2f)) / frame.Height;
+        Bgra32 neutral = BitmapTextRenderer.NeutralColor;
+
+        frameSprite.DrawFrame(batch, frame, -overscan, -overscan, scaleX, scaleY, neutral);
+        frameSprite.DrawFrame(batch, frame, screenWidth + overscan, -overscan, -scaleX, scaleY, neutral);
     }
 
     private static void DrawTargetBox(SpriteBatch batch, EnemyOverlayBox target, Bgra32 colour)
@@ -1190,6 +1216,33 @@ public sealed class StatusScreenRenderer : IDisposable
         }
 
         _sprites[name] = resource;
+        return resource;
+    }
+
+    private SpriteResource? GlobalSprite(string name)
+    {
+        string cacheKey = $"global:{name}";
+        if (_sprites.TryGetValue(cacheKey, out SpriteResource? cached))
+        {
+            return cached;
+        }
+
+        SpriteResource? resource = null;
+        IresEntry? entry = Find(_spriteArchive, name);
+        if (entry is not null)
+        {
+            try
+            {
+                SpriteAsset asset = SpriteLoader.Load(entry.Data, name);
+                resource = SpriteResource.Upload(_device, asset);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
+            {
+                _logger.Warning(LogCategory, $"Could not read the global HUD sprite '{name}': {ex.Message}");
+            }
+        }
+
+        _sprites[cacheKey] = resource;
         return resource;
     }
 
