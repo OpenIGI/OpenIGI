@@ -80,6 +80,55 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(expected, RemasteredHudPresentation.WeaponStateLabel(state));
 
     [Fact]
+    public void AmmoColumnsBlankTheMedipackMagazineAndKeepItsChargeCount()
+    {
+        // Regression: the medipack has no firearm magazine, so its HeldGun never loads a clip and
+        // RoundsInClip stays at the unloaded sentinel. It must not render as a literal "-02".
+        WeaponType medipack = new()
+        {
+            Category = WeaponCategory.Medipack,
+            AmmoDisplay = AmmoDisplayType.Normal,
+        };
+
+        (string magazine, string reserve) =
+            RemasteredHudPresentation.AmmoColumns(medipack, GunTiming.UnloadedClipSentinel, 51);
+
+        Assert.Equal("--", magazine);
+        Assert.Equal("051", reserve);
+    }
+
+    [Fact]
+    public void AmmoColumnsShowAFirearmMagazineAndReserve()
+    {
+        WeaponType rifle = new()
+        {
+            Category = WeaponCategory.Gun,
+            AmmoDisplay = AmmoDisplayType.Clip,
+        };
+
+        (string magazine, string reserve) = RemasteredHudPresentation.AmmoColumns(rifle, 7, 120);
+
+        Assert.Equal("07", magazine);
+        Assert.Equal("120", reserve);
+    }
+
+    [Fact]
+    public void AmmoColumnsBlankBothWhenTheWeaponCountsNothing()
+    {
+        WeaponType knife = new()
+        {
+            Category = WeaponCategory.Knife,
+            AmmoDisplay = AmmoDisplayType.None,
+        };
+
+        (string magazine, string reserve) =
+            RemasteredHudPresentation.AmmoColumns(knife, GunTiming.UnloadedClipSentinel, 0);
+
+        Assert.Equal("--", magazine);
+        Assert.Equal("--", reserve);
+    }
+
+    [Fact]
     public void DedicatedSettingSelectsEitherHudWithoutDependingOnTheMenuStyle()
     {
         Assert.True(RemasteredHudPresentation.UsesRemasteredHud(remasteredHudEnabled: true));

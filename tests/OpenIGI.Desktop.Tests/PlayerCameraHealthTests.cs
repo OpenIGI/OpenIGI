@@ -116,7 +116,7 @@ public sealed class PlayerCameraHealthTests
     }
 
     [RequiresGameDataFact]
-    public void MissingRetailMedipackLoopSlotUsesOneManagedLoopingPresentationClip()
+    public void MissingRetailMedipackLoopSlotPlaysNothingSoTheEntryClipHoldsItsFinalFrame()
     {
         WeaponType medipack = LoadRoster().Weapons.First(
             weapon => weapon.Category == WeaponCategory.Medipack);
@@ -131,10 +131,11 @@ public sealed class PlayerCameraHealthTests
         PlayerCamera camera = new();
         camera.UseViewRig(LoadViewSet());
 
-        Assert.True(camera.PlayWeaponAction(medipack, WeaponAction.MedipackLoop));
-        BoneClip clip = Assert.IsType<BoneClip>(camera.View!.Bones.SourceOf(0));
-        Assert.True(clip.Loops);
-        Assert.Equal(medipack.FireAnimation1, clip.Animation.Id);
+        // The shipped medipack's FireAnimation2 slot is -1. 0x40FB90 forwards that to 0x4D61D0, which
+        // leaves the view untouched -- so the sustained loop plays no clip and the one-shot entry
+        // ("insert syringe") holds its last frame. Substituting a looping FireAnimation1 replayed that
+        // "insert" animation over and over while Fire was held, which is not what the injection does.
+        Assert.False(camera.PlayWeaponAction(medipack, WeaponAction.MedipackLoop));
     }
 
     [RequiresGameDataFact]

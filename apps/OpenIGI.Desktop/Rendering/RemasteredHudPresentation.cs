@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using System.Globalization;
 
 namespace OpenIGI.Desktop;
 
@@ -112,6 +113,34 @@ public static class RemasteredHudPresentation
         HumanWeaponState.DryFire => "EMPTY",
         _ => string.Empty,
     };
+
+    /// <summary>Formats the MAG and RESERVE columns of the weapon readout.</summary>
+    /// <param name="weapon">The weapon in hand.</param>
+    /// <param name="roundsInClip">The magazine count, or <see cref="GunTiming.UnloadedClipSentinel"/> before a clip has loaded.</param>
+    /// <param name="reserve">The loose-ammunition count the weapon draws from.</param>
+    /// <returns>The MAG and RESERVE strings, either of which is <c>"--"</c> when the column does not apply.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="weapon"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A weapon whose <see cref="WeaponType.AmmoDisplay"/> is <see cref="AmmoDisplayType.None"/> counts
+    /// nothing and blanks both columns. The medipack is a pool of injection charges with no firearm
+    /// magazine: its <c>HeldGun</c> never loads a clip, so <paramref name="roundsInClip"/> stays at the
+    /// unloaded sentinel and would otherwise render as a literal <c>"-02"</c>. Its charge count belongs
+    /// under RESERVE alone, with a blank MAG. The same sentinel guard spares any firearm shown on its
+    /// first frame before its clip has loaded.
+    /// </remarks>
+    public static (string Magazine, string Reserve) AmmoColumns(WeaponType weapon, int roundsInClip, int reserve)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        if (weapon.AmmoDisplay == AmmoDisplayType.None)
+        {
+            return ("--", "--");
+        }
+
+        bool hasMagazine = weapon.Category != WeaponCategory.Medipack
+            && roundsInClip != GunTiming.UnloadedClipSentinel;
+        string magazine = hasMagazine ? roundsInClip.ToString("00", CultureInfo.InvariantCulture) : "--";
+        return (magazine, reserve.ToString("000", CultureInfo.InvariantCulture));
+    }
 
     /// <summary>Produces a short category tag used beside the weapon silhouette.</summary>
     public static string WeaponClass(WeaponType weapon)

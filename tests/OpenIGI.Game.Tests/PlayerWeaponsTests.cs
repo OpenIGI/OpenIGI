@@ -575,6 +575,38 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void TappingMedipackStillLandsItsFirstDoseWhenFireIsReleasedAsTheLoopBegins()
+    {
+        // Regression: a quick tap lets go of Fire while the one-shot entry clip is still playing, so by
+        // the tick the sustained syringe loop begins the Fire flag is already up. FUN_0040FBE0 applies
+        // one dose on that tick regardless -- a released Fire only *schedules* the terminal clip, it does
+        // not skip the fall-through heal. An earlier port gated the dose on Fire being held, so a tapped
+        // medipack played its animation, put itself away, and never healed.
+        PlayerWeapons weapons = new([31]);
+        weapons.Carry(Medipack, MedipackAmmo);
+        weapons.Ammunition.Add(MedipackAmmo.AmmoId, 2);
+        HumanHealth health = new(HumanHitZoneTable.Player);
+        health.ApplyDirect(0, 0.75f);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.Fire));
+        Assert.False(weapons.TryUseMedipack(health));
+
+        // The loop begins on a tick where Fire has already been released.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.True(weapons.TryUseMedipack(health));
+        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+
+        // One dose only: the release scheduled the put-away, so it does not keep dosing.
+        Tick(weapons, input, Frame(), clipEnded: true);
+        Assert.False(weapons.TryUseMedipack(health));
+        Assert.Equal(0.5f, health.Damage, 3);
+        Assert.Equal(1, weapons.Ammunition.Count(MedipackAmmo.AmmoId));
+    }
+
+    [Fact]
     public void BinocularViewUsesAuthoredDefaultAndClampsZoomToAuthoredBounds()
     {
         BinocularsView view = new();

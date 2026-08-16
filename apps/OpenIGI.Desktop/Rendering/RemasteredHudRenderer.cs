@@ -455,9 +455,8 @@ internal sealed class RemasteredHudRenderer : IDisposable
             painter.DrawText(body, state, new UiVec2(left, y + context.Px(65f)), context.Px(14f), Accent);
         }
 
-        bool countsAmmo = weapon.AmmoDisplay != AmmoDisplayType.None;
-        string magazine = countsAmmo ? snapshot.RoundsInClip.ToString("00", CultureInfo.InvariantCulture) : "--";
-        string reserve = countsAmmo ? snapshot.ReserveAmmo.ToString("000", CultureInfo.InvariantCulture) : "--";
+        (string magazine, string reserve) =
+            RemasteredHudPresentation.AmmoColumns(weapon, snapshot.RoundsInClip, snapshot.ReserveAmmo);
         float ammoSize = context.Px(42f);
         UiVec2 reserveSize = body.Measure(reserve, ammoSize);
         float reserveX = right - reserveSize.X;

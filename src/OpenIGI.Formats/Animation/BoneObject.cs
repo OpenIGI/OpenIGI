@@ -21,12 +21,15 @@ namespace OpenIGI.Formats.Animation;
 /// a whole skeleton without a per-bone binding.
 /// </para>
 /// <para>
-/// <b>What this does not do.</b> The original wraps every clip in a blend node
-/// (<c>{ i32 type, void *child }</c> slots, <c>-1</c> empty / <c>0</c> blend / <c>1</c> clip) and can
-/// cross-fade two branches with a weight from a callback on the node (<c>0x4D3020</c>, <c>0x4D5EC0</c>,
-/// <c>0x4D5FF0</c>). Only the immediate path is built here — the one <c>0x4D61D0</c> takes when the
-/// blend time is under a tick — so <see cref="Play"/> replaces a source outright rather than easing into
-/// it. Blending is the next piece of this runtime, not a simplification of it.
+/// <b>Blending.</b> The original wraps a started clip in a blend node
+/// (<c>{ i32 type, void *child }</c> slots, <c>-1</c> empty / <c>0</c> blend / <c>1</c> clip) and
+/// cross-fades two branches with a weight from a callback on the node (<c>0x4D5EC0</c>, <c>0x4D5FF0</c>).
+/// <c>0x4D61D0</c> takes the immediate path — replacing the source outright — only when the blend time is
+/// under a tick; otherwise it eases from the old source to the new over that time. <see cref="Play"/>
+/// reproduces both: with no blend time (the default) it replaces, and with one it ramps a weight
+/// <c>0 → 1</c> over <c>blendSeconds × 4800 / 160</c> ticks and slerps the outgoing and incoming poses at
+/// that weight. The blend node's full recursive tree is flattened here to one outgoing branch per bone,
+/// which is all a whole-rig cross-fade (a clip on bone 0 driving every bone) needs.
 /// </para>
 /// </remarks>
 public sealed class BoneObject
@@ -37,6 +40,20 @@ public sealed class BoneObject
     private readonly BoneClip?[] _resolved;
     private readonly BoneClip?[] _inherited;
     private readonly Quaternion32[] _locals;
+
+    // The cross-fade half of 0x4D61D0. When a clip is started with a blend time of a tick or more, the
+    // node it replaced becomes the outgoing branch of a blend node whose weight ramps 0 -> 1 over that
+    // time; the pose is the slerp of the two branches at the ramp's current value. These arrays are the
+    // flattened form of that blend node: the outgoing clip, how far the ramp has run, and its length in
+    // ticks (zero when no blend is live). The *_Resolved/_Inherited pairs carry the outgoing branch and
+    // weight down the skeleton exactly as _resolved/_inherited carry the live source.
+    private readonly BoneClip?[] _blendFrom;
+    private readonly float[] _blendElapsed;
+    private readonly float[] _blendDuration;
+    private readonly BoneClip?[] _blendFromResolved;
+    private readonly BoneClip?[] _blendFromInherited;
+    private readonly float[] _blendWeightResolved;
+    private readonly float[] _blendWeightInherited;
 
     /// <summary>Gets whether the last tick changed any clip's sampled time.</summary>
     public bool ChangedThisTick { get; private set; }
@@ -62,6 +79,13 @@ public sealed class BoneObject
         _resolved = new BoneClip?[bones];
         _inherited = new BoneClip?[bones];
         _locals = new Quaternion32[bones];
+        _blendFrom = new BoneClip?[bones];
+        _blendElapsed = new float[bones];
+        _blendDuration = new float[bones];
+        _blendFromResolved = new BoneClip?[bones];
+        _blendFromInherited = new BoneClip?[bones];
+        _blendWeightResolved = new float[bones];
+        _blendWeightInherited = new float[bones];
     }
 
     /// <summary>Gets the animation set backing this object.</summary>
@@ -78,6 +102,11 @@ public sealed class BoneObject
     /// <param name="animationId">The animation id, as the set's sparse table addresses it.</param>
     /// <param name="loops">Whether the clip wraps at its duration.</param>
     /// <param name="backwards">Whether the clip plays from its duration down to zero.</param>
+    /// <param name="blendSeconds">
+    /// How long to cross-fade from whatever was playing on the bone into the new clip. Zero (the default)
+    /// replaces the source outright; a value that works out to a tick or more eases into it. This is
+    /// <c>0x4D61D0</c>'s <c>a5</c>, converted to ticks with the same <c>× 4800 / 160</c> the original uses.
+    /// </param>
     /// <returns>The clip, or <see langword="null"/> when the set does not define that id.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="bone"/> is not a bone.</exception>
     /// <remarks>
@@ -86,7 +115,7 @@ public sealed class BoneObject
     /// stopping. Setting the source also raises the node's propagate flag, exactly as <c>0x4D61D0</c>
     /// does with <c>node[1] |= 0x20000</c>.
     /// </remarks>
-    public BoneClip? Play(int bone, int animationId, bool loops = false, bool backwards = false)
+    public BoneClip? Play(int bone, int animationId, bool loops = false, bool backwards = false, float blendSeconds = 0f)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(bone);
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(bone, _own.Length);
@@ -97,6 +126,23 @@ public sealed class BoneObject
         }
 
         BoneClip clip = new(animation, bone, loops, backwards);
+
+        // 0x4D61D0: v12 = a5 * 4800 / flt_A54658 (160). A blend under one tick is the immediate path,
+        // and a bone with nothing already playing has no branch to fade from.
+        float blendTicks = blendSeconds * (4800f / BoneAnimation.FrameStep);
+        if (_own[bone] is { } outgoing && blendTicks >= 1f)
+        {
+            _blendFrom[bone] = outgoing;
+            _blendElapsed[bone] = 0f;
+            _blendDuration[bone] = blendTicks;
+        }
+        else
+        {
+            _blendFrom[bone] = null;
+            _blendElapsed[bone] = 0f;
+            _blendDuration[bone] = 0f;
+        }
+
         _own[bone] = clip;
         _propagate[bone] = true;
         return clip;
@@ -112,6 +158,9 @@ public sealed class BoneObject
 
         _own[bone] = null;
         _propagate[bone] = false;
+        _blendFrom[bone] = null;
+        _blendElapsed[bone] = 0f;
+        _blendDuration[bone] = 0f;
     }
 
     /// <summary>Gets the clip attached to a bone itself, ignoring inheritance.</summary>
@@ -153,7 +202,28 @@ public sealed class BoneObject
     /// <c>eye + orientation · thisValue</c>. Dropping it puts every weapon in the middle of the screen.
     /// </para>
     /// </remarks>
-    public Vector3f SampleRootMotion() => _own[0]?.SampleRoot() ?? default;
+    public Vector3f SampleRootMotion()
+    {
+        if (_own[0] is not { } to)
+        {
+            return default;
+        }
+
+        Vector3f incoming = to.SampleRoot();
+        if (_blendDuration[0] <= 0f || _blendFrom[0] is not { } from)
+        {
+            return incoming;
+        }
+
+        // Blend the hold offset alongside the pose so the weapon does not jump to its new resting spot
+        // on the tick the source swaps; the position eases over the same weight as the rotations.
+        float weight = _blendElapsed[0] / _blendDuration[0];
+        Vector3f outgoing = from.SampleRoot();
+        return new Vector3f(
+            outgoing.X + ((incoming.X - outgoing.X) * weight),
+            outgoing.Y + ((incoming.Y - outgoing.Y) * weight),
+            outgoing.Z + ((incoming.Z - outgoing.Z) * weight));
+    }
 
     /// <summary>How far the root clip moved the body on the last tick — the step that actually moves it.</summary>
     /// <returns>The per-tick root-motion delta, in engine units.</returns>
@@ -170,14 +240,30 @@ public sealed class BoneObject
         for (int bone = 0; bone < _own.Length; bone++)
         {
             BoneClip? clip = _own[bone];
-            if (clip is null)
+            if (clip is not null)
+            {
+                float before = clip.Time;
+                clip.Tick();
+                ChangedThisTick |= before != clip.Time;
+            }
+
+            if (_blendDuration[bone] <= 0f)
             {
                 continue;
             }
 
-            float before = clip.Time;
-            clip.Tick();
-            ChangedThisTick |= before != clip.Time;
+            // The blend node advances both children; the outgoing branch keeps sampling live, which
+            // matters when it is still moving (a walk fading into a stand). A cross-fade in progress
+            // changes the pose every tick even if neither clip's clock moved, so it must re-pose.
+            _blendFrom[bone]?.Tick();
+            _blendElapsed[bone] += 1f;
+            ChangedThisTick = true;
+            if (_blendElapsed[bone] >= _blendDuration[bone])
+            {
+                _blendFrom[bone] = null;
+                _blendElapsed[bone] = 0f;
+                _blendDuration[bone] = 0f;
+            }
         }
     }
 
@@ -197,9 +283,18 @@ public sealed class BoneObject
         for (int bone = 0; bone < _locals.Length; bone++)
         {
             BoneClip? clip = _resolved[bone];
-            _locals[bone] = clip is null || bone >= clip.Animation.BoneCount
+            Quaternion32 incoming = clip is null || bone >= clip.Animation.BoneCount
                 ? new Quaternion32(0f, 0f, 0f, 1f)
                 : clip.SampleRotation(bone);
+
+            // While a cross-fade is live on the source reaching this bone, the local orientation is the
+            // slerp of the outgoing branch and the incoming clip at the ramp's current weight (0 = fully
+            // outgoing, 1 = fully incoming). 0x4D5EC0's blend node, flattened to one branch per bone.
+            BoneClip? from = _blendFromResolved[bone];
+            float weight = _blendWeightResolved[bone];
+            _locals[bone] = from is not null && weight < 1f && bone < from.Animation.BoneCount
+                ? BoneRotationSampler.Slerp(from.SampleRotation(bone), incoming, weight)
+                : incoming;
         }
 
         return BonePose.Evaluate(_set.Skeleton, _locals, rootPosition, rootRotation);
@@ -216,11 +311,41 @@ public sealed class BoneObject
         for (int bone = 0; bone < _resolved.Length; bone++)
         {
             int parent = parents[bone];
-            _inherited[bone] = parent == BoneSkeleton.NoParent
-                ? null
-                : _propagate[parent] ? _resolved[parent] : _inherited[parent];
+            if (parent == BoneSkeleton.NoParent)
+            {
+                _inherited[bone] = null;
+                _blendFromInherited[bone] = null;
+                _blendWeightInherited[bone] = 1f;
+            }
+            else if (_propagate[parent])
+            {
+                _inherited[bone] = _resolved[parent];
+                _blendFromInherited[bone] = _blendFromResolved[parent];
+                _blendWeightInherited[bone] = _blendWeightResolved[parent];
+            }
+            else
+            {
+                _inherited[bone] = _inherited[parent];
+                _blendFromInherited[bone] = _blendFromInherited[parent];
+                _blendWeightInherited[bone] = _blendWeightInherited[parent];
+            }
 
-            _resolved[bone] = _own[bone] ?? _inherited[bone];
+            if (_own[bone] is not null)
+            {
+                _resolved[bone] = _own[bone];
+
+                // A blend lives on the same bone as the source it replaced, so it rides the propagate
+                // flag down the skeleton exactly as the source does.
+                bool blending = _blendDuration[bone] > 0f;
+                _blendFromResolved[bone] = blending ? _blendFrom[bone] : null;
+                _blendWeightResolved[bone] = blending ? _blendElapsed[bone] / _blendDuration[bone] : 1f;
+            }
+            else
+            {
+                _resolved[bone] = _inherited[bone];
+                _blendFromResolved[bone] = _blendFromInherited[bone];
+                _blendWeightResolved[bone] = _blendWeightInherited[bone];
+            }
         }
     }
 }

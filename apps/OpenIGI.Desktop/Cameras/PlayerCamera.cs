@@ -363,25 +363,20 @@ public sealed class PlayerCamera
         int animationId = animations.FullBody;
         bool loops = animations.LoopFullBody;
 
-        // Retail's 0x40FB90 forwards FireAnimation2 verbatim. Some shipped medipack records leave
-        // that slot at -1, but the native state still remains in its sustained injection loop. The
-        // managed rig has no clip for -1, so keep the state visibly continuous by looping the already
-        // validated entry clip once at this presentation boundary. PlayerWeapons still requests this
-        // action only once; cooldown doses therefore never replay the entry animation.
-        if (action == WeaponAction.MedipackLoop
-            && weapon.Category == WeaponCategory.Medipack
-            && animationId < 0)
-        {
-            animationId = weapon.FireAnimation1;
-            loops = true;
-        }
-
+        // Retail's 0x40FB90 forwards FireAnimation2 to the animation dispatcher verbatim, and the
+        // shipped medipack leaves that slot at -1. 0x4D61D0 leaves the view untouched for a negative
+        // id, so the one-shot entry clip ("insert syringe") simply holds its final frame for the whole
+        // sustained injection. Substituting a *looping* FireAnimation1 here replayed that entry over
+        // and over while Fire was held; the syringe must be inserted once, then held -- not on repeat.
         if (animationId < 0)
         {
             return false;
         }
 
-        if (_view.PlayWeaponAnimation(animationId, loops) is null)
+        // 0x489F20 forwards the action's blend to BoneObj_Play. The standing/moving actions ease over
+        // 0.4 s; firing and reloading snap. This is what eases the medipack (and every weapon) back to
+        // its stand pose on release instead of teleporting from the injection frame.
+        if (_view.PlayWeaponAnimation(animationId, loops, animations.FullBodyBlendSeconds) is null)
         {
             return false;
         }

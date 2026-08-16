@@ -177,16 +177,22 @@ public sealed class HumanView
     /// <summary>Plays a weapon animation on the whole rig.</summary>
     /// <param name="animationId">The animation id out of the weapon's own record.</param>
     /// <param name="loops">Whether the clip repeats.</param>
+    /// <param name="blendSeconds">
+    /// How long to cross-fade from the clip already playing into this one. Zero snaps; the standing and
+    /// moving actions ease over the weapon table's default 0.4 s, which is what keeps a weapon from
+    /// teleporting back to its idle pose after a shot, a reload, or an injection.
+    /// </param>
     /// <returns>The clip, or <see langword="null"/> when skeleton 5's set does not define that id.</returns>
     /// <remarks>
     /// <c>0x489F20</c> is one line — <c>BoneObj_Play(human-&gt;view-&gt;boneObj, bone 0, id, loop, blend)</c>
-    /// — and bone 0 is what makes it drive the whole rig. This is where a weapon's <b>full-body</b>
-    /// animation ids go; its <c>UpperBody*</c> ids go to bone 1 of the human's own skeleton-0 rig
-    /// (<c>0x489ED0</c>), which is why the two halves resolve in different sets.
+    /// — and bone 0 is what makes it drive the whole rig. The blend argument was dropped in an earlier
+    /// port; forwarding it is what restores the eased return to the stand pose. This is where a weapon's
+    /// <b>full-body</b> animation ids go; its <c>UpperBody*</c> ids go to bone 1 of the human's own
+    /// skeleton-0 rig (<c>0x489ED0</c>), which is why the two halves resolve in different sets.
     /// </remarks>
-    public BoneClip? PlayWeaponAnimation(int animationId, bool loops)
+    public BoneClip? PlayWeaponAnimation(int animationId, bool loops, float blendSeconds = 0f)
     {
-        BoneClip? clip = _bones.Play(0, animationId, loops);
+        BoneClip? clip = _bones.Play(0, animationId, loops, backwards: false, blendSeconds);
         _pose = null;
         return clip;
     }

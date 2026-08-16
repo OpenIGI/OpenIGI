@@ -389,26 +389,32 @@ public sealed class PlayerWeapons
         if (State != HumanWeaponState.Medipack || _medipackUsed || InHand is not { } held
             || held.Weapon.Category != (WeaponCategory)MedipackCategory
             || MedipackStartedThisTick
-            || !_medipackInjectionLoopStarted)
+            || !_medipackInjectionLoopStarted
+            || _medipackClosing)
         {
             return false;
         }
 
-        // FUN_0040FBE0 is the sustained part of the state: it runs after the one-shot entry clip,
-        // then keeps the syringe loop alive until Fire is released, health is full, or its stock is
-        // empty. It is deliberately not a fresh animation/state transition for every charge.
-        if (!Flags.HasFlag(HumanWeaponFlagWord.Fire) || health.RemainingFraction >= 1f)
-        {
-            BeginMedipackFinish();
-            return false;
-        }
+        // FUN_0040FBE0 is the sustained part of the state: it runs after the one-shot entry clip and
+        // owns every finish decision from here on. Releasing Fire (Human+456 == 0) only *schedules*
+        // the terminal clip -- the handler still falls through and applies one final dose on the same
+        // tick. Gating the dose on Fire being held (as an earlier port did) is why a quick tap played
+        // the syringe animation, put it away, and never healed: the entry clip out-lasts the tap, so
+        // by the time the loop begins Fire is already up and the only dose was skipped.
+        bool fireReleased = !Flags.HasFlag(HumanWeaponFlagWord.Fire) || _medipackAwaitingRelease;
 
         // FUN_0040FBE0 tests this before looking up the ammo or touching the damage accumulator.
         // A non-zero countdown spends the whole handler update merely decrementing Human+0xD6C;
-        // the visible syringe loop continues, but it neither heals nor consumes a charge.
+        // the visible syringe loop continues, but it neither heals nor consumes a charge. When Fire
+        // is already up, the scheduled terminal is all that is left to do.
         if (_medipackCooldownTicks != 0)
         {
             _medipackCooldownTicks--;
+            if (fireReleased)
+            {
+                BeginMedipackFinish();
+            }
+
             return false;
         }
 
@@ -416,13 +422,11 @@ public sealed class PlayerWeapons
         // The native handler resolves AMMO_ID_MEDIPACK and consumes [ammoRecord+4]. A medipack
         // pickup is therefore never a one-round loaded clip; using RoundsInClip here caused the
         // first dose to be detached from the reserve HUD count and made later doses disappear.
-        if (Ammunition.Count(ammoId) <= 0)
-        {
-            BeginMedipackFinish();
-            return false;
-        }
-
-        if (held.Weapon.Weapon.Values.Count == 0)
+        // No charges, no heal fraction, or already at full health are FUN_0040FBE0's else-branch
+        // terminal conditions: run FireAnimation3 and dispatch the parent state instead of dosing.
+        if (Ammunition.Count(ammoId) <= 0
+            || held.Weapon.Weapon.Values.Count == 0
+            || health.RemainingFraction >= 1f)
         {
             BeginMedipackFinish();
             return false;
@@ -437,7 +441,9 @@ public sealed class PlayerWeapons
         health.HealFraction(held.Weapon.Weapon.Values[0]);
         _medipackCooldownTicks = GunTiming.TicksPerRound(held.Weapon.RoundsPerMinute);
 
-        if (health.RemainingFraction >= 1f || Ammunition.Count(ammoId) <= 0)
+        // The dose ran; now honour the terminal the top of the handler scheduled when Fire came up,
+        // and the two else-branch stops that a dose can newly satisfy.
+        if (fireReleased || health.RemainingFraction >= 1f || Ammunition.Count(ammoId) <= 0)
         {
             BeginMedipackFinish();
         }
