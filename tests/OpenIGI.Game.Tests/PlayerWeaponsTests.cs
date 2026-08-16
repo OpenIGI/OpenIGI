@@ -678,6 +678,21 @@ public sealed class PlayerWeaponsTests
         // or death (Ghidra FUN_004B5860 strip + FUN_00470570 0x3c23d70a syringe vs firearm report).
         Assert.Equal(0.1f * BinocularsView.ZoomOutFactor, closing.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, closing.ViewModelTanX);
+
+        SightZoomFrame restored = closing;
+        for (int i = 0; i < 100 && view.HasOpticsState; i++)
+        {
+            restored = view.Tick(
+                binoculars,
+                togglePressed: false,
+                zoomInHeld: false,
+                zoomOutHeld: false,
+                tanX: restored.TanX,
+                viewModelTanX: restored.ViewModelTanX);
+        }
+
+        Assert.Equal(HumanView.DefaultTanX, restored.TanX, 5);
+        Assert.False(view.HasOpticsState);
     }
 
     [Fact]

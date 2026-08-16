@@ -77,25 +77,36 @@ public sealed class RetailWorldSceneTests
 
         for (int missionId = 1; missionId <= 14; missionId++)
         {
-            (WorldScene scene, _) = Build(missionId);
-            IGrouping<GameTask, WorldPlacement>[] authored = scene.Placements
+            LevelTask levelRoot;
+            (WorldScene scene, _) = Build(missionId, includeMagic: false, out levelRoot);
+            Dictionary<GameTask, IGrouping<GameTask, WorldPlacement>> placementsByOwner = scene.Placements
                 .Where(placement => placement.Owner.Type.Name is "AmmoPickup" or "GenericPickup")
                 .GroupBy(placement => placement.Owner)
+                .ToDictionary(group => group.Key);
+            DeclaredTask[] authored = Walk(levelRoot)
+                .OfType<DeclaredTask>()
+                .Where(task => task.Type.Name is "AmmoPickup" or "GenericPickup")
                 .ToArray();
 
-            foreach (IGrouping<GameTask, WorldPlacement> pickup in authored)
+            foreach (DeclaredTask task in authored)
             {
                 pickups++;
+                if (!placementsByOwner.TryGetValue(task, out IGrouping<GameTask, WorldPlacement>? pickup))
+                {
+                    failures.Add($"mission {missionId} task {task.Id} ({task.Type.Name}) produced no placements");
+                    continue;
+                }
+
                 if (pickup.Count() != 1)
                 {
-                    failures.Add($"mission {missionId} task {pickup.Key.Id} ({pickup.Key.Type.Name}) produced {pickup.Count()} placements");
+                    failures.Add($"mission {missionId} task {task.Id} ({task.Type.Name}) produced {pickup.Count()} placements");
                     continue;
                 }
 
                 WorldPlacement placement = pickup.Single();
                 if (placement.Model.IsEmpty || placement.Instance.Name.Length == 0)
                 {
-                    failures.Add($"mission {missionId} task {pickup.Key.Id} ({pickup.Key.Type.Name}) has no drawable model");
+                    failures.Add($"mission {missionId} task {task.Id} ({task.Type.Name}) has no drawable model");
                 }
             }
         }
@@ -359,5 +370,17 @@ public sealed class RetailWorldSceneTests
         new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
 
         return (WorldScene.Build(mission, levelRoot, magic), mission);
+    }
+
+    private static IEnumerable<GameTask> Walk(GameTask task)
+    {
+        yield return task;
+        foreach (GameTask child in task.Children)
+        {
+            foreach (GameTask descendant in Walk(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 }

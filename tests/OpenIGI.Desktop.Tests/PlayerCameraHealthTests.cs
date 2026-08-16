@@ -116,20 +116,25 @@ public sealed class PlayerCameraHealthTests
     }
 
     [RequiresGameDataFact]
-    public void MissingRetailMedipackLoopSlotPlaysNothingSoTheEntryClipHoldsItsFinalFrame()
+    public void RetailMedipackLoopActionMatchesTheAuthoredSlot()
     {
         WeaponType medipack = LoadRoster().Weapons.First(
             weapon => weapon.Category == WeaponCategory.Medipack);
         int retailLoopAnimation = WeaponAnimationTable.Select(
             medipack,
             WeaponAction.MedipackLoop).FullBody;
-        if (retailLoopAnimation >= 0)
-        {
-            return;
-        }
 
         PlayerCamera camera = new();
         camera.UseViewRig(LoadViewSet());
+
+        if (retailLoopAnimation >= 0)
+        {
+            Assert.True(camera.PlayWeaponAction(medipack, WeaponAction.MedipackLoop));
+            BoneClip clip = Assert.IsType<BoneClip>(camera.View!.Bones.SourceOf(0));
+            Assert.Equal(retailLoopAnimation, clip.Animation.Id);
+            Assert.True(clip.Loops);
+            return;
+        }
 
         // The shipped medipack's FireAnimation2 slot is -1. 0x40FB90 forwards that to 0x4D61D0, which
         // leaves the view untouched -- so the sustained loop plays no clip and the one-shot entry

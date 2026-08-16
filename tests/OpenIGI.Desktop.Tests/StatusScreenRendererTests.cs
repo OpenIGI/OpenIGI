@@ -138,6 +138,7 @@ public sealed class StatusScreenRendererTests
             draw => draw.Texture != TextureHandle.None
                 && draw.Vertices.Chunk(4).Any(quad =>
                     Math.Abs(quad[0].X - 642.5f) < 0.01f
+                    && Math.Abs(quad[0].Y + 2.5f) < 0.01f
                     && Math.Abs(quad[1].X - 320f) < 0.01f
                     && Math.Abs(quad[3].Y - 482.5f) < 0.01f));
 

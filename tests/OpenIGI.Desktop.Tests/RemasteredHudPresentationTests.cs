@@ -87,7 +87,7 @@ public sealed class RemasteredHudPresentationTests
         WeaponType medipack = new()
         {
             Category = WeaponCategory.Medipack,
-            AmmoDisplay = AmmoDisplayType.Normal,
+            AmmoDisplay = AmmoDisplayType.None,
         };
 
         (string magazine, string reserve) =
