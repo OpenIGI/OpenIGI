@@ -206,8 +206,10 @@ public static class FontAtlasBuilder
             codepoints.Add(cp);
         }
 
-        // General-punctuation marks that appear in logs and prose.
-        codepoints.AddRange([0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026]);
+        // General-punctuation marks that appear in logs and prose, plus the single guillemets the
+        // developer tools use as a prompt sigil. A glyph that is not in this set silently becomes a
+        // question mark, which is how a prompt ends up reading "? type a command".
+        codepoints.AddRange([0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2026, 0x2039, 0x203A]);
         return [.. codepoints];
     }
 

@@ -27,8 +27,6 @@ public sealed class WatchBody : UiElement
     private readonly DevConsoleTheme _theme;
     private readonly List<ConsoleWatchEntry> _entries = [];
 
-    private float _cell = 8f;
-    private float _textSize = 13f;
 
     /// <summary>Initialises a new instance of the <see cref="WatchBody"/> class.</summary>
     /// <param name="watch">The pinned set.</param>
@@ -49,52 +47,57 @@ public sealed class WatchBody : UiElement
     /// <summary>Gets how tall the panel wants to be for what is pinned, in pixels.</summary>
     /// <remarks>The window follows this, so pinning a value grows the panel instead of scrolling it.</remarks>
     public float PreferredHeight =>
-        MathF.Max(1, _watch.Names.Count) * _theme.Mono.LineHeight(_textSize) * 1.35f + 12f;
-
-    /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
-    {
-        _textSize = context.Px(DevConsoleCVars.FontSize.Value * 0.95f);
-        _cell = _theme.Mono.MeasureWidth("0", _textSize);
-        return available;
-    }
+        (MathF.Max(1, _watch.Names.Count) * _theme.RowHeight) + (_theme.Unit * 4f);
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
     {
         _watch.Read(_registry, _entries);
 
-        float lineHeight = _theme.Mono.LineHeight(_textSize) * 1.35f;
-        float y = Bounds.Y + 6f;
+        float rowHeight = _theme.RowHeight;
+        float x = MathF.Round(Bounds.X + _theme.Gutter);
+        float y = MathF.Round(Bounds.Y + _theme.Unit * 2f);
 
         if (_entries.Count == 0)
         {
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 "nothing pinned — try  watch r_vsync",
-                new UiVec2(Bounds.X + _cell, y),
-                _textSize,
+                new UiVec2(x, y + (_theme.Unit * 2f)),
+                _theme.BodySize,
                 _theme.Ui.TextDisabled);
             return;
         }
 
-        foreach (ConsoleWatchEntry entry in _entries)
+        for (int i = 0; i < _entries.Count; i++)
         {
+            ConsoleWatchEntry entry = _entries[i];
+            var row = new UiRect(Bounds.X, y, Bounds.Width, rowHeight);
+
+            if ((i & 1) == 1)
+            {
+                painter.FillRect(row, _theme.Ui.Text.WithAlpha(8));
+            }
+
+            float textY = MathF.Round(row.Y + ((row.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
+
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 Fit(entry.Name, NameColumns - 1),
-                new UiVec2(Bounds.X + _cell, y),
-                _textSize,
+                new UiVec2(x, textY),
+                _theme.BodySize,
                 entry.IsResolved ? _theme.Ui.TextMuted : _theme.Ui.TextDisabled);
 
+            // The value is right-aligned against a fixed column so a changing number grows leftwards
+            // instead of shuffling everything after it, which is the whole point of watching one.
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 entry.Value,
-                new UiVec2(Bounds.X + _cell + (_cell * NameColumns), y),
-                _textSize,
+                new UiVec2(MathF.Round(x + (_theme.Cell * NameColumns)), textY),
+                _theme.BodySize,
                 entry.IsResolved ? _theme.Ui.Text : _theme.Ui.Danger);
 
-            y += lineHeight;
+            y = MathF.Round(y + rowHeight);
         }
     }
 

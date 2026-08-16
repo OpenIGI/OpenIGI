@@ -31,8 +31,6 @@ public sealed class InspectorBody : UiElement
 
     private IWorldInspector? _inspector;
     private int _selected = -1;
-    private float _cell = 8f;
-    private float _textSize = 13f;
 
     /// <summary>Initialises a new instance of the <see cref="InspectorBody"/> class.</summary>
     /// <param name="theme">The palette and face.</param>
@@ -115,17 +113,18 @@ public sealed class InspectorBody : UiElement
     /// <summary>Brings the selected row into view.</summary>
     public void RevealSelection() => _rows.EnsureVisible(_selected);
 
-    private float RowHeight => _theme.Mono.LineHeight(_textSize) * 1.32f;
+    /// <summary>Gets or sets the generated sprites used for rounded controls.</summary>
+    public UiSurfaces? Surfaces { get; set; }
 
-    private float HeaderHeight => RowHeight + 10f;
+    private float RowHeight => _theme.RowHeight;
 
-    private float DetailHeight => _detail.Count == 0 ? 0f : (_detail.Count + 1) * RowHeight;
+    private float HeaderHeight => _theme.ControlHeight + (_theme.Unit * 4f);
+
+    private float DetailHeight => _detail.Count == 0 ? 0f : ((_detail.Count * RowHeight) + (_theme.Unit * 3f));
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
-        _textSize = context.Px(DevConsoleCVars.FontSize.Value * 0.95f);
-        _cell = _theme.Mono.MeasureWidth("0", _textSize);
         _rows.RowHeight = RowHeight;
         _rows.Measure(context, available);
         return available;
@@ -147,10 +146,10 @@ public sealed class InspectorBody : UiElement
         if (_inspector is null)
         {
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 "no world loaded",
-                new UiVec2(Bounds.X + _cell, Bounds.Y + 10f),
-                _textSize,
+                new UiVec2(Bounds.X + _theme.Cell, Bounds.Y + 10f),
+                _theme.BodySize,
                 _theme.Ui.TextDisabled);
 
             _rows.RowCount = 0;
@@ -163,10 +162,10 @@ public sealed class InspectorBody : UiElement
         if (_entities.Count == 0)
         {
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 FilterEdit.Text.Length > 0 ? "nothing matches" : "nothing to inspect — no mission loaded",
-                new UiVec2(Bounds.X + (_cell * 2f), Bounds.Y + HeaderHeight + (RowHeight * 0.4f)),
-                _textSize,
+                new UiVec2(Bounds.X + (_theme.Cell * 2f), Bounds.Y + HeaderHeight + (RowHeight * 0.4f)),
+                _theme.BodySize,
                 _theme.Ui.TextDisabled);
         }
     }
@@ -188,27 +187,27 @@ public sealed class InspectorBody : UiElement
         float y = panel.Y + (RowHeight * 0.4f);
         foreach (string line in _detail)
         {
-            painter.DrawText(_theme.Mono, line, new UiVec2(panel.X + _cell, y), _textSize, _theme.Ui.TextMuted);
+            painter.DrawText(_theme.BodyFont, line, new UiVec2(panel.X + _theme.Cell, y), _theme.BodySize, _theme.Ui.TextMuted);
             y += RowHeight;
         }
     }
 
     private void DrawFilterBox(UiPainter painter)
     {
-        var box = new UiRect(Bounds.X + _cell, Bounds.Y + 5f, Bounds.Width - (_cell * 2f), RowHeight);
+        var box = new UiRect(Bounds.X + _theme.Cell, Bounds.Y + 5f, Bounds.Width - (_theme.Cell * 2f), RowHeight);
 
         painter.FillRect(box, _theme.Ui.Surface);
         painter.StrokeRect(box, 1f, _theme.Ui.Border);
 
-        float y = box.Y + ((box.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
-        painter.DrawText(_theme.Mono, "find", new UiVec2(box.X + (_cell * 0.75f), y), _textSize, _theme.Ui.TextDisabled);
-        painter.DrawText(_theme.Mono, FilterEdit.Text, new UiVec2(box.X + (_cell * 5.5f), y), _textSize, _theme.Ui.Text);
+        float y = box.Y + ((box.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f);
+        painter.DrawText(_theme.BodyFont, "find", new UiVec2(box.X + (_theme.Cell * 0.75f), y), _theme.BodySize, _theme.Ui.TextDisabled);
+        painter.DrawText(_theme.BodyFont, FilterEdit.Text, new UiVec2(box.X + (_theme.Cell * 5.5f), y), _theme.BodySize, _theme.Ui.Text);
 
         painter.DrawText(
-            _theme.Mono,
+            _theme.BodyFont,
             _entities.Count.ToString(CultureInfo.InvariantCulture),
-            new UiVec2(box.Right - (_cell * 6f), y),
-            _textSize,
+            new UiVec2(box.Right - (_theme.Cell * 6f), y),
+            _theme.BodySize,
             _theme.Ui.TextMuted);
     }
 
@@ -231,23 +230,23 @@ public sealed class InspectorBody : UiElement
             painter.FillRect(rect, _theme.Ui.Text.WithAlpha(6));
         }
 
-        float y = rect.Y + ((rect.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
-        float x = rect.X + _cell;
+        float y = rect.Y + ((rect.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f);
+        float x = rect.X + _theme.Cell;
 
-        painter.DrawText(_theme.Mono, Fit(entity.Name, NameColumns - 1), new UiVec2(x, y), _textSize, _theme.Ui.Text);
+        painter.DrawText(_theme.BodyFont, Fit(entity.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.Ui.Text);
 
         painter.DrawText(
-            _theme.Mono,
+            _theme.BodyFont,
             Fit(entity.Kind, KindColumns - 1),
-            new UiVec2(x + (_cell * NameColumns), y),
-            _textSize,
+            new UiVec2(x + (_theme.Cell * NameColumns), y),
+            _theme.BodySize,
             _theme.Ui.TextMuted);
 
         painter.DrawText(
-            _theme.Mono,
+            _theme.BodyFont,
             entity.State,
-            new UiVec2(x + (_cell * (NameColumns + KindColumns)), y),
-            _textSize,
+            new UiVec2(x + (_theme.Cell * (NameColumns + KindColumns)), y),
+            _theme.BodySize,
             _theme.Ui.TextMuted);
     }
 

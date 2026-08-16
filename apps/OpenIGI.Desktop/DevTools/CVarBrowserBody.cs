@@ -17,18 +17,15 @@ namespace OpenIGI.Desktop;
 /// "what is it set to" in one place, which is the question the log was a poor answer to.
 /// </para>
 /// <para>
-/// <b>Editing happens in the row.</b> Copying a name to the prompt and typing a value there works, but
-/// it puts the value being changed and the value it had on different parts of the screen. Editing in
-/// place keeps them together, and a rejected value can be reported against the row that refused it.
-/// </para>
-/// <para>
-/// Columns sit on multiples of one character advance, which is exact because the face is fixed-pitch.
+/// <b>Editing happens in the row.</b> Copying a name to the prompt and typing a value there works,
+/// but it puts the value being changed and the value it had on different parts of the screen. Editing
+/// in place keeps them together, and a rejected value can be reported against the row that refused it.
 /// </para>
 /// </remarks>
 public sealed class CVarBrowserBody : UiElement
 {
     private const int NameColumns = 30;
-    private const int ValueColumns = 14;
+    private const int ValueColumns = 13;
     private const int DefaultColumns = 12;
     private const int FlagColumns = 7;
 
@@ -41,12 +38,10 @@ public sealed class CVarBrowserBody : UiElement
     private int _selected = -1;
     private bool _editing;
     private string _error = string.Empty;
-    private float _cell = 8f;
-    private float _textSize = 14f;
 
     /// <summary>Initialises a new instance of the <see cref="CVarBrowserBody"/> class.</summary>
     /// <param name="registry">The registry listed.</param>
-    /// <param name="theme">The palette and face.</param>
+    /// <param name="theme">The palette, type scale and spacing.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     public CVarBrowserBody(CVarRegistry registry, DevConsoleTheme theme)
     {
@@ -73,6 +68,9 @@ public sealed class CVarBrowserBody : UiElement
 
     /// <summary>Gets the variables currently passing the filter.</summary>
     public IReadOnlyList<ICVar> Matches => _matches;
+
+    /// <summary>Gets or sets the generated sprites used for rounded controls.</summary>
+    public UiSurfaces? Surfaces { get; set; }
 
     /// <summary>Gets or sets the selected row, or -1 for none.</summary>
     public int SelectedIndex
@@ -235,16 +233,14 @@ public sealed class CVarBrowserBody : UiElement
     /// <summary>Brings the selected row into view.</summary>
     public void RevealSelection() => _rows.EnsureVisible(_selected);
 
-    private float RowHeight => _theme.Mono.LineHeight(_textSize) * 1.32f;
+    private float HeaderHeight => _theme.ControlHeight + (_theme.Unit * 4f) + _theme.RowHeight;
 
-    private float HeaderHeight => (RowHeight * 2f) + 10f;
+    private float FooterHeight => _error.Length == 0 ? 0f : _theme.ControlHeight + _theme.Unit;
 
     /// <inheritdoc/>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
-        _textSize = context.Px(DevConsoleCVars.FontSize.Value);
-        _cell = _theme.Mono.MeasureWidth("0", _textSize);
-        _rows.RowHeight = RowHeight;
+        _rows.RowHeight = _theme.RowHeight;
         _rows.Measure(context, available);
         return available;
     }
@@ -252,12 +248,12 @@ public sealed class CVarBrowserBody : UiElement
     /// <inheritdoc/>
     protected override void ArrangeContent(LayoutContext context, UiRect contentRect)
     {
-        float footer = _error.Length > 0 ? RowHeight : 0f;
+        float top = MathF.Round(contentRect.Y + HeaderHeight);
         _rows.Arrange(UiRect.FromEdges(
             contentRect.X,
-            contentRect.Y + HeaderHeight,
+            top,
             contentRect.Right,
-            MathF.Max(contentRect.Y + HeaderHeight, contentRect.Bottom - footer)));
+            MathF.Max(top, MathF.Round(contentRect.Bottom - FooterHeight))));
     }
 
     /// <inheritdoc/>
@@ -275,69 +271,83 @@ public sealed class CVarBrowserBody : UiElement
             return;
         }
 
-        var row = new UiRect(Bounds.X, Bounds.Bottom - RowHeight, Bounds.Width, RowHeight);
-        painter.FillRect(row, _theme.Ui.Danger.WithAlpha(40));
+        var row = new UiRect(Bounds.X, MathF.Round(Bounds.Bottom - FooterHeight), Bounds.Width, FooterHeight);
+        painter.FillRect(row, _theme.Ui.Danger.WithAlpha(28));
+        painter.FillRect(new UiRect(row.X, row.Y, MathF.Max(2f, _theme.Unit * 0.5f), row.Height), _theme.Ui.Danger);
+
         painter.DrawText(
-            _theme.Mono,
+            _theme.BodyFont,
             _error,
-            new UiVec2(row.X + _cell, row.Y + ((row.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f)),
-            _textSize,
+            new UiVec2(
+                MathF.Round(row.X + _theme.Gutter),
+                MathF.Round(row.Y + ((row.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f))),
+            _theme.BodySize,
             _theme.Ui.Danger);
     }
 
     private void DrawFilterBox(UiPainter painter)
     {
-        var box = new UiRect(Bounds.X + _cell, Bounds.Y + 5f, Bounds.Width - (_cell * 2f), RowHeight);
+        float unit = _theme.Unit;
+        var box = new UiRect(
+            MathF.Round(Bounds.X + _theme.Gutter),
+            MathF.Round(Bounds.Y + (unit * 2f)),
+            MathF.Round(Bounds.Width - (_theme.Gutter * 2f)),
+            _theme.ControlHeight);
+
         FilterRect = box;
 
-        painter.FillRect(box, _theme.Ui.Surface);
-        painter.StrokeRect(box, 1f, _theme.Ui.Border);
+        painter.FillRoundedRect(box, Surfaces?.Rounded ?? default, _theme.Ui.Panel, unit);
+        painter.StrokeRect(box, 1f, FilterEdit.Text.Length > 0 ? _theme.Ui.Accent : _theme.Ui.Border);
 
-        float y = box.Y + ((box.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
-        float x = box.X + (_cell * 0.75f);
-
-        painter.DrawText(_theme.Mono, "filter", new UiVec2(x, y), _textSize, _theme.Ui.TextDisabled);
-        float textX = x + (_cell * 7f);
-
-        if (FilterEdit.HasSelection)
-        {
-            painter.FillRect(
-                new UiRect(
-                    textX + (FilterEdit.SelectionStart * _cell),
-                    box.Y + 2f,
-                    (FilterEdit.SelectionEnd - FilterEdit.SelectionStart) * _cell,
-                    box.Height - 4f),
-                _theme.Ui.Selection);
-        }
-
-        painter.DrawText(_theme.Mono, FilterEdit.Text, new UiVec2(textX, y), _textSize, _theme.Ui.Text);
+        float y = MathF.Round(box.Y + ((box.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
+        float textX = MathF.Round(box.X + (unit * 2f));
 
         painter.DrawText(
-            _theme.Mono,
-            $"{_matches.Count}",
-            new UiVec2(box.Right - (_cell * 6f), y),
-            _textSize,
+            _theme.BodyFont,
+            FilterEdit.Text.Length > 0 ? FilterEdit.Text : "filter variables",
+            new UiVec2(textX, y),
+            _theme.BodySize,
+            FilterEdit.Text.Length > 0 ? _theme.Ui.Text : _theme.Ui.TextDisabled);
+
+        string count = $"{_matches.Count}";
+        painter.DrawText(
+            _theme.SmallFont,
+            count,
+            new UiVec2(
+                MathF.Round(box.Right - (unit * 2f) - _theme.SmallFont.MeasureWidth(count, _theme.SmallSize)),
+                MathF.Round(box.Y + ((box.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
+            _theme.SmallSize,
             _theme.Ui.TextMuted);
     }
 
+    /// <summary>
+    /// Draws the column headings, on exactly the cells the rows below use.
+    /// </summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <remarks>
+    /// Placed from the same character cell as the data, so a heading can never drift out of line with
+    /// the column it names — which is what happens the moment a heading is set at a different size and
+    /// positioned by eye.
+    /// </remarks>
     private void DrawColumnHeadings(UiPainter painter)
     {
-        float y = Bounds.Y + RowHeight + 8f;
-        float x = Bounds.X + _cell;
+        float cell = _theme.Cell;
+        float y = MathF.Round(Bounds.Y + (_theme.Unit * 3f) + _theme.ControlHeight);
+        float x = MathF.Round(Bounds.X + _theme.Gutter);
         Bgra32 colour = _theme.Ui.TextDisabled;
 
-        painter.DrawText(_theme.Mono, "NAME", new UiVec2(x, y), _textSize * 0.85f, colour);
-        painter.DrawText(_theme.Mono, "VALUE", new UiVec2(x + (_cell * NameColumns), y), _textSize * 0.85f, colour);
-        painter.DrawText(_theme.Mono, "DEFAULT", new UiVec2(x + (_cell * (NameColumns + ValueColumns)), y), _textSize * 0.85f, colour);
+        painter.DrawText(_theme.SmallFont, "NAME", new UiVec2(x, y), _theme.SmallSize, colour);
+        painter.DrawText(_theme.SmallFont, "VALUE", new UiVec2(MathF.Round(x + (cell * NameColumns)), y), _theme.SmallSize, colour);
+        painter.DrawText(_theme.SmallFont, "DEFAULT", new UiVec2(MathF.Round(x + (cell * (NameColumns + ValueColumns))), y), _theme.SmallSize, colour);
         painter.DrawText(
-            _theme.Mono,
+            _theme.SmallFont,
             "FLAGS",
-            new UiVec2(x + (_cell * (NameColumns + ValueColumns + DefaultColumns)), y),
-            _textSize * 0.85f,
+            new UiVec2(MathF.Round(x + (cell * (NameColumns + ValueColumns + DefaultColumns))), y),
+            _theme.SmallSize,
             colour);
 
         painter.FillRect(
-            new UiRect(Bounds.X, Bounds.Y + HeaderHeight - 1f, Bounds.Width, 1f),
+            new UiRect(Bounds.X, MathF.Round(Bounds.Y + HeaderHeight - 1f), Bounds.Width, 1f),
             _theme.Ui.Border);
     }
 
@@ -350,6 +360,7 @@ public sealed class CVarBrowserBody : UiElement
 
         ICVar variable = _matches[row];
         bool selected = row == _selected;
+        float cell = _theme.Cell;
 
         if (selected)
         {
@@ -359,91 +370,100 @@ public sealed class CVarBrowserBody : UiElement
         {
             // A whisper of a stripe. Enough to keep the eye on one row across a wide table, not enough
             // to read as two kinds of row.
-            painter.FillRect(rect, _theme.Ui.Text.WithAlpha(6));
+            painter.FillRect(rect, _theme.Ui.Text.WithAlpha(8));
         }
 
         // A variable the reader has changed is the one they are looking for; a bar in the gutter says
         // so without tinting the row and breaking the scan.
         if (!variable.IsDefault)
         {
-            painter.FillRect(new UiRect(rect.X, rect.Y, 3f, rect.Height), _theme.Ui.Accent);
+            painter.FillRect(new UiRect(rect.X, rect.Y, MathF.Max(2f, _theme.Unit * 0.5f), rect.Height), _theme.Ui.Accent);
         }
 
-        float y = rect.Y + ((rect.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
-        float x = rect.X + _cell;
+        float y = MathF.Round(rect.Y + ((rect.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
+        float x = MathF.Round(rect.X + _theme.Gutter);
 
-        painter.DrawText(_theme.Mono, Fit(variable.Name, NameColumns - 1), new UiVec2(x, y), _textSize, _theme.SyntaxVariable);
+        painter.DrawText(_theme.BodyFont, Fit(variable.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.SyntaxVariable);
 
-        float valueX = x + (_cell * NameColumns);
+        float valueX = MathF.Round(x + (cell * NameColumns));
         if (selected && _editing)
         {
-            DrawValueEditor(painter, new UiRect(valueX - 2f, rect.Y + 1f, _cell * ValueColumns, rect.Height - 2f), y);
+            DrawValueEditor(painter, new UiRect(valueX - _theme.Unit, rect.Y + 1f, cell * ValueColumns, rect.Height - 2f), y);
         }
         else
         {
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 Fit(variable.ValueText, ValueColumns - 1),
                 new UiVec2(valueX, y),
-                _textSize,
+                _theme.BodySize,
                 variable.IsDefault ? _theme.Ui.Text : _theme.Ui.Accent);
         }
 
         painter.DrawText(
-            _theme.Mono,
+            _theme.SmallFont,
             Fit(variable.DefaultText, DefaultColumns - 1),
-            new UiVec2(x + (_cell * (NameColumns + ValueColumns)), y),
-            _textSize,
+            new UiVec2(MathF.Round(x + (cell * (NameColumns + ValueColumns))), MathF.Round(rect.Y + ((rect.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
+            _theme.SmallSize,
             _theme.Ui.TextDisabled);
 
         painter.DrawText(
-            _theme.Mono,
+            _theme.SmallFont,
             FlagLetters(variable.Flags),
-            new UiVec2(x + (_cell * (NameColumns + ValueColumns + DefaultColumns)), y),
-            _textSize,
+            new UiVec2(MathF.Round(x + (cell * (NameColumns + ValueColumns + DefaultColumns))), MathF.Round(rect.Y + ((rect.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
+            _theme.SmallSize,
             _theme.Ui.TextMuted);
 
-        float helpX = x + (_cell * (NameColumns + ValueColumns + DefaultColumns + FlagColumns));
-        int helpColumns = Math.Max(0, (int)((rect.Right - helpX) / _cell) - 1);
+        float helpX = MathF.Round(x + (cell * (NameColumns + ValueColumns + DefaultColumns + FlagColumns)));
+        int helpColumns = Math.Max(0, (int)((rect.Right - helpX - _theme.Gutter) / cell));
         string trailing = variable.Help.Length > 0 ? variable.Help : variable.RangeText;
 
-        if (helpColumns > 4 && trailing.Length > 0)
+        if (helpColumns > 6 && trailing.Length > 0)
         {
-            painter.DrawText(_theme.Mono, Fit(trailing, helpColumns), new UiVec2(helpX, y), _textSize, _theme.Ui.TextMuted);
+            painter.DrawText(
+                _theme.SmallFont,
+                Fit(trailing, helpColumns),
+                new UiVec2(helpX, MathF.Round(rect.Y + ((rect.Height - _theme.SmallFont.LineHeight(_theme.SmallSize)) * 0.5f))),
+                _theme.SmallSize,
+                _theme.Ui.TextMuted);
         }
     }
 
     private void DrawValueEditor(UiPainter painter, UiRect box, float textY)
     {
-        painter.FillRect(box, _theme.Ui.SurfaceRaised);
+        painter.FillRoundedRect(box, Surfaces?.Rounded ?? default, _theme.Ui.SurfaceRaised, _theme.Unit);
         painter.StrokeRect(box, 1f, _theme.Ui.Accent);
 
-        float textX = box.X + 3f;
+        float textX = MathF.Round(box.X + _theme.Unit);
 
         if (ValueEdit.HasSelection)
         {
             painter.FillRect(
                 new UiRect(
-                    textX + (ValueEdit.SelectionStart * _cell),
-                    box.Y + 1f,
-                    (ValueEdit.SelectionEnd - ValueEdit.SelectionStart) * _cell,
-                    box.Height - 2f),
+                    MathF.Round(textX + (ValueEdit.SelectionStart * _theme.Cell)),
+                    box.Y + 2f,
+                    MathF.Round((ValueEdit.SelectionEnd - ValueEdit.SelectionStart) * _theme.Cell),
+                    box.Height - 4f),
                 _theme.Ui.Selection);
         }
 
-        painter.DrawText(_theme.Mono, ValueEdit.Text, new UiVec2(textX, textY), _textSize, _theme.Ui.Text);
+        painter.DrawText(_theme.BodyFont, ValueEdit.Text, new UiVec2(textX, textY), _theme.BodySize, _theme.Ui.Text);
 
         if (CaretVisible)
         {
             painter.FillRect(
-                new UiRect(textX + (ValueEdit.Caret * _cell), box.Y + 2f, MathF.Max(1f, _cell * 0.12f), box.Height - 4f),
+                new UiRect(
+                    MathF.Round(textX + (ValueEdit.Caret * _theme.Cell)),
+                    box.Y + 2f,
+                    MathF.Max(1f, MathF.Round(_theme.Cell * 0.1f)),
+                    box.Height - 4f),
                 _theme.Ui.Accent);
         }
     }
 
     /// <summary>Renders a variable's flags as one letter each.</summary>
     /// <param name="flags">The flags to render.</param>
-    /// <returns>A short string, or spaces when the variable is unremarkable.</returns>
+    /// <returns>A short string, or empty when the variable is unremarkable.</returns>
     /// <remarks>
     /// Letters rather than words: the column has to stay narrow enough that the help text still fits
     /// beside it, and a reader learns five letters far faster than they scroll horizontally.
@@ -481,13 +501,6 @@ public sealed class CVarBrowserBody : UiElement
         return at == 0 ? string.Empty : new string(letters[..at]);
     }
 
-    private static string Fit(string text, int columns)
-    {
-        if (columns <= 1 || text.Length <= columns)
-        {
-            return text;
-        }
-
-        return string.Concat(text.AsSpan(0, columns - 1), "…");
-    }
+    private static string Fit(string text, int columns) =>
+        columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
 }

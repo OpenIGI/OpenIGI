@@ -3513,11 +3513,6 @@ internal sealed partial class DesktopGame : IDisposable
             // pinned overlay can never leak into a reference screenshot and break the vanilla gate.
             if (console.WantsDraw)
             {
-                // The wall-clock tracker belongs to this loop, which is the only thing that knows when
-                // a frame began and ended, so the panel is handed the numbers rather than fetching
-                // them. The GPU stage timings it reads straight off the device.
-                console.View.FrameStatistics = framePerformance.Statistics();
-
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);
                 batch.Begin();

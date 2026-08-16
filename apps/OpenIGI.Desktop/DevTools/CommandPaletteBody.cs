@@ -31,8 +31,6 @@ public sealed class CommandPaletteBody : UiElement
     private readonly List<ConsoleSuggestion> _matches = [];
 
     private int _selected;
-    private float _cell = 8f;
-    private float _textSize = 14f;
 
     /// <summary>Initialises a new instance of the <see cref="CommandPaletteBody"/> class.</summary>
     /// <param name="console">The console whose registries are searched.</param>
@@ -108,17 +106,12 @@ public sealed class CommandPaletteBody : UiElement
         return index >= 0 && index < _matches.Count ? index : -1;
     }
 
-    private float RowHeight => _theme.Mono.LineHeight(_textSize) * 1.45f;
+    /// <summary>Gets or sets the generated sprites used for rounded rows.</summary>
+    public UiSurfaces? Surfaces { get; set; }
 
-    private float HeaderHeight => RowHeight + 8f;
+    private float RowHeight => _theme.RowHeight;
 
-    /// <inheritdoc/>
-    protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
-    {
-        _textSize = context.Px(DevConsoleCVars.FontSize.Value);
-        _cell = _theme.Mono.MeasureWidth("0", _textSize);
-        return available;
-    }
+    private float HeaderHeight => _theme.ControlHeight + (_theme.Unit * 4f);
 
     /// <inheritdoc/>
     protected override void OnDraw(UiPainter painter)
@@ -132,25 +125,25 @@ public sealed class CommandPaletteBody : UiElement
         var box = new UiRect(Bounds.X, Bounds.Y, Bounds.Width, RowHeight + 6f);
         painter.FillRect(box, _theme.Ui.Surface);
 
-        float y = box.Y + ((box.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
-        float x = box.X + _cell;
+        float y = box.Y + ((box.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f);
+        float x = box.X + _theme.Cell;
 
-        painter.DrawText(_theme.Mono, "›", new UiVec2(x, y), _textSize, _theme.Ui.Accent);
-        float textX = x + (_cell * 2f);
+        painter.DrawText(_theme.BodyFont, "›", new UiVec2(x, y), _theme.BodySize, _theme.Ui.Accent);
+        float textX = x + (_theme.Cell * 2f);
 
         if (Query.Text.Length == 0)
         {
-            painter.DrawText(_theme.Mono, "run a command or find a setting", new UiVec2(textX, y), _textSize, _theme.Ui.TextDisabled);
+            painter.DrawText(_theme.BodyFont, "run a command or find a setting", new UiVec2(textX, y), _theme.BodySize, _theme.Ui.TextDisabled);
         }
         else
         {
-            painter.DrawText(_theme.Mono, Query.Text, new UiVec2(textX, y), _textSize, _theme.Ui.Text);
+            painter.DrawText(_theme.BodyFont, Query.Text, new UiVec2(textX, y), _theme.BodySize, _theme.Ui.Text);
         }
 
         if (CaretVisible)
         {
             painter.FillRect(
-                new UiRect(textX + (Query.Caret * _cell), box.Y + 4f, MathF.Max(1f, _cell * 0.12f), box.Height - 8f),
+                new UiRect(textX + (Query.Caret * _theme.Cell), box.Y + 4f, MathF.Max(1f, _theme.Cell * 0.12f), box.Height - 8f),
                 _theme.Ui.Accent);
         }
 
@@ -165,10 +158,10 @@ public sealed class CommandPaletteBody : UiElement
         if (_matches.Count == 0)
         {
             painter.DrawText(
-                _theme.Mono,
+                _theme.BodyFont,
                 "no matches",
-                new UiVec2(Bounds.X + (_cell * 3f), y + (rowHeight * 0.25f)),
-                _textSize,
+                new UiVec2(Bounds.X + (_theme.Cell * 3f), y + (rowHeight * 0.25f)),
+                _theme.BodySize,
                 _theme.Ui.TextDisabled);
             return;
         }
@@ -184,31 +177,31 @@ public sealed class CommandPaletteBody : UiElement
                 painter.FillRect(new UiRect(row.X, row.Y, 3f, row.Height), _theme.Ui.Accent);
             }
 
-            float textY = row.Y + ((row.Height - _theme.Mono.LineHeight(_textSize)) * 0.5f);
+            float textY = row.Y + ((row.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f);
             Bgra32 colour = entry.IsBlocked ? _theme.Ui.TextDisabled : _theme.ColorFor(entry.Kind);
 
-            painter.DrawText(_theme.Mono, Fit(entry.Text, 34), new UiVec2(row.X + (_cell * 2f), textY), _textSize, colour);
+            painter.DrawText(_theme.BodyFont, Fit(entry.Text, 34), new UiVec2(row.X + (_theme.Cell * 2f), textY), _theme.BodySize, colour);
 
             if (entry.Detail.Length > 0)
             {
                 painter.DrawText(
-                    _theme.Mono,
+                    _theme.BodyFont,
                     Fit(entry.Detail, 14),
-                    new UiVec2(row.X + (_cell * 37f), textY),
-                    _textSize,
+                    new UiVec2(row.X + (_theme.Cell * 37f), textY),
+                    _theme.BodySize,
                     _theme.Ui.Text);
             }
 
             if (entry.Help.Length > 0)
             {
-                int columns = Math.Max(0, (int)((row.Right - row.X - (_cell * 53f)) / _cell) - 1);
+                int columns = Math.Max(0, (int)((row.Right - row.X - (_theme.Cell * 53f)) / _theme.Cell) - 1);
                 if (columns > 4)
                 {
                     painter.DrawText(
-                        _theme.Mono,
+                        _theme.BodyFont,
                         Fit(entry.Help, columns),
-                        new UiVec2(row.X + (_cell * 53f), textY),
-                        _textSize,
+                        new UiVec2(row.X + (_theme.Cell * 53f), textY),
+                        _theme.BodySize,
                         _theme.Ui.TextMuted);
                 }
             }

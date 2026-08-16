@@ -44,6 +44,17 @@ public class WindowLayer : UiElement
     /// <summary>Gets a value indicating whether a drag or resize is in progress.</summary>
     public bool IsManipulating => _active is not null;
 
+    /// <summary>Gets the window being dragged or resized, or <see langword="null"/> when none is.</summary>
+    public UiWindow? Active => _active;
+
+    /// <summary>Gets what the live manipulation is doing — a title drag, or which edges are moving.</summary>
+    /// <remarks>
+    /// Exposed so a panel that sizes itself to its contents can tell when the reader has taken that
+    /// decision away from it. A window whose height keeps snapping back to its content while it is
+    /// being dragged taller is worse than one that never sized itself at all.
+    /// </remarks>
+    public WindowRegion ActiveRegion => _active is null ? WindowRegion.None : _mode;
+
     /// <summary>Gets or sets how near a viewport edge a window snaps, in pixels. Zero disables it.</summary>
     public float SnapDistance { get; set; } = 12f;
 

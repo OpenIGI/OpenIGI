@@ -137,11 +137,4 @@ public static class DevConsoleCVars
         false,
         CVarOptions.Archive,
         "Keep the watch panel on screen while the console is closed.");
-
-    /// <summary>Whether the statistics panel stays on screen with the console closed.</summary>
-    public static readonly BoolCVar StatsVisible = CVar.Bool(
-        "con_stats",
-        false,
-        CVarOptions.Archive,
-        "Keep the performance panel on screen while the console is closed.");
 }

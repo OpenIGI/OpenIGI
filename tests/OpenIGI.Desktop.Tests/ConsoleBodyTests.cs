@@ -27,13 +27,11 @@ public sealed class ConsoleBodyTests
     private static Harness Build(float width = 1000f, float height = 500f)
     {
         var device = new RecordingGraphicsDevice();
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "JetBrainsMono-Regular.ttf");
-        UiFont font = UiFont.Upload(device, FontAtlasBuilder.Build(File.ReadAllBytes(path), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.Extended));
 
         var registry = new CVarRegistry();
         var system = new ConsoleSystem(registry);
         var model = new ConsoleModel(system);
-        var theme = new DevConsoleTheme(font);
+        var theme = new DevConsoleTheme(new MonoFontSet(device, UiFontLibrary.Mono));
         var body = new ConsoleBody(model, theme);
 
         var context = new LayoutContext(width, height, reference: new UiVec2(width, height));

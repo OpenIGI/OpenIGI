@@ -23,13 +23,8 @@ public sealed class PanelTests
         High,
     }
 
-    private static DevConsoleTheme Theme()
-    {
-        var device = new RecordingGraphicsDevice();
-        string path = Path.Combine(AppContext.BaseDirectory, "Assets", "fonts", "JetBrainsMono-Regular.ttf");
-        UiFont font = UiFont.Upload(device, FontAtlasBuilder.Build(File.ReadAllBytes(path), 32f, FontAtlasKind.Coverage, FontAtlasBuilder.Extended));
-        return new DevConsoleTheme(font);
-    }
+    private static DevConsoleTheme Theme() =>
+        new(new MonoFontSet(new RecordingGraphicsDevice(), UiFontLibrary.Mono));
 
     private static void Render(UiElement element, float width = 900f, float height = 500f)
     {

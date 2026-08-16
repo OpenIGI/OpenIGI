@@ -46,12 +46,11 @@ public sealed class DeveloperConsole : IDisposable
     private const string ConsolePanel = "console";
     private const string CVarPanel = "cvars";
     private const string WatchPanel = "watch";
-    private const string StatsPanel = "stats";
     private const string PalettePanel = "palette";
     private const string InspectorPanel = "world";
 
     /// <summary>Every panel's key, known before any of them has been built.</summary>
-    private static readonly string[] KnownPanels = [ConsolePanel, CVarPanel, WatchPanel, StatsPanel, InspectorPanel, PalettePanel];
+    private static readonly string[] KnownPanels = [ConsolePanel, CVarPanel, WatchPanel, InspectorPanel, PalettePanel];
 
     private readonly IGraphicsDevice _device;
     private readonly ConsoleModel _model;
@@ -69,21 +68,19 @@ public sealed class DeveloperConsole : IDisposable
     private readonly KeyRepeater _pageDown = new();
 
     private UiSurfaces? _surfaces;
-    private UiFont? _monoFont;
+    private MonoFontSet? _fonts;
     private DevConsoleTheme? _theme;
     private WindowLayer? _layer;
 
     private UiWindow? _consoleWindow;
     private UiWindow? _cvarWindow;
     private UiWindow? _watchWindow;
-    private UiWindow? _statsWindow;
     private UiWindow? _paletteWindow;
     private UiWindow? _inspectorWindow;
 
     private ConsoleBody? _body;
     private CVarBrowserBody? _cvars;
     private WatchBody? _watch;
-    private StatsBody? _stats;
     private CommandPaletteBody? _palette;
     private InspectorBody? _inspector;
     private IWorldInspector? _world;
@@ -93,6 +90,7 @@ public sealed class DeveloperConsole : IDisposable
     private bool _disposed;
     private bool _layoutRestored;
     private bool _findFocused;
+    private bool _watchAutoHeight = true;
     private int _viewportWidth = 1;
     private int _viewportHeight = 1;
 
@@ -136,19 +134,6 @@ public sealed class DeveloperConsole : IDisposable
     /// <summary>Gets or sets the clipboard writer.</summary>
     public Action<string>? WriteClipboard { get; set; }
 
-    /// <summary>Gets or sets the frame statistics the performance panel shows.</summary>
-    public FramePerformanceStatistics FrameStatistics
-    {
-        get => _stats?.Frame ?? default;
-        set
-        {
-            if (_stats is not null)
-            {
-                _stats.Frame = value;
-            }
-        }
-    }
-
     /// <summary>Gets a value indicating whether the console wants the pointer freed and shown.</summary>
     /// <remarks>
     /// The cursor lock is re-asserted from the game loop on every pass, so this is polled there rather
@@ -157,8 +142,7 @@ public sealed class DeveloperConsole : IDisposable
     public bool WantsPointer => _model.IsOpen;
 
     /// <summary>Gets a value indicating whether a panel is pinned to stay up with the console shut.</summary>
-    public static bool HasVisibleOverlays =>
-        DevConsoleCVars.WatchVisible.Value || DevConsoleCVars.StatsVisible.Value;
+    public static bool HasVisibleOverlays => DevConsoleCVars.WatchVisible.Value;
 
     /// <summary>Gets how many scrollback lines are on screen, for page-up and page-down.</summary>
     public int VisibleLines => _body?.VisibleLines ?? 20;
@@ -179,9 +163,9 @@ public sealed class DeveloperConsole : IDisposable
 
         try
         {
-            _monoFont = UiFontLibrary.Load(_device, UiFontLibrary.Mono, UiFontLibrary.MonoPixelHeight);
+            _fonts = new MonoFontSet(_device, UiFontLibrary.Mono);
             _surfaces = UiSurfaces.Create(_device);
-            _theme = new DevConsoleTheme(_monoFont, DevConsoleCVars.Palette.Value);
+            _theme = new DevConsoleTheme(_fonts, DevConsoleCVars.Palette.Value);
             _layer = new WindowLayer { SnapDistance = DevConsoleCVars.Snap.Value };
 
             BuildPanels(console);
@@ -253,6 +237,13 @@ public sealed class DeveloperConsole : IDisposable
         }
 
         LayoutContext context = BuildContext(screenWidth, screenHeight);
+
+        // The type scale and the spacing rhythm both follow the reader's settings, and every panel
+        // reads them from here -- so a change to con_font_size or con_scale moves the whole interface
+        // together instead of leaving one panel at the old size.
+        _theme.Resize(context.Px(DevConsoleCVars.FontSize.Value), context.Scale);
+        ApplyChrome();
+
         RestoreLayoutOnce(context);
         SyncViewport(context);
         SyncPanels();
@@ -288,7 +279,7 @@ public sealed class DeveloperConsole : IDisposable
 
         _disposed = true;
         _surfaces?.Dispose();
-        _monoFont?.Dispose();
+        _fonts?.Dispose();
     }
 
     private void BuildPanels(ConsoleSystem console)
@@ -296,10 +287,10 @@ public sealed class DeveloperConsole : IDisposable
         DevConsoleTheme theme = _theme!;
         WindowLayer layer = _layer!;
 
-        _body = new ConsoleBody(_model, theme) { Surfaces = _surfaces!.Rounded };
+        _body = new ConsoleBody(_model, theme) { Surfaces = _surfaces };
         _consoleWindow = Panel(ConsolePanel, "Console", new UiRect(40f, 40f, 1180f, 600f), _body, new UiVec2(420f, 200f));
 
-        _cvars = new CVarBrowserBody(console.Variables, theme);
+        _cvars = new CVarBrowserBody(console.Variables, theme) { Surfaces = _surfaces };
         _cvarWindow = Panel(CVarPanel, "Variables", new UiRect(1240f, 40f, 620f, 720f), _cvars, new UiVec2(460f, 240f));
         _cvarWindow.IsOpen = false;
 
@@ -307,16 +298,12 @@ public sealed class DeveloperConsole : IDisposable
         _watchWindow = Panel(WatchPanel, "Watch", new UiRect(40f, 660f, 420f, 150f), _watch, new UiVec2(240f, 90f));
         _watchWindow.IsOpen = false;
 
-        _stats = new StatsBody(_device, theme);
-        _statsWindow = Panel(StatsPanel, "Performance", new UiRect(480f, 660f, 520f, 340f), _stats, new UiVec2(320f, 140f));
-        _statsWindow.IsOpen = false;
-
-        _inspector = new InspectorBody(theme);
+        _inspector = new InspectorBody(theme) { Surfaces = _surfaces };
         _inspectorWindow = Panel(InspectorPanel, "World", new UiRect(1040f, 660f, 640f, 340f), _inspector, new UiVec2(380f, 180f));
         _inspectorWindow.IsOpen = false;
         _inspector.Attach(_world);
 
-        _palette = new CommandPaletteBody(console, theme);
+        _palette = new CommandPaletteBody(console, theme) { Surfaces = _surfaces };
         _paletteWindow = Panel(PalettePanel, "Command palette", new UiRect(520f, 180f, 900f, 460f), _palette, new UiVec2(420f, 200f));
         _paletteWindow.IsOpen = false;
         _paletteWindow.IsResizable = false;
@@ -358,10 +345,6 @@ public sealed class DeveloperConsole : IDisposable
         if (string.Equals(key, WatchPanel, StringComparison.OrdinalIgnoreCase))
         {
             DevConsoleCVars.WatchVisible.Value = false;
-        }
-        else if (string.Equals(key, StatsPanel, StringComparison.OrdinalIgnoreCase))
-        {
-            DevConsoleCVars.StatsVisible.Value = false;
         }
     }
 
@@ -417,10 +400,6 @@ public sealed class DeveloperConsole : IDisposable
                 {
                     DevConsoleCVars.WatchVisible.Value = wanted;
                 }
-                else if (string.Equals(name, StatsPanel, StringComparison.OrdinalIgnoreCase))
-                {
-                    DevConsoleCVars.StatsVisible.Value = wanted;
-                }
 
                 if (wanted)
                 {
@@ -430,7 +409,7 @@ public sealed class DeveloperConsole : IDisposable
 
                 context.Print($"{name} is {(wanted ? "shown" : "hidden")}.");
             },
-            "<console|cvars|watch|stats|palette> [on|off]");
+            "<console|cvars|watch|world|palette> [on|off]");
 
         console.Commands.Add(
             "con_reset_layout",
@@ -704,10 +683,9 @@ public sealed class DeveloperConsole : IDisposable
 
         window.Frame = key switch
         {
-            ConsolePanel => new UiRect(margin, margin, (w * 0.62f) - margin, (h * 0.58f) - margin),
+            ConsolePanel => new UiRect(margin, margin, (w * 0.62f) - margin, (h * 0.46f) - margin),
             CVarPanel => new UiRect(w * 0.63f, margin, (w * 0.37f) - margin, h * 0.7f),
-            WatchPanel => new UiRect(margin, h * 0.62f, w * 0.26f, h * 0.16f),
-            StatsPanel => new UiRect(w * 0.29f, h * 0.62f, w * 0.31f, h * 0.34f),
+            WatchPanel => new UiRect(margin, h * 0.5f, w * 0.24f, h * 0.12f),
             PalettePanel => new UiRect(w * 0.22f, h * 0.16f, w * 0.56f, h * 0.5f),
             _ => window.Frame,
         };
@@ -771,10 +749,16 @@ public sealed class DeveloperConsole : IDisposable
             {
                 _watchWindow.IsOpen = DevConsoleCVars.WatchVisible.Value;
             }
+        }
 
-            if (_statsWindow is not null)
+        // The watch panel hugs what is pinned, so adding a value grows it instead of leaving a band
+        // of nothing under two rows -- until the reader resizes it, after which it is theirs.
+        if (_watchAutoHeight && _watch is not null && _watchWindow is { IsOpen: true } watch)
+        {
+            float wanted = MathF.Round(watch.TitleHeight + _watch.PreferredHeight);
+            if (MathF.Abs(watch.Frame.Height - wanted) > 0.5f)
             {
-                _statsWindow.IsOpen = DevConsoleCVars.StatsVisible.Value;
+                watch.Frame = new UiRect(watch.Frame.X, watch.Frame.Y, watch.Frame.Width, MathF.Max(watch.MinSize.Y, wanted));
             }
         }
 
@@ -791,6 +775,32 @@ public sealed class DeveloperConsole : IDisposable
         if (_palette is not null)
         {
             _palette.CaretVisible = _caretVisible;
+        }
+    }
+
+    /// <summary>
+    /// Keeps every window's chrome in step with the type scale.
+    /// </summary>
+    /// <remarks>
+    /// The title face has to be handed to the window rather than derived inside it: a coverage atlas
+    /// is only crisp at the height it was rasterised at, so the bar has to be told which face to use
+    /// rather than scaling whichever one it happened to hold.
+    /// </remarks>
+    private void ApplyChrome()
+    {
+        if (_theme is null)
+        {
+            return;
+        }
+
+        foreach (UiWindow window in _panels.Values)
+        {
+            window.TitleFont = _theme.TitleFont;
+            window.TitleTextSize = _theme.TitleSize;
+            window.TitleHeight = _theme.TitleBarHeight;
+            window.Gutter = _theme.Gutter;
+            window.CornerRadius = _theme.CornerRadius;
+            window.GripSize = MathF.Max(5f, _theme.Unit * 1.5f);
         }
     }
 
@@ -832,6 +842,14 @@ public sealed class DeveloperConsole : IDisposable
         }
 
         _layer.UpdatePointer(mouse, new UiVec2(_viewportWidth, _viewportHeight));
+
+        // Dragging the watch panel's top or bottom edge is the reader deciding its height, so it stops
+        // deciding its own.
+        if (ReferenceEquals(_layer.Active, _watchWindow) &&
+            (_layer.ActiveRegion & (WindowRegion.Top | WindowRegion.Bottom)) != 0)
+        {
+            _watchAutoHeight = false;
+        }
 
         if (pressed)
         {

@@ -146,8 +146,16 @@ public class UiWindow : UiElement
                 return UiRect.Empty;
             }
 
-            float size = MathF.Min(TitleHeight, Frame.Height);
-            return new UiRect(Frame.Right - size, Frame.Y, size, size);
+            // Inset from the corner rather than filling it, so the button sits inside the bar's
+            // rounded edge instead of overhanging it, and so the resize grip at that corner stays
+            // reachable.
+            float height = MathF.Min(TitleHeight, Frame.Height);
+            float size = MathF.Max(1f, height - (Gutter * 0.5f));
+            return new UiRect(
+                Frame.Right - size - (Gutter * 0.5f),
+                Frame.Y + ((height - size) * 0.5f),
+                size,
+                size);
         }
     }
 
@@ -410,6 +418,20 @@ public class UiWindow : UiElement
         }
     }
 
+    /// <summary>Gets or sets the face and size the title is set in.</summary>
+    /// <remarks>
+    /// Supplied rather than derived from the bar's height, because a coverage atlas has to be drawn at
+    /// the size it was rasterised at to stay crisp. Deriving a size here and scaling whatever face
+    /// happened to be around is what made small headings mush.
+    /// </remarks>
+    public UiFont? TitleFont { get; set; }
+
+    /// <summary>Gets or sets the pixel size the title is drawn at.</summary>
+    public float TitleTextSize { get; set; } = 13f;
+
+    /// <summary>Gets or sets the inset kept between the bar's edge and its content.</summary>
+    public float Gutter { get; set; } = 12f;
+
     private void DrawTitleBar(UiPainter painter, float focus)
     {
         UiRect bar = TitleRect;
@@ -425,26 +447,27 @@ public class UiWindow : UiElement
                 Theme.Surface);
         }
 
-        UiFont font = Theme.Mono;
-        float size = MathF.Max(9f, TitleHeight * 0.42f);
-        float tracking = size * 0.08f;
-        float textY = bar.Y + ((bar.Height - font.LineHeight(size)) * 0.5f);
+        UiFont font = TitleFont ?? Theme.Mono;
+        float size = TitleTextSize;
+        float textY = MathF.Round(bar.Y + ((bar.Height - font.LineHeight(size)) * 0.5f));
 
-        painter.DrawTextTracked(
+        // A short accent bar at the leading edge, lit only on the window in front. It gives the bar
+        // something to start from and says which window has the keyboard without a colour change the
+        // reader has to notice.
+        float markWidth = MathF.Max(2f, Gutter * 0.25f);
+        float markHeight = MathF.Round(font.LineHeight(size) * 0.72f);
+        painter.FillRect(
+            new UiRect(bar.X + Gutter, MathF.Round(bar.Y + ((bar.Height - markHeight) * 0.5f)), markWidth, markHeight),
+            Interpolate.Lerp(Theme.Border, Theme.Accent, focus));
+
+        painter.DrawText(
             font,
-            Title.ToUpperInvariant(),
-            new UiVec2(bar.X + 12f, textY),
+            Title,
+            new UiVec2(MathF.Round(bar.X + Gutter + markWidth + (Gutter * 0.6f)), textY),
             size,
-            Interpolate.Lerp(Theme.TextMuted, Theme.Text, focus),
-            tracking);
+            Interpolate.Lerp(Theme.TextMuted, Theme.Text, focus));
 
-        // The accent underline appears only on the window in front. It springs in rather than
-        // switching, so flicking between windows reads as one thing moving forward.
-        if (focus > 0.01f)
-        {
-            float width = bar.Width * focus;
-            painter.FillRect(new UiRect(bar.X, bar.Bottom - 2f, width, 2f), Theme.Accent);
-        }
+        painter.FillRect(new UiRect(bar.X, bar.Bottom - 1f, bar.Width, 1f), Theme.Border);
 
         if (CanClose)
         {
@@ -470,22 +493,22 @@ public class UiWindow : UiElement
         if (hovered)
         {
             painter.FillRoundedRect(
-                rect.Deflate(new Thickness(rect.Width * 0.18f)),
+                rect.Deflate(new Thickness(MathF.Round(rect.Height * 0.22f))),
                 Surfaces?.Rounded ?? default,
-                Theme.Danger.WithAlpha(150),
-                rect.Width * 0.16f);
+                Theme.Danger.WithAlpha(170),
+                Gutter * 0.4f);
         }
 
-        float size = rect.Height * 0.5f;
-        UiFont font = Theme.Mono;
+        UiFont font = TitleFont ?? Theme.Mono;
+        float size = TitleTextSize;
         float width = font.MeasureWidth("×", size);
 
         painter.DrawText(
             font,
             "×",
             new UiVec2(
-                rect.X + ((rect.Width - width) * 0.5f),
-                rect.Y + ((rect.Height - font.LineHeight(size)) * 0.5f)),
+                MathF.Round(rect.X + ((rect.Width - width) * 0.5f)),
+                MathF.Round(rect.Y + ((rect.Height - font.LineHeight(size)) * 0.5f))),
             size,
             hovered ? Theme.Text : Theme.TextMuted);
     }
