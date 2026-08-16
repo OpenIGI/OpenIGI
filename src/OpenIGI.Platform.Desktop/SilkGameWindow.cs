@@ -75,6 +75,15 @@ public sealed class SilkGameWindow : IGameWindow
             WindowBorder = settings.Mode == WindowMode.BorderlessFullscreen
                 ? WindowBorder.Hidden
                 : WindowOptions.Default.WindowBorder,
+
+            // Placed at creation, because nothing else ever places a window that starts borderless:
+            // ApplyMode runs only from the Mode setter and from the exclusive-fullscreen paths, so a
+            // borderless window left on Silk's default position sits 50px in from the corner and hangs
+            // the same distance off the far edge -- a fullscreen window missing a strip of the screen.
+            Position = settings.Mode == WindowMode.BorderlessFullscreen
+                ? display.Origin
+                : WindowOptions.Default.Position,
+
             // Asked for only when the display mode is actually ours to set. A borderless window that
             // names a video mode is asking the backend to switch the monitor, which is the one thing
             // borderless exists not to do.
