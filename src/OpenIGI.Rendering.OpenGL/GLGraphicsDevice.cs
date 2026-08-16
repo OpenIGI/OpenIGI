@@ -288,6 +288,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _resolveGreenPhosphor = -1;
     private int _resolveTactical = -1;
     private int _resolveTacticalTime = -1;
+    private int _resolveBinocular = -1;
+    private int _resolveBinocularTime = -1;
     private uint _lutTexture;
     private int _lutSize;
     private int _gradeFrame;
@@ -1847,6 +1849,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             tactical.SweepPosition);
         _resolveProgram.SetFloat(_resolveTacticalTime, tactical.Seconds);
 
+        // The binocular glass, clamped for the same reason: its bezel port and grain index step edges
+        // that produce a black frame outside the unit range rather than degrading gracefully.
+        BinocularDisplaySettings binocular = post.Binocular;
+        _resolveProgram.SetVector3(
+            _resolveBinocular,
+            Math.Clamp(binocular.Amount, 0f, 1f),
+            Math.Max(binocular.Aberration, 0f),
+            0f);
+        _resolveProgram.SetFloat(_resolveBinocularTime, binocular.Seconds);
+
         if (graded)
         {
             BindProbeTexture(8, _lutTexture);
@@ -3276,6 +3288,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _resolveGreenPhosphor = _resolveProgram.LocationOf("uGreenPhosphor");
         _resolveTactical = _resolveProgram.LocationOf("uTactical");
         _resolveTacticalTime = _resolveProgram.LocationOf("uTacticalTime");
+        _resolveBinocular = _resolveProgram.LocationOf("uBinocular");
+        _resolveBinocularTime = _resolveProgram.LocationOf("uBinocularTime");
         UseProgram(_resolveProgram);
         _resolveProgram.SetInt("uScene", 0);
         _resolveProgram.SetInt("uDebugAlbedo", 6);

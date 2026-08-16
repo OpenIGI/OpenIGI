@@ -1092,6 +1092,39 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the remastered binocular applies its glass-lens display transform.</summary>
+    /// <remarks>
+    /// The optics tint, highlight bloom and bezel vignette are a resolve-time display transform over the
+    /// finished picture, raised as the device comes up. Off under vanilla for the reason the tactical
+    /// computer is: the retail binocular is the regression gate and must stay untouched.
+    /// </remarks>
+    public static readonly BoolCVar BinocularLens = Presets.Define(
+        CVar.Bool(
+            "r_binocular_lens",
+            true,
+            CVarOptions.Archive,
+            "Apply the remastered binocular's glass-lens transform (tint, bloom, bezel vignette)."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether binocular-detected enemies are given a through-wall silhouette glow.</summary>
+    /// <remarks>
+    /// A team-coloured selection glow drawn over each scanned soldier while the remastered optics are up,
+    /// so a marked contact stays legible through cover. Off under vanilla with the rest of the remaster.
+    /// </remarks>
+    public static readonly BoolCVar BinocularOutline = Presets.Define(
+        CVar.Bool(
+            "r_binocular_outline",
+            true,
+            CVarOptions.Archive,
+            "Glow binocular-detected enemies through walls while the remastered optics are up."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>Whether the mission's status messages are drawn as the remaster's comms cards.</summary>
     /// <remarks>
     /// <para>

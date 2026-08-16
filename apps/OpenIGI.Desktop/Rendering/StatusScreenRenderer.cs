@@ -39,6 +39,11 @@ public sealed class StatusScreenRenderer : IDisposable
     private const float BinocularRangeX = 0.378125f;
     private const float BinocularRangeY = 0.55f;
 
+    // FUN_00471120 fills the compass cardinal holders from 0x5402A8 as 'W','N','E','S'; FUN_00472050
+    // draws them at ring ticks 0/16/32/48. Working in the project's 0=N heading, tick i sits at
+    // i*5.625 degrees, so the labels appear here in N/E/S/W order (indexed by i >> 4).
+    private static readonly string[] CompassCardinals = ["N", "E", "S", "W"];
+
     /// <summary>The archive the HUD's font comes out of.</summary>
     /// <remarks>
     /// <b>Not the HUD's own.</b> <c>status.res</c> holds forty-seven sprites and no font at all. The
@@ -434,7 +439,8 @@ public sealed class StatusScreenRenderer : IDisposable
         int screenHeight,
         IReadOnlyList<EnemyOverlayBox>? targets = null,
         float headingRadians = 0f,
-        int simulationTick = 0)
+        int simulationTick = 0,
+        float? rangeMetres = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(batch);
@@ -448,8 +454,9 @@ public sealed class StatusScreenRenderer : IDisposable
 
         // RetailBinocularUpdater (0x0051A8C0) updates the holder's path; the overlay builder at
         // 0x00471480 then draws the authored binocular frame, reticle and range labels. The native
-        // widget is a range readout (weapons/strings/Binoculars/range), not a compass strip.
-        DrawNativeBinocularRange(batch, screenWidth, screenHeight, targets);
+        // widget is a range readout (weapons/strings/Binoculars/range), not a compass strip. Its
+        // distance is the crosshair raycast result supplied by the caller, not a detected soldier.
+        DrawNativeBinocularRange(batch, screenWidth, screenHeight, rangeMetres);
 
         // The original advances twelve independently gated records before drawing the arms and axes.
         // FUN_00471A90 turns each phase into a column which grows upward in the lower-left ruler.
@@ -472,37 +479,32 @@ public sealed class StatusScreenRenderer : IDisposable
 
         DrawRetailBinocularFrame(batch, screenWidth, screenHeight);
 
-        // FUN_00471480 updates and draws twelve live 0x14-byte quad records at context+0x2B54,
-        // then draws the textured frame, the two reticle arms, and the full sight axes. The sweep
-        // state above reproduces those records; the arms below are the confirmed geometry pair:
-        // their vertex data is (-.5,-2.5), (-2,-2.5), (-2,2.5), (-.5,2.5), with anchors at
-        // +/-9.375% of video width.
+        // FUN_00471480 draws the two reticle brackets and the full sight axes. FUN_004B5860 walks the
+        // vertex strip at unk_534070 and joins each consecutive pair with a FUN_004B5730 line, so each
+        // arm is a thin "[" / "]" bracket outline framing the centre -- NOT a filled block, which is
+        // what a solid FillRect made it. The vertices are (-.5,-2.5),(-2,-2.5),(-2,2.5),(-.5,2.5) at
+        // anchors of +/-9.375% of the width, scaled by 1.5625% of the width and 2.0833334% of height.
         float centreX = screenWidth * 0.5f;
         float centreY = screenHeight * 0.5f;
         Bgra32 signal = new(64, 160, 64, 210);
         // The reticle/axes are green in the retail device, but FUN_00471B60's contact
-        // marker is the hostile-target colour. Keep the two channels separate so a
-        // detected human is a red rectangle rather than an indistinguishable green dot.
+        // marker colour is chosen per target: red for a team-1 hostile, green for any other team,
+        // blue for a non-collidable body. See MarkerColour and BinocularMarkerColor.
         // Bgra32's constructor is storage-order (blue, green, red, alpha); use the RGB factory so
-        // the retail hostile marker is red on screen instead of the blue marker the old literal made.
-        Bgra32 targetSignal = Bgra32.FromRgb(220, 32, 32).WithAlpha(235);
+        // the markers read correctly on screen.
+        float lineWeight = MathF.Max(1f, UiScale.For(screenWidth, screenHeight));
         float armAnchor = screenWidth * 0.09375f;
-        float armScaleX = MathF.Max(1f, screenWidth * 0.015625f);
-        float armScaleY = MathF.Max(1f, screenHeight * 0.020833334f);
-        float armWidth = armScaleX * 1.5f;
-        float armHeight = armScaleY * 5f;
-        float armInset = armScaleX * 0.5f;
-        batch.FillRect(
-            new RectF(centreX - armAnchor - (armScaleX * 2f), centreY - (armHeight * 0.5f), armWidth, armHeight),
-            signal);
-        batch.FillRect(
-            new RectF(centreX + armAnchor + armInset, centreY - (armHeight * 0.5f), armWidth, armHeight),
-            signal);
+        float armScaleX = screenWidth * 0.015625f;
+        float armScaleY = screenHeight * 0.020833334f;
+        // The left bracket uses positive scales; the right mirrors it with both scales negated, exactly
+        // as the two FUN_004B5860 calls do.
+        DrawSightBracket(batch, centreX - armAnchor, centreY, armScaleX, armScaleY, lineWeight, signal);
+        DrawSightBracket(batch, centreX + armAnchor, centreY, -armScaleX, -armScaleY, lineWeight, signal);
 
         // FUN_00471480 emits two additional D3D line-list primitives through FUN_004B5730. The
         // first joins (0, centreY) to (screenWidth, centreY), and the second joins
         // (centreX, 0) to (centreX, screenHeight). They are the native binocular sight axes; the
-        // short textured arms above are separate geometry and must not replace these lines.
+        // short bracket arms above are separate geometry and must not replace these lines.
         batch.FillRect(new RectF(0f, centreY - 0.5f, screenWidth, 1f), signal);
         batch.FillRect(new RectF(centreX - 0.5f, 0f, 1f, screenHeight), signal);
 
@@ -512,14 +514,134 @@ public sealed class StatusScreenRenderer : IDisposable
             {
                 if (target.TryClipToViewport(screenWidth, screenHeight, out EnemyOverlayBox clipped))
                 {
-                    DrawTargetBox(batch, clipped, targetSignal);
+                    DrawTargetBox(batch, clipped, MarkerColour(clipped.Marker));
                 }
             }
         }
 
-        // The retail task draws its authored device overlay and range widget here. Do not expose
-        // internal tangent/heading diagnostics in the retail presentation; those values are camera
-        // state and belong only to the enhanced themed presentation.
+        // The retail binocular task closes by drawing the compass strip (FUN_00472050) at the
+        // bottom-right of the sight. It scrolls the full 360-degree ring, labels the four cardinals
+        // above and below the ticks, and marks the current heading with a pointer at each edge.
+        DrawBinocularCompass(batch, screenWidth, screenHeight, headingRadians);
+    }
+
+    /// <summary>Maps a native detector marker class to its on-screen rectangle colour.</summary>
+    /// <remarks>
+    /// FUN_00471B60 submits <c>(64,0,0)</c>/<c>(0,128,0)</c>/<c>(0,0,128)</c> on the device's own
+    /// 0-128 additive scale. The full-brightness display colours below reproduce the retail red, green
+    /// and blue markers on the back buffer.
+    /// </remarks>
+    private static Bgra32 MarkerColour(BinocularMarkerColor marker) => marker switch
+    {
+        BinocularMarkerColor.Team => Bgra32.FromRgb(48, 220, 48).WithAlpha(235),
+        BinocularMarkerColor.Disabled => Bgra32.FromRgb(64, 120, 235).WithAlpha(235),
+        _ => Bgra32.FromRgb(220, 32, 32).WithAlpha(235),
+    };
+
+    /// <summary>Draws the retail binocular compass strip (<c>FUN_00472050</c>).</summary>
+    /// <remarks>
+    /// The native task lays the strip out in the 640×480 authored space at x=62.5%, y=79.166% with a
+    /// width of 28.125% of the screen, draws sixty-four ticks across the full ring (a major tick with a
+    /// cardinal label above and below every sixteen, a medium tick every eight, a minor tick
+    /// otherwise), and closes with a pointer triangle at the top and bottom edges marking the centred
+    /// heading. The absolute pixel sizes are scaled by <see cref="UiScale"/> so the strip keeps its
+    /// proportions on a modern back buffer, exactly as the DISTANCE readout is.
+    /// </remarks>
+    private void DrawBinocularCompass(SpriteBatch batch, int screenWidth, int screenHeight, float headingRadians)
+    {
+        if (screenWidth <= 0 || screenHeight <= 0 || Font() is not { } font)
+        {
+            return;
+        }
+
+        float scale = UiScale.For(screenWidth, screenHeight);
+        float leftX = screenWidth * 0.625f;
+        float topY = screenHeight * 0.79166669f;
+        float totalWidth = screenWidth * 0.28125f;
+        if (totalWidth <= 0f)
+        {
+            return;
+        }
+
+        // FUN_00472050's strip height is 2*textHeight + 26 authored pixels; the ticks measure the
+        // font once (sub_4B7E00) and centre the ring on it.
+        float textHeight = font.LineHeight * scale;
+        float stripHeight = (2f * textHeight) + (26f * scale);
+        float centreY = topY + (stripHeight * 0.5f);
+        float bottomY = topY + stripHeight;
+        float lineWidth = MathF.Max(1f, scale);
+        Bgra32 green = new(64, 160, 64, 255);
+
+        // The native task scrolls the ring by the view heading. Reuse the project's 0=N heading so the
+        // strip agrees with the rest of the HUD: a direction D is placed at the wrapped fraction
+        // ((D - heading)/360 + 0.5) across the strip, which puts the faced direction at the centre.
+        float heading = RemasteredHudPresentation.HeadingDegrees(headingRadians);
+
+        for (int i = 0; i < 64; i++)
+        {
+            float directionDegrees = i * (360f / 64f);
+            float tickHeight;
+            int cardinalIndex = -1;
+            if ((i & 0xF) == 0)
+            {
+                tickHeight = 12f * scale;
+                cardinalIndex = i >> 4;
+            }
+            else if ((i & 7) == 0)
+            {
+                tickHeight = 8f * scale;
+            }
+            else
+            {
+                tickHeight = 4f * scale;
+            }
+
+            float fraction = Frac(((directionDegrees - heading) / 360f) + 0.5f);
+            float x = leftX + (fraction * totalWidth);
+            float halfTick = tickHeight * 0.5f;
+            float tickTop = centreY - halfTick;
+            float tickBottom = centreY + halfTick;
+            batch.FillRect(new RectF(x - (lineWidth * 0.5f), tickTop, lineWidth, tickHeight), green);
+
+            if (cardinalIndex >= 0)
+            {
+                // FUN_00472050 draws each cardinal glyph both above (v20 - h - 2) and below (v15 + 2)
+                // the tick, which is why the retail compass reads its four letters in two rows.
+                string label = CompassCardinals[cardinalIndex];
+                font.DrawCentered(batch, label, x, tickTop - textHeight - (2f * scale), green, scale, scale);
+                font.DrawCentered(batch, label, x, tickBottom + (2f * scale), green, scale, scale);
+            }
+        }
+
+        // The two heading pointers: a downward triangle at the top edge and an upward one at the
+        // bottom, both centred on the strip. FUN_00472050 sizes them at ±4 authored pixels.
+        float centreX = leftX + (totalWidth * 0.5f);
+        float pointer = 4f * scale;
+        FillTriangle(
+            batch,
+            new Point2(centreX, topY + pointer),
+            new Point2(centreX - pointer, topY),
+            new Point2(centreX + pointer, topY),
+            green);
+        FillTriangle(
+            batch,
+            new Point2(centreX, bottomY - pointer),
+            new Point2(centreX - pointer, bottomY),
+            new Point2(centreX + pointer, bottomY),
+            green);
+    }
+
+    private static float Frac(float value) => value - MathF.Floor(value);
+
+    private static void FillTriangle(SpriteBatch batch, Point2 apex, Point2 baseA, Point2 baseB, Bgra32 colour)
+    {
+        // A degenerate quad (the apex repeated) draws the single triangle FUN_00472050 submits.
+        batch.DrawQuad(
+            TextureHandle.None,
+            new Vertex2D(baseA.X, baseA.Y, 0f, 0f, colour),
+            new Vertex2D(baseB.X, baseB.Y, 1f, 0f, colour),
+            new Vertex2D(apex.X, apex.Y, 1f, 1f, colour),
+            new Vertex2D(apex.X, apex.Y, 0f, 1f, colour));
     }
 
     private void DrawRetailBinocularFrame(SpriteBatch batch, int screenWidth, int screenHeight)
@@ -576,6 +698,29 @@ public sealed class StatusScreenRenderer : IDisposable
     private static Point2 Rotate(float centreX, float centreY, float x, float y, float cos, float sin) =>
         new(centreX + (x * cos) - (y * sin), centreY + (x * sin) + (y * cos));
 
+    // FUN_00471480's reticle arm geometry (unk_534070): an open "[" bracket walked as a line strip.
+    private static readonly (float X, float Y)[] ArmStrip =
+        [(-0.5f, -2.5f), (-2f, -2.5f), (-2f, 2.5f), (-0.5f, 2.5f)];
+
+    /// <summary>Draws one reticle bracket as the line strip FUN_004B5860 walks through unk_534070.</summary>
+    private static void DrawSightBracket(
+        SpriteBatch batch,
+        float originX,
+        float originY,
+        float scaleX,
+        float scaleY,
+        float thickness,
+        Bgra32 colour)
+    {
+        Point2 previous = new(originX + (ArmStrip[0].X * scaleX), originY + (ArmStrip[0].Y * scaleY));
+        for (int index = 1; index < ArmStrip.Length; index++)
+        {
+            Point2 current = new(originX + (ArmStrip[index].X * scaleX), originY + (ArmStrip[index].Y * scaleY));
+            DrawSegment(batch, previous, current, thickness, colour);
+            previous = current;
+        }
+    }
+
     private static void DrawSegment(SpriteBatch batch, Point2 start, Point2 end, float thickness, Bgra32 colour)
     {
         float dx = end.X - start.X;
@@ -602,7 +747,7 @@ public sealed class StatusScreenRenderer : IDisposable
         SpriteBatch batch,
         int screenWidth,
         int screenHeight,
-        IReadOnlyList<EnemyOverlayBox>? targets)
+        float? rangeMetres)
     {
         if (screenWidth <= 0 || screenHeight <= 0)
         {
@@ -614,23 +759,15 @@ public sealed class StatusScreenRenderer : IDisposable
             return;
         }
 
-        // The native holder uses the video dimensions directly: x=37.8125% and y=55%, with the
-        // text height subtracted from y. Its distance source is the refined native path; until that
-        // holder is exposed to the renderer, the closest visible detector slot is the faithful managed source.
-        EnemyOverlayBox? nearest = targets is null
-            ? null
-            : targets
-                .Where(static target => target.DistanceMetres > 0f && float.IsFinite(target.DistanceMetres))
-                .OrderBy(static target => target.DistanceMetres)
-                .Select(static target => (EnemyOverlayBox?)target)
-                .FirstOrDefault();
-
+        // The native holder uses the video dimensions directly: x=37.8125% and y=55%, with the text
+        // height subtracted from y.
         float scale = UiScale.For(screenWidth, screenHeight);
-        // FUN_00471480 takes the no-contact branch when the holder has no measured distance and
-        // formats the authored fallback with "%s: %0.f+%s". The retail metric path is 1000+M;
-        // suppressing the label until an enemy is detected leaves the binocular HUD visibly unlike
-        // the original while looking at empty terrain.
-        string range = BinocularRangeText(nearest);
+        // FUN_00471480 casts a 1000 m ray from the eye along the aim (its scale factor 0.000244140625
+        // is 1/4096 = 1/UnitsPerMetre) and formats the hit distance with "%s: %0.f%s"; with no hit it
+        // takes the "%s: %0.f+%s" branch and prints 1000+M. A null/non-finite range is the no-hit case.
+        string range = rangeMetres is { } metres && float.IsFinite(metres) && metres > 0f
+            ? FormatBinocularRange(metres)
+            : "DISTANCE: 1000+M";
         font.Draw(
             batch,
             range,
@@ -643,17 +780,23 @@ public sealed class StatusScreenRenderer : IDisposable
 
     /// <summary>Formats the native binocular holder's two authored range labels.</summary>
     /// <remarks>
-    /// The retail binary stores <c>RANGE: 1000+M</c> and <c>RANGE: %0.fM</c> as separate strings;
-    /// the holder switches at 1000 metres instead of allowing the formatted value to grow wider.
+    /// <para>
+    /// <c>FUN_00471480</c> builds the label with <c>"%s: %0.f%s"</c> (measured) or
+    /// <c>"%s: %0.f+%s"</c> (no contact, value 1000/3000). The <c>%s</c> label is the localized
+    /// <c>weapons/strings/Binoculars/range</c> string; the exe's fallback literal is <c>RANGE</c>,
+    /// but the shipped English resource resolves that key to <b>DISTANCE</b>, which is what the retail
+    /// binocular actually renders. The holder switches to the <c>1000+M</c> form at 1000 metres
+    /// instead of letting the formatted value grow wider.
+    /// </para>
     /// </remarks>
     internal static string FormatBinocularRange(float distanceMetres) => distanceMetres >= 1000f
-        ? "RANGE: 1000+M"
-        : $"RANGE: {MathF.Round(MathF.Max(0f, distanceMetres)):0}M";
+        ? "DISTANCE: 1000+M"
+        : $"DISTANCE: {MathF.Round(MathF.Max(0f, distanceMetres)):0}M";
 
     /// <summary>Returns the native range label, including the no-contact fallback.</summary>
     internal static string BinocularRangeText(EnemyOverlayBox? nearest) => nearest is { } target
         ? FormatBinocularRange(target.DistanceMetres)
-        : "RANGE: 1000+M";
+        : "DISTANCE: 1000+M";
 
     internal static int DisplayedAmmoCount(WeaponType weapon, int roundsInClip, int reserve)
     {

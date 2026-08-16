@@ -591,6 +591,9 @@ public sealed class PlayerWeaponsTests
         Assert.True(view.OpenedThisTick);
         Assert.False(view.ClosedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
+        // Opening the view is silent: the motor cue only sounds while a zoom key is actually moving the
+        // magnification, so no zoom step is reported on the open tick.
+        Assert.False(view.ZoomSteppingThisTick);
         Assert.Equal(HumanView.DefaultTanX * BinocularsView.ZoomInFactor, opened.TanX, 5);
         Assert.Equal(HumanView.DefaultViewModelTanX, opened.ViewModelTanX);
 
@@ -602,6 +605,8 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(opened.TanX * BinocularsView.ZoomInFactor, narrowed.TanX, 5);
         Assert.True(view.ZoomChangedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
+        // A held zoom key that moved the magnification is a zoom step -- this is when the cue plays.
+        Assert.True(view.ZoomSteppingThisTick);
         narrowed = view.Tick(binoculars, false, false, false, narrowed.TanX, narrowed.ViewModelTanX);
         // Releasing the key holds the current magnification instead of continuing toward the last
         // retail target. Only holding a zoom input multiplies on the next tick.
@@ -609,6 +614,8 @@ public sealed class PlayerWeaponsTests
         Assert.Equal(HumanView.DefaultViewModelTanX, narrowed.ViewModelTanX);
         Assert.False(view.ZoomChangedThisTick);
         Assert.False(view.ZoomTargetChangedThisTick);
+        // Releasing the key ends the zoom step, so the cue stops even though the view stays open.
+        Assert.False(view.ZoomSteppingThisTick);
         for (int i = 0; i < 100; i++)
         {
             narrowed = view.Tick(binoculars, false, true, false, narrowed.TanX, narrowed.ViewModelTanX);
@@ -616,6 +623,9 @@ public sealed class PlayerWeaponsTests
         }
 
         Assert.Equal(0.1f, narrowed.TanX, 3);
+        // Held at the authored minimum the magnification no longer moves, so the zoom step -- and its
+        // cue -- ends even while the key is still down.
+        Assert.False(view.ZoomSteppingThisTick);
 
         SightZoomFrame closing = view.Tick(
             binoculars,
@@ -628,6 +638,8 @@ public sealed class PlayerWeaponsTests
         Assert.False(view.OpenedThisTick);
         Assert.True(view.ClosedThisTick);
         Assert.True(view.ZoomTargetChangedThisTick);
+        // Closing is silent too -- only an active zoom key drives the cue.
+        Assert.False(view.ZoomSteppingThisTick);
 
         // Closing starts the authored return transition; it does not snap the world camera back in one
         // tick. The loop cue must also stop on close — see bin_zoom_1 one-shot at mission teardown

@@ -94,6 +94,11 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<SoldierView, AiSoldier> _brains = [];
     private readonly EnemyDetectorOverlay _binocularOverlay = new();
 
+    // The soldiers the last binocular scan drew a contact for, and the team colour their marker uses.
+    // Kept so the remastered optics can glow exactly those bodies through cover without re-deriving the
+    // detector's own visibility, keyed by view so the outline pass can find each one's mesh and group.
+    private readonly Dictionary<SoldierView, BinocularMarkerColor> _binocularDetected = [];
+
     // One prepared rig per skeleton, shared by every corpse wearing it. Building it walks the whole bone
     // graph twice, so it must not happen per death -- and it holds no live state, so it need not.
     private readonly Dictionary<BoneAnimationSet, RagdollSkeleton> _ragdollRigs = [];
@@ -454,6 +459,68 @@ public sealed class SoldierRenderer : IDisposable
         return false;
     }
 
+    /// <summary>Draws a team-coloured through-wall glow over every soldier the last binocular scan marked.</summary>
+    /// <remarks>
+    /// Reuses the same inverted-hull selection glow as <see cref="DrawOutline"/>, keyed by the contacts
+    /// <see cref="BinocularTargets"/> cached this frame, so a scanned enemy stays legible through cover
+    /// while the remastered optics are up. Must run inside the scene-capture pass, before the resolve, so
+    /// the glow carries the lens and bloom with the rest of the world.
+    /// </remarks>
+    /// <param name="camera">The eye the scene is being drawn through.</param>
+    /// <param name="radiusPixels">The glow's screen-space radius, in pixels.</param>
+    public void DrawBinocularOutlines(in Camera3D camera, float radiusPixels)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_binocularDetected.Count == 0)
+        {
+            return;
+        }
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (!member.HasFrameState
+                    || !_binocularDetected.TryGetValue(member.View, out BinocularMarkerColor marker))
+                {
+                    continue;
+                }
+
+                _outlineRanges.Clear();
+                foreach (MeshSubset subset in group.Geometry.Subsets)
+                {
+                    if (subset.IndexCount > 0)
+                    {
+                        _outlineRanges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+                    }
+                }
+
+                if (_outlineRanges.Count == 0)
+                {
+                    continue;
+                }
+
+                _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
+                _device.DrawOutline(
+                    member.Mesh,
+                    CollectionsMarshal.AsSpan(_outlineRanges),
+                    camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation),
+                    MarkerGlow(marker),
+                    radiusPixels,
+                    throughWalls: true);
+                _device.ClearPoseInterpolation();
+            }
+        }
+    }
+
+    /// <summary>The through-wall glow colour for a detector marker class.</summary>
+    private static Bgra32 MarkerGlow(BinocularMarkerColor marker) => marker switch
+    {
+        BinocularMarkerColor.Team => Bgra32.FromRgba(96, 220, 120, 200),
+        BinocularMarkerColor.Disabled => Bgra32.FromRgba(96, 150, 255, 200),
+        _ => Bgra32.FromRgba(255, 72, 72, 210),
+    };
+
     /// <summary>Projects living, visible soldiers through the native ten-slot binocular detector.</summary>
     public IReadOnlyList<EnemyOverlayBox> BinocularTargets(
         Camera3D camera,
@@ -469,6 +536,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _binocularOverlay.BeginScan();
+        _binocularDetected.Clear();
         float verticalTangent = horizontalTangent * screenHeight / Math.Max(1f, screenWidth);
         Vector3d eyeUnits = new(
             camera.Position.X * WorldScene.UnitsPerMetre,
@@ -482,11 +550,21 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            // FUN_00471B60 copies the target's six position words from Human+0x20 directly into the
-            // projection input. PickChestUnits belongs to gameplay ray-picking only; adding it here
-            // moved the detector contact above the native target and made the rectangle drift away from
-            // the retail body as the camera moved.
-            Vector3d targetUnits = view.Position;
+            // FUN_00470F70 sizes the marker as projectionScale * Human+0xA0 / depth, where Human+0xA0
+            // is the model's authored MESH+0x78 bound. For the soldier LODs that value is ~0.94 m --
+            // a half-body radius -- so the rectangle only frames the body when it is centred on the
+            // model's own origin, which sits that same ~0.94 m above the grounded feet. view.Position
+            // is the grounded foot contact, so lift the marker centre by the bound to reach the retail
+            // body origin; leaving it at the feet drew the box half into the ground, over the shins.
+            if (!_detectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
+                || markerScaleMetres <= 0f)
+            {
+                continue;
+            }
+
+            Vector3d feetUnits = view.Position;
+            double bodyCentreUnits = markerScaleMetres * WorldScene.UnitsPerMetre;
+            Vector3d targetUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + bodyCentreUnits);
             Vector3d delta = new(
                 targetUnits.X / WorldScene.UnitsPerMetre - camera.Position.X,
                 targetUnits.Y / WorldScene.UnitsPerMetre - camera.Position.Y,
@@ -506,35 +584,38 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            // Native FUN_00471B60 only inserts a target after FUN_004D03D0's world visibility query
-            // is clear. A missing cast is not the same as a clear cast: without the level's object and
-            // terrain providers we cannot prove that the human is visible, so fail closed rather than
-            // drawing contacts through buildings or terrain during a partially loaded level.
-            if (_sight is null || _sight(eyeUnits, targetUnits, out _))
+            // FUN_00471B60 gates a contact on FUN_004D03D0, a view-frustum cull that the in-front and
+            // on-screen tests above already reproduce. The retail engine then hides fully-occluded
+            // humans through its sector/portal visibility, which this reimplementation lacks. Approximate
+            // that with a line-of-sight sweep: probe the feet, the body origin and the head, and keep the
+            // contact when ANY of them is unobstructed. A guard whose upper body clears a low container is
+            // still marked; one standing completely behind a wall is dropped, as the original drops it.
+            if (_sight is { } lineOfSight)
             {
-                continue;
+                Vector3d headUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + (2d * bodyCentreUnits));
+                bool anyVisible =
+                    HasLineOfSight(lineOfSight, eyeUnits, targetUnits)
+                    || HasLineOfSight(lineOfSight, eyeUnits, headUnits)
+                    || HasLineOfSight(lineOfSight, eyeUnits, feetUnits);
+                if (!anyVisible)
+                {
+                    continue;
+                }
             }
 
             // FUN_00470EC0 writes the transformed depth into the value passed to FUN_00471F60;
             // the retail slot's distance is view-space Z, not Euclidean eye-to-target distance.
             float distance = (float)viewPosition.Z;
 
-            // FUN_00470F70 returns the half-extents for the closed {-1,+1} strip used by
-            // FUN_004B5860: projectionScale * Human+0xA0 / depth. Human+0xA0 is the loaded model's
-            // authored MESH+0x78 bound, not a one-unit HUD constant. Convert it once to metres before
-            // applying the same perspective division; using the derived geometry radius made the
-            // red rectangle materially smaller than retail.
-            if (!_detectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
-                || markerScaleMetres <= 0f)
-            {
-                continue;
-            }
-
             float boxWidth = (float)(markerScaleMetres * screenWidth
                 / (Math.Max(0.001, viewPosition.Z) * horizontalTangent));
             float boxHeight = (float)(markerScaleMetres * screenHeight
                 / (Math.Max(0.001, viewPosition.Z) * verticalTangent));
 
+            // FUN_00471B60 passes the target's colour flags to FUN_00471F60: extraParam1 is the
+            // green flag (Team != 1, Human+0x252) and extraParam2 is the blue flag (the +0x3317
+            // non-collidable byte). Live scanned soldiers are collidable, so extraParam2 stays 0;
+            // team-1 guards fall through to the retail hostile-red rectangle.
             _binocularOverlay.Upsert(
                 brain.RuntimeId,
                 distance,
@@ -542,15 +623,67 @@ public sealed class SoldierRenderer : IDisposable
                 screenX,
                 screenY,
                 eventParam: 0,
-                extraParam1: 0,
+                extraParam1: view.Soldier.Team != 1 ? 1 : 0,
                 extraParam2: 0,
                 tick,
                 boxWidth,
                 boxHeight);
+
+            // Record the contact for the through-wall glow, in the same team colour its marker uses.
+            _binocularDetected[view] = view.Soldier.Team != 1
+                ? BinocularMarkerColor.Team
+                : BinocularMarkerColor.Hostile;
         }
 
         _binocularOverlay.ExpireInactive(tick);
         return _binocularOverlay.OverlayBoxes(tick);
+    }
+
+    /// <summary>How far past a see-through hit the next probe starts, so it clears that thin surface.</summary>
+    private const double SightSkipEpsilonUnits = 64d;
+
+    /// <summary>The most see-through layers a single sight probe steps through before giving up.</summary>
+    private const int SightSkipLimit = 8;
+
+    /// <summary>Whether the eye can see a point, treating glass and fences as non-occluding.</summary>
+    /// <remarks>
+    /// The retail detector culls by sector/portal visibility, which see-through surfaces do not bound.
+    /// A cast returns only its NEAREST contact, so a single probe would stop at a chain-link fence and
+    /// never notice a solid wall right behind it. This steps the ray past each transparent surface
+    /// (glass, wire) and keeps looking, so a guard behind a fence is seen but one behind the wall the
+    /// fence stands in front of is not. See <see cref="GameMaterial.IsSightTransparent"/>.
+    /// </remarks>
+    internal static bool HasLineOfSight(WorldRayCast cast, Vector3d from, Vector3d to)
+    {
+        Vector3d origin = from;
+        for (int step = 0; step < SightSkipLimit; step++)
+        {
+            if (!cast(origin, to, out WorldRayHit hit))
+            {
+                return true;
+            }
+
+            if (!GameMaterial.IsSightTransparent(hit.Material))
+            {
+                return false;
+            }
+
+            Vector3d ray = new(to.X - origin.X, to.Y - origin.Y, to.Z - origin.Z);
+            double length = Math.Sqrt((ray.X * ray.X) + (ray.Y * ray.Y) + (ray.Z * ray.Z));
+            double advance = hit.Distance + SightSkipEpsilonUnits;
+            if (length <= 0d || advance >= length)
+            {
+                return true;
+            }
+
+            double fraction = advance / length;
+            origin = new(
+                origin.X + (ray.X * fraction),
+                origin.Y + (ray.Y * fraction),
+                origin.Z + (ray.Z * fraction));
+        }
+
+        return true;
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>

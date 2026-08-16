@@ -72,6 +72,22 @@ public readonly record struct GunShotEffect(
 /// </remarks>
 public sealed class GameMaterial
 {
+    /// <summary>Whether a line of sight passes through this global material row.</summary>
+    /// <param name="globalMaterial">A row of the retail material table (see §24.4).</param>
+    /// <returns>
+    /// <see langword="true"/> for the see-through surfaces a sight ray must ignore: Water (2), Glass
+    /// (14), Fence (18), MetalLadder (22) and MetalFence (23).
+    /// </returns>
+    /// <remarks>
+    /// Retail's binocular detector culls contacts by sector/portal visibility, which glass panes and
+    /// chain-link fences do not bound, so a guard behind them stays visible. This reimplementation
+    /// approximates that with a sight raycast; those materials must therefore not count as occluders.
+    /// Air (0) is deliberately excluded — the terrain trace reports material 0 by default, and treating
+    /// it as transparent would let contacts be seen straight through a hill.
+    /// </remarks>
+    public static bool IsSightTransparent(int globalMaterial) =>
+        globalMaterial is 2 or 14 or 18 or 22 or 23;
+
     /// <summary>Gets the row this material occupies, which is what a collision face names.</summary>
     public int Index { get; init; }
 

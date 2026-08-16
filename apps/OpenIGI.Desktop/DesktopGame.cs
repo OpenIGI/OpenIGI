@@ -176,6 +176,8 @@ internal sealed partial class DesktopGame : IDisposable
     private TacticalComputerRenderer? _tacticalComputer;
     private StatusMessageRenderer? _messages;
     private readonly MapComputerCamera _computerFlight = new();
+    private readonly BinocularOptics _binocularOptics = new();
+    private int _lastBinocularMilliseconds;
     private ComputerHighlightCatalog? _computerHighlights;
     private MissionObjectiveRuntime? _missionObjectives;
     private CutsceneRuntime? _cutscenes;
@@ -2314,6 +2316,19 @@ internal sealed partial class DesktopGame : IDisposable
                 bool tacticalUp = _computerOpen && TacticalComputer is not null;
                 TacticalDisplaySettings computerDisplay = tacticalUp ? _computerFlight.Display : default;
                 float computerFlightBlur = tacticalUp ? _computerFlight.MotionBlur : 0f;
+
+                // The binocular glass, raised on its own wall clock so the lens fades in at the same
+                // rate whatever the frame rate. Gated on the device being open (the fade sits at 0
+                // otherwise) and the lens cvar; the map tube above and this glass are never both up.
+                int binocularNow = _loop.TimeSource.Milliseconds;
+                float binocularElapsed = Math.Clamp((binocularNow - _lastBinocularMilliseconds) / 1000f, 0f, 0.1f);
+                _lastBinocularMilliseconds = binocularNow;
+                _binocularOptics.Update(_player is { IsBinocularsOpen: true }, binocularElapsed);
+                BinocularDisplaySettings binocularDisplay =
+                    RenderCVars.BinocularLens.Value ? _binocularOptics.Display : default;
+                // A little extra edge fringing while the optics are up, on top of the ordinary value, so
+                // the lens carries chromatic aberration that ramps in with the glass.
+                float binocularAberration = binocularDisplay.Amount * 2f;
                 PostProcessSettings postProcess = new(
                     RenderCVars.ToneMap.Value,
                     RenderCVars.Exposure.Value,
@@ -2325,7 +2340,7 @@ internal sealed partial class DesktopGame : IDisposable
                     Saturation: RenderCVars.Saturation.Value,
                     Vignette: RenderCVars.Vignette.Value,
                     Grain: RenderCVars.Grain.Value,
-                    ChromaticAberration: RenderCVars.ChromaticAberration.Value,
+                    ChromaticAberration: MathF.Max(RenderCVars.ChromaticAberration.Value, binocularAberration),
                     Sharpen: RenderCVars.Sharpen.Value,
                     FocalDistance: RenderCVars.FocalDistance.Value,
                     FocalRange: RenderCVars.FocalRange.Value,
@@ -2337,7 +2352,8 @@ internal sealed partial class DesktopGame : IDisposable
                     ColourLookup: RenderCVars.ColourLookup.Value,
                     AutoExposure: RenderCVars.AutoExposure.Value,
                     GreenPhosphor: mapScene is not null && TacticalComputer is null,
-                    Tactical: computerDisplay);
+                    Tactical: computerDisplay,
+                    Binocular: binocularDisplay);
                 if (mapScene is { } mapView)
                 {
                     aspectRatio = (float)mapView.Viewport.Width / Math.Max(1, mapView.Viewport.Height);
@@ -2706,6 +2722,44 @@ internal sealed partial class DesktopGame : IDisposable
                         smoothPresentation ? tickBlend : 1f);
                 }
 
+                // The remastered-optics decisions and the binocular detector are resolved here, before
+                // the soldiers are drawn, for two reasons: the detector is stateful and must be scanned
+                // exactly once per frame, and the through-wall glow pass below has to mark the very
+                // contacts it finds while the scene is still being captured. The HUD after the resolve
+                // reuses this same target list rather than advancing the detector a second time.
+                bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
+                bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
+                    TacticalComputer is not null,
+                    _remasteredHud is { IsReady: true });
+                bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
+                    remasterHud,
+                    RenderCVars.TacticalMessages.Value);
+                bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
+                    && _cutscenes?.IsPlaying != true
+                    && !(_playerDead && _deathCamera.IsActive)
+                    && _player is { View: not null };
+                bool showFirstPersonHud = showPlayerHud
+                    && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+                IReadOnlyList<EnemyOverlayBox> binocularTargets =
+                    showFirstPersonHud
+                    && _player is { IsBinocularsOpen: true }
+                    && _soldiers is { } binocularSoldiers
+                        ? binocularSoldiers.BinocularTargets(
+                            // Use the same presented eye that rendered the world. The detector owns
+                            // authoritative slot lifetime, but its screen rectangle must be projected
+                            // through the frame's smoothed camera or moving/zooming binoculars make the
+                            // box visibly lag behind the soldier it is meant to surround.
+                            eye,
+                            sight.TanX,
+                            _window.Width,
+                            _window.Height,
+                            // FUN_00471F60/FUN_00471B60 use Sys_GetTickCount (the retail
+                            // millisecond counter), not the 30 Hz simulation index. Passing
+                            // TickCount here stretched the native 250 ms entry pulse and
+                            // 3000 ms retention window by a factor of thirty-three.
+                            _loop.Clock.Now)
+                        : [];
+
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
                 // never swaps in the view-model block for them (player.md section 15.3).
                 _soldiers?.Draw(eye, projection);
@@ -2810,6 +2864,18 @@ internal sealed partial class DesktopGame : IDisposable
                         smoothPresentation);
                 }
 
+                // The through-wall glow over the enemies the binocular scan marked, in the same FORWARD
+                // pass and for the same reason as the inspector selection below: submitted from the world
+                // pass it would be lit and fogged into a smear. Here it composites over the finished
+                // scene and is carried into the resolve, so the lens and bloom pick it up. Only while the
+                // remastered optics are up.
+                if (remasteredOptics
+                    && RenderCVars.BinocularOutline.Value
+                    && _player is { IsBinocularsOpen: true })
+                {
+                    _soldiers?.DrawBinocularOutlines(eye, radiusPixels: 8f);
+                }
+
                 // The developer inspector's selection, drawn as a real glow around the model rather
                 // than a mark beside it. It belongs to the FORWARD pass, with the tracers and the muzzle
                 // flames: submitted from the world pass it would be written into the g-buffer as
@@ -2826,39 +2892,36 @@ internal sealed partial class DesktopGame : IDisposable
                 // Not while the entry shot is running: the camera is somewhere over the level, and a pair
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
-                bool remasterHud = RemasteredHudPresentation.UsesRemasteredHud(RenderCVars.RemasteredHud.Value);
-                bool remasteredOptics = RemasteredHudPresentation.UsesRemasteredOptics(
-                    TacticalComputer is not null,
-                    _remasteredHud is { IsReady: true });
-                bool tacticalMessages = RemasteredHudPresentation.UsesTacticalMessages(
-                    remasterHud,
-                    RenderCVars.TacticalMessages.Value);
-                bool showPlayerHud = _playerMode && !_computerOpen && !_entry.IsCameraActive
-                    && _cutscenes?.IsPlaying != true
-                    && !(_playerDead && _deathCamera.IsActive)
-                    && _player is { View: not null };
-                bool showFirstPersonHud = showPlayerHud
-                    && _player is { IsOnLadder: false, IsInWorldInteraction: false };
-                IReadOnlyList<EnemyOverlayBox> binocularTargets =
-                    showFirstPersonHud
-                    && _player is { IsBinocularsOpen: true }
-                    && _soldiers is { } binocularSoldiers
-                        ? binocularSoldiers.BinocularTargets(
-                            // Use the same presented eye that rendered the world. The detector owns
-                            // authoritative slot lifetime, but its screen rectangle must be projected
-                            // through the frame's smoothed camera or moving/zooming binoculars make the
-                            // box visibly lag behind the soldier it is meant to surround.
-                            eye,
-                            sight.TanX,
-                            _window.Width,
-                            _window.Height,
-                            // FUN_00471F60/FUN_00471B60 use Sys_GetTickCount (the retail
-                            // millisecond counter), not the 30 Hz simulation index. Passing
-                            // TickCount here stretched the native 250 ms entry pulse and
-                            // 3000 ms retention window by a factor of thirty-three.
-                            _loop.Clock.Now)
-                        : [];
                 bool binocularsOpen = _player is { IsBinocularsOpen: true };
+                float? binocularRangeMetres = null;
+                if (binocularsOpen && _worldSolids is { } rangeSolids)
+                {
+                    // FUN_00471480's DISTANCE readout is a 1000 m ray cast from the eye along the aim
+                    // direction; its 0.000244140625 scale is 1/4096 = 1/UnitsPerMetre. The range is
+                    // whatever the centre crosshair rests on -- terrain or a placed object -- not the
+                    // nearest detected soldier, so a bare hillside still reads a distance. A ray that
+                    // reaches its 1000 m end unobstructed leaves the readout at the retail "1000+M".
+                    Vector3d forward = eye.Orientation.Transform(new Vector3d(0d, 0d, 1d));
+                    Vector3d rangeOrigin = new(
+                        eye.Position.X * WorldScene.UnitsPerMetre,
+                        eye.Position.Y * WorldScene.UnitsPerMetre,
+                        eye.Position.Z * WorldScene.UnitsPerMetre);
+                    const double rangeSpanUnits = 1000d * WorldScene.UnitsPerMetre;
+                    Vector3d rangeEnd = new(
+                        rangeOrigin.X + (forward.X * rangeSpanUnits),
+                        rangeOrigin.Y + (forward.Y * rangeSpanUnits),
+                        rangeOrigin.Z + (forward.Z * rangeSpanUnits));
+                    WorldTraceCast rangeTrace = _playerTerrain is { } rangeGround
+                        ? WorldTrace.Nearest(rangeSolids.Tracer(), TerrainRayTrace.Caster(rangeGround))
+                        : rangeSolids.Tracer();
+                    if (rangeTrace(
+                            new WorldTraceRequest(rangeOrigin, rangeEnd, WorldTraceMask.World),
+                            out WorldTraceHit rangeHit)
+                        && double.IsFinite(rangeHit.Distance))
+                    {
+                        binocularRangeMetres = (float)(rangeHit.Distance / WorldScene.UnitsPerMetre);
+                    }
+                }
                 if (showFirstPersonHud && _player is { View: { } rig } && !binocularsOpen)
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
@@ -2982,7 +3045,8 @@ internal sealed partial class DesktopGame : IDisposable
                             _window.Height,
                             binocularTargets,
                             _player.Yaw,
-                            _loop.Clock.TickCount);
+                            _loop.Clock.TickCount,
+                            binocularRangeMetres);
                     }
                     else if (_player.IsSniperScoped)
                     {
@@ -3254,7 +3318,9 @@ internal sealed partial class DesktopGame : IDisposable
                         binocularView.TanX,
                         _window.Width,
                         _window.Height,
-                        binocularTargets);
+                        binocularTargets,
+                        _binocularOptics.Seconds,
+                        binocularRangeMetres);
                     batch.End();
                 }
 

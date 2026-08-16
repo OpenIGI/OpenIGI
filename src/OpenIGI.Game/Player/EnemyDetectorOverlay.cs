@@ -5,6 +5,25 @@ namespace OpenIGI.Game.Player;
 
 #pragma warning disable CS1591
 
+/// <summary>Colour class the native detector paints a contact rectangle with.</summary>
+/// <remarks>
+/// <c>FUN_00471B60</c> selects the marker colour from two entity flags before submitting the strip to
+/// <c>FUN_004B5860</c>: the <c>+3317</c> non-collidable flag wins first and yields blue
+/// <c>(0,0,128)</c>; otherwise <c>Team != 1</c> yields green <c>(0,128,0)</c>; otherwise a
+/// team-1 hostile is red <c>(64,0,0)</c>. The priority order is retained here.
+/// </remarks>
+public enum BinocularMarkerColor
+{
+    /// <summary>Team 1 — the retail hostile red rectangle.</summary>
+    Hostile,
+
+    /// <summary>Any team other than 1 — the retail green rectangle.</summary>
+    Team,
+
+    /// <summary>The <c>+3317</c> non-collidable flag — the retail blue rectangle.</summary>
+    Disabled,
+}
+
 /// <summary>One projected enemy rectangle emitted by the native binocular detector.</summary>
 public readonly record struct EnemyOverlayBox(
     int TargetId,
@@ -15,7 +34,8 @@ public readonly record struct EnemyOverlayBox(
     float DistanceMetres,
     float Alpha,
     float RotationRadians = 0f,
-    float PulseScale = 1f)
+    float PulseScale = 1f,
+    BinocularMarkerColor Marker = BinocularMarkerColor.Hostile)
 {
     /// <summary>
     /// Clips the projected rectangle to the display viewport, matching the native status-display
@@ -176,6 +196,13 @@ public sealed class EnemyDetectorOverlay
             float height = slot.BoxHeight;
             int age = Math.Clamp(unchecked(tick - slot.AllocatedTick), 0, NativeMarkerPulseMilliseconds);
             float progress = age * NativeMarkerProgressPerMillisecond;
+            // FUN_00471B60 chooses the rectangle colour from the two entity flags it stored in the
+            // slot: the +3317 non-collidable flag (ExtraParam2) beats the Team!=1 flag (ExtraParam1).
+            BinocularMarkerColor marker = slot.ExtraParam2 != 0
+                ? BinocularMarkerColor.Disabled
+                : slot.ExtraParam1 != 0
+                    ? BinocularMarkerColor.Team
+                    : BinocularMarkerColor.Hostile;
             boxes.Add(new EnemyOverlayBox(
                 slot.TargetId,
                 slot.ScreenX - (width * 0.5f),
@@ -188,7 +215,8 @@ public sealed class EnemyDetectorOverlay
                 slot.Distance,
                 1f,
                 progress * NativeMarkerQuarterTurn,
-                ((1f - progress) * 10f) + 1f));
+                ((1f - progress) * 10f) + 1f,
+                marker));
         }
 
         return boxes;

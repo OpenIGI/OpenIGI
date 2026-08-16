@@ -162,11 +162,13 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Maintains the retail binocular zoom cue across view and zoom-target transitions.</summary>
+    /// <summary>Maintains the retail binocular zoom motor cue while the operator is zooming.</summary>
     /// <remarks>
-    /// <c>COMMON/SOUNDS/SOUNDS.RES</c> authors <c>bin_zoom_1</c> as a loop. Start it on the first
-    /// binocular/zoom edge and stop it when the view closes; treating it as a one-shot leaves the
-    /// authored loop running forever, while restarting it on every convergence tick causes clicks.
+    /// <c>COMMON/SOUNDS/SOUNDS.RES</c> authors <c>bin_zoom_1</c> as a loop. The retail device only makes
+    /// this sound while a zoom key is <b>actively</b> changing the magnification -- not when the view is
+    /// opened, and not while it settles to the authored default -- so it is driven off the player
+    /// camera's <c>BinocularZoomSteppingThisTick</c>, and stopped the moment the zoom stops or the view
+    /// closes. Keying it to the open edge instead played the cue every time the binoculars were raised.
     /// </remarks>
     private void PlayBinocularTransitionSound()
     {
@@ -175,14 +177,13 @@ internal sealed partial class DesktopGame
             return;
         }
 
-        if (player.BinocularsClosedThisTick || !player.IsBinocularsOpen)
+        if (!player.IsBinocularsOpen || !player.BinocularZoomSteppingThisTick)
         {
             StopBinocularTransitionSound();
             return;
         }
 
-        if ((!player.BinocularsOpenedThisTick && !player.BinocularZoomTargetChangedThisTick)
-            || (_binocularZoomVoice.IsValidHandle && _sounds.IsPlaying(_binocularZoomVoice)))
+        if (_binocularZoomVoice.IsValidHandle && _sounds.IsPlaying(_binocularZoomVoice))
         {
             return;
         }

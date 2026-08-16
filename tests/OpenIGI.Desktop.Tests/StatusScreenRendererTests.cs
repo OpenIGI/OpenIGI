@@ -16,10 +16,10 @@ namespace OpenIGI.Desktop.Tests;
 public sealed class StatusScreenRendererTests
 {
     [Theory]
-    [InlineData(12.4f, "RANGE: 12M")]
-    [InlineData(999.5f, "RANGE: 1000M")]
-    [InlineData(1000f, "RANGE: 1000+M")]
-    [InlineData(2500f, "RANGE: 1000+M")]
+    [InlineData(12.4f, "DISTANCE: 12M")]
+    [InlineData(999.5f, "DISTANCE: 1000M")]
+    [InlineData(1000f, "DISTANCE: 1000+M")]
+    [InlineData(2500f, "DISTANCE: 1000+M")]
     public void RetailBinocularRangeUsesTheAuthoredNativeLabels(float metres, string expected)
     {
         Assert.Equal(expected, StatusScreenRenderer.FormatBinocularRange(metres));
@@ -167,22 +167,31 @@ public sealed class StatusScreenRendererTests
         Assert.InRange(markerVertices.Max(vertex => vertex.X) - markerVertices.Min(vertex => vertex.X), 39f, 45f);
         Assert.InRange(markerVertices.Max(vertex => vertex.Y) - markerVertices.Min(vertex => vertex.Y), 79f, 85f);
 
-        // FUN_004B5860 uses the native vertex strip and 1.5625% x 2.0833334% scales. At
-        // 640x480 that produces the two 15x50 horizontal quads at x=240 and x=385.
-        Assert.Contains(
-            device.Draws,
-            draw => draw.Texture == TextureHandle.None
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 240f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 255f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 215f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 265f) < 0.01f));
-        Assert.Contains(
-            device.Draws,
-            draw => draw.Texture == TextureHandle.None
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 385f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.X - 400f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 215f) < 0.01f)
-                && draw.Vertices.Any(vertex => Math.Abs(vertex.Y - 265f) < 0.01f));
+        // FUN_004B5860 walks unk_534070 as a line strip, so each reticle arm is a thin "[" / "]"
+        // bracket outline (1.5625% x 2.0833334% scales, ±9.375% anchors), not a filled block. At
+        // 640x480 the left bracket spans x∈[240,255], y∈[215,265], and the right mirrors it to
+        // x∈[385,400]. The sight axes have no vertices inside those x-bands, so filtering the reticle
+        // green there isolates the bracket geometry.
+        Vertex2D[] reticleGreen = device.Draws
+            .Where(draw => draw.Texture == TextureHandle.None)
+            .SelectMany(draw => draw.Vertices)
+            .Where(vertex => vertex.Color.B == 64 && vertex.Color.G == 160
+                && vertex.Color.R == 64 && vertex.Color.A == 210)
+            .ToArray();
+
+        Vertex2D[] leftBracket = reticleGreen.Where(vertex => vertex.X is > 235f and < 260f).ToArray();
+        Assert.NotEmpty(leftBracket);
+        Assert.InRange(leftBracket.Min(vertex => vertex.X), 238f, 241f);
+        Assert.InRange(leftBracket.Max(vertex => vertex.X), 254f, 257f);
+        Assert.InRange(leftBracket.Min(vertex => vertex.Y), 213f, 217f);
+        Assert.InRange(leftBracket.Max(vertex => vertex.Y), 263f, 267f);
+
+        Vertex2D[] rightBracket = reticleGreen.Where(vertex => vertex.X is > 380f and < 405f).ToArray();
+        Assert.NotEmpty(rightBracket);
+        Assert.InRange(rightBracket.Min(vertex => vertex.X), 383f, 386f);
+        Assert.InRange(rightBracket.Max(vertex => vertex.X), 399f, 402f);
+        Assert.InRange(rightBracket.Min(vertex => vertex.Y), 213f, 217f);
+        Assert.InRange(rightBracket.Max(vertex => vertex.Y), 263f, 267f);
 
         // The retail builder also emits full-width and full-height line-list axes through
         // FUN_004B5730; keep the native center geometry from regressing to short arms only.
@@ -196,6 +205,22 @@ public sealed class StatusScreenRendererTests
             draw => draw.Texture == TextureHandle.None
                 && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y) < 0.01f)
                 && draw.Vertices.Any(vertex => vertex.X is > 319f and < 321f && Math.Abs(vertex.Y - 480f) < 0.01f));
+
+        // FUN_00472050 closes the overlay with the compass strip at the bottom-right of the sight.
+        // Its ticks and labels use the opaque phosphor green (64,160,64,255) — distinct from the
+        // half-transparent reticle green (alpha 210) — laid across x in [62.5%, 90.625%] of the width.
+        var compassGeometry = device.Draws
+            .Where(draw => draw.Texture == TextureHandle.None)
+            .SelectMany(draw => draw.Vertices)
+            .Where(vertex => vertex.Color.B == 64 && vertex.Color.G == 160
+                && vertex.Color.R == 64 && vertex.Color.A == 255)
+            .ToArray();
+        Assert.NotEmpty(compassGeometry);
+        // The strip occupies the bottom-right quadrant: x around [62.5%, 90.625%] of 640 and y in the
+        // 79-90% band. A cardinal glyph centred on a wrapped tick can spill a few pixels past the
+        // edges, so the bounds are generous rather than exact.
+        Assert.All(compassGeometry, vertex => Assert.InRange(vertex.X, 380f, 595f));
+        Assert.All(compassGeometry, vertex => Assert.InRange(vertex.Y, 360f, 470f));
 
         device.Draws.Clear();
         batch.Begin();
@@ -255,7 +280,7 @@ public sealed class StatusScreenRendererTests
     [Fact]
     public static void RetailBinocularsKeepTheNativeFallbackRangeWithoutAContact()
     {
-        Assert.Equal("RANGE: 1000+M", StatusScreenRenderer.BinocularRangeText(null));
+        Assert.Equal("DISTANCE: 1000+M", StatusScreenRenderer.BinocularRangeText(null));
     }
 
     [Fact]

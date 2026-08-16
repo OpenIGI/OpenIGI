@@ -173,6 +173,9 @@ public sealed class PlayerCamera
     /// <summary>Gets whether the binocular zoom target changed on the last simulation tick.</summary>
     public bool BinocularZoomTargetChangedThisTick => _binocularsView.ZoomTargetChangedThisTick;
 
+    /// <summary>Gets whether a held zoom key moved the binocular magnification on the last tick.</summary>
+    public bool BinocularZoomSteppingThisTick => _binocularsView.ZoomSteppingThisTick;
+
     /// <summary>Closes all optical devices and restores both first-person FOV tangents.</summary>
     /// <remarks>
     /// The desktop host stops ticking the player as soon as the death camera takes over. Resetting

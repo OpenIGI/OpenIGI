@@ -126,6 +126,29 @@ public sealed class SceneCaptureTests
     }
 
     [Theory]
+    [InlineData(0f, false)]
+    [InlineData(0.01f, true)]
+    [InlineData(1f, true)]
+    public void BinocularGlassIsActiveOnlyWhenRaised(float amount, bool active)
+    {
+        Assert.Equal(active, new BinocularDisplaySettings(amount).IsActive);
+    }
+
+    [Fact]
+    public void ActiveBinocularGlassMakesTheResolvePassRun()
+    {
+        // The glass is a display transform, so the resolve must not short-circuit to a copy while it is
+        // up: an active binocular has to count as grading and break the identity fast path.
+        var raised = PostProcessSettings.Identity with { Binocular = new BinocularDisplaySettings(0.5f) };
+        Assert.True(raised.WantsGrading);
+        Assert.False(raised.IsIdentity);
+
+        // A closed lens leaves the vanilla copy exactly as it was.
+        var closed = PostProcessSettings.Identity with { Binocular = default };
+        Assert.True(closed.IsIdentity);
+    }
+
+    [Theory]
     [InlineData(1280, 720, 1, true)]
     [InlineData(1280, 720, 4, true)]
     [InlineData(0, 720, 1, false)]

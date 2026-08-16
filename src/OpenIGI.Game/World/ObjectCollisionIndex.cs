@@ -1016,7 +1016,9 @@ public sealed class ObjectCollisionIndex
                         origin.Z + (direction.Z * t)),
                     new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
                     t * length,
-                    face.Material);
+                    // Report the global game-material row, not the per-mesh face index, so callers can
+                    // name the surface (glass, fence, concrete) against the shared material table.
+                    Mesh.GlobalMaterial(face.Material));
             }
 
             return found;

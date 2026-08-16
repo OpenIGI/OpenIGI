@@ -53,6 +53,15 @@ public sealed class BinocularsView
     /// </remarks>
     public bool ZoomTargetChangedThisTick { get; private set; }
 
+    /// <summary>Gets whether a held zoom-in or zoom-out key changed the magnification this tick.</summary>
+    /// <remarks>
+    /// The retail binocular plays its motor cue only while the operator is actively zooming, not when
+    /// the view is opened or when it settles to the authored default. This is therefore true only while
+    /// a zoom key is held and the magnification is still moving toward its min/max limit -- it is false
+    /// on the opening transition and once a zoom has bottomed out.
+    /// </remarks>
+    public bool ZoomSteppingThisTick { get; private set; }
+
     /// <summary>Returns the binocular state to its closed/default state.</summary>
     public void Reset()
     {
@@ -65,6 +74,7 @@ public sealed class BinocularsView
         ClosedThisTick = false;
         ZoomChangedThisTick = false;
         ZoomTargetChangedThisTick = false;
+        ZoomSteppingThisTick = false;
     }
 
     /// <summary>Advances the binocular toggle and zoom state by one simulation tick.</summary>
@@ -80,6 +90,7 @@ public sealed class BinocularsView
         ClosedThisTick = false;
         ZoomChangedThisTick = false;
         ZoomTargetChangedThisTick = false;
+        ZoomSteppingThisTick = false;
 
         if (!ReferenceEquals(_weapon, weapon))
         {
@@ -182,6 +193,9 @@ public sealed class BinocularsView
             }
         }
         ZoomChangedThisTick = tanX != previousTanX;
+        // The motor cue is driven only by a held zoom key that is still moving the magnification: not
+        // the opening settle above (which runs with both keys up), and not a zoom already at its limit.
+        ZoomSteppingThisTick = (zoomInHeld || zoomOutHeld) && ZoomChangedThisTick;
 
         return new SightZoomFrame(tanX, HumanView.DefaultViewModelTanX);
     }
