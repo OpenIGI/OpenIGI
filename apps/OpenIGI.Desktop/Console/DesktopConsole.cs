@@ -245,6 +245,9 @@ public sealed class DesktopConsole : IDisposable
     public bool WantsDraw =>
         Model.IsOpen || (!IsolatedFromSavedSettings && DeveloperConsole.HasVisibleOverlays);
 
+    /// <summary>Gets the entity the World panel has selected, or null when none is.</summary>
+    public int? SelectedEntityId => _view.SelectedEntityId;
+
     /// <summary>Gets a value indicating whether the pointer must be freed and shown this frame.</summary>
     /// <remarks>
     /// Polled from the game loop's cursor chain, which re-asserts the lock on every pass — so a console

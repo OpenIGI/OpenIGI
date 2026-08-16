@@ -1,3 +1,4 @@
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Input;
@@ -86,12 +87,16 @@ public sealed class DeveloperConsole : IDisposable
     private InspectorBody? _inspector;
     private IWorldInspector? _world;
 
+    /// <summary>An <c>ent_select</c> that arrived before the panels existed, applied once they do.</summary>
+    private int? _pendingSelection;
+
     private float _blink;
     private bool _caretVisible = true;
     private bool _disposed;
     private bool _layoutRestored;
     private bool _findFocused;
     private bool _watchAutoHeight = true;
+    private UiVec2 _viewportPointer;
     private int _viewportWidth = 1;
     private int _viewportHeight = 1;
 
@@ -144,6 +149,11 @@ public sealed class DeveloperConsole : IDisposable
 
     /// <summary>Gets a value indicating whether a panel is pinned to stay up with the console shut.</summary>
     public static bool HasVisibleOverlays => DevConsoleCVars.WatchVisible.Value;
+
+    /// <summary>Gets the handle of the entity selected in the World panel, or null when none is.</summary>
+    /// <remarks>Read from the 3D pass, which draws the selection silhouette around it.</remarks>
+    public int? SelectedEntityId =>
+        _inspectorWindow is { IsOpen: true } && _inspector?.Selected is { } entity ? entity.Id : null;
 
     /// <summary>Gets how many scrollback lines are on screen, for page-up and page-down.</summary>
     public int VisibleLines => _body?.VisibleLines ?? 20;
@@ -258,7 +268,197 @@ public sealed class DeveloperConsole : IDisposable
 
         // Over every window, and at full opacity: a menu the reader just asked for should not be
         // showing the scene through it.
+        DrawSelectionMarker(painter, context.Viewport);
         _menu.Draw(painter, _theme, context.Viewport);
+        DrawPointer(painter);
+    }
+
+    /// <summary>
+    /// Marks the entity selected in the world panel, wherever it is.
+    /// </summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <param name="viewport">The back buffer's size in pixels.</param>
+    /// <remarks>
+    /// <para>
+    /// Drawn in the interface pass, over the scene, which is what makes it visible through a wall with
+    /// no depth-test trickery — and the reason this is a screen-space bracket rather than a
+    /// world-space box.
+    /// </para>
+    /// <para>
+    /// The bracket shrinks with distance but never below a size that can be seen, so something a
+    /// kilometre away is still a mark rather than a pixel. When it leaves the viewport the mark pins
+    /// to the nearest edge and becomes an arrow pointing at it, so a selection is never simply lost
+    /// the moment the reader turns around.
+    /// </para>
+    /// </remarks>
+    private void DrawSelectionMarker(UiPainter painter, UiVec2 viewport)
+    {
+        if (_theme is null ||
+            _inspector is null ||
+            _inspectorWindow is not { IsOpen: true } ||
+            _inspector.Selected is not { } entity ||
+            _inspector.World is not { } world ||
+            !world.TryProject(entity.Id, out ScreenMarker marker))
+        {
+            return;
+        }
+
+        float margin = _theme.Gutter * 2f;
+        bool onScreen = marker.IsInFront &&
+            marker.X >= margin && marker.X <= viewport.X - margin &&
+            marker.Y >= margin && marker.Y <= viewport.Y - margin;
+
+        float x = Math.Clamp(marker.X, margin, viewport.X - margin);
+        float y = Math.Clamp(marker.Y, margin, viewport.Y - margin);
+
+        if (onScreen)
+        {
+            DrawBracket(painter, x, y, marker.DistanceMetres, entity);
+        }
+        else
+        {
+            DrawEdgeArrow(painter, x, y, viewport, marker, entity);
+        }
+    }
+
+    /// <summary>Draws the corner bracket that sits on a visible selection.</summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <param name="x">Where it sits horizontally.</param>
+    /// <param name="y">Where it sits vertically.</param>
+    /// <param name="distance">How far away the entity is.</param>
+    /// <param name="entity">What is selected.</param>
+    /// <remarks>
+    /// Corners rather than a closed rectangle: four short strokes read as a reticle placed over
+    /// something, where a full box reads as a thing in its own right and hides what it frames. Each
+    /// stroke is drawn twice, dark then bright, so it holds against a pale sky as well as a dark
+    /// interior — the outline is what makes it legible over any scene at all.
+    /// </remarks>
+    private void DrawBracket(UiPainter painter, float x, float y, double distance, in InspectableEntity entity)
+    {
+        DevConsoleTheme theme = _theme!;
+        float half = MathF.Round(Math.Clamp(900f / MathF.Max(4f, (float)distance), 14f, 90f));
+        float arm = MathF.Round(half * 0.45f);
+        float weight = MathF.Max(2f, MathF.Round(theme.Unit * 0.5f));
+
+        x = MathF.Round(x);
+        y = MathF.Round(y);
+
+        for (int pass = 0; pass < 2; pass++)
+        {
+            bool shadow = pass == 0;
+            float grow = shadow ? 1f : 0f;
+            Bgra32 colour = shadow ? Bgra32.FromRgba(0, 0, 0, 190) : theme.Ui.Accent;
+            float thickness = weight + (shadow ? 2f : 0f);
+
+            float left = x - half - grow;
+            float right = x + half + grow;
+            float top = y - half - grow;
+            float bottom = y + half + grow;
+
+            painter.FillRect(new UiRect(left, top, arm, thickness), colour);
+            painter.FillRect(new UiRect(left, top, thickness, arm), colour);
+
+            painter.FillRect(new UiRect(right - arm, top, arm, thickness), colour);
+            painter.FillRect(new UiRect(right - thickness, top, thickness, arm), colour);
+
+            painter.FillRect(new UiRect(left, bottom - thickness, arm, thickness), colour);
+            painter.FillRect(new UiRect(left, bottom - arm, thickness, arm), colour);
+
+            painter.FillRect(new UiRect(right - arm, bottom - thickness, arm, thickness), colour);
+            painter.FillRect(new UiRect(right - thickness, bottom - arm, thickness, arm), colour);
+        }
+
+        DrawMarkerLabel(painter, x, y - half - (theme.Unit * 2f), entity.Name, distance);
+    }
+
+    /// <summary>Draws the pinned arrow standing in for a selection off the edge of the screen.</summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <param name="x">Where the mark was clamped to horizontally.</param>
+    /// <param name="y">Where the mark was clamped to vertically.</param>
+    /// <param name="viewport">The back buffer's size in pixels.</param>
+    /// <param name="marker">Where the entity really projected to.</param>
+    /// <param name="entity">What is selected.</param>
+    private void DrawEdgeArrow(
+        UiPainter painter,
+        float x,
+        float y,
+        UiVec2 viewport,
+        in ScreenMarker marker,
+        in InspectableEntity entity)
+    {
+        DevConsoleTheme theme = _theme!;
+        float size = MathF.Max(10f, theme.Unit * 3f);
+
+        // Point away from the middle, along the direction the entity actually lies in.
+        float dx = marker.X - (viewport.X * 0.5f);
+        float dy = marker.Y - (viewport.Y * 0.5f);
+        float length = MathF.Max(0.0001f, MathF.Sqrt((dx * dx) + (dy * dy)));
+        dx /= length;
+        dy /= length;
+
+        var tip = new UiVec2(MathF.Round(x + (dx * size)), MathF.Round(y + (dy * size)));
+        var left = new UiVec2(MathF.Round(x - (dy * size * 0.6f)), MathF.Round(y + (dx * size * 0.6f)));
+        var right = new UiVec2(MathF.Round(x + (dy * size * 0.6f)), MathF.Round(y - (dx * size * 0.6f)));
+
+        painter.FillTriangle(tip, left, right, theme.Ui.Accent);
+        DrawMarkerLabel(painter, x, y - (size * 2.2f), entity.Name, marker.DistanceMetres);
+    }
+
+    private void DrawMarkerLabel(UiPainter painter, float centreX, float top, string name, double distance)
+    {
+        DevConsoleTheme theme = _theme!;
+        string text = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"{name}  {distance:0.0} m");
+
+        float width = theme.SmallFont.MeasureWidth(text, theme.SmallSize);
+        float height = theme.SmallFont.LineHeight(theme.SmallSize);
+        var box = new UiRect(
+            MathF.Round(centreX - (width * 0.5f) - theme.Unit),
+            MathF.Round(top - height - theme.Unit),
+            MathF.Round(width + (theme.Unit * 2f)),
+            MathF.Round(height + (theme.Unit * 1.5f)));
+
+        painter.FillRect(box, Bgra32.FromRgba(0, 0, 0, 175));
+        painter.DrawText(
+            theme.SmallFont,
+            text,
+            new UiVec2(MathF.Round(box.X + theme.Unit), MathF.Round(box.Y + (theme.Unit * 0.75f))),
+            theme.SmallSize,
+            theme.Ui.Accent);
+    }
+
+    /// <summary>
+    /// Draws the pointer, last of all.
+    /// </summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <remarks>
+    /// The console draws its own rather than letting the window system show the operating system's.
+    /// A composited cursor sits on top of everything including the menu the reader is aiming at, it
+    /// does not match the one the shell already draws, and turning it on while the shell was drawing
+    /// its own put two arrows on screen at once.
+    /// </remarks>
+    private void DrawPointer(UiPainter painter)
+    {
+        if (_theme is null)
+        {
+            return;
+        }
+
+        var tip = new UiVec2(_viewportPointer.X, _viewportPointer.Y);
+        float size = Math.Clamp(painter.Context.Viewport.Y / 42f, 18f, 40f);
+
+        DrawArrow(painter, tip, size + 3f, Bgra32.FromRgba(0, 0, 0, 200));
+        DrawArrow(painter, tip, size, Bgra32.White);
+    }
+
+    private static void DrawArrow(UiPainter painter, UiVec2 tip, float size, Bgra32 color)
+    {
+        var down = new UiVec2(tip.X, tip.Y + size);
+        var elbow = new UiVec2(tip.X + (size * 0.36f), tip.Y + (size * 0.72f));
+        var barb = new UiVec2(tip.X + (size * 0.72f), tip.Y + (size * 0.72f));
+        painter.FillTriangle(tip, down, elbow, color);
+        painter.FillTriangle(tip, elbow, barb, color);
     }
 
     /// <summary>Stores where the panels sit and what is pinned, so both survive a restart.</summary>
@@ -305,6 +505,12 @@ public sealed class DeveloperConsole : IDisposable
         _inspectorWindow = Panel(InspectorPanel, "World", new UiRect(1040f, 660f, 640f, 340f), _inspector, new UiVec2(380f, 180f));
         _inspectorWindow.IsOpen = false;
         _inspector.Attach(_world);
+
+        if (_pendingSelection is { } pending)
+        {
+            _pendingSelection = null;
+            _inspector.SelectWhenListed(pending);
+        }
 
         _palette = new CommandPaletteBody(console, theme) { Surfaces = _surfaces };
         _paletteWindow = Panel(PalettePanel, "Command palette", new UiRect(520f, 180f, 900f, 460f), _palette, new UiVec2(420f, 200f));
@@ -392,6 +598,16 @@ public sealed class DeveloperConsole : IDisposable
                     "off" or "0" => false,
                     _ => !window.IsOpen,
                 };
+
+                // The palette is stateful in a way the other panels are not — it has a query and a
+                // result list — so showing it has to go through the same door the chord uses, or it
+                // comes up reading "no matches" because nothing ever ran the search.
+                if (wanted && string.Equals(name, PalettePanel, StringComparison.OrdinalIgnoreCase))
+                {
+                    OpenPalette();
+                    context.Print($"{name} is shown.");
+                    return;
+                }
 
                 window.IsOpen = wanted;
 
@@ -535,6 +751,37 @@ public sealed class DeveloperConsole : IDisposable
             "<id>");
 
         console.Commands.Add(
+            "ent_select",
+            "Marks an entity in the world and shows it in the World panel.",
+            context =>
+            {
+                if (!int.TryParse(context[0], System.Globalization.CultureInfo.InvariantCulture, out int id))
+                {
+                    context.Error("Usage: ent_select <id>");
+                    return;
+                }
+
+                // Same story as `con_panel`: from `settings.cfg` or a `+` argument this runs before
+                // there is a display, so the selection is remembered rather than lost.
+                if (_inspector is null)
+                {
+                    _pendingSelection = id;
+                    _pendingOpen.Add(InspectorPanel);
+                    return;
+                }
+
+                if (_inspectorWindow is not null)
+                {
+                    _inspectorWindow.IsOpen = true;
+                    _model.IsOpen = true;
+                }
+
+                _inspector.SelectWhenListed(id);
+                context.Print($"Selected {id}.");
+            },
+            "<id>");
+
+        console.Commands.Add(
             "ent_goto",
             "Moves the free camera to look at an entity.",
             context =>
@@ -642,8 +889,31 @@ public sealed class DeveloperConsole : IDisposable
     {
         float w = MathF.Max(1f, width);
         float h = MathF.Max(1f, height);
-        return new LayoutContext(w, h, reference: new UiVec2(w, h), userScale: DevConsoleCVars.Scale.Value);
+        return new LayoutContext(
+            w,
+            h,
+            reference: new UiVec2(w, h),
+            userScale: AutoScale(h) * DevConsoleCVars.Scale.Value);
     }
+
+    /// <summary>
+    /// Works out how much to enlarge the interface for the display it is on.
+    /// </summary>
+    /// <param name="height">The back buffer's height in pixels.</param>
+    /// <returns>A factor <c>con_scale</c> multiplies.</returns>
+    /// <remarks>
+    /// <para>
+    /// Sizing in raw pixels is right for aspect ratio and wrong for resolution: a wider display should
+    /// show <em>more</em> console, but a denser one should not show a <em>smaller</em> one. Fourteen
+    /// pixels of text is comfortable at 1080p and a squint at 4K on the same-sized monitor.
+    /// </para>
+    /// <para>
+    /// Taken from the height against a 1080p baseline, and never allowed below one — at 720p the text
+    /// is already as small as it should ever be, and shrinking it further to be proportional would be
+    /// proportional and unreadable.
+    /// </para>
+    /// </remarks>
+    private static float AutoScale(float height) => Math.Clamp(height / 1080f, 1f, 3f);
 
     private void RestoreLayoutOnce(LayoutContext context)
     {
@@ -686,9 +956,10 @@ public sealed class DeveloperConsole : IDisposable
 
         window.Frame = key switch
         {
-            ConsolePanel => new UiRect(margin, margin, (w * 0.62f) - margin, (h * 0.46f) - margin),
-            CVarPanel => new UiRect(w * 0.63f, margin, (w * 0.37f) - margin, h * 0.7f),
-            WatchPanel => new UiRect(margin, h * 0.5f, w * 0.24f, h * 0.12f),
+            ConsolePanel => new UiRect(margin, margin, (w * 0.72f) - margin, (h * 0.58f) - margin),
+            CVarPanel => new UiRect(w * 0.73f, margin, (w * 0.27f) - margin, h * 0.72f),
+            WatchPanel => new UiRect(margin, h * 0.62f, w * 0.28f, h * 0.12f),
+            InspectorPanel => new UiRect(w * 0.32f, h * 0.62f, w * 0.40f, h * 0.34f),
             PalettePanel => new UiRect(w * 0.22f, h * 0.16f, w * 0.56f, h * 0.5f),
             _ => window.Frame,
         };
@@ -835,6 +1106,7 @@ public sealed class DeveloperConsole : IDisposable
         MouseState mouse = input.Mouse;
         var point = new UiVec2(mouse.X, mouse.Y);
         bool pressed = mouse.WasPressed(MouseButton.Left);
+        _viewportPointer = point;
 
         // The menu is above everything, so it gets first refusal on every press -- otherwise a click
         // meant for an item would be taken by whatever window happens to be under it.
@@ -872,7 +1144,7 @@ public sealed class DeveloperConsole : IDisposable
             return;
         }
 
-        if (HandleLogSelection(point, mouse, pressed))
+        if (HandleScrollBar(point, mouse, pressed) || HandleLogSelection(point, mouse, pressed))
         {
             return;
         }
@@ -896,6 +1168,35 @@ public sealed class DeveloperConsole : IDisposable
         {
             HandleWheel(point, mouse.WheelDelta);
         }
+    }
+
+    /// <summary>Runs the scrollbar's thumb drag, which has to be offered the pointer before selection.</summary>
+    /// <param name="point">Where the pointer is.</param>
+    /// <param name="mouse">The frame's mouse, read before capture.</param>
+    /// <param name="pressed">Whether the left button went down this frame.</param>
+    /// <returns><see langword="true"/> when the bar owned the pointer.</returns>
+    private bool HandleScrollBar(UiVec2 point, MouseState mouse, bool pressed)
+    {
+        if (_body is null || _consoleWindow is not { IsOpen: true })
+        {
+            return false;
+        }
+
+        if (_body.IsScrollDragging)
+        {
+            if (mouse.IsDown(MouseButton.Left))
+            {
+                _body.DragScroll(point);
+            }
+            else
+            {
+                _body.EndScrollDrag();
+            }
+
+            return true;
+        }
+
+        return pressed && _body.BeginScrollDrag(point);
     }
 
     /// <summary>

@@ -62,9 +62,13 @@ public static class ConsoleSuggester
 
         // Past the first space the line names something; complete the value it is being given.
         string name = leading[..firstSpace];
-        string valuePrefix = leading[(firstSpace + 1)..].TrimStart();
+        string rest = leading[(firstSpace + 1)..];
 
-        return RankValues(console, name, valuePrefix, limit);
+        int tokenStart = LastUnquotedSpace(rest) + 1;
+        string valuePrefix = rest[tokenStart..];
+        int argument = CountArguments(rest[..tokenStart]);
+
+        return RankValues(console, name, valuePrefix, argument, limit);
     }
 
     /// <summary>Scores a candidate against what has been typed, or returns null when it does not match.</summary>
@@ -217,11 +221,14 @@ public static class ConsoleSuggester
         ConsoleSystem console,
         string name,
         string query,
+        int argument,
         int limit)
     {
         if (!console.Variables.TryGet(name, out ICVar? variable))
         {
-            return [];
+            return console.Commands.TryGet(name, out ConsoleCommand? command)
+                ? RankArguments(console, command, query, argument, limit)
+                : [];
         }
 
         List<ConsoleSuggestion> matches = [];
@@ -246,6 +253,142 @@ public static class ConsoleSuggester
         }
 
         return Order(matches, limit);
+    }
+
+    /// <summary>
+    /// Ranks what a command's argument accepts.
+    /// </summary>
+    /// <param name="console">The console whose registries name-taking arguments draw from.</param>
+    /// <param name="command">The command being given an argument.</param>
+    /// <param name="query">What has been typed of the argument so far.</param>
+    /// <param name="argument">Which argument it is, counting from zero.</param>
+    /// <param name="limit">The most candidates to return.</param>
+    /// <returns>The candidates, best first.</returns>
+    /// <remarks>
+    /// Most commands need nothing beyond the usage string they were already declared with —
+    /// <c>gfx_preset [vanilla | enhanced | high | ultra]</c> completes because the alternatives are
+    /// written right there. The two placeholders worth understanding are <c>&lt;variable&gt;</c> and
+    /// <c>&lt;command&gt;</c>, which stand for the registries rather than for a fixed list, and which
+    /// are what make <c>help</c>, <c>reset</c>, <c>toggle</c> and <c>watch</c> complete usefully.
+    /// </remarks>
+    private static List<ConsoleSuggestion> RankArguments(
+        ConsoleSystem console,
+        ConsoleCommand command,
+        string query,
+        int argument,
+        int limit)
+    {
+        List<ConsoleSuggestion> matches = [];
+
+        foreach (string choice in command.ArgumentChoices(argument))
+        {
+            if (Score(choice, query) is { } score)
+            {
+                matches.Add(new ConsoleSuggestion(choice, ConsoleSuggestionKind.Value, string.Empty, string.Empty, string.Empty, score));
+            }
+        }
+
+        if (matches.Count > 0)
+        {
+            return Order(matches, limit);
+        }
+
+        string placeholder = command.ArgumentUsage(argument).TrimEnd('.');
+
+        if (placeholder.Equals("variable", StringComparison.OrdinalIgnoreCase) ||
+            placeholder.Equals("cvar", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (ICVar variable in console.Variables.All)
+            {
+                if ((variable.Flags & CVarOptions.Hidden) == 0 && Score(variable.Name, query) is { } score)
+                {
+                    matches.Add(new ConsoleSuggestion(
+                        variable.Name,
+                        ConsoleSuggestionKind.Variable,
+                        variable.ValueText,
+                        variable.RangeText,
+                        variable.Help,
+                        score));
+                }
+            }
+        }
+        else if (placeholder.Equals("command", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (ConsoleCommand other in console.Commands.All)
+            {
+                if ((other.Flags & CommandOptions.Hidden) == 0 && Score(other.Name, query) is { } score)
+                {
+                    matches.Add(new ConsoleSuggestion(
+                        other.Name,
+                        ConsoleSuggestionKind.Command,
+                        other.Usage,
+                        string.Empty,
+                        other.Help,
+                        score));
+                }
+            }
+        }
+
+        return Order(matches, limit);
+    }
+
+    /// <summary>Counts how many complete arguments precede a point in a line.</summary>
+    /// <param name="text">The text before the argument being typed.</param>
+    /// <returns>The zero-based index of the argument now being typed.</returns>
+    private static int CountArguments(string text)
+    {
+        int count = 0;
+        bool quoted = false;
+        bool inToken = false;
+
+        foreach (char c in text)
+        {
+            if (c == '"')
+            {
+                quoted = !quoted;
+                inToken = true;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c) && !quoted)
+            {
+                if (inToken)
+                {
+                    count++;
+                    inToken = false;
+                }
+
+                continue;
+            }
+
+            inToken = true;
+        }
+
+        return count + (inToken ? 1 : 0);
+    }
+
+    /// <summary>Finds the last space that is not inside quotes, or -1.</summary>
+    /// <param name="text">The text to scan.</param>
+    /// <returns>The index, or -1 when there is none.</returns>
+    private static int LastUnquotedSpace(string text)
+    {
+        bool quoted = false;
+        int last = -1;
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '"')
+            {
+                quoted = !quoted;
+            }
+            else if (char.IsWhiteSpace(c) && !quoted)
+            {
+                last = i;
+            }
+        }
+
+        return last;
     }
 
     private static List<ConsoleSuggestion> Order(List<ConsoleSuggestion> matches, int limit)

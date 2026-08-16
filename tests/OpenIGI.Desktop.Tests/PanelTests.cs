@@ -222,11 +222,10 @@ public sealed class PanelTests
             return true;
         }
 
-        public bool TryProject(int id, out float x, out float y)
+        public bool TryProject(int id, out ScreenMarker marker)
         {
-            x = 0f;
-            y = 0f;
-            return false;
+            marker = new ScreenMarker(100f, 100f, 12.5, true);
+            return true;
         }
     }
 

@@ -11,7 +11,7 @@ namespace OpenIGI.Desktop;
 /// the loader had already thrown away.
 /// </remarks>
 /// <param name="Name">The level's own name for the soldier.</param>
-/// <param name="Position">Where it stands, in world units.</param>
+/// <param name="Position">Where it stands, in metres — the unit every panel and command works in.</param>
 /// <param name="IsDead">Whether it has been killed.</param>
 /// <param name="Animation">The animation clip it is playing.</param>
 /// <param name="HealthFraction">How much health remains, 0 to 1, or -1 when it has no health model.</param>

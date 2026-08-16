@@ -163,6 +163,109 @@ public sealed class ConsoleBodyTests
             $"4000 lines drew {many.Batch.QuadCount} quads against {fewQuads} for five.");
     }
 
+    // ---- Scrolling ----
+
+    /// <summary>
+    /// The bug this covers: the model counts lines back from the newest and the viewport counts pixels
+    /// from the top, and nothing converted between them — so scrolling changed a number nothing read
+    /// and the log sat still.
+    /// </summary>
+    [Fact]
+    public void Scrolling_the_model_moves_the_viewport()
+    {
+        Harness h = Build();
+        for (int i = 0; i < 200; i++)
+        {
+            h.System.Write($"line {i}");
+        }
+
+        Render(h);
+        Assert.True(h.Body.Log.StickToEnd);
+
+        h.Model.Scroll(20, h.Body.VisibleLines);
+        Render(h);
+
+        // Twenty lines back from the newest is twenty row-heights short of the bottom, and the
+        // viewport stops following the end.
+        Assert.False(h.Body.Log.StickToEnd);
+        Assert.Equal(
+            h.Body.Log.MaxScroll - (20f * h.Body.Log.RowHeight),
+            h.Body.Log.ScrollOffset,
+            1);
+    }
+
+    [Fact]
+    public void Returning_to_the_bottom_sticks_to_the_end_again()
+    {
+        Harness h = Build();
+        for (int i = 0; i < 200; i++)
+        {
+            h.System.Write($"line {i}");
+        }
+
+        h.Model.Scroll(20, h.Body.VisibleLines);
+        Render(h);
+        Assert.False(h.Body.Log.StickToEnd);
+
+        h.Model.Scroll(-1000, h.Body.VisibleLines);
+        Render(h);
+
+        Assert.True(h.Body.Log.StickToEnd);
+        Assert.Equal(0, h.Model.ScrollOffset);
+    }
+
+    [Fact]
+    public void A_full_log_overflows_and_offers_a_scrollbar()
+    {
+        Harness h = Build();
+        for (int i = 0; i < 500; i++)
+        {
+            h.System.Write($"line {i}");
+        }
+
+        Render(h);
+
+        Assert.True(h.Body.Log.HasOverflow);
+        Assert.False(h.Body.Log.ThumbBounds.IsEmpty);
+    }
+
+    [Fact]
+    public void A_short_log_has_no_scrollbar_to_grab()
+    {
+        Harness h = Build();
+        h.System.Write("one line");
+
+        Render(h);
+
+        Assert.False(h.Body.Log.HasOverflow);
+        Assert.False(h.Body.BeginScrollDrag(new UiVec2(h.Body.Log.Bounds.Right - 4f, h.Body.Log.Bounds.Y + 10f)));
+    }
+
+    /// <summary>
+    /// Dragging the thumb has to end up expressed in the model's units, because that is what every
+    /// other scrolling path reads.
+    /// </summary>
+    [Fact]
+    public void Dragging_the_thumb_scrolls_and_tells_the_model()
+    {
+        Harness h = Build();
+        for (int i = 0; i < 500; i++)
+        {
+            h.System.Write($"line {i}");
+        }
+
+        Render(h);
+
+        UiRect track = h.Body.Log.TrackBounds;
+        Assert.True(h.Body.BeginScrollDrag(new UiVec2(track.X + 2f, track.Y + 4f)));
+        Assert.True(h.Body.IsScrollDragging);
+
+        Assert.True(h.Model.ScrollOffset > 0, "dragging the thumb to the top should scroll back.");
+
+        h.Body.EndScrollDrag();
+        Assert.False(h.Body.IsScrollDragging);
+    }
+
     [Fact]
     public void A_filtered_log_draws_only_what_passes()
     {

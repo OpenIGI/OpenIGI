@@ -1,4 +1,6 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using System.Runtime.InteropServices;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
@@ -65,6 +67,9 @@ public sealed class SoldierRenderer : IDisposable
     private const double HumanGroundProbeDownInUnits = 40960.0;
 
     private readonly IGraphicsDevice _device;
+
+    /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
+    private readonly List<MeshDrawRange> _outlineRanges = [];
     private readonly ResourceRegistry _resources;
     private readonly MagicObjectRegistry? _magic;
     private readonly IIgiLogger _logger;
@@ -361,13 +366,86 @@ public sealed class SoldierRenderer : IDisposable
 
                 into.Add(new SoldierSnapshot(
                     view.Soldier.Name ?? string.Empty,
-                    view.Position,
+                    view.Position / WorldScene.UnitsPerMetre,
                     dead,
                     view.CurrentAnimation,
                     _health.TryGetValue(view, out HumanHealth? hp) ? hp.RemainingFraction : -1f,
                     member.IsCutsceneActor));
             }
         }
+    }
+
+    /// <summary>Draws a selection glow around one soldier.</summary>
+    /// <param name="index">The soldier's index in the order <see cref="Snapshot"/> fills.</param>
+    /// <param name="camera">The eye the frame is drawn from.</param>
+    /// <param name="colour">The glow colour.</param>
+    /// <param name="radius">How far the glow reaches past the silhouette, in pixels.</param>
+    /// <param name="throughWalls">Whether it ignores the depth buffer.</param>
+    /// <returns><see langword="true"/> when something was drawn.</returns>
+    /// <remarks>
+    /// <para>
+    /// The pose is handed to the device the same way the ordinary draw hands it over, because a
+    /// soldier's mesh is uploaded as two poses the shader blends between. Without it the glow would
+    /// stand in whichever pose was uploaded last and lag a step behind the body inside it.
+    /// </para>
+    /// <para>
+    /// The walk mirrors <see cref="Snapshot"/> exactly — group, then member — because that walk is what
+    /// defines the handle the inspector asks with.
+    /// </para>
+    /// </remarks>
+    public bool DrawOutline(int index, in Camera3D camera, Bgra32 colour, float radius, bool throughWalls)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (index < 0)
+        {
+            return false;
+        }
+
+        int seen = 0;
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                if (seen++ != index)
+                {
+                    continue;
+                }
+
+                if (!member.HasFrameState)
+                {
+                    return false;
+                }
+
+                _outlineRanges.Clear();
+                foreach (MeshSubset subset in group.Geometry.Subsets)
+                {
+                    if (subset.IndexCount > 0)
+                    {
+                        _outlineRanges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+                    }
+                }
+
+                if (_outlineRanges.Count == 0)
+                {
+                    return false;
+                }
+
+                _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
+                _device.DrawOutline(
+                    member.Mesh,
+                    CollectionsMarshal.AsSpan(_outlineRanges),
+                    camera.CreateModelView(member.DrawnWhere, member.DrawnOrientation),
+                    colour,
+                    radius,
+                    throughWalls);
+                _device.ClearPoseInterpolation();
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Gets or sets the active authored cutscene transform source.</summary>

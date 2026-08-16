@@ -303,13 +303,106 @@ public sealed class ConsoleModel : IConsoleOutput
         }
 
         ConsoleCompletion completion = _console.Complete(_edit.Text);
-        if (!completion.HasCandidates)
+        if (completion.HasCandidates)
         {
+            SetInput(completion.IsUnambiguous ? completion.Candidates[0] + " " : completion.CommonPrefix);
             return completion.Candidates;
         }
 
-        SetInput(completion.IsUnambiguous ? completion.Candidates[0] + " " : completion.CommonPrefix);
-        return completion.Candidates;
+        return CompleteFromRanked();
+    }
+
+    /// <summary>
+    /// Completes from the ranked list when the plain one had nothing to offer.
+    /// </summary>
+    /// <returns>The candidate names considered.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is what makes Tab finish a <em>value</em>. <see cref="ConsoleSystem.Complete"/> answers
+    /// only for the first token — deliberately, since that is the question it was written for — so
+    /// without this, typing <c>r_vsync </c> and pressing Tab did nothing at all even though the
+    /// dropdown was sitting there listing <c>0</c> and <c>1</c>. It also picks up the fuzzy first-token
+    /// matches the plain path cannot see.
+    /// </para>
+    /// <para>
+    /// One candidate is taken outright. Several extend to their common prefix; when that adds nothing
+    /// the first is highlighted instead, so a second Tab takes it and a reader who wants a different
+    /// one can arrow to it — the behaviour a shell has trained everyone to expect.
+    /// </para>
+    /// </remarks>
+    private List<string> CompleteFromRanked()
+    {
+        if (_richSuggestions.Count == 0)
+        {
+            return _suggestions;
+        }
+
+        if (_richSuggestions.Count == 1)
+        {
+            _suggestionIndex = 0;
+            AcceptSuggestion();
+            return _suggestions;
+        }
+
+        string prefix = CommonPrefixOfRanked();
+        string token = TokenUnderCaret();
+
+        if (prefix.Length > token.Length)
+        {
+            ReplaceTokenUnderCaret(prefix, addTrailingSpace: false);
+            return _suggestions;
+        }
+
+        _suggestionIndex = 0;
+        return _suggestions;
+    }
+
+    private string CommonPrefixOfRanked()
+    {
+        string prefix = _richSuggestions[0].Text;
+
+        foreach (ConsoleSuggestion suggestion in _richSuggestions)
+        {
+            int length = 0;
+            while (length < prefix.Length && length < suggestion.Text.Length &&
+                   char.ToLowerInvariant(prefix[length]) == char.ToLowerInvariant(suggestion.Text[length]))
+            {
+                length++;
+            }
+
+            prefix = prefix[..length];
+        }
+
+        return prefix;
+    }
+
+    /// <summary>Returns the word the caret is inside, which is what a completion replaces.</summary>
+    /// <returns>The token, which may be empty when the caret sits after a space.</returns>
+    private string TokenUnderCaret()
+    {
+        string text = _edit.Text;
+        int start = TokenStart();
+        return text[start.._edit.Caret];
+    }
+
+    private int TokenStart()
+    {
+        string text = _edit.Text;
+        int start = text.LastIndexOfAny([' ', ';'], Math.Max(0, _edit.Caret - 1)) + 1;
+        return Math.Min(start, text.Length);
+    }
+
+    /// <summary>Replaces the token under the caret, leaving anything after it alone.</summary>
+    /// <param name="replacement">The text to put in its place.</param>
+    /// <param name="addTrailingSpace">Whether to leave a space ready for what comes next.</param>
+    private void ReplaceTokenUnderCaret(string replacement, bool addTrailingSpace)
+    {
+        string text = _edit.Text;
+        int start = TokenStart();
+        string head = text[..start];
+        string tail = text[_edit.Caret..];
+
+        SetInput(head + replacement + (addTrailingSpace ? " " : string.Empty) + tail);
     }
 
     /// <summary>Moves the highlight through the suggestion list.</summary>
@@ -361,21 +454,11 @@ public sealed class ConsoleModel : IConsoleOutput
         }
 
         ConsoleSuggestion chosen = _richSuggestions[_suggestionIndex];
-        string text = _edit.Text;
 
         // Replace only the token under the caret. A value completion must leave the variable's name
-        // standing, and a name completion must not swallow a value already typed after it.
-        int start = text.LastIndexOfAny([' ', ';'], Math.Max(0, _edit.Caret - 1)) + 1;
-        if (start > text.Length)
-        {
-            start = text.Length;
-        }
-
-        string head = text[..start];
-        string tail = text[_edit.Caret..];
-        bool naming = chosen.Kind != ConsoleSuggestionKind.Value;
-
-        SetInput(head + chosen.Text + (naming ? " " : string.Empty) + tail);
+        // standing, and a name completion must not swallow a value already typed after it. A name gets
+        // a trailing space because something follows it; a value ends the statement, so it does not.
+        ReplaceTokenUnderCaret(chosen.Text, addTrailingSpace: chosen.Kind != ConsoleSuggestionKind.Value);
         return true;
     }
 

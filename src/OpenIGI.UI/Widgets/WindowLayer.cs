@@ -195,10 +195,20 @@ public class WindowLayer : UiElement
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <b>Visibility is settled here, at the start of the measure pass, not during arrange.</b>
+    /// <see cref="UiElement.Measure"/> returns immediately for a collapsed element without measuring
+    /// its content, and <see cref="UiElement.Arrange"/> throws for anything that was never measured.
+    /// Deciding visibility in the later pass therefore left a window opened this frame still carrying
+    /// last frame's collapsed flag while it was measured, so its content was skipped and then arranged
+    /// — which is a crash on the first frame any panel is shown, and only that frame.
+    /// </remarks>
     protected override UiVec2 MeasureContent(LayoutContext context, UiVec2 available)
     {
         foreach (UiWindow window in _windows)
         {
+            window.Visibility = window.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+
             if (window.IsOpen)
             {
                 window.Measure(context, available);
@@ -213,14 +223,10 @@ public class WindowLayer : UiElement
     {
         foreach (UiWindow window in _windows)
         {
-            if (!window.IsOpen)
+            if (window.IsOpen)
             {
-                window.Visibility = Visibility.Collapsed;
-                continue;
+                window.Arrange(window.VisibleFrame);
             }
-
-            window.Visibility = Visibility.Visible;
-            window.Arrange(window.VisibleFrame);
         }
     }
 

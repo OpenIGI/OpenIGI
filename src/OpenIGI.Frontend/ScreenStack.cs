@@ -35,6 +35,14 @@ public sealed class ScreenStack
     private UiVec2 _pointer;
     private bool _pointerVisible;
 
+    /// <summary>Gets or sets a value indicating whether something in front is drawing the pointer instead.</summary>
+    /// <remarks>
+    /// Exactly one thing may draw a cursor. The developer console is drawn after the shell and over it,
+    /// so while it is up it owns the pointer; without this the reader sees two arrows, which is what
+    /// happens the moment two layers each decide they are the topmost.
+    /// </remarks>
+    public bool PointerSuppressed { get; set; }
+
     /// <summary>Gets the number of screens currently on the stack, including one that is exiting.</summary>
     public int Count => _screens.Count;
 
@@ -174,7 +182,7 @@ public sealed class ScreenStack
             screen.Draw(painter);
         }
 
-        if (_pointerVisible)
+        if (_pointerVisible && !PointerSuppressed)
         {
             DrawCursor(painter);
         }

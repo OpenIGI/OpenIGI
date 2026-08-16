@@ -35,6 +35,38 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     /// field alone wants four, and GL 3.3 guarantees sixteen to a fragment shader.
     /// </remarks>
     private const int MaxTextureUnits = 16;
+
+    /// <summary>How many concentric shells make up the selection glow's falloff.</summary>
+    /// <remarks>
+    /// Eight is where the banding stops being visible at the widths a selection mark uses. Fewer reads
+    /// as a set of rings; more costs another draw of the model for a difference nobody can see.
+    /// </remarks>
+    private const int GlowShells = 8;
+
+    /// <summary>The depth the glow's mask is pinned to, in normalised device coordinates.</summary>
+    /// <remarks>
+    /// Just <em>inside</em> the near plane, never on it. Clip space keeps what satisfies
+    /// <c>-w &lt;= z &lt;= w</c>, so a triangle pinned to exactly <c>-w</c> sits on the boundary and the
+    /// clipper's own rounding decides whether it survives — which showed up as a mask full of holes and
+    /// a glow washing across the middle of the model wherever one appeared.
+    /// </remarks>
+    private const float MaskDepth = -1f + 1e-5f;
+
+    /// <summary>The depth a see-through shell is pinned to.</summary>
+    /// <remarks>
+    /// A hair behind the mask, and that gap is the whole mechanism: the shells pass the depth test
+    /// against the world, which is further back still, and fail it against the mask, which is the
+    /// model's own silhouette. Sharing the mask's depth would compare equal and reject everything.
+    /// </remarks>
+    private const float GlowDepth = -1f + 1e-4f;
+
+    /// <summary>How sharply the glow fades from the silhouette outwards.</summary>
+    /// <remarks>
+    /// Above 1 the light hugs the model and trails off, which is what a glow looks like; at 1 it is a
+    /// linear ramp and reads as a flat band with a visible outer edge.
+    /// </remarks>
+    private const float GlowFalloff = 2.5f;
+
     private const string LogCategory = "OpenGL";
 
     private readonly GL _gl;
@@ -275,6 +307,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _spatialAaTexelSize = -1;
     private int _spatialAaEdge = -1;
 
+    private GLShaderProgram? _outlineProgram;
+    private int _outlineModelView;
+    private int _outlineProjection;
+    private int _outlineWidth;
+    private int _outlineColour;
+    private int _viewportWidth = 1;
+    private int _viewportHeight = 1;
+    private int _outlineViewport;
+    private int _outlinePoseBlend;
+    private int _outlinePin;
     private GLShaderProgram? _cameraProgram;
     private int _cameraUnproject = -1;
     private int _cameraFocus = -1;
@@ -476,6 +518,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         ThrowIfDisposed();
         _gl.Viewport(viewport.X, viewport.Y, (uint)Math.Max(0, viewport.Width), (uint)Math.Max(0, viewport.Height));
         _gl.DepthRange(viewport.MinDepth, viewport.MaxDepth);
+
+        // Remembered for the outline, which measures its glow in pixels and so has to know how many
+        // there are across the target it is drawing into.
+        _viewportWidth = Math.Max(1, viewport.Width);
+        _viewportHeight = Math.Max(1, viewport.Height);
     }
 
     /// <inheritdoc/>
@@ -2554,6 +2601,198 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// <b>The interior is carved out with the depth buffer, not a stencil.</b> The scene target has no
+    /// stencil attachment — its depth is a plain 32-bit float texture the deferred lighting samples —
+    /// so the mask goes where there is room for it: a first pass draws the model unexpanded, colour
+    /// writes off, depth test always, pinning its silhouette to the near plane. Every shell afterwards
+    /// tests <c>LESS</c> against that, which rejects exactly the pixels the model covers and leaves the
+    /// rim. Because the mask ignores the depth test on the way in, it works with the model behind a
+    /// wall, which is what makes the x-ray mode possible at all.
+    /// </para>
+    /// <para>
+    /// <b>The glow is layered, not blurred.</b> There is no spare render target to blur a mask in, so
+    /// the falloff is built from concentric shells drawn widest first and brightest last. They are
+    /// alpha blended rather than added: a model whose limbs overlap has several shells covering the
+    /// same pixel, and blending converges on the colour where adding would pile up into a white smear
+    /// wherever the mesh happens to be thick.
+    /// </para>
+    /// <para>
+    /// Depth writing is off for every shell. Occluded or not, an outline must never stop the geometry
+    /// drawn after it from appearing — it is a mark on the frame, not a part of the scene. The mask
+    /// pass is the one exception, and it is the reason this belongs late in the frame: it leaves the
+    /// near plane written across the selection's silhouette.
+    /// </para>
+    /// </remarks>
+    public unsafe void DrawOutline(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
+        in Matrix4f modelView,
+        Bgra32 colour,
+        float radius,
+        bool throughWalls)
+    {
+        ThrowIfDisposed();
+
+        if (_outlineProgram is null)
+        {
+            return;
+        }
+
+        if (!_meshes.TryGetValue(mesh.Id, out GLMesh entry))
+        {
+            throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
+        }
+
+        if (ranges.IsEmpty || radius <= 0f)
+        {
+            return;
+        }
+
+        foreach (MeshDrawRange range in ranges)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(range.IndexOffset);
+            ArgumentOutOfRangeException.ThrowIfNegative(range.IndexCount);
+
+            if (range.IndexOffset + range.IndexCount > entry.IndexCount)
+            {
+                throw new ArgumentException(
+                    $"Indices {range.IndexOffset}..{range.IndexOffset + range.IndexCount} lie outside the mesh's {entry.IndexCount}.",
+                    nameof(ranges));
+            }
+        }
+
+        UseProgram(_outlineProgram);
+
+        // The mesh programs cache their uniforms per program; switching away invalidates that cache,
+        // so the next mesh draw must re-send its own.
+        _lastMeshProgram = null;
+        _meshUniformsPrimed = false;
+        _sentMaterial = null;
+
+        _outlineProgram.SetMatrix4(_outlineModelView, modelView);
+        _outlineProgram.SetMatrix4(_outlineProjection, _projection);
+        _outlineProgram.SetVector2(_outlineViewport, _viewportWidth, _viewportHeight);
+        _outlineProgram.SetFloat(_outlinePoseBlend, _poseBlend);
+
+        BindVertexArray(entry.ActiveVertexArray);
+
+        // The mask. Both facings, because a model with inconsistent winding must still stop the glow
+        // getting inside it, and a hole in the mask reads as a bright patch across the middle.
+        _gl.Disable(EnableCap.CullFace);
+        _gl.Enable(EnableCap.DepthTest);
+        _gl.DepthFunc(DepthFunction.Always);
+        _gl.DepthMask(true);
+        _gl.ColorMask(false, false, false, false);
+
+        _outlineProgram.SetFloat(_outlineWidth, 0f);
+        _outlineProgram.SetVector2(_outlinePin, 1f, MaskDepth);
+        DrawOutlineRanges(entry, ranges);
+
+        _gl.ColorMask(true, true, true, true);
+        _gl.DepthMask(false);
+        _gl.DepthFunc(DepthFunction.Less);
+
+        // Cull whichever facing the frame is currently KEEPING, so each shell contributes one layer.
+        // Asking for a fixed facing would double the coverage wherever the pass in force had already
+        // inverted the winding, and the glow would come out twice as strong on those models.
+        _gl.Enable(EnableCap.CullFace);
+        _gl.FrontFace(FrontFaceDirection.Ccw);
+        _gl.CullFace(_cullMode == CullMode.Clockwise ? TriangleFace.Back : TriangleFace.Front);
+
+        // Pinned to the near plane the shells clear any wall between them and the camera; left at their
+        // own depth the world occludes them, which is the "only when visible" mode.
+        _outlineProgram.SetVector2(_outlinePin, throughWalls ? 1f : 0f, GlowDepth);
+
+        ApplyBlend(BlendMode.AlphaBlend);
+
+        // Widest and faintest first, so each shell blends over the ones outside it. What that stack has
+        // to add up to is a curve, not a set of even steps: full strength against the model and nothing
+        // at all at the far edge. So the loop tracks how opaque the glow already is at each ring and
+        // asks the next shell only for the difference -- solving a * (1 - covered) = wanted - covered.
+        // Setting every shell to the same fraction instead piles opacity up in the first two rings and
+        // reads as a solid band with a hard edge, which is what a stack of rings looks like.
+        float covered = 0f;
+
+        for (int shell = GlowShells; shell >= 1; shell--)
+        {
+            float fraction = shell / (float)GlowShells;
+            float wanted = MathF.Pow(1f - fraction + (1f / GlowShells), GlowFalloff);
+            float step = Math.Clamp((wanted - covered) / MathF.Max(1e-3f, 1f - covered), 0f, 1f);
+            covered = wanted;
+
+            _outlineProgram.SetFloat(_outlineWidth, radius * fraction);
+            _outlineProgram.SetVector4(
+                _outlineColour,
+                colour.R / 255f,
+                colour.G / 255f,
+                colour.B / 255f,
+                step * (colour.A / 255f));
+
+            DrawOutlineRanges(entry, ranges);
+        }
+
+        // Put back exactly what the frame was using, so a pass that outlines something mid-stream is
+        // indistinguishable from one that did not. Both are restored by replaying the setters' own
+        // logic rather than by guessing, because a state left wrong here corrupts the rest of the frame.
+        RestoreCullMode();
+        RestoreDepthState();
+    }
+
+    /// <summary>Issues one outline pass over every range of the mesh.</summary>
+    private unsafe void DrawOutlineRanges(GLMesh entry, ReadOnlySpan<MeshDrawRange> ranges)
+    {
+        _ = entry;
+
+        foreach (MeshDrawRange range in ranges)
+        {
+            if (range.IndexCount > 0)
+            {
+                _gl.DrawElements(
+                    PrimitiveType.Triangles,
+                    (uint)range.IndexCount,
+                    DrawElementsType.UnsignedShort,
+                    (void*)(nint)(range.IndexOffset * sizeof(ushort)));
+            }
+        }
+    }
+
+    private void RestoreCullMode()
+    {
+        if (_cullMode == CullMode.None)
+        {
+            _gl.Disable(EnableCap.CullFace);
+            return;
+        }
+
+        _gl.Enable(EnableCap.CullFace);
+        _gl.FrontFace(FrontFaceDirection.Ccw);
+        _gl.CullFace(_cullMode == CullMode.Clockwise ? TriangleFace.Front : TriangleFace.Back);
+    }
+
+    private void RestoreDepthState()
+    {
+        switch (_depthState)
+        {
+            case DepthState.Disabled:
+                _gl.Disable(EnableCap.DepthTest);
+                _gl.DepthMask(true);
+                break;
+            case DepthState.TestOnly:
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.DepthFunc(DepthFunction.Lequal);
+                _gl.DepthMask(false);
+                break;
+            default:
+                _gl.Enable(EnableCap.DepthTest);
+                _gl.DepthFunc(DepthFunction.Lequal);
+                _gl.DepthMask(true);
+                break;
+        }
+    }
+
+    /// <inheritdoc/>
     public unsafe void DrawMeshRanges(
         MeshHandle mesh,
         ReadOnlySpan<MeshDrawRange> ranges,
@@ -3001,6 +3240,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _meshProgram.LocationOf("uDetailFade"),
             _meshProgram.LocationOf("uAlphaTest"),
             PoseBlend: _meshProgram.LocationOf("uPoseBlend"));
+        _outlineProgram = GLShaderProgram.Create(_gl, OutlineShaders.Vertex, OutlineShaders.Fragment, _programCache);
+        _outlineModelView = _outlineProgram.LocationOf("uModelView");
+        _outlineProjection = _outlineProgram.LocationOf("uProjection");
+        _outlineWidth = _outlineProgram.LocationOf("uWidth");
+        _outlineColour = _outlineProgram.LocationOf("uColour");
+        _outlineViewport = _outlineProgram.LocationOf("uViewport");
+        _outlinePoseBlend = _outlineProgram.LocationOf("uPoseBlend");
+        _outlinePin = _outlineProgram.LocationOf("uPin");
+
         _meshMaterial = _meshProgram.LocationOf("uMaterial");
         _meshKeyColour = _meshProgram.LocationOf("uKeyColour");
         _meshAmbient = _meshProgram.LocationOf("uAmbientColour");

@@ -296,8 +296,6 @@ public sealed class CVarBrowserBody : UiElement
 
         FilterRect = box;
 
-        painter.FillRoundedRect(box, Surfaces?.Rounded ?? default, _theme.Ui.Panel, unit);
-        painter.StrokeRect(box, 1f, FilterEdit.Text.Length > 0 ? _theme.Ui.Accent : _theme.Ui.Border);
 
         float y = MathF.Round(box.Y + ((box.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float textX = MathF.Round(box.X + (unit * 2f));

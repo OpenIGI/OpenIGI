@@ -139,6 +139,9 @@ internal sealed partial class DesktopGame : IDisposable
     private MissionPreview? _backdrop;
 
     // --- The loaded world and its renderers ---
+    private Camera3D _inspectorEye = Camera3D.Default;
+    private float _inspectorTangent = 1f;
+    private float _inspectorAspect = 16f / 9f;
     private WorldScene? _scene;
     private WorldRenderer? _world;
     private TerrainRenderer? _terrain;
@@ -1514,9 +1517,11 @@ internal sealed partial class DesktopGame : IDisposable
                     // later and the cursor would snap back to the centre under the reader's hand.
                     // HoldStill matters just as much here: taking the cursor back on close warps the
                     // pointer, and without re-arming the settling frame that warp is read as aim.
+                    // The system cursor stays hidden: the console draws its own, as the shell does,
+                    // so the pointer looks the same everywhere and is drawn over the panels rather
+                    // than by the compositor on top of them.
                     _player?.HoldStill();
                     _window.CursorLocked = false;
-                    _window.CursorVisible = true;
                 }
                 else if (pauseMenu)
                 {
@@ -2246,6 +2251,11 @@ internal sealed partial class DesktopGame : IDisposable
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
                 float horizontalTangent = sight.TanX;
                 float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
+
+                // Kept for the developer inspector, which projects a selected entity to the screen and
+                // has no other way to know the lens the frame was actually drawn with.
+                _inspectorTangent = horizontalTangent;
+                _inspectorAspect = aspectRatio;
                 if (_cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
                 {
                     // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
@@ -2425,6 +2435,10 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     eye = cutsceneView.Camera;
                 }
+
+                // The eye has settled by here -- every camera that could have claimed the frame has
+                // had its say -- so this is where the inspector's projection can read it.
+                _inspectorEye = eye;
 
                 // Everything soldier-shaped resolves its own frame state once, here, so the shadow
                 // cascades and the geometry pass draw identical bodies in identical places.
@@ -2662,6 +2676,7 @@ internal sealed partial class DesktopGame : IDisposable
                 EndStageIfSlow("the sky and the terrain");
                 bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
                 _world.Draw(_scene, eye, projection);
+
                 EndStageIfSlow("the world's objects");
                 _gunPickupRenderer?.Draw(eye, projection);
 
@@ -2778,6 +2793,14 @@ internal sealed partial class DesktopGame : IDisposable
                         tickBlend,
                         smoothPresentation);
                 }
+
+                // The developer inspector's selection, drawn as a real glow around the model rather
+                // than a mark beside it. It belongs to the FORWARD pass, with the tracers and the muzzle
+                // flames: submitted from the world pass it would be written into the g-buffer as
+                // scenery and come back lit and fogged, which is a dull smear rather than a mark. Late
+                // in the pass because it carves its silhouette out of the depth buffer to read through
+                // walls, and the view model clears depth immediately after.
+                DrawInspectorOutline(console, eye);
 
                 // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
                 // then ask the human where the weapon is and draw that. Only in player mode, because the
@@ -3442,6 +3465,10 @@ internal sealed partial class DesktopGame : IDisposable
             // that it can fade rather than vanish. It hears nothing while it does.
             if ((menuMode || _entry.IsRunning) && shell is not null)
             {
+                // Exactly one layer may draw a pointer. The console is drawn after this and over it,
+                // so while it is up it owns the cursor; otherwise the reader sees two arrows.
+                shell.Stack.PointerSuppressed = console.IsOpen;
+
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));

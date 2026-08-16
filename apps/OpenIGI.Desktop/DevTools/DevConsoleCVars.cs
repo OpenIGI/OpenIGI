@@ -37,10 +37,17 @@ public static class DevConsoleCVars
 {
     /// <summary>How large the developer tools draw, as a multiple of real pixels.</summary>
     /// <remarks>
-    /// The console sizes itself in <em>back-buffer pixels</em>, not in the shell's 16:9 design units.
-    /// A tool wants a constant physical size: design units would make it 40% larger on an ultrawide
-    /// for no reason, and shrink its text below legibility at 1280×720. This is the one knob that
-    /// scales it, and it is the reader's rather than the display's.
+    /// <para>
+    /// The console sizes itself in <em>back-buffer pixels</em> rather than the shell's 16:9 design
+    /// units, so a wider display shows more console rather than a larger one — which is what a tool
+    /// wants and what a menu does not.
+    /// </para>
+    /// <para>
+    /// Resolution is a different question from aspect ratio, though, and raw pixels get that one
+    /// wrong: the same panel on a 4K monitor would be half the physical size it is on a 1080p one of
+    /// the same width. So a factor derived from the display height is applied underneath, and this is
+    /// the reader's multiplier on top of it.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> Scale = CVar.Float(
         "con_scale",
@@ -53,11 +60,11 @@ public static class DevConsoleCVars
     /// <summary>The log body's text size in pixels, before <see cref="Scale"/>.</summary>
     public static readonly NumericCVar<float> FontSize = CVar.Float(
         "con_font_size",
-        14f,
+        17f,
         9f,
-        28f,
+        40f,
         CVarOptions.Archive,
-        "The developer console's text size in pixels.");
+        "The developer console's text size in pixels, before con_scale.");
 
     /// <summary>How opaque the console's panels are over the scene behind them.</summary>
     public static readonly NumericCVar<float> Opacity = CVar.Float(

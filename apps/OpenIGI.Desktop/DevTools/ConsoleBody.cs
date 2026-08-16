@@ -93,6 +93,46 @@ public sealed class ConsoleBody : UiElement
     /// <summary>Gets the scrollback text picked out with the pointer.</summary>
     public LogSelection Selection => _selection;
 
+    /// <summary>Gets a value indicating whether the scrollbar's thumb is being dragged.</summary>
+    public bool IsScrollDragging { get; private set; }
+
+    /// <summary>Begins a scrollbar drag if a point is on the bar.</summary>
+    /// <param name="point">The point in back-buffer pixels.</param>
+    /// <returns><see langword="true"/> when the bar took the press.</returns>
+    /// <remarks>A press on the empty part of the track jumps there too, rather than doing nothing.</remarks>
+    public bool BeginScrollDrag(UiVec2 point)
+    {
+        if (!_log.HasOverflow || !_log.TrackBounds.Contains(point))
+        {
+            return false;
+        }
+
+        IsScrollDragging = true;
+        DragScroll(point);
+        return true;
+    }
+
+    /// <summary>Moves the view to follow a scrollbar drag.</summary>
+    /// <param name="point">The point in back-buffer pixels.</param>
+    public void DragScroll(UiVec2 point)
+    {
+        if (!IsScrollDragging)
+        {
+            return;
+        }
+
+        _log.ScrollToThumb(point.Y);
+
+        // The model counts lines back from the newest, and it is the thing every other scrolling path
+        // reads, so the pixel offset has to be converted back rather than kept alongside it.
+        float rowHeight = MathF.Max(1f, _log.RowHeight);
+        int back = (int)MathF.Round((_log.MaxScroll - _log.ScrollOffset) / rowHeight);
+        _model.ScrollOffset = Math.Max(0, back);
+    }
+
+    /// <summary>Ends a scrollbar drag.</summary>
+    public void EndScrollDrag() => IsScrollDragging = false;
+
     /// <summary>Begins a scrollback selection at a point.</summary>
     /// <param name="point">The point in back-buffer pixels.</param>
     /// <returns><see langword="true"/> when the point was inside the log.</returns>
@@ -265,8 +305,29 @@ public sealed class ConsoleBody : UiElement
     protected override void OnDraw(UiPainter painter)
     {
         _log.RowCount = _model.VisibleLineIndices.Count;
-        _log.StickToEnd = _model.ScrollOffset == 0;
+        SyncScroll();
         DrawFilterBar(painter);
+    }
+
+    /// <summary>
+    /// Points the viewport at wherever the model says the reader has scrolled to.
+    /// </summary>
+    /// <remarks>
+    /// The model counts <em>lines back from the newest</em>, because that is the unit page-up, the
+    /// wheel and "stay put while new output arrives" all work in. The viewport counts pixels from the
+    /// top. Nothing was converting between the two, so scrolling changed a number that nothing read
+    /// and the log never moved.
+    /// </remarks>
+    private void SyncScroll()
+    {
+        if (_model.ScrollOffset <= 0)
+        {
+            _log.StickToEnd = true;
+            return;
+        }
+
+        _log.StickToEnd = false;
+        _log.ScrollOffset = _log.MaxScroll - (_model.ScrollOffset * _log.RowHeight);
     }
 
     /// <inheritdoc/>
@@ -296,27 +357,33 @@ public sealed class ConsoleBody : UiElement
 
         _toggles.Clear();
 
-        // Flat, square, and all the same width. Rounded pills of different lengths were the single
-        // most web-page-looking thing in the first pass; a row of identical cells reads as a control
-        // strip, which is what it is.
+        // Tabs, not buttons: the label with a coloured rule under it when it is on, and nothing at all
+        // when it is off. A bordered box around four short words is a lot of furniture for a control
+        // whose whole job is to be glanced at, and boxes are what made the first pass look dated.
         foreach (ConsoleSeverity severity in FilterableSeverities)
         {
             bool shown = _model.Filter.IsSeverityShown(severity);
-            var chip = new UiRect(x, controlY, chipWidth, _theme.ControlHeight);
-            _toggles.Add(chip);
+            var tab = new UiRect(x, bar.Y, chipWidth, bar.Height);
+            _toggles.Add(tab);
 
             Bgra32 tint = _theme.ColorFor(severity);
-            painter.FillRect(chip, shown ? _theme.Ui.SurfaceRaised : _theme.Ui.Panel);
-            painter.StrokeRect(chip, 1f, shown ? tint : _theme.Ui.Border);
+            string label = Label(severity);
 
             painter.DrawText(
-                _theme.SmallFont,
-                Label(severity),
-                CentreText(_theme.SmallFont, _theme.SmallSize, Label(severity), chip),
-                _theme.SmallSize,
+                _theme.BodyFont,
+                label,
+                CentreText(_theme.BodyFont, _theme.BodySize, label, tab),
+                _theme.BodySize,
                 shown ? tint : _theme.Ui.TextDisabled);
 
-            x = MathF.Round(chip.Right + unit);
+            // The rule sits on the bar's own bottom edge, so the row of tabs reads as attached to the
+            // log beneath rather than floating above it.
+            float rule = MathF.Max(2f, unit * 0.5f);
+            painter.FillRect(
+                new UiRect(tab.X, MathF.Round(bar.Bottom - rule), tab.Width, rule),
+                shown ? tint : Bgra32.Transparent);
+
+            x = MathF.Round(tab.Right + unit);
         }
 
         // The find box takes the rest of the bar. Giving it the leftover width rather than a fixed
@@ -325,8 +392,8 @@ public sealed class ConsoleBody : UiElement
         var find = new UiRect(x + unit, controlY, MathF.Max(_theme.Cell * 8f, findRight - x - unit), _theme.ControlHeight);
         FindRect = find;
 
-        painter.FillRect(find, _theme.Ui.Panel);
-        painter.StrokeRect(find, 1f, FindFocused ? _theme.Ui.Accent : _theme.Ui.Border);
+        // No box and no rule. The placeholder says what the field is for and the caret says it has the
+        // keyboard, so a line under it was decoration standing in for information already on screen.
 
         float textY = MathF.Round(find.Y + ((find.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float textX = MathF.Round(find.X + (unit * 2f));
@@ -512,8 +579,6 @@ public sealed class ConsoleBody : UiElement
             _theme.ControlHeight);
 
         bool active = !FindFocused;
-        painter.FillRect(field, _theme.Ui.Panel);
-        painter.StrokeRect(field, 1f, active ? _theme.Ui.Border : _theme.Ui.Border.WithAlpha(120));
 
         float y = MathF.Round(field.Y + ((field.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float sigilX = MathF.Round(field.X + (unit * 2f));

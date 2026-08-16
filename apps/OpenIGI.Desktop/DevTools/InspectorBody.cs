@@ -21,8 +21,9 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 public sealed class InspectorBody : UiElement
 {
-    private const int NameColumns = 26;
-    private const int KindColumns = 9;
+    private const int NameColumns = 28;
+    private const int KindColumns = 10;
+    private const int DistanceColumns = 9;
 
     private readonly DevConsoleTheme _theme;
     private readonly VirtualListView _rows;
@@ -31,6 +32,7 @@ public sealed class InspectorBody : UiElement
 
     private IWorldInspector? _inspector;
     private int _selected = -1;
+    private int? _pendingId;
 
     /// <summary>Initialises a new instance of the <see cref="InspectorBody"/> class.</summary>
     /// <param name="theme">The palette and face.</param>
@@ -64,6 +66,9 @@ public sealed class InspectorBody : UiElement
         set => _selected = _entities.Count == 0 ? -1 : Math.Clamp(value, -1, _entities.Count - 1);
     }
 
+    /// <summary>Gets the world attached, or <see langword="null"/> when none is.</summary>
+    public IWorldInspector? World => _inspector;
+
     /// <summary>Gets the selected entity, or <see langword="null"/> when nothing is selected.</summary>
     public InspectableEntity? Selected =>
         _selected >= 0 && _selected < _entities.Count ? _entities[_selected] : null;
@@ -93,7 +98,20 @@ public sealed class InspectorBody : UiElement
 
         _inspector.Describe(FilterEdit.Text, _entities);
         _rows.RowCount = _entities.Count;
-        _selected = _entities.Count == 0 ? -1 : Math.Clamp(_selected, -1, _entities.Count - 1);
+
+        // A selection asked for before the world was listed lands here, on the first refresh that has
+        // anything in it. It is dropped either way once tried, so a handle for something the mission
+        // does not contain does not keep overriding what the reader clicks on.
+        if (_pendingId is { } wanted && _entities.Count > 0)
+        {
+            _pendingId = null;
+            SelectById(wanted);
+        }
+
+        // Something is always chosen when there is anything to choose. An inspector that opens with an
+        // empty detail pane and no mark in the world makes the reader click before it tells them
+        // anything, and the first row is as good a starting point as any.
+        _selected = _entities.Count == 0 ? -1 : Math.Clamp(_selected < 0 ? 0 : _selected, 0, _entities.Count - 1);
 
         if (Selected is { } chosen)
         {
@@ -109,6 +127,34 @@ public sealed class InspectorBody : UiElement
     /// <param name="point">The point in back-buffer pixels.</param>
     /// <returns>The index into <see cref="Entities"/>, or -1.</returns>
     public int RowAt(UiVec2 point) => _rows.RowAt(point);
+
+    /// <summary>Selects a handle as soon as the world lists it.</summary>
+    /// <param name="id">The handle to select on the next refresh that finds anything.</param>
+    public void SelectWhenListed(int id)
+    {
+        if (!SelectById(id))
+        {
+            _pendingId = id;
+        }
+    }
+
+    /// <summary>Selects the entity with a given handle, if it is currently listed.</summary>
+    /// <param name="id">The handle to select.</param>
+    /// <returns><see langword="true"/> when it was found and selected.</returns>
+    public bool SelectById(int id)
+    {
+        for (int i = 0; i < _entities.Count; i++)
+        {
+            if (_entities[i].Id == id)
+            {
+                _selected = i;
+                RevealSelection();
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>Brings the selected row into view.</summary>
     public void RevealSelection() => _rows.EnsureVisible(_selected);
@@ -236,20 +282,31 @@ public sealed class InspectorBody : UiElement
         painter.DrawText(_theme.BodyFont, Fit(entity.Name, NameColumns - 1), new UiVec2(x, y), _theme.BodySize, _theme.Ui.Text);
 
         painter.DrawText(
-            _theme.BodyFont,
+            _theme.SmallFont,
             Fit(entity.Kind, KindColumns - 1),
-            new UiVec2(x + (_theme.Cell * NameColumns), y),
-            _theme.BodySize,
+            new UiVec2(MathF.Round(x + (_theme.Cell * NameColumns)), y),
+            _theme.SmallSize,
             _theme.Ui.TextMuted);
 
+        // Distance is what turns a list of a thousand things into a way of finding one, so it sits
+        // beside the name rather than in the detail pane.
         painter.DrawText(
-            _theme.BodyFont,
+            _theme.SmallFont,
+            Line($"{entity.DistanceMetres,6:0.0} m"),
+            new UiVec2(MathF.Round(x + (_theme.Cell * (NameColumns + KindColumns))), y),
+            _theme.SmallSize,
+            _theme.Ui.TextDisabled);
+
+        painter.DrawText(
+            _theme.SmallFont,
             entity.State,
-            new UiVec2(x + (_theme.Cell * (NameColumns + KindColumns)), y),
-            _theme.BodySize,
+            new UiVec2(MathF.Round(x + (_theme.Cell * (NameColumns + KindColumns + DistanceColumns))), y),
+            _theme.SmallSize,
             _theme.Ui.TextMuted);
     }
 
     private static string Fit(string text, int columns) =>
         columns <= 1 || text.Length <= columns ? text : string.Concat(text.AsSpan(0, columns - 1), "…");
+
+    private static string Line(FormattableString text) => FormattableString.Invariant(text);
 }

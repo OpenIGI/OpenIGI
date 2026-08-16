@@ -317,6 +317,98 @@ public sealed class WindowTests
         Assert.Equal(MathF.Round(window.Frame.Y), window.Frame.Y);
     }
 
+    // ---- Opening a window that was closed ----
+
+    private static void Layout(WindowLayer layer, float width = 1280f, float height = 720f)
+    {
+        var context = new LayoutContext(width, height, reference: new UiVec2(width, height));
+        layer.Measure(context, new UiVec2(width, height));
+        layer.Arrange(new UiRect(0f, 0f, width, height));
+    }
+
+    /// <summary>
+    /// The crash this prevents: visibility used to be decided during arrange, so a window opened this
+    /// frame was still flagged collapsed when it was measured. Measure returns immediately for a
+    /// collapsed element without measuring its content, and arrange then threw on content that had
+    /// never been measured — a crash on the first frame any panel was shown, and only that frame.
+    /// </summary>
+    [Fact]
+    public void A_window_opened_after_being_closed_lays_out_without_throwing()
+    {
+        var theme = Theme();
+        var layer = new WindowLayer();
+        var window = new UiWindow(theme, "panel") { Frame = new UiRect(10f, 10f, 400f, 300f) };
+        window.Content = new Label(theme.Body, "content", 14f, theme.Text);
+        layer.Add(window);
+
+        window.IsOpen = false;
+        Layout(layer);
+
+        window.IsOpen = true;
+        Layout(layer);
+
+        Assert.Equal(Visibility.Visible, window.Visibility);
+        Assert.False(window.Bounds.IsEmpty);
+    }
+
+    [Fact]
+    public void A_window_open_from_the_start_lays_out_without_throwing()
+    {
+        var theme = Theme();
+        var layer = new WindowLayer();
+        var window = new UiWindow(theme, "panel") { Frame = new UiRect(10f, 10f, 400f, 300f) };
+        window.Content = new Label(theme.Body, "content", 14f, theme.Text);
+        layer.Add(window);
+
+        Layout(layer);
+
+        Assert.False(window.Bounds.IsEmpty);
+    }
+
+    /// <summary>
+    /// A closed window's whole subtree must have empty bounds, or its content keeps answering clicks
+    /// at the place it was last laid out.
+    /// </summary>
+    [Fact]
+    public void Closing_a_window_empties_its_bounds()
+    {
+        var theme = Theme();
+        var layer = new WindowLayer();
+        var window = new UiWindow(theme, "panel") { Frame = new UiRect(10f, 10f, 400f, 300f) };
+        var content = new Label(theme.Body, "content", 14f, theme.Text);
+        window.Content = content;
+        layer.Add(window);
+
+        Layout(layer);
+        Assert.False(content.Bounds.IsEmpty);
+
+        window.IsOpen = false;
+        Layout(layer);
+
+        Assert.True(window.Bounds.IsEmpty);
+        Assert.True(content.Bounds.IsEmpty);
+    }
+
+    [Fact]
+    public void Panels_can_be_opened_and_closed_repeatedly()
+    {
+        var theme = Theme();
+        var layer = new WindowLayer();
+        var window = new UiWindow(theme, "panel") { Frame = new UiRect(10f, 10f, 400f, 300f) };
+        window.Content = new Label(theme.Body, "content", 14f, theme.Text);
+        layer.Add(window);
+
+        for (int i = 0; i < 5; i++)
+        {
+            window.IsOpen = false;
+            Layout(layer);
+            window.IsOpen = true;
+            Layout(layer);
+        }
+
+        Assert.False(window.Bounds.IsEmpty);
+    }
+
     [Fact]
     public void The_close_button_asks_to_close_rather_than_dragging()
     {

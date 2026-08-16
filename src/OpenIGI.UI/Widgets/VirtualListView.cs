@@ -213,22 +213,63 @@ public class VirtualListView : UiElement
         painter.PopClip();
     }
 
-    /// <inheritdoc/>
-    protected override void OnDrawOverlay(UiPainter painter)
+    /// <summary>Gets the scrollbar's track, empty when the content fits.</summary>
+    public UiRect TrackBounds { get; private set; }
+
+    /// <summary>Gets the scrollbar's thumb, empty when the content fits.</summary>
+    /// <remarks>
+    /// Kept from the last draw so a caller can hit-test it. One frame stale, which nobody can see and
+    /// which avoids every widget having to recompute its chrome during input as well as during draw.
+    /// </remarks>
+    public UiRect ThumbBounds { get; private set; }
+
+    /// <summary>Gets a value indicating whether there is more content than fits.</summary>
+    public bool HasOverflow => ContentHeight > Bounds.Height && !Bounds.IsEmpty;
+
+    /// <summary>Scrolls so the thumb's middle sits at a vertical position.</summary>
+    /// <param name="y">Where the pointer is, in back-buffer pixels.</param>
+    /// <remarks>
+    /// The thumb's <em>centre</em> follows the pointer, which is what makes grabbing it anywhere feel
+    /// right; the travel excludes the thumb's own height so the ends reach exactly top and bottom.
+    /// </remarks>
+    public void ScrollToThumb(float y)
     {
-        if (!ShowScrollBar || ContentHeight <= Bounds.Height || Bounds.IsEmpty)
+        if (!HasOverflow)
         {
             return;
         }
 
-        const float Width = 4f;
-        float trackHeight = Bounds.Height;
-        float thumbHeight = MathF.Max(24f, trackHeight * (trackHeight / ContentHeight));
-        float travel = trackHeight - thumbHeight;
+        float thumbHeight = ThumbHeight();
+        float travel = MathF.Max(1f, Bounds.Height - thumbHeight);
+        float progress = Math.Clamp((y - Bounds.Y - (thumbHeight * 0.5f)) / travel, 0f, 1f);
+
+        SnapTo(MaxScroll * progress);
+    }
+
+    private float ThumbHeight() =>
+        ContentHeight <= 0f ? 0f : MathF.Max(24f, Bounds.Height * (Bounds.Height / ContentHeight));
+
+    /// <inheritdoc/>
+    protected override void OnDrawOverlay(UiPainter painter)
+    {
+        if (!ShowScrollBar || !HasOverflow)
+        {
+            TrackBounds = UiRect.Empty;
+            ThumbBounds = UiRect.Empty;
+            return;
+        }
+
+        const float Width = 6f;
+        float thumbHeight = ThumbHeight();
+        float travel = Bounds.Height - thumbHeight;
         float progress = MaxScroll <= 0f ? 0f : Math.Clamp(_scroll.Value / MaxScroll, 0f, 1f);
 
-        painter.FillRect(
-            new UiRect(Bounds.Right - Width - 2f, Bounds.Y + (travel * progress), Width, thumbHeight),
-            _theme.TextMuted.WithAlpha(90));
+        // The track is stored as well as the thumb, so a click on the empty part of it can page
+        // towards the pointer rather than doing nothing.
+        TrackBounds = new UiRect(MathF.Round(Bounds.Right - Width - 2f), Bounds.Y, Width, Bounds.Height);
+        ThumbBounds = new UiRect(TrackBounds.X, MathF.Round(Bounds.Y + (travel * progress)), Width, thumbHeight);
+
+        painter.FillRect(TrackBounds, _theme.TextDisabled.WithAlpha(40));
+        painter.FillRect(ThumbBounds, _theme.TextMuted.WithAlpha(160));
     }
 }

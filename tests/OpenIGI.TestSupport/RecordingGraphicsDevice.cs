@@ -600,6 +600,29 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         }
     }
 
+    /// <summary>Gets how many silhouette draws have been submitted.</summary>
+    public int OutlineDrawCount { get; private set; }
+
+    /// <summary>Gets the last outline's colour.</summary>
+    public Bgra32 LastOutlineColour { get; private set; }
+
+    /// <summary>Gets whether the last outline ignored the depth buffer.</summary>
+    public bool LastOutlineThroughWalls { get; private set; }
+
+    /// <inheritdoc/>
+    public void DrawOutline(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
+        in Matrix4f modelView,
+        Bgra32 colour,
+        float radius,
+        bool throughWalls)
+    {
+        OutlineDrawCount++;
+        LastOutlineColour = colour;
+        LastOutlineThroughWalls = throughWalls;
+    }
+
     public int MeshBatchDrawCount { get; private set; }
 
     public void Dispose()
