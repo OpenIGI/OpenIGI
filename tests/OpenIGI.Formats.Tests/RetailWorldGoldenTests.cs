@@ -102,6 +102,13 @@ public sealed class RetailWorldGoldenTests
                         continue;
                     }
 
+                    // Human_SetModel copies MESH+0x78 into Human+0xA0, which the retail binocular
+                    // detector uses as its projected marker half-extent. Keep this field finite and
+                    // positive across the full retail model corpus so rendering cannot silently fall
+                    // back to a guessed geometry radius.
+                    Assert.True(float.IsFinite(model.NativeMarkerBound));
+                    Assert.True(model.NativeMarkerBound > 0f);
+
                     // The stride check lives in the loader; this asserts the result is usable geometry.
                     Assert.Equal(model.TriangleCount, model.DrawRecords.Sum(r => r.TriangleCount));
                     foreach (MefDrawRecord record in model.DrawRecords)

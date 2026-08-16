@@ -42,7 +42,8 @@ public sealed class MefModel
         IReadOnlyList<MefAttachment> attachments,
         int baseVertexCount,
         int extraInfluenceCount,
-        MefSkinInfluence[] skinInfluences)
+        MefSkinInfluence[] skinInfluences,
+        float nativeMarkerBound)
     {
         Container = container;
         Format = format;
@@ -54,6 +55,7 @@ public sealed class MefModel
         BaseVertexCount = baseVertexCount;
         ExtraInfluenceCount = extraInfluenceCount;
         _skinInfluences = skinInfluences;
+        NativeMarkerBound = nativeMarkerBound;
 
         int highestBone = -1;
         foreach (MefSkinInfluence influence in skinInfluences)
@@ -92,6 +94,16 @@ public sealed class MefModel
 
     /// <summary>Gets the triangle count the mesh header declares, which equals the sum over the draw records.</summary>
     public int TriangleCount { get; }
+
+    /// <summary>
+    /// Gets the authored model marker bound from <c>MESH+0x78</c>, in raw IGI engine units.
+    /// </summary>
+    /// <remarks>
+    /// Retail <c>Human_SetModel</c> copies this field into <c>Human+0xA0</c>; the binocular detector
+    /// uses that value as the half-extent of its projected target rectangle. It is deliberately kept
+    /// separate from the derived vertex radius because the two values are not interchangeable.
+    /// </remarks>
+    public float NativeMarkerBound { get; }
 
     /// <summary>Gets the vertices, widened to the 40-byte layout.</summary>
     public ReadOnlySpan<MefVertex> Vertices => _vertices;
@@ -165,6 +177,7 @@ public sealed class MefModel
         MefMeshFormat format = (MefMeshFormat)rawFormat;
         int triangleCount = ReadInt32(mesh[96..], "the mesh triangle count");
         int headerVertexCount = ReadInt32(mesh[100..], "the mesh vertex count");
+        float nativeMarkerBound = BinaryPrimitives.ReadSingleLittleEndian(mesh[0x78..]);
 
         ReadOnlySpan<byte> render = RequireChunk(container, MefTags.RenderHeader).Span;
         (int vertexCount, int subMeshCount, int lightmapCount) = ReadRenderHeader(render, format);
@@ -217,7 +230,8 @@ public sealed class MefModel
             ReadAttachments(container),
             baseVertexCount,
             extraInfluenceCount,
-            influences);
+            influences,
+            nativeMarkerBound);
     }
 
     /// <summary>Gets the payload of a chunk this type does not decode, such as collision or portal data.</summary>

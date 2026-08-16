@@ -78,8 +78,8 @@ public sealed class SoldierRenderer : IDisposable
     private readonly List<HeldWeapon> _weapons = [];
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
     // FUN_004D9620 writes Human+0xA0 from FUN_004D0950(model), which reads the authored model bound
-    // at model+0x78. MefMeshBuilder keeps the same unscaled model-space vertices, so this is the
-    // validated managed representation of that native value (converted to metres at read time).
+    // at model+0x78. This is the exact value used by the retail detector; the derived vertex radius is
+    // not a substitute because it is materially smaller for the retail soldier models.
     private readonly Dictionary<SoldierView, float> _detectorMarkerScaleMetres = [];
     private readonly IgiRandom _aiRandom = new();
 
@@ -521,9 +521,9 @@ public sealed class SoldierRenderer : IDisposable
 
             // FUN_00470F70 returns the half-extents for the closed {-1,+1} strip used by
             // FUN_004B5860: projectionScale * Human+0xA0 / depth. Human+0xA0 is the loaded model's
-            // authored bound, not a one-unit HUD constant. The geometry bound above is raw IGI model
-            // space, so convert it once to metres before applying the same perspective division. The
-            // old one-unit fallback was why the red rectangle collapsed to a nearly invisible dot.
+            // authored MESH+0x78 bound, not a one-unit HUD constant. Convert it once to metres before
+            // applying the same perspective division; using the derived geometry radius made the
+            // red rectangle materially smaller than retail.
             if (!_detectorMarkerScaleMetres.TryGetValue(view, out float markerScaleMetres)
                 || markerScaleMetres <= 0f)
             {
@@ -707,10 +707,11 @@ public sealed class SoldierRenderer : IDisposable
                 ? soldier.Position / WorldScene.UnitsPerMetre
                 : Stand(soldier, group, terrain, cast);
             group.Soldiers.Add(new Member(view, placement, own) { IsCutsceneActor = cutsceneActor });
-            float markerScaleRaw = group.Geometry.Bounds.Radius;
-            if (markerScaleRaw > 0f && float.IsFinite(markerScaleRaw))
+            if (group.Model is { NativeMarkerBound: > 0f } model
+                && float.IsFinite(model.NativeMarkerBound))
             {
-                _detectorMarkerScaleMetres[view] = markerScaleRaw / (float)WorldScene.UnitsPerMetre;
+                _detectorMarkerScaleMetres[view] =
+                    model.NativeMarkerBound / (float)WorldScene.UnitsPerMetre;
             }
             Count++;
         }
