@@ -29,6 +29,39 @@ public static class UiFontLibrary
     /// </remarks>
     public const string Emphasis = "Saira-SemiBold.ttf";
 
+    /// <summary>The JetBrains Mono regular face the developer tools are set in.</summary>
+    /// <remarks>
+    /// <para>
+    /// A monospaced face is not a style choice for the console, it is what makes it work. Every column
+    /// in the variable browser and the log — value, default, flags, timestamp, category — can be placed
+    /// on an integer multiple of one character advance measured once per size, instead of measuring
+    /// every row's text on every frame. Numbers in a live watch list also stop shifting sideways as
+    /// their digits change, which is the difference between reading a value and chasing it.
+    /// </para>
+    /// <para>
+    /// Deliberately a different family from the shell's Saira: the developer tools are a separate
+    /// voice from the game's own interface, and should not be mistaken for it.
+    /// </para>
+    /// </remarks>
+    public const string Mono = "JetBrainsMono-Regular.ttf";
+
+    /// <summary>The JetBrains Mono medium face used for developer-tool headings.</summary>
+    public const string MonoMedium = "JetBrainsMono-Medium.ttf";
+
+    /// <summary>The JetBrains Mono bold face used where a developer tool needs real emphasis.</summary>
+    public const string MonoBold = "JetBrainsMono-Bold.ttf";
+
+    /// <summary>
+    /// The pixel height the developer tools' mono atlases are rasterised at.
+    /// </summary>
+    /// <remarks>
+    /// The console draws at roughly 12–20 pixels, and a coverage atlas wants a source close to the
+    /// sizes it is drawn at. The shell's 48 is far too large a source here: minifying it more than
+    /// threefold thins the stems and the text greys out. Distance fields are the wrong tool for the
+    /// same range — they soften exactly where a console needs to stay crisp.
+    /// </remarks>
+    public const float MonoPixelHeight = 32f;
+
     /// <summary>Gets the directory the font files are read from.</summary>
     public static string FontsDirectory => Path.Combine(AppContext.BaseDirectory, "Assets", "fonts");
 

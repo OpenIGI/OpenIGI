@@ -45,6 +45,23 @@ public sealed class ConsoleSystem
     /// <summary>Gets or sets a value indicating whether commands and variables flagged as cheats may be used.</summary>
     public bool CheatsEnabled { get; set; }
 
+    /// <summary>Gets or sets the source of the seconds stamped onto each line written.</summary>
+    /// <remarks>
+    /// <para>
+    /// A function rather than a clock type, so this project keeps its independence from any particular
+    /// timing source and a test can hand it a number it chose. It counts from whenever the host decides
+    /// the session began; nothing here interprets the value beyond passing it on.
+    /// </para>
+    /// <para>
+    /// The default returns zero, which is what makes a line's timestamp optional rather than a
+    /// requirement — a host that never sets this simply gets unstamped lines.
+    /// </para>
+    /// </remarks>
+    public Func<double> Clock { get; set; } = static () => 0.0;
+
+    /// <summary>Gets the seconds the clock currently reports.</summary>
+    public double Elapsed => Clock();
+
     /// <summary>Gets the registered aliases, keyed by name.</summary>
     public IReadOnlyDictionary<string, string> Aliases => _aliases;
 
@@ -83,8 +100,9 @@ public sealed class ConsoleSystem
     /// <summary>Writes text to every sink.</summary>
     /// <param name="text">The text to write.</param>
     /// <param name="severity">How the line should be presented.</param>
+    /// <remarks>Stamped with <see cref="Elapsed"/>, so a line written by a command is timed like one mirrored from the log.</remarks>
     public void Write(string text, ConsoleSeverity severity = ConsoleSeverity.Output) =>
-        Write(new ConsoleLine(text, severity));
+        Write(new ConsoleLine(text, severity, string.Empty, Elapsed));
 
     /// <summary>Runs a line of console input, which may hold several statements.</summary>
     /// <param name="line">The input to run.</param>
@@ -94,7 +112,7 @@ public sealed class ConsoleSystem
     {
         if (echo && !string.IsNullOrWhiteSpace(line))
         {
-            Write(new ConsoleLine($"] {line.Trim()}", ConsoleSeverity.Echo));
+            Write(new ConsoleLine($"] {line.Trim()}", ConsoleSeverity.Echo, string.Empty, Elapsed));
         }
 
         bool ok = true;
@@ -191,6 +209,19 @@ public sealed class ConsoleSystem
         names.Sort(StringComparer.OrdinalIgnoreCase);
         return new ConsoleCompletion(names, LongestCommonPrefix(names, prefix));
     }
+
+    /// <summary>Ranks what the reader might mean by a partially typed line, best first.</summary>
+    /// <param name="input">The line as typed so far.</param>
+    /// <param name="limit">The most candidates to return.</param>
+    /// <returns>The candidates, best first.</returns>
+    /// <remarks>
+    /// The rich counterpart to <see cref="Complete"/>, which is deliberately left alone: that answers
+    /// what Tab may safely insert, this answers what to show while the reader is still deciding. Unlike
+    /// <see cref="Complete"/> it matches loosely, ranks its results, and completes a half-typed
+    /// <em>value</em> once the line has named a variable.
+    /// </remarks>
+    public IReadOnlyList<ConsoleSuggestion> Suggest(string? input, int limit = 32) =>
+        ConsoleSuggester.Suggest(this, input, limit);
 
     /// <summary>Describes a variable the way the console prints it when named without a value.</summary>
     /// <param name="variable">The variable to describe.</param>

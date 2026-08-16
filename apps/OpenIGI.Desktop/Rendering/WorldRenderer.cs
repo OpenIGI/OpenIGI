@@ -34,6 +34,9 @@ public sealed class WorldRenderer : IDisposable
     private MaterialLibrary _materials = MaterialLibrary.Empty;
     private readonly Dictionary<string, MeshGeometry?> _geometry = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, MeshHandle> _meshes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Scratch for the selection glow's subset ranges, so outlining allocates nothing.</summary>
+    private readonly List<MeshDrawRange> _outlineRanges = [];
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _missingTextures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextureHandle[]> _lightmaps = new(StringComparer.OrdinalIgnoreCase);
@@ -206,53 +209,12 @@ public sealed class WorldRenderer : IDisposable
                 continue;
             }
 
-            Vector3d drawPosition = placement.Position;
-            Matrix3f drawOrientation = placement.Orientation;
-            RotorDrawState rotorDraw = default;
-            bool hasRotorDraw = false;
-            if (Doors?.TryGetDrawTransform(
-                placement.Owner,
-                _frameAlpha,
-                _frameSmooth,
-                out Vector3d doorPosition,
-                out Matrix3f doorOrientation) == true)
-            {
-                drawPosition = doorPosition;
-                drawOrientation = doorOrientation;
-                if (Elevators?.TryGetDisplacement(
-                    placement.Owner,
-                    _frameAlpha,
-                    _frameSmooth,
-                    out Vector3d doorDisplacement) == true)
-                {
-                    drawPosition += doorDisplacement;
-                }
-            }
-            else if (Elevators?.TryGetDrawTransform(
-                placement.Owner,
-                placement.Position,
-                placement.Orientation,
-                _frameAlpha,
-                _frameSmooth,
-                out Vector3d elevatorPosition,
-                out Matrix3f elevatorOrientation) == true)
-            {
-                drawPosition = elevatorPosition;
-                drawOrientation = elevatorOrientation;
-            }
-            else if (Cutscenes?.TryGetRotorDrawState(placement, out rotorDraw) == true)
-            {
-                drawPosition = rotorDraw.Position;
-                hasRotorDraw = true;
-            }
-            else if (Cutscenes?.TryGetPlacementDrawTransform(
+            ResolveDrawTransform(
                 placement,
-                out Vector3d cinematicPosition,
-                out Matrix3f cinematicOrientation) == true)
-            {
-                drawPosition = cinematicPosition;
-                drawOrientation = cinematicOrientation;
-            }
+                out Vector3d drawPosition,
+                out Matrix3f drawOrientation,
+                out RotorDrawState rotorDraw,
+                out bool hasRotorDraw);
 
             Matrix4f baseModelView = camera.CreateModelView(drawPosition, drawOrientation);
             if (!hasRotorDraw
@@ -394,6 +356,151 @@ public sealed class WorldRenderer : IDisposable
         MeshGeometry? built = MefMeshBuilder.Build(placement.Model, (float)(1.0 / WorldScene.UnitsPerMetre));
         _geometry[placement.Instance.Name] = built;
         return built;
+    }
+
+
+    /// <summary>
+    /// Works out where a placement is drawn this frame, after everything that can move it has moved it.
+    /// </summary>
+    /// <param name="placement">The placement being drawn.</param>
+    /// <param name="drawPosition">Receives the position to draw at.</param>
+    /// <param name="drawOrientation">Receives the orientation to draw with.</param>
+    /// <param name="rotorDraw">Receives the motion-blurred rotor state, when one applies.</param>
+    /// <param name="hasRotorDraw">Receives whether a rotor state applies.</param>
+    /// <remarks>
+    /// A door swings, an elevator carries what stands on it, a cutscene can seize either, and a rotor
+    /// smears across the frame. Pulled out of the draw loop so the selection outline resolves the same
+    /// transform from the same code: an outline computed a second way would drift off its subject the
+    /// moment any of these took hold, which is exactly when a reader is watching it.
+    /// </remarks>
+    private void ResolveDrawTransform(
+        WorldPlacement placement,
+        out Vector3d drawPosition,
+        out Matrix3f drawOrientation,
+        out RotorDrawState rotorDraw,
+        out bool hasRotorDraw)
+    {
+        drawPosition = placement.Position;
+        drawOrientation = placement.Orientation;
+        rotorDraw = default;
+        hasRotorDraw = false;
+
+        if (Doors?.TryGetDrawTransform(
+            placement.Owner,
+            _frameAlpha,
+            _frameSmooth,
+            out Vector3d doorPosition,
+            out Matrix3f doorOrientation) == true)
+        {
+            drawPosition = doorPosition;
+            drawOrientation = doorOrientation;
+            if (Elevators?.TryGetDisplacement(
+                placement.Owner,
+                _frameAlpha,
+                _frameSmooth,
+                out Vector3d doorDisplacement) == true)
+            {
+                drawPosition += doorDisplacement;
+            }
+        }
+        else if (Elevators?.TryGetDrawTransform(
+            placement.Owner,
+            placement.Position,
+            placement.Orientation,
+            _frameAlpha,
+            _frameSmooth,
+            out Vector3d elevatorPosition,
+            out Matrix3f elevatorOrientation) == true)
+        {
+            drawPosition = elevatorPosition;
+            drawOrientation = elevatorOrientation;
+        }
+        else if (Cutscenes?.TryGetRotorDrawState(placement, out rotorDraw) == true)
+        {
+            drawPosition = rotorDraw.Position;
+            hasRotorDraw = true;
+        }
+        else if (Cutscenes?.TryGetPlacementDrawTransform(
+            placement,
+            out Vector3d cinematicPosition,
+            out Matrix3f cinematicOrientation) == true)
+        {
+            drawPosition = cinematicPosition;
+            drawOrientation = cinematicOrientation;
+        }
+    }
+
+    /// <summary>Draws a selection glow around one placement.</summary>
+    /// <param name="scene">The scene the placement belongs to.</param>
+    /// <param name="camera">The eye the frame is drawn from.</param>
+    /// <param name="placementIndex">Which placement to outline.</param>
+    /// <param name="colour">The glow colour.</param>
+    /// <param name="radius">How far the glow reaches past the silhouette, in pixels.</param>
+    /// <param name="throughWalls">Whether it ignores the depth buffer.</param>
+    /// <returns><see langword="true"/> when something was drawn.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="scene"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// <para>
+    /// Deliberately not frustum-culled. A marker the reader asked for should keep being submitted
+    /// while they turn towards it, and one placement of geometry is not worth the cull.
+    /// </para>
+    /// <para>
+    /// Every subset goes to the device in one call. The glow masks the model's own silhouette out
+    /// before drawing, and outlining a piece at a time would light each piece's rim across the pieces
+    /// already drawn — a crate with a separate lid would come out with a bright line through it.
+    /// </para>
+    /// </remarks>
+    public bool DrawOutline(
+        WorldScene scene,
+        Camera3D camera,
+        int placementIndex,
+        Bgra32 colour,
+        float radius,
+        bool throughWalls)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+
+        if (placementIndex < 0 || placementIndex >= scene.Placements.Count)
+        {
+            return false;
+        }
+
+        WorldPlacement placement = DisplayedPlacement(scene.Placements[placementIndex]);
+        MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
+        if (geometry is null)
+        {
+            return false;
+        }
+
+        MeshHandle mesh = GetMesh(
+            placement.BentGeometry is null ? placement.Instance.Name : placement.TaskName,
+            geometry);
+        if (!mesh.IsValid)
+        {
+            return false;
+        }
+
+        _outlineRanges.Clear();
+        foreach (MeshSubset subset in geometry.Subsets)
+        {
+            if (subset.IndexCount > 0)
+            {
+                _outlineRanges.Add(new MeshDrawRange(subset.IndexOffset, subset.IndexCount));
+            }
+        }
+
+        if (_outlineRanges.Count == 0)
+        {
+            return false;
+        }
+
+        ResolveDrawTransform(placement, out Vector3d position, out Matrix3f orientation, out _, out _);
+        Matrix4f modelView = camera.CreateModelView(position, orientation);
+
+        _device.SetPoseInterpolation(0f, 0f);
+        _device.DrawOutline(mesh, CollectionsMarshal.AsSpan(_outlineRanges), modelView, colour, radius, throughWalls);
+        _device.ClearPoseInterpolation();
+        return true;
     }
 
     private MeshHandle GetMesh(string name, MeshGeometry geometry)

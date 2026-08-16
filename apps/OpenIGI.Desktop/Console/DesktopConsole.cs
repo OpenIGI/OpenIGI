@@ -29,7 +29,7 @@ public sealed class DesktopConsole : IDisposable
 
     private readonly IIgiLogger _logger;
     private readonly string _settingsPath;
-    private readonly ConsoleUiRenderer _renderer;
+    private readonly DeveloperConsole _view;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="DesktopConsole"/> class.</summary>
@@ -45,13 +45,23 @@ public sealed class DesktopConsole : IDisposable
 
         System = new ConsoleSystem();
         Model = new ConsoleModel(System);
-        Input = new ConsoleInputController(Model);
-        _renderer = new ConsoleUiRenderer(device, System, _logger);
+        _view = new DeveloperConsole(device, Model, _logger);
+
+        // Seconds since the console was built, which is near enough to "since launch" for reading a
+        // log and needs no clock of its own. Stopwatch rather than wall time: it cannot go backwards
+        // when the machine's clock is corrected mid-session. Fully qualified because this type's own
+        // `System` property shadows the namespace.
+        long started = global::System.Diagnostics.Stopwatch.GetTimestamp();
+        System.Clock = () => global::System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
 
         string configDirectory = Path.GetDirectoryName(_settingsPath) ?? SettingsPaths.PortableDirectory;
         BuiltInConsoleCommands.Register(System, new DirectoryConsoleFileSystem(configDirectory));
         GraphicsPresetCommands.Register(System);
         RegisterShellCommands();
+
+        // Registered here rather than when the view loads, so a settings file or a +command naming a
+        // panel is understood -- both run before there is a display to show one on.
+        _view.RegisterCommands(System);
     }
 
     /// <summary>Occurs when a console command has asked the game to quit.</summary>
@@ -63,8 +73,8 @@ public sealed class DesktopConsole : IDisposable
     /// <summary>Gets the on-screen console's state.</summary>
     public ConsoleModel Model { get; }
 
-    /// <summary>Gets the keyboard-to-editing translator.</summary>
-    public ConsoleInputController Input { get; }
+    /// <summary>Gets the on-screen view: the floating panels, their input and their drawing.</summary>
+    public DeveloperConsole View => _view;
 
     /// <summary>Gets a value indicating whether the console is showing and consuming input.</summary>
     public bool IsOpen => Model.IsOpen;
@@ -92,8 +102,11 @@ public sealed class DesktopConsole : IDisposable
         IsolatedFromSavedSettings = !useSavedSettings;
 
         // Static field initialisers only run when something touches the declaring class, so the
-        // generated registrations are what make the registry complete before settings are read.
+        // generated registrations are what make the registry complete before settings are read. Both
+        // assemblies matter: the console's own con_* variables live here, and without this call a
+        // saved layout line would be met with "unknown variable" and silently discarded.
         Rendering.Generated.CVarRegistrations.RegisterAll();
+        Generated.CVarRegistrations.RegisterAll();
 
         bool settingsLoaded = false;
         if (IsolatedFromSavedSettings)
@@ -158,7 +171,7 @@ public sealed class DesktopConsole : IDisposable
         System.Variables.AnyChanged += OnVariableChanged;
         GraphicsPresetRegistry.Default.PresetChanged += OnPresetChanged;
 
-        if (!_renderer.Load())
+        if (!_view.Load(System))
         {
             _logger.Warning(LogCategory, "The console has no font; it will accept commands but draw nothing.");
         }
@@ -184,18 +197,26 @@ public sealed class DesktopConsole : IDisposable
     public bool Update(InputState input, float elapsedSeconds)
     {
         ArgumentNullException.ThrowIfNull(input);
-        Input.Advance(elapsedSeconds);
 
-        // Gamepad navigation is read first, while the frame's input is still uncaptured: once
-        // Input.Update has taken the keyboard it also marks the frame captured, and the gamepad edge
-        // tests would then report nothing.
+        // The toggle is handled here rather than in the view, because it is the one key that has to
+        // work when the console is shut and the view is doing nothing at all.
         bool wasOpen = Model.IsOpen;
+        if (input.Keyboard.WasPressed(ToggleKey))
+        {
+            Model.IsOpen = !wasOpen;
+            DrainCharacters(input.Keyboard);
+            input.Captured = true;
+            return true;
+        }
+
+        // Gamepad navigation is read first, while the frame's input is still uncaptured: once the
+        // frame is marked captured every edge test reports nothing.
         if (wasOpen)
         {
             HandleGamepad(input);
         }
 
-        bool consumed = Input.Update(input, _renderer.VisibleLines);
+        bool consumed = _view.Update(input, elapsedSeconds);
         if (wasOpen)
         {
             input.Captured = true;
@@ -204,15 +225,53 @@ public sealed class DesktopConsole : IDisposable
         return consumed || wasOpen;
     }
 
-    /// <summary>Draws the console, if it is open.</summary>
+    /// <summary>Draws the console and any panel the reader has left showing.</summary>
     /// <param name="batch">The batch to draw into; it must already be between Begin and End.</param>
     /// <param name="screenWidth">The back buffer's width.</param>
     /// <param name="screenHeight">The back buffer's height.</param>
-    /// <param name="scale">Retained for call-site compatibility; the reskinned console sizes itself.</param>
+    /// <param name="scale">Retained for call-site compatibility; the console sizes itself from <c>con_scale</c>.</param>
     public void Draw(SpriteBatch batch, int screenWidth, int screenHeight, float scale = 1f)
     {
         _ = scale;
-        _renderer.Draw(batch, Model, screenWidth, screenHeight, Input.CaretVisible);
+        _view.Draw(batch, screenWidth, screenHeight);
+    }
+
+    /// <summary>Gets a value indicating whether anything needs drawing this frame.</summary>
+    /// <remarks>
+    /// Not the same question as <see cref="IsOpen"/>: the watch and performance panels can be left
+    /// showing with the console shut. It is deliberately false during a capture run, so a reader's
+    /// pinned overlay cannot leak into a reference screenshot and break the vanilla pixel gate.
+    /// </remarks>
+    public bool WantsDraw =>
+        Model.IsOpen || (!IsolatedFromSavedSettings && DeveloperConsole.HasVisibleOverlays);
+
+    /// <summary>Gets the entity the World panel has selected, or null when none is.</summary>
+    public int? SelectedEntityId => _view.SelectedEntityId;
+
+    /// <summary>Gets a value indicating whether the pointer must be freed and shown this frame.</summary>
+    /// <remarks>
+    /// Polled from the game loop's cursor chain, which re-asserts the lock on every pass — so a console
+    /// that merely released the cursor when it opened would have it taken back a frame later.
+    /// </remarks>
+    public bool WantsPointer => _view.WantsPointer;
+
+    /// <summary>The key that shows and hides the console.</summary>
+    public static KeyCode ToggleKey => KeyCode.Grave;
+
+    /// <summary>
+    /// Throws away the characters the toggle key itself produced.
+    /// </summary>
+    /// <param name="keyboard">The frame's keyboard.</param>
+    /// <remarks>
+    /// The platform decodes text before the key event is seen, so opening the console would otherwise
+    /// leave a backtick sitting in the prompt.
+    /// </remarks>
+    private static void DrainCharacters(KeyboardState keyboard)
+    {
+        while (keyboard.TryDequeueCharacter(out _))
+        {
+            // Discarded.
+        }
     }
 
     /// <summary>
@@ -224,26 +283,26 @@ public sealed class DesktopConsole : IDisposable
     private void HandleGamepad(InputState input)
     {
         GamepadState pad = input.Gamepad;
-        int page = Math.Max(1, _renderer.VisibleLines - 2);
+        int page = Math.Max(1, _view.VisibleLines - 2);
 
         if (pad.WasPressed(GamepadButton.DpadUp))
         {
-            Model.Scroll(1, _renderer.VisibleLines);
+            Model.Scroll(1, _view.VisibleLines);
         }
 
         if (pad.WasPressed(GamepadButton.DpadDown))
         {
-            Model.Scroll(-1, _renderer.VisibleLines);
+            Model.Scroll(-1, _view.VisibleLines);
         }
 
         if (pad.WasPressed(GamepadButton.LeftShoulder))
         {
-            Model.Scroll(page, _renderer.VisibleLines);
+            Model.Scroll(page, _view.VisibleLines);
         }
 
         if (pad.WasPressed(GamepadButton.RightShoulder))
         {
-            Model.Scroll(-page, _renderer.VisibleLines);
+            Model.Scroll(-page, _view.VisibleLines);
         }
 
         if (pad.WasPressed(GamepadButton.DpadLeft))
@@ -299,6 +358,10 @@ public sealed class DesktopConsole : IDisposable
             return false;
         }
 
+        // The panels' geometry is a setting like any other, so it is folded into the variable that
+        // carries it just before the file is rendered rather than being written on every drag.
+        _view.SaveLayout();
+
         bool saved = SettingsFile.Save(System, _settingsPath);
         if (!saved)
         {
@@ -319,7 +382,7 @@ public sealed class DesktopConsole : IDisposable
         _disposed = true;
         System.Variables.AnyChanged -= OnVariableChanged;
         GraphicsPresetRegistry.Default.PresetChanged -= OnPresetChanged;
-        _renderer.Dispose();
+        _view.Dispose();
     }
 
     private void OnVariableChanged(object? sender, CVarChangedEventArgs e)
@@ -400,7 +463,10 @@ public sealed class DesktopConsole : IDisposable
                 _ => ConsoleSeverity.Output,
             };
 
-            console.Write(new ConsoleLine($"[{category}] {message}", severity));
+            // The category rides beside the text rather than inside it. Formatted in, it could not be
+            // filtered on, it matched every search for the subsystem's name, and it came along when a
+            // line was copied.
+            console.Write(new ConsoleLine(message, severity, category, console.Elapsed));
         }
     }
 }

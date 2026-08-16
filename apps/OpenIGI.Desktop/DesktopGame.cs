@@ -139,6 +139,9 @@ internal sealed partial class DesktopGame : IDisposable
     private MissionPreview? _backdrop;
 
     // --- The loaded world and its renderers ---
+    private Camera3D _inspectorEye = Camera3D.Default;
+    private float _inspectorTangent = 1f;
+    private float _inspectorAspect = 16f / 9f;
     private WorldScene? _scene;
     private WorldRenderer? _world;
     private TerrainRenderer? _terrain;
@@ -331,6 +334,16 @@ internal sealed partial class DesktopGame : IDisposable
         // mirrored into its scrollback, so opening it shows the log rather than an empty panel.
         using DesktopConsole console = new(_device, _logger);
         console.QuitRequested += (_, _) => running = false;
+
+        // The console reaches the system clipboard through the window, which is what owns the handle,
+        // rather than taking a platform reference of its own.
+        console.View.ReadClipboard = () => _window.ClipboardText;
+        console.View.WriteClipboard = text => _window.ClipboardText = text;
+
+        // Attached once rather than per mission: the inspector asks for a fresh snapshot every frame
+        // it draws, and the implementation already answers with nothing when no world is loaded.
+        console.View.AttachWorld(this);
+
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
 
@@ -1046,6 +1059,18 @@ internal sealed partial class DesktopGame : IDisposable
             console.Update(_window.Input, Math.Clamp((consoleNow - lastConsoleMilliseconds) / 1000f, 0f, 0.25f));
             lastConsoleMilliseconds = consoleNow;
 
+            // Key bindings fire here, with the console shut. The bind table, the `bind` command and
+            // their tests have existed since the console was written, but nothing ever asked the table
+            // whether a key had been pressed -- so a binding could be declared and saved and would
+            // never once fire. Skipped during a capture run, whose input must stay exactly scripted.
+            if (!console.IsOpen && !console.IsolatedFromSavedSettings && !_window.Input.Captured)
+            {
+                while (_window.Input.Keyboard.TryDequeuePress(out Input.KeyCode boundKey))
+                {
+                    console.System.ExecuteBind(BindKeyNames.NameOf(boundKey));
+                }
+            }
+
             // The cinematic shell reads the frame's input after the console and, like it, marks the frame
             // captured so the free camera and the game beneath see an idle keyboard and pad. When the console
             // is open it owns the frame and the shell only advances its animation.
@@ -1484,7 +1509,21 @@ internal sealed partial class DesktopGame : IDisposable
                 _deathCamera.LookSettings = look;
                 interactionCamera.LookSettings = look;
 
-                if (pauseMenu)
+                if (console.WantsPointer)
+                {
+                    // The developer console is a pointer-driven tool: its panels are dragged and
+                    // resized. This branch comes first and is repeated every pass for the same reason
+                    // the pause menu's is -- the lock below would otherwise be re-asserted a frame
+                    // later and the cursor would snap back to the centre under the reader's hand.
+                    // HoldStill matters just as much here: taking the cursor back on close warps the
+                    // pointer, and without re-arming the settling frame that warp is read as aim.
+                    // The system cursor stays hidden: the console draws its own, as the shell does,
+                    // so the pointer looks the same everywhere and is drawn over the panels rather
+                    // than by the compositor on top of them.
+                    _player?.HoldStill();
+                    _window.CursorLocked = false;
+                }
+                else if (pauseMenu)
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
                     // release is repeated every pass rather than done once on the way in, so nothing can
@@ -2212,6 +2251,11 @@ internal sealed partial class DesktopGame : IDisposable
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
                 float horizontalTangent = sight.TanX;
                 float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
+
+                // Kept for the developer inspector, which projects a selected entity to the screen and
+                // has no other way to know the lens the frame was actually drawn with.
+                _inspectorTangent = horizontalTangent;
+                _inspectorAspect = aspectRatio;
                 if (_cutscenes?.Frame is { FieldOfView: > 0f } cutsceneLens)
                 {
                     // EditCamera.FOV is the horizontal half-angle tangent submitted at 0x4F604A,
@@ -2391,6 +2435,10 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     eye = cutsceneView.Camera;
                 }
+
+                // The eye has settled by here -- every camera that could have claimed the frame has
+                // had its say -- so this is where the inspector's projection can read it.
+                _inspectorEye = eye;
 
                 // Everything soldier-shaped resolves its own frame state once, here, so the shadow
                 // cascades and the geometry pass draw identical bodies in identical places.
@@ -2628,6 +2676,7 @@ internal sealed partial class DesktopGame : IDisposable
                 EndStageIfSlow("the sky and the terrain");
                 bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
                 _world.Draw(_scene, eye, projection);
+
                 EndStageIfSlow("the world's objects");
                 _gunPickupRenderer?.Draw(eye, projection);
 
@@ -2744,6 +2793,14 @@ internal sealed partial class DesktopGame : IDisposable
                         tickBlend,
                         smoothPresentation);
                 }
+
+                // The developer inspector's selection, drawn as a real glow around the model rather
+                // than a mark beside it. It belongs to the FORWARD pass, with the tracers and the muzzle
+                // flames: submitted from the world pass it would be written into the g-buffer as
+                // scenery and come back lit and fogged, which is a dull smear rather than a mark. Late
+                // in the pass because it carves its silhouette out of the depth buffer to read through
+                // walls, and the view model clears depth immediately after.
+                DrawInspectorOutline(console, eye);
 
                 // The first-person view goes last, and in 0x4644A0's own order: pose the rig, draw the arms,
                 // then ask the human where the weapon is and draw that. Only in player mode, because the
@@ -3408,6 +3465,10 @@ internal sealed partial class DesktopGame : IDisposable
             // that it can fade rather than vanish. It hears nothing while it does.
             if ((menuMode || _entry.IsRunning) && shell is not null)
             {
+                // Exactly one layer may draw a pointer. The console is drawn after this and over it,
+                // so while it is up it owns the cursor; otherwise the reader sees two arrows.
+                shell.Stack.PointerSuppressed = console.IsOpen;
+
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
@@ -3474,7 +3535,10 @@ internal sealed partial class DesktopGame : IDisposable
             }
 
             // The console goes over everything, including the menus, so it is the last thing drawn.
-            if (console.IsOpen)
+            // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up
+            // with the console shut. It is false during a capture run whatever the reader pinned, so a
+            // pinned overlay can never leak into a reference screenshot and break the vanilla gate.
+            if (console.WantsDraw)
             {
                 _device.BeginStageTiming(RenderStage.UserInterface);
                 _device.Set2DProjection(_window.Width, _window.Height);

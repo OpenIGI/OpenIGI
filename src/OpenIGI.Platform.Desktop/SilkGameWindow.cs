@@ -288,6 +288,29 @@ public sealed class SilkGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Reached through the first keyboard, which is where the backend hangs it. A machine with no
+    /// keyboard attached reports an empty clipboard and swallows writes rather than throwing: a paste
+    /// that quietly does nothing is a far better failure than a developer tool that crashes the game.
+    /// </remarks>
+    public string ClipboardText
+    {
+        get
+        {
+            IKeyboard? keyboard = _input.Keyboards.Count > 0 ? _input.Keyboards[0] : null;
+            return keyboard?.ClipboardText ?? string.Empty;
+        }
+
+        set
+        {
+            if (_input.Keyboards.Count > 0)
+            {
+                _input.Keyboards[0].ClipboardText = value ?? string.Empty;
+            }
+        }
+    }
+
+    /// <inheritdoc/>
     public bool IsFocused { get; private set; } = true;
 
     /// <inheritdoc/>
