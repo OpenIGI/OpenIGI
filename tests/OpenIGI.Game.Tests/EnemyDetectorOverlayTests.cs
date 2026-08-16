@@ -43,6 +43,7 @@ public sealed class EnemyDetectorOverlayTests
         Assert.Equal(10f, settled.Right - settled.Left, 3);
         Assert.Equal(20f, initial.Bottom - initial.Top, 3);
         Assert.Equal(20f, settled.Bottom - settled.Top, 3);
+        Assert.Equal(20f, settled.DistanceMetres, 3);
     }
 
     [Fact]

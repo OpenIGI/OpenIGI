@@ -116,6 +116,44 @@ public sealed class PlayerCameraHealthTests
     }
 
     [RequiresGameDataFact]
+    public void MissingRetailMedipackLoopSlotUsesOneManagedLoopingPresentationClip()
+    {
+        WeaponType medipack = LoadRoster().Weapons.First(
+            weapon => weapon.Category == WeaponCategory.Medipack);
+        int retailLoopAnimation = WeaponAnimationTable.Select(
+            medipack,
+            WeaponAction.MedipackLoop).FullBody;
+        if (retailLoopAnimation >= 0)
+        {
+            return;
+        }
+
+        PlayerCamera camera = new();
+        camera.UseViewRig(LoadViewSet());
+
+        Assert.True(camera.PlayWeaponAction(medipack, WeaponAction.MedipackLoop));
+        BoneClip clip = Assert.IsType<BoneClip>(camera.View!.Bones.SourceOf(0));
+        Assert.True(clip.Loops);
+        Assert.Equal(medipack.FireAnimation1, clip.Animation.Id);
+    }
+
+    [RequiresGameDataFact]
+    public void RebuildingTheViewRigRestoresOpticsAndInputStateForTheNextMission()
+    {
+        PlayerCamera camera = new();
+        BoneAnimationSet viewSet = LoadViewSet();
+        camera.UseViewRig(viewSet);
+
+        camera.View!.TanX = 0.1f;
+        camera.View.ViewModelTanX = 0.1f;
+
+        camera.UseViewRig(viewSet);
+
+        Assert.Equal(HumanView.DefaultTanX, camera.View!.TanX);
+        Assert.Equal(HumanView.DefaultViewModelTanX, camera.View.ViewModelTanX);
+    }
+
+    [RequiresGameDataFact]
     public void RetailMedipackWithoutAThirdClipReturnsToReadyWithoutReloading()
     {
         WeaponType medipack = LoadRoster().Weapons.First(

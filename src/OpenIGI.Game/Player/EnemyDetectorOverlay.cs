@@ -182,7 +182,10 @@ public sealed class EnemyDetectorOverlay
                 slot.ScreenY - (height * 0.5f),
                 slot.ScreenX + (width * 0.5f),
                 slot.ScreenY + (height * 0.5f),
-                slot.Distance / (float)OpenIGI.Game.World.WorldScene.UnitsPerMetre,
+                // BinocularTargets stores the native slot distance after projection in metres.
+                // Dividing by UnitsPerMetre here converted an already-converted value a second time,
+                // making the HUD report zero-ish ranges even when the rectangle was correctly sized.
+                slot.Distance,
                 1f,
                 progress * NativeMarkerQuarterTurn,
                 ((1f - progress) * 10f) + 1f));

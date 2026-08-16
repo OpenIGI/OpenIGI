@@ -299,6 +299,13 @@ public sealed class PlayerCamera
     public void UseViewRig(BoneAnimationSet set)
     {
         ArgumentNullException.ThrowIfNull(set);
+
+        // Mission restart can rebuild the first-person rig on an existing camera. Clear every
+        // optic's weapon identity and the input edge shadow before attaching the new bone object;
+        // otherwise a binocular/scope latch from the previous level can make the first toggle or
+        // zoom press disappear, and a held key can be interpreted as an old edge.
+        ResetOptics();
+        _input.Reset();
         _view = new HumanView(set);
         PoseChanged = true;
         SyncView();
@@ -346,12 +353,28 @@ public sealed class PlayerCamera
         }
 
         WeaponAnimations animations = WeaponAnimationTable.Select(weapon, action, fireVariant);
-        if (animations.FullBody < 0)
+        int animationId = animations.FullBody;
+        bool loops = animations.LoopFullBody;
+
+        // Retail's 0x40FB90 forwards FireAnimation2 verbatim. Some shipped medipack records leave
+        // that slot at -1, but the native state still remains in its sustained injection loop. The
+        // managed rig has no clip for -1, so keep the state visibly continuous by looping the already
+        // validated entry clip once at this presentation boundary. PlayerWeapons still requests this
+        // action only once; cooldown doses therefore never replay the entry animation.
+        if (action == WeaponAction.MedipackLoop
+            && weapon.Category == WeaponCategory.Medipack
+            && animationId < 0)
+        {
+            animationId = weapon.FireAnimation1;
+            loops = true;
+        }
+
+        if (animationId < 0)
         {
             return false;
         }
 
-        if (_view.PlayWeaponAnimation(animations.FullBody, animations.LoopFullBody) is null)
+        if (_view.PlayWeaponAnimation(animationId, loops) is null)
         {
             return false;
         }
