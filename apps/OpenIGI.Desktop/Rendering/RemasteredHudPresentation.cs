@@ -121,17 +121,17 @@ public static class RemasteredHudPresentation
     /// <returns>The MAG and RESERVE strings, either of which is <c>"--"</c> when the column does not apply.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="weapon"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// A weapon whose <see cref="WeaponType.AmmoDisplay"/> is <see cref="AmmoDisplayType.None"/> counts
-    /// nothing and blanks both columns. The medipack is a pool of injection charges with no firearm
-    /// magazine: its <c>HeldGun</c> never loads a clip, so <paramref name="roundsInClip"/> stays at the
-    /// unloaded sentinel and would otherwise render as a literal <c>"-02"</c>. Its charge count belongs
-    /// under RESERVE alone, with a blank MAG. The same sentinel guard spares any firearm shown on its
-    /// first frame before its clip has loaded.
+    /// A non-medical weapon whose <see cref="WeaponType.AmmoDisplay"/> is <see cref="AmmoDisplayType.None"/>
+    /// counts nothing and blanks both columns. The medipack is a pool of injection charges with no firearm
+    /// magazine, but its reserve still belongs under RESERVE even though its native gauge is None. Its
+    /// <c>HeldGun</c> never loads a clip, so <paramref name="roundsInClip"/> stays at the unloaded sentinel
+    /// and would otherwise render as a literal <c>"-02"</c>.
     /// </remarks>
     public static (string Magazine, string Reserve) AmmoColumns(WeaponType weapon, int roundsInClip, int reserve)
     {
         ArgumentNullException.ThrowIfNull(weapon);
-        if (weapon.AmmoDisplay == AmmoDisplayType.None)
+        if (weapon.AmmoDisplay == AmmoDisplayType.None
+            && weapon.Category != WeaponCategory.Medipack)
         {
             return ("--", "--");
         }

@@ -138,7 +138,7 @@ public sealed class BinocularsView
             // then moves its current field (+720) toward that target. Do not snap the current FOV on
             // entry, or the opening transition is visibly faster than retail. The task also does not
             // replace the first-person rig's independently authored view-model tangent.
-            if (_targetTanX != authoredDefault)
+            else if (_targetTanX != authoredDefault)
             {
                 _targetTanX = authoredDefault;
                 _settlingToDefault = true;

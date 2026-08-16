@@ -99,6 +99,11 @@ public sealed class SoldierRenderer : IDisposable
     // detector's own visibility, keyed by view so the outline pass can find each one's mesh and group.
     private readonly Dictionary<SoldierView, BinocularMarkerColor> _binocularDetected = [];
 
+    // LOS is a simulation fact, not a render fact. Cache it for the fixed tick so a second render
+    // of the same simulation state does not cast the same three rays again.
+    private readonly Dictionary<SoldierView, bool> _binocularVisibility = [];
+    private int _binocularVisibilityTick = int.MinValue;
+
     // One prepared rig per skeleton, shared by every corpse wearing it. Building it walks the whole bone
     // graph twice, so it must not happen per death -- and it holds no live state, so it need not.
     private readonly Dictionary<BoneAnimationSet, RagdollSkeleton> _ragdollRigs = [];
@@ -531,18 +536,29 @@ public sealed class SoldierRenderer : IDisposable
     /// The furthest a contact may be and still be marked, in metres of forward distance. The remastered
     /// optics pass a finite range; the vanilla optics pass positive infinity, staying retail-uncapped.
     /// </param>
+    /// <param name="simulationTick">
+    /// The fixed simulation tick used to cache line-of-sight results. Leave it at its default when
+    /// calling this method from a one-off diagnostic projection.
+    /// </param>
     public IReadOnlyList<EnemyOverlayBox> BinocularTargets(
         Camera3D camera,
         float horizontalTangent,
         int screenWidth,
         int screenHeight,
         int tick,
-        float maxDetectionMetres)
+        float maxDetectionMetres,
+        int simulationTick = int.MinValue)
     {
         if (horizontalTangent <= 0f)
         {
             _binocularOverlay.Clear();
             return [];
+        }
+
+        if (simulationTick != int.MinValue && _binocularVisibilityTick != simulationTick)
+        {
+            _binocularVisibility.Clear();
+            _binocularVisibilityTick = simulationTick;
         }
 
         _binocularOverlay.BeginScan();
@@ -611,11 +627,24 @@ public sealed class SoldierRenderer : IDisposable
             // still marked; one standing completely behind a wall is dropped, as the original drops it.
             if (_sight is { } lineOfSight)
             {
-                Vector3d headUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + (2d * bodyCentreUnits));
-                bool anyVisible =
-                    HasLineOfSight(lineOfSight, eyeUnits, targetUnits)
-                    || HasLineOfSight(lineOfSight, eyeUnits, headUnits)
-                    || HasLineOfSight(lineOfSight, eyeUnits, feetUnits);
+                bool anyVisible;
+                if (simulationTick != int.MinValue
+                    && _binocularVisibility.TryGetValue(view, out bool cachedVisibility))
+                {
+                    anyVisible = cachedVisibility;
+                }
+                else
+                {
+                    Vector3d headUnits = new(feetUnits.X, feetUnits.Y, feetUnits.Z + (2d * bodyCentreUnits));
+                    anyVisible =
+                        HasLineOfSight(lineOfSight, eyeUnits, targetUnits)
+                        || HasLineOfSight(lineOfSight, eyeUnits, headUnits)
+                        || HasLineOfSight(lineOfSight, eyeUnits, feetUnits);
+                    if (simulationTick != int.MinValue)
+                    {
+                        _binocularVisibility[view] = anyVisible;
+                    }
+                }
                 if (!anyVisible)
                 {
                     continue;
@@ -4706,6 +4735,10 @@ public sealed class SoldierRenderer : IDisposable
         _groups.Clear();
         _health.Clear();
         _detectorMarkerScaleMetres.Clear();
+        _binocularDetected.Clear();
+        _binocularOverlay.Clear();
+        _binocularVisibility.Clear();
+        _binocularVisibilityTick = int.MinValue;
         _cast = null;
         _sight = null;
         ReleasePlayerBody();

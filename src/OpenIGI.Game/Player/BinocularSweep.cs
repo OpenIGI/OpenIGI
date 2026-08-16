@@ -17,6 +17,10 @@ public sealed class BinocularSweep
 
     private const float PhaseStep = 0.01f;
     private const int Cadence = 30;
+    // Reopening after a suspended window must not make the render thread replay an unbounded
+    // number of fixed ticks. The retail state is visual-only, so a short catch-up is enough to
+    // preserve continuity without turning a long pause into a frame-time spike.
+    private const int MaxCatchUpTicks = 90;
     private const float StartX = 0.125f;
     private const float ColumnStepX = 0.015625f;
     private const float ColumnWidth = 0.00625f;
@@ -41,7 +45,9 @@ public sealed class BinocularSweep
         }
         else
         {
-            for (int tick = _lastSimulationTick; tick < simulationTick; tick++)
+            long elapsedTicks = (long)simulationTick - _lastSimulationTick;
+            int catchUpTicks = (int)Math.Min(Math.Max(0L, elapsedTicks), MaxCatchUpTicks);
+            for (int tick = 0; tick < catchUpTicks; tick++)
             {
                 Advance();
             }

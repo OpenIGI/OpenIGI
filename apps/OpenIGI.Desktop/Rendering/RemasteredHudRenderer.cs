@@ -141,14 +141,14 @@ internal sealed class RemasteredHudRenderer : IDisposable
         // rests on -- exactly as the vanilla readout shows, not the nearest detected contact. Same
         // 1000 m cap as the retail widget.
         string range = rangeMetres is { } metres && float.IsFinite(metres) && metres > 0f && metres < 1000f
-            ? $"RANGE  {metres:0}M"
+            ? FormattableString.Invariant($"RANGE  {metres:0}M")
             : "RANGE  1000+M";
         float magnification = tanX > 0.0001f ? HumanView.DefaultTanX / tanX : 1f;
         UiVectors.DrawTracked(
             painter, body, "OPTICS // BINOCULAR",
             new UiVec2(frame.X + context.Px(18f), frame.Bottom - context.Px(48f)), context.Px(15f), Signal, context.Px(2f));
         painter.DrawText(
-            body, $"x{magnification:0.0}    {range}",
+            body, FormattableString.Invariant($"x{magnification:0.0}    {range}"),
             new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(15f), Text);
     }
 

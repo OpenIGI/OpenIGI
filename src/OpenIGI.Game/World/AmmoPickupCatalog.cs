@@ -137,7 +137,9 @@ public static class AmmoPickupCatalog
             {
                 int value = raw switch
                 {
+                    short small => small,
                     int integer => integer,
+                    ushort unsignedSmall => unsignedSmall,
                     float real => (int)MathF.Round(real),
                     double doubleValue => (int)Math.Round(doubleValue),
                     _ => 0,

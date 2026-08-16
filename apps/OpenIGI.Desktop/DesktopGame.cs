@@ -2768,7 +2768,8 @@ internal sealed partial class DesktopGame : IDisposable
                             // TickCount here stretched the native 250 ms entry pulse and
                             // 3000 ms retention window by a factor of thirty-three.
                             _loop.Clock.Now,
-                            binocularDetectionRange)
+                            binocularDetectionRange,
+                            _loop.Clock.TickCount)
                         : [];
 
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700
