@@ -522,12 +522,22 @@ public sealed class SoldierRenderer : IDisposable
     };
 
     /// <summary>Projects living, visible soldiers through the native ten-slot binocular detector.</summary>
+    /// <param name="camera">The presented eye the contacts are projected through.</param>
+    /// <param name="horizontalTangent">The optics' horizontal half-angle tangent (the zoom).</param>
+    /// <param name="screenWidth">The back buffer width in pixels.</param>
+    /// <param name="screenHeight">The back buffer height in pixels.</param>
+    /// <param name="tick">The millisecond tick driving slot lifetime and the entry pulse.</param>
+    /// <param name="maxDetectionMetres">
+    /// The furthest a contact may be and still be marked, in metres of forward distance. The remastered
+    /// optics pass a finite range; the vanilla optics pass positive infinity, staying retail-uncapped.
+    /// </param>
     public IReadOnlyList<EnemyOverlayBox> BinocularTargets(
         Camera3D camera,
         float horizontalTangent,
         int screenWidth,
         int screenHeight,
-        int tick)
+        int tick,
+        float maxDetectionMetres)
     {
         if (horizontalTangent <= 0f)
         {
@@ -571,6 +581,15 @@ public sealed class SoldierRenderer : IDisposable
                 targetUnits.Z / WorldScene.UnitsPerMetre - camera.Position.Z);
             Vector3d viewPosition = camera.Orientation.Transposed().Transform(delta);
             if (viewPosition.Z <= 0f)
+            {
+                continue;
+            }
+
+            // The remastered detector has a maximum range: a contact past it is not marked at all.
+            // Measured on the forward depth, which is the distance the marker label reports, so the cap
+            // is the number the player reads. Skipped here, before the occlusion sweep, so a distant
+            // soldier costs nothing.
+            if (viewPosition.Z > maxDetectionMetres)
             {
                 continue;
             }

@@ -2740,6 +2740,16 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { View: not null };
                 bool showFirstPersonHud = showPlayerHud
                     && _player is { IsOnLadder: false, IsInWorldInteraction: false };
+
+                // The remastered detector's range grows with the zoom: from the base range at the
+                // default field of view up to the zoomed range at the tightest magnification, so leaning
+                // into the optics resolves a distant figure the wide view does not. The vanilla optics
+                // stay retail-uncapped (positive infinity).
+                float binocularZoomIn = _player?.BinocularZoomInFraction(sight.TanX) ?? 0f;
+                float binocularDetectionRange = remasteredOptics
+                    ? RenderCVars.BinocularRange.Value
+                        + ((RenderCVars.BinocularRangeZoomed.Value - RenderCVars.BinocularRange.Value) * binocularZoomIn)
+                    : float.PositiveInfinity;
                 IReadOnlyList<EnemyOverlayBox> binocularTargets =
                     showFirstPersonHud
                     && _player is { IsBinocularsOpen: true }
@@ -2757,7 +2767,8 @@ internal sealed partial class DesktopGame : IDisposable
                             // millisecond counter), not the 30 Hz simulation index. Passing
                             // TickCount here stretched the native 250 ms entry pulse and
                             // 3000 ms retention window by a factor of thirty-three.
-                            _loop.Clock.Now)
+                            _loop.Clock.Now,
+                            binocularDetectionRange)
                         : [];
 
                 // Soldiers draw under the same world projection: 0x4D9620 leaves +212 at 1, so 0x49F700

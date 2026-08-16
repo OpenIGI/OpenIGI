@@ -200,6 +200,29 @@ public sealed class BinocularsView
         return new SightZoomFrame(tanX, HumanView.DefaultViewModelTanX);
     }
 
+    /// <summary>
+    /// How far the optics are zoomed in from the authored default toward the closest magnification,
+    /// from 0 (at the default, or zoomed back out past it) to 1 (at the tightest zoom).
+    /// </summary>
+    /// <remarks>
+    /// The remastered detector's range scales with this: zooming in narrows the field, so the current
+    /// half-angle tangent moves from the authored default down toward the authored minimum, and the
+    /// fraction is that progress. Clamped, so zooming back out past the default cannot push the range
+    /// below its base and the closest zoom cannot push it past the maximum.
+    /// </remarks>
+    /// <param name="currentTanX">The optics' current horizontal half-angle tangent.</param>
+    /// <returns>The zoom-in progress in <c>[0, 1]</c>.</returns>
+    public float ZoomInFraction(float currentTanX)
+    {
+        if (!TryGetBounds(_weapon, out float minimum, out float _, out float authoredDefault)
+            || authoredDefault <= minimum)
+        {
+            return 0f;
+        }
+
+        return Math.Clamp((authoredDefault - currentTanX) / (authoredDefault - minimum), 0f, 1f);
+    }
+
     private static float MoveToward(float current, float target)
     {
         if (current > target)

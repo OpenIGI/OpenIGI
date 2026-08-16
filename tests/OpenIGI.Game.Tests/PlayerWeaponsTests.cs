@@ -649,6 +649,27 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void BinocularZoomInFractionTracksTheTangentBetweenDefaultAndMinimum()
+    {
+        // The remastered detector's range scales with this. Binoculars author default 0.5, min 0.1.
+        BinocularsView view = new();
+        view.Tick(Binoculars, togglePressed: true, false, false, HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
+
+        Assert.Equal(0f, view.ZoomInFraction(0.5f), 3);   // the authored default -- base range
+        Assert.Equal(1f, view.ZoomInFraction(0.1f), 3);   // the tightest zoom -- full range
+        Assert.Equal(0.5f, view.ZoomInFraction(0.3f), 3); // halfway in
+        Assert.Equal(0f, view.ZoomInFraction(1.0f), 3);   // zoomed out past the default -- clamped
+        Assert.Equal(0f, view.ZoomInFraction(2.0f), 3);   // beyond the widest -- clamped
+    }
+
+    [Fact]
+    public void BinocularZoomInFractionIsZeroWithoutABoundBinocular()
+    {
+        BinocularsView view = new();
+        Assert.Equal(0f, view.ZoomInFraction(0.3f), 3);
+    }
+
+    [Fact]
     public void BinocularViewUsesTheRetailMultiplicativeZoomFactors()
     {
         BinocularsView view = new();

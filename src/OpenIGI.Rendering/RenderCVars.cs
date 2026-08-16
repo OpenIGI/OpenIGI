@@ -1125,6 +1125,45 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>The remastered binocular detector's range at the default zoom, in metres.</summary>
+    /// <remarks>
+    /// A modern optics touch: the detector has a finite range rather than tagging every enemy in the
+    /// frustum however far off, and that range grows as the operator zooms in -- from this value at the
+    /// default field of view up to <see cref="BinocularRangeZoomed"/> at the tightest zoom. The vanilla
+    /// optics ignore both and stay retail-uncapped.
+    /// </remarks>
+    public static readonly NumericCVar<float> BinocularRange = Presets.Define(
+        CVar.Float(
+            "r_binocular_range",
+            150f,
+            50f,
+            4000f,
+            CVarOptions.Archive,
+            "Range, in metres, the remastered binocular detector marks a contact at, at the default zoom."),
+        vanilla: "150",
+        enhanced: "150",
+        high: "150",
+        ultra: "150");
+
+    /// <summary>The remastered binocular detector's range at the tightest zoom, in metres.</summary>
+    /// <remarks>
+    /// The range scales from <see cref="BinocularRange"/> at the default field of view to this at the
+    /// closest magnification, so leaning into the optics sees further, the way a real scope resolves a
+    /// distant figure the naked view cannot.
+    /// </remarks>
+    public static readonly NumericCVar<float> BinocularRangeZoomed = Presets.Define(
+        CVar.Float(
+            "r_binocular_range_zoomed",
+            250f,
+            50f,
+            4000f,
+            CVarOptions.Archive,
+            "Range, in metres, the remastered binocular detector marks a contact at, at the tightest zoom."),
+        vanilla: "250",
+        enhanced: "250",
+        high: "250",
+        ultra: "250");
+
     /// <summary>Whether the mission's status messages are drawn as the remaster's comms cards.</summary>
     /// <remarks>
     /// <para>

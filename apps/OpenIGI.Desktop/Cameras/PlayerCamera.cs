@@ -176,6 +176,10 @@ public sealed class PlayerCamera
     /// <summary>Gets whether a held zoom key moved the binocular magnification on the last tick.</summary>
     public bool BinocularZoomSteppingThisTick => _binocularsView.ZoomSteppingThisTick;
 
+    /// <summary>Gets how far the binoculars are zoomed in, 0 at the default to 1 at the tightest zoom.</summary>
+    /// <param name="currentTanX">The optics' current horizontal half-angle tangent.</param>
+    public float BinocularZoomInFraction(float currentTanX) => _binocularsView.ZoomInFraction(currentTanX);
+
     /// <summary>Closes all optical devices and restores both first-person FOV tangents.</summary>
     /// <remarks>
     /// The desktop host stops ticking the player as soon as the death camera takes over. Resetting
