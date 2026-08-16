@@ -98,7 +98,13 @@ public sealed class DevConsoleTheme
     public float Cell => BodyFont.MeasureWidth("0", BodySize);
 
     /// <summary>Gets the corner radius panels are drawn with.</summary>
-    public float CornerRadius => Unit * 2f;
+    /// <remarks>
+    /// Zero, deliberately. A developer console is a dense grid of text, and rounding its corners and
+    /// its controls makes it read as a web page laid over a game rather than as a tool built into one.
+    /// Square edges also let a border be exactly one pixel everywhere, which is what makes the whole
+    /// thing look sharp rather than soft.
+    /// </remarks>
+    public static float CornerRadius => 0f;
 
     /// <summary>Gets or sets the colour of a token that resolved to a command.</summary>
     public Bgra32 SyntaxCommand { get; set; } = Bgra32.FromRgb(121, 192, 255);
@@ -186,23 +192,23 @@ public sealed class DevConsoleTheme
 
             case ConsolePalette.Dark:
             default:
-                Ui.Panel = Bgra32.FromRgb(13, 17, 23);
-                Ui.Surface = Bgra32.FromRgb(22, 27, 34);
-                Ui.SurfaceRaised = Bgra32.FromRgb(28, 33, 40);
-                Ui.Border = Bgra32.FromRgb(48, 54, 61);
-                Ui.Text = Bgra32.FromRgb(230, 237, 243);
-                Ui.TextMuted = Bgra32.FromRgb(139, 148, 158);
-                Ui.TextDisabled = Bgra32.FromRgb(86, 96, 107);
+                Ui.Panel = Bgra32.FromRgb(16, 18, 22);
+                Ui.Surface = Bgra32.FromRgb(30, 34, 40);
+                Ui.SurfaceRaised = Bgra32.FromRgb(38, 43, 50);
+                Ui.Border = Bgra32.FromRgb(96, 104, 114);
+                Ui.Text = Bgra32.FromRgb(224, 228, 233);
+                Ui.TextMuted = Bgra32.FromRgb(150, 158, 168);
+                Ui.TextDisabled = Bgra32.FromRgb(104, 112, 122);
                 break;
         }
 
         Ui.Accent = Bgra32.FromRgb(240, 176, 84);
-        Ui.Selection = Ui.Accent.WithAlpha(38);
+        Ui.Selection = Bgra32.FromRgba(58, 110, 190, 190);
         Ui.FocusFill = Ui.Accent.WithAlpha(28);
         Ui.Info = Bgra32.FromRgb(121, 192, 255);
         Ui.Success = Bgra32.FromRgb(126, 231, 135);
         Ui.Warning = Bgra32.FromRgb(240, 176, 84);
         Ui.Danger = Bgra32.FromRgb(248, 113, 113);
-        Ui.Shadow = Bgra32.FromRgba(0, 0, 0, 190);
+        Ui.Shadow = Bgra32.FromRgba(0, 0, 0, 160);
     }
 }

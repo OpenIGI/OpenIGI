@@ -57,6 +57,7 @@ public sealed class DeveloperConsole : IDisposable
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, UiWindow> _panels = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pendingOpen = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ContextMenu _menu = new();
 
     private readonly KeyRepeater _backspace = new();
     private readonly KeyRepeater _delete = new();
@@ -255,7 +256,9 @@ public sealed class DeveloperConsole : IDisposable
         _layer.Arrange(new UiRect(0f, 0f, context.Viewport.X, context.Viewport.Y));
         _layer.Draw(painter);
 
-        painter.PopOpacity();
+        // Over every window, and at full opacity: a menu the reader just asked for should not be
+        // showing the scene through it.
+        _menu.Draw(painter, _theme, context.Viewport);
     }
 
     /// <summary>Stores where the panels sit and what is pinned, so both survive a restart.</summary>
@@ -799,7 +802,7 @@ public sealed class DeveloperConsole : IDisposable
             window.TitleTextSize = _theme.TitleSize;
             window.TitleHeight = _theme.TitleBarHeight;
             window.Gutter = _theme.Gutter;
-            window.CornerRadius = _theme.CornerRadius;
+            window.CornerRadius = DevConsoleTheme.CornerRadius;
             window.GripSize = MathF.Max(5f, _theme.Unit * 1.5f);
         }
     }
@@ -833,10 +836,43 @@ public sealed class DeveloperConsole : IDisposable
         var point = new UiVec2(mouse.X, mouse.Y);
         bool pressed = mouse.WasPressed(MouseButton.Left);
 
+        // The menu is above everything, so it gets first refusal on every press -- otherwise a click
+        // meant for an item would be taken by whatever window happens to be under it.
+        if (_menu.IsOpen)
+        {
+            _menu.HoveredIndex = _menu.ItemAt(point, _theme!.RowHeight);
+
+            if (pressed)
+            {
+                if (!_menu.Invoke(_menu.HoveredIndex))
+                {
+                    _menu.Close();
+                }
+
+                return;
+            }
+
+            if (mouse.WasPressed(MouseButton.Right))
+            {
+                _menu.Close();
+            }
+        }
+
+        if (mouse.WasPressed(MouseButton.Right))
+        {
+            OpenContextMenu(point);
+            return;
+        }
+
         // The palette's list and the console's completion dropdown both float above the windows they
         // belong to, so they are offered the press first; the window beneath would otherwise take it
         // and neither list could ever be clicked.
         if (pressed && HandleFloatingClick(point))
+        {
+            return;
+        }
+
+        if (HandleLogSelection(point, mouse, pressed))
         {
             return;
         }
@@ -859,6 +895,95 @@ public sealed class DeveloperConsole : IDisposable
         if (mouse.WheelDelta != 0f)
         {
             HandleWheel(point, mouse.WheelDelta);
+        }
+    }
+
+    /// <summary>
+    /// Runs the scrollback's click-and-drag text selection.
+    /// </summary>
+    /// <param name="point">Where the pointer is.</param>
+    /// <param name="mouse">The frame's mouse, read before capture.</param>
+    /// <param name="pressed">Whether the left button went down this frame.</param>
+    /// <returns><see langword="true"/> when the pointer belonged to a selection.</returns>
+    /// <remarks>
+    /// A drag continues while the button is held even after the pointer leaves the log — the row is
+    /// clamped rather than dropped — so running off the top or bottom keeps extending the selection
+    /// instead of stopping dead where the viewport ended.
+    /// </remarks>
+    private bool HandleLogSelection(UiVec2 point, MouseState mouse, bool pressed)
+    {
+        if (_body is null || _consoleWindow is not { IsOpen: true })
+        {
+            return false;
+        }
+
+        if (_body.Selection.IsDragging)
+        {
+            if (mouse.IsDown(MouseButton.Left))
+            {
+                _body.ExtendSelect(point);
+            }
+            else
+            {
+                _body.EndSelect();
+            }
+
+            return true;
+        }
+
+        if (pressed && _consoleWindow.Frame.Contains(point) && _body.BeginSelect(point))
+        {
+            _layer?.Raise(_consoleWindow);
+            return true;
+        }
+
+        // A press anywhere else drops the selection, which is what makes it feel like a selection
+        // rather than a highlight that has to be dismissed.
+        if (pressed)
+        {
+            _body.ClearSelection();
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Opens the right-click menu with whatever is possible where the pointer is.
+    /// </summary>
+    /// <param name="point">Where the pointer was.</param>
+    private void OpenContextMenu(UiVec2 point)
+    {
+        if (_body is null || _consoleWindow is not { IsOpen: true } || !_consoleWindow.Frame.Contains(point))
+        {
+            return;
+        }
+
+        bool hasSelection = _body.Selection.IsActive;
+        bool canWrite = WriteClipboard is not null;
+
+        // Copy is offered whether or not anything is selected, and greyed when it is not. Hiding it
+        // would move every item below it, so the same entry would sit in a different place depending
+        // on what the reader had done a moment earlier.
+        _menu.Open(
+            point,
+            [
+                new ContextMenuItem("Copy", () => WriteClipboard?.Invoke(_body.SelectedText()), hasSelection && canWrite),
+                new ContextMenuItem("Copy all", () => WriteClipboard?.Invoke(_body.AllVisibleText()), canWrite),
+                new ContextMenuItem("Select all", _body.SelectAllLines),
+                new ContextMenuItem("Paste", PasteFromClipboard, ReadClipboard is not null),
+                new ContextMenuItem("Clear", () =>
+                {
+                    _body.ClearSelection();
+                    _model.ClearScrollback();
+                }),
+            ]);
+    }
+
+    private void PasteFromClipboard()
+    {
+        if (ReadClipboard?.Invoke() is { Length: > 0 } pasted)
+        {
+            _model.Insert(pasted.ReplaceLineEndings(" ").Trim());
         }
     }
 
@@ -961,6 +1086,14 @@ public sealed class DeveloperConsole : IDisposable
     {
         bool control = keyboard.IsDown(KeyCode.LeftControl) || keyboard.IsDown(KeyCode.RightControl);
         bool shift = keyboard.IsDown(KeyCode.LeftShift) || keyboard.IsDown(KeyCode.RightShift);
+
+        // Escape dismisses the menu before it closes anything else, so the key does the least
+        // destructive thing that is still meaningful.
+        if (_menu.IsOpen && keyboard.WasPressed(KeyCode.Escape))
+        {
+            _menu.Close();
+            return;
+        }
 
         if (control && keyboard.WasPressed(KeyCode.P))
         {
@@ -1258,6 +1391,14 @@ public sealed class DeveloperConsole : IDisposable
         if (keyboard.WasPressed(KeyCode.A))
         {
             _model.SelectAll();
+            return true;
+        }
+
+        // A scrollback selection wins over the prompt's, because it is the one the reader can see and
+        // the one they just made with the mouse. The prompt's own selection is usually empty anyway.
+        if (keyboard.WasPressed(KeyCode.C) && _body is { } body && body.Selection.IsActive)
+        {
+            WriteClipboard?.Invoke(body.SelectedText());
             return true;
         }
 

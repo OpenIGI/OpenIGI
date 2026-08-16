@@ -384,32 +384,25 @@ public class UiWindow : UiElement
         UiRect frame = VisibleFrame;
         float focus = _focus.Value;
         NineSlice rounded = Surfaces?.Rounded ?? default;
-        NineSlice shadow = Surfaces?.Shadow ?? default;
 
-        // The shadow is the only depth cue available -- there is no blur to fake one with -- so the
-        // focused window casts a deeper one and that difference alone says which window is in front.
-        painter.DrawShadow(
-            frame,
-            shadow,
-            Theme.Shadow.WithAlpha((byte)(90f + (60f * focus))),
-            spread: 14f + (6f * focus),
-            offset: new UiVec2(0f, 5f));
+        // A soft shadow was the first instinct and the wrong one: with no blur to draw it with, a
+        // spread alpha ramp reads as a smudge around the window rather than as depth under it. A
+        // single hard border separates the panel from the scene far more cleanly, which is what every
+        // console that looks sharp actually does.
+        if (DropShadow && Surfaces is { } surfaces)
+        {
+            painter.DrawShadow(frame, surfaces.Shadow, Theme.Shadow, spread: 10f, offset: new UiVec2(0f, 3f));
+        }
 
         painter.FillRoundedRect(frame, rounded, Theme.Panel, CornerRadius);
 
         DrawTitleBar(painter, focus);
 
-        if (!IsCollapsed)
-        {
-            DrawGlassSheen(painter);
-        }
-
         // A hairline must be a whole pixel or the CPU clip half-covers it and it reads as a smear.
+        // The focused window's border is brighter; that difference alone says which is in front, and
+        // it costs four fills rather than a halo.
         float hairline = MathF.Max(1f, MathF.Round(painter.Context.Scale));
-        Bgra32 border = Interpolate.Lerp(
-            Theme.Border,
-            Theme.Border.WithAlpha(200),
-            MathF.Max(focus, _hoverEdge.Value));
+        Bgra32 border = Interpolate.Lerp(Theme.Border, Theme.Text, focus * 0.45f);
         painter.StrokeRect(frame, hairline, border);
 
         if (!IsCollapsed && IsResizable)
@@ -432,6 +425,14 @@ public class UiWindow : UiElement
     /// <summary>Gets or sets the inset kept between the bar's edge and its content.</summary>
     public float Gutter { get; set; } = 12f;
 
+    /// <summary>Gets or sets whether a soft shadow is cast behind the window.</summary>
+    /// <remarks>
+    /// Off by default. Without a blur to draw one with, a spread alpha ramp reads as a smudge rather
+    /// than as depth; a screen with a bright scene behind it makes that unmistakable. A window that
+    /// genuinely floats above a quiet background can turn it on.
+    /// </remarks>
+    public bool DropShadow { get; set; }
+
     private void DrawTitleBar(UiPainter painter, float focus)
     {
         UiRect bar = TitleRect;
@@ -451,23 +452,17 @@ public class UiWindow : UiElement
         float size = TitleTextSize;
         float textY = MathF.Round(bar.Y + ((bar.Height - font.LineHeight(size)) * 0.5f));
 
-        // A short accent bar at the leading edge, lit only on the window in front. It gives the bar
-        // something to start from and says which window has the keyboard without a colour change the
-        // reader has to notice.
-        float markWidth = MathF.Max(2f, Gutter * 0.25f);
-        float markHeight = MathF.Round(font.LineHeight(size) * 0.72f);
-        painter.FillRect(
-            new UiRect(bar.X + Gutter, MathF.Round(bar.Y + ((bar.Height - markHeight) * 0.5f)), markWidth, markHeight),
-            Interpolate.Lerp(Theme.Border, Theme.Accent, focus));
-
+        // Set in capitals. A short word in a small size needs the extra weight and width to hold its
+        // own against a bar of chrome, and it is what makes a title read as a label rather than as a
+        // stray line of body text.
         painter.DrawText(
             font,
-            Title,
-            new UiVec2(MathF.Round(bar.X + Gutter + markWidth + (Gutter * 0.6f)), textY),
+            Title.ToUpperInvariant(),
+            new UiVec2(MathF.Round(bar.X + Gutter), textY),
             size,
             Interpolate.Lerp(Theme.TextMuted, Theme.Text, focus));
 
-        painter.FillRect(new UiRect(bar.X, bar.Bottom - 1f, bar.Width, 1f), Theme.Border);
+        painter.FillRect(new UiRect(bar.X, MathF.Round(bar.Bottom - 1f), bar.Width, 1f), Theme.Border);
 
         if (CanClose)
         {
@@ -492,11 +487,7 @@ public class UiWindow : UiElement
 
         if (hovered)
         {
-            painter.FillRoundedRect(
-                rect.Deflate(new Thickness(MathF.Round(rect.Height * 0.22f))),
-                Surfaces?.Rounded ?? default,
-                Theme.Danger.WithAlpha(170),
-                Gutter * 0.4f);
+            painter.FillRect(rect, Theme.Danger.WithAlpha(160));
         }
 
         UiFont font = TitleFont ?? Theme.Mono;
@@ -511,31 +502,6 @@ public class UiWindow : UiElement
                 MathF.Round(rect.Y + ((rect.Height - font.LineHeight(size)) * 0.5f))),
             size,
             hovered ? Theme.Text : Theme.TextMuted);
-    }
-
-    /// <summary>
-    /// Fakes the look of a translucent pane without a blur, which the painter does not have.
-    /// </summary>
-    /// <param name="painter">The painter to draw into.</param>
-    /// <remarks>
-    /// Three cheap cues do the work a blur would: a faint wash that is lighter at the top, a bright
-    /// inner line along the top edge and a dark one along the bottom. Together they read as a sheet of
-    /// glass catching the light rather than as a flat rectangle of paint.
-    /// </remarks>
-    private void DrawGlassSheen(UiPainter painter)
-    {
-        UiRect client = ClientRect;
-        if (client.IsEmpty)
-        {
-            return;
-        }
-
-        painter.FillRect(
-            new UiRect(client.X, client.Y, client.Width, MathF.Min(client.Height, 48f)),
-            Theme.Text.WithAlpha(8));
-
-        painter.FillRect(new UiRect(client.X, client.Y, client.Width, 1f), Theme.Text.WithAlpha(18));
-        painter.FillRect(new UiRect(client.X, client.Bottom - 1f, client.Width, 1f), Bgra32.FromRgba(0, 0, 0, 60));
     }
 
     /// <summary>

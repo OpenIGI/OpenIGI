@@ -41,6 +41,11 @@ public sealed class ConsoleBody : UiElement
     private readonly DevConsoleTheme _theme;
     private readonly VirtualListView _log;
     private readonly List<UiRect> _toggles = [];
+    private readonly LogSelection _selection = new();
+
+    // One buffer, reused for every row drawn and every row copied. A line longer than this is elided
+    // rather than allowed to overrun, which no engine message comes close to anyway.
+    private readonly char[] _rowScratch = new char[1024];
 
     /// <summary>Initialises a new instance of the <see cref="ConsoleBody"/> class.</summary>
     /// <param name="model">The console state drawn and edited.</param>
@@ -84,6 +89,129 @@ public sealed class ConsoleBody : UiElement
 
     /// <summary>Gets the rectangle the completion dropdown occupies, empty when none is showing.</summary>
     public UiRect DropdownRect { get; private set; }
+
+    /// <summary>Gets the scrollback text picked out with the pointer.</summary>
+    public LogSelection Selection => _selection;
+
+    /// <summary>Begins a scrollback selection at a point.</summary>
+    /// <param name="point">The point in back-buffer pixels.</param>
+    /// <returns><see langword="true"/> when the point was inside the log.</returns>
+    public bool BeginSelect(UiVec2 point)
+    {
+        if (!_log.Bounds.Contains(point))
+        {
+            return false;
+        }
+
+        (int row, int column) = RowColumnAt(point);
+        _selection.Begin(row, column);
+        return true;
+    }
+
+    /// <summary>Extends a selection in progress to a point.</summary>
+    /// <param name="point">The point in back-buffer pixels.</param>
+    /// <remarks>
+    /// The row is clamped to what is on screen rather than ignored when the pointer leaves the
+    /// viewport, so dragging past the top or bottom keeps selecting instead of stopping dead.
+    /// </remarks>
+    public void ExtendSelect(UiVec2 point)
+    {
+        if (!_selection.IsDragging)
+        {
+            return;
+        }
+
+        (int row, int column) = RowColumnAt(point);
+        _selection.Extend(row, column);
+    }
+
+    /// <summary>Ends a selection drag.</summary>
+    public void EndSelect() => _selection.End();
+
+    /// <summary>Selects the whole visible scrollback.</summary>
+    public void SelectAllLines()
+    {
+        IReadOnlyList<int> visible = _model.VisibleLineIndices;
+        if (visible.Count == 0)
+        {
+            _selection.Clear();
+            return;
+        }
+
+        _selection.SelectAll(visible.Count, Compose(_model.Lines[visible[^1]], _rowScratch));
+    }
+
+    /// <summary>Drops any scrollback selection.</summary>
+    public void ClearSelection() => _selection.Clear();
+
+    /// <summary>Returns the selected scrollback text, or an empty string when nothing is selected.</summary>
+    /// <returns>The text, with the lines separated as they appear.</returns>
+    public string SelectedText()
+    {
+        if (!_selection.IsActive)
+        {
+            return string.Empty;
+        }
+
+        IReadOnlyList<int> visible = _model.VisibleLineIndices;
+        var text = new System.Text.StringBuilder();
+
+        for (int row = _selection.FirstRow; row <= _selection.LastRow && row < visible.Count; row++)
+        {
+            int length = Compose(_model.Lines[visible[row]], _rowScratch);
+            if (_selection.TryRangeFor(row, length, out int from, out int to))
+            {
+                text.Append(_rowScratch, from, to - from);
+            }
+
+            if (row < _selection.LastRow)
+            {
+                text.AppendLine();
+            }
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>Returns the whole visible scrollback as text.</summary>
+    /// <returns>Every shown line, one per line.</returns>
+    public string AllVisibleText()
+    {
+        var text = new System.Text.StringBuilder();
+        foreach (int index in _model.VisibleLineIndices)
+        {
+            int length = Compose(_model.Lines[index], _rowScratch);
+            text.AppendLine(new string(_rowScratch, 0, length));
+        }
+
+        return text.ToString();
+    }
+
+    /// <summary>Maps a point to the row and character column under it.</summary>
+    /// <param name="point">The point in back-buffer pixels.</param>
+    /// <returns>The row among the filtered lines, and the column within it.</returns>
+    /// <remarks>
+    /// Division rather than measurement, which is exact because the face is fixed-pitch. The row is
+    /// clamped into range so a drag off the edge of the viewport selects to the end rather than
+    /// resolving to nothing.
+    /// </remarks>
+    public (int Row, int Column) RowColumnAt(UiVec2 point)
+    {
+        int count = _model.VisibleLineIndices.Count;
+        if (count == 0)
+        {
+            return (0, 0);
+        }
+
+        float rowHeight = MathF.Max(1f, _log.RowHeight);
+        float shift = MathF.Max(0f, _log.Bounds.Height - (count * rowHeight));
+        int row = (int)MathF.Floor((point.Y - _log.Bounds.Y - shift + _log.ScrollOffset) / rowHeight);
+
+        float textX = MathF.Round(_log.Bounds.X + (_theme.Unit * 2f));
+        int column = (int)MathF.Round((point.X - textX) / MathF.Max(1f, _theme.Cell));
+
+        return (Math.Clamp(row, 0, count - 1), Math.Max(0, column));
+    }
 
     /// <summary>Returns which severity a toggle at an index controls.</summary>
     /// <param name="index">The toggle's index.</param>
@@ -168,6 +296,9 @@ public sealed class ConsoleBody : UiElement
 
         _toggles.Clear();
 
+        // Flat, square, and all the same width. Rounded pills of different lengths were the single
+        // most web-page-looking thing in the first pass; a row of identical cells reads as a control
+        // strip, which is what it is.
         foreach (ConsoleSeverity severity in FilterableSeverities)
         {
             bool shown = _model.Filter.IsSeverityShown(severity);
@@ -175,11 +306,8 @@ public sealed class ConsoleBody : UiElement
             _toggles.Add(chip);
 
             Bgra32 tint = _theme.ColorFor(severity);
-            painter.FillRoundedRect(
-                chip,
-                Surfaces?.Rounded ?? default,
-                shown ? tint.WithAlpha(34) : _theme.Ui.Panel,
-                unit);
+            painter.FillRect(chip, shown ? _theme.Ui.SurfaceRaised : _theme.Ui.Panel);
+            painter.StrokeRect(chip, 1f, shown ? tint : _theme.Ui.Border);
 
             painter.DrawText(
                 _theme.SmallFont,
@@ -197,13 +325,8 @@ public sealed class ConsoleBody : UiElement
         var find = new UiRect(x + unit, controlY, MathF.Max(_theme.Cell * 8f, findRight - x - unit), _theme.ControlHeight);
         FindRect = find;
 
-        bool searching = _model.Filter.Search.Length > 0;
-        painter.FillRoundedRect(find, Surfaces?.Rounded ?? default, _theme.Ui.Panel, unit);
-
-        if (FindFocused || searching)
-        {
-            painter.StrokeRect(find, 1f, FindFocused ? _theme.Ui.Accent : _theme.Ui.Border);
-        }
+        painter.FillRect(find, _theme.Ui.Panel);
+        painter.StrokeRect(find, 1f, FindFocused ? _theme.Ui.Accent : _theme.Ui.Border);
 
         float textY = MathF.Round(find.Y + ((find.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float textX = MathF.Round(find.X + (unit * 2f));
@@ -244,6 +367,18 @@ public sealed class ConsoleBody : UiElement
         painter.FillRect(new UiRect(bar.X, MathF.Round(bar.Bottom - 1f), bar.Width, 1f), _theme.Ui.Border);
     }
 
+    /// <summary>
+    /// Draws one scrollback line, with its selection wash if any of it is selected.
+    /// </summary>
+    /// <param name="painter">The painter to draw into.</param>
+    /// <param name="row">The row's index among the lines passing the filter.</param>
+    /// <param name="rect">The row's rectangle.</param>
+    /// <remarks>
+    /// The whole line is composed into one run of characters and drawn once. That is what makes it
+    /// selectable: with a fixed-pitch face and a single origin, a pointer maps to a column by division
+    /// and the text under a selection is a substring rather than a reconstruction. Drawing the
+    /// timestamp and category as separate columns looked tidier and made both of those impossible.
+    /// </remarks>
     private void DrawLogRow(UiPainter painter, int row, UiRect rect)
     {
         IReadOnlyList<int> visible = _model.VisibleLineIndices;
@@ -253,40 +388,113 @@ public sealed class ConsoleBody : UiElement
         }
 
         ConsoleLine line = _model.Lines[visible[row]];
-        Bgra32 colour = _theme.ColorFor(line.Severity);
+        int length = Compose(line, _rowScratch);
+        ReadOnlySpan<char> text = _rowScratch.AsSpan(0, length);
+
         float y = MathF.Round(rect.Y + ((rect.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float x = MathF.Round(rect.X + (_theme.Unit * 2f));
 
-        // A warning or an error tints its whole row very faintly and marks the gutter. Both together,
-        // because the tint is what the eye catches while scrolling and the mark is what it lands on.
-        if (line.Severity is ConsoleSeverity.Warning or ConsoleSeverity.Error)
+        DrawRowSelection(painter, row, rect, x, length);
+
+        // The category rides inline in brackets, the way every console that reads well does it. As its
+        // own dim column it was a stripe of repeated words down the left edge -- more noise than the
+        // alignment was worth.
+        int prefix = PrefixLength(line);
+        if (prefix > 0)
         {
-            painter.FillRect(rect, colour.WithAlpha(14));
-            painter.FillRect(new UiRect(rect.X, rect.Y, MathF.Max(2f, _theme.Unit * 0.5f), rect.Height), colour);
+            painter.DrawText(_theme.BodyFont, text[..prefix], new UiVec2(x, y), _theme.BodySize, _theme.Ui.TextMuted);
         }
+
+        painter.DrawText(
+            _theme.BodyFont,
+            text[prefix..],
+            new UiVec2(MathF.Round(x + (prefix * _theme.Cell)), y),
+            _theme.BodySize,
+            _theme.ColorFor(line.Severity));
+    }
+
+    private void DrawRowSelection(UiPainter painter, int row, UiRect rect, float textX, int length)
+    {
+        if (!_selection.TryRangeFor(row, length, out int from, out int to))
+        {
+            return;
+        }
+
+        painter.FillRect(
+            new UiRect(
+                MathF.Round(textX + (from * _theme.Cell)),
+                rect.Y,
+                MathF.Round((to - from) * _theme.Cell),
+                rect.Height),
+            _theme.Ui.Selection);
+    }
+
+    /// <summary>
+    /// Writes a line into a character buffer exactly as it is drawn and copied.
+    /// </summary>
+    /// <param name="line">The line to compose.</param>
+    /// <param name="into">The buffer to write into.</param>
+    /// <returns>How many characters were written.</returns>
+    /// <remarks>
+    /// One composition serves drawing, hit-testing and the clipboard, so what is copied is character
+    /// for character what was on screen. A second formatting path would drift from the first the
+    /// moment either changed.
+    /// </remarks>
+    private static int Compose(in ConsoleLine line, Span<char> into)
+    {
+        int at = 0;
 
         if (DevConsoleCVars.Timestamps.Value)
         {
-            painter.DrawText(_theme.SmallFont, FormatTime(line.Timestamp), new UiVec2(x, y), _theme.SmallSize, _theme.Ui.TextDisabled);
-            x = MathF.Round(x + (_theme.Cell * 13f));
+            TimeSpan span = TimeSpan.FromSeconds(line.Timestamp);
+            span.Hours.TryFormat(into[at..], out _, "00", System.Globalization.CultureInfo.InvariantCulture);
+            at += 2;
+            into[at++] = ':';
+            span.Minutes.TryFormat(into[at..], out _, "00", System.Globalization.CultureInfo.InvariantCulture);
+            at += 2;
+            into[at++] = ':';
+            span.Seconds.TryFormat(into[at..], out _, "00", System.Globalization.CultureInfo.InvariantCulture);
+            at += 2;
+            into[at++] = '.';
+            span.Milliseconds.TryFormat(into[at..], out _, "000", System.Globalization.CultureInfo.InvariantCulture);
+            at += 3;
+            into[at++] = ' ';
         }
 
-        if (DevConsoleCVars.Categories.Value)
+        if (DevConsoleCVars.Categories.Value && line.Category.Length > 0)
         {
-            if (line.Category.Length > 0)
-            {
-                painter.DrawText(
-                    _theme.SmallFont,
-                    Fit(line.Category, 13),
-                    new UiVec2(x, y),
-                    _theme.SmallSize,
-                    _theme.Ui.TextMuted);
-            }
-
-            x = MathF.Round(x + (_theme.Cell * 14f));
+            into[at++] = '[';
+            int room = Math.Min(line.Category.Length, into.Length - at - 3);
+            line.Category.AsSpan(0, Math.Max(0, room)).CopyTo(into[at..]);
+            at += Math.Max(0, room);
+            into[at++] = ']';
+            into[at++] = ' ';
         }
 
-        painter.DrawText(_theme.BodyFont, line.Text, new UiVec2(x, y), _theme.BodySize, colour);
+        int remaining = Math.Max(0, into.Length - at);
+        int copied = Math.Min(line.Text.Length, remaining);
+        line.Text.AsSpan(0, copied).CopyTo(into[at..]);
+        return at + copied;
+    }
+
+    /// <summary>Returns how many leading characters of a composed line are its timestamp and category.</summary>
+    /// <param name="line">The line.</param>
+    /// <returns>The prefix length in characters.</returns>
+    private static int PrefixLength(in ConsoleLine line)
+    {
+        int at = 0;
+
+        if (DevConsoleCVars.Timestamps.Value)
+        {
+            at += 13;
+        }
+
+        if (DevConsoleCVars.Categories.Value && line.Category.Length > 0)
+        {
+            at += line.Category.Length + 3;
+        }
+
+        return at;
     }
 
     private void DrawPrompt(UiPainter painter)
@@ -304,11 +512,8 @@ public sealed class ConsoleBody : UiElement
             _theme.ControlHeight);
 
         bool active = !FindFocused;
-        painter.FillRoundedRect(field, Surfaces?.Rounded ?? default, _theme.Ui.Panel, unit);
-        if (active)
-        {
-            painter.StrokeRect(field, 1f, _theme.Ui.Border);
-        }
+        painter.FillRect(field, _theme.Ui.Panel);
+        painter.StrokeRect(field, 1f, active ? _theme.Ui.Border : _theme.Ui.Border.WithAlpha(120));
 
         float y = MathF.Round(field.Y + ((field.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
         float sigilX = MathF.Round(field.X + (unit * 2f));
@@ -474,8 +679,7 @@ public sealed class ConsoleBody : UiElement
 
         DropdownRect = rect;
 
-        painter.DrawShadow(rect, Surfaces?.Shadow ?? default, _theme.Ui.Shadow, unit * 4f, new UiVec2(0f, unit));
-        painter.FillRoundedRect(rect, Surfaces?.Rounded ?? default, _theme.Ui.SurfaceRaised, _theme.CornerRadius);
+        painter.FillRect(rect, _theme.Ui.SurfaceRaised);
         painter.StrokeRect(rect, 1f, _theme.Ui.Border);
 
         for (int i = 0; i < shown; i++)
@@ -485,7 +689,7 @@ public sealed class ConsoleBody : UiElement
 
             if (i == _model.SuggestionIndex)
             {
-                painter.FillRoundedRect(line, Surfaces?.Rounded ?? default, _theme.Ui.Selection, unit);
+                painter.FillRect(line, _theme.Ui.Selection);
             }
 
             float y = MathF.Round(line.Y + ((line.Height - _theme.BodyFont.LineHeight(_theme.BodySize)) * 0.5f));
