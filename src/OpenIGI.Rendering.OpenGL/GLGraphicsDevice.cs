@@ -3045,8 +3045,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _fogSunDirection, _lighting.SunDirection.X, _lighting.SunDirection.Y, _lighting.SunDirection.Z);
         _fogProgram.SetVector3(
             _fogSunColour, _lighting.SunColour.X, _lighting.SunColour.Y, _lighting.SunColour.Z);
+        // The fog scatters SKYLIGHT, not the flat surface ambient: the sky is what fills a volume of air
+        // with light. Reading the surface ambient tied the haze to the r_ambient_scale diagnostic, so
+        // dialling that to zero to see the GI carry the surfaces also collapsed the fog to black. SkyColour
+        // is the daytime sky and is independent of that knob, so the haze stays lit while the GI takes over.
         _fogProgram.SetVector3(
-            _fogAmbient, _lighting.AmbientColour.X, _lighting.AmbientColour.Y, _lighting.AmbientColour.Z);
+            _fogAmbient, _lighting.SkyColour.X, _lighting.SkyColour.Y, _lighting.SkyColour.Z);
         _fogProgram.SetInt(_fogCascadeCount, _cascadeCount);
         _fogProgram.SetVector4(
             _fogCascadeSplits, _cascadeSplits[0], _cascadeSplits[1], _cascadeSplits[2], _cascadeSplits[3]);

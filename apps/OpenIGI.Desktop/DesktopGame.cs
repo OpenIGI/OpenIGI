@@ -3016,7 +3016,13 @@ internal sealed partial class DesktopGame : IDisposable
                         viewSunDirection,
                         scaledSun,
                         scaledAmbient,
-                        RenderCVars.LightScale.Value));
+                        RenderCVars.LightScale.Value,
+
+                        // The fog scatters the level's OWN ambient, not the r_sky_light-boosted surface
+                        // fill: the fog was calibrated against this value and boosting it whites the frame
+                        // out. Kept independent of r_ambient_scale so the haze does not collapse when the
+                        // flat ambient is dialled to zero to watch the GI carry the surfaces.
+                        light.Ambient));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
