@@ -1,5 +1,6 @@
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using Xunit;
 
 namespace OpenIGI.Game.Tests;
@@ -91,6 +92,29 @@ public sealed class MouseLookSettingsTests
         // Inverting the vertical axis must not touch the horizontal one.
         Assert.Equal(upright.YawDelta(10f), inverted.YawDelta(10f), 6);
         Assert.True(upright.YawDelta(10f) > 0f);
+    }
+
+    [Fact]
+    public void TheZoomScaleSlowsTheLookInStepWithTheFieldOfView()
+    {
+        // Unzoomed the field of view is the default, so the look is untouched.
+        Assert.Equal(1f, MouseLookSettings.ZoomSensitivityScale(HumanView.DefaultTanX));
+
+        // Zoomed in, the scale is exactly the ratio the field of view narrowed by: a scope that halves
+        // the half-FOV tangent halves the look, which is what keeps the crosshair moving at the same
+        // on-screen speed. The Dragunov's tan(2 degrees) against the default tan(45 degrees) barely lets
+        // the view creep, which is the whole point at that magnification.
+        float half = HumanView.DefaultTanX / 2f;
+        Assert.Equal(0.5f, MouseLookSettings.ZoomSensitivityScale(half));
+
+        float dragunov = WeaponTaskParameters.HalfAngleTangent(5);
+        Assert.Equal(dragunov / HumanView.DefaultTanX, MouseLookSettings.ZoomSensitivityScale(dragunov));
+        Assert.True(MouseLookSettings.ZoomSensitivityScale(dragunov) < 0.05f);
+
+        // The scope only ever narrows the field, but a value wider than the default (or a negative one
+        // from a corrupt state) must never speed the look up past 1 or flip its sign.
+        Assert.Equal(1f, MouseLookSettings.ZoomSensitivityScale(HumanView.DefaultTanX * 2f));
+        Assert.Equal(0f, MouseLookSettings.ZoomSensitivityScale(-1f));
     }
 
     [Fact]

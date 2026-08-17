@@ -85,6 +85,24 @@ public readonly record struct MouseLookSettings(float RadiansPerCount, bool Inve
     public double TurnDistanceCentimetres(int dotsPerInch = 800) =>
         (2.0 * Math.PI) / RadiansPerCount / dotsPerInch * 2.54;
 
+    /// <summary>
+    /// How much to slow the look while an optic has narrowed the field of view, so aiming stays as
+    /// controllable zoomed in as it is unzoomed.
+    /// </summary>
+    /// <param name="currentTanX">The view's current horizontal half-FOV tangent.</param>
+    /// <returns>A multiplier in <c>(0, 1]</c>: 1 unzoomed, and the zoom ratio while scoped.</returns>
+    /// <remarks>
+    /// <b>Divergence, deliberate.</b> Retail turns the head at one rate whatever the Dragunov's scope is
+    /// doing, so a single mouse count that was a fine correction unzoomed sweeps the crosshair across a
+    /// whole magnified field at the tightest zoom — the aim gets harder the more you zoom in. Scaling the
+    /// look by the same factor the field of view narrowed by (<paramref name="currentTanX"/> over the
+    /// unzoomed <see cref="HumanView.DefaultTanX"/>) holds the on-screen crosshair speed constant across
+    /// the whole zoom range, which is what a modern scope does. Unzoomed the ratio is 1 and the look is
+    /// untouched, so ordinary play is unchanged.
+    /// </remarks>
+    public static float ZoomSensitivityScale(float currentTanX) =>
+        Math.Clamp(currentTanX / HumanView.DefaultTanX, 0f, 1f);
+
     /// <summary>The yaw a frame's horizontal motion asks for, in radians.</summary>
     /// <param name="mouseDeltaX">The horizontal motion, in mouse counts.</param>
     /// <returns>The change in yaw. Mouse right turns right.</returns>

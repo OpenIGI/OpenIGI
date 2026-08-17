@@ -876,9 +876,17 @@ public sealed class PlayerCamera
             // from +Y toward +X - means yaw increases. Both deltas are in mouse COUNTS, not pixels: the
             // cursor is locked in raw motion mode, so no pointer ballistics stand between the sensor and
             // this line. PitchDelta carries the profile's invert, so it is added rather than subtracted.
-            _body.Yaw += LookSettings.YawDelta(mouse.DeltaX);
+            //
+            // The look is slowed in step with any optical zoom: at the Dragunov's tightest scope a mouse
+            // count moves the crosshair across a magnified field, so without this the aim gets harder the
+            // more you zoom in. The scale is the zoom ratio and is 1 (no change) whenever the view is not
+            // zoomed. See MouseLookSettings.ZoomSensitivityScale.
+            float zoomLook = _view is { } zoomView
+                ? MouseLookSettings.ZoomSensitivityScale(zoomView.TanX)
+                : 1f;
+            _body.Yaw += LookSettings.YawDelta(mouse.DeltaX) * zoomLook;
             _body.Pitch = Math.Clamp(
-                _body.Pitch + LookSettings.PitchDelta(mouse.DeltaY),
+                _body.Pitch + (LookSettings.PitchDelta(mouse.DeltaY) * zoomLook),
                 -PlayerBody.PitchLimit,
                 PlayerBody.PitchLimit);
         }

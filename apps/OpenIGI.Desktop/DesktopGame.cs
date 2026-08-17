@@ -2905,6 +2905,12 @@ internal sealed partial class DesktopGame : IDisposable
                 // of arms and a HUD hanging in front of it would be exactly wrong. They come up at the
                 // moment the view is handed over, which is also the moment the player can use them.
                 bool binocularsOpen = _player is { IsBinocularsOpen: true };
+
+                // Scoped, the Dragunov replaces the first-person picture with its scope overlay: retail's
+                // 0x473040 latch branch draws snipersight.spr and never poses the rig, so the rifle and the
+                // gloves are gone and only the scope picture remains. Hide the whole view model exactly as
+                // the binoculars do, or the weapon mesh shows through the aperture.
+                bool sniperScoped = _player is { IsSniperScoped: true };
                 float? binocularRangeMetres = null;
                 if (binocularsOpen && _worldSolids is { } rangeSolids)
                 {
@@ -2934,7 +2940,7 @@ internal sealed partial class DesktopGame : IDisposable
                         binocularRangeMetres = (float)(rangeHit.Distance / WorldScene.UnitsPerMetre);
                     }
                 }
-                if (showFirstPersonHud && _player is { View: { } rig } && !binocularsOpen)
+                if (showFirstPersonHud && _player is { View: { } rig } && !binocularsOpen && !sniperScoped)
                 {
                     // Only an advancing clip changes the skin, so the re-skin is keyed to the tick rather
                     // than the frame.

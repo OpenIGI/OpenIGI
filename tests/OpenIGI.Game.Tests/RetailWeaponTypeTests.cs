@@ -481,6 +481,62 @@ public sealed class RetailWeaponTypeTests
             WeaponAnimationTable.Select(ak47, WeaponAction.Stand).UpperBodyBlendSeconds);
     }
 
+    [RequiresGameDataFact]
+    public void ReloadingTheRosterAgainstAPersistentNamespaceKeepsEveryTaskBinding()
+    {
+        // A mission restart and a level change both build a FRESH WeaponTypeRegistry but reuse the
+        // session's NativeRegistry (StartMission runs against the same GameLoop). The TASKTYPE_* task
+        // classes register their id->name mapping on that persistent namespace, but the map that turns
+        // a resolved id back into a class name lives on the registry instance. If the second load skips
+        // re-recording it because the constant is already registered, ReadTaskBinding gets an empty class
+        // name, WeaponTaskParameters.Read returns an empty binding, and every optical weapon loses its
+        // task type and zoom parameters -- which is issue #79: the Dragunov scope (and MP5SD sight and
+        // binoculars) go dead after the first mission. Reload here and prove the bindings survive.
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        NativeRegistry natives = loop.Natives;
+
+        WeaponTypeRegistry first = new();
+        first.Register(natives);
+        first.Load(fileSystem, resources, natives);
+
+        // The second mission: a new roster over the SAME, already-populated namespace.
+        WeaponTypeRegistry second = new();
+        second.Register(natives);
+        second.Load(fileSystem, resources, natives);
+
+        foreach (WeaponType reloaded in second.Weapons)
+        {
+            WeaponType original = first.Weapons.First(w => w.WeaponId == reloaded.WeaponId);
+
+            // The task classes and every decoded parameter must read identically on the reload.
+            Assert.Equal(original.Weapon.TypeName, reloaded.Weapon.TypeName);
+            Assert.Equal<float[]>([.. original.Weapon.Values], [.. reloaded.Weapon.Values]);
+            Assert.Equal(original.Weapon.Text, reloaded.Weapon.Text);
+            Assert.Equal(original.Projectile.TypeName, reloaded.Projectile.TypeName);
+            Assert.Equal(original.Projectile.Text, reloaded.Projectile.Text);
+        }
+
+        // And the symptom the issue tracks, stated outright: the reloaded Dragunov still scopes.
+        WeaponType dragunov = second.Weapons.First(w => w.ScriptId == "WEAPON_ID_DRAGUNOV");
+        Assert.Equal(DragunovScope.TaskType, dragunov.Weapon.TypeName);
+        Assert.NotEmpty(dragunov.Weapon.Values);
+        Assert.Equal(WeaponTaskParameters.HalfAngleTangent(5), dragunov.Weapon.Values[0]);
+
+        DragunovScope scope = new();
+        scope.Tick(
+            dragunov,
+            alternateHeld: true,
+            alternateHeldLastTick: false,
+            zoomInHeld: false,
+            zoomOutHeld: false,
+            HumanView.DefaultTanX,
+            HumanView.DefaultViewModelTanX);
+        Assert.True(scope.IsScoped);
+    }
+
     private static WeaponTypeRegistry Load(
         out ResourceRegistry resources,
         out NativeRegistry natives,

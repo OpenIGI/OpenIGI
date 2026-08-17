@@ -226,10 +226,24 @@ public sealed class WeaponTypeRegistry
     {
         foreach (string? symbol in program.SymbolNames)
         {
-            if (symbol is null
-                || !symbol.StartsWith(TaskTypeConstantPrefix, StringComparison.Ordinal)
-                || natives.Contains(symbol))
+            if (symbol is null || !symbol.StartsWith(TaskTypeConstantPrefix, StringComparison.Ordinal))
             {
+                continue;
+            }
+
+            // The TASKTYPE_* constants live in the process-wide native namespace, which OUTLIVES this
+            // registry: a mission restart or a level change builds a fresh WeaponTypeRegistry but reuses
+            // the same natives. The id->name map (_taskTypeNames), however, is per-instance and starts
+            // empty. When an earlier load already registered the constant we must still adopt its value
+            // into this instance's map -- otherwise TaskTypeName() returns "" for it, ReadTaskBinding
+            // hands WeaponTaskParameters.Read an empty class name, and every optical weapon (the Dragunov
+            // scope, the MP5SD sight, the binoculars) loads with no task type and no zoom parameters on
+            // every load after the first. That is issue #79: ADS is dead after a restart or level change.
+            if (natives.TryResolve(symbol, out QvmSymbol? existing) && existing.IsReadable)
+            {
+                int existingId = existing.Read().ToInt32();
+                _taskTypeNames[existingId] = symbol;
+                _nextTaskTypeId = Math.Max(_nextTaskTypeId, existingId + 1);
                 continue;
             }
 
