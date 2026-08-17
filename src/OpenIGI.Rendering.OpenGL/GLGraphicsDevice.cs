@@ -202,6 +202,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _meshKeyColour = -1;
     private int _meshAmbient = -1;
     private int _gbufferDecodeAlbedo = -1;
+    private int _gbufferLightmapScale = -1;
+
+    // The headroom the current lightmap pages were divided by before their sRGB encode, so the shader can
+    // multiply back up to a high-dynamic-range lightmap. One for the shipped and LDR-baked pages.
+    private float _lightmapScale = 1f;
     private int _lightingModelLocation = -1;
     private int _lightingSunDirection = -1;
     private int _lightingSunColour = -1;
@@ -1873,6 +1878,21 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public void SetMaterialOverride(in SurfaceMaterial material) => _material = material;
+
+    /// <inheritdoc/>
+    public void SetLightmapScale(float scale)
+    {
+        _lightmapScale = scale;
+
+        // Set straight on the G-buffer program: the lightmapped world is drawn through it, and the value
+        // holds until the next call, so a renderer raises it for its HDR pages and lowers it back to one
+        // before the terrain, which keeps its own LDR lightmaps, draws.
+        if (_gbufferProgram is { } program && _gbufferLightmapScale >= 0)
+        {
+            UseProgram(program);
+            program.SetFloat(_gbufferLightmapScale, scale);
+        }
+    }
 
     /// <inheritdoc/>
     public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail)
@@ -3792,13 +3812,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 uniforms,
                 program.LocationOf("uMaterial"),
                 program.LocationOf("uDecodeAlbedo"),
-                program.LocationOf("uDetailStrength"));
+                program.LocationOf("uDetailStrength"),
+                program.LocationOf("uLightmapScale"));
             _gbufferPipelines.Add(layout, pipeline);
 
             UseProgram(program);
             program.SetInt("uDiffuse", 0);
             program.SetInt("uLightmap", 1);
             program.SetInt("uDetail", 2);
+            program.SetFloat("uLightmapScale", 1f);
         }
 
         _gbufferProgram = pipeline.Program;
@@ -3806,6 +3828,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _gbufferMaterial = pipeline.Material;
         _gbufferDecodeAlbedo = pipeline.DecodeAlbedo;
         _gbufferDetail = pipeline.Detail;
+        _gbufferLightmapScale = pipeline.LightmapScale;
+        if (_gbufferLightmapScale >= 0)
+        {
+            UseProgram(pipeline.Program);
+            pipeline.Program.SetFloat(_gbufferLightmapScale, _lightmapScale);
+        }
     }
 
     private unsafe void CreatePipeline()
@@ -4466,7 +4494,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         MeshUniforms Uniforms,
         int Material,
         int DecodeAlbedo,
-        int Detail);
+        int Detail,
+        int LightmapScale);
 
     /// <summary>One non-blocking any-samples query and its last trustworthy result.</summary>
     private readonly record struct VisibilityQuery(

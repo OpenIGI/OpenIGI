@@ -313,6 +313,15 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetMaterialOverride(in SurfaceMaterial material);
 
+    /// <summary>Sets the headroom the following draws' lightmap pages were encoded with.</summary>
+    /// <param name="scale">
+    /// The value each sampled lightmap is multiplied by after it is decoded. One for the shipped LDR pages;
+    /// a path-traced HDR page stores the radiance divided by this before its sRGB encode, so scaling it back
+    /// up recovers a lightmap that keeps its bright values above one instead of clipping.
+    /// </param>
+    /// <remarks>Device state, like <see cref="SetMaterialOverride"/>: it spans a run of draws.</remarks>
+    void SetLightmapScale(float scale);
+
     /// <summary>Attaches a derived surface-detail map to a diffuse texture.</summary>
     /// <param name="diffuse">The diffuse texture the map belongs to.</param>
     /// <param name="detail">

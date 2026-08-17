@@ -1,4 +1,3 @@
-using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.World;
@@ -23,14 +22,22 @@ namespace OpenIGI.Game.World;
 public sealed class BakedLightmaps
 {
     private const uint Magic = 0x4D4C4749; // "IGLM"
-    private const byte FormatVersion = 1;
+
+    // v2: pages store linear float radiance (HDR) rather than sRGB bytes, so the renderer can encode LDR or
+    // HDR at upload.
+    private const byte FormatVersion = 2;
 
     private readonly Dictionary<string, Dictionary<int, Page>> _pages;
 
     private BakedLightmaps(Dictionary<string, Dictionary<int, Page>> pages) => _pages = pages;
 
-    /// <summary>One page's dimensions and its row-major, width-fastest pixels.</summary>
-    public readonly record struct Page(int Width, int Height, Bgra32[] Pixels);
+    /// <summary>One page's dimensions and its row-major, width-fastest LINEAR radiance, an uncovered texel zero.</summary>
+    /// <remarks>
+    /// The radiance is kept linear and unclamped -- the high dynamic range the bake produced -- so the
+    /// renderer can encode it either as an LDR page (clamped to one) or as an HDR page (divided by a
+    /// headroom then sRGB-encoded) depending on the mode, without the bake having to know which.
+    /// </remarks>
+    public readonly record struct Page(int Width, int Height, Vector3f[] Radiance);
 
     /// <summary>Gets the pages, by lightmap entry name then page index.</summary>
     public IReadOnlyDictionary<string, Dictionary<int, Page>> Pages => _pages;
@@ -70,24 +77,20 @@ public sealed class BakedLightmaps
                 pages[entryName] = entry;
             }
 
-            if (!entry.TryGetValue(target.Page, out Page page) || page.Pixels.Length != target.Width * target.Height)
+            if (!entry.TryGetValue(target.Page, out Page page) || page.Radiance.Length != target.Width * target.Height)
             {
-                page = new Page(target.Width, target.Height, new Bgra32[target.Width * target.Height]);
+                page = new Page(target.Width, target.Height, new Vector3f[target.Width * target.Height]);
                 entry[target.Page] = page;
             }
 
-            Bgra32[] pixels = page.Pixels;
-            int count = Math.Min(pixels.Length, target.Radiance.Length);
+            Vector3f[] radiance = page.Radiance;
+            int count = Math.Min(radiance.Length, target.Radiance.Length);
             for (int i = 0; i < count; i++)
             {
-                if (!target.Texels[i].IsCovered)
+                if (target.Texels[i].IsCovered)
                 {
-                    continue;
+                    radiance[i] = target.Radiance[i];
                 }
-
-                Vector3f rad = target.Radiance[i];
-                pixels[i] = new Bgra32(
-                    r: LinearToSrgb(rad.X), g: LinearToSrgb(rad.Y), b: LinearToSrgb(rad.Z), a: 255);
             }
         }
 
@@ -115,12 +118,11 @@ public sealed class BakedLightmaps
                 writer.Write(index);
                 writer.Write(page.Width);
                 writer.Write(page.Height);
-                foreach (Bgra32 pixel in page.Pixels)
+                foreach (Vector3f value in page.Radiance)
                 {
-                    writer.Write(pixel.B);
-                    writer.Write(pixel.G);
-                    writer.Write(pixel.R);
-                    writer.Write(pixel.A);
+                    writer.Write(value.X);
+                    writer.Write(value.Y);
+                    writer.Write(value.Z);
                 }
             }
         }
@@ -158,31 +160,21 @@ public sealed class BakedLightmaps
                     return null;
                 }
 
-                Bgra32[] pixels = new Bgra32[width * height];
-                for (int i = 0; i < pixels.Length; i++)
+                Vector3f[] radiance = new Vector3f[width * height];
+                for (int i = 0; i < radiance.Length; i++)
                 {
-                    byte b = reader.ReadByte();
-                    byte g = reader.ReadByte();
-                    byte r = reader.ReadByte();
-                    byte a = reader.ReadByte();
-                    pixels[i] = new Bgra32(r: r, g: g, b: b, a: a);
+                    float x = reader.ReadSingle();
+                    float y = reader.ReadSingle();
+                    float z = reader.ReadSingle();
+                    radiance[i] = new Vector3f(x, y, z);
                 }
 
-                entry[index] = new Page(width, height, pixels);
+                entry[index] = new Page(width, height, radiance);
             }
 
             pages[entryName] = entry;
         }
 
         return new BakedLightmaps(pages);
-    }
-
-    // The pages are sampled and sRGB-decoded by the G-buffer, so the linear radiance the bake produces is
-    // encoded to sRGB here -- the same encoding the shipped .olm pixels carry, so the swap is transparent.
-    private static byte LinearToSrgb(float linear)
-    {
-        float c = Math.Clamp(linear, 0f, 1f);
-        float s = c <= 0.0031308f ? c * 12.92f : (1.055f * MathF.Pow(c, 1f / 2.4f)) - 0.055f;
-        return (byte)Math.Clamp((int)MathF.Round(s * 255f), 0, 255);
     }
 }

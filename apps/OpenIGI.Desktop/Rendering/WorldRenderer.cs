@@ -51,6 +51,12 @@ public sealed class WorldRenderer : IDisposable
     // over by the artists' light.
     private bool _discardRetailLightmaps;
 
+    // The headroom the baked pages are divided by before their sRGB encode when the bake is exclusive, so a
+    // sunlit or sky-lit surface's radiance keeps its value above one in an eight-bit page instead of clipping;
+    // the shader multiplies back up. One when the shipped LDR pages are in play (they have no such range).
+    private const float HdrHeadroom = 4f;
+    private float _lightmapScale = 1f;
+
     /// <summary>Each placement's mesh and per-subset draw state, resolved once and kept.</summary>
     /// <remarks>
     /// Keyed by reference: <see cref="WorldPlacement"/> is a record, and its value equality would hash
@@ -251,6 +257,11 @@ public sealed class WorldRenderer : IDisposable
         // cost needs per-model winding repair or portal culling, not this switch.
         _device.SetCullMode(CullMode.None);
 
+        // The lightmap headroom for the objects' pages -- one unless an exclusive HDR bake is applied.
+        // Reset to one at the end of the pass so the terrain, which keeps its shipped LDR lightmaps, is not
+        // scaled by it.
+        _device.SetLightmapScale(_lightmapScale);
+
         int draws = 0;
         int triangles = 0;
         int lit = 0;
@@ -368,6 +379,12 @@ public sealed class WorldRenderer : IDisposable
         LastTriangleCount = triangles;
         LastLightmappedCount = lit;
         LastOccludedCount = occluded;
+
+        // Back to one for whatever draws next -- the terrain keeps its shipped LDR lightmaps.
+        if (_lightmapScale != 1f)
+        {
+            _device.SetLightmapScale(1f);
+        }
     }
 
     /// <summary>Issues the queries the last occlusion-culled <see cref="Draw"/> queued.</summary>
@@ -748,6 +765,11 @@ public sealed class WorldRenderer : IDisposable
         // reads black even while the worker is still tracing, so the shipped lightmaps never flash up first.
         _discardRetailLightmaps = discardRetail;
 
+        // The exclusive path carries our own high-dynamic-range lighting, so its pages are encoded with the
+        // headroom and the shader scales them back up; the fallback path mixes with the shipped LDR pages,
+        // so it clamps to one and scales by one.
+        _lightmapScale = discardRetail ? HdrHeadroom : 1f;
+
         if (baked is not null)
         {
             foreach ((string entryName, Dictionary<int, BakedLightmaps.Page> pages) in baked.Pages)
@@ -755,7 +777,19 @@ public sealed class WorldRenderer : IDisposable
                 Dictionary<int, Bgra32[]> entry = new(pages.Count);
                 foreach ((int index, BakedLightmaps.Page page) in pages)
                 {
-                    entry[index] = page.Pixels;
+                    Vector3f[] radiance = page.Radiance;
+                    Bgra32[] pixels = new Bgra32[radiance.Length];
+                    for (int i = 0; i < pixels.Length; i++)
+                    {
+                        Vector3f r = radiance[i];
+                        pixels[i] = new Bgra32(
+                            r: LinearToSrgb(r.X / _lightmapScale),
+                            g: LinearToSrgb(r.Y / _lightmapScale),
+                            b: LinearToSrgb(r.Z / _lightmapScale),
+                            a: 255);
+                    }
+
+                    entry[index] = pixels;
                 }
 
                 _bakedPages[entryName] = entry;
@@ -788,6 +822,15 @@ public sealed class WorldRenderer : IDisposable
             baked is null
                 ? "Restored the shipped object lightmaps."
                 : $"Applied a path-traced lightmap bake over {_bakedPages.Count} object(s).");
+    }
+
+    // Encodes one linear channel to sRGB, clamped to the displayable range. The page is decoded back to
+    // linear in the G-buffer, so this is only the storage encoding; the HDR headroom is carried separately.
+    private static byte LinearToSrgb(float linear)
+    {
+        float c = Math.Clamp(linear, 0f, 1f);
+        float s = c <= 0.0031308f ? c * 12.92f : (1.055f * MathF.Pow(c, 1f / 2.4f)) - 0.055f;
+        return (byte)Math.Clamp((int)MathF.Round(s * 255f), 0, 255);
     }
 
     private MeshGeometry? GetGeometry(WorldPlacement placement)

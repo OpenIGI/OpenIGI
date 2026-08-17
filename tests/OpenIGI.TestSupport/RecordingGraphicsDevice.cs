@@ -90,6 +90,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetMaterialOverride(in SurfaceMaterial material) => Materials.Add(material);
 
+    /// <inheritdoc/>
+    public void SetLightmapScale(float scale)
+    {
+    }
+
     /// <summary>The detail map attached to each diffuse texture, in the order they were attached.</summary>
     public List<(TextureHandle Diffuse, TextureHandle Detail)> TextureDetails { get; } = [];
 

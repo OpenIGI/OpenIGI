@@ -22,8 +22,8 @@ public sealed class LightmapBakeCache
 
     // Bumped whenever the bake logic changes the result the same inputs produce, so an older cached file is
     // a miss and a re-bake rather than a stale hit. v2: bake rays see through glass and fences. v3: 128
-    // rays and an edge-aware denoise pass.
-    private const byte FormatVersion = 3;
+    // rays and an edge-aware denoise pass. v4: HDR linear-float pages.
+    private const byte FormatVersion = 4;
     private const float ColourEpsilon = 0.01f;
 
     private readonly string _writeDirectory;
