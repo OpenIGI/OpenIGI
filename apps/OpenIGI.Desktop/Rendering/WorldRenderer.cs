@@ -46,6 +46,11 @@ public sealed class WorldRenderer : IDisposable
     // Empty unless a bake has been applied; GetLightmapPages substitutes these pixels for the shipped ones.
     private readonly Dictionary<string, Dictionary<int, Bgra32[]>> _bakedPages = new(StringComparer.OrdinalIgnoreCase);
 
+    // When true, a lightmapped page the bake did not cover reads black instead of falling back to the
+    // shipped .olm -- so the frame shows only our own lighting, with its gaps visible rather than papered
+    // over by the artists' light.
+    private bool _discardRetailLightmaps;
+
     /// <summary>Each placement's mesh and per-subset draw state, resolved once and kept.</summary>
     /// <remarks>
     /// Keyed by reference: <see cref="WorldPlacement"/> is a record, and its value equality would hash
@@ -725,59 +730,32 @@ public sealed class WorldRenderer : IDisposable
 
     /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>
     /// <remarks>
-    /// Composites each target's covered texels into a page buffer keyed by the placement's lightmap entry
-    /// and page, encoded the way the shipped pages are (sRGB LDR, since the G-buffer sRGB-decodes the
-    /// lightmap it samples). Several draw records can name one page, so the buffer accumulates across the
-    /// targets that share it. Any pages already uploaded from the shipped archive are dropped so the next
-    /// draw rebuilds them from the bake; a target whose size disagrees with the shipped page is ignored at
-    /// upload. This is the runtime swap the path-traced lightmapper feeds.
+    /// The pages are already composited and encoded (<see cref="BakedLightmaps"/>); this only takes their
+    /// pixels and drops any lightmap textures already uploaded from the shipped archive, so the next draw
+    /// rebuilds them from the bake. A page whose size disagrees with the shipped one is ignored at upload.
+    /// <see langword="null"/> clears any override, restoring the shipped lightmaps.
     /// </remarks>
-    /// <param name="scene">The scene the targets were baked against.</param>
-    /// <param name="targets">The baked pages from <see cref="LightmapBaker"/>.</param>
-    public void ApplyBakedLightmaps(WorldScene scene, IReadOnlyList<LightmapBaker.LightmapTarget> targets)
+    /// <param name="baked">The composited pages, or <see langword="null"/> to restore the shipped lightmaps.</param>
+    /// <param name="discardRetail">
+    /// When <see langword="true"/>, a lightmapped page with no bake reads black rather than the shipped one,
+    /// so only our own lighting shows.
+    /// </param>
+    public void SetBakedLightmaps(BakedLightmaps? baked, bool discardRetail = false)
     {
-        ArgumentNullException.ThrowIfNull(scene);
-        ArgumentNullException.ThrowIfNull(targets);
-
         _bakedPages.Clear();
+        _discardRetailLightmaps = discardRetail && baked is not null;
 
-        foreach (LightmapBaker.LightmapTarget target in targets)
+        if (baked is not null)
         {
-            if (target.PlacementIndex < 0 || target.PlacementIndex >= scene.Placements.Count)
+            foreach ((string entryName, Dictionary<int, BakedLightmaps.Page> pages) in baked.Pages)
             {
-                continue;
-            }
-
-            WorldPlacement placement = scene.Placements[target.PlacementIndex];
-            if (!placement.HasLightmap)
-            {
-                continue;
-            }
-
-            string entryName = placement.LightmapEntryName();
-            if (!_bakedPages.TryGetValue(entryName, out Dictionary<int, Bgra32[]>? pages))
-            {
-                pages = [];
-                _bakedPages[entryName] = pages;
-            }
-
-            if (!pages.TryGetValue(target.Page, out Bgra32[]? buffer))
-            {
-                buffer = new Bgra32[target.Width * target.Height];
-                pages[target.Page] = buffer;
-            }
-
-            int count = Math.Min(buffer.Length, target.Radiance.Length);
-            for (int i = 0; i < count; i++)
-            {
-                if (!target.Texels[i].IsCovered)
+                Dictionary<int, Bgra32[]> entry = new(pages.Count);
+                foreach ((int index, BakedLightmaps.Page page) in pages)
                 {
-                    continue;
+                    entry[index] = page.Pixels;
                 }
 
-                Vector3f rad = target.Radiance[i];
-                buffer[i] = new Bgra32(
-                    r: LinearToSrgb(rad.X), g: LinearToSrgb(rad.Y), b: LinearToSrgb(rad.Z), a: 255);
+                _bakedPages[entryName] = entry;
             }
         }
 
@@ -795,14 +773,10 @@ public sealed class WorldRenderer : IDisposable
         _lightmaps.Clear();
 
         _logger.Information(
-            LogCategory, $"Applied a path-traced lightmap bake over {_bakedPages.Count} object(s).");
-    }
-
-    private static byte LinearToSrgb(float linear)
-    {
-        float c = Math.Clamp(linear, 0f, 1f);
-        float s = c <= 0.0031308f ? c * 12.92f : (1.055f * MathF.Pow(c, 1f / 2.4f)) - 0.055f;
-        return (byte)Math.Clamp((int)MathF.Round(s * 255f), 0, 255);
+            LogCategory,
+            baked is null
+                ? "Restored the shipped object lightmaps."
+                : $"Applied a path-traced lightmap bake over {_bakedPages.Count} object(s).");
     }
 
     private MeshGeometry? GetGeometry(WorldPlacement placement)
@@ -1015,13 +989,19 @@ public sealed class WorldRenderer : IDisposable
 
                     // A path-traced bake, if one was applied, replaces the shipped page's pixels here --
                     // same dimensions, same upload, so nothing downstream knows the difference. Falls back
-                    // to the retail page when this entry or page was not baked, or the sizes disagree.
+                    // to the retail page when this entry or page was not baked, or the sizes disagree --
+                    // unless the bake is exclusive, in which case an uncovered page reads black so only our
+                    // own lighting shows.
                     ReadOnlySpan<Bgra32> pixels = MemoryMarshal.Cast<byte, Bgra32>(image.Pixels.Span);
                     if (_bakedPages.TryGetValue(entryName, out Dictionary<int, Bgra32[]>? bakedEntry)
                         && bakedEntry.TryGetValue(i, out Bgra32[]? bakedPage)
                         && bakedPage.Length == image.Width * image.Height)
                     {
                         pixels = bakedPage;
+                    }
+                    else if (_discardRetailLightmaps)
+                    {
+                        pixels = new Bgra32[image.Width * image.Height];
                     }
 
                     // A page is an atlas of this model's own surfaces, so it clamps rather than repeats:

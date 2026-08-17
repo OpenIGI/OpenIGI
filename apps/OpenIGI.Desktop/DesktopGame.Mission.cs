@@ -494,19 +494,51 @@ internal sealed partial class DesktopGame
 
                     // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
                     // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
-                    // .olm ones would be sampled. Synchronous for now (a lockstep capture waits for the probe
-                    // bake beside it anyway); off by default. The sky is the daytime skylight (r_sky_light),
-                    // not the dim raw ambient, so sky-lit surfaces read closer to what the artists painted.
-                    if (RenderCVars.BakedLightmaps.Value && _scene is { } bakeScene && _world is not null)
+                    // .olm ones would be sampled. Cached to disk like the probe field, so only a mission
+                    // without a bake pays to trace it, and traced on a worker so the load does not stall.
+                    // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
+                    // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
+                    // lightmaps entirely; 1 keeps them where the bake produced nothing.
+                    bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
+                    if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
                     {
-                        IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
                         Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
                         Vector3f lmSky = SkyFillColour();
-                        LightmapBaker.BakeDirectAndSky(lmTargets, bakeCast, bakeSunDirection, lmSun, lmSky, hemisphereRays: 64);
-                        LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
-                        LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
-                        LightmapBaker.BakeBounces(lmTargets, lmTris, lmBvh, lmSky, passes: 4, hemisphereRays: 64);
-                        _world.ApplyBakedLightmaps(bakeScene, lmTargets);
+                        _lightmapBakeMission = id;
+                        _lightmapBakeSun = bakeSunDirection;
+                        _lightmapBakeSunColour = lmSun;
+                        _lightmapBakeSky = lmSky;
+
+                        if (_lightmapCache.TryLoad(id, bakeSunDirection, lmSun, lmSky) is { } cachedLightmaps)
+                        {
+                            _world.SetBakedLightmaps(cachedLightmaps, discardRetailLightmaps);
+                        }
+                        else
+                        {
+                            // Resolving each surface's albedo reads the resource registry, so the texel
+                            // maps, textured triangles and their BVH are built here on the main thread; the
+                            // worker then does only the tracing, which touches immutable data and the cast.
+                            IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
+                            LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
+                            LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
+
+                            _lightmapBake?.Cancel();
+                            _lightmapBake = LightmapBake.Start(
+                                bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
+                                bounces: 4, hemisphereRays: 64, _logger);
+
+                            if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
+                            {
+                                _world.SetBakedLightmaps(readyLightmaps, discardRetailLightmaps);
+                                _lightmapCache.Save(id, bakeSunDirection, lmSun, lmSky, readyLightmaps);
+                                _lightmapBake = null;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // The setting is off, or off since the last load: make sure no stale bake lingers.
+                        _world?.SetBakedLightmaps(null);
                     }
 
                     // Whatever the console says, but never so fine that a big level spends a minute of

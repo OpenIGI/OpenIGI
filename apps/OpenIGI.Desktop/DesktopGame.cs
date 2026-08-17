@@ -88,6 +88,7 @@ internal sealed partial class DesktopGame : IDisposable
     private ITimeSource _timeSource = null!;
     private GameLoop _loop = null!;
     private GiBakeCache _giCache = null!;
+    private LightmapBakeCache _lightmapCache = null!;
     private MissionRegistry _missions = null!;
     private MagicObjectRegistry _magic = null!;
     private VehiclePhysicsRegistry _vehiclePhysics = null!;
@@ -148,6 +149,15 @@ internal sealed partial class DesktopGame : IDisposable
     private float _probeBakeSpacing;
     private Vector3f _probeBakeSun;
     private WorldRayCast? _bakeCast;
+
+    // The path-traced object-lightmap bake in flight, and the inputs its result is cached under once it
+    // lands -- remembered because the load no longer blocks for it, so the save moves to the frame it
+    // completes, exactly as the probe field's does.
+    private LightmapBake? _lightmapBake;
+    private int _lightmapBakeMission;
+    private Vector3f _lightmapBakeSun;
+    private Vector3f _lightmapBakeSunColour;
+    private Vector3f _lightmapBakeSky;
 
     // One albedo for the whole level, shared by the load-time trace and the live re-bake. IGI's palette is
     // concrete, snow and dirt, so a warm grey stands in for reading each hit's own texture.
@@ -475,6 +485,13 @@ internal sealed partial class DesktopGame : IDisposable
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
             _logger);
 
+        // The path-traced object lightmaps, cached the same way: baked once, read instantly after. The
+        // shipped bakes live beside the probe fields; freshly-baked ones write to the per-user cache.
+        _lightmapCache = LightmapBakeCache.Create(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "gi"),
+            Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
+            _logger);
+
         // The mission table is built the way the original builds it: walk LOCAL:missions and run every
         // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
         // before the Select Mission screen asks for the list.
@@ -598,6 +615,8 @@ internal sealed partial class DesktopGame : IDisposable
         // The bake in flight, while it is in flight. Non-null only between the level load starting one and
         // the render thread collecting it; a lockstep capture never sees it, because that path waits.
         _probeBake = null;
+        _lightmapBake?.Cancel();
+        _lightmapBake = null;
 
         // When the probe field landed, in the loop's own milliseconds, or -1 for "no fade owed". The field
         // is traced on a worker and arrives several seconds into a level; until it does, every surface is
@@ -1227,6 +1246,20 @@ internal sealed partial class DesktopGame : IDisposable
                     }
 
                     _probeBake = null;
+                }
+            }
+
+            // The path-traced lightmap bake, once its worker finishes: swap the pages in and write them to
+            // the cache so the next load reads instead of tracing. Collected here for the same reason the
+            // probe field is -- the pages become GL textures, and the context belongs to this thread.
+            if (_lightmapBake is { } pendingLightmaps && pendingLightmaps.TryCollect(out BakedLightmaps? bakedLightmaps))
+            {
+                _lightmapBake = null;
+                if (bakedLightmaps is not null)
+                {
+                    _world?.SetBakedLightmaps(bakedLightmaps, RenderCVars.BakedLightmaps.Value >= 2);
+                    _lightmapCache.Save(
+                        _lightmapBakeMission, _lightmapBakeSun, _lightmapBakeSunColour, _lightmapBakeSky, bakedLightmaps);
                 }
             }
 
@@ -4402,6 +4435,7 @@ internal sealed partial class DesktopGame : IDisposable
         // thread-pool thread and cannot hold the process open, so this is not about shutting down cleanly --
         // it is about not spending every core on it while the rest of the shutdown runs.
         _probeBake?.Cancel();
+        _lightmapBake?.Cancel();
 
         if (!_options.IsBenchmark)
         {

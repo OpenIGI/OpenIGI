@@ -1160,19 +1160,29 @@ public static class RenderCVars
         // nothing reads. High and below, with no surface cache to gather, light from this bake.
         ultra: "0");
 
-    /// <summary>Whether the level's static object lightmaps are re-baked by the path tracer at load.</summary>
+    /// <summary>How the level's static object lightmaps are sourced: shipped, augmented, or our bake alone.</summary>
     /// <remarks>
-    /// Replaces the shipped <c>.olm</c> object lightmaps with a per-texel, coloured, multi-bounce bake of
-    /// the level's own sun and sky -- the same lighting the retail artists painted by hand, computed
-    /// instead. Off by default and a restart-scope setting: the bake runs once at load and its pages are
-    /// swapped in where the retail ones would be sampled, so vanilla and an unbaked load are untouched.
-    /// Interiors a sealed room's sun cannot reach stay dim until the lamp fixtures are baked as emitters.
+    /// <para>
+    /// <b>0</b> uses the shipped <c>.olm</c> object lightmaps, exactly as retail. <b>1</b> re-bakes them with
+    /// the path tracer at load -- per-texel, coloured, multi-bounce, from the level's own sun and sky -- and
+    /// swaps a baked page in wherever there is one, falling back to the shipped page where the bake produced
+    /// nothing. <b>2</b> discards the shipped lightmaps entirely: a surface the bake did not reach reads
+    /// black rather than borrowing the artists' light, so what the frame shows is ONLY our own lighting --
+    /// the honest state of the system, gaps and all.
+    /// </para>
+    /// <para>
+    /// A restart-scope setting: the bake runs once at load (on a worker, cached to disk) and only ever
+    /// reaches the baked and hybrid models, which sample the lightmap; vanilla and the dynamic path are
+    /// untouched. Interiors a sealed room's sun cannot reach stay dark until the lamp fixtures are baked.
+    /// </para>
     /// </remarks>
-    public static readonly BoolCVar BakedLightmaps = CVar.Bool(
+    public static readonly NumericCVar<int> BakedLightmaps = CVar.Int(
         "r_lightmap",
-        false,
+        0,
+        0,
+        2,
         CVarOptions.Archive,
-        "Re-bake the level's object lightmaps with the path tracer at load, replacing the shipped ones.");
+        "Object lightmaps: 0 shipped, 1 path-traced bake over the shipped ones, 2 path-traced bake only.");
 
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(
