@@ -230,15 +230,16 @@ public static class RenderCVars
             "Scene brightness before tone mapping. 1 leaves the level's own lighting alone."),
 
         // Vanilla never tone maps, so its value is ignored. The others are calibrated so the scene reads
-        // right at a FIXED exposure -- no auto-exposure crutch. The dynamic model (ultra) lights from a GI
-        // bake and a live sun whose linear values sit well below one, so a room the sun fills through
-        // bounces still needs the frame lifted to read as lit; the bake-lit presets carry the artists'
-        // brighter lightmaps and need less. The tone map rolls off the sky, so lifting interiors this far
-        // does not blow the exterior -- measured across the outdoor, window and windowless views.
+        // right at a FIXED exposure -- no auto-exposure crutch. All three tone-mapped presets now light
+        // from the artists' baked lightmaps (ultra reverted from the dynamic model -- see r_lighting), so
+        // their exposures sit close together: enhanced is the baseline, high lifts a touch to offset the
+        // contact shadows and heavier AO it adds, and ultra lifts a touch more to offset ACES pulling the
+        // midtones down where the others use neutral. The tone map rolls off the sky, so lifting interiors
+        // this far does not blow the exterior -- measured across the outdoor, window and windowless views.
         vanilla: "1",
         enhanced: "1.4",
         high: "1.6",
-        ultra: "2.5");
+        ultra: "1.8");
 
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
@@ -258,10 +259,10 @@ public static class RenderCVars
         high: "0",
 
         // OFF at ultra now. It was on to rescue interiors that the real-time gather left dark, but that was
-        // papering over weak light: the multi-bounce GI bake and the calibrated fixed exposure (r_exposure
-        // ultra 2.5) now light interiors and exteriors together WITHOUT the eye adapting, which is the
-        // honest result -- a sunny scene that reads sunny at a fixed exposure rather than one the camera
-        // keeps rebalancing. Left as an opt-in for anyone who wants eye adaptation.
+        // papering over weak light: the artists' baked lightmaps and the calibrated fixed exposure
+        // (r_exposure ultra 1.8) now light interiors and exteriors together WITHOUT the eye adapting, which
+        // is the honest result -- a sunny scene that reads sunny at a fixed exposure rather than one the
+        // camera keeps rebalancing. Left as an opt-in for anyone who wants eye adaptation.
         ultra: "0");
 
     /// <summary>How many samples per pixel the scene is rasterised with.</summary>
@@ -653,6 +654,23 @@ public static class RenderCVars
         2f,
         CVarOptions.Archive,
         "Scales dynamic lighting to match what the level's textures were painted for.");
+
+    /// <summary>Scales the flat ambient stand-in the dynamic model fills unlit surfaces with.</summary>
+    /// <remarks>
+    /// TEMPORARY. Until the probe volume of stage R7 gives ambient a sense of place, the dynamic model
+    /// lights every surface with one flat ambient colour from the level's Dirlight -- so a sealed,
+    /// windowless room reads as bright as open ground. This scales that stand-in so the effect can be
+    /// dialled down to see enclosed spaces go dark, or to nothing (0) to prove it is what lights them.
+    /// Not archived and not part of any preset: it exists to diagnose, not to ship. Only the dynamic
+    /// model reads it -- the baked model lights from the lightmaps and has no ambient term of its own.
+    /// </remarks>
+    public static readonly NumericCVar<float> AmbientScale = CVar.Float(
+        "r_ambient_scale",
+        1f,
+        0f,
+        2f,
+        CVarOptions.None,
+        "TEMPORARY: scales the dynamic model's flat ambient fill. 0 removes it. Only the dynamic model reads it.");
 
     /// <summary>Scales the real-time sun so a sunlit surface reads as sunlit rather than as flat daylight.</summary>
     /// <remarks>

@@ -2648,11 +2648,16 @@ internal sealed partial class DesktopGame : IDisposable
                     // model ignores it (it never adds a live sun), so the scale is a no-op below ultra.
                     Vector3f scaledSun = light.Colour * RenderCVars.SunScale.Value;
 
+                    // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
+                    // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
+                    // is how that stand-in is dialled down or removed to confirm what lights enclosed spaces.
+                    Vector3f scaledAmbient = light.Ambient * RenderCVars.AmbientScale.Value;
+
                     _device.SetLighting(new SceneLighting(
                         RenderCVars.Lighting.Value,
                         viewSunDirection,
                         scaledSun,
-                        light.Ambient,
+                        scaledAmbient,
                         RenderCVars.LightScale.Value));
                     _device.BeginPass(ScenePass.Geometry);
 
