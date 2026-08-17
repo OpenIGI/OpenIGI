@@ -1160,6 +1160,20 @@ public static class RenderCVars
         // nothing reads. High and below, with no surface cache to gather, light from this bake.
         ultra: "0");
 
+    /// <summary>Whether the level's static object lightmaps are re-baked by the path tracer at load.</summary>
+    /// <remarks>
+    /// Replaces the shipped <c>.olm</c> object lightmaps with a per-texel, coloured, multi-bounce bake of
+    /// the level's own sun and sky -- the same lighting the retail artists painted by hand, computed
+    /// instead. Off by default and a restart-scope setting: the bake runs once at load and its pages are
+    /// swapped in where the retail ones would be sampled, so vanilla and an unbaked load are untouched.
+    /// Interiors a sealed room's sun cannot reach stay dim until the lamp fixtures are baked as emitters.
+    /// </remarks>
+    public static readonly BoolCVar BakedLightmaps = CVar.Bool(
+        "r_lightmap",
+        false,
+        CVarOptions.Archive,
+        "Re-bake the level's object lightmaps with the path tracer at load, replacing the shipped ones.");
+
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(
         "r_gi_probe_spacing",

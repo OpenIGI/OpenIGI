@@ -492,6 +492,23 @@ internal sealed partial class DesktopGame
                         DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
                     }
 
+                    // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
+                    // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
+                    // .olm ones would be sampled. Synchronous for now (a lockstep capture waits for the probe
+                    // bake beside it anyway); off by default. The sky is the daytime skylight (r_sky_light),
+                    // not the dim raw ambient, so sky-lit surfaces read closer to what the artists painted.
+                    if (RenderCVars.BakedLightmaps.Value && _scene is { } bakeScene && _world is not null)
+                    {
+                        IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
+                        Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+                        Vector3f lmSky = SkyFillColour();
+                        LightmapBaker.BakeDirectAndSky(lmTargets, bakeCast, bakeSunDirection, lmSun, lmSky, hemisphereRays: 64);
+                        LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
+                        LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
+                        LightmapBaker.BakeBounces(lmTargets, lmTris, lmBvh, lmSky, passes: 4, hemisphereRays: 64);
+                        _world.ApplyBakedLightmaps(bakeScene, lmTargets);
+                    }
+
                     // Whatever the console says, but never so fine that a big level spends a minute of
                     // load tracing rays nobody asked for.
                     float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;

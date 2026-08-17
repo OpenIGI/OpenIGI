@@ -42,6 +42,10 @@ public sealed class WorldRenderer : IDisposable
     private readonly Dictionary<string, TextureHandle[]> _lightmaps = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, IresEntry>? _lightmapArchive;
 
+    // Path-traced lightmap pages that override the retail .olm ones, keyed by entry name then page index.
+    // Empty unless a bake has been applied; GetLightmapPages substitutes these pixels for the shipped ones.
+    private readonly Dictionary<string, Dictionary<int, Bgra32[]>> _bakedPages = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Each placement's mesh and per-subset draw state, resolved once and kept.</summary>
     /// <remarks>
     /// Keyed by reference: <see cref="WorldPlacement"/> is a record, and its value equality would hash
@@ -713,9 +717,92 @@ public sealed class WorldRenderer : IDisposable
         }
 
         _lightmaps.Clear();
+        _bakedPages.Clear();
         _meshes.Clear();
         _textures.Clear();
         _geometry.Clear();
+    }
+
+    /// <summary>Overrides the retail object lightmaps with a path-traced bake, applied on the next draw.</summary>
+    /// <remarks>
+    /// Composites each target's covered texels into a page buffer keyed by the placement's lightmap entry
+    /// and page, encoded the way the shipped pages are (sRGB LDR, since the G-buffer sRGB-decodes the
+    /// lightmap it samples). Several draw records can name one page, so the buffer accumulates across the
+    /// targets that share it. Any pages already uploaded from the shipped archive are dropped so the next
+    /// draw rebuilds them from the bake; a target whose size disagrees with the shipped page is ignored at
+    /// upload. This is the runtime swap the path-traced lightmapper feeds.
+    /// </remarks>
+    /// <param name="scene">The scene the targets were baked against.</param>
+    /// <param name="targets">The baked pages from <see cref="LightmapBaker"/>.</param>
+    public void ApplyBakedLightmaps(WorldScene scene, IReadOnlyList<LightmapBaker.LightmapTarget> targets)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(targets);
+
+        _bakedPages.Clear();
+
+        foreach (LightmapBaker.LightmapTarget target in targets)
+        {
+            if (target.PlacementIndex < 0 || target.PlacementIndex >= scene.Placements.Count)
+            {
+                continue;
+            }
+
+            WorldPlacement placement = scene.Placements[target.PlacementIndex];
+            if (!placement.HasLightmap)
+            {
+                continue;
+            }
+
+            string entryName = placement.LightmapEntryName();
+            if (!_bakedPages.TryGetValue(entryName, out Dictionary<int, Bgra32[]>? pages))
+            {
+                pages = [];
+                _bakedPages[entryName] = pages;
+            }
+
+            if (!pages.TryGetValue(target.Page, out Bgra32[]? buffer))
+            {
+                buffer = new Bgra32[target.Width * target.Height];
+                pages[target.Page] = buffer;
+            }
+
+            int count = Math.Min(buffer.Length, target.Radiance.Length);
+            for (int i = 0; i < count; i++)
+            {
+                if (!target.Texels[i].IsCovered)
+                {
+                    continue;
+                }
+
+                Vector3f rad = target.Radiance[i];
+                buffer[i] = new Bgra32(
+                    r: LinearToSrgb(rad.X), g: LinearToSrgb(rad.Y), b: LinearToSrgb(rad.Z), a: 255);
+            }
+        }
+
+        foreach (TextureHandle[] uploaded in _lightmaps.Values)
+        {
+            foreach (TextureHandle page in uploaded)
+            {
+                if (page.IsValid)
+                {
+                    _device.DestroyTexture(page);
+                }
+            }
+        }
+
+        _lightmaps.Clear();
+
+        _logger.Information(
+            LogCategory, $"Applied a path-traced lightmap bake over {_bakedPages.Count} object(s).");
+    }
+
+    private static byte LinearToSrgb(float linear)
+    {
+        float c = Math.Clamp(linear, 0f, 1f);
+        float s = c <= 0.0031308f ? c * 12.92f : (1.055f * MathF.Pow(c, 1f / 2.4f)) - 0.055f;
+        return (byte)Math.Clamp((int)MathF.Round(s * 255f), 0, 255);
     }
 
     private MeshGeometry? GetGeometry(WorldPlacement placement)
@@ -926,6 +1013,17 @@ public sealed class WorldRenderer : IDisposable
                 {
                     ObjectLightmapImage image = lightmap.Images[i];
 
+                    // A path-traced bake, if one was applied, replaces the shipped page's pixels here --
+                    // same dimensions, same upload, so nothing downstream knows the difference. Falls back
+                    // to the retail page when this entry or page was not baked, or the sizes disagree.
+                    ReadOnlySpan<Bgra32> pixels = MemoryMarshal.Cast<byte, Bgra32>(image.Pixels.Span);
+                    if (_bakedPages.TryGetValue(entryName, out Dictionary<int, Bgra32[]>? bakedEntry)
+                        && bakedEntry.TryGetValue(i, out Bgra32[]? bakedPage)
+                        && bakedPage.Length == image.Width * image.Height)
+                    {
+                        pixels = bakedPage;
+                    }
+
                     // A page is an atlas of this model's own surfaces, so it clamps rather than repeats:
                     // wrapping would bleed one surface's light onto another at the edges.
                     pages[i] = _device.CreateTexture(
@@ -935,7 +1033,7 @@ public sealed class WorldRenderer : IDisposable
                             1,
                             TextureFilter.Linear,
                             TextureAddressMode.Clamp),
-                        MemoryMarshal.Cast<byte, Bgra32>(image.Pixels.Span));
+                        pixels);
                 }
             }
             catch (Exception ex) when (ex is PackFormatException or ArgumentException or GraphicsDeviceException)
