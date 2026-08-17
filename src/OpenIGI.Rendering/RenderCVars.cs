@@ -1180,13 +1180,23 @@ public static class RenderCVars
     /// untouched. Interiors a sealed room's sun cannot reach stay dark until the lamp fixtures are baked.
     /// </para>
     /// </remarks>
-    public static readonly NumericCVar<int> BakedLightmaps = CVar.Int(
-        "r_lightmap",
-        0,
-        0,
-        2,
-        CVarOptions.Archive,
-        "Object lightmaps: 0 shipped, 1 path-traced bake over the shipped ones, 2 path-traced bake only.");
+    public static readonly NumericCVar<int> BakedLightmaps = Presets.Define(
+        CVar.Int(
+            "r_lightmap",
+            0,
+            0,
+            2,
+            CVarOptions.Archive,
+            "Object lightmaps: 0 shipped, 1 path-traced bake over the shipped ones, 2 path-traced bake only."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // Ultra runs OUR lighting only -- it discards the shipped .olm entirely and shows the path-traced
+        // bake alone, so what the frame lights with is the level's own sun and sky computed rather than the
+        // artists' hand-painted maps. A room the bake cannot reach reads dark rather than borrowing their
+        // light; that is the honest state until the lamp fixtures are baked as emitters.
+        ultra: "2");
 
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(

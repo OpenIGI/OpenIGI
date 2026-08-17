@@ -460,7 +460,10 @@ internal sealed partial class DesktopGame
                 //
                 // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
                 // alone -- which is what such a level looks like anyway.
-                if (RenderCVars.GlobalIllumination.Value)
+                // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
+                // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
+                // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
+                if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
                 {
                     Vector3f bakeSunDirection = _sun is { } declared && !declared.IsBelowHorizon
                         ? declared.Direction
@@ -592,6 +595,10 @@ internal sealed partial class DesktopGame
                         _world?.SetBakedLightmaps(null);
                     }
 
+                    // The probe field, guarded on its own cvar so it does not trace under a lightmap-only
+                    // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
+                    if (RenderCVars.GlobalIllumination.Value)
+                    {
                     // Whatever the console says, but never so fine that a big level spends a minute of
                     // load tracing rays nobody asked for.
                     float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
@@ -647,6 +654,7 @@ internal sealed partial class DesktopGame
                             // under the key already remembered above.
                             _probeField = null;
                         }
+                    }
                     }
                 }
 
