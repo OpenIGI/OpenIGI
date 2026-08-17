@@ -45,6 +45,7 @@ public sealed class SilkGameWindow : IGameWindow
     // one and contributes no motion, which is how a pointer that has been moved out from under us
     // arrives as a new starting point rather than as a movement the player never made.
     private Vector2? _pointerBaseline;
+    private Vector2 _virtualPointer;
 
     internal SilkGameWindow(in WindowSettings settings)
     {
@@ -74,6 +75,11 @@ public sealed class SilkGameWindow : IGameWindow
             WindowBorder = settings.Mode == WindowMode.BorderlessFullscreen
                 ? WindowBorder.Hidden
                 : WindowOptions.Default.WindowBorder,
+
+            // Placed at creation, because nothing else ever places a window that starts borderless:
+            // ApplyMode runs only from the Mode setter and from the exclusive-fullscreen paths, so a
+            // borderless window left on Silk's default position sits 50px in from the corner and hangs
+            // the same distance off the far edge -- a fullscreen window missing a strip of the screen.
             Position = settings.Mode == WindowMode.BorderlessFullscreen
                 ? display.Origin
                 : WindowOptions.Default.Position,
@@ -86,13 +92,9 @@ public sealed class SilkGameWindow : IGameWindow
                 : WindowOptions.Default.VideoMode,
             VSync = settings.VSync,
 
-            // Created hidden so nothing sees a half-initialised window -- except in exclusive
-            // fullscreen, which cannot be created hidden at all. The platform grants the fullscreen
-            // state against a monitor and will not grant one to an invisible window, so a hidden
-            // exclusive window comes up decorated and is never corrected. That matters beyond how it
-            // looks: the caller reads Width and Height straight after construction to size the
-            // graphics device, so a window still pretending to be 2560x1421 when the framebuffer is
-            // really 2560x1440 leaves a strip along one edge that nothing ever renders into.
+            // A windowed macOS OpenGL context reports a zero framebuffer until the window is visible;
+            // borderless remains hidden until Show(), while exclusive fullscreen must be visible for
+            // the monitor state to take.
             IsVisible = settings.Mode == WindowMode.ExclusiveFullscreen,
             ShouldSwapAutomatically = false,
         };
@@ -105,12 +107,11 @@ public sealed class SilkGameWindow : IGameWindow
         // fragment passes over a fullscreen quad. 3.3 is the floor and is what the web and mobile
         // backends will target; the game runs on it, only with the cheaper implementations of those
         // effects. Nothing below 3.3 is supported at all.
-        APIVersion[] wanted =
-        [
-            new APIVersion(4, 6),
-            new APIVersion(4, 3),
-            new APIVersion(3, 3),
-        ];
+        // Apple exposes OpenGL 4.1 as its ceiling. Asking GLFW for 4.6/4.3 first can fail before a
+        // native window exists, and Silk.NET 2.22 then attempts to position that null handle on macOS.
+        APIVersion[] wanted = OperatingSystem.IsMacOS()
+            ? [new APIVersion(4, 1), new APIVersion(3, 3)]
+            : [new APIVersion(4, 6), new APIVersion(4, 3), new APIVersion(3, 3)];
 
         Exception? lastFailure = null;
 
@@ -200,10 +201,14 @@ public sealed class SilkGameWindow : IGameWindow
     }
 
     /// <inheritdoc/>
-    public int Width => _window.FramebufferSize.X;
+    public int Width => _window.FramebufferSize.X > 0
+        ? _window.FramebufferSize.X
+        : _window.Size.X > 0 ? _window.Size.X : Display.Size.X;
 
     /// <inheritdoc/>
-    public int Height => _window.FramebufferSize.Y;
+    public int Height => _window.FramebufferSize.Y > 0
+        ? _window.FramebufferSize.Y
+        : _window.Size.Y > 0 ? _window.Size.Y : Display.Size.Y;
 
     /// <summary>Gets what the monitor this window opened on reports, and what was chosen from it.</summary>
     public DesktopDisplay Display { get; }
@@ -325,6 +330,20 @@ public sealed class SilkGameWindow : IGameWindow
         ObjectDisposedException.ThrowIf(_disposed, this);
         _window.IsVisible = true;
 
+        if (OperatingSystem.IsMacOS() && _mode == WindowMode.Windowed)
+        {
+            _window.Size = _windowedSize;
+            _window.Position = new Vector2D<int>(100, 100);
+        }
+        _window.DoEvents();
+
+        if (OperatingSystem.IsMacOS() && _mode == WindowMode.BorderlessFullscreen)
+        {
+            _window.Position = Display.Origin;
+            _window.DoEvents();
+        }
+        _window.Focus();
+
         // Exclusive fullscreen has to be asked for again now that the window is on screen.
         //
         // The window is created hidden, and the other two modes survive that because they are not
@@ -413,7 +432,10 @@ public sealed class SilkGameWindow : IGameWindow
                 // because dropping it moves the client area by the old border's thickness.
                 _window.WindowState = WindowState.Normal;
                 _window.WindowBorder = WindowBorder.Hidden;
-                _window.Position = Display.Origin;
+                if (!OperatingSystem.IsMacOS() || _window.IsVisible)
+                {
+                    _window.Position = Display.Origin;
+                }
                 _window.Size = BorderlessSize(Display);
                 break;
 
@@ -513,11 +535,22 @@ public sealed class SilkGameWindow : IGameWindow
                 // report's worth of motion, which is nothing, and is what ApplyCursorMode does below.
                 if (_pointerBaseline is { } previous)
                 {
-                    Input.Mouse.AddMotion(position.X - previous.X, position.Y - previous.Y);
+                    float deltaX = position.X - previous.X;
+                    float deltaY = position.Y - previous.Y;
+                    Input.Mouse.AddMotion(deltaX, deltaY);
+
+                    if (OperatingSystem.IsMacOS() && !_cursorLocked)
+                    {
+                        _virtualPointer = new Vector2(
+                            Math.Clamp(_virtualPointer.X + deltaX, 0f, Math.Max(1, Width - 1)),
+                            Math.Clamp(_virtualPointer.Y + deltaY, 0f, Math.Max(1, Height - 1)));
+                    }
                 }
 
                 _pointerBaseline = position;
-                Input.Mouse.SetPosition(position.X, position.Y);
+                Input.Mouse.SetPosition(
+                    OperatingSystem.IsMacOS() && !_cursorLocked ? _virtualPointer.X : position.X,
+                    OperatingSystem.IsMacOS() && !_cursorLocked ? _virtualPointer.Y : position.Y);
             };
             mouse.Scroll += (_, wheel) => Input.Mouse.AddWheel(wheel.Y);
         }
@@ -557,6 +590,11 @@ public sealed class SilkGameWindow : IGameWindow
         // new starting point, not a movement.
         _pointerBaseline = null;
 
+        if (OperatingSystem.IsMacOS() && !_cursorLocked)
+        {
+            _virtualPointer = new Vector2(Math.Max(1, Width - 1) / 2f, Math.Max(1, Height - 1) / 2f);
+        }
+
         foreach (IMouse mouse in _input.Mice)
         {
             // Raw is the same lock as Disabled but without the desktop's pointer acceleration applied,
@@ -564,7 +602,9 @@ public sealed class SilkGameWindow : IGameWindow
             // fallback and both hide the cursor on their own.
             mouse.Cursor.CursorMode = _cursorLocked
                 ? (mouse.Cursor.IsSupported(CursorMode.Raw) ? CursorMode.Raw : CursorMode.Disabled)
-                : _cursorVisible ? CursorMode.Normal : CursorMode.Hidden;
+                : OperatingSystem.IsMacOS()
+                    ? CursorMode.Disabled
+                    : _cursorVisible ? CursorMode.Normal : CursorMode.Hidden;
         }
     }
 }

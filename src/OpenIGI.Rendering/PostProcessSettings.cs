@@ -105,6 +105,11 @@ namespace OpenIGI.Rendering;
 /// on continuous parameters, so the tube can be brought up and taken down as part of a camera move
 /// rather than switched. The two are never on together — see <see cref="TacticalDisplaySettings"/>.
 /// </param>
+/// <param name="Binocular">
+/// The remastered first-person binocular's glass lens transform, carried on continuous parameters so
+/// the optics fade in as the device is raised. Mutually exclusive with <paramref name="Tactical"/> —
+/// the map computer replaces the first-person view — see <see cref="BinocularDisplaySettings"/>.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -129,7 +134,8 @@ public readonly record struct PostProcessSettings(
     float ColourLookup = 0f,
     bool AutoExposure = false,
     bool GreenPhosphor = false,
-    TacticalDisplaySettings Tactical = default)
+    TacticalDisplaySettings Tactical = default,
+    BinocularDisplaySettings Binocular = default)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.
@@ -181,5 +187,6 @@ public readonly record struct PostProcessSettings(
         || Sharpen > 0f
         || WantsColourLookup
         || GreenPhosphor
-        || Tactical.IsActive;
+        || Tactical.IsActive
+        || Binocular.IsActive;
 }

@@ -104,12 +104,15 @@ public sealed class GenericPickupRegistry
     private void Collect(GameTask task, ScriptVarRegistry variables)
     {
         if (task is DeclaredTask declared
-            && string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
+            && (string.Equals(declared.Type.Name, "GenericPickup", StringComparison.Ordinal)
+                || string.Equals(declared.Type.Name, "AmmoPickup", StringComparison.Ordinal))
             && TryReadPosition(declared, out Vector3d position))
         {
             string modelName = declared.TryGetValue("Model", out object? rawModel) && rawModel is string model
-                ? model
-                : string.Empty;
+                ? ResolveModelName(model)
+                : declared.TryGetValue("ID", out object? rawId) && rawId is string id
+                    ? AmmoPickupCatalog.ModelNameForScriptId(id)
+                    : string.Empty;
             Matrix3f orientation = declared.TryGetValue("Orientation", out object? rawOrientation)
                 && rawOrientation is Vector3f angles
                     ? Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z)
@@ -138,4 +141,9 @@ public sealed class GenericPickupRegistry
         position = default;
         return false;
     }
+
+    private static string ResolveModelName(string model) =>
+        AmmoPickupCatalog.ModelNameForScriptId(model) is { Length: > 0 } ammoModel
+            ? ammoModel
+            : model;
 }

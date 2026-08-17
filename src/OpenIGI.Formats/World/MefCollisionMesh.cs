@@ -85,13 +85,15 @@ public sealed class MefCollisionMesh
     public const int NotAPortal = 0xFFFF;
 
     private readonly bool[] _materialIsPortal;
+    private readonly int[]? _materialGlobal;
 
     private MefCollisionMesh(
         MefCollisionFace[] faces,
         Vector3f[] vertices,
         int[] vertexBones,
         MefCollisionSphere[] spheres,
-        bool[] materialIsPortal)
+        bool[] materialIsPortal,
+        int[]? materialGlobal = null)
     {
         Faces = faces;
         Vertices = vertices;
@@ -99,7 +101,20 @@ public sealed class MefCollisionMesh
         Spheres = spheres;
         Materials = materialIsPortal.Length;
         _materialIsPortal = materialIsPortal;
+        _materialGlobal = materialGlobal;
     }
+
+    /// <summary>Resolves a face's per-mesh material to its global game-material row.</summary>
+    /// <param name="material">The face's material index — <see cref="MefCollisionFace.Material"/>.</param>
+    /// <returns>
+    /// The row of the global game-material table this face is made of (0 = Air, 14 = Glass, 18 = Fence,
+    /// …), read from the <c>TAMC</c> row's <c>u16</c> at offset 8. Falls back to the per-mesh index when
+    /// no global mapping is present (a hand-built mesh) or the row names no global material (<c>0xFFFF</c>).
+    /// </returns>
+    public int GlobalMaterial(int material) =>
+        _materialGlobal is { } table && (uint)material < (uint)table.Length && table[material] != NotAPortal
+            ? table[material]
+            : material;
 
     /// <summary>Gets the collision triangles.</summary>
     public IReadOnlyList<MefCollisionFace> Faces { get; }
@@ -195,10 +210,15 @@ public sealed class MefCollisionMesh
         // window opening is closed by a portal polygon whose material carries a portal index here; the
         // original walks through it, so a portal material is non-solid. 0xFFFF means "not a portal".
         bool[] materialIsPortal = new bool[materialCount];
+        // The TAMC row's u16 at offset 8 is the global game-material row this face is made of (0 = Air,
+        // 14 = Glass, 18 = Fence, …); 0xFFFF names none. This is the face->material link 
+        // recorded as "still missing"; it is what lets the sight test tell glass from a solid wall.
+        int[] materialGlobal = new int[materialCount];
         for (int i = 0; i < materialCount; i++)
         {
             int portal = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * MaterialStride) + 4, 2));
             materialIsPortal[i] = portal != NotAPortal;
+            materialGlobal[i] = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * MaterialStride) + 8, 2));
         }
 
         Vector3f[] vertices = new Vector3f[vertexCount];
@@ -240,7 +260,7 @@ public sealed class MefCollisionMesh
                 BinaryPrimitives.ReadInt32LittleEndian(row[20..]));
         }
 
-        mesh = new MefCollisionMesh(faces, vertices, vertexBones, spheres, materialIsPortal);
+        mesh = new MefCollisionMesh(faces, vertices, vertexBones, spheres, materialIsPortal, materialGlobal);
         return true;
     }
 

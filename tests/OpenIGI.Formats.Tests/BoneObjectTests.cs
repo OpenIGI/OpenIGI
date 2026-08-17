@@ -135,6 +135,61 @@ public sealed class BoneObjectTests
         Assert.Equal(Matrix3f.Identity, pose.Rotations[2]);
     }
 
+    [Fact]
+    public void PlayCrossFadesFromTheOutgoingClipOverTheBlendTime()
+    {
+        BoneObject bones = new(Set());
+
+        // Drive the 90-degree turn to completion so the outgoing branch holds a known, frozen pose.
+        BoneClip turning = bones.Play(0, TurningAnimationId, loops: false)!;
+        bones.Tick();
+        bones.Tick();
+        Assert.True(turning.Ended);
+
+        // 0.2 s = 6 ticks. The still clip (identity) fades in from that turned pose.
+        bones.Play(0, StillAnimationId, loops: true, backwards: false, blendSeconds: 0.2f);
+
+        // The live source is the incoming clip throughout the fade; only the pose is a blend.
+        Assert.Same(bones.SourceOf(0), bones.EffectiveSourceOf(0));
+
+        // Weight 0: fully the outgoing 90-degree turn, so bone 1 sits on +Y.
+        BonePose start = bones.Pose();
+        Assert.Equal(0f, start.Positions[1].X, 3);
+        Assert.Equal(1f, start.Positions[1].Y, 3);
+
+        // Three ticks in, weight 0.5: half-way back, bone 1 on the 45-degree diagonal.
+        bones.Tick();
+        bones.Tick();
+        bones.Tick();
+        BonePose mid = bones.Pose();
+        Assert.Equal(MathF.Cos(MathF.PI / 4f), mid.Positions[1].X, 3);
+        Assert.Equal(MathF.Sin(MathF.PI / 4f), mid.Positions[1].Y, 3);
+
+        // Three more ticks completes the blend; the outgoing branch is dropped and bone 1 is back on +X.
+        bones.Tick();
+        bones.Tick();
+        bones.Tick();
+        BonePose done = bones.Pose();
+        Assert.Equal(1f, done.Positions[1].X, 3);
+        Assert.Equal(0f, done.Positions[1].Y, 3);
+    }
+
+    [Fact]
+    public void PlayWithABlendUnderOneTickReplacesTheSourceOutright()
+    {
+        BoneObject bones = new(Set());
+        bones.Play(0, TurningAnimationId, loops: false);
+        bones.Tick();
+        bones.Tick();
+
+        // ~0.02 s = 0.6 ticks, under 0x4D61D0's one-tick threshold: the still pose shows at once.
+        bones.Play(0, StillAnimationId, loops: true, backwards: false, blendSeconds: 0.02f);
+
+        BonePose pose = bones.Pose();
+        Assert.Equal(1f, pose.Positions[1].X, 3);
+        Assert.Equal(0f, pose.Positions[1].Y, 3);
+    }
+
     private const int StillAnimationId = 2;
     private const int TurningAnimationId = 3;
 

@@ -62,4 +62,30 @@ public sealed class GenericPickupRegistryTests
         Assert.Same(pickup.Task, loop.Tasks.FromId(870));
         Assert.Empty(registry.CollectAt(pickup.Position));
     }
+
+    [Fact]
+    public void AmmoScriptStoredInModelIsNormalizedToItsWorldMesh()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("GenericPickup"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Model"), QvmExpression.Text("String16")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(871),
+                QvmExpression.Text("GenericPickup"),
+                QvmExpression.Text("Ammo"),
+                QvmExpression.Real(1000f), QvmExpression.Real(2000f), QvmExpression.Real(3000f),
+                QvmExpression.Text("AMMO_ID_556"))));
+
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        GenericPickup pickup = Assert.Single(
+            GenericPickupRegistry.Build(loop.Tasks.Root, loop.Variables).Items);
+        Assert.Equal("115_01_1", pickup.ModelName);
+        Assert.Equal("115_01_1", Assert.Single(WorldScene.PlacedModelNames(pickup.Task)));
+    }
 }

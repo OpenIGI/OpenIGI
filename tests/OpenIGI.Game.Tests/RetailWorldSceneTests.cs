@@ -70,6 +70,52 @@ public sealed class RetailWorldSceneTests
     }
 
     [RequiresGameDataFact]
+    public void EveryCampaignAmmoPickupHasExactlyOneDrawablePlacement()
+    {
+        List<string> failures = [];
+        int pickups = 0;
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            LevelTask levelRoot;
+            (WorldScene scene, _) = Build(missionId, includeMagic: false, out levelRoot);
+            Dictionary<GameTask, IGrouping<GameTask, WorldPlacement>> placementsByOwner = scene.Placements
+                .Where(placement => placement.Owner.Type.Name is "AmmoPickup" or "GenericPickup")
+                .GroupBy(placement => placement.Owner)
+                .ToDictionary(group => group.Key);
+            DeclaredTask[] authored = Walk(levelRoot)
+                .OfType<DeclaredTask>()
+                .Where(task => task.Type.Name is "AmmoPickup" or "GenericPickup")
+                .ToArray();
+
+            foreach (DeclaredTask task in authored)
+            {
+                pickups++;
+                if (!placementsByOwner.TryGetValue(task, out IGrouping<GameTask, WorldPlacement>? pickup))
+                {
+                    failures.Add($"mission {missionId} task {task.Id} ({task.Type.Name}) produced no placements");
+                    continue;
+                }
+
+                if (pickup.Count() != 1)
+                {
+                    failures.Add($"mission {missionId} task {task.Id} ({task.Type.Name}) produced {pickup.Count()} placements");
+                    continue;
+                }
+
+                WorldPlacement placement = pickup.Single();
+                if (placement.Model.IsEmpty || placement.Instance.Name.Length == 0)
+                {
+                    failures.Add($"mission {missionId} task {task.Id} ({task.Type.Name}) has no drawable model");
+                }
+            }
+        }
+
+        Assert.True(pickups > 0, "the campaign did not expose any authored ammo/generic pickups");
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures.Take(20)));
+    }
+
+    [RequiresGameDataFact]
     public void SecurityCamerasUseTheirHolderTransformAndCarryTheDestroyedHead()
     {
         (WorldScene scene, _) = Build();
@@ -324,5 +370,17 @@ public sealed class RetailWorldSceneTests
         new ConditionalContainerGate(loop.Variables).Prepare(levelRoot);
 
         return (WorldScene.Build(mission, levelRoot, magic), mission);
+    }
+
+    private static IEnumerable<GameTask> Walk(GameTask task)
+    {
+        yield return task;
+        foreach (GameTask child in task.Children)
+        {
+            foreach (GameTask descendant in Walk(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 }

@@ -32,6 +32,14 @@ public sealed class Mp5SightZoom
     /// <summary>Gets whether the MP5 zoom latch is engaged.</summary>
     public bool IsActive { get; private set; }
 
+    /// <summary>Closes the sight without waiting for another input or weapon tick.</summary>
+    /// <remarks>Used when the player leaves first-person control, such as entering the death camera.</remarks>
+    public void Reset()
+    {
+        _weapon = null;
+        IsActive = false;
+    }
+
     /// <summary>Advances the sight by one simulation tick.</summary>
     /// <param name="weapon">The weapon currently in hand, or <see langword="null"/>.</param>
     /// <param name="togglePressed">Whether alternate fire rose this tick.</param>

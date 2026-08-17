@@ -33,6 +33,21 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(expected, RemasteredHudPresentation.HeadingDegrees(yawRadians), 3);
 
     [Fact]
+    public void NearestContactRangeIgnoresInvalidAndZeroContacts()
+    {
+        IReadOnlyList<EnemyOverlayBox> targets =
+        [
+            new(1, 0f, 0f, 1f, 1f, 0f, 1f),
+            new(2, 0f, 0f, 1f, 1f, float.NaN, 1f),
+            new(3, 0f, 0f, 1f, 1f, 18f, 1f),
+            new(4, 0f, 0f, 1f, 1f, 7.5f, 1f),
+        ];
+
+        Assert.Equal(7.5f, RemasteredHudPresentation.NearestContactRange(targets));
+        Assert.Null(RemasteredHudPresentation.NearestContactRange([]));
+    }
+
+    [Fact]
     public void ObjectivesPreferTheFirstIncomplete()
     {
         MissionObjective[] objectives =
@@ -65,11 +80,91 @@ public sealed class RemasteredHudPresentationTests
         => Assert.Equal(expected, RemasteredHudPresentation.WeaponStateLabel(state));
 
     [Fact]
+    public void AmmoColumnsBlankTheMedipackMagazineAndKeepItsChargeCount()
+    {
+        // Regression: the medipack has no firearm magazine, so its HeldGun never loads a clip and
+        // RoundsInClip stays at the unloaded sentinel. It must not render as a literal "-02".
+        WeaponType medipack = new()
+        {
+            Category = WeaponCategory.Medipack,
+            AmmoDisplay = AmmoDisplayType.None,
+        };
+
+        (string magazine, string reserve) =
+            RemasteredHudPresentation.AmmoColumns(medipack, GunTiming.UnloadedClipSentinel, 51);
+
+        Assert.Equal("--", magazine);
+        Assert.Equal("051", reserve);
+    }
+
+    [Fact]
+    public void AmmoColumnsShowAFirearmMagazineAndReserve()
+    {
+        WeaponType rifle = new()
+        {
+            Category = WeaponCategory.Gun,
+            AmmoDisplay = AmmoDisplayType.Clip,
+        };
+
+        (string magazine, string reserve) = RemasteredHudPresentation.AmmoColumns(rifle, 7, 120);
+
+        Assert.Equal("07", magazine);
+        Assert.Equal("120", reserve);
+    }
+
+    [Fact]
+    public void AmmoColumnsBlankBothWhenTheWeaponCountsNothing()
+    {
+        WeaponType knife = new()
+        {
+            Category = WeaponCategory.Knife,
+            AmmoDisplay = AmmoDisplayType.None,
+        };
+
+        (string magazine, string reserve) =
+            RemasteredHudPresentation.AmmoColumns(knife, GunTiming.UnloadedClipSentinel, 0);
+
+        Assert.Equal("--", magazine);
+        Assert.Equal("--", reserve);
+    }
+
+    [Fact]
     public void DedicatedSettingSelectsEitherHudWithoutDependingOnTheMenuStyle()
     {
         Assert.True(RemasteredHudPresentation.UsesRemasteredHud(remasteredHudEnabled: true));
         Assert.False(RemasteredHudPresentation.UsesRemasteredHud(remasteredHudEnabled: false));
     }
+
+    [Theory]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    public void BinocularsFollowTheTacticalComputerOnlyWhenTheirRendererIsReady(
+        bool tacticalComputerEnabled,
+        bool opticsRendererReady,
+        bool expected) =>
+        Assert.Equal(expected, RemasteredHudPresentation.UsesRemasteredOptics(tacticalComputerEnabled, opticsRendererReady));
+
+    [Theory]
+    [InlineData(false, false, false, true)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, true)]
+    [InlineData(true, true, false, true)]
+    [InlineData(false, false, true, true)]
+    [InlineData(true, false, true, false)]
+    [InlineData(false, true, true, false)]
+    [InlineData(true, true, true, false)]
+    public void RetailAndEnhancedBinocularLayersAreMutuallyExclusive(
+        bool remasteredHudEnabled,
+        bool binocularsOpen,
+        bool remasteredOpticsEnabled,
+        bool expectedRetailLayer)
+        => Assert.Equal(
+            expectedRetailLayer,
+            RemasteredHudPresentation.UsesRetailWeaponHud(
+                remasteredHudEnabled,
+                binocularsOpen,
+                remasteredOpticsEnabled));
 
     [Theory]
     [InlineData(true, true, true)]

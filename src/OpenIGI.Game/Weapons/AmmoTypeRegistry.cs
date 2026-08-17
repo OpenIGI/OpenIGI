@@ -129,6 +129,15 @@ public sealed class AmmoTypeRegistry
     /// <remarks>Models the linear search at <c>0x47CD40</c>.</remarks>
     public bool TryGet(int ammoId, out AmmoType type) => _byId.TryGetValue(ammoId, out type!);
 
+    /// <summary>Looks an ammunition type up by its authored <c>AMMO_ID_*</c> symbol.</summary>
+    public bool TryGetByScriptId(string scriptId, out AmmoType type)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(scriptId);
+        type = _types.FirstOrDefault(candidate =>
+            string.Equals(candidate.ScriptId, scriptId, StringComparison.OrdinalIgnoreCase))!;
+        return type is not null;
+    }
+
     /// <summary>Looks a type up by the calibre a weapon names.</summary>
     /// <param name="calibreId">The calibre from a <see cref="WeaponType.CalibreId"/>.</param>
     /// <param name="type">Receives the type when a calibre matches.</param>

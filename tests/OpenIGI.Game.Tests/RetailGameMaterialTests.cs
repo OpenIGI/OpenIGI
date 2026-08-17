@@ -114,6 +114,26 @@ public sealed class RetailGameMaterialTests
         Assert.True(silent > 0, "every material leaves a mark, so the empty-texture guard is dead.");
     }
 
+    [Theory]
+    // The binocular detector's sight ray passes through these: Water, Glass, Fence, MetalLadder,
+    // MetalFence -- glass and wire do not bound retail's sector visibility, so a guard behind them
+    // stays marked.
+    [InlineData(2, true)]
+    [InlineData(14, true)]
+    [InlineData(18, true)]
+    [InlineData(22, true)]
+    [InlineData(23, true)]
+    // Solid surfaces occlude, and Air (0) must NOT be transparent: the terrain trace reports material
+    // 0 by default, so treating it as see-through would let contacts show through a hill.
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(6, false)]
+    [InlineData(11, false)]
+    public void SightTransparencyMatchesTheSeeThroughMaterials(int globalMaterial, bool expected)
+    {
+        Assert.Equal(expected, GameMaterial.IsSightTransparent(globalMaterial));
+    }
+
     private static GameMaterial Find(GameMaterialRegistry materials, string name)
     {
         GameMaterial? found = materials.ByIndex.Values.FirstOrDefault(

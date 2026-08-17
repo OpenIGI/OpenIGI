@@ -47,6 +47,7 @@ internal sealed partial class DesktopGame
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<GameTask, AudioVoiceHandle> _cutsceneVoices = [];
     private readonly HashSet<AudioVoiceHandle> _cutsceneOneShotVoices = [];
+    private AudioVoiceHandle _binocularZoomVoice;
 
     private void SetCutsceneSound(CutsceneSoundEvent sound)
     {
@@ -161,6 +162,67 @@ internal sealed partial class DesktopGame
         }
     }
 
+    /// <summary>Maintains the retail binocular zoom motor cue while the operator is zooming.</summary>
+    /// <remarks>
+    /// <c>COMMON/SOUNDS/SOUNDS.RES</c> authors <c>bin_zoom_1</c> as a loop. The retail device only makes
+    /// this sound while a zoom key is <b>actively</b> changing the magnification -- not when the view is
+    /// opened, and not while it settles to the authored default -- so it is driven off the player
+    /// camera's <c>BinocularZoomSteppingThisTick</c>, and stopped the moment the zoom stops or the view
+    /// closes. Keying it to the open edge instead played the cue every time the binoculars were raised.
+    /// </remarks>
+    private void PlayBinocularTransitionSound()
+    {
+        if (_sounds is null || _player is not { } player)
+        {
+            return;
+        }
+
+        if (!player.IsBinocularsOpen || !player.BinocularZoomSteppingThisTick)
+        {
+            StopBinocularTransitionSound();
+            return;
+        }
+
+        if (_binocularZoomVoice.IsValidHandle && _sounds.IsPlaying(_binocularZoomVoice))
+        {
+            return;
+        }
+
+        _binocularZoomVoice = _sounds.PlayDefinition("bin_zoom_1", priority: 180, looping: true);
+    }
+
+    /// <summary>Stops the looping binocular cue when player ticking is suspended.</summary>
+    /// <remarks>
+    /// Death-camera and mission teardown deliberately stop ticking the player. Those paths therefore
+    /// cannot rely on <see cref="PlayBinocularTransitionSound"/> observing a closed-view edge on a
+    /// later player tick; stop the voice at the lifecycle boundary instead.
+    /// </remarks>
+    private void StopBinocularTransitionSound()
+    {
+        if (_binocularZoomVoice.IsValidHandle)
+        {
+            _sounds?.Stop(_binocularZoomVoice);
+            _binocularZoomVoice = AudioVoiceHandle.None;
+        }
+    }
+
+    /// <summary>Plays the medipack's authored cue when its sustained syringe action starts.</summary>
+    /// <remarks>
+    /// IGI.EXE's medipack execution state consumes a charge and applies one heal after its damage and
+    /// ammo checks, while the state keeps one syringe clip looping. The cue belongs to that action
+    /// edge, not to every cooldown-eligible dose, so a fifty-charge pack cannot spam a sound each tick.
+    /// </remarks>
+    private void PlayMedipackSound()
+    {
+        if (_player?.Weapons is { MedipackStartedThisTick: true } weapons)
+        {
+            // A medipack is an injection action, not a gun shot. Some weapon records carry a
+            // legacy firearm FireSound field (which produces the shotgun/pistol report); the
+            // retail medipack cue is the standalone syringe sound and is always used here.
+            _sounds?.PlayDefinition("syringe", priority: 180);
+        }
+    }
+
     /// <summary>Plays the retail world-weapon cue after a <c>GunPickup</c> reaches the player.</summary>
     private void PlayGunPickupSound(GunPickup pickup)
     {
@@ -177,6 +239,17 @@ internal sealed partial class DesktopGame
     private void PlayGenericPickupSound(GenericPickup pickup)
     {
         ArgumentNullException.ThrowIfNull(pickup);
+
+        // Ammo pickups are authored as GenericPickup/AmmoPickup world objects. Resolve and award them
+        // at the same collection edge as the retail pickup cue, so the object, inventory count and sound
+        // cannot drift apart. An explicit task payload wins over the catalog fallback.
+        if (_player?.Weapons is { } weapons
+            && _ammoTypes is { } ammoTypes
+            && AmmoPickupCatalog.TryResolve(pickup, ammoTypes, out AmmoType ammo))
+        {
+            weapons.Ammunition.Add(ammo.AmmoId, AmmoPickupCatalog.Amount(pickup, ammo.AmmoId));
+        }
+
         _sounds?.PlayDefinition("pickup", priority: 180);
     }
 
@@ -325,6 +398,7 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private void ResetSoundsForMission()
     {
+        StopBinocularTransitionSound();
         _weaponSounds?.Reset();
         foreach (WeaponSoundPlayer soldier in _soldierWeaponSounds.Values)
         {

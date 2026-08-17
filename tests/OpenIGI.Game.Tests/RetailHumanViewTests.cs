@@ -66,6 +66,52 @@ public sealed class RetailHumanViewTests
     }
 
     [RequiresGameDataFact]
+    public void TheViewExposesTheCurrentWholeRigClipProgress()
+    {
+        HumanView view = new(ViewSet());
+        view.PlayWeaponAnimation(Knife().StandAnimation, loops: true);
+
+        Assert.Equal(0f, view.ClipProgress);
+
+        view.Bones.Tick();
+
+        Assert.InRange(view.ClipProgress, 0.0f, 1.0f);
+        Assert.True(view.ClipProgress > 0f);
+    }
+
+    [RequiresGameDataFact]
+    public void TheMedipackLoopActionUsesTheRawRetailSecondFireSlot()
+    {
+        WeaponType medipack = RetailWeaponRoster.Value.Weapons.First(
+            weapon => weapon.Category == WeaponCategory.Medipack);
+        WeaponAnimations action = WeaponAnimationTable.Select(medipack, WeaponAction.MedipackLoop);
+
+        // The retail medipack record in IGI.EXE has no second full-body fire clip. The native
+        // callback forwards -1 to the animation dispatcher; it does not replay FireAnimation1.
+        Assert.Equal(medipack.FireAnimation2, action.FullBody);
+        if (action.FullBody < 0)
+        {
+            return;
+        }
+
+        BoneAnimationSet viewSet = ViewSet();
+        Assert.True(viewSet.TryGet(action.FullBody, out BoneAnimation injection));
+        Assert.True(
+            injection.Rotations(HumanAttachPoints.FirstPersonWeapon).Count > 1,
+            "The medipack fire clip does not animate the first-person arm attachment.");
+
+        HumanView view = new(viewSet);
+        Assert.True(action.LoopFullBody);
+        Assert.NotNull(view.PlayWeaponAnimation(action.FullBody, loops: action.LoopFullBody));
+        Assert.Equal(0f, view.ClipProgress);
+
+        view.Bones.Tick();
+
+        Assert.InRange(view.ClipProgress, 0f, 1f);
+        Assert.True(view.ClipProgress > 0f);
+    }
+
+    [RequiresGameDataFact]
     public void EveryFullBodyWeaponAnimationOfEveryWeaponResolvesInTheViewRigsSet()
     {
         BoneAnimationSet view = ViewSet();

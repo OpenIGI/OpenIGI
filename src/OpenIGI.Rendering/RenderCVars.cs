@@ -1092,6 +1092,78 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>Whether the remastered binocular applies its glass-lens display transform.</summary>
+    /// <remarks>
+    /// The optics tint, highlight bloom and bezel vignette are a resolve-time display transform over the
+    /// finished picture, raised as the device comes up. Off under vanilla for the reason the tactical
+    /// computer is: the retail binocular is the regression gate and must stay untouched.
+    /// </remarks>
+    public static readonly BoolCVar BinocularLens = Presets.Define(
+        CVar.Bool(
+            "r_binocular_lens",
+            true,
+            CVarOptions.Archive,
+            "Apply the remastered binocular's glass-lens transform (tint, bloom, bezel vignette)."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether binocular-detected enemies are given a through-wall silhouette glow.</summary>
+    /// <remarks>
+    /// A team-coloured selection glow drawn over each scanned soldier while the remastered optics are up,
+    /// so a marked contact stays legible through cover. Off under vanilla with the rest of the remaster.
+    /// </remarks>
+    public static readonly BoolCVar BinocularOutline = Presets.Define(
+        CVar.Bool(
+            "r_binocular_outline",
+            true,
+            CVarOptions.Archive,
+            "Glow binocular-detected enemies through walls while the remastered optics are up."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>The remastered binocular detector's range at the default zoom, in metres.</summary>
+    /// <remarks>
+    /// A modern optics touch: the detector has a finite range rather than tagging every enemy in the
+    /// frustum however far off, and that range grows as the operator zooms in -- from this value at the
+    /// default field of view up to <see cref="BinocularRangeZoomed"/> at the tightest zoom. The vanilla
+    /// optics ignore both and stay retail-uncapped.
+    /// </remarks>
+    public static readonly NumericCVar<float> BinocularRange = Presets.Define(
+        CVar.Float(
+            "r_binocular_range",
+            150f,
+            50f,
+            4000f,
+            CVarOptions.Archive,
+            "Range, in metres, the remastered binocular detector marks a contact at, at the default zoom."),
+        vanilla: "150",
+        enhanced: "150",
+        high: "150",
+        ultra: "150");
+
+    /// <summary>The remastered binocular detector's range at the tightest zoom, in metres.</summary>
+    /// <remarks>
+    /// The range scales from <see cref="BinocularRange"/> at the default field of view to this at the
+    /// closest magnification, so leaning into the optics sees further, the way a real scope resolves a
+    /// distant figure the naked view cannot.
+    /// </remarks>
+    public static readonly NumericCVar<float> BinocularRangeZoomed = Presets.Define(
+        CVar.Float(
+            "r_binocular_range_zoomed",
+            250f,
+            50f,
+            4000f,
+            CVarOptions.Archive,
+            "Range, in metres, the remastered binocular detector marks a contact at, at the tightest zoom."),
+        vanilla: "250",
+        enhanced: "250",
+        high: "250",
+        ultra: "250");
+
     /// <summary>Whether the mission's status messages are drawn as the remaster's comms cards.</summary>
     /// <remarks>
     /// <para>

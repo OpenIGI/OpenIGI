@@ -2,6 +2,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using System.Globalization;
 
 namespace OpenIGI.Desktop;
 
@@ -10,6 +11,27 @@ public static class RemasteredHudPresentation
 {
     /// <summary>Whether the dedicated HUD setting selects the remaster presentation.</summary>
     public static bool UsesRemasteredHud(bool remasteredHudEnabled) => remasteredHudEnabled;
+
+    /// <summary>Whether binoculars use the enhanced optics interface paired with the tactical computer.</summary>
+    /// <remarks>
+    /// The selection must include the actual optics renderer's readiness. A tactical map can be available
+    /// while the independent HUD font atlas failed to initialize; choosing enhanced optics in that state
+    /// would suppress the retail device and leave the player with zoom but no overlay.
+    /// </remarks>
+    public static bool UsesRemasteredOptics(bool tacticalComputerEnabled, bool opticsRendererReady) =>
+        tacticalComputerEnabled && opticsRendererReady;
+
+    /// <summary>Whether the retail weapon layer owns the current binocular presentation.</summary>
+    /// <remarks>
+    /// The tactical optics switch is independent of the ordinary remastered HUD switch. When the
+    /// player is looking through binoculars, exactly one optics layer must win; outside binoculars,
+    /// the ordinary HUD setting continues to choose the weapon layer.
+    /// </remarks>
+    public static bool UsesRetailWeaponHud(
+        bool remasteredHudEnabled,
+        bool binocularsOpen,
+        bool remasteredOpticsEnabled)
+        => binocularsOpen ? !remasteredOpticsEnabled : !remasteredHudEnabled;
 
     /// <summary>Whether messages use the remaster's tactical-card presentation.</summary>
     public static bool UsesTacticalMessages(bool remasteredHudEnabled, bool tacticalMessagesEnabled)
@@ -24,6 +46,30 @@ public static class RemasteredHudPresentation
     {
         float degrees = yawRadians * (180f / MathF.PI);
         return ((degrees % 360f) + 360f) % 360f;
+    }
+
+    /// <summary>Returns the nearest finite binocular contact range, or <see langword="null"/>.</summary>
+    public static float? NearestContactRange(IReadOnlyList<EnemyOverlayBox>? targets)
+    {
+        if (targets is null)
+        {
+            return null;
+        }
+
+        float? nearest = null;
+        foreach (EnemyOverlayBox target in targets)
+        {
+            if (target.DistanceMetres <= 0f || !float.IsFinite(target.DistanceMetres))
+            {
+                continue;
+            }
+
+            nearest = nearest is null
+                ? target.DistanceMetres
+                : MathF.Min(nearest.Value, target.DistanceMetres);
+        }
+
+        return nearest;
     }
 
     /// <summary>Chooses the health colour with deliberately broad warning bands.</summary>
@@ -67,6 +113,34 @@ public static class RemasteredHudPresentation
         HumanWeaponState.DryFire => "EMPTY",
         _ => string.Empty,
     };
+
+    /// <summary>Formats the MAG and RESERVE columns of the weapon readout.</summary>
+    /// <param name="weapon">The weapon in hand.</param>
+    /// <param name="roundsInClip">The magazine count, or <see cref="GunTiming.UnloadedClipSentinel"/> before a clip has loaded.</param>
+    /// <param name="reserve">The loose-ammunition count the weapon draws from.</param>
+    /// <returns>The MAG and RESERVE strings, either of which is <c>"--"</c> when the column does not apply.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="weapon"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// A non-medical weapon whose <see cref="WeaponType.AmmoDisplay"/> is <see cref="AmmoDisplayType.None"/>
+    /// counts nothing and blanks both columns. The medipack is a pool of injection charges with no firearm
+    /// magazine, but its reserve still belongs under RESERVE even though its native gauge is None. Its
+    /// <c>HeldGun</c> never loads a clip, so <paramref name="roundsInClip"/> stays at the unloaded sentinel
+    /// and would otherwise render as a literal <c>"-02"</c>.
+    /// </remarks>
+    public static (string Magazine, string Reserve) AmmoColumns(WeaponType weapon, int roundsInClip, int reserve)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        if (weapon.AmmoDisplay == AmmoDisplayType.None
+            && weapon.Category != WeaponCategory.Medipack)
+        {
+            return ("--", "--");
+        }
+
+        bool hasMagazine = weapon.Category != WeaponCategory.Medipack
+            && roundsInClip != GunTiming.UnloadedClipSentinel;
+        string magazine = hasMagazine ? roundsInClip.ToString("00", CultureInfo.InvariantCulture) : "--";
+        return (magazine, reserve.ToString("000", CultureInfo.InvariantCulture));
+    }
 
     /// <summary>Produces a short category tag used beside the weapon silhouette.</summary>
     public static string WeaponClass(WeaponType weapon)

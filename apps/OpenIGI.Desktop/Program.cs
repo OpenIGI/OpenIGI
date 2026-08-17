@@ -1,5 +1,6 @@
 ﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
+using OpenIGI.Desktop.Infrastructure;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Platform;
@@ -21,11 +22,19 @@ catch (ArgumentException ex)
     return 2;
 }
 
-string logPath = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-    "OpenIGI",
-    "runtime.log");
-using OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger = new(logPath);
+OpenIGI.Desktop.Infrastructure.PersistentLogger persistentLogger;
+try
+{
+    persistentLogger = new(RuntimePaths.GetLogPath());
+}
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+{
+    Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
+    return 2;
+}
+
+using (persistentLogger)
+{
 IIgiLogger logger = persistentLogger;
 
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
@@ -91,18 +100,29 @@ catch (PlatformException ex)
     return 3;
 }
 
+// macOS reports a zero drawable for a hidden OpenGL window. Show it before the graphics device reads
+// the drawable dimensions. Other platforms keep the window hidden until DesktopGame.Run so boot does
+// not present a blank focused surface.
+if (OperatingSystem.IsMacOS())
+{
+    window.Show();
+}
+
 using (window)
 {
     DisplayReport.Report(window, options, logger);
 
     GL gl = GL.GetApi(window.GLContext);
 
+    int width = window.Width > 0 ? window.Width : options.Width > 0 ? options.Width : 640;
+    int height = window.Height > 0 ? window.Height : options.Height > 0 ? options.Height : 480;
     using GLGraphicsDevice device = new(
         gl,
-        new DisplayMode(window.Width, window.Height, 32, window.RefreshRate),
+        new DisplayMode(width, height, 32, window.RefreshRate),
         window.SwapBuffers,
         logger);
 
     using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);
     return game.Run();
+}
 }

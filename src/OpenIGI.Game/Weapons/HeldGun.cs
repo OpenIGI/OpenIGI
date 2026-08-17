@@ -1,4 +1,5 @@
 using OpenIGI.Core.Numerics;
+using OpenIGI.Game.Player;
 
 namespace OpenIGI.Game.Weapons;
 
@@ -88,7 +89,16 @@ public sealed class HeldGun
     public int Reserve(AmmoPool pool)
     {
         ArgumentNullException.ThrowIfNull(pool);
-        return Ammo is null ? 0 : pool.Count(Ammo.AmmoId);
+        if (Ammo is not null)
+        {
+            return pool.Count(Ammo.AmmoId);
+        }
+
+        // Medipack is the one special weapon whose native ammo slot is fixed even when a
+        // partially-loaded roster leaves the cached binding unavailable.
+        return Weapon.Category == WeaponCategory.Medipack
+            ? pool.Count(PlayerWeapons.MedipackAmmoId)
+            : 0;
     }
 
     /// <summary>Advances the gun's clock by one tick.</summary>
@@ -97,7 +107,16 @@ public sealed class HeldGun
     /// <c>0x478640</c>. Its first act is to load the magazine if it never has been, which is what turns
     /// <see cref="GunTiming.UnloadedClipSentinel"/> into the weapon's capacity.
     /// </remarks>
-    public void Tick(bool triggerHeld) => State.Tick(Weapon, triggerHeld);
+    public void Tick(bool triggerHeld)
+    {
+        // Medipacks are inventory charges, not firearms. Their first charge is written by PickUp;
+        // treating the unloaded sentinel as a magazine here would manufacture a usable pack for a
+        // merely equipped weapon and would make the reserve pool off by one.
+        if (Weapon.Category != WeaponCategory.Medipack)
+        {
+            State.Tick(Weapon, triggerHeld);
+        }
+    }
 
     /// <summary>Refills the magazine from a pool.</summary>
     /// <param name="pool">What the owner is carrying.</param>
@@ -161,7 +180,10 @@ public sealed class HeldGun
     {
         ArgumentNullException.ThrowIfNull(random);
 
-        State.EnsureLoaded(Weapon);
+        if (Weapon.Category != WeaponCategory.Medipack)
+        {
+            State.EnsureLoaded(Weapon);
+        }
 
         GunFireBlock block = GunFiring.Evaluate(Weapon, State, triggerHeld, ConsumesAmmunition);
         if (!triggerHeld)

@@ -26,6 +26,7 @@ internal sealed class RemasteredHudRenderer : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
     private UiFont? _body;
+    private UiFont? _display;
     private bool _disposed;
 
     public RemasteredHudRenderer(IGraphicsDevice device, IIgiLogger logger)
@@ -50,6 +51,13 @@ internal sealed class RemasteredHudRenderer : IDisposable
         try
         {
             _body = UiFontLibrary.Load(_device, UiFontLibrary.Body, pixelHeight: 48f);
+
+            // A distance-field face for the binocular's marker labels, so a range digit can carry the
+            // outline and glow that make it read as projected onto the optics rather than printed on
+            // them. Optional: a missing heading face falls back to the plain body font on the markers.
+            _display = UiFontLibrary.Exists(UiFontLibrary.Heading)
+                ? UiFontLibrary.Load(_device, UiFontLibrary.Heading, pixelHeight: 64f, FontAtlasKind.SignedDistanceField)
+                : null;
             return true;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException)
@@ -75,6 +83,176 @@ internal sealed class RemasteredHudRenderer : IDisposable
         DrawWeapon(painter, context, body, snapshot);
         DrawCrosshair(painter, context, snapshot.Weapon, snapshot.SniperScoped);
         DrawInteraction(painter, context, body, snapshot.ActionSprite);
+    }
+
+    /// <summary>Draws the remastered binocular optics overlay over the glass-lens post-process.</summary>
+    /// <remarks>
+    /// The glass tint, bloom and bezel vignette are a resolve-time display transform (see
+    /// <see cref="OpenIGI.Rendering.BinocularDisplaySettings"/>); this draws the crisp vector interface
+    /// on top of it. Contacts are modern chevron markers with a glowing range label rather than the
+    /// retail rotating rectangle -- the faithful rectangle stays on the vanilla <c>StatusScreenRenderer</c>.
+    /// </remarks>
+    public void DrawBinocularOverlay(
+        SpriteBatch batch,
+        float headingRadians,
+        float tanX,
+        int screenWidth,
+        int screenHeight,
+        IReadOnlyList<EnemyOverlayBox>? targets,
+        float seconds,
+        float? rangeMetres)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        if (_body is not { } body)
+        {
+            return;
+        }
+
+        var context = new LayoutContext(Math.Max(1, screenWidth), Math.Max(1, screenHeight));
+        var painter = new UiPainter(batch, context);
+
+        // No full-screen wash and no opaque frame: the lens post-process owns the glass now, so the HUD
+        // stays crisp chrome over it. Thin rails and corner ticks read as an optics frame without
+        // tinting the picture a second time.
+        float inset = context.Px(30f);
+        UiRect frame = new(inset, inset, context.SafeRect.Width - (inset * 2f), context.SafeRect.Height - (inset * 2f));
+        painter.FillRect(new UiRect(frame.X, frame.Y, frame.Width, context.Px(2f)), Signal.WithAlpha(190));
+        painter.FillRect(new UiRect(frame.X, frame.Bottom - context.Px(2f), frame.Width, context.Px(2f)), Signal.WithAlpha(120));
+        DrawCornerTicks(painter, context, frame, Signal.WithAlpha(170));
+
+        DrawCompass(painter, context, body, headingRadians);
+
+        float centreX = context.SafeRect.X + (context.SafeRect.Width * 0.5f);
+        float centreY = context.SafeRect.Y + (context.SafeRect.Height * 0.5f);
+        DrawReticle(painter, context, centreX, centreY);
+
+        if (targets is not null)
+        {
+            foreach (EnemyOverlayBox target in targets)
+            {
+                if (target.TryClipToViewport(screenWidth, screenHeight, out EnemyOverlayBox clipped))
+                {
+                    DrawContactMarker(painter, context, clipped, seconds);
+                }
+            }
+        }
+
+        // The range is the crosshair raycast the caller supplies -- the distance to whatever the centre
+        // rests on -- exactly as the vanilla readout shows, not the nearest detected contact. Same
+        // 1000 m cap as the retail widget.
+        string range = rangeMetres is { } metres && float.IsFinite(metres) && metres > 0f && metres < 1000f
+            ? FormattableString.Invariant($"RANGE  {metres:0}M")
+            : "RANGE  1000+M";
+        float magnification = tanX > 0.0001f ? HumanView.DefaultTanX / tanX : 1f;
+        UiVectors.DrawTracked(
+            painter, body, "OPTICS // BINOCULAR",
+            new UiVec2(frame.X + context.Px(18f), frame.Bottom - context.Px(48f)), context.Px(15f), Signal, context.Px(2f));
+        painter.DrawText(
+            body, FormattableString.Invariant($"x{magnification:0.0}    {range}"),
+            new UiVec2(frame.Right - context.Px(250f), frame.Bottom - context.Px(48f)), context.Px(15f), Text);
+    }
+
+    /// <summary>The colour a contact's marker is drawn in, by its detector team classification.</summary>
+    private static Bgra32 MarkerColour(BinocularMarkerColor marker) => marker switch
+    {
+        BinocularMarkerColor.Team => Bgra32.FromRgb(120, 235, 140),
+        BinocularMarkerColor.Disabled => Bgra32.FromRgb(120, 170, 255),
+        _ => Bgra32.FromRgb(255, 72, 72),
+    };
+
+    /// <summary>Draws one detected contact: a bobbing chevron over the target and a glowing range label.</summary>
+    private void DrawContactMarker(UiPainter painter, LayoutContext context, EnemyOverlayBox target, float seconds)
+    {
+        float alpha = Math.Clamp(target.Alpha, 0f, 1f);
+        if (alpha <= 0f)
+        {
+            return;
+        }
+
+        float centreX = (target.Left + target.Right) * 0.5f;
+        Bgra32 colour = MarkerColour(target.Marker);
+
+        // The acquisition flourish reuses the detector's own entry pulse: while PulseScale is still
+        // large the contact is freshly seen, so an expanding, fading ring collapses onto the chevron.
+        if (target.PulseScale > 1.05f)
+        {
+            float boxCentreY = (target.Top + target.Bottom) * 0.5f;
+            float ringRadius = context.Px(9f) * target.PulseScale * 0.5f;
+            float ringFade = Math.Clamp((target.PulseScale - 1f) / 10f, 0f, 1f) * alpha * 0.7f;
+            UiVectors.StrokeRing(
+                painter, new UiVec2(centreX, boxCentreY), ringRadius,
+                MathF.Max(1f, context.Px(2f)), colour.WithAlpha((byte)(255f * ringFade)));
+        }
+
+        // The chevron floats just above the contact, bobbing on a per-target phase so a cluster of
+        // marks does not pulse in lockstep. A dark backing chevron keeps it legible over bright terrain.
+        float bob = context.Px(4f) * MathF.Sin((seconds * 2.2f) + target.TargetId);
+        var apex = new UiVec2(centreX, target.Top - context.Px(7f) + bob);
+        float halfWidth = context.Px(9f);
+        float height = context.Px(11f);
+        UiVectors.DrawChevron(
+            painter, new UiVec2(apex.X, apex.Y + context.Px(1.5f)),
+            halfWidth + context.Px(1.5f), height + context.Px(2f), Bgra32.FromRgba(0, 0, 0, (byte)(130f * alpha)));
+        UiVectors.DrawChevron(painter, apex, halfWidth, height, colour.WithAlpha((byte)(255f * alpha)));
+
+        // The range, above the chevron, glowing so it reads as projected onto the optics.
+        string label = $"{MathF.Max(0f, target.DistanceMetres):0}M";
+        float labelSize = context.Px(15f);
+        UiFont labelFont = _display ?? _body!;
+        float labelTop = apex.Y - height - labelFont.LineHeight(labelSize) - context.Px(4f);
+        DrawGlowLabel(painter, label, centreX, labelTop, labelSize, alpha);
+    }
+
+    /// <summary>Draws a centred, glowing label, using the distance-field face when one loaded.</summary>
+    private void DrawGlowLabel(UiPainter painter, string text, float centreX, float topY, float size, float alpha)
+    {
+        Bgra32 white = Bgra32.FromRgb(238, 246, 250).WithAlpha((byte)(255f * alpha));
+        if (_display is { } display)
+        {
+            float width = display.MeasureWidth(text, size);
+            SdfTextParams effects = SdfTextParams.Plain(0f)
+                .WithOutline(Bgra32.FromRgba(0, 0, 0, (byte)(190f * alpha)), 0.18f)
+                .WithGlow(Signal, 0.5f, 0.5f * alpha);
+            painter.DrawText(display, text, new UiVec2(centreX - (width * 0.5f), topY), size, white, effects);
+        }
+        else if (_body is { } body)
+        {
+            float width = body.MeasureWidth(text, size);
+            Bgra32 backing = Bgra32.FromRgba(0, 0, 0, (byte)(170f * alpha));
+            painter.DrawText(body, text, new UiVec2(centreX - (width * 0.5f) + 1f, topY + 1f), size, backing);
+            painter.DrawText(body, text, new UiVec2(centreX - (width * 0.5f), topY), size, white);
+        }
+    }
+
+    /// <summary>Draws the gapped rangefinder reticle: crosshair arms, a framing ring and a centre dot.</summary>
+    private static void DrawReticle(UiPainter painter, LayoutContext context, float centreX, float centreY)
+    {
+        Bgra32 mint = Signal.WithAlpha(210);
+        float arm = context.Px(24f);
+        float gap = context.Px(10f);
+        float weight = MathF.Max(1f, context.Px(1.5f));
+        painter.FillRect(new UiRect(centreX - gap - arm, centreY - (weight * 0.5f), arm, weight), mint);
+        painter.FillRect(new UiRect(centreX + gap, centreY - (weight * 0.5f), arm, weight), mint);
+        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY - gap - arm, weight, arm), mint);
+        painter.FillRect(new UiRect(centreX - (weight * 0.5f), centreY + gap, weight, arm), mint);
+        UiVectors.StrokeRing(
+            painter, new UiVec2(centreX, centreY), context.Px(3.4f), MathF.Max(1f, context.Px(1.2f)), mint.WithAlpha(150));
+        UiVectors.FillDisc(painter, new UiVec2(centreX, centreY), MathF.Max(1f, context.Px(1.6f)), Accent);
+    }
+
+    /// <summary>Draws short L-brackets at the corners of the optics frame.</summary>
+    private static void DrawCornerTicks(UiPainter painter, LayoutContext context, UiRect frame, Bgra32 colour)
+    {
+        float length = context.Px(28f);
+        float weight = MathF.Max(1f, context.Px(2f));
+        painter.FillRect(new UiRect(frame.X, frame.Y, length, weight), colour);
+        painter.FillRect(new UiRect(frame.X, frame.Y, weight, length), colour);
+        painter.FillRect(new UiRect(frame.Right - length, frame.Y, length, weight), colour);
+        painter.FillRect(new UiRect(frame.Right - weight, frame.Y, weight, length), colour);
+        painter.FillRect(new UiRect(frame.X, frame.Bottom - weight, length, weight), colour);
+        painter.FillRect(new UiRect(frame.X, frame.Bottom - length, weight, length), colour);
+        painter.FillRect(new UiRect(frame.Right - length, frame.Bottom - weight, length, weight), colour);
+        painter.FillRect(new UiRect(frame.Right - weight, frame.Bottom - length, weight, length), colour);
     }
 
     /// <summary>Draws the modern presentation of the same timed state progress the retail HUD exposes.</summary>
@@ -109,6 +287,8 @@ internal sealed class RemasteredHudRenderer : IDisposable
         _disposed = true;
         _body?.Dispose();
         _body = null;
+        _display?.Dispose();
+        _display = null;
     }
 
     private static void DrawObjectives(
@@ -275,9 +455,8 @@ internal sealed class RemasteredHudRenderer : IDisposable
             painter.DrawText(body, state, new UiVec2(left, y + context.Px(65f)), context.Px(14f), Accent);
         }
 
-        bool countsAmmo = weapon.AmmoDisplay != AmmoDisplayType.None;
-        string magazine = countsAmmo ? snapshot.RoundsInClip.ToString("00", CultureInfo.InvariantCulture) : "--";
-        string reserve = countsAmmo ? snapshot.ReserveAmmo.ToString("000", CultureInfo.InvariantCulture) : "--";
+        (string magazine, string reserve) =
+            RemasteredHudPresentation.AmmoColumns(weapon, snapshot.RoundsInClip, snapshot.ReserveAmmo);
         float ammoSize = context.Px(42f);
         UiVec2 reserveSize = body.Measure(reserve, ammoSize);
         float reserveX = right - reserveSize.X;
@@ -350,6 +529,7 @@ internal sealed class RemasteredHudRenderer : IDisposable
     private static Bgra32 Text => Bgra32.FromRgb(245, 248, 250);
     private static Bgra32 Muted => Bgra32.FromRgb(202, 213, 220);
     private static Bgra32 Accent => Bgra32.FromRgb(240, 176, 84);
+    private static Bgra32 Signal => Bgra32.FromRgb(140, 245, 200);
 }
 
 /// <summary>Everything the remaster HUD needs for one draw, collected without mutable renderer state.</summary>

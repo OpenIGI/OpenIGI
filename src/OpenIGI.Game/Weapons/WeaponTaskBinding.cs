@@ -46,7 +46,8 @@ public sealed record WeaponTaskParameterSlot(
 /// </remarks>
 public sealed class WeaponTaskBinding
 {
-    internal WeaponTaskBinding(
+    /// <summary>Initializes a decoded weapon-task binding.</summary>
+    public WeaponTaskBinding(
         string typeName,
         int typeId,
         IReadOnlyList<float> values,

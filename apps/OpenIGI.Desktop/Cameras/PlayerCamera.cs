@@ -60,6 +60,7 @@ public sealed class PlayerCamera
     private readonly IgiRandom _random = new();
     private readonly Mp5SightZoom _sightZoom = new();
     private readonly DragunovScope _dragunovScope = new();
+    private readonly BinocularsView _binocularsView = new();
     private readonly List<GunImpact> _impacts = [];
     private readonly BallisticSimulation _ballistics = new();
     private readonly GrenadeSimulation _grenades = new();
@@ -130,6 +131,9 @@ public sealed class PlayerCamera
     /// <summary>Gets the body being driven.</summary>
     public PlayerBody Body => _body;
 
+    /// <summary>Uses the owning runtime's live player-health accumulator.</summary>
+    public void UseHealth(HumanHealth health) => _body.UseHealth(health);
+
     /// <summary>Gets the first-person rig the held weapon hangs off, once one has been given.</summary>
     public HumanView? View => _view;
 
@@ -156,6 +160,50 @@ public sealed class PlayerCamera
 
     /// <summary>Gets whether the Dragunov's scope is open, for the HUD's overlay.</summary>
     public bool IsSniperScoped => _dragunovScope.IsScoped;
+
+    /// <summary>Gets whether the binocular overlay is open.</summary>
+    public bool IsBinocularsOpen => _binocularsView.IsOpen;
+
+    /// <summary>Gets whether binoculars opened on the last simulation tick.</summary>
+    public bool BinocularsOpenedThisTick => _binocularsView.OpenedThisTick;
+
+    /// <summary>Gets whether binoculars closed on the last simulation tick.</summary>
+    public bool BinocularsClosedThisTick => _binocularsView.ClosedThisTick;
+
+    /// <summary>Gets whether the binocular zoom target changed on the last simulation tick.</summary>
+    public bool BinocularZoomTargetChangedThisTick => _binocularsView.ZoomTargetChangedThisTick;
+
+    /// <summary>Gets whether a held zoom key moved the binocular magnification on the last tick.</summary>
+    public bool BinocularZoomSteppingThisTick => _binocularsView.ZoomSteppingThisTick;
+
+    /// <summary>Gets how far the binoculars are zoomed in, 0 at the default to 1 at the tightest zoom.</summary>
+    /// <param name="currentTanX">The optics' current horizontal half-angle tangent.</param>
+    public float BinocularZoomInFraction(float currentTanX) => _binocularsView.ZoomInFraction(currentTanX);
+
+    /// <summary>Closes all optical devices and restores both first-person FOV tangents.</summary>
+    /// <remarks>
+    /// The desktop host stops ticking the player as soon as the death camera takes over. Resetting
+    /// here prevents a binocular or sniper latch and its narrowed tangent from surviving outside
+    /// first-person control.
+    /// </remarks>
+    public void ResetOptics()
+    {
+        _binocularsView.Reset();
+        _sightZoom.Reset();
+        _dragunovScope.Reset();
+
+        if (_view is { } view)
+        {
+            view.TanX = HumanView.DefaultTanX;
+            view.ViewModelTanX = HumanView.DefaultViewModelTanX;
+        }
+
+        _prevTickTanX = HumanView.DefaultTanX;
+        _tickTanX = HumanView.DefaultTanX;
+        _prevTickViewModelTanX = HumanView.DefaultViewModelTanX;
+        _tickViewModelTanX = HumanView.DefaultViewModelTanX;
+        HasViewTickPair = false;
+    }
 
     /// <summary>Gets the grenades in the air, both the player's and the AI's.</summary>
     /// <remarks>
@@ -258,6 +306,13 @@ public sealed class PlayerCamera
     public void UseViewRig(BoneAnimationSet set)
     {
         ArgumentNullException.ThrowIfNull(set);
+
+        // Mission restart can rebuild the first-person rig on an existing camera. Clear every
+        // optic's weapon identity and the input edge shadow before attaching the new bone object;
+        // otherwise a binocular/scope latch from the previous level can make the first toggle or
+        // zoom press disappear, and a held key can be interpreted as an old edge.
+        ResetOptics();
+        _input.Reset();
         _view = new HumanView(set);
         PoseChanged = true;
         SyncView();
@@ -305,12 +360,23 @@ public sealed class PlayerCamera
         }
 
         WeaponAnimations animations = WeaponAnimationTable.Select(weapon, action, fireVariant);
-        if (animations.FullBody < 0)
+        int animationId = animations.FullBody;
+        bool loops = animations.LoopFullBody;
+
+        // Retail's 0x40FB90 forwards FireAnimation2 to the animation dispatcher verbatim, and the
+        // shipped medipack leaves that slot at -1. 0x4D61D0 leaves the view untouched for a negative
+        // id, so the one-shot entry clip ("insert syringe") simply holds its final frame for the whole
+        // sustained injection. Substituting a *looping* FireAnimation1 here replayed that entry over
+        // and over while Fire was held; the syringe must be inserted once, then held -- not on repeat.
+        if (animationId < 0)
         {
             return false;
         }
 
-        if (_view.PlayWeaponAnimation(animations.FullBody, animations.LoopFullBody) is null)
+        // 0x489F20 forwards the action's blend to BoneObj_Play. The standing/moving actions ease over
+        // 0.4 s; firing and reloading snap. This is what eases the medipack (and every weapon) back to
+        // its stand pose on release instead of teleporting from the injection frame.
+        if (_view.PlayWeaponAnimation(animationId, loops, animations.FullBodyBlendSeconds) is null)
         {
             return false;
         }
@@ -1611,6 +1677,15 @@ public sealed class PlayerCamera
 
         _weapons.Tick(_input, _view?.ClipEnded ?? false, _body.IsGrounded, locomotion);
 
+        if (_weapons.State == HumanWeaponState.Medipack)
+        {
+            float progress = _view?.ClipProgress ?? 0f;
+            // The medipack task owns both its entry/loop action and the terminal FireAnimation3
+            // request. In particular, full health is a terminal condition for the task, not a
+            // reason for the presentation layer to replace the newly requested clip with Stand.
+            _ = _weapons.TryUseMedipack(_body.Health, progress);
+        }
+
         if (_weapons.InHand is { } held && _weapons.RequestedAction is { } action)
         {
             PlayWeaponAction(held.Weapon, action, _weapons.RequestedFireVariant);
@@ -1647,11 +1722,29 @@ public sealed class PlayerCamera
             else
             {
                 _ = _dragunovScope.Tick(heldWeapon, false, false, false, false, _view.TanX, _view.ViewModelTanX);
-                zoom = _sightZoom.Tick(
-                    heldWeapon,
-                    _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
-                    _view.TanX,
-                    _view.ViewModelTanX);
+                bool binocular = heldWeapon?.Category == WeaponCategory.Binocular;
+                if (!binocular && _binocularsView.HasOpticsState)
+                {
+                    // Binoculars are not ticked once the weapon swap has selected another weapon.
+                    // Clear their latch and restore the camera before MP5/other sight zoom is applied.
+                    _binocularsView.Reset();
+                    _view.TanX = HumanView.DefaultTanX;
+                    _view.ViewModelTanX = HumanView.DefaultViewModelTanX;
+                }
+
+                zoom = binocular
+                    ? _binocularsView.Tick(
+                        heldWeapon,
+                        _weapons?.ConsumeBinocularToggle() == true,
+                        _input.IsSet(PlayerInputSlot.ZoomIn),
+                        _input.IsSet(PlayerInputSlot.ZoomOut),
+                        _view.TanX,
+                        _view.ViewModelTanX)
+                    : _sightZoom.Tick(
+                        heldWeapon,
+                        _input.IsRisingEdge(PlayerInputSlot.AlternateFire),
+                        _view.TanX,
+                        _view.ViewModelTanX);
             }
 
             _view.TanX = zoom.TanX;
@@ -1659,6 +1752,14 @@ public sealed class PlayerCamera
         }
 
         if (_weapons is null || _view is null)
+        {
+            return;
+        }
+
+        // Binoculars are an optical device, not a gun. The weapon state machine ignores Fire while
+        // they are held, and this guard keeps a stale trigger/request from reaching the generic gun
+        // resolver if the input changes during the weapon-swap transition.
+        if (_weapons.InHand?.Weapon.Category == WeaponCategory.Binocular)
         {
             return;
         }

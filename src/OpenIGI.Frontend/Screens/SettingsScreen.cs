@@ -137,6 +137,10 @@ public sealed class SettingsScreen : ShellScreen
     }
 
     /// <inheritdoc/>
+    public override bool CapturesQueuedNavigation =>
+        Focus?.Focused is KeyBindingRow { IsListening: true };
+
+    /// <inheritdoc/>
     protected override bool HandleInput(UiNavigation nav, InputState input)
     {
         // A key-binding row that is listening swallows the keyboard until it captures a key.

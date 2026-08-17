@@ -41,12 +41,54 @@ public sealed class UiNavigation
     /// <param name="input">The frame's input.</param>
     /// <param name="elapsedSeconds">The real seconds since the last read, for repeat timing.</param>
     /// <exception cref="ArgumentNullException"><paramref name="input"/> is <see langword="null"/>.</exception>
-    public void Update(InputState input, float elapsedSeconds)
+    public void Update(InputState input, float elapsedSeconds) =>
+        Update(input, elapsedSeconds, consumeQueuedNavigation: true);
+
+    /// <summary>Reads a frame of input into the navigation intents.</summary>
+    /// <param name="input">The frame's input.</param>
+    /// <param name="elapsedSeconds">The real seconds since the last read, for repeat timing.</param>
+    /// <param name="consumeQueuedNavigation">
+    /// When <see langword="false"/>, queued Enter/Space/arrows stay in the press queue so a listening
+    /// settings row can bind them. Direction and accept still come from the live key state.
+    /// </param>
+    public void Update(InputState input, float elapsedSeconds, bool consumeQueuedNavigation)
     {
         ArgumentNullException.ThrowIfNull(input);
 
         Direction = null;
         NavDirection? current = ReadDirection(input);
+        bool queuedAccept = false;
+        NavDirection? queuedDirection = null;
+
+        // A quick desktop key press can be released between game-loop polls. Consume the queued edge
+        // while preserving the live-key repeat behavior used by held controls.
+        while (consumeQueuedNavigation && input.Keyboard.TryDequeueNavigationPress(out KeyCode pressed))
+        {
+            switch (pressed)
+            {
+                case KeyCode.Return:
+                case KeyCode.NumpadEnter:
+                case KeyCode.Space:
+                    queuedAccept = true;
+                    break;
+                case KeyCode.Up:
+                case KeyCode.Numpad8:
+                    queuedDirection = NavDirection.Up;
+                    break;
+                case KeyCode.Down:
+                case KeyCode.Numpad2:
+                    queuedDirection = NavDirection.Down;
+                    break;
+                case KeyCode.Left:
+                case KeyCode.Numpad4:
+                    queuedDirection = NavDirection.Left;
+                    break;
+                case KeyCode.Right:
+                case KeyCode.Numpad6:
+                    queuedDirection = NavDirection.Right;
+                    break;
+            }
+        }
 
         if (current != _held)
         {
@@ -67,9 +109,14 @@ public sealed class UiNavigation
             }
         }
 
+        if (Direction is null)
+        {
+            Direction = queuedDirection;
+        }
+
         KeyboardState keyboard = input.Keyboard;
         GamepadState pad = input.Gamepad;
-        Accept = keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter)
+        Accept = queuedAccept || keyboard.WasPressed(KeyCode.Return) || keyboard.WasPressed(KeyCode.NumpadEnter)
             || keyboard.WasPressed(KeyCode.Space) || pad.WasPressed(GamepadButton.South);
         Back = keyboard.WasPressed(KeyCode.Escape) || pad.WasPressed(GamepadButton.East);
     }

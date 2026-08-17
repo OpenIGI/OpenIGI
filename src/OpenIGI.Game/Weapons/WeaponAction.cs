@@ -41,4 +41,11 @@ public enum WeaponAction
 
     /// <summary>Standing, blended in immediately rather than eased.</summary>
     StandImmediate = 10,
+
+    /// <summary>The medipack's sustained syringe loop.</summary>
+    /// <remarks>
+    /// This is not a weapon reload or a second fire press. IGI.EXE's medipack state plays
+    /// FireAnimation1 once, then keeps FireAnimation2 looping while Fire remains held.
+    /// </remarks>
+    MedipackLoop = 11,
 }

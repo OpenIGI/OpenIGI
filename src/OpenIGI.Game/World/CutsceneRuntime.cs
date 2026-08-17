@@ -1417,7 +1417,10 @@ public sealed class CutsceneRuntime
     private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
     private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
     /// <summary>
-    /// Ports Heli::Tick (0x431E30), Rotor::Tick (0x42D440), and the force accumulator at 0x4EC6A0.
+    /// Ports the helicopter tick identified by the cutscene task, Rotor::Tick (0x42D440), and the
+    /// force accumulator at 0x4EC6A0. The current Ghidra analysis identifies 0x431E30 as the human
+    /// camera FOV integrator, so this method deliberately does not assign that address to helicopter
+    /// logic.
     /// Forces and application points are body-local; the accumulator converts linear acceleration to
     /// world space with the pre-integration attitude. Retail damps angular momentum by 0.92 after the
     /// quaternion step and deliberately does not damp linear velocity.
