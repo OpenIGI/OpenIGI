@@ -435,6 +435,16 @@ internal sealed partial class DesktopGame
                 // hills. Nearest contact wins.
                 WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace);
 
+                // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
+                // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
+                // path-traced lightmap was baked with `_sun` still null -- a zero sun direction and a fallback
+                // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
+                // backdrop already carried one in. The later read stays and simply re-confirms the same value.
+                if (_sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
+                {
+                    _sun = bakeSun;
+                }
+
                 // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
                 // about three seconds in Release and half a minute in Debug, and by this point the window
                 // and its GL context are live -- so the process stops answering, the GPU is handed no
