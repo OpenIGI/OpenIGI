@@ -2478,7 +2478,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         SetComputeUniform(_autoExposureAdapt, "uKey", 0.18f);
         SetComputeUniform(_autoExposureAdapt, "uRate", 0.04f);
         SetComputeUniform(_autoExposureAdapt, "uMin", 0.05f);
-        SetComputeUniform(_autoExposureAdapt, "uMax", 16.0f);
+
+        // Capped at 6x rather than 16x: a dark interior pulls the metered average right down, and a 16x
+        // ceiling let the exposure lift so far that the brighter surfaces -- a lit floor, a wall by a window
+        // -- clipped to white. Six stops of lift is enough to open a shadowed room without blowing out what
+        // little light it does have; the tone map's shoulder then carries the window on top of that.
+        SetComputeUniform(_autoExposureAdapt, "uMax", 6.0f);
         SetComputeUniform(_autoExposureAdapt, "uFixedScale", AutoExposureShaders.FixedScale);
         SetComputeUniform(_autoExposureAdapt, "uFixedBias", AutoExposureShaders.FixedBias);
         BindStorageBuffer(0, _autoExposureAccum);

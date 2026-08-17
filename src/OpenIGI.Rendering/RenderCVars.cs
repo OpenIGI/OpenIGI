@@ -192,12 +192,14 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Tone map: none reproduces the original exactly, neutral stays out of the way, aces and agx are filmic."),
         vanilla: "none",
-        enhanced: "neutral",
-        high: "neutral",
 
-        // ACES on ultra rather than AgX. Measured over the range this game actually occupies, ACES
-        // holds the most contrast of the four and AgX the least bar neutral -- AgX's strength is
-        // taming very bright highlights, and a world lit by LDR lightmaps does not have any.
+        // ACES filmic across the modern presets. Neutral was fine while the world had no highlights to tame,
+        // but with auto-exposure on and a window several stops brighter than the room it stands in, there is
+        // now a real highlight range: ACES' shoulder rolls the blown window off with its colour intact rather
+        // than clipping it to flat white, and holds more midtone contrast than AgX over the range this game
+        // occupies. Vanilla stays untouched -- none reproduces the original exactly.
+        enhanced: "aces",
+        high: "aces",
         ultra: "aces");
 
     /// <summary>The linear value that maps to display white.</summary>
@@ -362,15 +364,17 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Adapt exposure to the scene's average brightness over time. Only where a tone map is on."),
         vanilla: "0",
-        enhanced: "0",
-        high: "0",
 
-        // OFF at ultra now. It was on to rescue interiors that the real-time gather left dark, but that was
-        // papering over weak light: the artists' baked lightmaps and the calibrated fixed exposure
-        // (r_exposure ultra 1.8) now light interiors and exteriors together WITHOUT the eye adapting, which
-        // is the honest result -- a sunny scene that reads sunny at a fixed exposure rather than one the
-        // camera keeps rebalancing. Left as an opt-in for anyone who wants eye adaptation.
-        ultra: "0");
+        // ON for every modern preset. It was turned off in the fixed-exposure era on the theory that a
+        // calibrated exposure lit interiors and exteriors together -- but a fixed exposure tuned for a sunlit
+        // exterior crushes an interior to black, which is exactly what a windowed room looked like: dark and
+        // flat. Adapting the exposure to what the camera is actually looking at is what every modern engine
+        // does, and it is what lets a dim room read bright next to a blown-out window while the tone map's
+        // shoulder rolls the window off rather than clipping it. r_exposure is a bias on the adapted value
+        // here, no longer the whole of it. Vanilla keeps the original's fixed brightness.
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How many samples per pixel the scene is rasterised with.</summary>
     /// <remarks>
