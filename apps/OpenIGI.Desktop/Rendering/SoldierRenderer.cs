@@ -282,6 +282,9 @@ public sealed class SoldierRenderer : IDisposable
     private GameMaterialRegistry? _materials;
     private readonly Dictionary<SoldierView, int> _footCursors = [];
     private readonly HashSet<string> _reportedChannels = new(StringComparer.Ordinal);
+
+    /// <summary>This frame's ground-snap results by queried position; see <see cref="SnapToGround"/>.</summary>
+    private readonly Dictionary<(double X, double Y, double Z), double> _groundSnaps = [];
     private int _deathsSoFar;
     private int _walkAnimation = -1;
     private int _runAnimation = -1;
@@ -1145,6 +1148,16 @@ public sealed class SoldierRenderer : IDisposable
     /// </remarks>
     private double SnapToGround(double x, double y, double declaredZ)
     {
+        // One collision cast and one terrain descent per distinct position per FRAME: the shadow
+        // cascades and the geometry pass each resolve every soldier's feet from the same positions,
+        // and this query was being paid once per pass. Cleared in BeginFrame, so a moved soldier is
+        // re-queried the moment the simulation actually moved it.
+        (double X, double Y, double Z) key = (x, y, declaredZ);
+        if (_groundSnaps.TryGetValue(key, out double cached))
+        {
+            return cached;
+        }
+
         double groundZ = declaredZ;
         double probeTop = declaredZ + ProbeAboveInUnits;
 
@@ -1162,6 +1175,7 @@ public sealed class SoldierRenderer : IDisposable
             groundZ = Math.Max(groundZ, ground.Height);
         }
 
+        _groundSnaps[key] = groundZ;
         return groundZ;
     }
 
@@ -3177,6 +3191,7 @@ public sealed class SoldierRenderer : IDisposable
         float alpha = Math.Clamp(tickFraction, 0f, 1f);
         _frameAlpha = alpha;
         _frameSmooth = smooth;
+        _groundSnaps.Clear();
 
         foreach (Group group in _groups)
         {

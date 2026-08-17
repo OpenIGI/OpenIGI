@@ -70,10 +70,19 @@ public sealed record WorldPlacement(
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
     public bool HasLightmap => LightmapIndex >= 0 && LightmapSet.Length > 0;
 
+    /// <summary>The cached result of <see cref="LightmapEntryName"/>; the inputs are init-only.</summary>
+    private string? _lightmapEntryName;
+
     /// <summary>Gets the archive entry name holding this object's bake.</summary>
     /// <returns>The entry name, or an empty string when <see cref="HasLightmap"/> is false.</returns>
+    /// <remarks>
+    /// Computed once and cached: the renderer asks every drawn placement for this every frame, and
+    /// formatting it each time was a measurable share of the frame's garbage.
+    /// </remarks>
     public string LightmapEntryName() =>
-        HasLightmap ? $"{LightmapSet}_{LightmapIndex:D5}{ObjectLightmap.Extension}" : string.Empty;
+        HasLightmap
+            ? _lightmapEntryName ??= $"{LightmapSet}_{LightmapIndex:D5}{ObjectLightmap.Extension}"
+            : string.Empty;
 
     /// <inheritdoc/>
     public override string ToString() => $"{Instance.Name} at {Position}";

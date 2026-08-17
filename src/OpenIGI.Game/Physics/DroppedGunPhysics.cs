@@ -70,9 +70,10 @@ public sealed class DroppedGunCollider
         ArgumentNullException.ThrowIfNull(world);
         localPoint = default;
         penetration = 0.0;
+        Matrix3f rotation = orientation.Transposed();
         foreach (Vector3f vertex in _contactVertices)
         {
-            Vector3f offset = orientation.Transposed().Transform(vertex);
+            Vector3f offset = rotation.Transform(vertex);
             Vector3d point = origin + new Vector3d(offset.X, offset.Y, offset.Z);
             if (world.TryGround(point, out double ground) && ground > point.Z + penetration)
             {
@@ -98,10 +99,12 @@ public sealed class DroppedGunCollider
         localPoint = default;
         normal = default;
         penetration = 0.0;
+        Matrix3f previousRotation = previousOrientation.Transposed();
+        Matrix3f rotation = orientation.Transposed();
         foreach (Vector3f vertex in _contactVertices)
         {
-            Vector3f oldOffset = previousOrientation.Transposed().Transform(vertex);
-            Vector3f newOffset = orientation.Transposed().Transform(vertex);
+            Vector3f oldOffset = previousRotation.Transform(vertex);
+            Vector3f newOffset = rotation.Transform(vertex);
             Vector3d start = previousOrigin + new Vector3d(oldOffset.X, oldOffset.Y, oldOffset.Z);
             Vector3d end = origin + new Vector3d(newOffset.X, newOffset.Y, newOffset.Z);
             Vector3d travel = end - start;
@@ -219,7 +222,14 @@ public sealed class DroppedGunMeshBody
     private const double InverseInertia = 0.0000001;
     private const double Restitution = 0.08;
     private const double Friction = 0.68;
+
+    /// <summary>The ground memo's cell edge: ten centimetres, in engine units.</summary>
+    private const double GroundMemoCellUnits = 409.6;
+
     private readonly DroppedGunCollider _collider;
+    private readonly Dictionary<long, (bool Found, double GroundZ)> _groundMemo = [];
+    private RagdollWorld? _memoSource;
+    private RagdollWorld? _memoWorld;
     private Quaternion32 _orientation;
     private Vector3d _velocity;
     private Vector3d _spin;
@@ -249,6 +259,13 @@ public sealed class DroppedGunMeshBody
     public bool IsAtRest { get; private set; }
 
     /// <summary>Advances mesh collision, gravity and angular motion for one game tick.</summary>
+    /// <remarks>
+    /// The ground query behind <paramref name="world"/> is a full terrain-octree descent plus a
+    /// collision ray. One tick asks it up to three hundred times — every contact vertex, every
+    /// resolution pass, every substep — from positions millimetres apart, and a tumbling gun kept
+    /// that up for seconds after every kill. The memo collapses those to one descent per ten-
+    /// centimetre cell per tick, which is finer than any surface the queries can distinguish.
+    /// </remarks>
     public void Step(RagdollWorld world, int substeps = 4)
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -256,6 +273,9 @@ public sealed class DroppedGunMeshBody
         {
             return;
         }
+
+        _groundMemo.Clear();
+        world = MemoizedWorld(world);
 
         double step = 1.0 / Math.Max(substeps, 1);
         bool contacted = false;
@@ -347,6 +367,50 @@ public sealed class DroppedGunMeshBody
     {
         _velocity += impulse * InverseMass;
         _spin += Vector3d.Cross(arm, impulse) * InverseInertia;
+    }
+
+    /// <summary>Wraps a world so its ground query answers repeats from <see cref="_groundMemo"/>.</summary>
+    /// <remarks>
+    /// Built once per source world and reused: the shell hands the same <see cref="RagdollWorld"/> to
+    /// every step, so this allocates on the first step and never again. The memo itself is cleared
+    /// per step by the caller. Positions are keyed at <see cref="GroundMemoCellUnits"/> — points that
+    /// share a cell can differ by centimetres, which is below the resolution of the terrain descent
+    /// and flat within any floor a gun can rest on; a gun overhanging a ledge edge may read the
+    /// ledge's height a few centimetres past it, which for a dropped prop is invisible.
+    /// </remarks>
+    private RagdollWorld MemoizedWorld(RagdollWorld world)
+    {
+        if (ReferenceEquals(_memoSource, world) && _memoWorld is not null)
+        {
+            return _memoWorld;
+        }
+
+        _memoSource = world;
+        RagdollGround? ground = world.Ground;
+        _memoWorld = ground is null
+            ? world
+            : new RagdollWorld(world.Cast, (double x, double y, double z, out double groundZ) =>
+            {
+                long key = MemoKey(x, y, z);
+                if (_groundMemo.TryGetValue(key, out (bool Found, double GroundZ) cached))
+                {
+                    groundZ = cached.GroundZ;
+                    return cached.Found;
+                }
+
+                bool found = ground(x, y, z, out groundZ);
+                _groundMemo[key] = (found, groundZ);
+                return found;
+            });
+        return _memoWorld;
+    }
+
+    private static long MemoKey(double x, double y, double z)
+    {
+        long cellX = (long)Math.Floor(x / GroundMemoCellUnits);
+        long cellY = (long)Math.Floor(y / GroundMemoCellUnits);
+        long cellZ = (long)Math.Floor(z / GroundMemoCellUnits);
+        return ((cellX & 0x1FFFFF) << 42) | ((cellY & 0x1FFFFF) << 21) | (cellZ & 0x1FFFFF);
     }
 }
 

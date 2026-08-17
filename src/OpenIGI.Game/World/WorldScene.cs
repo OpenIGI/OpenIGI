@@ -888,7 +888,7 @@ public sealed class WorldScene
             subsets.Add(new MeshSubset(start, run.Length, record.MaterialSlot, record.LightmapPage));
         }
 
-        return new MeshGeometry(vertices, indices, new ReadOnlyCollection<MeshSubset>(subsets));
+        return new MeshGeometry(vertices, indices, [.. subsets]);
     }
 
     /// <summary>

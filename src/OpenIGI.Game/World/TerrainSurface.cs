@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -41,26 +40,25 @@ public sealed class TerrainSurface
     /// <summary>How many layers the original's stack holds at once.</summary>
     public const int MaximumActiveLayers = 4;
 
-    private readonly TerrainTileLayer[] _layers;
-    private readonly TerrainDiscardRegion[] _discards;
-
     private TerrainSurface(TerrainData terrain, TerrainTileLayer[] layers, TerrainDiscardRegion[] discards)
     {
         Terrain = terrain;
-        _layers = layers;
-        _discards = discards;
-        Layers = new ReadOnlyCollection<TerrainTileLayer>(layers);
-        Discards = new ReadOnlyCollection<TerrainDiscardRegion>(discards);
+        Layers = layers;
+        Discards = discards;
     }
 
     /// <summary>Gets the terrain the layers belong to.</summary>
     public TerrainData Terrain { get; }
 
     /// <summary>Gets the layers, most specific first.</summary>
-    public IReadOnlyList<TerrainTileLayer> Layers { get; }
+    /// <remarks>
+    /// An array, not a wrapped list: the chunk builder consults it per vertex and the octree descent
+    /// consults <see cref="Discards"/> per visited node, so the interface indirection was measurable.
+    /// </remarks>
+    public TerrainTileLayer[] Layers { get; }
 
     /// <summary>Gets the octree cubes whose terrain the level removes, most specific first.</summary>
-    public IReadOnlyList<TerrainDiscardRegion> Discards { get; }
+    public TerrainDiscardRegion[] Discards { get; }
 
     /// <summary>
     /// Builds the surface by walking a level's task tree for its <c>TextureModifier</c>s and
@@ -156,7 +154,7 @@ public sealed class TerrainSurface
     public int MaterialAt(double worldX, double worldY)
     {
         int consulted = 0;
-        foreach (TerrainTileLayer layer in _layers)
+        foreach (TerrainTileLayer layer in Layers)
         {
             if (!Overlaps(layer, worldX, worldY))
             {
@@ -187,7 +185,7 @@ public sealed class TerrainSurface
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"terrain surface, {_layers.Length} layer(s), {_discards.Length} discard(s)";
+        $"terrain surface, {Layers.Length} layer(s), {Discards.Length} discard(s)";
 
     private static bool Overlaps(TerrainTileLayer layer, double worldX, double worldY)
     {

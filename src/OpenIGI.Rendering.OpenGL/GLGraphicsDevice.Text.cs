@@ -53,6 +53,10 @@ public sealed partial class GLGraphicsDevice : ISdfTextDevice
         GLShaderProgram program = _sdfProgram!;
         UseProgram(program);
 
+        // Screen-space text, like the sprites, must not inherit the scene's live cull mode; see
+        // DrawTriangles2D for the failure this prevents.
+        SetCullMode(CullMode.None);
+
         program.SetVector2(_sdfInverseScreen, 2.0f / _projectionWidth, 2.0f / _projectionHeight);
         program.SetFloat(_sdfPxRange, parameters.PxRange);
         program.SetVector4(_sdfOutline, Red(parameters.OutlineColor), Green(parameters.OutlineColor), Blue(parameters.OutlineColor), parameters.OutlineWidth);

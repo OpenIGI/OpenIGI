@@ -61,6 +61,8 @@ public sealed class TerrainRenderer : IDisposable
     private readonly List<BatchPage> _drawPages = [];
     private readonly List<BatchPage> _queryPages = [];
     private readonly List<ChunkKey> _evictions = [];
+    private readonly HashSet<BatchPage> _affectedPages = [];
+    private readonly List<BatchKey> _emptyBatchKeys = [];
     private readonly TextureHandle[] _tiles;
     private long _frame;
     private Camera3D _previousCamera;
@@ -237,10 +239,18 @@ public sealed class TerrainRenderer : IDisposable
                 chunk.Position.Y / WorldScene.UnitsPerMetre,
                 chunk.Position.Z / WorldScene.UnitsPerMetre);
             double distance = (centreMetres - camera.Position).Length;
-            bool pageVisible = bypassOcclusion || _device.OcclusionVisible(entry.OcclusionPage.OcclusionQuery);
+
+            // A camera inside a page's bounds — always true of the ground underfoot — sees the query
+            // box only from within, where its faces sit behind the page's own terrain and every
+            // sample fails. Querying from in there flickers the floor, so the containing page is
+            // force-visible and left unqueried until the camera is clear of it.
+            bool cameraInsidePage = entry.OcclusionPage.ContainsCamera(camera.Position, 0.5);
+            bool pageVisible = bypassOcclusion
+                || cameraInsidePage
+                || _device.OcclusionVisible(entry.OcclusionPage.OcclusionQuery);
             bool refreshQuery = !pageVisible
                 || ((_frame + entry.OcclusionPage.OcclusionQuery.Id) % visibleQueryInterval) == 0;
-            if (occlusionCulling && refreshQuery && entry.OcclusionPage.RequestQuery(distance))
+            if (occlusionCulling && !cameraInsidePage && refreshQuery && entry.OcclusionPage.RequestQuery(distance))
             {
                 _queryPages.Add(entry.OcclusionPage);
             }
@@ -602,43 +612,53 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>Adds one chunk's material layers to spatially local, state-compatible mesh pages.</summary>
     private BatchedLayer[] AddToBatches(in TerrainChunk chunk, TerrainChunkGeometry geometry)
     {
-        int vertexCount = geometry.Vertices.Length / geometry.Layers.Count;
-        BatchedLayer[] result = new BatchedLayer[geometry.Layers.Count];
+        int vertexCount = geometry.Vertices.Length / geometry.Layers.Length;
+        BatchedLayer[] result = new BatchedLayer[geometry.Layers.Length];
 
-        for (int slot = 0; slot < geometry.Layers.Count; slot++)
+        for (int slot = 0; slot < geometry.Layers.Length; slot++)
         {
-            TerrainChunkLayer layer = geometry.Layers[slot];
-            BatchKey key = BatchKey.For(chunk, layer, slot);
-            if (!_batchPages.TryGetValue(key, out List<BatchPage>? pages))
-            {
-                pages = [];
-                _batchPages.Add(key, pages);
-            }
-
-            BatchPage? page = pages.Count > 0 && pages[^1].CanFit(vertexCount)
-                ? pages[^1]
-                : null;
-            if (page is null)
-            {
-                page = new BatchPage(key, _device);
-                pages.Add(page);
-            }
-
-            int sourceVertex = slot * vertexCount;
-            Vector3d chunkMetres = new(
-                chunk.Position.X / WorldScene.UnitsPerMetre,
-                chunk.Position.Y / WorldScene.UnitsPerMetre,
-                chunk.Position.Z / WorldScene.UnitsPerMetre);
-            Vector3d offset = chunkMetres - page.OriginMetres;
-            MeshDrawRange range = page.Append(
-                geometry.Vertices.AsSpan(sourceVertex, vertexCount),
-                geometry.Indices.AsSpan(layer.IndexOffset, layer.IndexCount),
-                sourceVertex,
-                new Vector3f((float)offset.X, (float)offset.Y, (float)offset.Z));
-            result[slot] = new BatchedLayer(page, range, layer.TriangleCount);
+            result[slot] = AppendLayer(chunk, geometry, slot, vertexCount);
         }
 
         return result;
+    }
+
+    /// <summary>Appends one of a chunk's material layers to the open page for its batch key.</summary>
+    private BatchedLayer AppendLayer(
+        in TerrainChunk chunk,
+        TerrainChunkGeometry geometry,
+        int slot,
+        int vertexCount)
+    {
+        TerrainChunkLayer layer = geometry.Layers[slot];
+        BatchKey key = BatchKey.For(chunk, layer, slot);
+        if (!_batchPages.TryGetValue(key, out List<BatchPage>? pages))
+        {
+            pages = [];
+            _batchPages.Add(key, pages);
+        }
+
+        BatchPage? page = pages.Count > 0 && pages[^1].CanFit(vertexCount)
+            ? pages[^1]
+            : null;
+        if (page is null)
+        {
+            page = new BatchPage(key, _device);
+            pages.Add(page);
+        }
+
+        int sourceVertex = slot * vertexCount;
+        Vector3d chunkMetres = new(
+            chunk.Position.X / WorldScene.UnitsPerMetre,
+            chunk.Position.Y / WorldScene.UnitsPerMetre,
+            chunk.Position.Z / WorldScene.UnitsPerMetre);
+        Vector3d offset = chunkMetres - page.OriginMetres;
+        MeshDrawRange range = page.Append(
+            geometry.Vertices.AsSpan(sourceVertex, vertexCount),
+            geometry.Indices.AsSpan(layer.IndexOffset, layer.IndexCount),
+            sourceVertex,
+            new Vector3f((float)offset.X, (float)offset.Y, (float)offset.Z));
+        return new BatchedLayer(page, range, layer.TriangleCount);
     }
 
     /// <summary>Drops the chunks no recent frame drew, once the cache is over its bound.</summary>
@@ -676,9 +696,24 @@ public sealed class TerrainRenderer : IDisposable
             }
         }
 
+        if (_evictions.Count == 0)
+        {
+            return;
+        }
+
+        // Pages are append-only, so evicting a chunk means rebuilding the pages that held its layers —
+        // and only those. The old approach destroyed every page and re-appended the whole cache, which
+        // re-uploaded tens of megabytes of geometry on one frame and was the single largest freeze:
+        // eviction happens exactly when the player is moving fast, which is when a spike shows most.
+        _affectedPages.Clear();
         foreach (ChunkKey key in _evictions)
         {
             Entry entry = _cache[key];
+            foreach (BatchedLayer layer in entry.Layers)
+            {
+                _affectedPages.Add(layer.Page);
+            }
+
             if (entry.DirectMesh.IsValid)
             {
                 _device.DestroyMesh(entry.DirectMesh);
@@ -686,27 +721,54 @@ public sealed class TerrainRenderer : IDisposable
             _cache.Remove(key);
         }
 
-        if (_evictions.Count > 0)
+        foreach (BatchPage page in _affectedPages)
         {
-            RebuildBatches();
+            page.Destroy(_device);
         }
-    }
 
-    /// <summary>Compacts pages after cache eviction; ordinary frame-to-frame use only appends.</summary>
-    private void RebuildBatches()
-    {
-        foreach (List<BatchPage> pages in _batchPages.Values)
+        _emptyBatchKeys.Clear();
+        foreach ((BatchKey key, List<BatchPage> pages) in _batchPages)
         {
-            foreach (BatchPage page in pages)
+            pages.RemoveAll(_affectedPages.Contains);
+            if (pages.Count == 0)
             {
-                page.Destroy(_device);
+                _emptyBatchKeys.Add(key);
             }
         }
-        _batchPages.Clear();
 
+        foreach (BatchKey key in _emptyBatchKeys)
+        {
+            _batchPages.Remove(key);
+        }
+
+        // Surviving chunks that shared a destroyed page get just those layers appended again; their
+        // layers in untouched pages keep their ranges, because untouched pages only ever grow.
         foreach (Entry entry in _cache.Values)
         {
-            entry.Layers = AddToBatches(entry.Chunk, entry.Geometry);
+            bool touched = false;
+            foreach (BatchedLayer layer in entry.Layers)
+            {
+                if (_affectedPages.Contains(layer.Page))
+                {
+                    touched = true;
+                    break;
+                }
+            }
+
+            if (!touched)
+            {
+                continue;
+            }
+
+            int vertexCount = entry.Geometry.Vertices.Length / entry.Geometry.Layers.Length;
+            for (int slot = 0; slot < entry.Layers.Length; slot++)
+            {
+                if (_affectedPages.Contains(entry.Layers[slot].Page))
+                {
+                    entry.Layers[slot] = AppendLayer(entry.Chunk, entry.Geometry, slot, vertexCount);
+                }
+            }
+
             entry.OcclusionPage = entry.Layers[0].Page;
         }
     }
@@ -758,12 +820,22 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>A 16-bit indexed mesh page sharing every state needed by one multi-draw.</summary>
     private sealed class BatchPage
     {
+        /// <summary>The smallest vertex capacity a page's mesh is created with.</summary>
+        private const int MinimumVertexCapacity = 4096;
+
+        /// <summary>The smallest index capacity a page's mesh is created with.</summary>
+        private const int MinimumIndexCapacity = 12288;
+
         private readonly List<Vertex3D> _vertices = [];
         private readonly List<ushort> _indices = [];
         private readonly List<VisibleDraw> _visible = [];
         private readonly List<MeshDrawRange> _visibleRanges = [];
         private Vector3f _minimum = new(float.MaxValue);
         private Vector3f _maximum = new(float.MinValue);
+        private int _uploadedVertices;
+        private int _uploadedIndices;
+        private int _vertexCapacity;
+        private int _indexCapacity;
         private bool _dirty;
         private bool _queryRequested;
 
@@ -795,6 +867,19 @@ public sealed class TerrainRenderer : IDisposable
 
         public bool HasVisibleRanges => _visible.Count > 0;
 
+        /// <summary>Gets whether a camera position sits inside this page's occlusion bounds.</summary>
+        /// <param name="cameraMetres">The camera position, in metres.</param>
+        /// <param name="margin">Extra reach in metres, keeping the near plane clear of the box.</param>
+        public bool ContainsCamera(in Vector3d cameraMetres, double margin)
+        {
+            double x = cameraMetres.X - OriginMetres.X;
+            double y = cameraMetres.Y - OriginMetres.Y;
+            double z = cameraMetres.Z - OriginMetres.Z;
+            return x >= _minimum.X - margin && x <= _maximum.X + margin
+                && y >= _minimum.Y - margin && y <= _maximum.Y + margin
+                && z >= _minimum.Z - margin && z <= _maximum.Z + margin;
+        }
+
         public bool QueryRequested => _queryRequested;
 
         public double MinimumDistance { get; private set; }
@@ -803,7 +888,11 @@ public sealed class TerrainRenderer : IDisposable
         {
             get
             {
-                _visible.Sort(static (left, right) => left.Distance.CompareTo(right.Distance));
+                if (_visible.Count > 1)
+                {
+                    _visible.Sort(static (left, right) => left.Distance.CompareTo(right.Distance));
+                }
+
                 _visibleRanges.Clear();
                 foreach (VisibleDraw draw in _visible)
                 {
@@ -823,6 +912,11 @@ public sealed class TerrainRenderer : IDisposable
         {
             int vertexBase = _vertices.Count;
             int indexBase = _indices.Count;
+
+            // Grown to what this append needs before the loops, so a page filling up over many appends
+            // does not shed a trail of half-size backing arrays behind each doubling.
+            _vertices.EnsureCapacity(vertexBase + vertices.Length);
+            _indices.EnsureCapacity(indexBase + indices.Length);
 
             foreach (Vertex3D vertex in vertices)
             {
@@ -885,6 +979,13 @@ public sealed class TerrainRenderer : IDisposable
             return true;
         }
 
+        /// <summary>Brings the GPU copy up to date with what has been appended.</summary>
+        /// <remarks>
+        /// Pages grow every time terrain streams in, and re-uploading a whole page per appended chunk
+        /// was the frame-spike this renderer was profiled to. The mesh is allocated with headroom and
+        /// each append uploads only its own range; the full re-upload survives only for the rare
+        /// doubling where the headroom runs out.
+        /// </remarks>
         public void EnsureUploaded(IGraphicsDevice device)
         {
             if (!_dirty && Mesh.IsValid)
@@ -892,13 +993,40 @@ public sealed class TerrainRenderer : IDisposable
                 return;
             }
 
-            if (Mesh.IsValid)
+            if (Mesh.IsValid && _vertices.Count <= _vertexCapacity && _indices.Count <= _indexCapacity)
             {
-                device.DestroyMesh(Mesh);
-                Mesh = MeshHandle.None;
+                device.UploadMeshRange(
+                    Mesh,
+                    _uploadedVertices,
+                    CollectionsMarshal.AsSpan(_vertices)[_uploadedVertices..],
+                    _uploadedIndices,
+                    CollectionsMarshal.AsSpan(_indices)[_uploadedIndices..]);
+            }
+            else
+            {
+                if (Mesh.IsValid)
+                {
+                    device.DestroyMesh(Mesh);
+                    Mesh = MeshHandle.None;
+                }
+
+                _vertexCapacity = Math.Min(
+                    MaximumBatchVertices,
+                    (int)Math.Max(MinimumVertexCapacity, System.Numerics.BitOperations.RoundUpToPowerOf2((uint)_vertices.Count)));
+                _indexCapacity = (int)Math.Max(
+                    MinimumIndexCapacity,
+                    System.Numerics.BitOperations.RoundUpToPowerOf2((uint)_indices.Count));
+                Mesh = device.CreateMeshStorage(_vertexCapacity, _indexCapacity);
+                device.UploadMeshRange(
+                    Mesh,
+                    0,
+                    CollectionsMarshal.AsSpan(_vertices),
+                    0,
+                    CollectionsMarshal.AsSpan(_indices));
             }
 
-            Mesh = device.CreateMesh(CollectionsMarshal.AsSpan(_vertices), CollectionsMarshal.AsSpan(_indices));
+            _uploadedVertices = _vertices.Count;
+            _uploadedIndices = _indices.Count;
             _dirty = false;
         }
 
@@ -915,6 +1043,11 @@ public sealed class TerrainRenderer : IDisposable
                 device.DestroyOcclusionQuery(OcclusionQuery);
                 OcclusionQuery = OcclusionQueryHandle.None;
             }
+
+            _uploadedVertices = 0;
+            _uploadedIndices = 0;
+            _vertexCapacity = 0;
+            _indexCapacity = 0;
         }
 
         private void ExpandBounds(Vector3f point)

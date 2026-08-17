@@ -73,7 +73,11 @@ public sealed class ShadowCasterPass
 
                 if (scene is not null && world is not null)
                 {
-                    world.Draw(scene, lightCamera, cascades[i].Projection);
+                    // An object smaller than a handful of texels of this cascade cannot cast a shadow
+                    // anyone reads, and the cascades redraw the whole scene once each — so each one
+                    // skips casters below 1/256th of its own radius. The near cascade's threshold is
+                    // centimetres, which skips nothing a player could stand next to.
+                    world.Draw(scene, lightCamera, cascades[i].Projection, cascades[i].Radius * (1f / 256f));
                 }
 
                 soldiers?.Draw(lightCamera, cascades[i].Projection);

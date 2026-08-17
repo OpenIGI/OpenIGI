@@ -109,6 +109,14 @@ public sealed record PlacedDoor(
 public sealed class DoorRegistry
 {
     private readonly List<PlacedDoor> _doors = [];
+
+    /// <summary>The doors by their task, for the per-placement draw query.</summary>
+    /// <remarks>
+    /// The renderer asks every placement in the level whether it is a door, every frame; a linear scan
+    /// there was a placements-times-doors product that showed in the profile.
+    /// </remarks>
+    private readonly Dictionary<GameTask, PlacedDoor> _doorsByTask = new(ReferenceEqualityComparer.Instance);
+
     private Action<PlacedDoor, DoorSoundEvent>? _sounds;
     private Func<Vector3d, Vector3d, bool>? _doorwayBlocked;
 
@@ -154,7 +162,7 @@ public sealed class DoorRegistry
                 };
             }
 
-            registry._doors.Add(new PlacedDoor(
+            PlacedDoor door = new(
                 declared,
                 position,
                 orientation,
@@ -164,7 +172,9 @@ public sealed class DoorRegistry
                 new DoorState(maxAngle, openTime <= 0f ? 1f : openTime, slides),
                 ReadSound(declared, "Open sound"),
                 ReadSound(declared, "Close sound"),
-                ReadSound(declared, "Move sound")));
+                ReadSound(declared, "Move sound"));
+            registry._doors.Add(door);
+            registry._doorsByTask[declared] = door;
         }
 
         foreach (GameTask child in task.Children)
@@ -297,20 +307,18 @@ public sealed class DoorRegistry
         out Vector3d position,
         out Matrix3f orientation)
     {
-        foreach (PlacedDoor door in _doors)
+        if (_doorsByTask.TryGetValue(task, out PlacedDoor? door))
         {
-            if (ReferenceEquals(door.Task, task))
-            {
-                float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
-                float slide = door.State.PreviousSlideFraction
-                    + ((door.State.SlideFraction - door.State.PreviousSlideFraction) * alpha);
-                float angle = door.State.PreviousAngleDegrees
-                    + ((door.State.AngleDegrees - door.State.PreviousAngleDegrees) * alpha);
-                position = door.DrawPositionAt(slide);
-                orientation = door.DrawOrientationAt(angle);
-                return true;
-            }
+            float alpha = smooth ? Math.Clamp(tickFraction, 0f, 1f) : 1f;
+            float slide = door.State.PreviousSlideFraction
+                + ((door.State.SlideFraction - door.State.PreviousSlideFraction) * alpha);
+            float angle = door.State.PreviousAngleDegrees
+                + ((door.State.AngleDegrees - door.State.PreviousAngleDegrees) * alpha);
+            position = door.DrawPositionAt(slide);
+            orientation = door.DrawOrientationAt(angle);
+            return true;
         }
+
         position = default;
         orientation = default;
         return false;

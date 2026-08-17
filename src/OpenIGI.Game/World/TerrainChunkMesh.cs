@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
@@ -161,7 +160,7 @@ public static class TerrainChunkMesh
             }
         }
 
-        return new TerrainChunkGeometry(vertices, indices, new ReadOnlyCollection<TerrainChunkLayer>(layers));
+        return new TerrainChunkGeometry(vertices, indices, [.. layers]);
     }
 
     /// <summary>Builds one vertex's texture coordinate from its pass's projection.</summary>
@@ -331,7 +330,7 @@ public static class TerrainChunkMesh
 
         static int Rank(TerrainSurface surface, int material)
         {
-            for (int i = 0; i < surface.Layers.Count; i++)
+            for (int i = 0; i < surface.Layers.Length; i++)
             {
                 if (surface.Layers[i].MaterialId == material)
                 {

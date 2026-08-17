@@ -2694,6 +2694,22 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     _device.SetMaterialOverride(SurfaceMaterial.Default);
                 }
+
+                // The world draws BEFORE the terrain, deliberately: buildings are the pass's best
+                // occluders. Indoors the frustum still holds the whole outdoors, and with the ground
+                // drawn first every one of those terrain fragments was shaded and then buried under
+                // the walls; walls first, and early-Z rejects that fill instead. Outdoors the same
+                // holds for the ground behind every building.
+                bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
+                _world.Draw(_scene, eye, projection, occlusionCulling: RenderCVars.WorldOcclusion.Value);
+                EndStageIfSlow("the sky and the world's objects");
+
+                if (captured)
+                {
+                    // The world leaves its last sub-mesh's surface material in force; the terrain
+                    // must not wear it.
+                    _device.SetMaterialOverride(SurfaceMaterial.Default);
+                }
                 _terrain?.Draw(
                     eye,
                     projection,
@@ -2705,11 +2721,11 @@ internal sealed partial class DesktopGame : IDisposable
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
                     RenderCVars.TerrainOcclusion.Value);
-                EndStageIfSlow("the sky and the terrain");
-                bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
-                _world.Draw(_scene, eye, projection);
+                EndStageIfSlow("the terrain");
 
-                EndStageIfSlow("the world's objects");
+                // With the world and the terrain both in the depth buffer, the world's occlusion
+                // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.
+                _world.IssueOcclusionQueries(eye);
                 _gunPickupRenderer?.Draw(eye, projection);
 
                 // The grenades in the air, solid geometry among the world's own.
@@ -3599,7 +3615,7 @@ internal sealed partial class DesktopGame : IDisposable
                     reportedWorld = true;
                     _logger.Information(
                         "World",
-                        $"Drew {_world.LastDrawCount} sub-mesh(es), {_world.LastLightmappedCount} lightmapped, {_world.LastTriangleCount} triangles from {_camera.Position}.");
+                        $"Drew {_world.LastDrawCount} sub-mesh(es), {_world.LastLightmappedCount} lightmapped, {_world.LastTriangleCount} triangles, {_world.LastOccludedCount} placement(s) occlusion-culled from {_camera.Position}.");
 
                     if (_terrain is not null)
                     {

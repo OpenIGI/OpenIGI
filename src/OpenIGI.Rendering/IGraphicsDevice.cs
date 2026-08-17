@@ -206,6 +206,42 @@ public interface IGraphicsDevice : IDisposable
     /// </exception>
     void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices);
 
+    /// <summary>Allocates an empty mesh with fixed capacity, to be filled by <see cref="UploadMeshRange"/>.</summary>
+    /// <param name="vertexCapacity">How many vertices the mesh can ever hold.</param>
+    /// <param name="indexCapacity">How many indices the mesh can ever hold.</param>
+    /// <returns>A handle naming the mesh, which draws nothing until a range is uploaded.</returns>
+    /// <exception cref="ArgumentException">A capacity is not positive, or the vertex capacity exceeds 16-bit indexing.</exception>
+    /// <exception cref="GraphicsDeviceException">The mesh could not be created.</exception>
+    /// <remarks>
+    /// For meshes that grow by appending — the terrain's batch pages. A mesh from
+    /// <see cref="CreateMesh"/> is immutable, so growing one means destroying it and re-uploading
+    /// everything it held; done every time a streamed-in chunk joins a page, those re-uploads were the
+    /// single largest source of frame spikes. A storage mesh uploads each appended range once.
+    /// </remarks>
+    MeshHandle CreateMeshStorage(int vertexCapacity, int indexCapacity);
+
+    /// <summary>Writes a range of vertices and indices into a mesh made by <see cref="CreateMeshStorage"/>.</summary>
+    /// <param name="mesh">A mesh from <see cref="CreateMeshStorage"/>.</param>
+    /// <param name="vertexOffset">The first vertex slot written.</param>
+    /// <param name="vertices">The vertices to write; may be empty.</param>
+    /// <param name="indexOffset">The first index slot written.</param>
+    /// <param name="indices">The indices to write, addressing the mesh's own vertex slots; may be empty.</param>
+    /// <exception cref="ArgumentException">
+    /// The handle is unknown or not a storage mesh, a range runs past its capacity, or an index
+    /// addresses a slot past the vertex capacity.
+    /// </exception>
+    /// <remarks>
+    /// Ranges written are drawable immediately; the mesh's drawable index count is the highest index
+    /// slot ever written plus one. Callers append, so ranges beyond what the GPU has drawn are new
+    /// storage and never stall the pipeline.
+    /// </remarks>
+    void UploadMeshRange(
+        MeshHandle mesh,
+        int vertexOffset,
+        ReadOnlySpan<Vertex3D> vertices,
+        int indexOffset,
+        ReadOnlySpan<ushort> indices);
+
     /// <summary>Releases a mesh.</summary>
     /// <param name="mesh">The mesh to release. <see cref="MeshHandle.None"/> is ignored.</param>
     void DestroyMesh(MeshHandle mesh);

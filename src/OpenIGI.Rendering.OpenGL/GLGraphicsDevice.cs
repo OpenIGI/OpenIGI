@@ -73,8 +73,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private readonly Action _present;
     private readonly IIgiLogger _logger;
     private readonly GLProgramBinaryCache _programCache;
-    private readonly Dictionary<uint, GLTexture> _textures = [];
-    private readonly Dictionary<uint, GLMesh> _meshes = [];
+    private readonly HandleTable<GLTexture> _textures = new();
+    private readonly HandleTable<GLMesh> _meshes = new();
 
     // The GL names currently bound to each texture unit. Zero is GL's own initial state, so this starts
     // out truthful; every bind in this class goes through BindTexture, so it stays that way.
@@ -263,7 +263,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
     private GLSceneTarget? _sceneTarget;
     private GLStageProfiler? _stageProfiler;
-    private readonly Dictionary<uint, VisibilityQuery> _visibilityQueries = [];
+    private readonly HandleTable<VisibilityQuery> _visibilityQueries = new();
     private uint _nextVisibilityQuery = 1;
     private GLShaderProgram? _visibilityProgram;
     private int _visibilityModelView = -1;
@@ -791,6 +791,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         UseProgram(_program);
 
+        // The 2D pass owes nothing to whichever 3D renderer ran last: a sprite quad is authored in
+        // screen space with one fixed winding, and inheriting a live cull mode from the scene made
+        // the whole interface vanish whenever the last 3D draw happened to cull that winding.
+        SetCullMode(CullMode.None);
+
         // uTexture is a constant and is set once at link time; the screen size changes only on a resize,
         // but it is one uniform on a path that draws a handful of batches per frame rather than
         // thousands, so it is not worth shadowing.
@@ -858,6 +863,136 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         MeshHandle handle = new(_nextMeshId++);
         _meshes[handle.Id] = new GLMesh(array, vertexBuffer, indexBuffer, indices.Length);
         return handle;
+    }
+
+    /// <inheritdoc/>
+    public unsafe MeshHandle CreateMeshStorage(int vertexCapacity, int indexCapacity)
+    {
+        ThrowIfDisposed();
+
+        if (vertexCapacity <= 0 || indexCapacity <= 0)
+        {
+            throw new ArgumentException(
+                $"A storage mesh needs positive capacities, got {vertexCapacity} vertices and {indexCapacity} indices.",
+                nameof(vertexCapacity));
+        }
+
+        if (vertexCapacity > ushort.MaxValue + 1)
+        {
+            throw new ArgumentException(
+                $"A 16-bit index buffer addresses at most {ushort.MaxValue + 1} vertices, got {vertexCapacity}.",
+                nameof(vertexCapacity));
+        }
+
+        uint vertexBuffer = _gl.GenBuffer();
+        uint indexBuffer = _gl.GenBuffer();
+
+        // Buffers are typeless: allocating the index storage through the array-buffer target avoids
+        // touching any vertex array's element-buffer binding. DynamicDraw, because ranges keep landing
+        // in these buffers for as long as their page keeps growing.
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, vertexBuffer);
+        _gl.BufferData(
+            BufferTargetARB.ArrayBuffer,
+            (nuint)(vertexCapacity * Vertex3D.Size),
+            null,
+            BufferUsageARB.DynamicDraw);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, indexBuffer);
+        _gl.BufferData(
+            BufferTargetARB.ArrayBuffer,
+            (nuint)(indexCapacity * sizeof(ushort)),
+            null,
+            BufferUsageARB.DynamicDraw);
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+
+        uint array = BuildMeshVertexArray(vertexBuffer, vertexBuffer, indexBuffer, uploadIndices: default);
+
+        MeshHandle handle = new(_nextMeshId++);
+        _meshes[handle.Id] = new GLMesh(
+            array,
+            vertexBuffer,
+            indexBuffer,
+            IndexCount: 0,
+            VertexCapacity: vertexCapacity,
+            IndexCapacity: indexCapacity);
+        return handle;
+    }
+
+    /// <inheritdoc/>
+    public unsafe void UploadMeshRange(
+        MeshHandle mesh,
+        int vertexOffset,
+        ReadOnlySpan<Vertex3D> vertices,
+        int indexOffset,
+        ReadOnlySpan<ushort> indices)
+    {
+        ThrowIfDisposed();
+
+        if (!_meshes.TryGetValue(mesh.Id, out GLMesh entry))
+        {
+            throw new ArgumentException($"{mesh} does not belong to this device.", nameof(mesh));
+        }
+
+        if (!entry.IsStorage)
+        {
+            throw new ArgumentException($"{mesh} was not created with {nameof(CreateMeshStorage)}.", nameof(mesh));
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(vertexOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(indexOffset);
+
+        if (vertexOffset + vertices.Length > entry.VertexCapacity)
+        {
+            throw new ArgumentException(
+                $"Vertices {vertexOffset}..{vertexOffset + vertices.Length} lie outside the mesh's capacity of {entry.VertexCapacity}.",
+                nameof(vertices));
+        }
+
+        if (indexOffset + indices.Length > entry.IndexCapacity)
+        {
+            throw new ArgumentException(
+                $"Indices {indexOffset}..{indexOffset + indices.Length} lie outside the mesh's capacity of {entry.IndexCapacity}.",
+                nameof(indices));
+        }
+
+        if (!indices.IsEmpty)
+        {
+            int highest = HighestIndex(indices);
+            if (highest >= entry.VertexCapacity)
+            {
+                throw new ArgumentException(
+                    $"Index {highest} is past the mesh's capacity of {entry.VertexCapacity} vertices.",
+                    nameof(indices));
+            }
+        }
+
+        if (!vertices.IsEmpty)
+        {
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, entry.VertexBuffer);
+            _gl.BufferSubData(
+                BufferTargetARB.ArrayBuffer,
+                (nint)(vertexOffset * Vertex3D.Size),
+                (nuint)(vertices.Length * Vertex3D.Size),
+                vertices);
+        }
+
+        if (!indices.IsEmpty)
+        {
+            // Through the array-buffer target for the same reason CreateMeshStorage allocates there.
+            _gl.BindBuffer(BufferTargetARB.ArrayBuffer, entry.IndexBuffer);
+            _gl.BufferSubData(
+                BufferTargetARB.ArrayBuffer,
+                (nint)(indexOffset * sizeof(ushort)),
+                (nuint)(indices.Length * sizeof(ushort)),
+                indices);
+        }
+
+        _gl.BindBuffer(BufferTargetARB.ArrayBuffer, 0);
+
+        int drawable = Math.Max(entry.IndexCount, indexOffset + indices.Length);
+        if (drawable != entry.IndexCount)
+        {
+            _meshes[mesh.Id] = entry with { IndexCount = drawable };
+        }
     }
 
     /// <inheritdoc/>
@@ -1150,7 +1285,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     {
         ThrowIfDisposed();
         uint id = _nextVisibilityQuery++;
-        _visibilityQueries.Add(id, new VisibilityQuery(_gl.GenQuery()));
+        _visibilityQueries[id] = new VisibilityQuery(_gl.GenQuery());
         return new OcclusionQueryHandle(id);
     }
 
@@ -3034,7 +3169,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             : new GLTexture(_whiteTexture, 1, 1, 1);
 
         BindTexture(0, surface.Name);
-        BindTexture(1, NameOf(lightmap, nameof(lightmap)));
+
+        // The shadow program's fragment stage is nothing but the diffuse cut-out test — it never
+        // samples the lightmap, and the cascades redraw the whole world several times a frame, so
+        // binding one per draw there was thousands of driver calls for a sampler nothing reads.
+        if (!shadow)
+        {
+            BindTexture(1, NameOf(lightmap, nameof(lightmap)));
+        }
 
         // The derived surface detail: the normal and roughness this game's textures never carried. A
         // texture with no map registered, or a preset that asked for none, sends a strength of zero
@@ -3900,9 +4042,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         uint SecondVertexArray = 0,
         uint SecondVertexBuffer = 0,
         int VertexCount = 0,
-        bool FrontIsFirst = true)
+        bool FrontIsFirst = true,
+        int VertexCapacity = 0,
+        int IndexCapacity = 0)
     {
         public bool IsAnimated => SecondVertexBuffer != 0;
+
+        public bool IsStorage => VertexCapacity > 0;
 
         public uint ActiveVertexArray => FrontIsFirst ? VertexArray : SecondVertexArray;
     }

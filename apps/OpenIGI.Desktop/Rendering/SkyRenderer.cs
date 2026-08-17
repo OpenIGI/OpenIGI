@@ -60,7 +60,16 @@ public sealed class SkyRenderer : IDisposable
     private readonly IIgiLogger _logger;
     private readonly List<CloudLayer> _layers = [];
     private readonly MeshHandle _dome = MeshHandle.None;
-    private MeshHandle _clouds = MeshHandle.None;
+
+    /// <summary>One mesh per cloud layer, created on first draw and updated in place after.</summary>
+    /// <remarks>
+    /// The grid's topology never changes and its vertex count is fixed, so rebuilding the mesh per
+    /// frame — the first version's approach — spent a buffer create, a buffer delete and three managed
+    /// allocations per layer per frame for data that only ever changes in place.
+    /// </remarks>
+    private MeshHandle[] _cloudMeshes = [];
+    private Vertex3D[] _cloudVertices = [];
+    private ushort[] _cloudIndices = [];
     private bool _disposed;
 
     /// <summary>Initializes a new instance of the <see cref="SkyRenderer"/> class.</summary>
@@ -177,9 +186,9 @@ public sealed class SkyRenderer : IDisposable
         Matrix4f modelView = camera.CreateModelView(camera.Position);
         _device.DrawMesh(_dome, 0, DomeIndexCount, modelView, TextureHandle.None, TextureHandle.None, BlendMode.Opaque);
 
-        foreach (CloudLayer layer in _layers)
+        for (int i = 0; i < _layers.Count; i++)
         {
-            DrawCloudLayer(layer, camera, modelView, seconds);
+            DrawCloudLayer(_layers[i], i, camera, modelView, seconds);
         }
     }
 
@@ -197,10 +206,15 @@ public sealed class SkyRenderer : IDisposable
             _device.DestroyMesh(_dome);
         }
 
-        if (_clouds.IsValid)
+        foreach (MeshHandle mesh in _cloudMeshes)
         {
-            _device.DestroyMesh(_clouds);
+            if (mesh.IsValid)
+            {
+                _device.DestroyMesh(mesh);
+            }
         }
+
+        _cloudMeshes = [];
 
         foreach (CloudLayer layer in _layers)
         {
@@ -317,12 +331,18 @@ public sealed class SkyRenderer : IDisposable
         }
     }
 
-    /// <summary>Rebuilds and draws one cloud layer for this frame's camera.</summary>
+    /// <summary>Recomputes and draws one cloud layer for this frame's camera.</summary>
     /// <remarks>
-    /// Rebuilt per frame because the fade is a function of view depth, exactly as the original
-    /// re-projects its grid per frame. The grid is small, so the upload is noise next to the terrain.
+    /// The vertices are a function of view depth, exactly as the original re-projects its grid per
+    /// frame — but the buffers are persistent: the vertex array is reused, the index topology is built
+    /// once, and the GPU mesh is updated in place rather than destroyed and recreated.
     /// </remarks>
-    private void DrawCloudLayer(in CloudLayer layer, in Camera3D camera, in Matrix4f modelView, float seconds)
+    private void DrawCloudLayer(
+        in CloudLayer layer,
+        int layerIndex,
+        in Camera3D camera,
+        in Matrix4f modelView,
+        float seconds)
     {
         // The fade window, in engine units: opaque out to nearDepth, gone by the task's Distance.
         float distanceUnits = Distance * (float)WorldScene.UnitsPerMetre;
@@ -336,7 +356,17 @@ public sealed class SkyRenderer : IDisposable
         float scrollY = seconds * layer.SpeedY * 30f;
 
         int columns = DomeSegments;
-        var vertices = new Vertex3D[(CloudRows + 1) * columns];
+        if (_cloudVertices.Length == 0)
+        {
+            _cloudVertices = new Vertex3D[(CloudRows + 1) * columns];
+        }
+
+        if (_cloudMeshes.Length != _layers.Count)
+        {
+            _cloudMeshes = new MeshHandle[_layers.Count];
+        }
+
+        Vertex3D[] vertices = _cloudVertices;
         float maxRadius = Distance * 1.5f;
 
         for (int row = 0; row <= CloudRows; row++)
@@ -374,7 +404,45 @@ public sealed class SkyRenderer : IDisposable
             }
         }
 
-        var indices = new List<ushort>(CloudRows * columns * 6);
+        if (_cloudIndices.Length == 0)
+        {
+            _cloudIndices = BuildCloudIndices(columns);
+        }
+
+        try
+        {
+            if (_cloudMeshes[layerIndex].IsValid)
+            {
+                _device.UpdateAnimatedMesh(_cloudMeshes[layerIndex], vertices);
+            }
+            else
+            {
+                // Animated, because that is the device's "vertices replaced every frame" mesh: the
+                // update orphans the stale buffer instead of stalling behind the previous frame's draw.
+                _cloudMeshes[layerIndex] = _device.CreateAnimatedMesh(vertices, _cloudIndices);
+            }
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
+        {
+            _logger.Warning(LogCategory, $"The cloud grid did not upload: {ex.Message}");
+            return;
+        }
+
+        _device.DrawMesh(
+            _cloudMeshes[layerIndex],
+            0,
+            _cloudIndices.Length,
+            modelView,
+            layer.Texture,
+            TextureHandle.None,
+            BlendMode.AlphaBlend);
+    }
+
+    /// <summary>Builds the cloud grid's triangle list, which never changes after that.</summary>
+    private static ushort[] BuildCloudIndices(int columns)
+    {
+        ushort[] indices = new ushort[CloudRows * columns * 6];
+        int cursor = 0;
         for (int row = 0; row < CloudRows; row++)
         {
             for (int column = 0; column < columns; column++)
@@ -384,32 +452,16 @@ public sealed class SkyRenderer : IDisposable
                 int b = (row * columns) + next;
                 int c = ((row + 1) * columns) + column;
                 int d = ((row + 1) * columns) + next;
-                indices.Add((ushort)a);
-                indices.Add((ushort)c);
-                indices.Add((ushort)b);
-                indices.Add((ushort)b);
-                indices.Add((ushort)c);
-                indices.Add((ushort)d);
+                indices[cursor++] = (ushort)a;
+                indices[cursor++] = (ushort)c;
+                indices[cursor++] = (ushort)b;
+                indices[cursor++] = (ushort)b;
+                indices[cursor++] = (ushort)c;
+                indices[cursor++] = (ushort)d;
             }
         }
 
-        if (_clouds.IsValid)
-        {
-            _device.DestroyMesh(_clouds);
-            _clouds = MeshHandle.None;
-        }
-
-        try
-        {
-            _clouds = _device.CreateMesh(vertices, [.. indices]);
-        }
-        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException)
-        {
-            _logger.Warning(LogCategory, $"The cloud grid did not upload: {ex.Message}");
-            return;
-        }
-
-        _device.DrawMesh(_clouds, 0, indices.Count, modelView, layer.Texture, TextureHandle.None, BlendMode.AlphaBlend);
+        return indices;
     }
 
     private TextureHandle LoadLayerTexture(VirtualFileSystem fileSystem, string name)

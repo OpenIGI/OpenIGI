@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
 using OpenIGI.Rendering;
@@ -76,6 +75,6 @@ public static class MefMeshBuilder
             subsets.Add(new MeshSubset(start, source2.Length, record.MaterialSlot, record.LightmapPage));
         }
 
-        return new MeshGeometry(vertices, indices, new ReadOnlyCollection<MeshSubset>(subsets));
+        return new MeshGeometry(vertices, indices, [.. subsets]);
     }
 }

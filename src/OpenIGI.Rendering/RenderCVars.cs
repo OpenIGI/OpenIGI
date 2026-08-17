@@ -325,6 +325,18 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Cull fully hidden terrain batch pages with asynchronous GPU visibility queries. Opt-in because sparse scenes can cost more to query than they save.");
 
+    /// <summary>Whether placed world objects use asynchronous visibility queries in the geometry pass.</summary>
+    /// <remarks>
+    /// The frustum keeps most of a level's objects while the camera stands indoors — a wall hides
+    /// them, a frustum does not. On by default because interiors are where the geometry pass was
+    /// measured most over budget; a CVar so the gain is A/B testable per mission like the terrain's.
+    /// </remarks>
+    public static readonly BoolCVar WorldOcclusion = CVar.Bool(
+        "r_world_occlusion",
+        true,
+        CVarOptions.Archive,
+        "Cull placed objects hidden behind walls and hills with asynchronous GPU visibility queries.");
+
     /// <summary>Whether surfaces are recorded into a G-buffer and lit afterwards.</summary>
     /// <remarks>
     /// Required by everything from stage R3 on. Kept separate from <see cref="OffscreenScene"/> so the
