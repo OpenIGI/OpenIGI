@@ -19,7 +19,10 @@ namespace OpenIGI.Desktop;
 public sealed class LightmapBakeCache
 {
     private const uint Magic = 0x424D4C49; // "ILMB"
-    private const byte FormatVersion = 1;
+
+    // Bumped whenever the bake logic changes the result the same inputs produce, so an older cached file is
+    // a miss and a re-bake rather than a stale hit. v2: bake rays see through glass and fences.
+    private const byte FormatVersion = 2;
     private const float ColourEpsilon = 0.01f;
 
     private readonly string _writeDirectory;

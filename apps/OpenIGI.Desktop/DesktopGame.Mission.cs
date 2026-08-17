@@ -467,9 +467,54 @@ internal sealed partial class DesktopGame
                         : default;
 
                     WorldRayCast shutObjectCast = solids.CasterWithDoorsShut();
+
+                    // A bake ray passes through glass and chain-link the way a line of sight does
+                    // (GameMaterial.IsSightTransparent), so daylight reaches a room through its windows
+                    // instead of stopping at the pane -- the very thing that left window rooms as dark as
+                    // sealed ones. It steps a hair past each see-through face and casts on until it meets
+                    // something solid or leaves the level. Portal polygons (doorway/window openings) are
+                    // already skipped by the cast itself. Terrain always blocks -- it reports material Air.
+                    WorldRayCast seeThroughObjectCast = (a, b, out blockedAt) =>
+                    {
+                        Vector3d origin = a;
+                        for (int pass = 0; pass < 8; pass++)
+                        {
+                            if (!shutObjectCast(origin, b, out WorldRayHit hit))
+                            {
+                                blockedAt = default;
+                                return false;
+                            }
+
+                            if (!GameMaterial.IsSightTransparent(hit.Material))
+                            {
+                                blockedAt = hit;
+                                return true;
+                            }
+
+                            Vector3d toEnd = new(b.X - hit.Position.X, b.Y - hit.Position.Y, b.Z - hit.Position.Z);
+                            double length = Math.Sqrt((toEnd.X * toEnd.X) + (toEnd.Y * toEnd.Y) + (toEnd.Z * toEnd.Z));
+                            if (length <= 1e-6)
+                            {
+                                blockedAt = default;
+                                return false;
+                            }
+
+                            // A few units past the pane (4/4096 m ~= 1 mm); thicker or layered glass is
+                            // cleared by the loop, one see-through face at a time.
+                            double scale = 4.0 / length;
+                            origin = new Vector3d(
+                                hit.Position.X + (toEnd.X * scale),
+                                hit.Position.Y + (toEnd.Y * scale),
+                                hit.Position.Z + (toEnd.Z * scale));
+                        }
+
+                        blockedAt = default;
+                        return false;
+                    };
+
                     WorldRayCast bakeCast = (a, b, out blockedAt) =>
                     {
-                        bool hitObject = shutObjectCast(a, b, out WorldRayHit onObject);
+                        bool hitObject = seeThroughObjectCast(a, b, out WorldRayHit onObject);
                         if (_playerTerrain is { } bakeGround
                             && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
                             && (!hitObject || onGround.Distance < onObject.Distance))
