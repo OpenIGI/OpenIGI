@@ -908,6 +908,137 @@ public static class LightmapBaker
         }
     }
 
+    /// <summary>Smooths the baked radiance with an edge-aware à-trous filter, taming the ray tracer's noise.</summary>
+    /// <param name="targets">The baked targets, their <see cref="LightmapTarget.Radiance"/> filled.</param>
+    /// <param name="iterations">How many à-trous passes, each at twice the previous spacing.</param>
+    /// <param name="positionSigmaMetres">How far, in metres, radiance is allowed to blur across a flat surface.</param>
+    /// <param name="normalPower">How sharply the filter stops at a change of surface orientation; higher keeps edges.</param>
+    /// <remarks>
+    /// <para>
+    /// A per-texel Monte-Carlo estimate is noisy, and more rays only buy so much before the cost is not worth
+    /// it; the standard answer a baker reaches for is a denoise that averages a texel with its neighbours but
+    /// refuses to blur across the geometry the atlas packs side by side. This is that: a joint bilateral
+    /// à-trous, weighting each neighbour by the B3-spline kernel, by how near it sits in the WORLD (so two
+    /// islands that touch in the atlas but face different walls do not bleed into each other), and by how
+    /// alike its normal is (so a convex edge stays an edge). Uncovered texels are left alone and never
+    /// contribute.
+    /// </para>
+    /// <para>
+    /// Runs on the bake worker after the bounces and before the pages are composited, so the smoothing is
+    /// baked into the cached result and costs nothing at runtime.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="targets"/> is null.</exception>
+    public static void Denoise(
+        IReadOnlyList<LightmapTarget> targets,
+        int iterations = 4,
+        float positionSigmaMetres = 0.35f,
+        float normalPower = 48f)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+
+        if (iterations <= 0)
+        {
+            return;
+        }
+
+        Parallel.ForEach(targets, target => DenoiseTarget(target, iterations, positionSigmaMetres, normalPower));
+    }
+
+    // The B3-spline row an à-trous filter uses along each axis; the 2D kernel is its outer product.
+    private static readonly float[] AtrousKernel = [1f / 16f, 1f / 4f, 3f / 8f, 1f / 4f, 1f / 16f];
+
+    private static void DenoiseTarget(LightmapTarget target, int iterations, float positionSigmaMetres, float normalPower)
+    {
+        int width = target.Width;
+        int height = target.Height;
+        float inversePositionVariance = 1f / (2f * positionSigmaMetres * positionSigmaMetres);
+
+        Vector3f[] source = target.Radiance;
+        Vector3f[] destination = new Vector3f[source.Length];
+
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            int step = 1 << iteration;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int centre = (y * width) + x;
+                    if (!target.Texels[centre].IsCovered)
+                    {
+                        destination[centre] = source[centre];
+                        continue;
+                    }
+
+                    Vector3d centrePosition = target.Texels[centre].WorldPosition;
+                    Vector3f centreNormal = target.Texels[centre].Normal;
+
+                    Vector3f sum = default;
+                    float weightSum = 0f;
+
+                    for (int ky = 0; ky < 5; ky++)
+                    {
+                        int sy = y + ((ky - 2) * step);
+                        if (sy < 0 || sy >= height)
+                        {
+                            continue;
+                        }
+
+                        for (int kx = 0; kx < 5; kx++)
+                        {
+                            int sx = x + ((kx - 2) * step);
+                            if (sx < 0 || sx >= width)
+                            {
+                                continue;
+                            }
+
+                            int sample = (sy * width) + sx;
+                            if (!target.Texels[sample].IsCovered)
+                            {
+                                continue;
+                            }
+
+                            Vector3d samplePosition = target.Texels[sample].WorldPosition;
+                            double dx = samplePosition.X - centrePosition.X;
+                            double dy = samplePosition.Y - centrePosition.Y;
+                            double dz = samplePosition.Z - centrePosition.Z;
+                            float positionWeight = MathF.Exp(-(float)((dx * dx) + (dy * dy) + (dz * dz)) * inversePositionVariance);
+
+                            Vector3f sampleNormal = target.Texels[sample].Normal;
+                            float alignment = (centreNormal.X * sampleNormal.X)
+                                + (centreNormal.Y * sampleNormal.Y)
+                                + (centreNormal.Z * sampleNormal.Z);
+                            if (alignment <= 0f)
+                            {
+                                continue;
+                            }
+
+                            float weight = AtrousKernel[kx] * AtrousKernel[ky] * positionWeight * MathF.Pow(alignment, normalPower);
+
+                            Vector3f radiance = source[sample];
+                            sum = new Vector3f(sum.X + (radiance.X * weight), sum.Y + (radiance.Y * weight), sum.Z + (radiance.Z * weight));
+                            weightSum += weight;
+                        }
+                    }
+
+                    destination[centre] = weightSum > 1e-6f
+                        ? new Vector3f(sum.X / weightSum, sum.Y / weightSum, sum.Z / weightSum)
+                        : source[centre];
+                }
+            }
+
+            (source, destination) = (destination, source);
+        }
+
+        // Ensure the smoothed result lands in the target's own array, whichever buffer the ping-pong ended on.
+        if (!ReferenceEquals(source, target.Radiance))
+        {
+            Array.Copy(source, target.Radiance, source.Length);
+        }
+    }
+
     /// <summary>Renders a target's normals as an image, for verifying the texel map before any light is traced.</summary>
     /// <param name="target">The target whose texels to draw.</param>
     /// <param name="destination">Receives the image, one pixel per texel, row-major.</param>

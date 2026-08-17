@@ -91,6 +91,9 @@ public sealed class LightmapBake
                     LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, bounces, hemisphereRays);
 
                     cancellation.Token.ThrowIfCancellationRequested();
+                    LightmapBaker.Denoise(targets);
+
+                    cancellation.Token.ThrowIfCancellationRequested();
                     BakedLightmaps baked = BakedLightmaps.Compose(scene, targets);
 
                     double seconds = Stopwatch.GetElapsedTime(startedAt).TotalSeconds;

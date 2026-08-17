@@ -560,6 +560,12 @@ internal sealed partial class DesktopGame
                         }
                         else
                         {
+                            // Set the mode straight away so the worker's seconds are not spent showing the
+                            // shipped lightmaps under an exclusive (r_lightmap 2) request: with no bake yet,
+                            // lightmapped surfaces read black until the bake lands. Mode 1 keeps the shipped
+                            // pages meanwhile, which is what its fallback means.
+                            _world.SetBakedLightmaps(null, discardRetailLightmaps);
+
                             // Resolving each surface's albedo reads the resource registry, so the texel
                             // maps, textured triangles and their BVH are built here on the main thread; the
                             // worker then does only the tracing, which touches immutable data and the cast.
@@ -570,7 +576,7 @@ internal sealed partial class DesktopGame
                             _lightmapBake?.Cancel();
                             _lightmapBake = LightmapBake.Start(
                                 bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
-                                bounces: 4, hemisphereRays: 64, _logger);
+                                bounces: 4, hemisphereRays: 128, _logger);
 
                             if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
                             {

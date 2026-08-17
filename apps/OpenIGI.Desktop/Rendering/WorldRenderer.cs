@@ -743,7 +743,10 @@ public sealed class WorldRenderer : IDisposable
     public void SetBakedLightmaps(BakedLightmaps? baked, bool discardRetail = false)
     {
         _bakedPages.Clear();
-        _discardRetailLightmaps = discardRetail && baked is not null;
+
+        // Independent of whether a bake has landed yet: under the exclusive mode a surface with no bake
+        // reads black even while the worker is still tracing, so the shipped lightmaps never flash up first.
+        _discardRetailLightmaps = discardRetail;
 
         if (baked is not null)
         {
@@ -771,6 +774,14 @@ public sealed class WorldRenderer : IDisposable
         }
 
         _lightmaps.Clear();
+
+        // Each placement caches the lightmap handles it resolved into its per-subset draw state, and those
+        // now point at textures just destroyed. Drop the resolutions so the next draw rebuilds them against
+        // the swapped-in pages -- without this the frame the async bake lands on draws a dangling handle and
+        // the device rejects it.
+        DestroyResolvedQueries();
+        _resolved.Clear();
+        _resolvedDestroyed.Clear();
 
         _logger.Information(
             LogCategory,
