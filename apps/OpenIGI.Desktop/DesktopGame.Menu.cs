@@ -18,7 +18,7 @@ internal sealed partial class DesktopGame
     /// <remarks>
     /// <para>
     /// Everything a backdrop is made of — the packs, the task tree, the scene, the collision index, the
-    /// terrain surface, the level's sun — arrived already built. What is left is the
+    /// terrain surface, the level's sun, its baked probe field — arrived already built. What is left is the
     /// part that cannot leave this thread: a GL texture, buffer and framebuffer all belong to the context
     /// that made them, so the three renderers are constructed here. That is a handful of milliseconds
     /// against the several hundred the whole load used to cost the frame.
@@ -99,6 +99,30 @@ internal sealed partial class DesktopGame
         _sky = new SkyRenderer(_device, preview.FileSystem, preview.LevelRoot, FarPlane, _logger);
         _shadowPass ??= new ShadowCasterPass(_device);
 
+        // A mission with no shipped bake previews on sun and sky alone. Tracing one is seconds of CPU for a
+        // backdrop, and the trace belongs to the mission's real load, which caches it for good.
+        _probeField = preview.ProbeField;
+        _device.SetIrradianceVolume(_probeField);
+
+        // The surface cache belongs to a played mission; a backdrop has none, so the frame loop must not go
+        // on lighting the last one's cards over this level's geometry.
+        _cardLighting?.Dispose();
+        _cardLighting = null;
+        _cardLookup?.Dispose();
+        _cardLookup = null;
+        _capturedCards = null;
+        _cardInstances = null;
+        _lightFixtures = [];
+
+        // Likewise the distance fields: the clipmaps that are up were traced against the level that has
+        // just been replaced, and tracing new ones is work a backdrop does not need.
+        _sdfBake?.Cancel();
+        _sdfBake = null;
+        _sdfClipmaps?.Dispose();
+        _sdfClipmaps = null;
+        _sdfScene = null;
+        _sdfValidated = false;
+
         if (_sky.HasSky)
         {
             _scheduler.ClearColour = new Bgra32(
@@ -136,7 +160,7 @@ internal sealed partial class DesktopGame
             Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
 
         using var loader = new MissionPreviewLoader(
-            _gamePath, _missions, _magic, cameras, _previewContext, _logger);
+            _gamePath, _missions, _magic, _giCache, cameras, _previewContext, _logger);
         var entries = new List<ShowcasePointFile.Entry>();
 
         foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())

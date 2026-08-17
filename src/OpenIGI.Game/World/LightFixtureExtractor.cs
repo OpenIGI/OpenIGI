@@ -11,7 +11,7 @@ namespace OpenIGI.Game.World;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Where this sits.</b> An emissive-texture survey answers "which textures are lights" and
+/// <b>Where this sits.</b> <see cref="EmissiveTextureSurvey"/> answers "which textures are lights" and
 /// stops there — on level 1 it answers <c>236_01_1</c>, thirty uses, baked pure white on every one.
 /// That is a name, not a place. This is the other half: given the names, walk the level's placements
 /// and their geometry the same way the survey does, take every triangle whose subset draws with one of
@@ -126,7 +126,7 @@ public static class LightFixtureExtractor
     /// <param name="meshes">The drawable meshes and where each one stands.</param>
     /// <param name="emitterTextures">
     /// The texture names confirmed to be light sources, compared case-insensitively. Typically the top
-    /// of an emissive-texture-survey ranking after a human has looked at it.
+    /// of an <see cref="EmissiveTextureSurvey"/> ranking after a human has looked at it.
     /// </param>
     /// <param name="colour">
     /// Supplies an emitter texture's colour, linear and normalised so its brightest channel is around

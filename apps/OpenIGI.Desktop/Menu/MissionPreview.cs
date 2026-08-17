@@ -48,6 +48,7 @@ namespace OpenIGI.Desktop;
 /// from where the level put its geometry — see <see cref="MissionShowcasePoints"/>.
 /// </param>
 /// <param name="Sun">The level's directional light, or <see langword="null"/> when it declares none.</param>
+/// <param name="ProbeField">A shipped or cached probe field, or <see langword="null"/> when the mission has no bake.</param>
 /// <param name="Resources">The registry the preview's packs were opened into; the world renderer reads through it.</param>
 /// <param name="FileSystem">The file system the preview's <c>MISSION:</c> alias is bound in.</param>
 public sealed record MissionPreview(
@@ -61,5 +62,6 @@ public sealed record MissionPreview(
     IReadOnlyList<Bgra32[]> GroundDetail,
     IReadOnlyList<ShowcasePoint> PointsOfInterest,
     DirectionalLightSettings? Sun,
+    IrradianceVolume? ProbeField,
     ResourceRegistry Resources,
     VirtualFileSystem FileSystem);

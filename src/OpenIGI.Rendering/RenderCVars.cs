@@ -241,6 +241,94 @@ public static class RenderCVars
         high: "1.6",
         ultra: "1.8");
 
+    /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
+    /// <remarks>
+    /// Zero is off, which is every preset for now: above zero, the gather traces the surface cache per
+    /// screen probe into an atlas and the deferred lighting reads it as its diffuse fill in place of the
+    /// flat ambient -- the stage where the traced global illumination reaches the screen. Not a name
+    /// clash with <see cref="GlobalIllumination"/> (<c>r_gi</c>), which is the baked probe field; this is
+    /// the live screen-space gather, and it needs the surface cache and the distance fields, so it does
+    /// nothing without both. The magnitude compensates for how the gather reads the cache: the surface
+    /// cache's final atlas holds each card's OUTGOING radiance -- the incident light already taken through
+    /// the surface's albedo and the Lambertian one-over-pi -- and the deferred fill then takes the
+    /// receiver's albedo again, so the raw gather lands roughly an order of magnitude below the ambient it
+    /// stands in for. A strength around two and a half lifts it back, so a shadowed wall reads as lit
+    /// concrete rather than black. It stays a knob while the look is tuned.
+    /// </remarks>
+    public static readonly NumericCVar<float> ScreenGather = Presets.Define(
+        CVar.Float(
+            "r_screen_gi",
+            0f,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // Ultra's indirect is this real-time screen probe gather: it traces the surface cache and the
+        // distance fields along the view and reads back as the diffuse fill, so the bounced light responds
+        // to the frame -- a lamp switched on, a door opened, the camera moved -- with no bake. Calibrated so
+        // a shadowed wall reads as lit concrete rather than black: the cache holds outgoing radiance (see
+        // the remarks), so the gather needs lifting by about this much to stand in for the ambient. It
+        // carries only light already in the frame, so a windowless room still leans on the lamp fixtures
+        // (r_local_light_scale). The cheaper presets light from the baked field (r_gi) instead.
+        ultra: "2.5");
+
+    /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
+    /// <remarks>
+    /// The screen gather only carries light that already exists in the frame -- daylight through a window,
+    /// a sunlit wall -- so a windowless interior it cannot help: there is no source to gather. This turns
+    /// the lamp fixtures the emissive survey proposes (see the game layer's light-fixture proposer) into
+    /// direct punctual lights, which is the honest way to light such a room -- a real source with a real
+    /// falloff, not exposure lifting a black frame into grey. Scales the whole set; the fixtures' relative
+    /// intensities are the survey's, and this is the one number tuned by eye. Off below ultra, where the
+    /// bakes still carry the interiors.
+    /// </remarks>
+    public static readonly NumericCVar<float> LocalLightScale = Presets.Define(
+        CVar.Float(
+            "r_local_light_scale",
+            0f,
+            0f,
+            64f,
+            CVarOptions.Archive,
+            "Strength of the level's inferred lamp fixtures as real point lights. 0 is off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "6");
+
+    /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
+    /// <remarks>
+    /// On by default, but only ever engaged while <see cref="ScreenGather"/> is up: each gather ray first
+    /// marches the depth buffer and, on an on-screen hit, reads the previous frame's lit colour there --
+    /// on-screen bounce at full frame detail rather than the surface cache's coarse card -- falling
+    /// through to the cache only when the ray leaves the screen or finds nothing. A knob to turn off for
+    /// comparison; it does nothing when the gather itself is off.
+    /// </remarks>
+    public static readonly BoolCVar ScreenGatherTrace = CVar.Bool(
+        "r_screen_gi_trace",
+        true,
+        CVarOptions.Archive,
+        "Trace on-screen geometry from the frame before falling back to the surface cache.");
+
+    /// <summary>How far the screen probe gather's spatial denoise blur reaches, in probes. Zero is off.</summary>
+    /// <remarks>
+    /// The spatial half of the gather's denoise, paired with its temporal accumulation. The per-frame
+    /// estimate is noisy and the temporal pass resets along depth edges, so the probes freshest near a
+    /// wall shimmer; blending each probe with its neighbours, weighted so light does not cross an edge,
+    /// smooths that. One probe each way is usually enough; higher is smoother but softer. Only ever runs
+    /// while <see cref="ScreenGather"/> is up.
+    /// </remarks>
+    public static readonly NumericCVar<int> ScreenGatherFilter = CVar.Int(
+        "r_screen_gi_filter",
+        1,
+        0,
+        4,
+        CVarOptions.Archive,
+        "Radius, in probes, of the screen probe gather's spatial denoise. 0 is off.");
+
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
     /// Off by default, and only ever engages where a tone map is on -- the vanilla copy path returns
@@ -639,6 +727,131 @@ public static class RenderCVars
         CVarOptions.Archive | CVarOptions.RequiresRestart,
         "Directory of derived surface-detail maps; empty for none.");
 
+    /// <summary>Whether every model's surface is captured into the card atlas at load.</summary>
+    /// <remarks>
+    /// The structure that lets light bounce off geometry the camera cannot see: a ray hitting a model
+    /// reads its captured surface rather than needing the model drawn. Off at every preset until the
+    /// stages that read it exist — an atlas nothing samples is load time and video memory spent on
+    /// nothing.
+    /// </remarks>
+    public static readonly BoolCVar SurfaceCache = Presets.Define(
+        CVar.Bool(
+            "r_cards",
+            false,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Capture every model's surface into the card atlas at load."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // Ultra's real-time global illumination is built on the surface cache: the screen probe gather
+        // traces it for the indirect fill, so ultra is the one preset that pays to capture it. The other
+        // three light from the bakes and never read a card.
+        ultra: "1");
+
+    /// <summary>How many texels of card a world unit of surface is given.</summary>
+    /// <remarks>
+    /// The dial that decides both the atlas size and how much detail a bounce carries. Higher resolves
+    /// a doorway rather than averaging over a wall, and costs the square of itself.
+    /// </remarks>
+    public static readonly NumericCVar<float> SurfaceCacheDensity = CVar.Float(
+        "r_cards_density",
+        8f,
+        1f,
+        64f,
+        CVarOptions.Archive | CVarOptions.RequiresRestart,
+        "Texels of card per world unit of surface.");
+
+    /// <summary>Where to write the captured atlas as images, or empty to write none.</summary>
+    /// <remarks>
+    /// A capture can only be judged by looking at it. Wrong winding shows as models captured
+    /// inside-out, a wrong card rotation as mirrored pages, a missing scissor as pages bleeding into
+    /// each other — and every one of those produces an atlas full of entirely plausible surfaces.
+    /// </remarks>
+    public static readonly StringCVar SurfaceCacheDump = CVar.Text(
+        "r_cards_dump",
+        string.Empty,
+        CVarOptions.Developer,
+        "Directory to write the captured card atlas to as PNGs; empty writes none.");
+
+    /// <summary>What the lighting pass writes into its atlas: light, or a chosen diagnostic.</summary>
+    /// <remarks>
+    /// A shadow trace that fails leaves nothing to look at — a black atlas is equally consistent with a
+    /// wrong world position, an unbound sampler, a uniform that never arrived and a field that is
+    /// genuinely closed over. Each probe writes one of those intermediates where the light would have
+    /// gone, so the dump can tell them apart: 1 writes what the trace sees at its start point, 2 the
+    /// reconstructed world position within the outermost clipmap, 3 the world normal, 4 how the trace
+    /// ended, 5 whether the card index sends a texel back to itself.
+    /// <para>
+    /// <b>Keep the maximum in step with the shader.</b> This clamps, silently and by design, so a probe
+    /// added to the shader but not added here runs as whichever probe the clamp lands on -- which
+    /// presents as the new probe reporting nothing whatsoever, and is indistinguishable from the thing
+    /// it was measuring being broken.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> SurfaceCacheProbe = CVar.Int(
+        "r_cards_probe",
+        0,
+        0,
+        5,
+        CVarOptions.Developer,
+        "Diagnostic the card lighting writes instead of light: 0 none, 1 trace start, 2 position, "
+        + "3 normal, 4 trace outcome, 5 card index self-test.");
+
+    /// <summary>Whether the level's signed distance fields are baked and resampled into clipmaps.</summary>
+    /// <remarks>
+    /// <para>
+    /// The structure everything in the realtime GI track traces through. A ray marched against
+    /// triangles tests every triangle it might cross; a ray marched against a distance field asks how
+    /// far the nearest surface is and steps exactly that far, which cannot overshoot.
+    /// </para>
+    /// <para>
+    /// Needs compute, so it is off wherever the context cannot honour it whatever this says. Off at
+    /// every preset until the stages that consume it exist — a field nothing traces is a load-time cost
+    /// with nothing to show for it.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar DistanceFields = Presets.Define(
+        CVar.Bool(
+            "r_sdf",
+            false,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Bake the level's signed distance fields and keep clipmaps of them around the camera."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // The screen probe gather traces the distance fields for the rays that leave the screen, so ultra
+        // bakes them for the same reason it captures the cards. The cheaper presets need neither.
+        ultra: "1");
+
+    /// <summary>How many voxels the longest axis of each model's distance field gets.</summary>
+    /// <remarks>
+    /// The cost of a bake is roughly this cubed per distinct model, and the memory exactly so. Thirty-two
+    /// gives this game's crates and huts voxels of a few centimetres, which is fine enough for a trace
+    /// to land on the right side of a wall.
+    /// </remarks>
+    public static readonly NumericCVar<int> DistanceFieldResolution = CVar.Int(
+        "r_sdf_resolution",
+        32,
+        8,
+        128,
+        CVarOptions.Archive | CVarOptions.RequiresRestart,
+        "Voxels along the longest axis of each model's distance field.");
+
+    /// <summary>Whether the built clipmaps are checked against the exact field once, after a load.</summary>
+    /// <remarks>
+    /// Reads the clipmap back and compares every voxel against <c>SceneDistanceField</c>, which answers
+    /// the same question exactly. Costs a synchronising readback and a few hundred thousand CPU
+    /// evaluations, so it is a diagnostic rather than something to leave on — but a wrong distance field
+    /// is invisible in a rendered frame, and this is the only thing that can see it.
+    /// </remarks>
+    public static readonly BoolCVar DistanceFieldValidate = CVar.Bool(
+        "r_sdf_validate",
+        false,
+        CVarOptions.Developer,
+        "After a load, compare the built clipmap against the exact field and report the difference.");
+
     /// <summary>Scales the whole dynamically-computed irradiance.</summary>
     /// <remarks>
     /// Not a taste control, a calibration. I.G.I.'s diffuse textures are not albedo: they were painted
@@ -906,6 +1119,68 @@ public static class RenderCVars
         1f,
         CVarOptions.Archive,
         "Roughest surface that still reflects. Rougher ones scatter too widely for one ray to describe.");
+
+    /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
+    /// <remarks>
+    /// Costs a trace of the level at load rather than anything per frame, which is why it is a
+    /// restart-scope setting in practice even though nothing enforces that: turning it on mid-level
+    /// finds no field baked and changes nothing until the next load.
+    /// </remarks>
+    public static readonly BoolCVar GlobalIllumination = Presets.Define(
+        CVar.Bool(
+            "r_gi",
+            false,
+            CVarOptions.Archive,
+            "Light surfaces from the level's baked probe field instead of a flat ambient term."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "1",
+
+        // Off at ultra: there the real-time screen gather (r_screen_gi) is the indirect, and it supersedes
+        // this baked field in the shader anyway -- so baking one would only spend the load tracing a field
+        // nothing reads. High and below, with no surface cache to gather, light from this bake.
+        ultra: "0");
+
+    /// <summary>How far apart the probes sit, in metres.</summary>
+    public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(
+        "r_gi_probe_spacing",
+        6f,
+        1f,
+        32f,
+        CVarOptions.Archive,
+        "Metres between irradiance probes. Finer resolves smaller rooms and takes longer to bake.");
+
+    /// <summary>How strongly the probe field's light is applied.</summary>
+    public static readonly NumericCVar<float> GlobalIlluminationIntensity = CVar.Float(
+        "r_gi_intensity",
+        1f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "How strongly the probe field lights surfaces; 1 is the amount the bake computed.");
+
+    /// <summary>The diffuse colour boost the surface cache reflects light through — the reference's DiffuseColorBoost.</summary>
+    /// <remarks>
+    /// The single lever for how bright the bounced light is. Each time light reflects off a card, the
+    /// surface's albedo is raised by <c>pow(luminance, boost)</c> before it passes light along, so a
+    /// <b>lower</b> value lifts a dark, low-albedo surface's reflectance towards one and lets a sunless
+    /// interior carry far more indirect -- which the raw retail albedos (~0.4) otherwise swallow after a
+    /// bounce or two. One is off (physical albedo). It never reaches one (the surface would return
+    /// everything it received and the feedback would diverge); the shader clamps it below. This is what to
+    /// reach for when interiors read dark, ahead of exposure or more bounces.
+    /// </remarks>
+    public static readonly NumericCVar<float> GlobalIlluminationBoost = Presets.Define(
+        CVar.Float(
+            "r_gi_boost",
+            0.8f,
+            0.1f,
+            1f,
+            CVarOptions.Archive,
+            "Diffuse colour boost for bounced light: LOWER lifts dark surfaces so interiors carry more indirect. 1 is off."),
+        vanilla: "0.8",
+        enhanced: "0.8",
+        high: "0.8",
+        ultra: "0.6");
 
     /// <summary>Whether each stage of the frame is timed on the GPU and shown in an overlay.</summary>
     /// <remarks>

@@ -1021,6 +1021,110 @@ public sealed class WorldRenderer : IDisposable
     /// </remarks>
     public MaterialDetailPack? DetailMaps { get; set; }
 
+    /// <summary>Captures every distinct model's surface into the card atlas.</summary>
+    /// <param name="scene">The level, for the placements that name which models are used.</param>
+    /// <param name="cardResolution">How many texels per world unit a card asks for.</param>
+    /// <returns>What was captured, or <see langword="null"/> when there was nothing to capture.</returns>
+    /// <remarks>
+    /// <para>
+    /// Here rather than in the shell because everything it needs is already here and private: the
+    /// geometry cache, the uploaded meshes, the texture cache and the material library. Reaching in
+    /// from outside would mean exposing all four, and the only caller wants none of them.
+    /// </para>
+    /// <para>
+    /// <b>Once per distinct model, not per placement.</b> A level draws the same crate hundreds of
+    /// times and it looks the same every time. Spline-bent geometry is skipped entirely: it is unique
+    /// to its placement, so it has no shared model whose cards could be reused, and cards for one-off
+    /// geometry would be atlas spent on a single object.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="scene"/> is <see langword="null"/>.</exception>
+    public (SurfaceCacheCapture.Result Capture, SurfaceCacheInstances? Instances)? CaptureSurfaceCache(
+        WorldScene scene, float cardResolution = 8f)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+
+        List<SurfaceCacheCapture.Subject> subjects = [];
+        List<MeshHandle> meshes = [];
+
+        // Which captured model each instance name became, so the per-placement lighting layout can join
+        // a placement back to the cards its model contributed.
+        Dictionary<string, int> modelOfName = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (placement.BentGeometry is not null || !seen.Add(placement.Instance.Name))
+            {
+                continue;
+            }
+
+            if (GetGeometry(placement) is not { } geometry || geometry.Indices.Length < 3)
+            {
+                continue;
+            }
+
+            MeshHandle mesh = GetMesh(placement.Instance.Name, geometry);
+
+            if (!mesh.IsValid)
+            {
+                continue;
+            }
+
+            IReadOnlyList<MeshCard> cards = MeshCardBaker.Bake(geometry, cardResolution);
+
+            if (cards.Count == 0)
+            {
+                continue;
+            }
+
+            // Captured by value so the closure does not depend on which placement the loop is on when
+            // the capture actually runs.
+            WorldPlacement owner = placement;
+
+            subjects.Add(new SurfaceCacheCapture.Subject(
+                geometry,
+                cards,
+                subset =>
+                {
+                    TextureHandle diffuse = TextureHandle.None;
+                    SurfaceMaterial material = _materials.Default;
+
+                    if (subset.HasMaterial
+                        && owner.Pack.TryGetTextureName(owner.Instance, subset.MaterialSlot, out string texture))
+                    {
+                        diffuse = GetTexture(texture);
+                        material = _materials.For(texture);
+                    }
+
+                    // No lightmap. A card belongs to a model and a bake belongs to a placement, so
+                    // there is no single bake a shared card could carry -- see CardAtlasShaders.
+                    return (diffuse, TextureHandle.None, material);
+                }));
+
+            modelOfName[placement.Instance.Name] = subjects.Count - 1;
+            meshes.Add(mesh);
+        }
+
+        if (SurfaceCacheCapture.Capture(_device, subjects, meshes, 8192, _logger) is not { } captured)
+        {
+            return null;
+        }
+
+        // A card's SURFACE belongs to the model and is shared; its LIGHTING belongs to the placement and
+        // is not -- one crate stands in sunlight and another in a hangar's shadow. So the lighting gets
+        // a second layout, a page per placement of each card.
+        SurfaceCacheInstances? instances = SurfaceCacheInstances.Build(
+            captured,
+            scene.Placements,
+            placement => placement.BentGeometry is null
+                && modelOfName.TryGetValue(placement.Instance.Name, out int model) ? model : -1,
+            8192,
+            _logger);
+
+        return (captured, instances);
+    }
+
     private TextureHandle GetTexture(string name)
     {
         if (_textures.TryGetValue(name, out TextureHandle cached))
