@@ -299,6 +299,25 @@ public static class RenderCVars
         high: "0",
         ultra: "6");
 
+    /// <summary>How bright the sky is as a source of indirect light, where 1 is the level's own ambient.</summary>
+    /// <remarks>
+    /// The GI reads the sky as the colour a ray that escapes the geometry returns -- the skylight that
+    /// fills every outdoor surface and reaches in through a window. The level's <c>Dirlight</c> carries
+    /// only a dim ambient triple (its "Back Color", around a quarter), authored as a subtle fill on top of
+    /// the flat ambient rather than as the sky's whole radiance; read literally as the sky it leaves the
+    /// open exterior reading like dusk. This scales it up to a daytime value. It touches only what looks at
+    /// the sky, so a sealed room is unaffected while the courtyard and the window-lit wall lift -- and it
+    /// only ever reaches a preset that runs the gather or the probe field, so vanilla and the baked path
+    /// are untouched.
+    /// </remarks>
+    public static readonly NumericCVar<float> SkyLight = CVar.Float(
+        "r_sky_light",
+        2.5f,
+        0f,
+        16f,
+        CVarOptions.Archive,
+        "Skylight brightness the GI fill sees; 1 is the level's own ambient. Lifts outdoor and window-lit surfaces.");
+
     /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
     /// <remarks>
     /// On by default, but only ever engaged while <see cref="ScreenGather"/> is up: each gather ray first

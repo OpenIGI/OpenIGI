@@ -1,4 +1,5 @@
 ﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
 
@@ -6,6 +7,14 @@ namespace OpenIGI.Desktop;
 
 internal sealed partial class DesktopGame
 {
+    // The sky as a source of indirect light: the colour a GI ray that escapes the geometry returns. The
+    // level's Dirlight ambient is a dim fill (~0.27, its "Back Color"), authored to sit on top of the flat
+    // ambient rather than to be the sky's whole radiance; r_sky_light scales it up to a daytime skylight so
+    // the GI can carry the outdoor and window fill the flat ambient used to stand in for. Only surfaces
+    // that actually see the sky read it, so a sealed interior is unaffected.
+    private Vector3f SkyFillColour() =>
+        (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
+
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than
     // per frame -- it is a volume texture upload, while how much of it to apply is a number.
     // A mission with no table of its own is not a fault: it renders ungraded, which is what every

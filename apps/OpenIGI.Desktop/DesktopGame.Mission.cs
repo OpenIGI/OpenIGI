@@ -945,7 +945,7 @@ internal sealed partial class DesktopGame
                 _cardLighting.Light(
                     _sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
                     _sun?.Colour ?? default,
-                    _sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f));
+                    SkyFillColour());
 
                 if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
                 {

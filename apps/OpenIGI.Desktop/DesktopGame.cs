@@ -2883,7 +2883,7 @@ internal sealed partial class DesktopGame : IDisposable
                         litCards.Light(
                             _sun is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
                             _sun?.Colour ?? default,
-                            _sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f),
+                            SkyFillColour(),
                             liveField,
                             RenderCVars.SurfaceCacheProbe.Value);
 
@@ -3268,7 +3268,7 @@ internal sealed partial class DesktopGame : IDisposable
                         // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
                         // the surface cache lights its cards with, so the indirect that replaces the ambient
                         // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
-                        _sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f));
+                        SkyFillColour());
 
                     // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
                     // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
