@@ -1041,11 +1041,11 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> AmbientScale = CVar.Float(
         "r_ambient_scale",
-        1f,
+        0f,
         0f,
         2f,
         CVarOptions.None,
-        "TEMPORARY: scales the dynamic model's flat ambient fill. 0 removes it. Only the dynamic model reads it.");
+        "Scales the dynamic model's flat ambient fill; 0 removes it and lets the GI carry the indirect. Only the dynamic model reads it.");
 
     /// <summary>Scales the real-time sun so a sunlit surface reads as sunlit rather than as flat daylight.</summary>
     /// <remarks>
