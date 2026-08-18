@@ -33,6 +33,7 @@ public static class RenderBudget
     public static double? For(RenderStage stage) => stage switch
     {
         RenderStage.Shadows => 0.7,
+        RenderStage.GlobalIllumination => 2.5,
         RenderStage.AmbientOcclusionSearch => 1.0,
         RenderStage.AmbientOcclusionReconstruct => 0.25,
         RenderStage.Lighting => 0.8,

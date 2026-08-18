@@ -328,6 +328,15 @@ internal sealed partial class DesktopGame : IDisposable
         void Resize(int width, int height)
         {
             _logger.Information("Desktop", $"Framebuffer resize event: {width}x{height}.");
+
+            // A minimised window, and the occasional spurious event as the window is created, arrive as a
+            // zero dimension. There is nothing to project onto and the back buffer keeps its last real size,
+            // so ignore it rather than tear the viewport down to zero (which the projection rejects outright).
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
             _device.SetViewport(new Viewport(0, 0, width, height));
             _device.Set2DProjection(width, height);
         }
@@ -2881,7 +2890,16 @@ internal sealed partial class DesktopGame : IDisposable
                 // only becomes wrong by being walked out of.
                 if (_sdfClipmaps is { } liveField)
                 {
-                    int rebuiltLevels = liveField.Update(eye.Position);
+                    // The real-time GI's compute runs here, before the G-buffer, so this is where it is
+                    // timed. Without this bracket the bounce below -- the frame's single most expensive pass
+                    // when real-time GI is on -- was measured by nothing, and the overlay's total was a frame
+                    // that did not exist.
+                    _device.BeginStageTiming(RenderStage.GlobalIllumination);
+
+                    // Scrolls the clipmaps to follow the camera, rebuilding whichever level it walked out
+                    // of. The relight below no longer keys off how many rebuilt: it runs a slice every
+                    // frame regardless, which is what took the stall out of moving.
+                    liveField.Update(eye.Position);
 
                     // Once, after the first build, and only when asked. A wrong distance field produces a
                     // picture that is merely subtly wrong several stages later, so the only way to know it
@@ -2911,22 +2929,22 @@ internal sealed partial class DesktopGame : IDisposable
                     bool wantDump = !cardLightingDumped
                         && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 };
 
-                    if ((rebuiltLevels > 0 || wantDump) && _cardLighting is { } litCards)
+                    if (_cardLighting is { } litCards)
                     {
+                        // The direct relight: the whole cache at once for a deterministic dump, otherwise a
+                        // slice a frame. The sun is fixed, so the only thing the direct term has to track is
+                        // the clipmap scrolling new coverage under a card as the camera moves -- and doing
+                        // that over the whole cache on the scroll frame was a seventy-millisecond stall that
+                        // read as the game lurching every few steps. Sliced, the new shadows arrive over a
+                        // handful of frames with no spike, and the bounce keeps its long-running history
+                        // instead of being re-seeded from scratch on every scroll.
                         litCards.Light(
                             _sun is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
                             _sun?.Colour ?? default,
                             SkyFillColour(),
                             liveField,
-                            RenderCVars.SurfaceCacheProbe.Value);
-
-                        // A clipmap that moved brought new shadows with it, so re-seed the bounce ramp: the
-                        // new direct term should converge from scratch rather than being dragged in slowly
-                        // by a long-accumulated history. Rare -- only when the camera leaves a clipmap level.
-                        if (rebuiltLevels > 0)
-                        {
-                            _cardBounceFrame = 0;
-                        }
+                            RenderCVars.SurfaceCacheProbe.Value,
+                            amortize: !wantDump);
                     }
 
                     // The bounce accumulates EVERY frame -- the reference's amortised radiosity. Each frame
@@ -2955,6 +2973,8 @@ internal sealed partial class DesktopGame : IDisposable
                                 _device, bounceCards, shadowInto, _logger, RenderCVars.SurfaceCacheProbe.Value);
                         }
                     }
+
+                    _device.EndStageTiming();
                 }
 
                 _device.SetDebugView(RenderCVars.Debug.Value);

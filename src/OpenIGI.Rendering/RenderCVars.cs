@@ -276,7 +276,11 @@ public static class RenderCVars
         // the remarks), so the gather needs lifting by about this much to stand in for the ambient. It
         // carries only light already in the frame, so a windowless room still leans on the lamp fixtures
         // (r_local_light_scale). The cheaper presets light from the baked field (r_gi) instead.
-        ultra: "2.5");
+        //
+        // One, not the old 2.5: the lift that made a shadowed wall read as concrete now lives inside the
+        // gather on the surface-cache term alone (kCacheBoost), where it belongs. Applied here it multiplied
+        // the sky fill as well, and open terrain -- which sees mostly sky -- blew to white.
+        ultra: "1.0");
 
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
@@ -344,7 +348,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<int> ScreenGatherFilter = CVar.Int(
         "r_screen_gi_filter",
-        1,
+        2,
         0,
         4,
         CVarOptions.Archive,

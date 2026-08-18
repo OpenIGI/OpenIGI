@@ -23,6 +23,18 @@ public enum RenderStage
     /// <summary>Every shadow cascade's depth render, together.</summary>
     Shadows,
 
+    /// <summary>
+    /// The real-time global-illumination update: the distance-field clipmap refresh, the surface-cache
+    /// relight and the per-frame radiosity bounce, and the screen-space probe gather and filter.
+    /// </summary>
+    /// <remarks>
+    /// This is compute work that runs before the G-buffer fill and was, until it earned a stage, timed by
+    /// nothing at all -- the reason a frame could read six milliseconds on the overlay while taking
+    /// thirty-five. It is here so the bounce that dominates a real-time-GI frame is a line on the budget
+    /// like every other pass.
+    /// </remarks>
+    GlobalIllumination,
+
     /// <summary>Opaque world rasterisation, including Vanilla's direct forward path.</summary>
     Geometry,
 
