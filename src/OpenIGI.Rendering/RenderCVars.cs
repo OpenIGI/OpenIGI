@@ -347,7 +347,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> RadianceCacheScale = CVar.Float(
         "r_radiance_cache_scale",
-        0.55f,
+        1.0f,
         0f,
         4f,
         CVarOptions.Archive,
@@ -405,7 +405,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> SkyLight = CVar.Float(
         "r_sky_light",
-        0.7f,
+        2.5f,
         0f,
         16f,
         CVarOptions.Archive,
