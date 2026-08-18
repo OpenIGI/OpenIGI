@@ -2983,6 +2983,41 @@ internal sealed partial class DesktopGame : IDisposable
                         }
                     }
 
+                    // The world-space radiance cache: a grid of probes tracing the just-lit surface cache
+                    // into the same L1-SH field the deferred pass samples, but held in world cells rather
+                    // than on the moving screen -- so it stays stable under motion where the screen gather
+                    // shimmers. Configured to the baked field's own layout so the two are interchangeable at
+                    // the sampler, updated a slab a frame off the freshly bounced cache, and bound in place
+                    // of the baked field for the deferred fill. Needs the baked field only for its grid.
+                    if (RenderCVars.RadianceCache.Value != 0
+                        && _cardLighting is { } cacheCards
+                        && _probeField is { } cacheGrid)
+                    {
+                        cacheCards.ConfigureRadianceCache(
+                            new Vector3d(cacheGrid.Origin.X, cacheGrid.Origin.Y, cacheGrid.Origin.Z),
+                            cacheGrid.Spacing,
+                            cacheGrid.CountX,
+                            cacheGrid.CountY,
+                            cacheGrid.CountZ);
+
+                        cacheCards.UpdateRadianceCache(liveField, SkyFillColour(), maxFrames: 16);
+
+                        _device.SetRealtimeProbeVolume(
+                            cacheCards.RadianceCacheRed,
+                            cacheCards.RadianceCacheGreen,
+                            cacheCards.RadianceCacheBlue,
+                            cacheCards.RadianceCacheDistance,
+                            cacheGrid.Origin,
+                            cacheGrid.Spacing,
+                            cacheGrid.CountX,
+                            cacheGrid.CountY,
+                            cacheGrid.CountZ);
+                    }
+                    else
+                    {
+                        _device.ClearRealtimeProbeVolume();
+                    }
+
                     _device.EndStageTiming();
                 }
 

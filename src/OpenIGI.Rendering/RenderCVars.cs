@@ -280,6 +280,29 @@ public static class RenderCVars
         // and judge it; it is the field the radiance cache work will make shippable.
         ultra: "0");
 
+    /// <summary>Whether the world-space radiance cache updates and feeds the deferred fill's indirect.</summary>
+    /// <remarks>
+    /// The stable counterpart to the screen gather. A grid of world-anchored probes traces the surface
+    /// cache every frame into the same L1-SH layout the baked probe field uses, so the deferred pass samples
+    /// it unchanged -- but the radiance is live, not baked, so the sun and dynamic surfaces still feed it,
+    /// and because a probe lives in a world cell rather than on the moving screen it does not shimmer under
+    /// motion the way the gather does. It supersedes the baked field when on, and needs the surface cache
+    /// (<c>r_cards</c>) and the distance field (<c>r_sdf</c>) to trace against. Held off by default while it
+    /// is brought to polish; turn it on to judge and to build against.
+    /// </remarks>
+    public static readonly NumericCVar<int> RadianceCache = Presets.Define(
+        CVar.Int(
+            "r_radiance_cache",
+            0,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Update the world-space radiance cache and feed it to the indirect fill. Needs r_cards and r_sdf."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
     /// The screen gather only carries light that already exists in the frame -- daylight through a window,

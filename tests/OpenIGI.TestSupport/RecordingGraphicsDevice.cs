@@ -393,6 +393,25 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void SetIrradianceVolume(IrradianceVolume? volume) => Volumes.Add(volume);
 
     /// <inheritdoc/>
+    public void SetRealtimeProbeVolume(
+        TextureHandle red,
+        TextureHandle green,
+        TextureHandle blue,
+        TextureHandle distance,
+        Vector3f origin,
+        float spacing,
+        int countX,
+        int countY,
+        int countZ)
+    {
+    }
+
+    /// <inheritdoc/>
+    public void ClearRealtimeProbeVolume()
+    {
+    }
+
+    /// <inheritdoc/>
     public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings) =>
         VolumeSettings.Add(settings);
 

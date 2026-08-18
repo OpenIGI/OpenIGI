@@ -107,6 +107,18 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private float _probeSpacing;
     private bool _hasProbes;
 
+    // The real-time radiance cache's volumes, bound in place of the baked field's when the game layer is
+    // updating one this frame. These are owned by the surface cache pass that writes them, so the device
+    // only references their GL names -- it never allocates or deletes them, unlike the baked textures it
+    // uploads itself. When present they supersede the baked field: same sampler, same layout, but fed live
+    // from the surface cache rather than a load-time bake, and holding actual coloured radiance so the sky
+    // tint the baked path applies at the sampler must be white here.
+    private readonly uint[] _realtimeProbes = [0, 0, 0, 0];
+    private bool _hasRealtimeProbes;
+    private Vector3f _realtimeProbeOrigin;
+    private Vector3f _realtimeProbeInverseCount;
+    private float _realtimeProbeSpacing;
+
     // The last probe layout logged as uploaded, so re-uploads of the same field (the interactive bake
     // easing light in frame by frame) do not each print a line.
     private (int X, int Y, int Z, float Spacing) _loggedProbeLayout;
@@ -1568,6 +1580,44 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         }
     }
 
+    /// <inheritdoc/>
+    public void SetRealtimeProbeVolume(
+        TextureHandle red,
+        TextureHandle green,
+        TextureHandle blue,
+        TextureHandle distance,
+        Vector3f origin,
+        float spacing,
+        int countX,
+        int countY,
+        int countZ)
+    {
+        ThrowIfDisposed();
+
+        if (!red.IsValid || !green.IsValid || !blue.IsValid || !distance.IsValid
+            || countX < 1 || countY < 1 || countZ < 1 || spacing <= 0f)
+        {
+            _hasRealtimeProbes = false;
+            return;
+        }
+
+        _realtimeProbes[0] = Resolve(red, nameof(red)).Name;
+        _realtimeProbes[1] = Resolve(green, nameof(green)).Name;
+        _realtimeProbes[2] = Resolve(blue, nameof(blue)).Name;
+        _realtimeProbes[3] = Resolve(distance, nameof(distance)).Name;
+        _realtimeProbeOrigin = origin;
+        _realtimeProbeSpacing = spacing;
+        _realtimeProbeInverseCount = new Vector3f(1f / countX, 1f / countY, 1f / countZ);
+        _hasRealtimeProbes = true;
+    }
+
+    /// <inheritdoc/>
+    public void ClearRealtimeProbeVolume()
+    {
+        ThrowIfDisposed();
+        _hasRealtimeProbes = false;
+    }
+
     /// <summary>Uploads one channel of the probe field as a filtered volume texture.</summary>
     private unsafe uint CreateProbeTexture(IrradianceVolume volume, float[] data)
     {
@@ -2630,32 +2680,42 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _reflectionFrame = (_reflectionFrame + 1) & 63;
         _reflectionProgram.SetFloat(_reflectionJitter, _reflectionFrame * 0.61803399f);
 
-        bool probes = _hasProbes && _volumeSettings.Enabled;
+        bool realtimeProbes = _hasRealtimeProbes && _volumeSettings.Enabled;
+        bool probes = (_hasProbes || _hasRealtimeProbes) && _volumeSettings.Enabled;
         _reflectionProgram.SetInt(_reflectionProbesEnabled, probes ? 1 : 0);
 
         if (probes)
         {
-            BindProbeTexture(8, _probeTextures[0]);
-            BindProbeTexture(9, _probeTextures[1]);
-            BindProbeTexture(10, _probeTextures[2]);
+            uint[] textures = realtimeProbes ? _realtimeProbes : _probeTextures;
+            Vector3f origin = realtimeProbes ? _realtimeProbeOrigin : _probeOrigin;
+            Vector3f inverseCount = realtimeProbes ? _realtimeProbeInverseCount : _probeInverseCount;
+            float spacing = realtimeProbes ? _realtimeProbeSpacing : _probeSpacing;
+
+            BindProbeTexture(8, textures[0]);
+            BindProbeTexture(9, textures[1]);
+            BindProbeTexture(10, textures[2]);
+            _reflectionProgram.SetVector3(_reflectionProbeOrigin, origin.X, origin.Y, origin.Z);
             _reflectionProgram.SetVector3(
-                _reflectionProbeOrigin, _probeOrigin.X, _probeOrigin.Y, _probeOrigin.Z);
-            _reflectionProgram.SetVector3(
-                _reflectionProbeInverseCount,
-                _probeInverseCount.X,
-                _probeInverseCount.Y,
-                _probeInverseCount.Z);
-            _reflectionProgram.SetFloat(_reflectionProbeSpacing, _probeSpacing);
+                _reflectionProbeInverseCount, inverseCount.X, inverseCount.Y, inverseCount.Z);
+            _reflectionProgram.SetFloat(_reflectionProbeSpacing, spacing);
         }
 
         // What a ray that finds nothing at all falls back to. The sky is what most of a reflected ray
-        // in this game would have hit, and the ambient term is what the level says its sky is worth.
-        float intensity = probes ? MathF.Max(_volumeSettings.Intensity, 0f) : 1f;
-        _reflectionProgram.SetVector3(
-            _reflectionProbeSky,
-            _lighting.AmbientColour.X * intensity,
-            _lighting.AmbientColour.Y * intensity,
-            _lighting.AmbientColour.Z * intensity);
+        // in this game would have hit, and the ambient term is what the level says its sky is worth. The
+        // real-time cache already carries coloured radiance, so its fallback is not re-tinted (white).
+        if (realtimeProbes)
+        {
+            _reflectionProgram.SetVector3(_reflectionProbeSky, 1f, 1f, 1f);
+        }
+        else
+        {
+            float intensity = probes ? MathF.Max(_volumeSettings.Intensity, 0f) : 1f;
+            _reflectionProgram.SetVector3(
+                _reflectionProbeSky,
+                _lighting.AmbientColour.X * intensity,
+                _lighting.AmbientColour.Y * intensity,
+                _lighting.AmbientColour.Z * intensity);
+        }
 
         _reflectionProgram.SetMatrix3(_reflectionViewToWorld, _viewToWorld);
         _reflectionProgram.SetVector3(
@@ -2906,7 +2966,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             BindTexture(6, target.OcclusionTexture);
         }
 
-        bool probes = _hasProbes && _volumeSettings.Enabled;
+        // The real-time cache takes precedence over the baked field: same sampler, live radiance.
+        bool realtime = _hasRealtimeProbes && _volumeSettings.Enabled;
+        bool probes = (_hasProbes || _hasRealtimeProbes) && _volumeSettings.Enabled;
         _lightingProgram.SetInt(_lightingProbesEnabled, probes ? 1 : 0);
         _lightingProgram.SetInt(_lightingShowProbes, _debugView == DebugView.Probes ? 1 : 0);
 
@@ -2917,29 +2979,42 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         if (probes)
         {
-            BindProbeTexture(8, _probeTextures[0]);
-            BindProbeTexture(9, _probeTextures[1]);
-            BindProbeTexture(10, _probeTextures[2]);
-            BindProbeTexture(11, _probeTextures[3]);
+            uint[] textures = realtime ? _realtimeProbes : _probeTextures;
+            Vector3f origin = realtime ? _realtimeProbeOrigin : _probeOrigin;
+            Vector3f inverseCount = realtime ? _realtimeProbeInverseCount : _probeInverseCount;
+            float spacing = realtime ? _realtimeProbeSpacing : _probeSpacing;
 
+            BindProbeTexture(8, textures[0]);
+            BindProbeTexture(9, textures[1]);
+            BindProbeTexture(10, textures[2]);
+            BindProbeTexture(11, textures[3]);
+
+            _lightingProgram.SetVector3(_lightingProbeOrigin, origin.X, origin.Y, origin.Z);
             _lightingProgram.SetVector3(
-                _lightingProbeOrigin, _probeOrigin.X, _probeOrigin.Y, _probeOrigin.Z);
-            _lightingProgram.SetVector3(
-                _lightingProbeInverseCount,
-                _probeInverseCount.X,
-                _probeInverseCount.Y,
-                _probeInverseCount.Z);
+                _lightingProbeInverseCount, inverseCount.X, inverseCount.Y, inverseCount.Z);
 
             // The normal offset is half a probe spacing: far enough to leave the surface it shades,
             // near enough not to cross the next wall along.
-            _lightingProgram.SetVector2(_lightingProbeScale, _probeSpacing, _probeSpacing * 0.5f);
+            _lightingProgram.SetVector2(_lightingProbeScale, spacing, spacing * 0.5f);
 
-            Vector3f sky = _volumeSettings.Sky;
-            float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
             _lightingProgram.SetFloat(
                 _lightingProbeBlend, Math.Clamp(_volumeSettings.Blend, 0f, 1f));
-            _lightingProgram.SetVector3(
-                _lightingProbeSky, sky.X * intensity, sky.Y * intensity, sky.Z * intensity);
+
+            // The baked field stores grey sky-visibility and is tinted by the sky colour here; the
+            // real-time cache already stores actual coloured radiance from the lit cards, so tinting it
+            // again would double the colour -- its sky multiplier is white.
+            if (realtime)
+            {
+                _lightingProgram.SetVector3(_lightingProbeSky, 1f, 1f, 1f);
+            }
+            else
+            {
+                Vector3f sky = _volumeSettings.Sky;
+                float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
+                _lightingProgram.SetVector3(
+                    _lightingProbeSky, sky.X * intensity, sky.Y * intensity, sky.Z * intensity);
+            }
+
             _lightingProgram.SetMatrix3(_lightingProbeViewToWorld, _viewToWorld);
             _lightingProgram.SetVector3(
                 _lightingProbeCamera, _cameraPosition.X, _cameraPosition.Y, _cameraPosition.Z);

@@ -818,6 +818,37 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetIrradianceVolume(IrradianceVolume? volume);
 
+    /// <summary>Binds a real-time radiance-cache volume in place of the baked field, or leaves the last one.</summary>
+    /// <param name="red">The red-channel L1-SH volume, four coefficients per texel.</param>
+    /// <param name="green">The green-channel volume.</param>
+    /// <param name="blue">The blue-channel volume.</param>
+    /// <param name="distance">The distance-moment volume, for the Chebyshev leak test.</param>
+    /// <param name="origin">The world position of probe (0, 0, 0), in metres.</param>
+    /// <param name="spacing">The distance between neighbouring probes, in metres.</param>
+    /// <param name="countX">How many probes span X.</param>
+    /// <param name="countY">How many probes span Y.</param>
+    /// <param name="countZ">How many probes span Z.</param>
+    /// <remarks>
+    /// The volumes are owned by the pass that writes them each frame, so the device only references them --
+    /// it never allocates or frees them, unlike the baked field it uploads. When bound they take precedence
+    /// over the baked volume at the same sampler: the layout is identical, but the radiance is live and
+    /// already coloured, so the device applies no sky tint to it. Call
+    /// <see cref="ClearRealtimeProbeVolume"/> to fall back to the baked field.
+    /// </remarks>
+    void SetRealtimeProbeVolume(
+        TextureHandle red,
+        TextureHandle green,
+        TextureHandle blue,
+        TextureHandle distance,
+        Vector3f origin,
+        float spacing,
+        int countX,
+        int countY,
+        int countZ);
+
+    /// <summary>Stops sampling the real-time radiance cache, falling back to the baked field.</summary>
+    void ClearRealtimeProbeVolume();
+
     /// <summary>Sets how this frame lights itself from the probe field.</summary>
     /// <param name="settings">
     /// The application, or <see cref="IrradianceVolumeSettings.Off"/> for none. With none, or with no
