@@ -3132,6 +3132,10 @@ internal sealed partial class DesktopGame : IDisposable
                     RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
                         ? RenderCVars.MaterialDetail.Value
                         : 0f);
+                _device.SetFloorGloss(
+                    RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                        ? RenderCVars.FloorGloss.Value
+                        : 1f);
                 _device.SetReflections(
                     RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
                         ? new ReflectionSettings(

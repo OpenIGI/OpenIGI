@@ -364,6 +364,10 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     void SetMaterialDetail(float strength);
 
+    /// <summary>Sets how much an up-facing surface's roughness is smoothed, so floors reflect while walls stay matte.</summary>
+    /// <param name="gloss">A multiplier on an up-facing surface's roughness; 1 leaves every surface as its material said.</param>
+    void SetFloorGloss(float gloss);
+
     /// <summary>Sets how textures are sampled.</summary>
     /// <param name="maxAnisotropy">
     /// The anisotropic filtering ratio, 1 for none. A ground plane seen at a grazing angle is the

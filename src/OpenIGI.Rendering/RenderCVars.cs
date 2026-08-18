@@ -837,6 +837,27 @@ public static class RenderCVars
         // instead. High keeps a quarter for the presets not held to that reference.
         ultra: "0");
 
+    /// <summary>How glossy an up-facing surface (a floor, a desk top) is made, so it takes a reflection.</summary>
+    /// <remarks>
+    /// The game ships one roughness for every surface, so a floor is as matte as a wall and reflects nothing,
+    /// where the reference render's floor is semi-glossy and mirrors the windows. This multiplies an up-facing
+    /// surface's roughness down towards a sheen while leaving the walls matte -- the split the reference has --
+    /// keyed off how far the surface faces the world up. One is off, every surface as its material said. Only
+    /// the dynamic model reflects, so it does nothing under the others.
+    /// </remarks>
+    public static readonly NumericCVar<float> FloorGloss = Presets.Define(
+        CVar.Float(
+            "r_floor_gloss",
+            1f,
+            0.05f,
+            1f,
+            CVarOptions.Archive,
+            "Roughness multiplier for up-facing surfaces, so floors reflect while walls stay matte. 1 is off."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "0.5");
+
     /// <summary>Where the derived surface-detail maps are read from.</summary>
     /// <remarks>
     /// A directory of PNGs named after the textures they belong to, as

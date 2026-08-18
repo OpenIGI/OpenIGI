@@ -113,6 +113,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public void SetMaterialDetail(float strength) => MaterialDetail = strength;
 
+    /// <inheritdoc/>
+    public void SetFloorGloss(float gloss)
+    {
+    }
+
     /// <summary>The compute programs asked for, by the name they were given.</summary>
     public List<string> ComputeShaders { get; } = [];
 

@@ -239,6 +239,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _gbufferDetail = -1;
     private float _sentDetailStrength = float.NaN;
 
+    // How much an up-facing surface's roughness is smoothed, so a floor takes a reflection while walls stay
+    // matte. One is off. The world-up carried into view space, and the last values the bound program was
+    // told, so they are only re-sent on a change.
+    private float _floorGloss = 1f;
+    private int _gbufferWorldUpView = -1;
+    private int _gbufferFloorGloss = -1;
+    private float _sentFloorGloss = float.NaN;
+
     // Which albedo decode the bound G-buffer program was last told, so it is only re-sent on a change. The
     // dynamic model lights in linear space -- albedo decoded from its sRGB texture before the multiply, the
     // physically correct place for it -- while the baked and vanilla models keep the original's gamma-space
@@ -2003,6 +2011,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     public void SetMaterialDetail(float strength) => _materialDetail = MathF.Max(strength, 0f);
 
     /// <inheritdoc/>
+    public void SetFloorGloss(float gloss) => _floorGloss = Math.Clamp(gloss, 0.05f, 1f);
+
+    /// <inheritdoc/>
     public void SetLighting(in SceneLighting lighting) => _lighting = lighting;
 
     /// <inheritdoc/>
@@ -3564,6 +3575,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _sentMaterial = null;
             _sentDetailStrength = float.NaN;
             _sentDecodeAlbedo = -1;
+            _sentFloorGloss = float.NaN;
         }
 
         UseProgram(program);
@@ -3772,6 +3784,27 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             }
         }
 
+        // The up-facing gloss and the world-up it is measured against. Only the dynamic model reflects, so
+        // the gloss is one (off) for the others; the world up is carried into view space here because the
+        // G-buffer keeps normals in view space.
+        if (deferred && _gbufferFloorGloss >= 0)
+        {
+            float gloss = _lighting.Model == LightingModel.Dynamic ? _floorGloss : 1f;
+            if (_sentFloorGloss != gloss)
+            {
+                _sentFloorGloss = gloss;
+                program.SetFloat(_gbufferFloorGloss, gloss);
+            }
+
+            // The world up in view space changes with the camera, so it is refreshed while the gloss is on
+            // rather than cached against it. Only when it is on -- off, the shader never reads it.
+            if (gloss < 1f && _gbufferWorldUpView >= 0)
+            {
+                Vector3f up = _viewToWorld.Transposed().Transform(new Vector3f(0f, 0f, 1f));
+                program.SetVector3(_gbufferWorldUpView, up.X, up.Y, up.Z);
+            }
+        }
+
         ApplyBlend(blend);
 
         BindVertexArray(entry.ActiveVertexArray);
@@ -3959,6 +3992,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _gbufferUniforms = pipeline.Uniforms;
         _gbufferMaterial = pipeline.Material;
         _gbufferDecodeAlbedo = pipeline.DecodeAlbedo;
+        _gbufferWorldUpView = pipeline.Program.LocationOf("uWorldUpView");
+        _gbufferFloorGloss = pipeline.Program.LocationOf("uFloorGloss");
         _gbufferDetail = pipeline.Detail;
         _gbufferLightmapScale = pipeline.LightmapScale;
         if (_gbufferLightmapScale >= 0)
