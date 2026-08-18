@@ -352,6 +352,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _resolveDecodeInput = -1;
     private int _resolveWhitePoint = -1;
     private int _resolveDebugView = -1;
+    private int _resolveDebugViewToWorld = -1;
     private int _resolveBloomIntensity = -1;
     private int _resolveGrade = -1;
     private int _resolveLens = -1;
@@ -2388,6 +2389,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 ? (int)_debugView
                 : 0;
         _resolveProgram.SetInt(_resolveDebugView, debug);
+        _resolveProgram.SetMatrix3(_resolveDebugViewToWorld, _viewToWorld);
 
         if (debug != 0)
         {
@@ -3993,6 +3995,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
         _resolveWhitePoint = _resolveProgram.LocationOf("uWhitePoint");
         _resolveDebugView = _resolveProgram.LocationOf("uDebugView");
+        _resolveDebugViewToWorld = _resolveProgram.LocationOf("uDebugViewToWorld");
         _resolveBloomIntensity = _resolveProgram.LocationOf("uBloomIntensity");
         _resolveGrade = _resolveProgram.LocationOf("uGrade");
         _resolveLens = _resolveProgram.LocationOf("uLens");
