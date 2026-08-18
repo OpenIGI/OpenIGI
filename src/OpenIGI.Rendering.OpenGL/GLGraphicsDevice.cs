@@ -127,6 +127,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lightingGiStrength = -1;
     private TextureHandle _screenIndirect;
     private float _screenIndirectStrength;
+    private bool _screenIndirectFullResolution;
+    private int _lightingGiFullRes = -1;
 
     // The level's real-time local lights -- the lamp fixtures, in view space. Set per frame by the game
     // layer before the pass closes and cleared after, the same lifetime as the screen indirect: a frame
@@ -2991,6 +2993,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         bool screenGi = _screenIndirectStrength > 0f && _screenIndirect.IsValid;
         _lightingProgram.SetFloat(_lightingGiStrength, screenGi ? _screenIndirectStrength : 0f);
 
+        if (_lightingGiFullRes >= 0)
+        {
+            _lightingProgram.SetInt(_lightingGiFullRes, screenGi && _screenIndirectFullResolution ? 1 : 0);
+        }
+
         if (screenGi)
         {
             SetTexture(7, _screenIndirect);
@@ -3013,6 +3020,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _screenIndirect = default;
         _screenIndirectStrength = 0f;
+        _screenIndirectFullResolution = false;
         _localLightCount = 0;
 
         // The pass left the bindings and the depth shadow in a state the next draw must not inherit.
@@ -3023,13 +3031,15 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetScreenIndirect(TextureHandle indirect, float strength)
+    public void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false)
     {
         // Held, not acted on: the deferred lighting reads it when the geometry pass closes, so this only
         // records what the next RunDeferredLighting should fold in. Called before EndPass, while the
-        // G-buffer the gather traced from is still live.
+        // G-buffer the gather traced from is still live. Full-resolution when the temporal resolve has
+        // already upsampled it, so the deferred reads it straight rather than upsampling the sparse atlas.
         _screenIndirect = indirect;
         _screenIndirectStrength = MathF.Max(strength, 0f);
+        _screenIndirectFullResolution = fullResolution;
     }
 
     /// <summary>Sets the level's real-time local lights for the next deferred lighting pass.</summary>
@@ -4044,6 +4054,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
         _lightingScale = _lightingProgram.LocationOf("uLightScale");
         _lightingGiStrength = _lightingProgram.LocationOf("uGiStrength");
+        _lightingGiFullRes = _lightingProgram.LocationOf("uGiFullRes");
         _lightingLocalLightCount = _lightingProgram.LocationOf("uLocalLightCount");
         _lightingLocalLightPositionRadius = _lightingProgram.LocationOf("uLocalLightPositionRadius");
         _lightingLocalLightColourIntensity = _lightingProgram.LocationOf("uLocalLightColourIntensity");

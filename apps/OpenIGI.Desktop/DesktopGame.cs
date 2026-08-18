@@ -671,6 +671,15 @@ internal sealed partial class DesktopGame : IDisposable
         bool giHasHistory = false;
         Matrix3f giPrevWorldToView = Matrix3f.Identity;
         Vector3f giPrevCameraToCache = default;
+
+        // The full-resolution temporal resolve's atlases: the sparse probe atlas upsampled and accumulated
+        // per pixel so the indirect is pinned to the world rather than sliding with the sparse reprojection.
+        // Ping-ponged like the probe atlases, sized to the full render, and read directly by the deferred fill.
+        TextureHandle[] giResolve = [default, default];
+        TextureHandle[] giResolvePosition = [default, default];
+        int giResolveWidth = 0;
+        int giResolveHeight = 0;
+        bool giResolveHasHistory = false;
         _capturedCards = null;
         _cardInstances = null;
         _sdfBake = null;
@@ -3349,8 +3358,59 @@ internal sealed partial class DesktopGame : IDisposable
                         giRead = giFiltered;
                     }
 
-                    // Recorded for the deferred lighting to fold in when the pass closes, just below.
-                    _device.SetScreenIndirect(giRead, giStrength);
+                    // The full-resolution temporal resolve (the reference's ScreenProbeTemporalReprojectionCS):
+                    // upsample the sparse atlas once and accumulate it per pixel, reprojecting against each
+                    // surface's own world position, so the indirect is pinned to the world instead of sliding
+                    // with the coarse sparse-probe reprojection. The deferred fill reads the full-res result.
+                    int resolveW = _window.Width;
+                    int resolveH = _window.Height;
+                    if (giResolveWidth != resolveW || giResolveHeight != resolveH)
+                    {
+                        for (int i = 0; i < 2; i++)
+                        {
+                            if (giResolve[i].IsValid)
+                            {
+                                _device.DestroyTexture(giResolve[i]);
+                            }
+
+                            if (giResolvePosition[i].IsValid)
+                            {
+                                _device.DestroyTexture(giResolvePosition[i]);
+                            }
+
+                            giResolve[i] = _device.CreateStorageTexture(
+                                resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve");
+                            giResolvePosition[i] = _device.CreateStorageTexture(
+                                resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve.pos");
+                        }
+
+                        giResolveWidth = resolveW;
+                        giResolveHeight = resolveH;
+                        giResolveHasHistory = false;
+                    }
+
+                    liveGiCards.ResolveScreenTemporal(
+                        giRead,
+                        _device.SceneDepth,
+                        _device.SceneNormal,
+                        DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                        eye.Orientation.Transposed(),
+                        giCameraToCache,
+                        giPrevWorldToView,
+                        giPrevCameraToCache,
+                        giResolve[write],
+                        giResolvePosition[write],
+                        giResolve[read],
+                        giResolvePosition[read],
+                        resolveW,
+                        resolveH,
+                        giResolveHasHistory,
+                        16);
+                    giResolveHasHistory = true;
+
+                    // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
+                    // it is read straight rather than upsampled from the sparse atlas a second time.
+                    _device.SetScreenIndirect(giResolve[write], giStrength, fullResolution: true);
 
                     // What this frame becomes to the next: its camera, so the next reprojection can find where
                     // each surface sat, and the flag that says there is now a frame to reproject onto. The
@@ -3365,6 +3425,7 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     // The gather did not run this frame, so next frame has nothing coherent to reproject onto.
                     giHasHistory = false;
+                    giResolveHasHistory = false;
                 }
 
                 // The level's lamp fixtures, submitted as real point lights for the deferred pass that

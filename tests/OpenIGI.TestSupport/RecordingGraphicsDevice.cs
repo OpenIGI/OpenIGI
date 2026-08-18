@@ -206,7 +206,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public TextureHandle SceneColour => new(90_007);
 
     /// <inheritdoc/>
-    public void SetScreenIndirect(TextureHandle indirect, float strength)
+    public void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false)
     {
     }
 

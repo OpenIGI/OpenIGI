@@ -511,6 +511,10 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Feeds a screen probe gather's indirect light into the deferred lighting.</summary>
     /// <param name="indirect">The probe atlas of indirect irradiance, covering the frame.</param>
     /// <param name="strength">How strongly to apply it. Zero, or an invalid handle, is a no-op.</param>
+    /// <param name="fullResolution">
+    /// When set, the handle is a full-resolution atlas the temporal resolve already upsampled, read straight
+    /// per pixel; when clear it is the sparse probe atlas the deferred fill upsamples itself.
+    /// </param>
     /// <remarks>
     /// Set while the G-buffer is live, before the geometry pass closes: the deferred lighting reads it
     /// as its diffuse fill in place of the flat ambient, where the surface's own albedo and the light
@@ -518,7 +522,7 @@ public interface IGraphicsDevice : IDisposable
     /// itself, in the renderer's <c>albedo * E</c> convention with metals excluded. A no-op when the
     /// target is not deferred or the strength is zero, so a preset that leaves it off pays nothing.
     /// </remarks>
-    void SetScreenIndirect(TextureHandle indirect, float strength);
+    void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false);
 
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
