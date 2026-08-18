@@ -35,6 +35,24 @@ internal sealed partial class DesktopGame
         return ambient + ((horizon - ambient) * warmth);
     }
 
+    /// <summary>A per-channel tint for the sky dome that reddens towards the horizon as the sun sinks.</summary>
+    /// <param name="sinElevation">The sine of the sun's elevation; 1 is overhead, negative is below the horizon.</param>
+    /// <remarks>
+    /// The authored sky is a fixed blue with no sense of the sun's height. A low sun scatters the blue out of
+    /// the light that reaches the ground and leaves the horizon warm, so this multiplies the dome towards a
+    /// warm tint by how low the sun sits -- one at a high sun, so a noon sky is the authored blue untouched.
+    /// It is the sky counterpart to <see cref="WarmedAmbient"/>: together they warm both what a window shows
+    /// and what the fill carries in.
+    /// </remarks>
+    private static Vector3f SkyWarmthTint(float sinElevation)
+    {
+        float highness = Math.Clamp((sinElevation - 0.10f) / (0.70f - 0.10f), 0f, 1f);
+        float warmth = 1f - (highness * highness * (3f - (2f * highness)));
+
+        Vector3f warm = new(1.4f, 1.0f, 0.55f);
+        return Vector3f.One + ((warm - Vector3f.One) * warmth);
+    }
+
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than
     // per frame -- it is a volume texture upload, while how much of it to apply is a number.
     // A mission with no table of its own is not a fault: it renders ungraded, which is what every

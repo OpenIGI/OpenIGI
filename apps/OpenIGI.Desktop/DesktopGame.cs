@@ -3240,6 +3240,10 @@ internal sealed partial class DesktopGame : IDisposable
                 // of a black void.
                 if (mapScene is null || _computerFlight.IsFlying)
                 {
+                    // Warm the sky dome towards the horizon as the sun sinks, so a window shows a golden dusk
+                    // sky rather than a flat blue one and the screen-space bounce off it carries that warmth
+                    // into the room instead of a cool tint. Untouched with the sun high.
+                    _sky?.SetSunTint(SkyWarmthTint((_effectiveSun ?? _sun)?.Direction.Z ?? 1f));
                     _sky?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
                 }
 

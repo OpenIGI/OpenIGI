@@ -59,7 +59,19 @@ public sealed class SkyRenderer : IDisposable
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
     private readonly List<CloudLayer> _layers = [];
-    private readonly MeshHandle _dome = MeshHandle.None;
+    private MeshHandle _dome = MeshHandle.None;
+
+    // The authored dome gradient, kept so the dome can be rebuilt with a sun tint. The sky an interior sees
+    // reddens as the sun sinks, and this dome is what a window shows and what the screen-space bounce reads
+    // off it -- so warming it at a low sun is what carries the horizon's colour into the room.
+    private readonly Vector3f _domeTop;
+    private readonly Vector3f _domeMiddle1;
+    private readonly Vector3f _domeMiddle2;
+    private readonly Vector3f _domeBottom1;
+    private readonly Vector3f _domeBottom2;
+    private readonly float _domeAngle;
+    private readonly float _domeRadius;
+    private Vector3f _sunTint = Vector3f.One;
 
     /// <summary>One mesh per cloud layer, created on first draw and updated in place after.</summary>
     /// <remarks>
@@ -120,7 +132,14 @@ public sealed class SkyRenderer : IDisposable
             bottom1 = bottom2;
         }
 
-        _dome = BuildDome(farPlane * DomeRadiusOfFar, angle, top, middle2, middle1, bottom2, bottom1);
+        _domeRadius = farPlane * DomeRadiusOfFar;
+        _domeAngle = angle;
+        _domeTop = top;
+        _domeMiddle1 = middle1;
+        _domeMiddle2 = middle2;
+        _domeBottom1 = bottom1;
+        _domeBottom2 = bottom2;
+        RebuildDome();
 
         foreach (GameTask child in sky.Children)
         {
@@ -190,6 +209,49 @@ public sealed class SkyRenderer : IDisposable
         {
             DrawCloudLayer(_layers[i], i, camera, modelView, seconds);
         }
+    }
+
+    /// <summary>Tints the dome to the sun's warmth, rebuilding it when the tint moves enough to matter.</summary>
+    /// <param name="tint">A per-channel multiplier, one for the authored sky, warmer as the sun sinks.</param>
+    /// <remarks>
+    /// The dome's gradient is baked into its vertices, so a tint means rebuilding the mesh -- cheap for a
+    /// dome of a few hundred vertices, but not worth doing every frame as the sun creeps. A small dead-band
+    /// rebuilds only when the tint has shifted enough to see, so a still sun rebuilds once and a moving one a
+    /// handful of times across the day.
+    /// </remarks>
+    public void SetSunTint(Vector3f tint)
+    {
+        if (_disposed || !HasSky)
+        {
+            return;
+        }
+
+        Vector3f delta = tint - _sunTint;
+        if ((delta.X * delta.X) + (delta.Y * delta.Y) + (delta.Z * delta.Z) < 0.0004f)
+        {
+            return;
+        }
+
+        _sunTint = tint;
+        RebuildDome();
+    }
+
+    private void RebuildDome()
+    {
+        if (_dome.IsValid)
+        {
+            _device.DestroyMesh(_dome);
+            _dome = MeshHandle.None;
+        }
+
+        _dome = BuildDome(
+            _domeRadius,
+            _domeAngle,
+            _domeTop * _sunTint,
+            _domeMiddle2 * _sunTint,
+            _domeMiddle1 * _sunTint,
+            _domeBottom2 * _sunTint,
+            _domeBottom1 * _sunTint);
     }
 
     /// <inheritdoc/>
