@@ -251,11 +251,12 @@ public sealed class WorldRenderer : IDisposable
         _device.SetProjection(projection);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        // Both facings are drawn. The original culls with its own winding rule, but the port's
-        // flattened index order was measured NOT to wind uniformly — culling either facing loses
-        // real walls (tried as an r_world_cull experiment and reverted). Halving the indoor fill
-        // cost needs per-model winding repair or portal culling, not this switch.
-        _device.SetCullMode(CullMode.None);
+        // Back faces are culled once the mesh builder has repaired winding (r_world_cull): every triangle
+        // is rewound to agree with its outward vertex normals there, so CCW is reliably the front and
+        // culling the back removes a thin object's inward face rather than letting the two fight over a
+        // pixel -- and halves the indoor fill. Off falls back to drawing both facings, which is what the
+        // port did before the repair existed and does not wind uniformly on its own.
+        _device.SetCullMode(RenderCVars.WorldCull.Value != 0 ? CullMode.CounterClockwise : CullMode.None);
 
         // The lightmap headroom for the objects' pages -- one unless an exclusive HDR bake is applied.
         // Reset to one at the end of the pass so the terrain, which keeps its shipped LDR lightmaps, is not
