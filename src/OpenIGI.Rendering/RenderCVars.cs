@@ -1127,7 +1127,11 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0.8",
-        ultra: "1.2");
+
+        // Off at ultra. The reference the ultra look is matched against has no lens fringing, and against a
+        // window's high-contrast edges the aberration read as coloured fringes that made the frame look less
+        // clean, not more filmic. High keeps a little for the presets not held to that reference.
+        ultra: "0");
 
     /// <summary>How much of the level's authored colour table is applied.</summary>
     /// <remarks>
