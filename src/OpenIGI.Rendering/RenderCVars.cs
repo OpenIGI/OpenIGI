@@ -287,8 +287,9 @@ public static class RenderCVars
     /// it unchanged -- but the radiance is live, not baked, so the sun and dynamic surfaces still feed it,
     /// and because a probe lives in a world cell rather than on the moving screen it does not shimmer under
     /// motion the way the gather does. It supersedes the baked field when on, and needs the surface cache
-    /// (<c>r_cards</c>) and the distance field (<c>r_sdf</c>) to trace against. Held off by default while it
-    /// is brought to polish; turn it on to judge and to build against.
+    /// (<c>r_cards</c>) and the distance field (<c>r_sdf</c>) to trace against. On at ultra, which already
+    /// runs the surface cache and the distance field it needs; off below, where the baked field carries the
+    /// indirect. It is the shippable form of the real-time indirect the screen gather could not steady.
     /// </remarks>
     public static readonly NumericCVar<int> RadianceCache = Presets.Define(
         CVar.Int(
@@ -301,7 +302,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0");
+        ultra: "1");
 
     /// <summary>Calibration on the radiance cache's stored bounce, where 1 is the raw traced radiance.</summary>
     /// <remarks>
