@@ -131,6 +131,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lightingProbeViewToWorld = -1;
     private int _lightingProbeCamera = -1;
     private int _lightingShowProbes = -1;
+    private int _lightingLightingOnly = -1;
     private int _lightingScale = -1;
 
     // The screen probe gather's indirect atlas, fed into the deferred lighting's own diffuse irradiance
@@ -2383,6 +2384,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         int debug = target.Description.Deferred
             && _debugView != DebugView.Probes
             && _debugView != DebugView.Ssr
+            && _debugView != DebugView.Lighting
                 ? (int)_debugView
                 : 0;
         _resolveProgram.SetInt(_resolveDebugView, debug);
@@ -2971,6 +2973,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         bool probes = (_hasProbes || _hasRealtimeProbes) && _volumeSettings.Enabled;
         _lightingProgram.SetInt(_lightingProbesEnabled, probes ? 1 : 0);
         _lightingProgram.SetInt(_lightingShowProbes, _debugView == DebugView.Probes ? 1 : 0);
+        _lightingProgram.SetInt(_lightingLightingOnly, _debugView == DebugView.Lighting ? 1 : 0);
 
         // Never scales the baked model: that path has to reproduce the original exactly, and the
         // original multiplies the texture by the lightmap and stops.
@@ -4127,6 +4130,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingProbeViewToWorld = _lightingProgram.LocationOf("uProbeViewToWorld");
         _lightingProbeCamera = _lightingProgram.LocationOf("uProbeCamera");
         _lightingShowProbes = _lightingProgram.LocationOf("uShowProbes");
+        _lightingLightingOnly = _lightingProgram.LocationOf("uLightingOnly");
         _lightingScale = _lightingProgram.LocationOf("uLightScale");
         _lightingGiStrength = _lightingProgram.LocationOf("uGiStrength");
         _lightingGiFullRes = _lightingProgram.LocationOf("uGiFullRes");

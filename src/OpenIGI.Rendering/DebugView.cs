@@ -51,4 +51,13 @@ public enum DebugView
     /// invisible once it has been multiplied by a dark surface.
     /// </summary>
     Probes = 9,
+
+    /// <summary>
+    /// The full lighting on a neutral grey material, the reference engine's "detail lighting". Base colour
+    /// is replaced by a flat mid-grey so what remains is the light itself -- the sun, its shadows, the
+    /// bounce and the sky fill, shaped by the surfaces' normals -- with the level's own textures taken out
+    /// of the picture. The view for comparing this renderer's lighting against another's without the
+    /// materials confusing the two.
+    /// </summary>
+    Lighting = 11,
 }
