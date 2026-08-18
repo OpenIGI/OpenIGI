@@ -870,10 +870,11 @@ public static class RenderCVars
         enhanced: "1",
         high: "1",
 
-        // A gentle sheen at ultra, not a mirror. At half the roughness the floor's reflection of a dark chair
-        // or desk read as a hard dark smear -- the reference's floor is only faintly glossy -- so it is eased
-        // back to a soft sheen that reads as polish in the composite without smearing the neutral view.
-        ultra: "0.78");
+        // Off. The screen-space reflection a glossy floor takes cannot describe a thin object -- a chair's
+        // legs, a desk edge -- and smeared them across the floor as hard dark streaks, worse than the matte
+        // floor it replaced. A floor sheen wants a reflection that sees off-screen geometry cleanly, which the
+        // screen trace is not; left off until the probe field can carry the specular instead.
+        ultra: "1");
 
     /// <summary>Where the derived surface-detail maps are read from.</summary>
     /// <remarks>
