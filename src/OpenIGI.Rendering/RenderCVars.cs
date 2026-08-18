@@ -269,18 +269,16 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
 
-        // Ultra's indirect is this real-time screen probe gather: it traces the surface cache and the
-        // distance fields along the view and reads back as the diffuse fill, so the bounced light responds
-        // to the frame -- a lamp switched on, a door opened, the camera moved -- with no bake. Calibrated so
-        // a shadowed wall reads as lit concrete rather than black: the cache holds outgoing radiance (see
-        // the remarks), so the gather needs lifting by about this much to stand in for the ambient. It
-        // carries only light already in the frame, so a windowless room still leans on the lamp fixtures
-        // (r_local_light_scale). The cheaper presets light from the baked field (r_gi) instead.
-        //
-        // One, not the old 2.5: the lift that made a shadowed wall read as concrete now lives inside the
-        // gather on the surface-cache term alone (kCacheBoost), where it belongs. Applied here it multiplied
-        // the sky fill as well, and open terrain -- which sees mostly sky -- blew to white.
-        ultra: "1.0");
+        // Off at ultra, held back for now. The screen probe gather is a real-time indirect -- it traces the
+        // surface cache along the view so the bounce responds to the frame -- but it is a SCREEN-SPACE
+        // estimate, and in live play it reads as unstable low-frequency patches that slide and blow out on
+        // interior walls. The full-resolution temporal resolve steadies it enough to look right in a locked,
+        // converged capture, but not in ordinary play, where the underlying variance has no world-space
+        // radiance cache behind it to draw a stable answer from. Until that cache exists, ultra takes its
+        // indirect from the baked probe volume (r_gi) plus the flat-ambient floor -- stable, and clean --
+        // while the sun and shadows stay real-time. Raise this (about 2.5) to switch the live gather back on
+        // and judge it; it is the field the radiance cache work will make shippable.
+        ultra: "0");
 
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
