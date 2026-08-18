@@ -239,6 +239,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _gbufferDetail = -1;
     private float _sentDetailStrength = float.NaN;
 
+    // Which albedo decode the bound G-buffer program was last told, so it is only re-sent on a change. The
+    // dynamic model lights in linear space -- albedo decoded from its sRGB texture before the multiply, the
+    // physically correct place for it -- while the baked and vanilla models keep the original's gamma-space
+    // compositing, so the flag follows the model rather than being fixed.
+    private int _sentDecodeAlbedo = -1;
+
     /// <summary>GL_TEXTURE_MAX_ANISOTROPY. Core since 4.6 and an EXT with the same value long before.</summary>
     private const GLEnum TextureMaxAnisotropy = (GLEnum)0x84FE;
 
@@ -3557,6 +3563,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _meshUniformsPrimed = false;
             _sentMaterial = null;
             _sentDetailStrength = float.NaN;
+            _sentDecodeAlbedo = -1;
         }
 
         UseProgram(program);
@@ -3748,6 +3755,20 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             if (strength > 0f)
             {
                 BindTexture(2, surface.Detail);
+            }
+        }
+
+        // The dynamic model lights in linear space, so its albedo is decoded from the sRGB the texture holds
+        // before the multiply -- the physically correct place for it, and what stops the light being applied
+        // in gamma space. The baked and vanilla models keep the original's gamma-space compositing, so they
+        // leave the albedo encoded.
+        if (deferred && _gbufferDecodeAlbedo >= 0)
+        {
+            int decode = _lighting.Model == LightingModel.Dynamic ? 1 : 0;
+            if (_sentDecodeAlbedo != decode)
+            {
+                _sentDecodeAlbedo = decode;
+                program.SetInt(_gbufferDecodeAlbedo, decode);
             }
         }
 
@@ -4084,6 +4105,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _cardDecodeAlbedo = _cardProgram.LocationOf("uDecodeAlbedo");
         UseProgram(_cardProgram);
         _cardProgram.SetInt("uDiffuse", 0);
+
+        // The surface cache is only ever captured to feed the real-time GI, which lights in linear space, so
+        // its albedo is decoded from sRGB the same way the G-buffer's is under the dynamic model. Without this
+        // the bounce would gather gamma-encoded albedo and the indirect would be lit in the wrong space.
+        if (_cardDecodeAlbedo >= 0)
+        {
+            _cardProgram.SetInt(_cardDecodeAlbedo, 1);
+        }
 
 
         _occlusionProgram = GLShaderProgram.Create(

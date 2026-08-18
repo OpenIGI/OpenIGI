@@ -2684,7 +2684,11 @@ internal sealed partial class DesktopGame : IDisposable
                     RenderCVars.Bloom.Value,
                     RenderCVars.BloomThreshold.Value,
                     RenderCVars.WhitePoint.Value,
-                    SceneIsDisplayEncoded: true,
+                    // The dynamic model now composites in linear space -- albedo decoded before the multiply
+                    // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
+                    // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
+                    // display-encoded and has to be decoded before the tone map.
+                    SceneIsDisplayEncoded: RenderCVars.Lighting.Value != LightingModel.Dynamic,
                     Contrast: RenderCVars.Contrast.Value,
                     Saturation: RenderCVars.Saturation.Value,
                     Vignette: RenderCVars.Vignette.Value,
