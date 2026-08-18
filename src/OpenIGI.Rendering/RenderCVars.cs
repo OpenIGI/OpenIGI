@@ -486,12 +486,15 @@ public static class RenderCVars
         enhanced: "baked",
         high: "baked",
 
-        // Dynamic remains available as an explicit development setting, but it is not a safe preset
-        // default until the probe-irradiance field exists. The current fallback is only flat ambient
-        // plus the live sun; close to Mission 9's tower it exposes the terrain's per-triangle normals
-        // as alternating black and bright facets and leaves interiors without their authored fill.
-        // Ultra therefore keeps the artists' bakes, just as the contract above says it should.
-        ultra: "baked");
+        // Ultra is the real-time preset. It lights from the screen probe gather (r_screen_gi), FLOORED
+        // against the baked probe volume (r_gi, on at ultra for exactly this) so a surface the screen field
+        // cannot resolve -- a thin edge whose probes all land on the sky, an off-screen wall -- is lit by
+        // the coarse visibility-aware field rather than dropped to a flat ambient or to black. That floor is
+        // the probe-irradiance field this used to wait for: with it the terrain's per-triangle facets and
+        // the unlit interiors dynamic once fell into are the field's to carry, and the lamps
+        // (r_local_light_scale) light the windowless rooms the screen gather has no source for. The cheaper
+        // presets keep the artists' bakes.
+        ultra: "dynamic");
 
     /// <summary>The side length in texels of each shadow cascade, or 0 for no shadows.</summary>
     /// <remarks>
@@ -1163,10 +1166,12 @@ public static class RenderCVars
         enhanced: "0",
         high: "1",
 
-        // Off at ultra: there the real-time screen gather (r_screen_gi) is the indirect, and it supersedes
-        // this baked field in the shader anyway -- so baking one would only spend the load tracing a field
-        // nothing reads. High and below, with no surface cache to gather, light from this bake.
-        ultra: "0");
+        // On at ultra, and read there. The real-time screen gather no longer replaces this field -- it is
+        // FLOORED against it (see the deferred fill's max of the two), so this is the coarse, visibility-aware
+        // far field a surface the screen probes cannot resolve falls back to instead of black: a merlon or a
+        // wire thinner than the probe spacing, or a wall the screen never saw. High and below, with no
+        // surface cache to gather, light from this bake directly.
+        ultra: "1");
 
     /// <summary>How the level's static object lightmaps are sourced: shipped, augmented, or our bake alone.</summary>
     /// <remarks>
