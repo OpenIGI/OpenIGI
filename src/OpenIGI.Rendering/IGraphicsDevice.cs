@@ -322,6 +322,15 @@ public interface IGraphicsDevice : IDisposable
     /// <remarks>Device state, like <see cref="SetMaterialOverride"/>: it spans a run of draws.</remarks>
     void SetLightmapScale(float scale);
 
+    /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
+    /// <param name="seed">
+    /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose
+    /// dithered coverage the temporal resolve averages into a smooth edge; vary it each frame so successive
+    /// frames dither differently and the average converges.
+    /// </param>
+    /// <remarks>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</remarks>
+    void SetAlphaHash(float seed);
+
     /// <summary>Attaches a derived surface-detail map to a diffuse texture.</summary>
     /// <param name="diffuse">The diffuse texture the map belongs to.</param>
     /// <param name="detail">

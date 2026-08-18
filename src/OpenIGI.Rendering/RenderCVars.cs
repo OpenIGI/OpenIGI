@@ -1321,6 +1321,25 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How much of the temporal history's resampling blur is sharpened back out.");
 
+    /// <summary>Whether cut-outs use a temporally-resolved hashed alpha test rather than a hard one.</summary>
+    /// <remarks>
+    /// A hard cut-out keeps or drops whole pixels, so a chain-link fence or a wire thinner than a pixel
+    /// aliases into a shimmer. The hashed test recovers the edge's coverage from the alpha gradient and
+    /// dithers it, which the temporal resolve then averages into a smooth edge. It therefore only helps
+    /// where the temporal filter runs, so it follows the same presets: off where <see cref="TemporalFeedback"/>
+    /// is one, on above it.
+    /// </remarks>
+    public static readonly BoolCVar HashedAlpha = Presets.Define(
+        CVar.Bool(
+            "r_alpha_hash",
+            false,
+            CVarOptions.Archive,
+            "Dither cut-out edges and let the temporal resolve average them, instead of a hard alpha test."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "1",
+        ultra: "1");
+
     /// <summary>How many samples each fog ray takes, or 0 for no volumetric fog.</summary>
     /// <remarks>The single biggest cost in the pass, and the quality dial.</remarks>
     public static readonly NumericCVar<int> FogQuality = Presets.Define(

@@ -203,10 +203,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _meshAmbient = -1;
     private int _gbufferDecodeAlbedo = -1;
     private int _gbufferLightmapScale = -1;
+    private int _gbufferAlphaHash = -1;
 
     // The headroom the current lightmap pages were divided by before their sRGB encode, so the shader can
     // multiply back up to a high-dynamic-range lightmap. One for the shipped and LDR-baked pages.
     private float _lightmapScale = 1f;
+
+    // The per-frame seed for the G-buffer's hashed alpha test. Zero is the hard cut-out; a value above
+    // zero turns the hash on and varies it each frame so the temporal resolve averages the dithered
+    // coverage into a smooth edge. Held on the device and re-applied to whichever pipeline is selected.
+    private float _alphaHash;
     private int _lightingModelLocation = -1;
     private int _lightingSunDirection = -1;
     private int _lightingSunColour = -1;
@@ -1891,6 +1897,20 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         {
             UseProgram(program);
             program.SetFloat(_gbufferLightmapScale, scale);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void SetAlphaHash(float seed)
+    {
+        _alphaHash = seed;
+
+        // Straight on the current G-buffer program, the same way as the lightmap scale: cut-outs are drawn
+        // through it, and the value holds for every draw until the next frame changes the seed.
+        if (_gbufferProgram is { } program && _gbufferAlphaHash >= 0)
+        {
+            UseProgram(program);
+            program.SetFloat(_gbufferAlphaHash, seed);
         }
     }
 
@@ -3813,7 +3833,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 program.LocationOf("uMaterial"),
                 program.LocationOf("uDecodeAlbedo"),
                 program.LocationOf("uDetailStrength"),
-                program.LocationOf("uLightmapScale"));
+                program.LocationOf("uLightmapScale"),
+                program.LocationOf("uAlphaHash"));
             _gbufferPipelines.Add(layout, pipeline);
 
             UseProgram(program);
@@ -3833,6 +3854,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         {
             UseProgram(pipeline.Program);
             pipeline.Program.SetFloat(_gbufferLightmapScale, _lightmapScale);
+        }
+
+        _gbufferAlphaHash = pipeline.AlphaHash;
+        if (_gbufferAlphaHash >= 0)
+        {
+            UseProgram(pipeline.Program);
+            pipeline.Program.SetFloat(_gbufferAlphaHash, _alphaHash);
         }
     }
 
@@ -4495,7 +4523,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         int Material,
         int DecodeAlbedo,
         int Detail,
-        int LightmapScale);
+        int LightmapScale,
+        int AlphaHash);
 
     /// <summary>One non-blocking any-samples query and its last trustworthy result.</summary>
     private readonly record struct VisibilityQuery(

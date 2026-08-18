@@ -95,6 +95,11 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     {
     }
 
+    /// <inheritdoc/>
+    public void SetAlphaHash(float seed)
+    {
+    }
+
     /// <summary>The detail map attached to each diffuse texture, in the order they were attached.</summary>
     public List<(TextureHandle Diffuse, TextureHandle Detail)> TextureDetails { get; } = [];
 

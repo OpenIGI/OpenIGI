@@ -2979,6 +2979,14 @@ internal sealed partial class DesktopGame : IDisposable
 
                 _device.SetDebugView(RenderCVars.Debug.Value);
 
+                // The hashed alpha test needs the temporal resolve to average its dither, so it follows the
+                // temporal path: a per-frame seed above zero turns it on, zero leaves the hard cut-out. The
+                // seed only has to change each frame for the dither to differ; the jitter counter does that.
+                _device.SetAlphaHash(
+                    RenderCVars.HashedAlpha.Value && wantsTemporal
+                        ? 1f + (float)(temporalFrame & 63)
+                        : 0f);
+
                 // The derived detail is a deferred-path feature: it changes the normal and the roughness
                 // written into the G-buffer, and without one there is nothing to write them into.
                 _device.SetMaterialDetail(
