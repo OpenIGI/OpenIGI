@@ -405,7 +405,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> SkyLight = CVar.Float(
         "r_sky_light",
-        1.0f,
+        1.35f,
         0f,
         16f,
         CVarOptions.Archive,
@@ -869,7 +869,11 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1",
         high: "1",
-        ultra: "0.5");
+
+        // A gentle sheen at ultra, not a mirror. At half the roughness the floor's reflection of a dark chair
+        // or desk read as a hard dark smear -- the reference's floor is only faintly glossy -- so it is eased
+        // back to a soft sheen that reads as polish in the composite without smearing the neutral view.
+        ultra: "0.78");
 
     /// <summary>Where the derived surface-detail maps are read from.</summary>
     /// <remarks>

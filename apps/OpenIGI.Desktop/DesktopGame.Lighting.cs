@@ -27,11 +27,14 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private static Vector3f WarmedAmbient(Vector3f ambient, float sinElevation)
     {
-        float highness = Math.Clamp((sinElevation - 0.08f) / (0.55f - 0.08f), 0f, 1f);
-        float warmth = (1f - (highness * highness * (3f - (2f * highness)))) * 0.75f;
+        float highness = Math.Clamp((sinElevation - 0.05f) / (1.0f - 0.05f), 0f, 1f);
+        float warmth = 1f - (highness * highness * (3f - (2f * highness)));
 
+        // A low sun's skylight is strongly warm -- the golden fill the reference bathes an interior in. The
+        // authored ambient is a cool blue-grey; blended nearly all the way to a warm horizon tint at a low
+        // sun (and left alone at noon), it carries that warmth into the room rather than reading as grey.
         float luminance = (ambient.X + ambient.Y + ambient.Z) / 3f;
-        Vector3f horizon = new Vector3f(1.2f, 0.85f, 0.58f) * luminance;
+        Vector3f horizon = new Vector3f(1.35f, 0.82f, 0.5f) * luminance;
         return ambient + ((horizon - ambient) * warmth);
     }
 
@@ -46,10 +49,10 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private static Vector3f SkyWarmthTint(float sinElevation)
     {
-        float highness = Math.Clamp((sinElevation - 0.10f) / (0.70f - 0.10f), 0f, 1f);
+        float highness = Math.Clamp((sinElevation - 0.05f) / (0.90f - 0.05f), 0f, 1f);
         float warmth = 1f - (highness * highness * (3f - (2f * highness)));
 
-        Vector3f warm = new(1.4f, 1.0f, 0.55f);
+        Vector3f warm = new(1.5f, 0.95f, 0.5f);
         return Vector3f.One + ((warm - Vector3f.One) * warmth);
     }
 
