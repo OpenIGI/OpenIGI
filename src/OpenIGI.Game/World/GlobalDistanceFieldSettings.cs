@@ -47,11 +47,23 @@ public readonly record struct GlobalDistanceFieldSettings(
 {
     /// <summary>Gets the settings the shipped presets use.</summary>
     /// <remarks>
+    /// <para>
     /// Spelled out rather than written <c>new()</c>: for a record struct that is the ZERO instance, not
     /// the primary constructor's defaults, and a resolution of nought builds nothing while reporting
     /// success. That trap has already cost this project one silent stage.
+    /// </para>
+    /// <para>
+    /// A 16-metre near extent (not the 64 the record defaults to) is what seals interiors. Changing it
+    /// costs nothing -- the voxel count is the same either way, this only chooses how much world it
+    /// covers -- so the near level is pulled in to a 0.25-metre voxel, fine enough to register the
+    /// building's walls. At 64 the finest voxel was a whole metre, thinner than any interior wall, so
+    /// the radiance cache's probe rays sailed through the walls of a sealed room and came back carrying
+    /// the daylight sky: a windowless office lit as if it had a skylight. The trade is far reach, which
+    /// drops from 512 metres to 128; validated on mission 1 as ample -- the sealed base-floor office now
+    /// darkens to its own ceiling tubes while the windowed office still fills through the glass.
+    /// </para>
     /// </remarks>
-    public static GlobalDistanceFieldSettings Default { get; } = new(Levels: 4);
+    public static GlobalDistanceFieldSettings Default { get; } = new(Levels: 4, NearExtent: 16f);
 
     /// <summary>Gets how many voxels one level holds.</summary>
     public int VoxelsPerLevel => Resolution * Resolution * Resolution;
