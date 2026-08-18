@@ -241,7 +241,14 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1.4",
         high: "1.6",
-        ultra: "1.8");
+
+        // Recalibrated for the real-time radiance cache. The old 1.8 was set for the baked model, whose flat
+        // fill needed lifting; the cache carries a much fuller, sun-led indirect, and lit that far it washes
+        // the frame flat and blows the window out. Measured against the reference render (a low sun through
+        // the office window, and the sunlit exterior), this is where the sunlit floor stays bright but reads
+        // its grain, the shadowed fill holds its contrast, and the exterior sits under the tone map's shoulder
+        // rather than clipping. Auto-exposure still adapts around it; this is the bias on that.
+        ultra: "0.6");
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
@@ -313,7 +320,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> RadianceCacheScale = CVar.Float(
         "r_radiance_cache_scale",
-        0.6f,
+        0.55f,
         0f,
         4f,
         CVarOptions.Archive,
@@ -371,7 +378,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> SkyLight = CVar.Float(
         "r_sky_light",
-        2.5f,
+        0.7f,
         0f,
         16f,
         CVarOptions.Archive,
@@ -795,7 +802,13 @@ public static class RenderCVars
         // not survive a whole room. The generator itself (MaterialMapGenerator) wants gentler normals; until
         // then this is where the strength is held.
         high: "0.25",
-        ultra: "0.3");
+
+        // Off at ultra. The reference the ultra look is matched against renders the level's own diffuse
+        // textures flat, with no derived normal or roughness, so the derived relief -- however mild -- reads
+        // as a departure from it: a faint sparkle on surfaces the reference leaves matte. With the relief
+        // gone the two agree, and the low-frequency lighting the radiance cache carries is what the eye reads
+        // instead. High keeps a quarter for the presets not held to that reference.
+        ultra: "0");
 
     /// <summary>Where the derived surface-detail maps are read from.</summary>
     /// <remarks>
