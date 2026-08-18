@@ -42,9 +42,26 @@ internal sealed class DayNightCycle
     private float _rotX;
     private float _rotY;
     private float _rotZ;
+    private Vector3f _lastDirection = Vector3f.UnitZ;
 
     /// <summary>Gets the current time of day, an hour in [0, 24).</summary>
     public float TimeHours => _timeHours;
+
+    /// <summary>Gets the sun direction the last <see cref="Apply"/> produced, for the gizmo to point at.</summary>
+    public Vector3f Direction => _lastDirection;
+
+    /// <summary>Turns the sun's arc about one world axis, for the gizmo to drive as the numpad keys do.</summary>
+    /// <param name="axis">0 for X, 1 for Y, 2 for Z.</param>
+    /// <param name="radians">The angle to add.</param>
+    public void RotateAxis(int axis, float radians)
+    {
+        switch (axis)
+        {
+            case 0: _rotX += radians; break;
+            case 1: _rotY += radians; break;
+            case 2: _rotZ += radians; break;
+        }
+    }
 
     /// <summary>Returns the cycle to a starting hour with no re-orientation, for a fresh level.</summary>
     /// <param name="startHours">The hour of day to open on; wrapped into [0, 24).</param>
@@ -180,6 +197,8 @@ internal sealed class DayNightCycle
         // reads as moonlit rather than lit by a sun that is no longer there.
         Vector3f nightAmbient = new(0.03f, 0.045f, 0.08f);
         Vector3f ambient = Lerp(nightAmbient, authored.Ambient, daylight);
+
+        _lastDirection = direction;
 
         return authored with
         {

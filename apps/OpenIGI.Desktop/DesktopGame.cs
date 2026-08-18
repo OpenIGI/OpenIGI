@@ -231,6 +231,7 @@ internal sealed partial class DesktopGame : IDisposable
     // radiance cache, the sky fill) lights from in place of the raw authored one. Recomputed each rendered
     // frame; scrubbed on real elapsed time so holding a key sweeps smoothly whatever the frame rate.
     private readonly DayNightCycle _dayNight = new();
+    private readonly SunGizmo _sunGizmo = new();
     private DirectionalLightSettings? _effectiveSun;
     private int _dayNightMilliseconds;
     private FreeCamera? _camera;
@@ -1819,6 +1820,18 @@ internal sealed partial class DesktopGame : IDisposable
                 _dayNight.Update(_window.Input.Keyboard, dayNightElapsed);
             }
 
+            // G shows the sun gizmo, but only while flying: it takes the cursor to drag its rings, which the
+            // walking player needs for looking. Leaving the free camera puts it away.
+            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.G) && !_playerMode)
+            {
+                _sunGizmo.Toggle();
+            }
+
+            if (_playerMode)
+            {
+                _sunGizmo.Hide();
+            }
+
             if (_camera is not null)
             {
                 int nowMilliseconds = _loop.TimeSource.Milliseconds;
@@ -1905,6 +1918,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // moves on the fixed tick below, so it steps identically whatever the frame rate.
                     _player.Look(_window.Input, elapsed);
                     _window.CursorLocked = !captureMode && _player.IsCapturingMouse;
+                }
+                else if (_sunGizmo.Active)
+                {
+                    // The sun gizmo owns the cursor while it is up: free it so its rings can be dragged, and
+                    // leave the camera where it is so a drag turns the sun rather than the view. The gizmo is
+                    // a free-camera tool, so this only ever runs while flying.
+                    _window.CursorLocked = false;
                 }
                 else
                 {
@@ -2848,6 +2868,20 @@ internal sealed partial class DesktopGame : IDisposable
                 DirectionalLightSettings light = _dayNight.Apply(_sun ?? defaultSun);
                 _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
+
+                // The sun gizmo, if it is up: projected against this frame's camera and dragged this frame,
+                // so there is no lag between the ring under the cursor and the sun it turns. Its rotation
+                // feeds straight back into the cycle, the same knob the numpad keys turn.
+                _sunGizmo.Update(
+                    eye,
+                    DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                    light.Direction,
+                    _window.Width,
+                    _window.Height,
+                    _window.Input.Mouse.X,
+                    _window.Input.Mouse.Y,
+                    _window.Input.Mouse.IsDown(Input.MouseButton.Left),
+                    (axis, delta) => _dayNight.RotateAxis(axis, delta));
 
                 bool wantsShadows = RenderCVars.OffscreenScene.Value
                     && RenderCVars.Deferred.Value
@@ -4178,6 +4212,17 @@ internal sealed partial class DesktopGame : IDisposable
                 float debugPanelHeight = 0f;
 
                 _device.EndStageTiming();
+
+                // The sun gizmo, over everything, whenever it is up -- not gated on the F12 overlay, since it
+                // is a tool being used rather than an inspection panel.
+                if (_sunGizmo.Active)
+                {
+                    _device.BeginStageTiming(RenderStage.DebugRendering);
+                    batch.Begin();
+                    _sunGizmo.Draw(batch);
+                    batch.End();
+                    _device.EndStageTiming();
+                }
 
                 // The F12 debug overlay and crosshair. Works in both the walking player and the free (flying)
                 // camera: the state lines come from whichever is active, the crosshair readout and the reticle
