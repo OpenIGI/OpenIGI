@@ -3000,7 +3000,11 @@ internal sealed partial class DesktopGame : IDisposable
                             cacheGrid.CountY,
                             cacheGrid.CountZ);
 
-                        cacheCards.UpdateRadianceCache(liveField, SkyFillColour(), maxFrames: 16);
+                        cacheCards.UpdateRadianceCache(
+                            liveField,
+                            SkyFillColour(),
+                            maxFrames: 32,
+                            scale: RenderCVars.RadianceCacheScale.Value);
 
                         _device.SetRealtimeProbeVolume(
                             cacheCards.RadianceCacheRed,

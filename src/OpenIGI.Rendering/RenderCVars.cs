@@ -303,6 +303,21 @@ public static class RenderCVars
         high: "0",
         ultra: "0");
 
+    /// <summary>Calibration on the radiance cache's stored bounce, where 1 is the raw traced radiance.</summary>
+    /// <remarks>
+    /// The cache holds actual card radiance, which runs brighter than the baked field's grey sky-visibility
+    /// and blows a window-lit wall out at full strength. This scales the stored bounce back into the tuned
+    /// range the rest of the lighting expects -- the cache's equivalent of the screen gather's cache boost,
+    /// only a reduction rather than a lift. A knob while the look is calibrated.
+    /// </remarks>
+    public static readonly NumericCVar<float> RadianceCacheScale = CVar.Float(
+        "r_radiance_cache_scale",
+        0.6f,
+        0f,
+        4f,
+        CVarOptions.Archive,
+        "Calibration on the radiance cache's bounce; 1 is the raw traced radiance.");
+
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
     /// The screen gather only carries light that already exists in the frame -- daylight through a window,
