@@ -15,6 +15,26 @@ internal sealed partial class DesktopGame
     private Vector3f SkyFillColour() =>
         ((_effectiveSun ?? _sun)?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
 
+    /// <summary>Warms a level's cool zenith ambient towards the horizon as the sun sinks.</summary>
+    /// <remarks>
+    /// The sky an interior sees at a low sun is the warm horizon, not the cool zenith: the atmosphere
+    /// reddens as the sun sinks and a real skylight carries that warmth into the room. The level ships a
+    /// single cool ambient triple with no notion of the sun's height, so read literally it leaves a dusk-lit
+    /// room as flatly blue as a noon one. This blends it towards a golden horizon tint by how low the sun
+    /// sits -- keeping its own brightness so only the hue shifts -- and fades the warmth out above a moderate
+    /// elevation, where the ambient is left alone. Applied at the source so both the deferred ambient and the
+    /// GI sky fill inherit it.
+    /// </remarks>
+    private static Vector3f WarmedAmbient(Vector3f ambient, float sinElevation)
+    {
+        float highness = Math.Clamp((sinElevation - 0.08f) / (0.55f - 0.08f), 0f, 1f);
+        float warmth = (1f - (highness * highness * (3f - (2f * highness)))) * 0.75f;
+
+        float luminance = (ambient.X + ambient.Y + ambient.Z) / 3f;
+        Vector3f horizon = new Vector3f(1.2f, 0.85f, 0.58f) * luminance;
+        return ambient + ((horizon - ambient) * warmth);
+    }
+
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than
     // per frame -- it is a volume texture upload, while how much of it to apply is a number.
     // A mission with no table of its own is not a fault: it renders ungraded, which is what every

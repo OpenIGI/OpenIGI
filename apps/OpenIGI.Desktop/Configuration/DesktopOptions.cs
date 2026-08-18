@@ -77,6 +77,7 @@ public readonly record struct DesktopOptions(
         int height = 0;
         string? screenshot = null;
         (double X, double Y, double Z)? cameraPosition = null;
+        (float X, float Y, float Z)? sunDirection = null;
 
         // Null until a flight end pose is named. When any of the three is set the free camera is flown
         // from its opening pose to this one over the frame budget, and -screenshot writes one numbered
@@ -241,6 +242,20 @@ public readonly record struct DesktopOptions(
                 }
 
                 cameraPosition = (px, py, pz);
+            }
+            else if (arg.Equals("sundir", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "sundir");
+                string[] parts = value.Split(',');
+                if (parts.Length != 3
+                    || !float.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sx)
+                    || !float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sy)
+                    || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sz))
+                {
+                    throw new ArgumentException($"-sundir expects X,Y,Z pointing towards the sun, got '{value}'.", nameof(args));
+                }
+
+                sunDirection = (sx, sy, sz);
             }
             else if (arg.Equals("camend", StringComparison.OrdinalIgnoreCase))
             {
@@ -423,6 +438,7 @@ public readonly record struct DesktopOptions(
             uiScale)
         {
             CameraPosition = cameraPosition,
+            SunDirection = sunDirection,
             CameraEnd = cameraEnd,
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
@@ -481,6 +497,9 @@ public readonly record struct DesktopOptions(
 
     /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
     public (double X, double Y, double Z)? CameraPosition { get; init; }
+
+    /// <summary>Gets a fixed sun direction (pointing towards the sun) that overrides the level's, or <see langword="null"/> to use the level's own. For matching an external reference render.</summary>
+    public (float X, float Y, float Z)? SunDirection { get; init; }
 
     /// <summary>
     /// Gets the world position in metres the fly-through camera ends a flight at, or <see langword="null"/>

@@ -2865,7 +2865,25 @@ internal sealed partial class DesktopGame : IDisposable
                 // The authored sun swept to the current time of day. Held for the frame so every consumer
                 // -- this deferred light, the shadows, the surface cache's relight and its radiance cache,
                 // and the sky fill -- lights from the same swept sun rather than the raw authored one.
-                DirectionalLightSettings light = _dayNight.Apply(_sun ?? defaultSun);
+                DirectionalLightSettings light;
+                if (_options.SunDirection is { } fixedSun)
+                {
+                    // A fixed sun for matching an external reference render: the level's own colour and
+                    // ambient, but a direction pinned to the reference's, bypassing the day/night sweep.
+                    Vector3f dir = new(fixedSun.X, fixedSun.Y, fixedSun.Z);
+                    float len = dir.Length;
+                    dir = len > 1e-5f ? dir / len : Vector3f.UnitZ;
+                    light = (_sun ?? defaultSun) with { Direction = dir };
+                }
+                else
+                {
+                    light = _dayNight.Apply(_sun ?? defaultSun);
+                }
+
+                // Warm the fill towards the horizon as the sun sinks, so a low sun reads golden rather than
+                // flatly blue. At the source, so the deferred ambient and the GI sky fill both inherit it.
+                light = light with { Ambient = WarmedAmbient(light.Ambient, light.Direction.Z) };
+
                 _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
 
