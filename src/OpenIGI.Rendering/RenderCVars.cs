@@ -601,7 +601,12 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "1024",
         high: "2048",
-        ultra: "2048");
+
+        // 4096 at ultra. The window mullions cast a fine grid of shadow across the floor, and at 2048 -- with
+        // the cascade's texels spread over a room's worth of world -- each bar's shadow fell across only a few
+        // texels and read as a soft blur. Doubled, the grid comes in crisp, the clean sunlit pattern the
+        // reference draws rather than a smear.
+        ultra: "4096");
 
     /// <summary>How many cascades the shadow distance is split across.</summary>
     public static readonly NumericCVar<int> ShadowCascades = Presets.Define(
@@ -633,7 +638,11 @@ public static class RenderCVars
         vanilla: "220",
         enhanced: "150",
         high: "220",
-        ultra: "320");
+
+        // Pulled in from 320 to concentrate the cascades' resolution on the near field, where the window's
+        // shadow grid on the floor is -- the sharpness there is worth more than shadows out past the haze,
+        // which the fog swallows anyway. The near building and fence shadows outdoors still read.
+        ultra: "150");
 
     /// <summary>How far a screen-space contact ray reaches, in metres. Zero disables it.</summary>
     /// <remarks>
@@ -666,7 +675,11 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1",
         high: "1.5",
-        ultra: "2.5");
+
+        // 1.5 at ultra, down from 2.5. With the higher-resolution, nearer cascade the wide filter was no
+        // longer hiding aliasing, only blurring the window's shadow grid; a tighter kernel keeps the grid's
+        // edges crisp -- the reference's shadows are soft but defined, not smeared.
+        ultra: "1.5");
 
     /// <summary>How many directions each pixel searches for its horizons, or 0 for no occlusion.</summary>
     /// <remarks>
