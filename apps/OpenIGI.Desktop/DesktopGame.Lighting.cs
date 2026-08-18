@@ -13,7 +13,7 @@ internal sealed partial class DesktopGame
     // the GI can carry the outdoor and window fill the flat ambient used to stand in for. Only surfaces
     // that actually see the sky read it, so a sealed interior is unaffected.
     private Vector3f SkyFillColour() =>
-        (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
+        ((_effectiveSun ?? _sun)?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f)) * RenderCVars.SkyLight.Value;
 
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than
     // per frame -- it is a volume texture upload, while how much of it to apply is a number.

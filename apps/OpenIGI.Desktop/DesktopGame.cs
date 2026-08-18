@@ -1,6 +1,7 @@
 using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Desktop.Audio;
+using OpenIGI.Desktop.World;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -224,6 +225,14 @@ internal sealed partial class DesktopGame : IDisposable
     // The shot that carries the player out of the menu and into their own eyes.
     private readonly MissionEntryCamera _entry = new();
     private DirectionalLightSettings? _sun;
+
+    // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
+    // the current time of day, which everything downstream (shadows, deferred, the surface cache and its
+    // radiance cache, the sky fill) lights from in place of the raw authored one. Recomputed each rendered
+    // frame; scrubbed on real elapsed time so holding a key sweeps smoothly whatever the frame rate.
+    private readonly DayNightCycle _dayNight = new();
+    private DirectionalLightSettings? _effectiveSun;
+    private int _dayNightMilliseconds;
     private FreeCamera? _camera;
 
     // --- The player, the held weapon, the HUD and the soldiers ---
@@ -1800,6 +1809,16 @@ internal sealed partial class DesktopGame : IDisposable
                 _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
             }
 
+            // The day/night cycle is advanced on every pass, on real elapsed time, so holding [ or ] sweeps
+            // the sun smoothly whatever the frame rate -- the same reasoning the camera below is advanced by.
+            // The keyboard's own capture flag keeps the console's typing out of it.
+            {
+                int dayNightNow = _loop.TimeSource.Milliseconds;
+                float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
+                _dayNightMilliseconds = dayNightNow;
+                _dayNight.Update(_window.Input.Keyboard, dayNightElapsed);
+            }
+
             if (_camera is not null)
             {
                 int nowMilliseconds = _loop.TimeSource.Milliseconds;
@@ -2823,7 +2842,11 @@ internal sealed partial class DesktopGame : IDisposable
                 // ARE the view axes, and Transform() applies the engine's row-vector convention which dots
                 // the columns -- the inverse rotation. Getting it wrong lights the world from a direction
                 // that swings as the player turns.
-                DirectionalLightSettings light = _sun ?? defaultSun;
+                // The authored sun swept to the current time of day. Held for the frame so every consumer
+                // -- this deferred light, the shadows, the surface cache's relight and its radiance cache,
+                // and the sky fill -- lights from the same swept sun rather than the raw authored one.
+                DirectionalLightSettings light = _dayNight.Apply(_sun ?? defaultSun);
+                _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
 
                 bool wantsShadows = RenderCVars.OffscreenScene.Value
@@ -2948,8 +2971,8 @@ internal sealed partial class DesktopGame : IDisposable
                         // handful of frames with no spike, and the bounce keeps its long-running history
                         // instead of being re-seeded from scratch on every scroll.
                         litCards.Light(
-                            _sun is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
-                            _sun?.Colour ?? default,
+                            light is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
+                            light.Colour,
                             SkyFillColour(),
                             liveField,
                             RenderCVars.SurfaceCacheProbe.Value,

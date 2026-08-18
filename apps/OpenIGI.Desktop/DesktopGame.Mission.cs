@@ -989,6 +989,7 @@ internal sealed partial class DesktopGame
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
                 _sun = readSun;
+                _dayNight.Reset(RenderCVars.TimeOfDay.Value);
                 _logger.Information(
                     "Light",
                     FormattableString.Invariant(

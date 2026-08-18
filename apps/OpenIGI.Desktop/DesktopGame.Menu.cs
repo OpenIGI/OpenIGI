@@ -44,6 +44,7 @@ internal sealed partial class DesktopGame
         _scene = preview.Scene;
         _worldSolids = preview.Solids;
         _sun = preview.Sun;
+        _dayNight.Reset(RenderCVars.TimeOfDay.Value);
         _playerTerrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
 
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene

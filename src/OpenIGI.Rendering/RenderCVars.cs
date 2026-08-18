@@ -318,6 +318,22 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Calibration on the radiance cache's bounce; 1 is the raw traced radiance.");
 
+    /// <summary>The hour of day the interactive sun starts a level at, 0 to 24. Noon is the authored sun.</summary>
+    /// <remarks>
+    /// The day/night cycle sweeps the level's one authored sun across the sky by a time of day the player
+    /// scrubs live with the bracket keys; this is where that time starts each level. Twelve reproduces the
+    /// authored noon sun exactly, which is why it is the default -- a level opens looking as it always did.
+    /// Set it to open on a sunrise, a sunset or a night instead. It only seeds the starting hour; the keys
+    /// move it from there.
+    /// </remarks>
+    public static readonly NumericCVar<float> TimeOfDay = CVar.Float(
+        "r_time_of_day",
+        12f,
+        0f,
+        24f,
+        CVarOptions.Archive,
+        "Hour of day the interactive sun starts a level at, 0-24. 12 is the authored noon sun.");
+
     /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
     /// <remarks>
     /// The screen gather only carries light that already exists in the frame -- daylight through a window,
