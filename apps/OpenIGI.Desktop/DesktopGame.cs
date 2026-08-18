@@ -2938,13 +2938,25 @@ internal sealed partial class DesktopGame : IDisposable
                 // a level that asked for thick fog gets thick fog, so the missions keep their own moods
                 // instead of all being handed one number. The colours come from the sun, so a fog bank is
                 // lit by the same light as the ground under it.
+                // Lighter than it was: the authored FogAmount, read at full strength, laid a haze dense
+                // enough to wash the yard white a few tens of metres out -- where the reference keeps its
+                // buildings crisp -- and it hung inside rooms besides. This carries the same shape at a
+                // fraction of the extinction, so distance still reads but the far wall of a compound stays
+                // legible.
                 float authoredDensity = _sky is { HasSky: true }
-                    ? 0.004f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.03f)
-                    : 0.014f;
+                    ? 0.002f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.010f)
+                    : 0.006f;
+
+                // Fog is an outdoor medium. A sealed room has no haze source, so the froxel march is turned
+                // off whenever the camera is inside a building -- which is also what clears the exterior seen
+                // through a window from indoors, since the haze that washed the distant yard was the fog
+                // sitting between the eye and it, marched right through the wall.
+                bool fogIndoors = IsCameraInsideBuilding(eye.Position);
 
                 bool wantsFog = RenderCVars.FogQuality.Value > 0
                     && RenderCVars.OffscreenScene.Value
-                    && RenderCVars.Deferred.Value;
+                    && RenderCVars.Deferred.Value
+                    && !fogIndoors;
 
                 VolumetricFogSettings medium = VolumetricFogSettings.Off;
                 if (wantsFog)
