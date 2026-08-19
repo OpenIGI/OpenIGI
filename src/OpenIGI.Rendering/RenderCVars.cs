@@ -255,9 +255,9 @@ public static class RenderCVars
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
-    /// Zero is off, which is every preset for now: above zero, the gather traces the surface cache per
-    /// screen probe into an atlas and the deferred lighting reads it as its diffuse fill in place of the
-    /// flat ambient -- the stage where the traced global illumination reaches the screen. Not a name
+    /// Zero is off, which is every preset below ultra: above zero, the gather traces the surface cache per
+    /// screen probe into an atlas and the deferred lighting reads it as its diffuse fill over the far-field
+    /// floor -- the stage where the traced global illumination reaches the screen. Not a name
     /// clash with <see cref="GlobalIllumination"/> (<c>r_gi</c>), which is the baked probe field; this is
     /// the live screen-space gather, and it needs the surface cache and the distance fields, so it does
     /// nothing without both. The magnitude compensates for how the gather reads the cache: the surface
@@ -279,16 +279,22 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
 
-        // Off at ultra, held back for now. The screen probe gather is a real-time indirect -- it traces the
-        // surface cache along the view so the bounce responds to the frame -- but it is a SCREEN-SPACE
-        // estimate, and in live play it reads as unstable low-frequency patches that slide and blow out on
-        // interior walls. The full-resolution temporal resolve steadies it enough to look right in a locked,
-        // converged capture, but not in ordinary play, where the underlying variance has no world-space
-        // radiance cache behind it to draw a stable answer from. Until that cache exists, ultra takes its
-        // indirect from the baked probe volume (r_gi) plus the flat-ambient floor -- stable, and clean --
-        // while the sun and shadows stay real-time. Raise this (about 2.5) to switch the live gather back on
-        // and judge it; it is the field the radiance cache work will make shippable.
-        ultra: "0");
+        // On at ultra. The screen probe gather is a real-time indirect -- it traces the surface cache along
+        // the view so the bounce responds to the frame -- and it is what carries the warm bounced light the
+        // interior reads as: the world-space radiance cache alone, sampled straight, comes back markedly
+        // cooler than the reference (its far-field trace misses the near, sun-warmed bounce a screen ray
+        // catches), so the gather is not optional for the look, it is the look. Two things make it shippable
+        // where the raw screen estimate was not, both added with it. Its full-resolution temporal resolve
+        // now clamps each reprojected history into the current frame's own neighbourhood mean and spread --
+        // the reference's anti-shimmer -- so a stale or noisy history can no longer slide across a wall as
+        // the low-frequency shimmer that once shelved it. And the deferred fill floors the gather to the
+        // BRIGHTER of it and the far field: the radiance cache runs at this same tier, so a surface the
+        // gather has not yet resolved -- a freshly disoccluded pixel -- falls to the cache's stable answer
+        // rather than to black, which is the dropout the screen estimate had with no world-space field
+        // behind it. Strength compensates for the cache holding outgoing radiance the fill takes albedo
+        // against a second time; three lands the interior on the reference's warmth without over-driving the
+        // gather's variance into the temporal flicker a higher one would show.
+        ultra: "3");
 
     /// <summary>Whether the world-space radiance cache updates and feeds the deferred fill's indirect.</summary>
     /// <remarks>
