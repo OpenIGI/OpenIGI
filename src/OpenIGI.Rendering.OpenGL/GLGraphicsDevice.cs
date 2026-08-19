@@ -362,6 +362,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
     private int _resolveExposure = -1;
+    private int _resolveLocalExposure = -1;
+    private int _resolveLocalExposureLod = -1;
     private int _resolveToneMap = -1;
     private int _resolveDecodeInput = -1;
     private int _resolveWhitePoint = -1;
@@ -2331,9 +2333,45 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             exposure = RunAutoExposure(scene, post);
         }
 
+        // Local exposure reads a heavily blurred version of the scene as its base luminance. The scene
+        // texture carries a mip min-filter, so the blur is just its own coarse levels -- generated here,
+        // once, before the resolve samples them. Only when a tone map is on: the vanilla copy path neither
+        // tone maps nor reaches here, so it never pays for this.
+        bool localExposure = post.ToneMap != ToneMapOperator.None;
+        if (localExposure)
+        {
+            BindTexture(0, scene);
+
+            // A mipmap min filter, set on the scene texture alone (not the shared creation default), so the
+            // chain GenerateMipmap fills is both complete and readable by textureLod. A 1:1 read still lands
+            // on level 0, so the passes before this that also sample the scene are unaffected.
+            _gl.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMinFilter,
+                (int)TextureMinFilter.LinearMipmapLinear);
+            _gl.GenerateMipmap(TextureTarget.Texture2D);
+        }
+
         using GLStageProfiler.Scope toneTiming = Measure(RenderStage.ToneMapGrade);
         UseProgram(_resolveProgram);
         _resolveProgram.SetFloat(_resolveExposure, exposure);
+
+        if (localExposure)
+        {
+            // Shadow and highlight contrast below one lift the shadows towards grey and pull the highlights
+            // back; detail at one keeps the fine texture the base blurred away. The base is read from a
+            // level whose texels span a large neighbourhood -- a sixteenth of the frame or so -- so the
+            // lift is regional, the reference's soft filled interior rather than a local-contrast sharpen.
+            float lod = MathF.Log2(
+                Math.Max(1, Math.Min(target.Description.PresentWidth, target.Description.PresentHeight))) - 4f;
+            _resolveProgram.SetVector4(_resolveLocalExposure, 0.6f, 0.75f, 1f, 0f);
+            _resolveProgram.SetFloat(_resolveLocalExposureLod, MathF.Max(lod, 1f));
+        }
+        else
+        {
+            _resolveProgram.SetVector4(_resolveLocalExposure, 1f, 1f, 1f, 0f);
+            _resolveProgram.SetFloat(_resolveLocalExposureLod, 1f);
+        }
         _resolveProgram.SetInt(_resolveToneMap, (int)post.ToneMap);
         _resolveProgram.SetInt(_resolveDecodeInput, post.SceneIsDisplayEncoded ? 1 : 0);
         _resolveProgram.SetFloat(_resolveWhitePoint, post.WhitePoint);
@@ -2568,9 +2606,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         // Last frame's adapted exposure, read before this frame overwrites it. A frame of latency, which
         // eye adaptation does not notice, and no stall waiting on work only just submitted.
-        uint[] state = new uint[3];
+        uint[] state = new uint[AutoExposureShaders.AccumUints];
         ReadStorageBuffer<uint>(_autoExposureAccum, state);
-        float adapted = BitConverter.UInt32BitsToSingle(state[2]);
+        float adapted = BitConverter.UInt32BitsToSingle(state[AutoExposureShaders.HistogramBins]);
 
         // Measure this frame into the accumulator and ease the running exposure towards it, for the next
         // frame to read. The scene is bound to unit zero, which the resolve rebinds for itself afterwards.
@@ -2578,8 +2616,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         SetComputeUniform(_autoExposureReduce, "uScene", 0);
         SetComputeUniform(_autoExposureReduce, "uDecode", post.SceneIsDisplayEncoded ? 1 : 0);
         SetComputeUniform(_autoExposureReduce, "uGrid", AutoExposureShaders.Grid);
-        SetComputeUniform(_autoExposureReduce, "uFixedScale", AutoExposureShaders.FixedScale);
-        SetComputeUniform(_autoExposureReduce, "uFixedBias", AutoExposureShaders.FixedBias);
+        SetComputeUniform(_autoExposureReduce, "uBins", AutoExposureShaders.HistogramBins);
+        SetComputeUniform(_autoExposureReduce, "uMinLog", AutoExposureShaders.MinLogLuminance);
+        SetComputeUniform(_autoExposureReduce, "uMaxLog", AutoExposureShaders.MaxLogLuminance);
         BindStorageBuffer(0, _autoExposureAccum);
 
         int groups = (AutoExposureShaders.Grid + 7) / 8;
@@ -2588,18 +2627,18 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         // Middle grey as the target, the step per frame the caller chose -- a slow eye-adaptation in
         // steady play, faster for the moment after a load while the GI converges -- and a range that keeps
-        // a black or blown scene from driving the exposure to an extreme.
+        // a black or blown scene from driving the exposure to an extreme. The metered value is now the
+        // average of the histogram's middle percentile band, so the bright window is already left out and
+        // the ceiling can be high without it lifting the exposure to blow the room.
         SetComputeUniform(_autoExposureAdapt, "uKey", 0.18f);
         SetComputeUniform(_autoExposureAdapt, "uRate", Math.Clamp(post.ExposureRate, 0f, 1f));
         SetComputeUniform(_autoExposureAdapt, "uMin", 0.05f);
-
-        // Capped at 6x rather than 16x: a dark interior pulls the metered average right down, and a 16x
-        // ceiling let the exposure lift so far that the brighter surfaces -- a lit floor, a wall by a window
-        // -- clipped to white. Six stops of lift is enough to open a shadowed room without blowing out what
-        // little light it does have; the tone map's shoulder then carries the window on top of that.
-        SetComputeUniform(_autoExposureAdapt, "uMax", 6.0f);
-        SetComputeUniform(_autoExposureAdapt, "uFixedScale", AutoExposureShaders.FixedScale);
-        SetComputeUniform(_autoExposureAdapt, "uFixedBias", AutoExposureShaders.FixedBias);
+        SetComputeUniform(_autoExposureAdapt, "uMax", 8.0f);
+        SetComputeUniform(_autoExposureAdapt, "uBins", AutoExposureShaders.HistogramBins);
+        SetComputeUniform(_autoExposureAdapt, "uMinLog", AutoExposureShaders.MinLogLuminance);
+        SetComputeUniform(_autoExposureAdapt, "uMaxLog", AutoExposureShaders.MaxLogLuminance);
+        SetComputeUniform(_autoExposureAdapt, "uLowPercent", AutoExposureShaders.MeterLowPercent);
+        SetComputeUniform(_autoExposureAdapt, "uHighPercent", AutoExposureShaders.MeterHighPercent);
         BindStorageBuffer(0, _autoExposureAccum);
         Dispatch(_autoExposureAdapt, 1);
         MemoryBarrier(MemoryBarrierScope.StorageBuffer);
@@ -4048,6 +4087,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _resolveProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, PostProcessShaders.Fragment, _programCache);
         _resolveExposure = _resolveProgram.LocationOf("uExposure");
+        _resolveLocalExposure = _resolveProgram.LocationOf("uLocalExposure");
+        _resolveLocalExposureLod = _resolveProgram.LocationOf("uLocalExposureLod");
         _resolveToneMap = _resolveProgram.LocationOf("uToneMap");
         _resolveDecodeInput = _resolveProgram.LocationOf("uDecodeInput");
         _resolveWhitePoint = _resolveProgram.LocationOf("uWhitePoint");
@@ -4088,8 +4129,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             {
                 _autoExposureReduce = CreateComputeShader(AutoExposureShaders.Reduce, "autoexposure.reduce");
                 _autoExposureAdapt = CreateComputeShader(AutoExposureShaders.Adapt, "autoexposure.adapt");
-                _autoExposureAccum = CreateStorageBuffer(3 * sizeof(uint), "autoexposure.accum");
-                UpdateStorageBuffer<uint>(_autoExposureAccum, new uint[3]);
+                _autoExposureAccum = CreateStorageBuffer(
+                    AutoExposureShaders.AccumUints * sizeof(uint), "autoexposure.accum");
+                UpdateStorageBuffer<uint>(_autoExposureAccum, new uint[AutoExposureShaders.AccumUints]);
             }
             catch (GraphicsDeviceException)
             {
