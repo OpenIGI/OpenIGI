@@ -362,6 +362,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
     private int _resolveExposure = -1;
+    private int _resolveAutoExposure = -1;
+    private int _resolveExposureIndex = -1;
     private int _resolveWhiteBalance = -1;
     private int _resolveLocalExposure = -1;
     private int _resolveLocalExposureLod = -1;
@@ -2326,12 +2328,12 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         // Auto-exposure runs before the resolve uses its result: it reads last frame's adapted value and
         // measures this frame for the next. Off, or without a tone map, it returns the cvar's exposure
         // unchanged -- and the vanilla copy path never reaches here at all, so it is untouched either way.
-        float exposure;
+        bool autoExposureActive;
         using (GLStageProfiler.Scope timing = Measure(
             RenderStage.Exposure,
             post.AutoExposure && post.ToneMap != ToneMapOperator.None))
         {
-            exposure = RunAutoExposure(scene, post);
+            autoExposureActive = RunAutoExposure(scene, post);
         }
 
         // Local exposure reads a heavily blurred version of the scene as its base luminance. The scene
@@ -2355,7 +2357,16 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         using GLStageProfiler.Scope toneTiming = Measure(RenderStage.ToneMapGrade);
         UseProgram(_resolveProgram);
-        _resolveProgram.SetFloat(_resolveExposure, exposure);
+
+        // uExposure is the cvar's exposure scale. When auto-exposure ran, the resolve multiplies it by the
+        // eased value it reads from the accumulator (bound below); otherwise it is the exposure outright.
+        _resolveProgram.SetFloat(_resolveExposure, post.Exposure);
+        _resolveProgram.SetInt(_resolveAutoExposure, autoExposureActive ? 1 : 0);
+        if (autoExposureActive)
+        {
+            _resolveProgram.SetInt(_resolveExposureIndex, AutoExposureShaders.HistogramBins);
+            BindStorageBuffer(0, _autoExposureAccum);
+        }
 
         // Neutral: the cold-morning balance is set at the source, in the sun and sky colours the scene is
         // lit by, not corrected out of the finished frame here. Left in place as an identity for now.
@@ -2599,21 +2610,20 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     // Measures the scene's brightness and eases a running exposure towards it, returning the exposure to
     // resolve with. Off, or on a context without compute, or before a tone map, it returns the cvar's own
     // exposure and does nothing else.
-    private float RunAutoExposure(uint scene, in PostProcessSettings post)
+    private bool RunAutoExposure(uint scene, in PostProcessSettings post)
     {
         if (!post.AutoExposure
             || post.ToneMap == ToneMapOperator.None
             || !_autoExposureReduce.IsValid
             || !_autoExposureAdapt.IsValid)
         {
-            return post.Exposure;
+            return false;
         }
 
-        // Last frame's adapted exposure, read before this frame overwrites it. A frame of latency, which
-        // eye adaptation does not notice, and no stall waiting on work only just submitted.
-        uint[] state = new uint[AutoExposureShaders.AccumUints];
-        ReadStorageBuffer<uint>(_autoExposureAccum, state);
-        float adapted = BitConverter.UInt32BitsToSingle(state[AutoExposureShaders.HistogramBins]);
+        // The eased exposure is not read back to the CPU. It stays in the accumulator, which the resolve
+        // pass reads on the GPU when it applies exposure -- so no GetBufferSubData drains the pipeline here
+        // (that readback was a per-frame stall, worst on a busy frame). The running value the adapt eases
+        // from persists in the buffer across frames on its own; the CPU never has to see it.
 
         // Measure this frame into the accumulator and ease the running exposure towards it, for the next
         // frame to read. The scene is bound to unit zero, which the resolve rebinds for itself afterwards.
@@ -2648,8 +2658,9 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         Dispatch(_autoExposureAdapt, 1);
         MemoryBarrier(MemoryBarrierScope.StorageBuffer);
 
-        // Until the first adapt has run the buffer still holds zero; the cvar's exposure stands in.
-        return adapted > 0f ? adapted * post.Exposure : post.Exposure;
+        // The accumulator now holds this frame's eased exposure at HistogramBins; the resolve reads it. The
+        // shader falls back to the cvar's exposure while the buffer is still zero (before the first adapt).
+        return true;
     }
 
     /// <summary>Spreads the brightest part of the frame into a half-resolution buffer.</summary>
@@ -4092,6 +4103,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _resolveProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, PostProcessShaders.Fragment, _programCache);
         _resolveExposure = _resolveProgram.LocationOf("uExposure");
+        _resolveAutoExposure = _resolveProgram.LocationOf("uAutoExposure");
+        _resolveExposureIndex = _resolveProgram.LocationOf("uExposureIndex");
         _resolveWhiteBalance = _resolveProgram.LocationOf("uWhiteBalance");
         _resolveLocalExposure = _resolveProgram.LocationOf("uLocalExposure");
         _resolveLocalExposureLod = _resolveProgram.LocationOf("uLocalExposureLod");
