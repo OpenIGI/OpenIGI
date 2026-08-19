@@ -1047,7 +1047,16 @@ internal sealed partial class DesktopGame
 
             if (_cardLighting is not null)
             {
-                _cardLighting.SetLocalLights(EmissiveLightProposer.Propose(_scene, _resources, id, _logger));
+                // The lamp fixtures the level's emissive geometry implies -- the ceiling tubes read as
+                // area emitters and fed into the surface cache so they bounce. Off by default: the fixture
+                // survey is not yet trustworthy enough to ship (a bright sign reads as a lamp), and a room
+                // lit by inferred lamps cannot be told from one that should be dark. Until the survey is
+                // dialled in, a sealed windowless room reads dark, which is the honest state. Turn on to
+                // light interiors from their own fixtures.
+                _cardLighting.SetLocalLights(
+                    RenderCVars.GlobalIlluminationLamps.Value != 0
+                        ? EmissiveLightProposer.Propose(_scene, _resources, id, _logger)
+                        : System.Array.Empty<LightFixture>());
 
                 // Built once, from the same capture and placements the lighting was. A ray that stops
                 // somewhere knows only that it stopped; this is what lets it read the surface it hit.

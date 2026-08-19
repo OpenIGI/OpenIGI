@@ -3095,7 +3095,8 @@ internal sealed partial class DesktopGame : IDisposable
                             liveField,
                             SkyFillColour(),
                             maxFrames: 32,
-                            scale: RenderCVars.RadianceCacheScale.Value);
+                            scale: RenderCVars.RadianceCacheScale.Value,
+                            skyReject: RenderCVars.GlobalIlluminationLeakReject.Value);
 
                         _device.SetRealtimeProbeVolume(
                             cacheCards.RadianceCacheRed,

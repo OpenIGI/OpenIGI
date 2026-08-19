@@ -340,16 +340,20 @@ public static class RenderCVars
 
     /// <summary>Calibration on the radiance cache's stored bounce, where 1 is the raw traced radiance.</summary>
     /// <remarks>
-    /// The cache holds actual card radiance, which runs brighter than the baked field's grey sky-visibility
-    /// and blows a window-lit wall out at full strength. This scales the stored bounce back into the tuned
-    /// range the rest of the lighting expects -- the cache's equivalent of the screen gather's cache boost,
-    /// only a reduction rather than a lift. A knob while the look is calibrated.
+    /// The cache holds actual card radiance, and how strongly it is fed into the deferred fill is what turns
+    /// a sunlit floor into a room lit by the light it bounces up its walls. Half was far too timid: it left a
+    /// window room showing only the sun's own patches on the floor with no bounce climbing the walls, the
+    /// single-bounce indirect starved to almost nothing. Lifted so the bounce actually carries the room --
+    /// validated on mission 1's office, where the sun through the window now fills the whole room the way the
+    /// reference's does, and on the outdoor spawn, which does not blow out. The sealed-room leak this would
+    /// also amplify is cut at its source instead (see the sky-leak reject in the cache trace), not by keeping
+    /// the whole bounce dim.
     /// </remarks>
     public static readonly NumericCVar<float> RadianceCacheScale = CVar.Float(
         "r_radiance_cache_scale",
-        0.5f,
+        3f,
         0f,
-        4f,
+        8f,
         CVarOptions.Archive,
         "Calibration on the radiance cache's bounce; 1 is the raw traced radiance.");
 
@@ -1351,6 +1355,40 @@ public static class RenderCVars
         32f,
         CVarOptions.Archive,
         "Metres between irradiance probes. Finer resolves smaller rooms and takes longer to bake.");
+
+    /// <summary>The escape fraction below which a radiance-cache probe's sky is treated as a wall leak.</summary>
+    /// <remarks>
+    /// A cache probe traces the whole sphere; the fraction of its rays reaching open sky says whether the
+    /// sky it sees is a real opening or a leak through a wall the coarse distance field cannot seal. Above
+    /// this fraction the sky is kept in full, below a third of it dropped entirely, so a sealed room -- whose
+    /// probes escape only on the few rays that slip through a wall -- falls dark rather than borrowing the
+    /// day outside, while a window room, whose probes escape freely, keeps its sky. A window room is lit
+    /// mostly by its sunlit floor bouncing regardless, so this can be firm without darkening it.
+    /// </remarks>
+    public static readonly NumericCVar<float> GlobalIlluminationLeakReject = CVar.Float(
+        "r_gi_leak_reject",
+        0.3f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "Escape fraction under which a cache probe's sky is treated as a wall leak and dropped.");
+
+    /// <summary>Whether the inferred lamp fixtures light the surface cache, so interiors lit by their own lamps.</summary>
+    /// <remarks>
+    /// The level declares no point lights; a survey reads them from emissive geometry -- the ceiling tubes
+    /// and the like -- and feeds them into the surface cache so a lamplit room bounces. Off by default: the
+    /// survey is not yet reliable (a bright sign or a screen can read as a lamp), and while it is wrong a
+    /// sealed windowless room lit by an inferred lamp cannot be told from one that ought to be dark. With it
+    /// off such a room reads dark, which is the honest state until the survey is dialled in. On lights
+    /// interiors from their fixtures.
+    /// </remarks>
+    public static readonly NumericCVar<int> GlobalIlluminationLamps = CVar.Int(
+        "r_gi_lamps",
+        0,
+        0,
+        1,
+        CVarOptions.Archive,
+        "Light the surface cache from the level's inferred lamp fixtures, so lamplit rooms bounce.");
 
     /// <summary>How strongly the probe field's light is applied.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationIntensity = CVar.Float(
