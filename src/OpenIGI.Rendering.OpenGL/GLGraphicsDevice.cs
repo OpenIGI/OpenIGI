@@ -362,6 +362,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private GLFullScreenPass? _fullScreen;
     private GLShaderProgram? _resolveProgram;
     private int _resolveExposure = -1;
+    private int _resolveWhiteBalance = -1;
     private int _resolveLocalExposure = -1;
     private int _resolveLocalExposureLod = -1;
     private int _resolveToneMap = -1;
@@ -2356,6 +2357,10 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         UseProgram(_resolveProgram);
         _resolveProgram.SetFloat(_resolveExposure, exposure);
 
+        // Neutral: the cold-morning balance is set at the source, in the sun and sky colours the scene is
+        // lit by, not corrected out of the finished frame here. Left in place as an identity for now.
+        _resolveProgram.SetVector3(_resolveWhiteBalance, 1f, 1f, 1f);
+
         if (localExposure)
         {
             // Shadow and highlight contrast below one lift the shadows towards grey and pull the highlights
@@ -2364,7 +2369,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             // lift is regional, the reference's soft filled interior rather than a local-contrast sharpen.
             float lod = MathF.Log2(
                 Math.Max(1, Math.Min(target.Description.PresentWidth, target.Description.PresentHeight))) - 4f;
-            _resolveProgram.SetVector4(_resolveLocalExposure, 0.6f, 0.75f, 1f, 0f);
+            _resolveProgram.SetVector4(_resolveLocalExposure, 0.62f, 0.9f, 1f, 0f);
             _resolveProgram.SetFloat(_resolveLocalExposureLod, MathF.Max(lod, 1f));
         }
         else
@@ -4087,6 +4092,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
 
         _resolveProgram = GLShaderProgram.Create(_gl, PostProcessShaders.Vertex, PostProcessShaders.Fragment, _programCache);
         _resolveExposure = _resolveProgram.LocationOf("uExposure");
+        _resolveWhiteBalance = _resolveProgram.LocationOf("uWhiteBalance");
         _resolveLocalExposure = _resolveProgram.LocationOf("uLocalExposure");
         _resolveLocalExposureLod = _resolveProgram.LocationOf("uLocalExposureLod");
         _resolveToneMap = _resolveProgram.LocationOf("uToneMap");

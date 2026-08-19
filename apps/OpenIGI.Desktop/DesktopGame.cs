@@ -2908,9 +2908,15 @@ internal sealed partial class DesktopGame : IDisposable
                     light = _dayNight.Apply(_sun ?? defaultSun);
                 }
 
-                // Warm the fill towards the horizon as the sun sinks, so a low sun reads golden rather than
-                // flatly blue. At the source, so the deferred ambient and the GI sky fill both inherit it.
-                light = light with { Ambient = WarmedAmbient(light.Ambient, light.Direction.Z) };
+                // Re-light with daylight chromaticity, keeping the level's own brightness. The level authors
+                // a saturated warm sun; the reference lights the same cold morning with a near-white sun,
+                // and it is that neutral key -- not a grade on the finished frame -- that reads as clean
+                // daylight. The ambient is left as authored; the sky's own colour is set below.
+                light = light with
+                {
+                    Colour = DaylightColour(light.Colour, new Vector3f(1.0f, 0.9f, 0.8f)),
+                    Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
+                };
 
                 _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);

@@ -25,17 +25,30 @@ internal sealed partial class DesktopGame
     /// elevation, where the ambient is left alone. Applied at the source so both the deferred ambient and the
     /// GI sky fill inherit it.
     /// </remarks>
+    /// <summary>Re-points a light's colour to a target chromaticity while keeping its own luminance.</summary>
+    /// <remarks>
+    /// The level's authored light colours carry the game's stylised warmth; this swaps the HUE for a
+    /// physical daylight one -- a near-white sun, a cool-blue sky -- without touching how BRIGHT the level
+    /// asked the light to be. The target is scaled by the ratio of the source's luminance to its own, so a
+    /// dim ambient stays dim and a strong sun stays strong; only the balance between the channels changes.
+    /// </remarks>
+    private static Vector3f DaylightColour(Vector3f colour, Vector3f chroma)
+    {
+        float luma = (colour.X * 0.2126f) + (colour.Y * 0.7152f) + (colour.Z * 0.0722f);
+        float chromaLuma = (chroma.X * 0.2126f) + (chroma.Y * 0.7152f) + (chroma.Z * 0.0722f);
+        return chroma * (luma / MathF.Max(chromaLuma, 1e-4f));
+    }
+
     private static Vector3f WarmedAmbient(Vector3f ambient, float sinElevation)
     {
-        float highness = Math.Clamp((sinElevation - 0.05f) / (1.0f - 0.05f), 0f, 1f);
-        float warmth = 1f - (highness * highness * (3f - (2f * highness)));
-
-        // A low sun's skylight is strongly warm -- the golden fill the reference bathes an interior in. The
-        // authored ambient is a cool blue-grey; blended nearly all the way to a warm horizon tint at a low
-        // sun (and left alone at noon), it carries that warmth into the room rather than reading as grey.
-        float luminance = (ambient.X + ambient.Y + ambient.Z) / 3f;
-        Vector3f horizon = new Vector3f(1.35f, 0.82f, 0.5f) * luminance;
-        return ambient + ((horizon - ambient) * warmth);
+        // Left as the level authored it. An earlier version blended the ambient hard towards a golden
+        // horizon by how low the sun sat, on the theory that a low sun is a warm sun -- but mission 1 is a
+        // COLD clear morning, its sun as low as a dusk one and its skylight cool blue off the snow, and the
+        // warming dumped orange over a room the reference keeps a clean neutral. A low sun is not a warm
+        // one; only a SETTING sun is, and that is a per-mission call rather than a function of height. The
+        // authored cool ambient is what balances the slightly warm sun into neutral daylight, so it stands.
+        _ = sinElevation;
+        return ambient;
     }
 
     /// <summary>A per-channel tint for the sky dome that reddens towards the horizon as the sun sinks.</summary>
@@ -49,11 +62,12 @@ internal sealed partial class DesktopGame
     /// </remarks>
     private static Vector3f SkyWarmthTint(float sinElevation)
     {
-        float highness = Math.Clamp((sinElevation - 0.05f) / (0.90f - 0.05f), 0f, 1f);
-        float warmth = 1f - (highness * highness * (3f - (2f * highness)));
-
-        Vector3f warm = new(1.5f, 0.95f, 0.5f);
-        return Vector3f.One + ((warm - Vector3f.One) * warmth);
+        // Neutral. The sky the window shows and the fill it carries stay the authored cool blue rather than
+        // being reddened towards the horizon by the sun's height. See WarmedAmbient: a cold morning has a
+        // low sun over a cool sky, and tinting the sky warm to match a low sun turned the snow outside the
+        // window and the light off it orange, where the reference keeps a clean cool daylight.
+        _ = sinElevation;
+        return Vector3f.One;
     }
 
     // The mission's authored grade, or the one r_lut_table names instead. Loaded per level rather than

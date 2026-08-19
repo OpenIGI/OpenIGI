@@ -242,13 +242,16 @@ public static class RenderCVars
         enhanced: "1.4",
         high: "1.6",
 
-        // Recalibrated for the real-time radiance cache. The old 1.8 was set for the baked model, whose flat
-        // fill needed lifting; the cache carries a much fuller, sun-led indirect, and lit that far it washes
-        // the frame flat and blows the window out. Measured against the reference render (a low sun through
-        // the office window, and the sunlit exterior), this is where the sunlit floor stays bright but reads
-        // its grain, the shadowed fill holds its contrast, and the exterior sits under the tone map's shoulder
-        // rather than clipping. Auto-exposure still adapts around it; this is the bias on that.
-        ultra: "0.6");
+        // Recalibrated once the metering and the curve were the reference's. The old 0.6 DARKENED the
+        // adapted exposure, a crutch from when a whole-frame mean meter -- dragged up by any window -- was
+        // over-reporting the scene's brightness, so it had to be pulled back down. The meter is now a
+        // histogram percentile band that leaves the window out, local exposure lifts the shadows, and the
+        // warm ambient/sky tints that muddied the frame are gone; the scene reports its real, lower
+        // brightness, so the bias goes the other way and OPENS it up to the reference's bright, airy
+        // interior. Auto-exposure still adapts around this; it is the bias on that, near the +0.4 EV the
+        // reference biases a daylight interior by. Measured on the office (bright, filled, window held under
+        // the shoulder, its channel means on the reference's) and the outdoor spawn (balanced, not blown).
+        ultra: "1.3");
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
@@ -1401,7 +1404,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<int> GlobalIlluminationLamps = CVar.Int(
         "r_gi_lamps",
-        0,
+        1,
         0,
         1,
         CVarOptions.Archive,
