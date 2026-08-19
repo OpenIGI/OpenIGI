@@ -264,6 +264,15 @@ internal sealed partial class DesktopGame : IDisposable
     private readonly MapComputerCamera _computerFlight = new();
     private readonly BinocularOptics _binocularOptics = new();
     private int _lastBinocularMilliseconds;
+
+    // The performance overlay's managed-allocation sampler. The GPU stage timers see none of this: a frame
+    // that allocates megabytes churns Gen0 and, on the large-object heap, triggers the Gen2 collections that
+    // stall the render thread -- a cost that shows only as a gap between the frame's wall time and the GPU's.
+    private long _perfAllocBytes;
+    private long _perfAllocTicks;
+    private double _perfAllocRate;
+    private long _benchmarkAllocStart;
+    private (int, int, int) _benchmarkGcStart;
     private ComputerHighlightCatalog? _computerHighlights;
     private MissionObjectiveRuntime? _missionObjectives;
     private CutsceneRuntime? _cutscenes;
@@ -2561,6 +2570,8 @@ internal sealed partial class DesktopGame : IDisposable
             if (_options.IsBenchmark && _loop.Clock.FrameCount == BenchmarkSchedule.WarmUpFrames)
             {
                 framePerformance.Reset();
+                _benchmarkAllocStart = GC.GetTotalAllocatedBytes();
+                _benchmarkGcStart = (GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
             }
             if (!_options.IsBenchmark || _loop.Clock.FrameCount <= BenchmarkSchedule.MeasurementEndFrame)
             {
@@ -4461,6 +4472,29 @@ internal sealed partial class DesktopGame : IDisposable
                         ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                         : "measuring...");
 
+                    // The CPU side the GPU timers cannot see. cpu is how much longer the frame's wall time
+                    // is than the GPU's -- submission, game logic and GC that did not overlap the GPU. alloc
+                    // is the managed allocation rate, eased so it is readable; a high figure is what feeds the
+                    // GC collections whose pauses read as the frame's stutter, and the LOH share of it drives
+                    // the Gen2 collections that stall hardest. gc shows the Gen0/1/2 collection counts so a
+                    // climbing Gen2 is visible while playing rather than only under a profiler.
+                    long allocNow = GC.GetTotalAllocatedBytes();
+                    long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+                    if (_perfAllocTicks != 0)
+                    {
+                        double seconds = (nowTicks - _perfAllocTicks) / (double)System.Diagnostics.Stopwatch.Frequency;
+                        if (seconds > 1e-4)
+                        {
+                            double sample = (allocNow - _perfAllocBytes) / seconds / (1024.0 * 1024.0);
+                            _perfAllocRate = (_perfAllocRate * 0.9) + (sample * 0.1);
+                        }
+                    }
+
+                    _perfAllocBytes = allocNow;
+                    _perfAllocTicks = nowTicks;
+                    double cpuMilliseconds = Math.Max(0.0, frame.AverageMilliseconds - gpu.Milliseconds);
+                    perf.Add(I($"cpu {cpuMilliseconds,5:0.00} ms   alloc {_perfAllocRate,6:0} MB/s   gc {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}"));
+
                     _device.Set2DProjection(_window.Width, _window.Height);
                     batch.Begin();
                     float performanceTopOffset = debugPanelHeight > 0f
@@ -4634,6 +4668,16 @@ internal sealed partial class DesktopGame : IDisposable
             IReadOnlyList<RenderStageTiming> gpuStages = _device.StageTimings();
             FramePerformanceStatistics frame = framePerformance.Statistics();
             GpuFrameTiming gpu = _device.GpuTiming();
+
+            if (_benchmarkAllocStart > 0)
+            {
+                long allocated = GC.GetTotalAllocatedBytes() - _benchmarkAllocStart;
+                int measured = Math.Max(1, frame.SampleCount);
+                _logger.Information(
+                    "Benchmark",
+                    FormattableString.Invariant(
+                        $"Managed alloc over {measured} measured frames: {allocated / (1024.0 * 1024.0):0.0} MB, {allocated / (double)measured / 1024.0:0.0} KB/frame; gc {GC.CollectionCount(0) - _benchmarkGcStart.Item1}/{GC.CollectionCount(1) - _benchmarkGcStart.Item2}/{GC.CollectionCount(2) - _benchmarkGcStart.Item3}."));
+            }
             RenderPerformanceSnapshot snapshot = new(
                 GraphicsPresetRegistry.Default.Current.ToString(),
                 _window.Width,
