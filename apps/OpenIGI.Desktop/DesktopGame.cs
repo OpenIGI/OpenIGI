@@ -56,7 +56,7 @@ internal sealed partial class DesktopGame : IDisposable
     // --- Environment, supplied by the composition root ---
     private readonly DesktopPlatformHost _platform;
     private readonly SilkGameWindow _window;
-    private readonly GLGraphicsDevice _device;
+    private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
     private readonly DesktopOptions _options;
     private readonly string _gamePath;
@@ -323,7 +323,7 @@ internal sealed partial class DesktopGame : IDisposable
     public DesktopGame(
         DesktopPlatformHost platform,
         SilkGameWindow window,
-        GLGraphicsDevice device,
+        IGraphicsDevice device,
         VirtualFileSystem fileSystem,
         DesktopOptions options,
         string gamePath,
@@ -3639,7 +3639,12 @@ internal sealed partial class DesktopGame : IDisposable
                             intensity);
                     }
 
-                    _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    // Local deferred lights are an OpenGL-backend extra outside the graphics seam; the
+                    // Vulkan backend reports no scene capture, so this path is not reached on it.
+                    if (_device is GLGraphicsDevice localLightDevice)
+                    {
+                        localLightDevice.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    }
                 }
 
                 if (mapScene is not null)

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Vulkan is a pointer-first API: every create-info is populated through fixed pointers and the
+         command buffers take raw handles, so the whole backend is unsafe by construction. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Vulkan" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
+    <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />
+    <PackageReference Include="Silk.NET.Shaderc" />
+    <PackageReference Include="Silk.NET.SPIRV.Reflect" />
+  </ItemGroup>
+
+</Project>

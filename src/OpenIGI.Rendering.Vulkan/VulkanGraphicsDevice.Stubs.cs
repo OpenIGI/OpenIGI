@@ -1,0 +1,183 @@
+using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering;
+
+namespace OpenIGI.Rendering.Vulkan;
+
+/// <summary>
+/// The members beyond the foundation's direct path — meshes, the deferred pipeline, compute, GI,
+/// shadows, occlusion and timing — as the honest placeholders they are until each is built.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Nothing here pretends to work. The capability-gated features report unavailable through
+/// <see cref="VulkanGraphicsDevice.Capabilities"/>, so the engine takes the same fallbacks a bare
+/// OpenGL 3.3 context would and never calls them; if one is called anyway it throws rather than
+/// silently doing nothing. The state setters the direct path still calls are no-ops because the state
+/// they set only feeds the deferred pipeline, which is off. The 3D draws are no-ops that warn once, so
+/// the game runs and presents its 2D layers while the world pass is still being built.
+/// </para>
+/// <para>
+/// Each group is one milestone of the port: meshes and the forward draw, then the offscreen scene and
+/// the deferred lighting, then compute and the storage resources it needs, then the shadow, GI and
+/// temporal passes, and finally the acceleration structures the hardware ray tracer traces.
+/// </para>
+/// </remarks>
+public sealed partial class VulkanGraphicsDevice
+{
+    // ---- The forward draw's outline (still a placeholder) -----------------------------------------
+
+    /// <inheritdoc/>
+    public void DrawOutline(
+        MeshHandle mesh,
+        ReadOnlySpan<MeshDrawRange> ranges,
+        in Matrix4f modelView,
+        Bgra32 colour,
+        float radius,
+        bool throughWalls) => ThrowIfDisposed();
+
+    // ---- Pipeline state the direct path still sets -------------------------------------------------
+
+    /// <inheritdoc/>
+    public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void ClearDetailFade() => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetAlphaHash(float seed) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetMaterialDetail(float strength) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    /// <remarks>The up-facing floor sheen is not modelled by the Vulkan lighting yet; recorded and ignored.</remarks>
+    public void SetFloorGloss(float gloss) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    /// <remarks>Recorded for when textures are created; the sampler rebuild is layered on with the 3D path.</remarks>
+    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps) => ThrowIfDisposed();
+
+    // ---- Deferred effects fed into the lighting (no-op until compute lands) ------------------------
+
+    // SetScreenIndirect and SetVolumetricFog are implemented in VulkanGraphicsDevice.Deferred.cs — the
+    // former feeds the near-field GI atlas into the lighting, the latter captures the camera position.
+
+    /// <inheritdoc/>
+    public void SetReflections(in ReflectionSettings settings) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetColourLookup(ColourLookupTable? table) => ThrowIfDisposed();
+
+    // ---- The surface-cache card atlas (not yet offered) -------------------------------------------
+
+    /// <inheritdoc/>
+    public bool BeginCardCapture(int width, int height)
+    {
+        ThrowIfDisposed();
+        return false;
+    }
+
+    /// <inheritdoc/>
+    public void SetCardPage(int x, int y, int width, int height) =>
+        throw new GraphicsDeviceException("No card capture is open; the Vulkan backend offers none yet.");
+
+    /// <inheritdoc/>
+    public void EndCardCapture() =>
+        throw new GraphicsDeviceException("No card capture is open; the Vulkan backend offers none yet.");
+
+    /// <inheritdoc/>
+    public void ReadCardAtlas(int attachment, Span<Bgra32> destination) =>
+        throw new GraphicsDeviceException("There is no card atlas; the Vulkan backend offers none yet.");
+
+    /// <inheritdoc/>
+    public TextureHandle CardAlbedo => TextureHandle.None;
+
+    /// <inheritdoc/>
+    public TextureHandle CardNormal => TextureHandle.None;
+
+    /// <inheritdoc/>
+    public TextureHandle CardMaterial => TextureHandle.None;
+
+    /// <inheritdoc/>
+    public TextureHandle CardDepth => TextureHandle.None;
+
+    // ---- Compute, storage buffers, storage images and volumes are in VulkanGraphicsDevice.Compute.cs.
+
+    // ---- Shadows, GI, temporal and pose state --------------
+    // SetShadows / SetIrradianceVolume / SetIrradianceVolumeSettings / SetTemporalAntiAliasing are
+    // implemented in VulkanGraphicsDevice.Deferred.cs — they feed the probe-lit deferred lighting.
+
+    // BeginShadowCascade / EndShadowCascade are implemented in VulkanGraphicsDevice.Deferred.cs — they
+    // render the sun's cascades into the shadow map the lighting then samples.
+
+    /// <inheritdoc/>
+    public void SetRealtimeProbeVolume(
+        TextureHandle red,
+        TextureHandle green,
+        TextureHandle blue,
+        TextureHandle distance,
+        Vector3f origin,
+        float spacing,
+        int countX,
+        int countY,
+        int countZ) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void ClearRealtimeProbeVolume() => ThrowIfDisposed();
+
+    // SetAmbientOcclusion is implemented in VulkanGraphicsDevice.Deferred.cs — it drives the occlusion pass.
+
+    /// <inheritdoc/>
+    public void SetPreviousPose(in Matrix4f previousModelView) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void ClearPreviousPose() => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetPoseInterpolation(float currentBlend, float previousBlend) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void ClearPoseInterpolation() => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetDebugView(DebugView view) => ThrowIfDisposed();
+
+    // ---- Occlusion queries and GPU timing (conservative placeholders) -----------------------------
+
+    /// <inheritdoc/>
+    public OcclusionQueryHandle CreateOcclusionQuery()
+    {
+        ThrowIfDisposed();
+        return default;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>Conservatively visible: without a real query, treating everything as visible never hides geometry.</remarks>
+    public bool OcclusionVisible(OcclusionQueryHandle query) => true;
+
+    /// <inheritdoc/>
+    public void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds) =>
+        ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void DestroyOcclusionQuery(OcclusionQueryHandle query) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void SetStageTiming(bool enabled) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void BeginStageTiming(RenderStage stage) => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public void EndStageTiming() => ThrowIfDisposed();
+
+    /// <inheritdoc/>
+    public IReadOnlyList<RenderStageTiming> StageTimings() => [];
+
+    /// <inheritdoc/>
+    public GpuFrameTiming GpuTiming() => default;
+}
