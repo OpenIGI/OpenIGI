@@ -110,6 +110,14 @@ namespace OpenIGI.Rendering;
 /// the optics fade in as the device is raised. Mutually exclusive with <paramref name="Tactical"/> —
 /// the map computer replaces the first-person view — see <see cref="BinocularDisplaySettings"/>.
 /// </param>
+/// <param name="ExposureRate">
+/// How fast the adapted exposure eases towards the scene's brightness each frame, from 0 to 1, when
+/// <paramref name="AutoExposure"/> is on. The small default is a slow eye-adaptation. The game raises it
+/// for the moment after a level loads: the real-time GI takes many frames to converge from dark to its
+/// full bounce, and a slow exposure would over-lift the dim early frames and then walk visibly back down
+/// as the light fills in -- a scene that loads bright and dims. A fast rate during that window lets the
+/// exposure track the convergence instead, holding the displayed brightness steady while the light settles.
+/// </param>
 
 public readonly record struct PostProcessSettings(
     ToneMapOperator ToneMap = ToneMapOperator.Neutral,
@@ -135,7 +143,8 @@ public readonly record struct PostProcessSettings(
     bool AutoExposure = false,
     bool GreenPhosphor = false,
     TacticalDisplaySettings Tactical = default,
-    BinocularDisplaySettings Binocular = default)
+    BinocularDisplaySettings Binocular = default,
+    float ExposureRate = 0.04f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.

@@ -2586,10 +2586,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         Dispatch(_autoExposureReduce, groups, groups);
         MemoryBarrier(MemoryBarrierScope.StorageBuffer);
 
-        // Middle grey as the target, a small step per frame so the eye adapts over a moment rather than
-        // snapping, and a range that keeps a black or blown scene from driving the exposure to an extreme.
+        // Middle grey as the target, the step per frame the caller chose -- a slow eye-adaptation in
+        // steady play, faster for the moment after a load while the GI converges -- and a range that keeps
+        // a black or blown scene from driving the exposure to an extreme.
         SetComputeUniform(_autoExposureAdapt, "uKey", 0.18f);
-        SetComputeUniform(_autoExposureAdapt, "uRate", 0.04f);
+        SetComputeUniform(_autoExposureAdapt, "uRate", Math.Clamp(post.ExposureRate, 0f, 1f));
         SetComputeUniform(_autoExposureAdapt, "uMin", 0.05f);
 
         // Capped at 6x rather than 16x: a dark interior pulls the metered average right down, and a 16x

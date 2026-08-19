@@ -184,6 +184,20 @@ internal sealed partial class DesktopGame : IDisposable
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
     private int _cardBounceFrame;
+
+    // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
+    // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
+    // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
+    private int _giExposureWarmup;
+
+    // How long that warm-up lasts. The radiance cache's running average settles over maxFrames sweeps and
+    // one sweep is spread over several frames, so full convergence is a couple of seconds; this covers it.
+    private const int GiExposureWarmupFrames = 150;
+
+    // The exposure adaptation rate during the warm-up and in steady play. Fast while the GI converges so the
+    // exposure follows it and the picture holds its brightness; slow after, for an unobtrusive eye-adaptation.
+    private const float GiExposureWarmupRate = 0.35f;
+    private const float ExposureSteadyRate = 0.04f;
     private SurfaceCacheCapture.Result? _capturedCards;
     private SurfaceCacheInstances? _cardInstances;
     private DistanceFieldBake? _sdfBake;
@@ -2706,7 +2720,17 @@ internal sealed partial class DesktopGame : IDisposable
                     AutoExposure: RenderCVars.AutoExposure.Value,
                     GreenPhosphor: mapScene is not null && TacticalComputer is null,
                     Tactical: computerDisplay,
-                    Binocular: binocularDisplay);
+                    Binocular: binocularDisplay,
+
+                    // Fast while the GI is still filling in after a load, slow once it has settled. Counted
+                    // down here so a frame that never reaches the cache update (a menu, a paused load) does
+                    // not burn the window; the cache's own reset above is what refills it.
+                    ExposureRate: _giExposureWarmup > 0 ? GiExposureWarmupRate : ExposureSteadyRate);
+
+                if (_giExposureWarmup > 0)
+                {
+                    _giExposureWarmup--;
+                }
                 if (mapScene is { } mapView)
                 {
                     aspectRatio = (float)mapView.Viewport.Width / Math.Max(1, mapView.Viewport.Height);
@@ -3094,7 +3118,12 @@ internal sealed partial class DesktopGame : IDisposable
                         cacheCards.UpdateRadianceCache(
                             liveField,
                             SkyFillColour(),
-                            maxFrames: 32,
+                            // A short running average while the level is warming up, so the cache climbs to
+                            // its converged value in a handful of frames rather than easing there over a
+                            // couple of seconds -- which is what read as the scene loading bright and dimming.
+                            // A long one after, where a slow average is what keeps the steady field from
+                            // shimmering under the per-sweep ray jitter.
+                            maxFrames: _giExposureWarmup > 0 ? 6 : 32,
                             scale: RenderCVars.RadianceCacheScale.Value,
                             skyReject: RenderCVars.GlobalIlluminationLeakReject.Value);
 

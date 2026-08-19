@@ -1045,6 +1045,10 @@ internal sealed partial class DesktopGame
             // A fresh pass has no history to accumulate onto, so the next bounce converges in one shot.
             _cardBounceFrame = 0;
 
+            // The cache now climbs from dark to its full bounce over the frames that follow; hold the
+            // exposure on a fast rate for that stretch so it tracks the light in rather than dimming after.
+            _giExposureWarmup = GiExposureWarmupFrames;
+
             if (_cardLighting is not null)
             {
                 // The lamp fixtures the level's emissive geometry implies -- the ceiling tubes read as
