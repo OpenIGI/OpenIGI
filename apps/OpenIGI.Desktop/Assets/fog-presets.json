@@ -30,11 +30,13 @@
 
   "missions": {
     "1": {
-      "$comment": "Cold clear morning over snow. THIN -- density 0.010 hazed the whole valley to fog-white by 500 m (1-e^-5), which read as overcast rather than clear; a fifth of that keeps atmospheric depth in the far distance while the mountains stay crisp and sunny.",
-      "density": 0.002,
+      "$comment": "Cold clear morning over snow. THIN -- earlier passes read as overcast, nothing like the retail's crisp clear morning. The wash that hung even on near buildings was the flat terms, not distance: a 0.12 uniform fraction laid fog at every height and a 0.35 multiple-scattering glow lit it like a light-box. Cut both right down and drop the density to 0.0008, so what is left is a thin aerial depth on the far mountains and clear air over the yard. Forward scatter eased too, since a low sun through the denser lobe washed the distance orange.",
+      "density": 0.0008,
       "heightFalloff": 30.0,
       "albedo": [0.94, 0.96, 1.0],
-      "anisotropy": 0.72
+      "anisotropy": 0.55,
+      "multipleScattering": 0.12,
+      "uniformFraction": 0.03
     },
     "3": {
       "$comment": "Overcast. Thicker and flatter -- less forward scatter, more ambient.",
