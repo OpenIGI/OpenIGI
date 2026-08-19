@@ -680,10 +680,11 @@ public static class RenderCVars
         enhanced: "1",
         high: "1.5",
 
-        // 1.5 at ultra, down from 2.5. With the higher-resolution, nearer cascade the wide filter was no
-        // longer hiding aliasing, only blurring the window's shadow grid; a tighter kernel keeps the grid's
-        // edges crisp -- the reference's shadows are soft but defined, not smeared.
-        ultra: "1.5");
+        // 3 at ultra. The reference's sun casts a soft penumbra -- a window's shadow grid lands on the
+        // floor with edges that widen with distance, not the hard stencil a single-tap shadow gives. A
+        // wider filter is what reads as that penumbra; the grid stays defined at this radius rather than
+        // smearing away, matching the reference's soft-but-legible shadows against a crisp one.
+        ultra: "3");
 
     /// <summary>How many directions each pixel searches for its horizons, or 0 for no occlusion.</summary>
     /// <remarks>
@@ -726,6 +727,12 @@ public static class RenderCVars
         "How deeply ambient occlusion darkens; 1 is the physical amount.");
 
     /// <summary>How many samples gather bounced colour, or 0 for no screen-space bounce.</summary>
+    /// <remarks>
+    /// Off at ultra, where the world-space radiance cache already carries the bounce. Running both stacked
+    /// a second, screen-space estimate on top of the cache's -- and its occlusion term read darker than the
+    /// cache's own, dragging interiors down a stop while the per-pixel screen march added noise the cache
+    /// does not have. High keeps it (2 samples) because high has no radiance cache to carry the bounce.
+    /// </remarks>
     public static readonly NumericCVar<int> ScreenSpaceGi = Presets.Define(
         CVar.Int(
             "r_ssgi",
@@ -737,7 +744,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "2",
-        ultra: "4");
+        ultra: "0");
 
     /// <summary>How strongly the bounced colour is added back.</summary>
     public static readonly NumericCVar<float> ScreenSpaceGiIntensity = CVar.Float(
@@ -1281,14 +1288,24 @@ public static class RenderCVars
         CVarOptions.Archive,
         "How strongly surfaces reflect; 1 is the physical amount.");
 
-    /// <summary>The roughness past which a surface stops reflecting sharply enough to march for.</summary>
+    /// <summary>The roughness past which a surface stops marching a screen ray and keeps the smooth fallback.</summary>
+    /// <remarks>
+    /// Held low deliberately. A screen-marched reflection is a SINGLE ray, so on anything but a near-mirror
+    /// it reads the one surface that ray happens to hit -- for a parquet floor or a painted wall that is a
+    /// dark, shadowed patch of the room, which the march then substitutes for the smooth probe fallback and
+    /// the surface CRUSHES a stop or two darker than it should, besides shimmering as the ray wanders under
+    /// motion. That single-ray march is what made interiors read dark and noisy. At 0.22 only genuinely
+    /// glossy surfaces -- glass, a monitor, polished metal -- still march, where one ray IS the reflection;
+    /// everything rougher keeps the probe field's smooth, bright, stable fallback. The reference denoises a
+    /// many-ray reflection instead; this is the single-ray equivalent of not marching where it cannot help.
+    /// </remarks>
     public static readonly NumericCVar<float> ReflectionMaxRoughness = CVar.Float(
         "r_ssr_max_roughness",
-        0.6f,
+        0.22f,
         0f,
         1f,
         CVarOptions.Archive,
-        "Roughest surface that still reflects. Rougher ones scatter too widely for one ray to describe.");
+        "Roughest surface that still marches a screen ray; rougher ones keep the smooth probe fallback.");
 
     /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
     /// <remarks>
