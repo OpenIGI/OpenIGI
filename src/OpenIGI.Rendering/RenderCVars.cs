@@ -412,7 +412,7 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> SkyLight = CVar.Float(
         "r_sky_light",
-        1.35f,
+        0.8f,
         0f,
         16f,
         CVarOptions.Archive,
@@ -1075,13 +1075,21 @@ public static class RenderCVars
             "r_sun_scale",
             1f,
             0.25f,
-            4f,
+            16f,
             CVarOptions.Archive,
             "Scales the real-time sun so sunlit surfaces read as sunlit. Only the dynamic lighting model reads it."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
-        ultra: "2");
+
+        // 7 at ultra. The old 2 left the sun barely brighter than the indirect fill, so its shafts washed
+        // into an evenly-lit floor -- nothing like the reference, whose bright window pattern reads clearly
+        // against a darker floor. A real daylight sun is far more intense than the room's bounce; scaled up
+        // to that, the direct light dominates the surfaces it lands on and its shafts read as shafts, while
+        // the sky fill (dialled DOWN to match, see r_sky_light) no longer floods the shadow between them.
+        // Auto-exposure adapts to the brighter key, so the frame does not simply blow -- measured on the
+        // office (shafts crisp, walls held) and the outdoor spawn (bright, not clipped).
+        ultra: "7");
 
     /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
     /// <remarks>
