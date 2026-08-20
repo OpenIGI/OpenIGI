@@ -787,6 +787,99 @@ public sealed class RetailCutsceneRuntimeTests
         }
     }
 
+    /// <summary>
+    /// Mission 4's parked Bell rests on its pad at the authored pose instead of sinking through the
+    /// terrain while its collective is below hover, then leaves the pad along the authored path
+    /// once cyclic pitches the disc. Retail's Heli collision flag grounds the airframe; excess
+    /// collective alone must not launch it up the world Z axis.
+    /// </summary>
+    [RequiresGameDataFact]
+    public void MissionFourParkedHelicopterRestsOnTerrainThenLiftsOff()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions,
+            fs,
+            resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
+            terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+
+        // The parked Bell rests low (skids on its pad) while the airborne getaway Bell flies far above
+        // it; this ceiling separates the two 709_01_1 instances. It is the same parked-helicopter
+        // Z threshold the suite uses elsewhere to pick the parked copy.
+        const double ParkedBellZCeiling = 42_800d;
+        WorldPlacement parkedBell = Assert.Single(scene.Placements, placement =>
+            placement.Instance.Name == "709_01_1" && placement.Position.Z < ParkedBellZCeiling);
+        GameTask helicopter = parkedBell.Owner;
+
+        // The transport Bell rests on the pad inside a gated container whose authored condition needs
+        // the player to enter area 156 - something a headless runtime test cannot supply. Force the
+        // container active so the flight programme actually runs, matching how the intro activates it.
+        if (root.Tree.FromId(3902) is ConditionalContainerTask { } transportBell)
+        {
+            transportBell.Condition = "1";
+        }
+
+        // Tick until the Bell exposes its rest pose on the pad, then measure its take-off profile.
+        Vector3d parked = default;
+        int activatedTick = -1;
+        for (int t = 0; t < 20_000; t++)
+        {
+            runtime.Tick();
+            if (runtime.TryGetDrawTransform(helicopter, out parked, out _))
+            {
+                activatedTick = t;
+                break;
+            }
+        }
+        Assert.True(activatedTick >= 0, "parked Bell never exposed a draw transform");
+        double pad = parked.Z; // authored rest pose: skids on the pad, origin just above it
+        TerrainData terrain = Assert.IsAssignableFrom<TerrainData>(mission.Terrain);
+        Assert.True(TerrainProbe.TryGetGroundHeight(
+                terrain, parked.X, parked.Y, 45_000.0, 42_000.0, out double terrainAtPad),
+            "terrain lookup found no ground under the parked Bell");
+        Assert.True(terrainAtPad <= pad && pad - terrainAtPad < 8d,
+            $"parked Bell must sit on the pad: pad={pad:R}, terrain={terrainAtPad:R}");
+
+        double lowest = double.MaxValue;
+        double farthest = 0d;
+        for (int tick = 0; tick < 600; tick++)
+        {
+            runtime.Tick();
+            if (tick % 9 == 0)
+            {
+                Assert.True(runtime.TryGetDrawTransform(helicopter, out Vector3d position, out _));
+                lowest = Math.Min(lowest, position.Z);
+                double slide = Math.Sqrt(
+                    ((position.X - parked.X) * (position.X - parked.X))
+                    + ((position.Y - parked.Y) * (position.Y - parked.Y)));
+                farthest = Math.Max(farthest, slide);
+                Assert.True(TerrainProbe.TryGetGroundHeight(
+                        terrain, position.X, position.Y, 45_000.0, 42_000.0, out double ground),
+                    $"terrain lookup found no ground at tick={tick}");
+                Assert.True(position.Z >= ground - 0.05d,
+                    $"helicopter must not sink below the terrain: tick={tick}, z={position.Z:R}, terrain={ground:R}");
+            }
+        }
+
+        // Collision holds the skids through the pre-cyclic collective ramp. Lift-off is
+        // cyclic converting that lift into the authored path, not a vertical launch.
+        Assert.True(lowest >= pad - 0.1d,
+            $"parked Bell must stay on the pad until lift-off: lowest={lowest:R}, pad={pad:R}");
+        Assert.True(farthest > 20d,
+            $"parked Bell must leave the pad along its path after cyclic: slide={farthest:R}");
+    }
+
+
     private static void RegisterCutsceneTypes(TaskTypeRegistry types)
     {
         PlayerTaskTypes.RegisterAll(types);

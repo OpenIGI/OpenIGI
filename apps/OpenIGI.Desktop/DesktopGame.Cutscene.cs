@@ -22,6 +22,13 @@ internal sealed partial class DesktopGame
 
     private void DrawCutsceneFraming(SpriteBatch batch, CutsceneFrame frame)
     {
+        if (_window.Width <= 0 || _window.Height <= 0)
+        {
+            // A minimized/hidden window reports 0x0; a zero-sized projection faults the renderer, so
+            // defer the letterbox until a real size arrives.
+            return;
+        }
+
         float width = _window.Width;
         float height = _window.Height;
         _device.Set2DProjection(_window.Width, _window.Height);

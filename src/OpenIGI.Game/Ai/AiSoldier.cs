@@ -225,12 +225,24 @@ public sealed class AiSoldier
     public AiVision Vision { get; }
 
     /// <summary>
+    /// Whether the human this brain calls <em>the enemy</em> — the player — is actually hostile. The retail
+    /// guard never shoots a human on the same side: detection and every player-origin noise event are gated
+    /// on the team comparison, so a friendly (team 0) patrol ignores the player (also team 0) instead of
+    /// aiming at and firing on it. Defaults to <see langword="true"/> so brains constructed without a team
+    /// (and every existing unit test) keep treating the player as an enemy.
+    /// </summary>
+    public bool PlayerIsEnemy { get; set; } = true;
+
+    /// <summary>
     /// Gets the eye snapshot the last sweep tested against — <c>HumanAI+14896</c>, rebuilt on every sweep.
     /// </summary>
     public AiEyeSnapshot Eye { get; private set; }
 
     /// <summary>Gets its event queues.</summary>
     public AiEventQueues Events { get; }
+
+    /// <summary>Diagnostics: the last event type this brain dispatched, or <see langword="null"/>.</summary>
+    public AiEvent? LastDispatchedEvent { get; set; }
 
     /// <summary>Gets the live pending-action program used for event interrupt arbitration.</summary>
     public AiPendingActionList PendingActions => _pendingActions;
@@ -536,6 +548,9 @@ public sealed class AiSoldier
     private bool _scriptedAnimation;
     private int _lastTick;
 
+    /// <summary>Diagnostics: the last tick this brain's <see cref="Tick"/> was entered.</summary>
+    public int LastTick => _lastTick;
+
     /// <summary>Declares an event type's dispatch priority — <c>AIFunction_SetEventPriority</c> (<c>0x44E0C0</c>).</summary>
     /// <param name="type">The event type the script wants considered.</param>
     /// <remarks>
@@ -604,15 +619,30 @@ public sealed class AiSoldier
     public bool HearGunshot(Vector3d shotPosition, bool silenced)
         => HearGunshot(
             shotPosition,
-            silenced ? AiScriptApi.SilencedGunshotRange : AiScriptApi.GunshotRange);
+            silenced ? AiScriptApi.SilencedGunshotRange : AiScriptApi.GunshotRange,
+            fromPlayer: true);
 
     /// <summary>Delivers a gunshot using the weapon record's exact AI detection range.</summary>
     /// <param name="shotPosition">Where the round was fired.</param>
     /// <param name="range">The weapon's <c>AI Detection Range</c>, in engine units.</param>
     /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
     public bool HearGunshot(Vector3d shotPosition, double range)
+        => HearGunshot(shotPosition, range, fromPlayer: true);
+
+    /// <summary>
+    /// Delivers a gunshot using the weapon record's exact AI detection range, distinguishing who fired it.
+    /// </summary>
+    /// <param name="shotPosition">Where the round was fired.</param>
+    /// <param name="range">The weapon's <c>AI Detection Range</c>, in engine units.</param>
+    /// <param name="fromPlayer">
+    /// Whether the player fired the round. A friendly (non-enemy) soldier is deaf to the player's own shots
+    /// — they share the player's side — but must still hear a hostile AI soldier firing, so this gate applies
+    /// only to player-origin gunshots.
+    /// </param>
+    /// <returns><see langword="true"/> when a gunshot event was posted.</returns>
+    public bool HearGunshot(Vector3d shotPosition, double range, bool fromPlayer)
     {
-        if (Activity == AiSoldierActivity.Dead)
+        if (Activity == AiSoldierActivity.Dead || (fromPlayer && !PlayerIsEnemy))
         {
             return false;
         }
@@ -661,7 +691,7 @@ public sealed class AiSoldier
     /// </remarks>
     public bool ReceiveGunshotMiss(Vector3d segmentStart, Vector3d segmentEnd, Vector3d shooterPosition)
     {
-        if (Activity == AiSoldierActivity.Dead)
+        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy)
         {
             return false;
         }
@@ -715,7 +745,7 @@ public sealed class AiSoldier
         Vector3d shooterPosition,
         double radiusInUnits = GroundImpactRadiusInUnits)
     {
-        if (Activity == AiSoldierActivity.Dead || radiusInUnits < 0.0)
+        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy || radiusInUnits < 0.0)
         {
             return false;
         }
@@ -765,7 +795,7 @@ public sealed class AiSoldier
     /// </remarks>
     public bool ReceiveWalk(Vector3d stepPosition, Vector3d walkerPosition, double radiusInUnits)
     {
-        if (Activity == AiSoldierActivity.Dead)
+        if (Activity == AiSoldierActivity.Dead || !PlayerIsEnemy)
         {
             return false;
         }
@@ -904,6 +934,31 @@ public sealed class AiSoldier
 
     /// <summary>Gets the orientation matrix a renderer should draw it with.</summary>
     public Matrix3f Orientation => Matrix3f.FromEngineEulerAngles(0f, 0f, Facing);
+
+    /// <summary>Diagnostic: the steering frame's Forward from the last Advance.</summary>
+    public float LastSteeringForward { get; private set; } = -1f;
+
+    /// <summary>Diagnostic: the steering outcome from the last Advance.</summary>
+    public AiMovementOutcome LastSteeringOutcome { get; private set; }
+
+    /// <summary>Diagnostic: the root-motion figure the last Advance was given.</summary>
+    public double LastAdvanceRm { get; private set; } = -1.0;
+
+    /// <summary>Diagnostic: the destination Advance last computed for the move branch.</summary>
+    public Vector3d? LastMovedTo { get; private set; }
+
+    /// <summary>Diagnostic: the facing (degrees) when Advance last moved.</summary>
+    public double LastFacingDeg { get; private set; }
+
+    /// <summary>Diagnostic: the last separation resolution (refused, from, to, resolved).</summary>
+    public (bool refused, Vector3d from, Vector3d to, Vector3d resolved) LastSeparation { get; set; }
+
+    /// <summary>Diagnostic: the move was allowed after removing same-team bodies from the blocker set.</summary>
+    public bool LastSeparationFallback { get; set; }
+
+    /// <summary>Diagnostic: the current route's first waypoint, in engine units.</summary>
+    public Vector3d? DebugWaypoint =>
+        _route.Count > 0 && _graph?.NodeAt(_route[0]) is { } wp ? wp.Position : null;
 
     /// <summary>Gives the soldier an occlusion test, so it stops seeing through walls.</summary>
     /// <param name="sight">The test, or <see langword="null"/> to see through everything.</param>
@@ -1457,6 +1512,63 @@ public sealed class AiSoldier
         }
     }
 
+    /// <summary>Creates the fresh HumanAI instance installed by a GuardGenerator respawn.</summary>
+    /// <param name="position">The authored soldier spawn position.</param>
+    /// <param name="facing">The authored soldier heading.</param>
+    /// <param name="weapon">
+    /// Reads the respawned brain's weapon state. The owner is supplied so renderer callbacks cannot retain
+    /// the dead brain while querying mounted-gun state.
+    /// </param>
+    /// <returns>A new brain with the same level wiring and no state carried from the dead instance.</returns>
+    /// <remarks>
+    /// IGI1's <c>0x488000</c>/<c>0x488040</c> path constructs the whole stored child subtree again. A new
+    /// <see cref="AiSoldier"/> is the managed equivalent: CREATE will run again on its first tick, while
+    /// immutable level services (graph, scripts, collision queries and combat row) are reattached here.
+    /// </remarks>
+    public AiSoldier Respawned(
+        Vector3d position,
+        float facing,
+        Func<AiSoldier, AiCombatWeaponState>? weapon = null)
+    {
+        int seed = Math.Max(0, RuntimeId - 1);
+        AiSoldier fresh = new(_graph, position, facing, seed & 3, seed, _random)
+        {
+            PlayerIsEnemy = PlayerIsEnemy,
+            RuntimeId = RuntimeId,
+        };
+
+        fresh.SetLineOfSight(_sight);
+        fresh.SetEyeTransform(_eyePosition, _eyeOrientation);
+        fresh.SetGroundQuery(_ground);
+        fresh.SetPatrolPaths(_paths);
+        fresh.SetResponseRouter(_responseRouter);
+        fresh.SetScriptSound(_scriptSound);
+        fresh.SetDoorQuery(_doors);
+        fresh.SetAlarmStatusResolver(_alarmStatus);
+        fresh.SetGunnerStatusResolver(_gunnerStatus);
+        fresh.SetStationaryGunResolver(_stationaryGun);
+        fresh.SetDefaultTarget(_defaultTarget);
+        fresh.SetNodeOccupancy(_occupancy);
+        fresh.SetGrenadeAvailable(HasGrenade);
+
+        if (_claims is not null && _locateTask is not null && _activateTask is not null)
+        {
+            fresh.SetActivateSupport(_claims, _locateTask, _activateTask);
+        }
+
+        if (_host is not null && _script is not null)
+        {
+            fresh.SetScript(_host, _script, _archetypeScript);
+        }
+
+        if (CombatParameters is not null && weapon is not null)
+        {
+            fresh.SetCombat(_type, CombatParameters, () => weapon(fresh));
+        }
+
+        return fresh;
+    }
+
     /// <summary>Gets the corrective velocity the death-fall solver returned, in engine units per tick.</summary>
     public Vector3d DeathFallVelocity { get; private set; }
 
@@ -1522,6 +1634,11 @@ public sealed class AiSoldier
     /// 0.5 m, 0.25 m crouched). Defaults to <paramref name="enemy"/> when the caller has no body.
     /// </param>
     /// <param name="enemyCrouching">Whether the enemy is crouching, which halves the aim raise.</param>
+    /// <param name="enemyIsSoldier">
+    /// Whether the fed enemy is another soldier rather than the player. The player is only a target to a
+    /// hostile team, so a friendly never registers it; another soldier is a target to any soldier whose
+    /// team differs from the enemy's own, regardless of the player relationship.
+    /// </param>
     public void Tick(
         int tick,
         Vector3d enemy,
@@ -1530,7 +1647,8 @@ public sealed class AiSoldier
         bool alarmWasOn = false,
         bool enemyAlive = true,
         Vector3d? enemyFeet = null,
-        bool enemyCrouching = false)
+        bool enemyCrouching = false,
+        bool enemyIsSoldier = false)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
@@ -1592,7 +1710,12 @@ public sealed class AiSoldier
         // and UNREGISTERS one that reports itself invalid -- a corpse -- so the AI loses it. Reproduce the
         // unregister: the slot goes not-visible and the sweep is skipped, so no detection event fires and
         // the guard stops seeing a threat where the body fell.
-        if (!enemyAlive)
+        // A SAME-TEAM player is equally not a target: the retail guard never engages a human on its own
+        // side, so a friendly patrol must not register or fire on the player. The slot is held unregistered
+        // exactly as a corpse's is, so no detection, alarm or combat ever starts for it. The one exception
+        // is a fed soldier enemy: NPC-vs-NPC combat feeds a soldier of the opposing team into the slot the
+        // same way the player's eye is fed, and team rivalry (not the player relationship) decides it.
+        if (!enemyAlive || (!PlayerIsEnemy && !enemyIsSoldier))
         {
             _playerSlot.IsVisible = false;
             _playerSlot.IsInCone = false;
@@ -1987,6 +2110,7 @@ public sealed class AiSoldier
             }
 
             bool handled = _host.Run(_script, this, type, slot, _archetypeScript);
+            LastDispatchedEvent = type;
             if (handled)
             {
                 QueueActions(_host.Produced);
@@ -2605,6 +2729,10 @@ public sealed class AiSoldier
 
         AiMovementOutcome outcome = _steering.Step(
             Position, Orientation, waypoint, 0f, 0f, out AiSteeringFrame frame);
+        LastSteeringForward = frame.Forward;
+        LastSteeringOutcome = outcome;
+        LastAdvanceRm = rootMotionThisTick;
+
 
         if (outcome == AiMovementOutcome.WaypointReached)
         {
@@ -2626,6 +2754,8 @@ public sealed class AiSoldier
         {
             double x = Position.X + (Math.Sin(-Facing) * rootMotionThisTick);
             double y = Position.Y + (Math.Cos(Facing) * rootMotionThisTick);
+            LastMovedTo = new Vector3d(x, y, Position.Z);
+            LastFacingDeg = Facing * 180.0 / Math.PI;
             Position = new Vector3d(x, y, QueryGroundHeight(x, y, waypoint));
         }
     }

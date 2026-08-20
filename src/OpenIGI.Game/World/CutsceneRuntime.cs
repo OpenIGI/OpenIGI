@@ -1,3 +1,5 @@
+using System.Globalization;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Game.Player;
@@ -19,6 +21,23 @@ public sealed class CutsceneRuntime
     /// <summary>The fixed update frequency used by retail cutscenes and animation programmes.</summary>
     public const int Frequency = 30;
 
+    /// <summary>The narrow vertical band in which an airframe has touched supporting geometry.</summary>
+    /// <remarks>
+    /// Contact is resolved after the native-style integration step. This small band catches the exact
+    /// rest case as well as the following tick's shallow penetration without affecting a genuinely
+    /// airborne path.
+    /// </remarks>
+    private const double GroundContactToleranceUnits = 64.0;
+
+    private static readonly AsyncLocal<string?> AirframePathLogLocal = new();
+
+    /// <summary>[AIRFRAME-PATH] Per-test hook (AsyncLocal) so parallel suites do not share one file.</summary>
+    public static string? AirframePathLog
+    {
+        get => AirframePathLogLocal.Value;
+        set => AirframePathLogLocal.Value = value;
+    }
+
     private readonly GameTask _root;
     private readonly ScriptVarRegistry _variables;
     private readonly LevelExpressionRuntime _expressions;
@@ -37,8 +56,31 @@ public sealed class CutsceneRuntime
     private readonly Func<string, float>? _modelLength;
     private readonly Func<string, float>? _modelPivot;
     private readonly VehiclePhysicsRegistry? _vehiclePhysics;
+    private readonly TerrainData? _terrain;
+    private readonly IIgiLogger _logger;
+    private ObjectCollisionIndex? _collisionIndex;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
+    private readonly List<string> _diagnostics = [];
+
+    /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
+    /// <remarks>
+    /// Wired by the host when a level has placed pads, crates or rooftops under a vehicle the
+    /// terrain half cannot see. The terrain half mirrors retail's <c>0x4CBE40</c>; the object sweep
+    /// mirrors retail's placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>).
+    /// </remarks>
+    public ObjectCollisionIndex? CollisionIndex
+    {
+        get => _collisionIndex;
+        set
+        {
+            _collisionIndex = value;
+            if (value is not null)
+            {
+                RestCollisionHelisOnSupport();
+            }
+        }
+    }
 
     /// <summary>Builds the live cutscene state for a loaded level.</summary>
     public CutsceneRuntime(
@@ -48,7 +90,9 @@ public sealed class CutsceneRuntime
         Action<CutsceneSoundEvent>? soundChanged = null,
         Func<string, float>? modelLength = null,
         Func<string, float>? modelPivot = null,
-        VehiclePhysicsRegistry? vehiclePhysics = null)
+        VehiclePhysicsRegistry? vehiclePhysics = null,
+        TerrainData? terrain = null,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
@@ -59,6 +103,8 @@ public sealed class CutsceneRuntime
         _modelLength = modelLength;
         _modelPivot = modelPivot;
         _vehiclePhysics = vehiclePhysics;
+        _terrain = terrain;
+        _logger = logger ?? NullLogger.Instance;
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
         List<CutSceneTask> cutscenes = [];
 
@@ -100,13 +146,20 @@ public sealed class CutsceneRuntime
                     && data is IReadOnlyList<AnimDataEntry> entries)
                 {
                     int target = Int(declared, "TargetID", Int(declared, "Target ID", -1));
-                    _animations.Add(new AnimationState(
+                    AnimationState animation = new(
                         declared,
                         target,
                         order,
                         Text(declared, "Run"),
                         Bool(declared, "Initial run"),
-                        new AnimDataProgram(entries)));
+                        new AnimDataProgram(entries));
+                    _animations.Add(animation);
+
+                    // Retail exports AnimTask's running tick counter so level expressions such as
+                    // container conditions (e.g. mission 4's ConditionalContainer_300 waiting on
+                    // AnimTask_850.nTick > 66 * GAME_FREQUENCY) can time off it. Without this export
+                    // those conditions never resolve and the gated tasks stay dormant forever.
+                    variables.BindInt(declared, "nTick", () => animation.Tick, value => animation.Tick = value);
                 }
                 else if (string.Equals(task.Type.Name, "ConditionalSound", StringComparison.Ordinal))
                 {
@@ -130,6 +183,12 @@ public sealed class CutsceneRuntime
         {
             _scenes.Add(new SceneState(cutscene, ReadShots(cutscene)));
         }
+
+        // QVM children of a Heli/Plane/Train are already parented by CaptureTransform
+        // (Walk is parent-then-child). Mission 1 Jones 1666 is a sibling of the car, so
+        // Human ground 0x462390 / AttachedMovement 0x462CF0 still needs the near-vehicle
+        // pass for those staged cabin copies that are not tree children.
+        AttachStagedHumansToNearestVehicle();
 
         // The gate is prepared by the mission loader before this runtime is created. Refreshing here
         // replaces its former steady-game snapshot with the authored initial registration state.
@@ -170,6 +229,14 @@ public sealed class CutsceneRuntime
         UpdateFrame();
     }
 
+    /// <summary>Gets the number of <see cref="Tick"/> calls applied since construction.</summary>
+    public int SimulationTick { get; private set; }
+
+    /// <summary>
+    /// Ride / rest / attach notes for tests and playtest logs (task id + tick). Capped.
+    /// </summary>
+    public IReadOnlyList<string> Diagnostics => _diagnostics;
+
     /// <summary>Gets whether an authored cutscene currently owns the camera.</summary>
     public bool IsPlaying => ActiveScene is not null;
 
@@ -189,7 +256,12 @@ public sealed class CutsceneRuntime
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
     {
+        SimulationTick++;
         RefreshContainers(executeTransitions: true);
+        // Human_SetParent (0x462390 / 0x462CF0) binds cabin copies when the vehicle
+        // is registered. M4 Harrison 309 opens with Heli 800 at 45 s — a one-shot
+        // attach at construction leaves them on the dirt beside an empty hull.
+        AttachStagedHumansToNearestVehicle();
 
         foreach (TimerState timer in _timers)
         {
@@ -218,6 +290,7 @@ public sealed class CutsceneRuntime
             }
 
             int previousTick = animation.Program.Tick;
+            animation.Tick++;
             animation.Program.SeekTo(previousTick + 1);
             ApplyAnimation(animation.TargetId, animation.Order, animation.Program);
             if (previousTick < 0)
@@ -262,7 +335,8 @@ public sealed class CutsceneRuntime
 
             if (scene.IsRun)
             {
-                // CutScene_RunHandler (IGI.exe 0x43A470) runs child AnimTasks before the scene,
+                // The retail CutScene run callback begins at IGI.exe 0x43A450 (0x43A470 is
+                // inside that function). It runs child AnimTasks before the scene,
                 // evaluates Run, and then calls CutScene_SetCamera with the *current* nTick. The
                 // camera marks isFinished only when that old tick is beyond the authored duration;
                 // Run stays latched for this frame and nTick is incremented afterwards. The Run
@@ -378,7 +452,9 @@ public sealed class CutsceneRuntime
             orientation = state.Orientation;
             // Child Train tasks have no authored world position: even before the engine moves, their
             // derived consist placement must replace WorldScene's position-zero fallback.
-            return state.IsDynamic || state.TrainRoot is not null;
+            // Collision-parked helis also publish the rested pose so the hull is not left at the
+            // authored float height while its container is still closed.
+            return state.IsDynamic || state.TrainRoot is not null || state.CollisionEnabled;
         }
 
         position = default;
@@ -419,7 +495,7 @@ public sealed class CutsceneRuntime
         else if (_taskTransforms.TryGetValue(task, out TransformState? state))
         {
             UpdateDerivedPose(state);
-            if (!state.IsDynamic && state.TrainRoot is null)
+            if (!state.IsDynamic && state.TrainRoot is null && !state.CollisionEnabled)
             {
                 position = default;
                 orientation = Matrix3f.Identity;
@@ -540,9 +616,11 @@ public sealed class CutsceneRuntime
     /// <param name="orientation">The Human's current world orientation.</param>
     /// <returns><see langword="true"/> when the parent has a live cutscene transform.</returns>
     /// <remarks>
-    /// Retail's Human ground pass tests the struck collision task's moving-platform flag and calls
-    /// <c>Human_SetParent</c> (IGI.exe <c>0x463310</c>) with that exact task. The task-tree ancestry of
-    /// the Human is unrelated: Mission 1 actor 1666 is a sibling of train car 1888, not its child.
+    /// Retail's Human ground pass tests the struck collision task's moving-platform flag and parents
+    /// the Human to that exact task. <c>0x463310</c> is a mid-instruction false start (AGENTS.md);
+    /// r2's real prologues are Human ground <c>0x462390</c> and <c>Human_AttachedMovement</c>
+    /// <c>0x462CF0</c>. The task-tree ancestry of the Human is unrelated: Mission 1 actor 1666 is a
+    /// sibling of train car 1888, not its child.
     /// </remarks>
     public bool TryAttachActorToTask(
         GameTask task,
@@ -824,13 +902,13 @@ public sealed class CutsceneRuntime
     {
         if (task is HumanSoldierTask soldier)
         {
-            if (task.Id != GameTask.NoId)
-            {
-                Matrix3f orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, soldier.Gamma);
-                TransformState humanState = new(soldier.Position, orientation);
-                Remember(task, humanState);
-                CaptureAttachment(task, humanState);
-            }
+            // Cabin copies (M4 Heli 356/800 riders) ship with HumanSoldier id -1; the mind
+            // id is on the child HumanAI. Skipping NoId left them unparented so they froze
+            // while the airframe left. Remember by task reference and attach via QVM parent.
+            Matrix3f orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, soldier.Gamma);
+            TransformState humanState = new(soldier.Position, orientation);
+            Remember(task, humanState);
+            CaptureAttachment(task, humanState);
             return;
         }
 
@@ -920,6 +998,16 @@ public sealed class CutsceneRuntime
             {
                 state.HelicopterPhysics = physics;
             }
+
+            // The retail Heli live-update callback begins at 0x431B70 and invokes the validated
+            // force helper 0x431E30. The authored collision flag is carried into the live body;
+            // the contact solver below uses it only to prevent terrain penetration. The QVM
+            // collective and cyclic controls remain free to lift and steer the airframe.
+            state.CollisionEnabled = Bool(declared, "Collision detection");
+            if (state.CollisionEnabled)
+            {
+                RestHeliOnSupport(task, state);
+            }
         }
         bool attached = CaptureAttachment(task, state);
         if (task.Id != GameTask.NoId || attached)
@@ -972,8 +1060,62 @@ public sealed class CutsceneRuntime
         return true;
     }
 
-    private static bool IsVehicle(GameTask task) =>
-        task is DeclaredTask && task.Type.Name is "Train" or "Heli" or "Plane" or "Car";
+    private static bool IsVehicle(GameTask task) => CinematicActor.IsVehicle(task);
+
+    /// <summary>
+    /// How far a staged Human may sit from a vehicle origin and still inherit its ride (cabin / ramp).
+    /// </summary>
+    private const double StagedRideAttachRadiusMetres = 20.0;
+
+    private void AttachStagedHumansToNearestVehicle()
+    {
+        List<(HumanSoldierTask Human, TransformState State)> riders = [];
+        List<(GameTask Vehicle, TransformState State)> vehicles = [];
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (task is HumanSoldierTask human && CinematicActor.IsStaged(human))
+            {
+                riders.Add((human, state));
+            }
+            else if (IsVehicle(task))
+            {
+                vehicles.Add((task, state));
+            }
+        }
+
+        double maxDistance = StagedRideAttachRadiusMetres * WorldScene.UnitsPerMetre;
+        double maxDistanceSquared = maxDistance * maxDistance;
+        foreach ((HumanSoldierTask human, TransformState rider) in riders)
+        {
+            if (_attachments.ContainsKey(human))
+            {
+                continue;
+            }
+
+            GameTask? best = null;
+            TransformState? bestState = null;
+            double bestDistanceSquared = maxDistanceSquared;
+            foreach ((GameTask vehicle, TransformState vehicleState) in vehicles)
+            {
+                double dx = rider.Position.X - vehicleState.Position.X;
+                double dy = rider.Position.Y - vehicleState.Position.Y;
+                double dz = rider.Position.Z - vehicleState.Position.Z;
+                double distanceSquared = (dx * dx) + (dy * dy) + (dz * dz);
+                if (distanceSquared <= bestDistanceSquared)
+                {
+                    bestDistanceSquared = distanceSquared;
+                    best = vehicle;
+                    bestState = vehicleState;
+                }
+            }
+
+            if (best is not null && bestState is not null)
+            {
+                CaptureAttachment(human, rider, best, bestState);
+                Note($"attach human={human.Id} vehicle={best.Id} dist2={bestDistanceSquared:R}");
+            }
+        }
+    }
 
     private void Remember(GameTask task, TransformState state)
     {
@@ -1088,7 +1230,7 @@ public sealed class CutsceneRuntime
                     ]);
             if (program.Tick == 0)
             {
-                // Heli::ReadChannels (0x431B70) is bidirectional: the tick-zero reset restores the
+                // The retail Heli live callback (0x431B70) is bidirectional: its tick-zero reset restores the
                 // authored pose/collective, clears motion and controls, and overwrites the shared
                 // AnimTask block with its hold sentinels. Without the channel-three write, the zeroed
                 // programme block cancels Original Thrust on tick one and the opening helicopter never
@@ -1103,7 +1245,38 @@ public sealed class CutsceneRuntime
                 transform.QueuedRotorForce = default;
                 transform.QueuedRotorTorque = default;
                 transform.PhysicsTicks = 0;
+                transform.GroundContact = false;
+                transform.GroundContactEventLogged = false;
+                transform.GroundContactLogged = false;
+                transform.TerminalLandingLatched = false;
+                transform.TerminalLandingEventLogged = false;
+                transform.TerminalLandingPosition = transform.OriginPosition;
                 transform.TargetThrust = transform.Thrust;
+                // A landed helicopter rests with its skids on the terrain. Retail's Heli collision
+                // flag keeps the airframe from sinking through the surface while its collective ramps
+                // below hover. Prefer a measurement from an authored pose that is already on a
+                // support, but never measure an arbitrary in-flight pose and freeze that gap as the
+                // rest height: Mission 4 Bell 800 reaches the warehouse while still ~28 m above its
+                // roof, and doing that made it stop in the air when its collective reached zero.
+                double measuredRest = MeasureGroundRestOffset(transform.OriginPosition, target);
+                if (IsPlausibleGroundRestOffset(measuredRest, physics))
+                {
+                    transform.GroundRestOffset = Math.Max(measuredRest, DefaultGroundRestOffset(physics));
+                }
+                else if (double.IsNaN(transform.GroundRestOffset))
+                {
+                    transform.GroundRestOffset = DefaultGroundRestOffset(physics);
+                    Note(
+                        $"heli-rest-fallback id={targetId} measured={measuredRest:R} "
+                        + $"offset={transform.GroundRestOffset:R}");
+                }
+                // Cache the authored near-ground offset for contact recovery. Do not zero collective
+                // here: both Mission 4 Bells follow their AnimTask controls and must still lift.
+                if (!double.IsNaN(transform.GroundRestOffset))
+                {
+                    Note($"heli-park-rest id={targetId} offset={transform.GroundRestOffset:R}");
+                }
+
                 program.WriteChannel(0, 0f);
                 program.WriteChannel(1, 0f);
                 program.WriteChannel(2, 0f);
@@ -1113,6 +1286,28 @@ public sealed class CutsceneRuntime
                 // packet only resets the body, the child rotor still queues lift for tick one.
                 QueueRetailRotorForces(transform, transform.Orientation, physics);
                 transform.IsDynamic = true;
+                return;
+            }
+
+            // Bell 800's authored getaway path has reached its terminal touchdown. Keep the body
+            // parked at the first terrain contact instead of feeding the next AnimTask sample back
+            // through the rigid-flight integrator. Without this latch the terminal wait clears the
+            // collective, but the horizontal velocity carries the Bell on to the warehouse roof.
+            if (transform.TerminalLandingLatched)
+            {
+                transform.Position = transform.TerminalLandingPosition;
+                transform.PreviousPosition = transform.Position;
+                transform.Velocity = default;
+                transform.Speed = 0f;
+                transform.Thrust = 0f;
+                transform.TargetThrust = 0f;
+                transform.Control = default;
+                transform.AngularMomentum = default;
+                transform.QueuedRotorForce = default;
+                transform.QueuedRotorTorque = default;
+                transform.IsDynamic = true;
+                transform.PhysicsTicks++;
+                LogAirframePath(targetId, "Heli", target, transform);
                 return;
             }
 
@@ -1142,39 +1337,79 @@ public sealed class CutsceneRuntime
                 transform.Thrust = 0f;
             }
             transform.RotorPhase += transform.Thrust;
+            if (target is DeclaredTask liveHeli)
+            {
+                transform.CollisionEnabled = Bool(liveHeli, "Collision detection");
+            }
 
             ApplyRetailHelicopterPhysics(transform, physics);
             transform.Position += transform.Velocity;
+            if (target is not null)
+            {
+                KeepHelicopterAboveGround(target, transform);
+            }
             transform.PhysicsTicks++;
             transform.IsDynamic = true;
+            LogAirframePath(targetId, "Heli", target, transform);
             return;
         }
         else if (string.Equals(type, "Plane", StringComparison.Ordinal))
         {
-            if (program.Tick > 0)
+            if (program.Tick == 0)
             {
-                SnapshotDynamicPose(transform, simulationOrder);
+                // The retail Plane move callback is registered by 0x4330F0 and begins at 0x433690.
+                // The dispatcher resets the body on tick zero before any physics runs, matching the
+                // callback's observed zero-tick state (the callback itself is a run/state handler).
+                // The plane flies a scripted path through the level's terrain, and like the heli it has
+                // no per-tick collision that would stop it sinking into a valley or a ridge. Measure the
+                // model's rest height once (authored pose minus the ground under it), the same way the
+                // heli's parked airframe does, so the clamp below keeps the body above the terrain
+                // instead of letting a fly-by path clip through the ground.
+                transform.Position = transform.OriginPosition;
+                transform.Orientation = transform.AuthoredOrientation;
+                transform.Velocity = default;
+                transform.Control = default;
+                transform.Heading = 0f;
+                transform.Speed = 0f;
+                transform.GroundContact = false;
+                transform.GroundContactEventLogged = false;
+                transform.GroundContactLogged = false;
+                transform.GroundRestOffset = MeasureGroundRestOffset(transform.OriginPosition);
+                transform.IsDynamic = true;
+                return;
             }
 
-            // Plane::ReadChannels (0x4337E0) has the same normalized pitch/roll/yaw + latched-thrust
-            // channel map as Heli.  These are control targets, not Euler deltas.
+            SnapshotDynamicPose(transform, simulationOrder);
+
+            // The Plane AnimTask publishes normalized pitch/roll/yaw controls and a latched thrust
+            // target. These are control targets, not Euler deltas; the callback that owns the Plane
+            // run/state transition is the r2/Ghidra-confirmed 0x433690 prologue.
             transform.Control += (new Vector3f(channels[0], channels[1], channels[2]) - transform.Control)
                 * 0.12f;
             if (channels[3] != -1f)
             {
                 transform.TargetThrust = channels[3];
             }
+            if (target is DeclaredTask livePlane)
+            {
+                transform.CollisionEnabled = Bool(livePlane, "Collision detection");
+            }
             transform.Heading += transform.Control.Z * 0.004f;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Control.X * 0.10f,
                 transform.Control.Y * 0.18f,
                 transform.Heading) * transform.AuthoredOrientation;
-            Vector3f planeForward = transform.Orientation.Column2;
+            // IGI vehicles are Y-forward: the second row of Real32x9 is the local +Y axis in world
+            // space (same as the generic AnimTask path below). Column2 is the transposed axis and
+            // sent Mission 3/4 planes backwards along the authored heading.
+            Vector3f planeForward = transform.Orientation.Row2;
             float desiredSpeed = Math.Max(0f, transform.TargetThrust) * 1_500f;
             transform.Speed += (desiredSpeed - transform.Speed) * 0.025f;
             transform.Position += new Vector3d(planeForward.X, planeForward.Y, planeForward.Z)
                 * transform.Speed;
+            KeepHelicopterAboveGround(target, transform);
             transform.IsDynamic = true;
+            LogAirframePath(targetId, "Plane", target, transform);
             return;
         }
         else
@@ -1326,6 +1561,14 @@ public sealed class CutsceneRuntime
     private List<EditCameraShot> ReadShots(CutSceneTask scene)
     {
         List<EditCameraShot> shots = [];
+        // Mission 4 CutScene 1000 mixes world ObjectPos (the pad, ~53 km from origin) with
+        // cabin-scale ObjectPos (~18 m). Those small records are local offsets — Link is -1 —
+        // but Hermite still interpolates them as world points, so the intro camera leaves the
+        // castle and flies through empty sky to (17.7, -0.4, 2.8). Promote any cabin-scale
+        // shot onto the last world-space camera (or the CutScene anchor) so the path stays
+        // in the level. World-scale shots (Mission 1's linked heli cameras included) are
+        // left untouched.
+        Vector3d lastWorld = scene.Position;
         foreach (GameTask task in Walk(scene))
         {
             if (task is not DeclaredTask camera || !string.Equals(task.Type.Name, "EditCamera", StringComparison.Ordinal))
@@ -1335,8 +1578,9 @@ public sealed class CutsceneRuntime
             int link = Int(camera, "Link task ID", -1);
             int target = Int(camera, "Target task ID", -1);
             (Vector3d linkOrigin, Matrix3f linkOrientation) = InitialPose(scene.Tree.FromId(link));
+            Vector3d position = ResolveEditCameraPosition(Vector(camera, "Position"), scene.Position, ref lastWorld);
             shots.Add(new EditCameraShot(
-                Vector(camera, "Position"),
+                position,
                 Real(camera, "Alpha"), Real(camera, "Beta"), Real(camera, "Gamma"),
                 Math.Clamp(Real(camera, "FOV", 1f), 0.001f, 3f), Real(camera, "Duration"),
                 link, Bool(camera, "Update link continously"), target, Bool(camera, "Update target continously"),
@@ -1345,6 +1589,29 @@ public sealed class CutsceneRuntime
                 Real(camera, "Camera shake"), linkOrigin, linkOrientation));
         }
         return shots;
+    }
+
+    /// <summary>
+    /// ObjectPos smaller than a kilometre on a cutscene that itself sits tens of kilometres
+    /// from the origin is a local offset, not a world point.
+    /// </summary>
+    private static Vector3d ResolveEditCameraPosition(
+        Vector3d authored, Vector3d sceneOrigin, ref Vector3d lastWorld)
+    {
+        const double localRadius = 1_000.0 * WorldScene.UnitsPerMetre;
+        double authoredSquared = authored.LengthSquared;
+        if (authoredSquared < localRadius * localRadius
+            && sceneOrigin.LengthSquared > localRadius * localRadius)
+        {
+            return lastWorld + authored;
+        }
+
+        if (authoredSquared >= localRadius * localRadius)
+        {
+            lastWorld = authored;
+        }
+
+        return authored;
     }
 
     private static bool IsBandFilter(string filter) =>
@@ -1417,14 +1684,533 @@ public sealed class CutsceneRuntime
     private static float Lerp(float a, float b, float t) => a + ((b - a) * t);
     private static Vector3f Lerp(Vector3f a, Vector3f b, float t) => a + ((b - a) * t);
     /// <summary>
-    /// Ports the helicopter tick identified by the cutscene task, Rotor::Tick (0x42D440), and the
-    /// force accumulator at 0x4EC6A0. The current Ghidra analysis identifies 0x431E30 as the human
-    /// camera FOV integrator, so this method deliberately does not assign that address to helicopter
-    /// logic.
+    /// Ports the retail Heli live update (0x431B70), its force helper (0x431E30), Rotor::Tick
+    /// (0x42D440), and the force accumulator at 0x4EC6A0.
     /// Forces and application points are body-local; the accumulator converts linear acceleration to
     /// world space with the pre-integration attitude. Retail damps angular momentum by 0.92 after the
     /// quaternion step and deliberately does not damp linear velocity.
     /// </summary>
+    /// <summary>Measures a parked helicopter's rest height above the ground under its authored pose.</summary>
+    /// <remarks>
+    /// The authored pose of a landed helicopter sits its skids on the surface, so the distance from
+    /// the pose down to the terrain is the model's own rest height. Returns <see cref="double.NaN"/>
+    /// when the pose is not within the near-ground query's reach, meaning the helicopter is airborne
+    /// and no rest height applies.
+    /// </remarks>
+    private double MeasureGroundRestOffset(Vector3d authoredPosition, GameTask? ignoredOwner = null)
+    {
+        // Near-body only. A 2 km column would treat an airborne spawn as parked and
+        // clamp it to the dirt for the whole flight (356 lift-off regression).
+        if (!TryFindSupportHeight(
+                authoredPosition,
+                ignoredOwner,
+                allowDeepRecovery: false,
+                out double surfaceHeight))
+        {
+            return double.NaN;
+        }
+
+        // Never record a negative rest: the first successful query can happen after the body has
+        // already crossed below the surface. A negative offset would clamp it even deeper and the
+        // plane/heli would keep sinking. Belly-on-surface (0) is the safe floor.
+        return Math.Max(0.0, authoredPosition.Z - surfaceHeight);
+    }
+
+    private static double DefaultGroundRestOffset(HelicopterPhysicsDefinition physics) =>
+        Math.Max(0.0, physics.Dimensions.Z * 0.5f * WorldScene.UnitsPerMetre);
+
+    private static bool IsPlausibleGroundRestOffset(
+        double measured,
+        HelicopterPhysicsDefinition physics) =>
+        !double.IsNaN(measured)
+        && measured <= Math.Max(
+            4.0 * WorldScene.UnitsPerMetre,
+            physics.Dimensions.Z * 2.0f * WorldScene.UnitsPerMetre);
+
+    private static string FormatMetres(double units) =>
+        double.IsNaN(units)
+            ? "NaN"
+            : (units / WorldScene.UnitsPerMetre).ToString("F3", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Finds the highest supporting surface height under a point, preferring an elevated placed object (a
+    /// pad, crate or rooftop) over lower terrain.
+    /// </summary>
+    /// <param name="position">The body position, in world units.</param>
+    /// <param name="surfaceHeight">Receives the highest supporting surface height found.</param>
+    /// <returns>
+    /// <see langword="true"/> when at least one surface answers; <see langword="false"/> when neither the
+    /// terrain nor the collision index reports a surface under the point.
+    /// </returns>
+    /// <remarks>
+    /// Retail's terrain half (<c>0x4CBE40</c>) and placed-model sweep (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>)
+    /// are two answers for the same question. The higher of the two is the surface the body actually rests
+    /// on: a heli parked on a pad must rest on the pad's top, not the terrain below it. Both queries run and
+    /// the higher answer wins, so an elevated collision surface takes precedence over terrain without losing
+    /// the terrain answer when no object is present.
+    /// </remarks>
+    private bool TryFindSupportHeight(Vector3d position, out double surfaceHeight) =>
+        TryFindSupportHeight(position, ignoredOwner: null, allowDeepRecovery: true, out surfaceHeight);
+
+    private bool TryFindSupportHeight(
+        Vector3d position,
+        GameTask? ignoredOwner,
+        bool allowDeepRecovery,
+        out double surfaceHeight) =>
+        TryFindSupportHeight(position, ignoredOwner, allowDeepRecovery, out surfaceHeight, out _);
+
+    private bool TryFindSupportHeight(
+        Vector3d position,
+        GameTask? ignoredOwner,
+        bool allowDeepRecovery,
+        out double surfaceHeight,
+        out string supportSource)
+    {
+        double best = double.NegativeInfinity;
+        bool found = false;
+        bool objectFound = false;
+        supportSource = "none";
+
+        if (_terrain is { IsUsable: true } terrain
+            && TerrainHeightQuery.TryGetGround(
+                terrain,
+                position.X,
+                position.Y,
+                position.Z,
+                TerrainHeightQuery.AboveRecoveryUnits,
+                out TerrainGround ground))
+        {
+            best = ground.Height;
+            found = true;
+            supportSource = "terrain";
+        }
+
+        if (_collisionIndex is not null)
+        {
+            Vector3d top = new(position.X, position.Y, position.Z + 4096.0);
+            Vector3d bottom = new(position.X, position.Y, position.Z - 262144.0);
+            if (TryCastObjectsIgnoringOwner(top, bottom, ignoredOwner, out WorldRayHit hit)
+                && hit.Position.Z <= position.Z + TerrainHeightQuery.AboveRecoveryUnits
+                && hit.Position.Z > best)
+            {
+                best = hit.Position.Z;
+                found = true;
+                objectFound = true;
+                supportSource = "object";
+            }
+        }
+
+        // A fast sink can leave the body more than AboveRecoveryUnits below the mesh. The
+        // near-ground query only sees ~20 m around its probe Z, so a single sample 2 km above
+        // the body never hits the surface they just punched through. Walk the column down in
+        // 4 m steps (same window as TerrainHeightQuery.SearchDepthUnits) from well above the
+        // body to just under it, and take the first (highest) surface.
+        if (allowDeepRecovery && !found && _terrain is { IsUsable: true } deepTerrain)
+        {
+            const double step = 4.0 * WorldScene.UnitsPerMetre;
+            const double high = 2_000.0 * WorldScene.UnitsPerMetre;
+            for (double probeZ = position.Z + high; probeZ >= position.Z - step; probeZ -= step)
+            {
+                if (!TerrainHeightQuery.TryGetGround(
+                        deepTerrain, position.X, position.Y, probeZ, out TerrainGround deep)
+                    || deep.Height <= best)
+                {
+                    continue;
+                }
+
+                best = deep.Height;
+                found = true;
+                supportSource = "terrain-deep";
+                break;
+            }
+        }
+
+        // The body can be below an elevated pad/roof while the terrain query still answers below it.
+        // In that case !found is false, but the one-metre near ray above the body has already missed
+        // the object. Recover the object independently, then retain whichever valid surface is higher.
+        if (allowDeepRecovery && !objectFound && _collisionIndex is not null)
+        {
+            Vector3d highTop = new(
+                position.X, position.Y, position.Z + (2_000.0 * WorldScene.UnitsPerMetre));
+            Vector3d deepBottom = new(position.X, position.Y, position.Z - 262144.0);
+            if (TryCastObjectsIgnoringOwner(highTop, deepBottom, ignoredOwner, out WorldRayHit deepHit)
+                && deepHit.Position.Z > best)
+            {
+                best = deepHit.Position.Z;
+                found = true;
+                supportSource = "object-deep";
+            }
+        }
+
+        surfaceHeight = best;
+        return found;
+    }
+
+    private bool TryCastObjectsIgnoringOwner(
+        Vector3d origin,
+        Vector3d end,
+        GameTask? ignoredOwner,
+        out WorldRayHit hit)
+    {
+        hit = default;
+        if (_collisionIndex is null)
+        {
+            return false;
+        }
+
+        WorldTraceRequest request = new(
+            origin,
+            end,
+            WorldTraceMask.StaticObjects | WorldTraceMask.DynamicObjects,
+            IgnoredOwner: ignoredOwner);
+        if (!_collisionIndex.TryTrace(request, out WorldTraceHit traced))
+        {
+            return false;
+        }
+
+        hit = traced.RayHit;
+        return true;
+    }
+
+    /// <summary>Keeps a helicopter from sinking through the terrain during contact recovery.</summary>
+    /// <remarks>
+    /// Retail's Heli collision flag prevents a descending body from penetrating a supporting surface;
+    /// it does not replace the scripted collective or cyclic controls with a pad lock. Airborne
+    /// helicopters are untouched while the query finds no nearby support. The landing-height search
+    /// is widened a little above the body (see <see cref="TerrainHeightQuery.AboveRecoveryUnits"/>) so
+    /// a body that dips under a ridge or a rising slope still finds the surface it just crossed and
+    /// rides it back up, instead of falling forever once the downward-only search loses it.
+    /// </remarks>
+    private void RestCollisionHelisOnSupport()
+    {
+        foreach ((GameTask task, TransformState state) in _taskTransforms)
+        {
+            if (state.CollisionEnabled && string.Equals(task.Type?.Name, "Heli", StringComparison.Ordinal))
+            {
+                RestHeliOnSupport(task, state);
+            }
+        }
+    }
+
+    private void RestHeliOnSupport(GameTask task, TransformState state)
+    {
+        double measuredRest = MeasureGroundRestOffset(state.OriginPosition, task);
+        if (state.HelicopterPhysics is { } physics)
+        {
+            bool plausible = IsPlausibleGroundRestOffset(measuredRest, physics);
+            double bodyFloor = DefaultGroundRestOffset(physics);
+            state.GroundRestOffset = plausible
+                ? Math.Max(measuredRest, bodyFloor)
+                : bodyFloor;
+            if (!plausible)
+            {
+                Note(
+                    $"heli-rest-fallback id={task.Id} measured={measuredRest:R} "
+                    + $"offset={state.GroundRestOffset:R}");
+            }
+
+            _logger.Warning(
+                "Airframe",
+                $"[AIRFRAME-REST] id={task.Id} type=Heli "
+                + $"measured={FormatMetres(measuredRest)} applied={FormatMetres(state.GroundRestOffset)} "
+                + $"mode={(plausible && measuredRest >= bodyFloor ? "authored" : "physics-floor")}");
+        }
+        else
+        {
+            state.GroundRestOffset = measuredRest;
+        }
+
+        if (!TryGetLandingHeight(state.OriginPosition, state.GroundRestOffset, task, out double rest)
+            || double.IsNaN(rest))
+        {
+            return;
+        }
+
+        state.Position = new Vector3d(state.Position.X, state.Position.Y, rest);
+        Note($"heli-park-rest id={task.Id} offset={state.GroundRestOffset:R}");
+    }
+
+    private void KeepHelicopterAboveGround(GameTask? ignoredOwner, TransformState transform)
+    {
+        Vector3d position = transform.Position;
+
+        // The rest offset is a body/pivot property, not the current distance to whatever surface a
+        // ray happens to find. If the tick-zero authored pose was not near support, use the physics
+        // body's stable half-height and never calibrate from an in-flight pose.
+        if (double.IsNaN(transform.GroundRestOffset))
+        {
+            transform.GroundRestOffset = transform.HelicopterPhysics is { } physics
+                ? DefaultGroundRestOffset(physics)
+                : 0.0;
+        }
+
+        if (!TryGetLandingHeight(
+                position,
+                transform.GroundRestOffset,
+                ignoredOwner,
+                out double rest,
+                out string supportSource)
+            || double.IsNaN(rest))
+        {
+            transform.GroundContact = false;
+            transform.GroundContactLogged = false;
+            transform.GroundContactEventLogged = false;
+            return;
+        }
+
+        if (position.Z > rest + (0.5 * WorldScene.UnitsPerMetre))
+        {
+            transform.GroundContact = false;
+            transform.GroundContactLogged = false;
+            transform.GroundContactEventLogged = false;
+            return;
+        }
+
+        bool belowSupport = position.Z < rest;
+        bool continuingContact = transform.GroundContact
+            && position.Z <= rest + GroundContactToleranceUnits;
+        if (!belowSupport && !continuingContact)
+        {
+            return;
+        }
+
+        bool firstContact = transform.CollisionEnabled && !transform.GroundContact;
+        Vector3d incomingVelocity = transform.Velocity;
+        float incomingSpeed = transform.Speed;
+        transform.Position = new Vector3d(position.X, position.Y, rest);
+        if (transform.CollisionEnabled)
+        {
+            transform.GroundContact = true;
+
+            // Bell 800's retail landing is a terminal authored state. Its first contact is with the
+            // terrain, while the warehouse roof is a later elevated ray hit reached only because the
+            // old port retained tangential velocity. Latch the terrain touchdown by the authored task
+            // id, then bypass all further flight integration.
+            if (IsTerminalTerrainLanding(ignoredOwner, supportSource))
+            {
+                transform.TerminalLandingLatched = true;
+                transform.TerminalLandingPosition = transform.Position;
+                transform.Thrust = 0f;
+                transform.TargetThrust = 0f;
+                transform.Velocity = default;
+                transform.Speed = 0f;
+                transform.AngularMomentum = default;
+            }
+            else if (belowSupport && transform.Velocity.Z < 0d)
+            {
+                transform.Velocity = new Vector3d(transform.Velocity.X, transform.Velocity.Y, 0d);
+            }
+        }
+
+        Note($"ground-clamp z={position.Z:R} rest={rest:R}");
+
+        if (firstContact && !transform.GroundContactEventLogged)
+        {
+            string type = ignoredOwner?.Type.Name ?? "Airframe";
+            double offset = double.IsNaN(transform.GroundRestOffset)
+                ? 0.0
+                : transform.GroundRestOffset / WorldScene.UnitsPerMetre;
+            _logger.Warning(
+                "Airframe",
+                $"[AIRFRAME-CONTACT] id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
+                + $"x={transform.Position.X / WorldScene.UnitsPerMetre:F2} "
+                + $"y={transform.Position.Y / WorldScene.UnitsPerMetre:F2} "
+                + $"z={transform.Position.Z / WorldScene.UnitsPerMetre:F2} "
+                + $"support={(rest / WorldScene.UnitsPerMetre) - offset:F2} "
+                + $"rest={transform.Position.Z / WorldScene.UnitsPerMetre:F2} offset={offset:F2} "
+                + $"incomingV=({incomingVelocity.X / WorldScene.UnitsPerMetre:F3},"
+                + $"{incomingVelocity.Y / WorldScene.UnitsPerMetre:F3},"
+                + $"{incomingVelocity.Z / WorldScene.UnitsPerMetre:F3}) "
+                + $"incomingSpeed={incomingSpeed:F3} target={transform.TargetThrust:F3} "
+                + $"terminal={(transform.TargetThrust <= 0f && transform.Thrust <= 0f)} "
+                + $"thrust={transform.Thrust:F3} target={transform.TargetThrust:F3}");
+            transform.GroundContactEventLogged = true;
+        }
+
+        if (transform.TerminalLandingLatched && !transform.TerminalLandingEventLogged)
+        {
+            string type = ignoredOwner?.Type.Name ?? "Airframe";
+            _logger.Warning(
+                "Airframe",
+                $"[AIRFRAME-LANDING-LATCH] id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
+                + $"x={transform.Position.X / WorldScene.UnitsPerMetre:F2} "
+                + $"y={transform.Position.Y / WorldScene.UnitsPerMetre:F2} "
+                + $"z={transform.Position.Z / WorldScene.UnitsPerMetre:F2} "
+                + $"source={supportSource} stoppedSpeed=0.000");
+            Note(
+                $"heli-terminal-latch id={ignoredOwner?.Id ?? -1} source={supportSource} "
+                + $"position={transform.TerminalLandingPosition}");
+            transform.TerminalLandingEventLogged = true;
+        }
+
+        if (transform.GroundContact
+            && transform.TargetThrust <= 0f
+            && transform.Thrust <= 0f
+            && !transform.GroundContactLogged)
+        {
+            string type = ignoredOwner?.Type.Name ?? "Airframe";
+            double offset = double.IsNaN(transform.GroundRestOffset)
+                ? 0.0
+                : transform.GroundRestOffset / WorldScene.UnitsPerMetre;
+            _logger.Warning(
+                "Airframe",
+                $"[AIRFRAME-LANDING] id={ignoredOwner?.Id ?? -1} type={type} tick={SimulationTick} "
+                + $"x={transform.Position.X / WorldScene.UnitsPerMetre:F2} "
+                + $"y={transform.Position.Y / WorldScene.UnitsPerMetre:F2} "
+                + $"z={transform.Position.Z / WorldScene.UnitsPerMetre:F2} "
+                + $"support={(rest / WorldScene.UnitsPerMetre) - offset:F2} "
+                + $"rest={transform.Position.Z / WorldScene.UnitsPerMetre:F2} offset={offset:F2} "
+                + $"incomingV=({incomingVelocity.X / WorldScene.UnitsPerMetre:F3},"
+                + $"{incomingVelocity.Y / WorldScene.UnitsPerMetre:F3},"
+                + $"{incomingVelocity.Z / WorldScene.UnitsPerMetre:F3}) "
+                + $"incomingSpeed={incomingSpeed:F3} stoppedV=(0.000,0.000,0.000) stoppedSpeed=0.000 "
+                + $"thrust={transform.Thrust:F3} target={transform.TargetThrust:F3}");
+            transform.GroundContactLogged = true;
+        }
+        else if (!transform.GroundContact)
+        {
+            transform.GroundContactLogged = false;
+        }
+    }
+
+    private void Note(string message)
+    {
+        if (_diagnostics.Count >= 256)
+        {
+            return;
+        }
+
+        _diagnostics.Add($"tick={SimulationTick} {message}");
+    }
+
+    /// <summary>
+    /// [AIRFRAME-PATH] Append-only sample of the live Heli/Plane tick. Set
+    /// <c>OPENIGI_AIRFRAME_PATH_LOG</c> to a file path. One grep of the tag removes the helper.
+    /// </summary>
+    private void LogAirframePath(int id, string type, GameTask? target, TransformState transform)
+    {
+        // [AIRFRAME-PATH]
+        if (transform.PhysicsTicks > 0 && transform.PhysicsTicks % 15 != 0)
+        {
+            return;
+        }
+
+        string? path = AirframePathLog
+            ?? Environment.GetEnvironmentVariable("OPENIGI_AIRFRAME_PATH_LOG");
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        double x = transform.Position.X / WorldScene.UnitsPerMetre;
+        double y = transform.Position.Y / WorldScene.UnitsPerMetre;
+        double z = transform.Position.Z / WorldScene.UnitsPerMetre;
+        double ox = transform.OriginPosition.X / WorldScene.UnitsPerMetre;
+        double oy = transform.OriginPosition.Y / WorldScene.UnitsPerMetre;
+        double oz = transform.OriginPosition.Z / WorldScene.UnitsPerMetre;
+        double dHoriz = Math.Sqrt(((x - ox) * (x - ox)) + ((y - oy) * (y - oy)));
+        double dVert = z - oz;
+        bool hasSupport = TryFindSupportHeight(
+            transform.Position,
+            target,
+            allowDeepRecovery: true,
+            out double supportHeight,
+            out string supportSource);
+        double support = hasSupport ? supportHeight / WorldScene.UnitsPerMetre : double.NaN;
+        double offset = double.IsNaN(transform.GroundRestOffset)
+            ? double.NaN
+            : transform.GroundRestOffset / WorldScene.UnitsPerMetre;
+        double rest = hasSupport && !double.IsNaN(offset) ? support + offset : double.NaN;
+        double supportGap = hasSupport ? z - support : double.NaN;
+        double restGap = !double.IsNaN(rest) ? z - rest : double.NaN;
+        double vx = transform.Velocity.X / WorldScene.UnitsPerMetre;
+        double vy = transform.Velocity.Y / WorldScene.UnitsPerMetre;
+        double vz = transform.Velocity.Z / WorldScene.UnitsPerMetre;
+        try
+        {
+            File.AppendAllText(
+                path,
+                $"[AIRFRAME-PATH] t={SimulationTick} pt={transform.PhysicsTicks} id={id} type={type} "
+                + $"x={x:F2} y={y:F2} z={z:F2} dHoriz={dHoriz:F2} dVert={dVert:F2} "
+                + $"vx={vx:F3} vy={vy:F3} vz={vz:F3} "
+                + $"thrust={transform.Thrust:F3} target={transform.TargetThrust:F3} col={transform.CollisionEnabled} "
+                + $"offset={offset:F3} support={support:F3} source={supportSource} rest={rest:F3} "
+                + $"supportGap={supportGap:F3} restGap={restGap:F3} "
+                + $"latched={transform.TerminalLandingLatched} "
+                + $"ctl=({transform.Control.X:F3},{transform.Control.Y:F3},{transform.Control.Z:F3})"
+                + Environment.NewLine);
+        }
+        catch (IOException)
+        {
+            // Path logging must never take down the tick.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>Finds the height a helicopter should rest at under a body position.</summary>
+    /// <param name="position">The body's current position, in world units.</param>
+    /// <param name="offset">The model's measured rest height above a supporting surface.</param>
+    /// <param name="rest">Receives the height the body should rest at when one is found.</param>
+    /// <returns>
+    /// <see langword="true"/> with <paramref name="rest"/> when a supporting surface is under the
+    /// point; <see langword="false"/> when nothing holds the body there.
+    /// </returns>
+    /// <remarks>
+    /// The terrain query mirrors retail's terrain half (<c>0x4CBE40</c>) but not the placed-model sweep
+    /// (<c>0x4CDB20</c> -&gt; <c>0x4C7770</c>), so a heli landing on a pad, crate or rooftop finds nothing
+    /// and would sink straight through. When the terrain misses, cast the collision index down from
+    /// well above the body and rest on the solid object the ray hits instead. A NaN rest offset from
+    /// the terrain measurement does not disable the object fallback: a heli resting on a pad measures
+    /// its rest height from the pad's surface below the body.
+    /// </remarks>
+    private bool TryGetLandingHeight(Vector3d position, double offset, out double rest) =>
+        TryGetLandingHeight(position, offset, ignoredOwner: null, out rest);
+
+    private bool TryGetLandingHeight(
+        Vector3d position,
+        double offset,
+        GameTask? ignoredOwner,
+        out double rest) =>
+        TryGetLandingHeight(position, offset, ignoredOwner, out rest, out _);
+
+    private bool TryGetLandingHeight(
+        Vector3d position,
+        double offset,
+        GameTask? ignoredOwner,
+        out double rest,
+        out string supportSource)
+    {
+        // A NaN rest offset from the terrain measurement does not disable the object fallback: a heli resting
+        // on a pad measures its rest height from the pad's surface below the body.
+        double restOffset = double.IsNaN(offset) ? 0.0 : offset;
+
+        // The terrain and collision queries share one support-selection rule, so a body on an elevated pad
+        // rests on the pad rather than the lower terrain underneath it.
+        if (!TryFindSupportHeight(
+                position,
+                ignoredOwner,
+                allowDeepRecovery: true,
+                out double surfaceHeight,
+                out supportSource))
+        {
+            rest = 0.0;
+            supportSource = "none";
+            return false;
+        }
+
+        rest = surfaceHeight + restOffset;
+        return true;
+    }
+
+    private const int MissionFourGetawayHeliTaskId = 800;
+
+    private static bool IsTerminalTerrainLanding(GameTask? owner, string supportSource) =>
+        owner?.Id == MissionFourGetawayHeliTaskId
+        && string.Equals(owner.Type.Name, "Heli", StringComparison.Ordinal)
+        && supportSource.StartsWith("terrain", StringComparison.Ordinal);
+
     private static void ApplyRetailHelicopterPhysics(
         TransformState transform,
         HelicopterPhysicsDefinition physics)
@@ -1705,7 +2491,11 @@ public sealed class CutsceneRuntime
         int Order,
         string Run,
         bool InitialRun,
-        AnimDataProgram Program);
+        AnimDataProgram Program)
+    {
+        /// <summary>Running-tick counter exported as <c>AnimTask+&lt;id&gt;.nTick</c> (retail AnimTask state var).</summary>
+        public int Tick { get; set; }
+    }
     private sealed record SoundState(
         DeclaredTask Task,
         string Condition,
@@ -1767,6 +2557,14 @@ public sealed class CutsceneRuntime
         public float Heading { get; set; }
         public Vector3d Velocity { get; set; }
         public HelicopterPhysicsDefinition? HelicopterPhysics { get; set; }
+        public double GroundRestOffset { get; set; } = double.NaN;
+        public bool GroundContact { get; set; }
+        public bool GroundContactEventLogged { get; set; }
+        public bool GroundContactLogged { get; set; }
+        public bool CollisionEnabled { get; set; }
+        public bool TerminalLandingLatched { get; set; }
+        public bool TerminalLandingEventLogged { get; set; }
+        public Vector3d TerminalLandingPosition { get; set; }
         public float RotorPhase { get; set; }
         public Vector3f AngularMomentum { get; set; }
         public int PhysicsTicks { get; set; }

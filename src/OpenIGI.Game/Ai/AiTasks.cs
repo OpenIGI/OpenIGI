@@ -112,6 +112,9 @@ public static class AiTaskTypes
     /// <summary>The script name of the soldier brain type.</summary>
     public const string HumanAi = "HumanAI";
 
+    /// <summary>The script name of the bounded authored-soldier generator.</summary>
+    public const string GuardGenerator = GuardGeneratorTask.TypeName;
+
     /// <summary>Registers every AI task type.</summary>
     /// <param name="types">The registry to add to.</param>
     /// <param name="parent">The base type these derive from, if the host has one.</param>
@@ -123,5 +126,6 @@ public static class AiTaskTypes
         types.Register<PatrolPathTask>(PatrolPath, parent);
         types.Register<PatrolPathCommandTask>(PatrolPathCommand, parent);
         types.Register<HumanAiTask>(HumanAi, parent);
+        types.Register<GuardGeneratorTask>(GuardGenerator, parent);
     }
 }

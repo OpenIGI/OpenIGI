@@ -19,9 +19,10 @@ namespace OpenIGI.Game.World;
 /// pack opens because a pack's archives are addressed relative to it.
 /// </para>
 /// <para>
-/// Steps this does not perform yet are logged, not skipped silently: the terrain loader is still blocked
-/// on open format questions, and AI graphs belong to M10. A caller can see exactly what a loaded mission
-/// is missing from <see cref="LoadedMission.PendingSteps"/>.
+/// Steps this does not perform yet are logged, not skipped silently. AI graph files are
+/// detected here; the desktop host still parses them and applies the AIGraph world offset.
+/// A caller can see exactly what a loaded mission is missing from
+/// <see cref="LoadedMission.PendingSteps"/>.
 /// </para>
 /// </remarks>
 public sealed class MissionLoader
@@ -162,8 +163,17 @@ public sealed class MissionLoader
             TerrainDiscardBinding.Bind(terrain, _levelLoader.LevelRoot);
         }
 
-        // 16. AI navigation graphs are M10's.
-        pending.Add("AI navigation graphs");
+        // 16. AI navigation graphs: one graphN.dat per AIGraph task (0x4F9770 world offset
+        // is applied by the desktop host). Do not claim they are missing when the level ships them.
+        IReadOnlyList<string> graphFiles = _fileSystem.EnumerateFiles("MISSION:graphs", "graph*.dat");
+        if (graphFiles.Count == 0)
+        {
+            pending.Add("AI navigation graphs");
+        }
+        else
+        {
+            _logger.Information(LogCategory, $"{graphFiles.Count} AI navigation graph file(s) present.");
+        }
 
         if (pending.Count > 0)
         {

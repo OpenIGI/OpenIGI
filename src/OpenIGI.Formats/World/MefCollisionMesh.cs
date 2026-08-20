@@ -37,8 +37,9 @@ public readonly record struct MefCollisionSphere(Vector3f Centre, float Radius, 
 /// Four chunk groups, headed by <c>HSMC</c>. Its 64-byte payload holds two 32-byte
 /// <c>MultiMesh_Mesh_t</c> headers, one for each collision mesh level. A non-empty level has its own
 /// <c>ECFC</c>, <c>XTVC</c>, <c>TAMC</c>, and <c>HPSC</c> chunk, in level order. Every stride below was
-/// checked against level 1's retail packs, with no mismatch — the counts and the chunk lengths agree
-/// exactly everywhere.
+/// checked against the retail packs. One shipped human model has a stale smaller vertex count in its
+/// HSMC header; the complete <c>XTVC</c> payload is still record-aligned and is the authoritative row
+/// count for that case.
 /// </para>
 /// <list type="table">
 /// <item><term><c>ECFC</c></term><description>faces, <b>8</b> bytes: four <c>u16</c></description></item>
@@ -205,6 +206,7 @@ public sealed class MefCollisionMesh
         ReadOnlySpan<byte> vertexBytes = Payload(container, MefTags.CollisionVertices, meshIndex, vertexCount, VertexStride);
         ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, meshIndex, sphereCount, SphereStride);
         ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, meshIndex, materialCount, MaterialStride);
+        int payloadVertexCount = vertexBytes.Length / VertexStride;
 
         // The material rows' one field the collision needs: iPortal (u16 at offset 4). A doorway or
         // window opening is closed by a portal polygon whose material carries a portal index here; the
@@ -221,9 +223,9 @@ public sealed class MefCollisionMesh
             materialGlobal[i] = BinaryPrimitives.ReadUInt16LittleEndian(materialBytes.Slice((i * MaterialStride) + 8, 2));
         }
 
-        Vector3f[] vertices = new Vector3f[vertexCount];
-        int[] vertexBones = new int[vertexCount];
-        for (int i = 0; i < vertexCount; i++)
+        Vector3f[] vertices = new Vector3f[payloadVertexCount];
+        int[] vertexBones = new int[payloadVertexCount];
+        for (int i = 0; i < payloadVertexCount; i++)
         {
             ReadOnlySpan<byte> row = vertexBytes.Slice(i * VertexStride, VertexStride);
             vertices[i] = new Vector3f(
@@ -295,6 +297,14 @@ public sealed class MefCollisionMesh
         int needed = count * stride;
         if (span.Length != needed)
         {
+            // A shipped human model's HSMC header says 502 vertices although its XTVC chunk carries
+            // 1189 complete 16-byte rows. Keep the full aligned payload: faces in that model reference
+            // rows beyond the stale header count. Truncated or partially-recorded chunks remain errors.
+            if (tag == MefTags.CollisionVertices && span.Length > needed && span.Length % stride == 0)
+            {
+                return span;
+            }
+
             throw new PackFormatException(
                 $"The level {meshIndex} '{tag}' chunk is {span.Length} bytes but {count} records at a {stride}-byte stride need {needed}.");
         }
