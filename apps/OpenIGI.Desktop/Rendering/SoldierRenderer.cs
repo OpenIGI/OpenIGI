@@ -3281,7 +3281,7 @@ public sealed class SoldierRenderer : IDisposable
             if (member is not null)
             {
                 UpdateMountedWeapon(member, brain);
-                if (brain.Arm == AiCombatArm.Gunner)
+                if (collectDiagnostics && brain.Arm == AiCombatArm.Gunner)
                 {
                     string report = $"runtime={brain.RuntimeId} gunnerId={brain.GunnerId} "
                         + $"mounted={(brain.IsMounted ? "true" : "false")} "
@@ -3299,13 +3299,10 @@ public sealed class SoldierRenderer : IDisposable
                             ? timerValue.ToString()
                             : "missing";
                         string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
-                        string actions = brain.LastDispatchedActions.Count == 0
-                            ? "-"
-                            : string.Join(',', brain.LastDispatchedActions.Select(action => action.Name));
                         _logger.Information(
                             LogCategory,
                             $"[gunner] diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
-                            + $"actions={actions} timer1608={timer}");
+                            + $"timer1608={timer}");
                     }
                 }
             }

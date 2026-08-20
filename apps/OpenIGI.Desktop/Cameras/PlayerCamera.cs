@@ -999,13 +999,9 @@ public sealed class PlayerCamera
         WorldInteraction? electricFence = _interactions?.FindElectrifiedFenceContact(
             previousPosition,
             _body.Position);
-        if (!ReferenceEquals(electricFence, _electricFenceContact))
+        if (ElectricFenceContact.Advance(ref _electricFenceContact, electricFence) is { } touchedFence)
         {
-            _electricFenceContact = electricFence;
-            if (electricFence is not null)
-            {
-                ElectrifiedFenceTouched?.Invoke(electricFence);
-            }
+            ElectrifiedFenceTouched?.Invoke(touchedFence);
         }
 
         // Diagnostic: name whatever the wall sweep stopped the body against, so a doorway you cannot walk

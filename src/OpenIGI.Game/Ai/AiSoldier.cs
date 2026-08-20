@@ -173,9 +173,6 @@ public sealed class AiSoldier
     /// <summary>Gets the actions the archetype script last asked for.</summary>
     public IReadOnlyList<AiProducedAction> LastActions { get; private set; } = [];
 
-    /// <summary>Gets the actions produced by <see cref="LastDispatchedEvent"/>.</summary>
-    public IReadOnlyList<AiProducedAction> LastDispatchedActions { get; private set; } = [];
-
     /// <summary>Initializes a new instance of the <see cref="AiSoldier"/> class.</summary>
     /// <param name="graph">The nav graph this soldier walks.</param>
     /// <param name="position">Where it starts, in engine units.</param>
@@ -2196,8 +2193,6 @@ public sealed class AiSoldier
 
             bool handled = _host.Run(_script, this, type, slot, _archetypeScript);
             LastDispatchedEvent = type;
-
-            LastDispatchedActions = _host.Produced.ToArray();
             if (handled)
             {
                 QueueActions(_host.Produced);

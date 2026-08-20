@@ -1721,8 +1721,8 @@ internal sealed partial class DesktopGame
                 + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
                 + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
 
-        const float damageFactor = 0.1f;
-        float dealt = _playerHealth.Apply(HumanDamage.FrontZone, damageFactor);
+        ElectricFenceShock shock = ElectricFenceContact.Shock(_playerHealth);
+        float dealt = shock.Damage;
         if (dealt <= 0f)
         {
             _logger.Warning(
@@ -1739,17 +1739,21 @@ internal sealed partial class DesktopGame
             PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
         }
 
-        _soldiers?.NotifyGroundImpact(
+        Action<Vector3d, Vector3d, double>? notifyGroundImpact = _soldiers is { } soldiers
+            ? soldiers.NotifyGroundImpact
+            : null;
+        ElectricFenceContact.NotifyAiOnShock(
+            shock,
+            notifyGroundImpact,
             fence.Anchor,
-            player.Body.Position,
-            AiSoldier.GroundImpactRadiusInUnits);
+            player.Body.Position);
         _logger.Information(
             "Player",
             $"Electric fence shock dealt {dealt:F3} ({_playerHealth.RemainingFraction:P0} left).");
 
-        if (_playerHealth.IsDead)
+        if (shock.IsLethal)
         {
-            BeginPlayerDeath(fence.Anchor, HumanDamage.FrontZone, bone: -1, WeaponCategory.Gun);
+            BeginPlayerDeath(fence.Anchor, ElectricFenceContact.Zone, bone: -1, WeaponCategory.Gun);
         }
     }
 
