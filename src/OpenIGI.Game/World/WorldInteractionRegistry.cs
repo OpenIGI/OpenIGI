@@ -79,6 +79,10 @@ public sealed class WorldInteraction
     public ScriptFlag InUse { get; } = new();
     public ScriptFlag Pressed { get; } = new();
     public bool IsOn { get; set; } = true;
+    /// <summary>Whether this interaction's player-use state currently owns its stationary gun.</summary>
+    public bool IsPlayerUsingStationaryGun => StationaryGun is { } gun
+        && InUse.Value
+        && gun.IsOccupiedBy(_userOccupant);
     /// <summary>Whether an authored electric fence is currently powered.</summary>
     public bool IsElectrified { get; private set; }
     public bool IsCompleted { get; private set; }

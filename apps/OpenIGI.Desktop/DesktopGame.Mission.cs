@@ -242,7 +242,8 @@ internal sealed partial class DesktopGame
             vehiclePhysics: _vehiclePhysics,
             terrain: loaded.Terrain,
             logger: _logger);
-        if (levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
+        bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
+        if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
         {
             string parameters = string.Join(
                 ", ",
@@ -250,7 +251,7 @@ internal sealed partial class DesktopGame
                     (parameter, index) => $"{parameter.Name}={levelTimer.GetValue(index) ?? "<null>"}"));
             _logger.Information("Mission", $"[timer] LevelTimer_1608 {parameters}");
         }
-        if (levelRoot.Tree.FromId(161) is DeclaredTask activation)
+        if (collectDiagnostics && levelRoot.Tree.FromId(161) is DeclaredTask activation)
         {
             string parameters = string.Join(
                 ", ",

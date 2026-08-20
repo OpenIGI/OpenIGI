@@ -3972,10 +3972,10 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
 
-        // StationaryGun's holder is a separate authored model. Draw its M2HB here even while the
-        // stand is unattended; once a gunner owns it, the mounted soldier's hand attachment becomes
-        // the single live copy and the static copy is suppressed below.
-        DrawUnoccupiedStationaryGuns(camera, projection);
+        // StationaryGun's holder is a separate authored model. An AI gunner replaces it with the
+        // mounted soldier's hand attachment, but the first-person player has no equivalent world
+        // attachment, so the holder stays visible while the player owns the task.
+        DrawStationaryGuns(camera, projection);
 
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
@@ -4059,11 +4059,14 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
-    private void DrawUnoccupiedStationaryGuns(in Camera3D camera, in Matrix4f projection)
+    private void DrawStationaryGuns(in Camera3D camera, in Matrix4f projection)
     {
         foreach ((AiStationaryGun gun, HeldWeapon? visual) in _stationaryWeaponVisuals)
         {
-            if (gun.IsOccupied || visual?.Presentation is not { } presentation)
+            bool playerUsing = gun.IsOccupied && _interactions?.Items.Any(item =>
+                ReferenceEquals(item.StationaryGun, gun) && item.IsPlayerUsingStationaryGun) == true;
+            if (!ShouldDrawStaticStationaryGun(gun, playerUsing)
+                || visual?.Presentation is not { } presentation)
             {
                 continue;
             }
@@ -4089,6 +4092,13 @@ public sealed class SoldierRenderer : IDisposable
                 shotSequence: 0,
                 WeaponDrawParts.BodyOnly);
         }
+    }
+
+    /// <summary>Gets whether the holder model remains the visible gun for this ownership state.</summary>
+    internal static bool ShouldDrawStaticStationaryGun(AiStationaryGun gun, bool playerUsing)
+    {
+        ArgumentNullException.ThrowIfNull(gun);
+        return !gun.IsOccupied || playerUsing;
     }
 
     /// <summary>Gets a value indicating whether the player's third-person body is posed and drawing.</summary>
