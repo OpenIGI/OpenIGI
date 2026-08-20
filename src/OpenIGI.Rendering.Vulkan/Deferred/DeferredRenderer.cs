@@ -32,6 +32,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly ShadowMap _shadowMap;
     private readonly ShadowPipeline _shadowPipeline;
     private readonly SsaoPass _ssao;
+    private readonly VelocityPass _velocity;
     private bool _disposed;
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
@@ -69,6 +70,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass);
         _ssao = new SsaoPass(vk, device, allocator, compiler);
+        _velocity = new VelocityPass(vk, device, allocator, compiler);
         _giUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
@@ -146,6 +148,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the ambient-occlusion compute pass.</summary>
     public SsaoPass Ssao => _ssao;
 
+    /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
+    public VelocityPass Velocity => _velocity;
+
     /// <summary>Gets the scene target for a frame in flight, built at the render size.</summary>
     /// <param name="frameIndex">The frame-in-flight index.</param>
     /// <param name="width">The render width in pixels.</param>
@@ -157,6 +162,27 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         target.Ensure(width, height);
         return target;
     }
+
+    /// <summary>Gets the target the previous frame rendered into.</summary>
+    /// <param name="frameIndex">This frame's frame-in-flight index.</param>
+    /// <returns>The previous frame's target, holding its depth, normals and base colour.</returns>
+    /// <remarks>
+    /// <para>
+    /// There is no separate copy of the previous frame: with two frames in flight, the slot this frame is
+    /// not using is the one the previous frame used, and it still holds everything that frame wrote. That
+    /// is what a temporal pass needs to tell a surface it can accumulate onto from one that has just come
+    /// into view — comparing this frame's depth and normal against the previous frame's at the reprojected
+    /// position, which is what the velocity buffer points at.
+    /// </para>
+    /// <para>
+    /// Safe to read because both frames are submitted to the same queue in order, so the previous frame's
+    /// writes have executed by the time this frame's reads do; a barrier is still needed to make them
+    /// visible. It is only meaningful once a second frame has been rendered at the current size — before
+    /// that the slot holds either nothing or an image of a different shape.
+    /// </para>
+    /// </remarks>
+    public SceneTarget PreviousTarget(int frameIndex) =>
+        _targets[(frameIndex + _targets.Length - 1) % _targets.Length];
 
     /// <inheritdoc/>
     public void Dispose()
@@ -177,6 +203,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             uniform.Dispose();
         }
 
+        _velocity.Dispose();
         _ssao.Dispose();
         _shadowPipeline.Dispose();
         _shadowMap.Dispose();

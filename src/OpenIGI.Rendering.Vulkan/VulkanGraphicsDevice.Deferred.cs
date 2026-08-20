@@ -26,6 +26,14 @@ public sealed partial class VulkanGraphicsDevice
     private Vector3f _cameraPosition;
     private Matrix3f _viewToWorld = Matrix3f.Identity;
     private DepthUnprojection _unprojection = new(1f, 1f, 0.1f, 1000f);
+
+    // The previous frame's camera, which is the whole of what a static world needs to be reprojected onto
+    // it. Captured at the end of each captured frame rather than when the seam hands the camera over, so
+    // a frame that renders nothing does not shift the reference the next one measures against.
+    private Matrix3f _previousViewToWorld = Matrix3f.Identity;
+    private Vector3f _previousCameraPosition;
+    private DepthUnprojection _previousUnprojection = new(1f, 1f, 0.1f, 1000f);
+    private bool _hasPreviousFrame;
     private IrradianceVolumeSettings _volumeSettings = IrradianceVolumeSettings.Off;
     private bool _hasProbeField;
 
@@ -167,6 +175,13 @@ public sealed partial class VulkanGraphicsDevice
             // lighting to read. The lighting already sampled the occlusion image this frame (its previous
             // contents), so a read-before-write barrier separates that from the compute write below.
             DispatchOcclusion();
+            DispatchVelocity();
+
+            // Everything temporal measures against this, so it moves on exactly once per captured frame.
+            _previousViewToWorld = _viewToWorld;
+            _previousCameraPosition = _cameraPosition;
+            _previousUnprojection = _unprojection;
+            _hasPreviousFrame = true;
         }
 
         _capturing = false;
@@ -208,6 +223,54 @@ public sealed partial class VulkanGraphicsDevice
 
         OcclusionBarrier(cmd, ao, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
+    }
+
+    /// <summary>Works out this frame's screen motion from the stored depth and the two frames' cameras.</summary>
+    private unsafe void DispatchVelocity()
+    {
+        if (_sceneTarget is null)
+        {
+            return;
+        }
+
+        Deferred.SceneTarget target = _sceneTarget;
+        CommandBuffer cmd = _frameCommandBuffer;
+
+        // The very first captured frame has nothing to have moved from. Leaving the image at its cleared
+        // zero says exactly that, and is what a consumer should see rather than motion measured against an
+        // identity camera that was never real.
+        if (!_hasPreviousFrame)
+        {
+            return;
+        }
+
+        DepthReadBarrier(cmd, target.DepthImage);
+
+        Image velocity = target.VelocityImage;
+        OcclusionBarrier(
+            cmd, velocity, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.Velocity.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.DepthView,
+            target.VelocityView,
+            _captureWidth,
+            _captureHeight,
+            _viewToWorld,
+            _previousViewToWorld,
+            new Vector3f(
+                _cameraPosition.X - _previousCameraPosition.X,
+                _cameraPosition.Y - _previousCameraPosition.Y,
+                _cameraPosition.Z - _previousCameraPosition.Z),
+            _unprojection,
+            _previousUnprojection);
+
+        OcclusionBarrier(
+            cmd, velocity, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
+
     }
 
     private unsafe void DepthReadBarrier(CommandBuffer cmd, Image depth)
