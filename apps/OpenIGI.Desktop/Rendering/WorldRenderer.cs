@@ -284,6 +284,7 @@ public sealed class WorldRenderer : IDisposable
                     }
                 }
             }
+
         }
 
         LastDrawCount = draws;

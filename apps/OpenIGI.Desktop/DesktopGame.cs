@@ -1849,6 +1849,9 @@ internal sealed partial class DesktopGame : IDisposable
                 }
             }
 
+            // Direct interactions publish their expression/power state during the fixed tick.
+            _interactions?.Tick();
+
             // Lifts advance before perception and AI consume this tick's player position. A passenger
             // standing on the previous platform sample receives the same displacement, which keeps the
             // body, camera and collision contact together while the platform travels.

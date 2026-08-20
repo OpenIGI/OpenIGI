@@ -96,6 +96,10 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<int, AiSoldier> _brainsByRuntimeId = [];
     private readonly Dictionary<GuardGeneratorTask, SoldierView> _guardGenerators = [];
     private LevelExpressionRuntime? _guardExpressions;
+    private readonly Dictionary<AiStationaryGun, HeldWeapon?> _stationaryWeaponVisuals = [];
+    private readonly Dictionary<int, string> _lastGunnerRuntimeReports = [];
+    private readonly HashSet<int> _reportedStationaryVisuals = [];
+    private ScriptVarRegistry? _scriptVariables;
     private readonly EnemyDetectorOverlay _binocularOverlay = new();
 
     // The soldiers the last binocular scan drew a contact for, and the team colour their marker uses.
@@ -1317,6 +1321,7 @@ public sealed class SoldierRenderer : IDisposable
         _guardGenerators.Clear();
         _npcTargetByBrain.Clear();
         _guardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
+        _scriptVariables = variables;
         _lastDetectionShoutTick = -1;
         _combat.Clear();
         _health.Clear();
@@ -1445,6 +1450,14 @@ public sealed class SoldierRenderer : IDisposable
                         id =>
                         {
                             _activatedTasks.Add(id);
+                            if (brain.Arm == AiCombatArm.Gunner
+                                || _interactions?.FindStationaryGun(id) is not null)
+                            {
+                                _logger.Information(
+                                    LogCategory,
+                                    $"[gunner] runtime={brain.RuntimeId} activation reached task={id} "
+                                        + $"gunnerId={brain.GunnerId}");
+                            }
                             _aiTaskActivator?.Invoke(id);
                         });
                 }
@@ -1566,18 +1579,42 @@ public sealed class SoldierRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _heldWeaponsByModel.Clear();
 
+        Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
+        _stationaryWeaponVisuals.Clear();
+        _reportedStationaryVisuals.Clear();
         if (_interactions is { } interactions)
         {
             foreach (AiStationaryGun gun in interactions.Items
                 .Select(static item => item.StationaryGun)
                 .OfType<AiStationaryGun>())
             {
-                gun.BindWeapon(roster.TryGetByScriptId(gun.WeaponId, out WeaponType weapon) ? weapon : null);
+                if (!roster.TryGetByScriptId(gun.WeaponId, out WeaponType weapon))
+                {
+                    gun.BindWeapon(null);
+                    _stationaryWeaponVisuals[gun] = null;
+                    _logger.Warning(
+                        LogCategory,
+                        $"[gunner] task={gun.TaskId} weapon={gun.WeaponId} is not in the weapon table.");
+                    continue;
+                }
+
+                gun.BindWeapon(weapon);
+                if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
+                {
+                    held = BuildWeapon(mission, weapon.GunModel);
+                    cache[weapon.GunModel] = held;
+                }
+
+                _stationaryWeaponVisuals[gun] = held;
+                _logger.Information(
+                    LogCategory,
+                    $"[gunner] task={gun.TaskId} weapon={weapon.ScriptId} model={weapon.GunModel} "
+                        + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) "
+                        + $"visual={(held is null ? "missing" : "ready")}");
             }
         }
 
         int armed = 0;
-        Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (Group group in _groups)
         {
@@ -1612,6 +1649,7 @@ public sealed class SoldierRenderer : IDisposable
                 // reads that task directly (IGI1 0x48D8E0; IGI2 HumanAIContent_RunFire), so a missing or
                 // unrenderable model must not turn an armed guard into an unarmed AI that only stares.
                 member.WeaponType = weapon;
+                member.CarriedWeaponType = weapon;
                 member.AmmoInClip = weapon.RoundsPerClip;
 
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
@@ -1627,6 +1665,7 @@ public sealed class SoldierRenderer : IDisposable
 
                 member.Weapon = held;
                 _heldWeaponsByModel[weapon.GunModel] = held;
+                member.CarriedWeapon = held;
                 armed++;
             }
         }
@@ -1842,6 +1881,28 @@ public sealed class SoldierRenderer : IDisposable
             held.WeaponType?.RoundsPerClip ?? 0,
             held.WeaponType?.MaximumRoundsPerBurst ?? 0,
             held.WeaponType?.Category ?? WeaponCategory.Knife);
+    }
+
+    /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
+    private void UpdateMountedWeapon(Member member, AiSoldier brain)
+    {
+        if (brain.MountedGun is { } mounted
+            && mounted.Weapon is { } weapon
+            && _stationaryWeaponVisuals.TryGetValue(mounted, out HeldWeapon? visual)
+            && visual is not null)
+        {
+            member.WeaponType = weapon;
+            member.Weapon = visual;
+            member.RenderedMountedGun = mounted;
+            return;
+        }
+
+        if (member.RenderedMountedGun is not null)
+        {
+            member.WeaponType = member.CarriedWeaponType;
+            member.Weapon = member.CarriedWeapon;
+            member.RenderedMountedGun = null;
+        }
     }
 
     /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
@@ -3217,6 +3278,38 @@ public sealed class SoldierRenderer : IDisposable
             }
             SeparateFromOtherSoldiers(brain, before);
 
+            if (member is not null)
+            {
+                UpdateMountedWeapon(member, brain);
+                if (brain.Arm == AiCombatArm.Gunner)
+                {
+                    string report = $"runtime={brain.RuntimeId} gunnerId={brain.GunnerId} "
+                        + $"mounted={(brain.IsMounted ? "true" : "false")} "
+                        + $"task={(brain.MountedGun is null ? "-" : brain.MountedGun.TaskId.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                        + $"activity={brain.Activity}";
+                    if (_lastGunnerRuntimeReports.GetValueOrDefault(brain.RuntimeId) != report)
+                    {
+                        _lastGunnerRuntimeReports[brain.RuntimeId] = report;
+                        _logger.Information(LogCategory, $"[gunner] {report}");
+                    }
+
+                    if (_tick % 300 == 1)
+                    {
+                        string timer = _scriptVariables?.TryRead("LevelTimer_1608.nTick", out QvmValue timerValue) == true
+                            ? timerValue.ToString()
+                            : "missing";
+                        string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
+                        string actions = brain.LastDispatchedActions.Count == 0
+                            ? "-"
+                            : string.Join(',', brain.LastDispatchedActions.Select(action => action.Name));
+                        _logger.Information(
+                            LogCategory,
+                            $"[gunner] diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
+                            + $"actions={actions} timer1608={timer}");
+                    }
+                }
+            }
+
             // The pump half of the [aiflow] diff: an event that was QUEUED shows up here the tick it is
             // drained, whether or not any script acted on it. Noise delivered but never drained points at
             // the pump; drained but never acted on points at the script/actions.
@@ -3873,7 +3966,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_groups.Count == 0)
+        if (_groups.Count == 0 && _stationaryWeaponVisuals.Count == 0)
         {
             return;
         }
@@ -3881,6 +3974,11 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
+
+        // StationaryGun's holder is a separate authored model. Draw its M2HB here even while the
+        // stand is unattended; once a gunner owns it, the mounted soldier's hand attachment becomes
+        // the single live copy and the static copy is suppressed below.
+        DrawUnoccupiedStationaryGuns(camera, projection);
 
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
@@ -3961,6 +4059,38 @@ public sealed class SoldierRenderer : IDisposable
                 _device.ClearPreviousPose();
                 _device.ClearPoseInterpolation();
             }
+        }
+    }
+
+    private void DrawUnoccupiedStationaryGuns(in Camera3D camera, in Matrix4f projection)
+    {
+        foreach ((AiStationaryGun gun, HeldWeapon? visual) in _stationaryWeaponVisuals)
+        {
+            if (gun.IsOccupied || visual?.Presentation is not { } presentation)
+            {
+                continue;
+            }
+
+            if (_reportedStationaryVisuals.Add(gun.TaskId))
+            {
+                _logger.Information(
+                    LogCategory,
+                    $"[gunner] static visual task={gun.TaskId} weapon={gun.WeaponId} "
+                    + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) drawn");
+            }
+
+            presentation.Draw(
+                // The retail M2HB mesh's barrel is authored on local +Y while StationaryGun's
+                // orientation and cone are defined from the local -Y barrel axis. Rotate the
+                // presentation around the stand pivot so the visible gun points where the task aims.
+                new BoneAttachment(
+                    gun.Position,
+                    gun.Orientation * Matrix3f.RotationZ(MathF.PI)),
+                camera,
+                projection,
+                firedThisTick: false,
+                shotSequence: 0,
+                WeaponDrawParts.BodyOnly);
         }
     }
 
@@ -5831,6 +5961,15 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>What this soldier holds, or <see langword="null"/> when the level armed it with nothing.</summary>
         public HeldWeapon? Weapon { get; set; }
+
+        /// <summary>The carried weapon restored after a temporary stationary-gun mount ends.</summary>
+        public HeldWeapon? CarriedWeapon { get; set; }
+
+        /// <summary>The carried weapon table row restored after a temporary stationary-gun mount ends.</summary>
+        public WeaponType? CarriedWeaponType { get; set; }
+
+        /// <summary>The stationary gun whose model currently replaces the carried weapon.</summary>
+        public AiStationaryGun? RenderedMountedGun { get; set; }
 
         /// <summary>Whether a round left this soldier's barrel on the current simulation tick.</summary>
         public bool FiredThisTick { get; set; }

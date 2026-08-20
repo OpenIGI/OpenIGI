@@ -235,7 +235,8 @@ public sealed class RetailObjectLightmapTests
         List<string> names = [];
         foreach (GameTask task in Walk(owner))
         {
-            if (task is DeclaredTask declared)
+            if (task is DeclaredTask declared
+                && !string.Equals(declared.Type.Name, "StationaryGun", StringComparison.Ordinal))
             {
                 names.AddRange(WorldScene.PlacedModelNames(declared));
             }

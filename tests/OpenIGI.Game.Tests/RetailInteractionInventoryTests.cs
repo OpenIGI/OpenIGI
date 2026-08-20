@@ -324,6 +324,57 @@ public sealed class RetailInteractionInventoryTests
         Assert.True(genericPickupTotal > 0, "No shipped GenericPickup task was loaded.");
     }
 
+    [RequiresGameDataFact]
+    public void EveryRetailStationaryGunHasItsDrawableHolderPlacement()
+    {
+        int stationaryGunCount = 0;
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+                Load(missionId);
+            DoorRegistry doors = DoorRegistry.Build(root);
+            WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+            WorldScene scene = WorldScene.Build(mission, root, magic);
+
+            foreach (WorldInteraction gun in interactions.Items.Where(
+                         static item => item.Type == InteractionActivateType.StationaryGun))
+            {
+                stationaryGunCount++;
+                DeclaredTask declared = Assert.IsType<DeclaredTask>(gun.Task);
+                string parameters = string.Join(
+                    "; ",
+                    declared.Type.Parameters.Select(
+                        (parameter, index) => $"{parameter.Name}={declared.GetValue(index)}"));
+                Assert.True(
+                    scene.Placements.Any(candidate => ReferenceEquals(candidate.Owner, gun.Task)),
+                    $"Mission {missionId} task {declared.Name} produced no placement; "
+                    + $"models=[{string.Join(",", WorldScene.PlacedModelNames(declared))}], "
+                    + $"parameters=[{parameters}], unresolved={scene.UnresolvedCount}");
+                WorldPlacement placement = Assert.Single(
+                    scene.Placements,
+                    candidate => ReferenceEquals(candidate.Owner, gun.Task));
+
+                string expectedModel = declared.TryGetValue("Holder model", out object? rawHolderModel)
+                    && rawHolderModel is string holderModel
+                    && holderModel.Length > 0
+                    ? holderModel
+                    : "456_13_1";
+                Assert.Equal(expectedModel, placement.Instance.Name);
+                Assert.Equal(
+                    new Vector3d(
+                        gun.Anchor.X / WorldScene.UnitsPerMetre,
+                        gun.Anchor.Y / WorldScene.UnitsPerMetre,
+                        gun.Anchor.Z / WorldScene.UnitsPerMetre),
+                    placement.Position);
+                Assert.Equal(gun.Orientation, placement.Orientation);
+                Assert.False(placement.Model.IsEmpty);
+            }
+        }
+
+        Assert.True(stationaryGunCount > 0, "The campaign did not expose any StationaryGun tasks.");
+    }
+
     private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(
         int missionId,
         bool loadTerrain = false)

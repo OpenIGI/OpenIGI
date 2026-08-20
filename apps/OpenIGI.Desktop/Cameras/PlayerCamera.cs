@@ -85,6 +85,7 @@ public sealed class PlayerCamera
     private int _interactionTick;
     private bool _interactionUseArmed;
     private Vector3d _fenceExitPosition;
+    private WorldInteraction? _electricFenceContact;
     private float _interactionFacing;
     private Vector3d _wireDirection;
     private double _wireSpeed;
@@ -701,6 +702,9 @@ public sealed class PlayerCamera
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
 
+    /// <summary>Raised once when the player touches a powered electric fence.</summary>
+    public event Action<WorldInteraction>? ElectrifiedFenceTouched;
+
     /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
     public bool IsInWorldInteraction => _activeInteraction is not null;
 
@@ -975,6 +979,8 @@ public sealed class PlayerCamera
 
         PlayerCommand command = new(forward, strafe, 0f, 0f, _running, crouch, jump);
 
+        Vector3d previousPosition = _body.Position;
+
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in
         // HumanPlayer_Update ahead of 0x464800, so its clip-end flag is last tick's.
         TickWeapons();
@@ -988,6 +994,18 @@ public sealed class PlayerCamera
         else
         {
             _body.TickAnimated(command, terrain, _animator);
+        }
+
+        WorldInteraction? electricFence = _interactions?.FindElectrifiedFenceContact(
+            previousPosition,
+            _body.Position);
+        if (!ReferenceEquals(electricFence, _electricFenceContact))
+        {
+            _electricFenceContact = electricFence;
+            if (electricFence is not null)
+            {
+                ElectrifiedFenceTouched?.Invoke(electricFence);
+            }
         }
 
         // Diagnostic: name whatever the wall sweep stopped the body against, so a doorway you cannot walk
@@ -1101,6 +1119,11 @@ public sealed class PlayerCamera
                     ? interaction.FenceExitPoint(position)
                     : position;
                 interaction.BeginUse();
+                if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
+                {
+                    _electricFenceContact = interaction;
+                    ElectrifiedFenceTouched?.Invoke(interaction);
+                }
                 break;
         }
 
@@ -1542,6 +1565,16 @@ public sealed class PlayerCamera
             $"BLOCKED by {label} at ({nearest.Position.X:F0}, {nearest.Position.Y:F0}, {nearest.Position.Z:F0}) — probe {probeMetres:F2}m, {aheadMetres:F2}m ahead; player ({_body.Position.X:F0}, {_body.Position.Y:F0}, {_body.Position.Z:F0}) yaw {_body.Yaw:F2}");
 
         _logger.Information("Player", line);
+        if (label.Contains("Fence", StringComparison.OrdinalIgnoreCase))
+        {
+            WorldInteraction? fence = _interactions?.FindElectrifiedFenceNear(nearest.Position);
+            _logger.Information(
+                "Player",
+                $"[fence] wall contact task={(fence is null ? "-" : fence.Task.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                    + $"powered={(fence?.IsElectrified == true ? "true" : "false")} "
+                    + $"contact={(fence is null ? "miss" : "candidate")} "
+                    + $"player=({_body.Position.X:F0},{_body.Position.Y:F0},{_body.Position.Z:F0})");
+        }
     }
 
     // The nearest ladder that is close enough, faced and within height to mount.

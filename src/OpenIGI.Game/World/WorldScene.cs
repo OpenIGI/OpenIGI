@@ -61,6 +61,9 @@ public sealed class WorldScene
     /// <summary>The security-camera task type, whose models are engine-supplied rather than declared.</summary>
     public const string SecurityCameraType = "SCamera";
 
+    /// <summary>The stationary-gun task type, whose holder is engine-created outside lightmap enumeration.</summary>
+    private const string StationaryGunType = "StationaryGun";
+
     /// <summary>The interactive switch task type, whose model a task declares in <see cref="SwitchModelParameter"/>.</summary>
     public const string SwitchType = "Switch";
 
@@ -135,6 +138,28 @@ public sealed class WorldScene
             yield return genericAmmoModel;
         }
 
+        // StationaryGun carries its visible holder in "Holder model", not Model.
+        // The native task still owns the world transform, so this is a normal placement rather than an
+        // attachment to the enemy's animated gunner.
+        if (declaredModelName is null
+            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && task.TryGetValue("Holder model", out object? rawHolderModel)
+            && rawHolderModel is string holderModel
+            && holderModel.Length > 0)
+        {
+            yield return holderModel;
+        }
+
+        // Keep a drawable default for older or hand-authored StationaryGun tasks that omit both model fields.
+        if (declaredModelName is null
+            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && (!task.TryGetValue("Holder model", out object? rawFallbackHolderModel)
+                || rawFallbackHolderModel is not string fallbackHolderModel
+                || fallbackHolderModel.Length == 0))
+        {
+            yield return "456_13_1";
+        }
+
         if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
         {
             for (int i = 0; i < SecurityCameraModelParameters.Count; i++)
@@ -186,6 +211,21 @@ public sealed class WorldScene
         task.TryGetValue(SwitchModelParameter, out object? model) && model is string name && name.Length > 0
             ? name
             : "switch";
+
+    /// <summary>Lists the models the retail lightmap walker enumerates for a task.</summary>
+    /// <remarks>StationaryGun's holder is created by the engine after the lightmap list is built.</remarks>
+    private static IEnumerable<string> LightmapModelNames(DeclaredTask task)
+    {
+        if (string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal))
+        {
+            yield break;
+        }
+
+        foreach (string name in PlacedModelNames(task))
+        {
+            yield return name;
+        }
+    }
 
     /// <summary>Tells whether a waypoint has a waypoint sibling before it under the same parent.</summary>
     private static bool HasEarlierWaypointSibling(DeclaredTask waypoint)
@@ -942,7 +982,7 @@ public sealed class WorldScene
                     continue;
                 }
 
-                foreach (string name in PlacedModelNames(declared))
+                foreach (string name in LightmapModelNames(declared))
                 {
                     placing.Add(task);
                     models.Add(name);

@@ -3,6 +3,7 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Player;
 using OpenIGI.Rendering;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.
@@ -21,6 +22,7 @@ public sealed class WorldInteraction
     private Func<bool>? _lockedCondition;
     private Func<bool>? _openCondition;
     private Func<bool>? _closeCondition;
+    private Func<bool>? _electricCondition;
     private Action? _onPress;
     private readonly Vector3d _authoredAnchor;
     private readonly Vector3d _authoredEnd;
@@ -77,6 +79,8 @@ public sealed class WorldInteraction
     public ScriptFlag InUse { get; } = new();
     public ScriptFlag Pressed { get; } = new();
     public bool IsOn { get; set; } = true;
+    /// <summary>Whether an authored electric fence is currently powered.</summary>
+    public bool IsElectrified { get; private set; }
     public bool IsCompleted { get; private set; }
     public bool CompletedThisTick { get; private set; }
     public bool IsSearched { get; private set; }
@@ -342,6 +346,7 @@ public sealed class WorldInteraction
     {
         _offset = _dynamicOffset?.Invoke() ?? default;
         IsOn = _onCondition?.Invoke() ?? IsOn;
+        IsElectrified = _electricCondition?.Invoke() ?? false;
         IsLocked = !IsPicked && (_lockedCondition?.Invoke() ?? false);
         // Door_RunHandler only evaluates the open expression while fully closed and the close
         // expression while fully open (0x446DF0 / 0x446E38). Evaluating close during the opening
@@ -380,19 +385,85 @@ public sealed class WorldInteraction
         Func<bool>? on,
         Func<bool>? locked,
         Func<bool>? open = null,
-        Func<bool>? close = null)
+        Func<bool>? close = null,
+        Func<bool>? electric = null)
     {
         _onCondition = on;
         _lockedCondition = locked;
         _openCondition = open;
         _closeCondition = close;
+        _electricCondition = electric;
         IsOn = on?.Invoke() ?? true;
+        IsElectrified = electric?.Invoke() ?? false;
         IsLocked = locked?.Invoke() ?? false;
     }
 
     internal void SetDynamicOffset(Func<Vector3d> offset) => _dynamicOffset = offset;
 
     internal void SetPressHandler(Action handler) => _onPress = handler;
+
+    internal bool SegmentTouchesFence(Vector3d from, Vector3d to)
+    {
+        if (Type != InteractionActivateType.Fence || !IsElectrified || !HasLocalBounds)
+        {
+            return false;
+        }
+
+        Vector3d localFrom = Orientation.Transform(from - Anchor);
+        Vector3d localTo = Orientation.Transform(to - Anchor);
+        Vector3d delta = localTo - localFrom;
+        const double tolerance = HumanSeparation.RadiusInUnits;
+        double enter = 0.0;
+        double exit = 1.0;
+        return Slab(localFrom.X, delta.X, LocalBoundsMinimum.X - tolerance, LocalBoundsMaximum.X + tolerance,
+                ref enter, ref exit)
+            && Slab(localFrom.Y, delta.Y, LocalBoundsMinimum.Y - tolerance, LocalBoundsMaximum.Y + tolerance,
+                ref enter, ref exit)
+            && Slab(localFrom.Z, delta.Z, LocalBoundsMinimum.Z - tolerance, LocalBoundsMaximum.Z + tolerance,
+                ref enter, ref exit);
+    }
+
+    internal bool PointTouchesFence(Vector3d point)
+    {
+        if (Type != InteractionActivateType.Fence || !IsElectrified || !HasLocalBounds)
+        {
+            return false;
+        }
+
+        Vector3d local = Orientation.Transform(point - Anchor);
+        const double tolerance = HumanSeparation.RadiusInUnits;
+        return local.X >= LocalBoundsMinimum.X - tolerance
+            && local.X <= LocalBoundsMaximum.X + tolerance
+            && local.Y >= LocalBoundsMinimum.Y - tolerance
+            && local.Y <= LocalBoundsMaximum.Y + tolerance
+            && local.Z >= LocalBoundsMinimum.Z - tolerance
+            && local.Z <= LocalBoundsMaximum.Z + tolerance;
+    }
+
+    private static bool Slab(
+        double origin,
+        double direction,
+        double minimum,
+        double maximum,
+        ref double enter,
+        ref double exit)
+    {
+        if (Math.Abs(direction) < double.Epsilon)
+        {
+            return origin >= minimum && origin <= maximum;
+        }
+
+        double near = (minimum - origin) / direction;
+        double far = (maximum - origin) / direction;
+        if (near > far)
+        {
+            (near, far) = (far, near);
+        }
+
+        enter = Math.Max(enter, near);
+        exit = Math.Min(exit, far);
+        return enter <= exit;
+    }
 }
 
 /// <summary>
@@ -469,6 +540,10 @@ public sealed class WorldInteractionRegistry
             case InteractionActivateType.Door:
                 item.Door?.Toggle();
                 break;
+            case InteractionActivateType.StationaryGun:
+                // AIAction_Activate reaches the gunner's own mount state. Player interaction's
+                // BeginUse/CompleteUse pair uses a private player sentinel and would dismount it.
+                break;
             default:
                 item.BeginUse();
                 item.CompleteUse();
@@ -481,6 +556,14 @@ public sealed class WorldInteractionRegistry
     /// <summary>Resolves the live stationary-gun task a HumanAI's gunner id names.</summary>
     public AiStationaryGun? FindStationaryGun(int taskId) =>
         _items.FirstOrDefault(item => item.Task.Id == taskId)?.StationaryGun;
+
+    /// <summary>Finds a powered electric fence touched by a player movement segment.</summary>
+    public WorldInteraction? FindElectrifiedFenceContact(Vector3d from, Vector3d to) =>
+        _items.FirstOrDefault(item => item.SegmentTouchesFence(from, to));
+
+    /// <summary>Finds the powered fence whose collision volume contains a nearby player centre.</summary>
+    public WorldInteraction? FindElectrifiedFenceNear(Vector3d point) =>
+        _items.FirstOrDefault(item => item.PointTouchesFence(point));
 
     /// <summary>Finds the eligible task nearest the centre of the player's aim.</summary>
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch = 0f)
@@ -504,7 +587,12 @@ public sealed class WorldInteractionRegistry
             }
 
             double radius = item.Type == InteractionActivateType.PlaceExplosive
-                ? Math.Max(ActivateRadius, ReadReal(item.Task, "Activate radius(meters)", 2f) * WorldScene.UnitsPerMetre)
+                ? Math.Max(
+                    ActivateRadius,
+                    ReadReal(
+                        item.Task,
+                        "Activate radius (meters)",
+                        ReadReal(item.Task, "Activate radius(meters)", 2f)) * WorldScene.UnitsPerMetre)
                 : ActivateRadius;
             Consider(item, item.CandidatePoint(eye), radius);
             if (item.Type == InteractionActivateType.Door)
@@ -622,6 +710,7 @@ public sealed class WorldInteractionRegistry
             string lockedExpression = ReadString(declared, "Locked expression", string.Empty);
             string openExpression = ReadString(declared, "Open door expression", string.Empty);
             string closeExpression = ReadString(declared, "Close door expression", string.Empty);
+            string electricExpression = ReadString(declared, "Electric Expression", string.Empty);
             item.SetConditions(
                 type is InteractionActivateType.Terminal or InteractionActivateType.Generic
                     or InteractionActivateType.PlaceExplosive
@@ -635,6 +724,9 @@ public sealed class WorldInteractionRegistry
                     : null,
                 type == InteractionActivateType.Door && !string.IsNullOrWhiteSpace(closeExpression)
                     ? () => expressions.EvaluateCondition(closeExpression, emptyValue: false)
+                    : null,
+                type == InteractionActivateType.Fence && !string.IsNullOrWhiteSpace(electricExpression)
+                    ? () => expressions.EvaluateCondition(electricExpression, emptyValue: false)
                     : null);
             registry._items.Add(item);
             BindVariables(item, variables);

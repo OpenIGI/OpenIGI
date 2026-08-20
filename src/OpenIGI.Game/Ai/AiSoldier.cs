@@ -173,6 +173,9 @@ public sealed class AiSoldier
     /// <summary>Gets the actions the archetype script last asked for.</summary>
     public IReadOnlyList<AiProducedAction> LastActions { get; private set; } = [];
 
+    /// <summary>Gets the actions produced by <see cref="LastDispatchedEvent"/>.</summary>
+    public IReadOnlyList<AiProducedAction> LastDispatchedActions { get; private set; } = [];
+
     /// <summary>Initializes a new instance of the <see cref="AiSoldier"/> class.</summary>
     /// <param name="graph">The nav graph this soldier walks.</param>
     /// <param name="position">Where it starts, in engine units.</param>
@@ -1900,7 +1903,10 @@ public sealed class AiSoldier
             SetTarget(null);
         }
 
-        if (Activity == AiSoldierActivity.Engaging)
+        // A scripted gunner can receive AIAction_Activate and AIAction_Combat in the same dispatch.
+        // The activation walk owns the tick until it reaches the emplacement; letting the combat
+        // branch return first strands the gunner beside an empty stand forever.
+        if (Activity == AiSoldierActivity.Engaging && _activate is null)
         {
             Fight(tick, _lastSeenFeet, rootMotionThisTick);
             return;
@@ -1976,9 +1982,29 @@ public sealed class AiSoldier
                 return;
             }
 
-            _activateTask?.Invoke(pressing.TaskId);
+            bool mountedGun = false;
+            if (pressing.TaskId == GunnerId
+                && _gunnerCombat is not null
+                && _stationaryGun?.Invoke(pressing.TaskId) is { } gun)
+            {
+                // StationaryGun's player interaction is a temporary input state. Calling its generic
+                // BeginUse/CompleteUse pair here would mount a private player sentinel and immediately
+                // release it, leaving the scripted gunner visibly beside an empty M2HB. The AI arm owns
+                // the real occupant and stays in Engaging after the activation walk arrives.
+                _activateTask?.Invoke(pressing.TaskId);
+                mountedGun = _gunnerCombat.MountImmediately(gun);
+                if (mountedGun)
+                {
+                    Position = gun.MountPosition;
+                    Facing = gun.MountFacing;
+                }
+            }
+            else
+            {
+                _activateTask?.Invoke(pressing.TaskId);
+            }
             ReleaseActivateClaims();
-            Activity = AiSoldierActivity.Idle;
+            Activity = mountedGun ? AiSoldierActivity.Engaging : AiSoldierActivity.Idle;
             return;
         }
 
@@ -2170,6 +2196,8 @@ public sealed class AiSoldier
 
             bool handled = _host.Run(_script, this, type, slot, _archetypeScript);
             LastDispatchedEvent = type;
+
+            LastDispatchedActions = _host.Produced.ToArray();
             if (handled)
             {
                 QueueActions(_host.Produced);
