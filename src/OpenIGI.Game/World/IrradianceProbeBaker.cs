@@ -161,6 +161,15 @@ public static class IrradianceProbeBaker
 
             Parallel.For(0, countZ, options, z =>
             {
+                // Below the render thread, so the bake -- which runs off the main thread but still on the
+                // machine's other cores -- yields to a frame that needs a core rather than starving it. The
+                // level lights up a little slower; the frame it lights up over does not freeze. Set once per
+                // worker (the guard skips the syscall after the first slice a pooled thread runs).
+                if (System.Threading.Thread.CurrentThread.Priority == System.Threading.ThreadPriority.Normal)
+                {
+                    System.Threading.Thread.CurrentThread.Priority = System.Threading.ThreadPriority.BelowNormal;
+                }
+
                 float[] coefficients = new float[IrradianceVolume.CoefficientsPerProbe];
 
                 for (int y = 0; y < countY; y++)

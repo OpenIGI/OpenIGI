@@ -173,6 +173,11 @@ public static class LightmapBaker
 
         Parallel.For(0, targets.Count, options, t =>
         {
+            if (Thread.CurrentThread.Priority == ThreadPriority.Normal)
+            {
+                Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+            }
+
             LightmapTarget target = targets[t];
 
             for (int i = 0; i < target.Texels.Length; i++)
@@ -849,6 +854,11 @@ public static class LightmapBaker
 
             Parallel.For(0, targets.Count, options, t =>
             {
+                if (Thread.CurrentThread.Priority == ThreadPriority.Normal)
+                {
+                    Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+                }
+
                 LightmapTarget target = targets[t];
 
                 for (int i = 0; i < target.Texels.Length; i++)
