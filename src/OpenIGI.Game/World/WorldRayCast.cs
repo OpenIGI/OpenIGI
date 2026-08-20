@@ -92,13 +92,19 @@ public enum WorldTraceHitKind
 /// Whether collision owned by a dormant conditional container participates. Retail uses this during
 /// Human registration so staged actors can acquire their moving parent before the scene is activated.
 /// </param>
+/// <param name="TracePortals">
+/// Whether doorway and window portal faces are solid. Human movement leaves this clear so a body
+/// walks through an opening; AI sight sets it so a closed room or an unwound door is cover. An
+/// open door registers a sight opening on the collision index so its portal becomes a hole again.
+/// </param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
     WorldTraceMask Mask = WorldTraceMask.World,
     GameTask? IgnoredOwner = null,
     GameTask? IgnoredSubject = null,
-    bool IncludeInactiveOwners = false)
+    bool IncludeInactiveOwners = false,
+    bool TracePortals = false)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length
@@ -205,12 +211,17 @@ public static class WorldTrace
     }
 
     /// <summary>Returns the legacy adapter used by movement and camera callers.</summary>
-    public static WorldRayCast AsRayCast(WorldTraceCast cast, WorldTraceMask mask = WorldTraceMask.World)
+    public static WorldRayCast AsRayCast(
+        WorldTraceCast cast,
+        WorldTraceMask mask = WorldTraceMask.World,
+        bool tracePortals = false)
     {
         ArgumentNullException.ThrowIfNull(cast);
         return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         {
-            bool found = cast(new WorldTraceRequest(origin, end, mask), out WorldTraceHit rich);
+            bool found = cast(
+                new WorldTraceRequest(origin, end, mask, TracePortals: tracePortals),
+                out WorldTraceHit rich);
             hit = found ? rich.RayHit : default;
             return found;
         };

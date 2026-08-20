@@ -1341,8 +1341,8 @@ public sealed class SoldierRenderer : IDisposable
                 }
                 if (sight is not null)
                 {
-                    // 0x489B20: the target is seen when the cast is clear, OR when whatever blocked it sits at
-                    // or past 0.79 of the way there - so clipping a corner near the target does not hide it.
+                    // A world hit before the target is cover. In particular, a wall enclosing the player
+                    // must not be treated as a late corner clip that leaves the player visible.
                     brain.SetLineOfSight((from, to) =>
                     {
                         if (!sight(from, to, out WorldRayHit blocked))
@@ -1351,8 +1351,7 @@ public sealed class SoldierRenderer : IDisposable
                         }
 
                         double total = Length(from, to);
-                        return total <= 0.0
-                            || Length(from, blocked.Position) / total >= AiSoldier.SightObstructionTolerance;
+                        return AiSoldier.WorldBlockerAllowsSight(total, blocked.Distance);
                     });
                 }
 
@@ -1888,6 +1887,7 @@ public sealed class SoldierRenderer : IDisposable
     public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
         int heard = 0;
+        List<AiSoldier> listeners = [];
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
@@ -1902,10 +1902,35 @@ public sealed class SoldierRenderer : IDisposable
             if (brain.HearGunshot(origin, range))
             {
                 heard++;
+                listeners.Add(brain);
             }
         }
 
+        HashSet<AiSoldier> directlyHeard = [.. listeners];
+        foreach (AiSoldier listener in listeners)
+        {
+            NotifySquadmates(listener, directlyHeard);
+        }
+
         ReportNoise("gunshot", heard, range);
+    }
+
+    /// <summary>Propagates a combat stimulus through the existing nearby-guard alert event.</summary>
+    private void NotifySquadmates(AiSoldier source, HashSet<AiSoldier>? alreadyNotified = null)
+    {
+        foreach ((SoldierView view, AiSoldier neighbour) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
+                || ReferenceEquals(neighbour, source)
+                || alreadyNotified?.Contains(neighbour) == true
+                || neighbour.Alerted
+                || neighbour.Events.PendingCount(AiEvent.Alert) > 0)
+            {
+                continue;
+            }
+
+            neighbour.ReceiveAlert(source.Position, source.RuntimeId);
+        }
     }
 
     /// <summary>Delivers a player's world-impact event to every guard inside its authored radius.</summary>
@@ -2501,6 +2526,10 @@ public sealed class SoldierRenderer : IDisposable
                         solids.UpdateTransform(
                             door.Task, door.DrawPosition + elevatorOffset, door.DrawOrientation);
                     }
+
+                    // Sight treats building portals as solid. Once this leaf is off its shut pose,
+                    // open the portal it filled so a guard in the doorway can see through.
+                    solids.SetSightOpening(door.Task, !door.State.IsFullyClosed);
                 }
             }
         }
@@ -4170,11 +4199,18 @@ public sealed class SoldierRenderer : IDisposable
                 if (health.IsDead)
                 {
                     HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
+                    if (brain?.ReceiveDamage(position) == true)
+                    {
+                        NotifySquadmates(brain);
+                    }
                     Die(soldier, hit, position, feet, WeaponCategory.Grenade);
                 }
                 else
                 {
-                    brain?.ReceiveDamage(position);
+                    if (brain?.ReceiveDamage(position) == true)
+                    {
+                        NotifySquadmates(brain);
+                    }
                     ReportHitSound(soldier);
                 }
             }
@@ -4442,11 +4478,18 @@ public sealed class SoldierRenderer : IDisposable
 
             if (struck.IsDead && struckView is not null)
             {
+                if (brain?.ReceiveDamage(origin) == true)
+                {
+                    NotifySquadmates(brain);
+                }
                 Die(struckView, hit, origin, end, category);
             }
             else
             {
-                brain?.ReceiveDamage(origin);
+                if (brain?.ReceiveDamage(origin) == true)
+                {
+                    NotifySquadmates(brain);
+                }
 
                 // The grunt. 0x4553E0 plays it on the branch where the hit was NOT fatal -- a killing
                 // round goes to the death state, which has its own cry -- and 0x4637C0 rate-limits it

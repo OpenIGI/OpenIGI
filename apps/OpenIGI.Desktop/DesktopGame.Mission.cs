@@ -433,7 +433,10 @@ internal sealed partial class DesktopGame
                 // 0x4CDB20 does (both of the sight ray's passes send the -1 mask whose sign bit turns
                 // the terrain arm on -- player.md 7.6). Objects alone let guards see and shoot through
                 // hills. Nearest contact wins.
-                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace);
+                // Movement still skips portal faces (walk through a doorway). Sight must not:
+                // those faces are the room/window openings, and skipping them lets a guard see
+                // through a closed door and into the room on the other side.
+                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
 
                 // The level's doors, before the brains: a walker asks the registry for the nearest door
                 // on a door hop, and an open door is switched out of the collision index so the

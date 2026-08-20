@@ -71,15 +71,18 @@ public sealed class AiSoldier
     private bool _pendingRanDuringDispatch;
 
     /// <summary>
-    /// The fraction of the way to the target at which an obstruction still counts as seen through —
-    /// <c>0x489B20</c>'s literal <c>0.79</c>.
+    /// The fraction of the way to the target at which an obstruction still counts as seen through.
     /// </summary>
     /// <remarks>
-    /// The line-of-sight test returns visible when the cast is clear <b>or</b> the blocker sits at or past
-    /// this fraction of the distance. So a guard still sees you when the ray clips a corner close to you, and
-    /// only a blocker in the first 79% of the line actually hides you.
+    /// Retail <c>0x489B00</c> calls <c>0x4C4630</c>, which returns 1 when the ray is clear
+    /// (<c>sete al</c> on the hit flag). On a hit it then allows sight only if the hit parameter
+    /// is at least <c>DAT_00532218</c> (0.79f). That 0.79 exists because the native ray can
+    /// strike the target human itself. This port omits <c>HumanPlayer</c> / <c>HumanSoldier</c>
+    /// hulls from the world index, so every remaining hit is world geometry — a closed door or
+    /// the wall of the room the player is in. Treating those as the 0.79 “target body” lets
+    /// guards see through rooms. Any world hit before the mark is cover.
     /// </remarks>
-    public const double SightObstructionTolerance = 0.79000002;
+    public const double SightObstructionTolerance = 1.0;
 
     /// <summary>
     /// How far above its feet a standing human reports itself to detection — the Z offset the descriptor
@@ -103,6 +106,14 @@ public sealed class AiSoldier
     /// <param name="to">The target.</param>
     /// <returns><see langword="true"/> when the target can be seen.</returns>
     public delegate bool LineOfSight(Vector3d from, Vector3d to);
+
+    /// <summary>Returns whether a world hit leaves the target visible.</summary>
+    /// <param name="targetDistance">The distance from the observer to the target.</param>
+    /// <param name="blockerDistance">The distance from the observer to the nearest world hit.</param>
+    /// <returns><see langword="true"/> when no hit occurs before the target.</returns>
+    public static bool WorldBlockerAllowsSight(double targetDistance, double blockerDistance) =>
+        targetDistance <= 0.0
+            || (blockerDistance / targetDistance) >= SightObstructionTolerance;
 
     /// <summary>Finds the ground height at a world position.</summary>
     /// <param name="x">World X, in engine units.</param>
@@ -394,6 +405,7 @@ public sealed class AiSoldier
     private int _currentEventSource;
     private Vector3d? _playerEventSourcePosition;
     private Action<int>? _responseRouter;
+    private bool _combatPerceptionAlert;
 
     /// <summary>Gets or sets the renderer-local identity stored in inter-soldier event source fields.</summary>
     public int RuntimeId { get; set; }
@@ -624,8 +636,18 @@ public sealed class AiSoldier
             return false;
         }
 
+        bool posted = Events.Post(
+            new AiEventRecord(AiEvent.Gunshot, -1, AiEventFilter.None, (float)range, shotPosition, -1, 0),
+            owner: RuntimeId,
+            worldTests: null);
+        if (!posted)
+        {
+            return false;
+        }
+
         LastEventDistance = distance;
         _playerEventSourcePosition = shotPosition;
+        _combatPerceptionAlert = true;
 
         // Hearing refreshes the guard's belief with the target's true position: sub_48A920's
         // else-branch runs sub_451380 over the shared record (+272) whenever the tick drained hearing
@@ -638,10 +660,6 @@ public sealed class AiSoldier
             Target?.Refresh(_lastSeenFeet);
         }
 
-        Events.Post(
-            new AiEventRecord(AiEvent.Gunshot, -1, AiEventFilter.None, (float)range, shotPosition, -1, 0),
-            owner: RuntimeId,
-            worldTests: null);
         return true;
     }
 
@@ -801,16 +819,15 @@ public sealed class AiSoldier
 
     /// <summary>Posts the type-15 event a non-lethal hit delivers to a HumanAI.</summary>
     /// <param name="attackerPosition">The attacking human's position, used by distance/behind natives.</param>
-    public void ReceiveDamage(Vector3d attackerPosition)
+    /// <returns><see langword="true"/> when the <see cref="AiEvent.TakingDamage"/> event was queued.</returns>
+    public bool ReceiveDamage(Vector3d attackerPosition)
     {
         if (Activity == AiSoldierActivity.Dead)
         {
-            return;
+            return false;
         }
 
-        LastEventDistance = Distance(Position, attackerPosition);
-        _playerEventSourcePosition = attackerPosition;
-        Events.Post(
+        bool posted = Events.Post(
             new AiEventRecord(
                 AiEvent.TakingDamage,
                 -1,
@@ -821,6 +838,16 @@ public sealed class AiSoldier
                 0),
             owner: RuntimeId,
             worldTests: null);
+
+        if (!posted)
+        {
+            return false;
+        }
+
+        LastEventDistance = Distance(Position, attackerPosition);
+        _playerEventSourcePosition = attackerPosition;
+        _combatPerceptionAlert = true;
+        return true;
     }
 
     /// <summary>The alert ping's reach — 28160 units, 6.875 m (<c>sub_48AB10</c>'s radius, float bits <c>1189085184</c>).</summary>
@@ -845,13 +872,30 @@ public sealed class AiSoldier
             return false;
         }
 
+        if (Alerted || Events.PendingCount(AiEvent.Alert) > 0)
+        {
+            return false;
+        }
+
         double distance = Distance(Position, alerterPosition);
         if (distance > AlertPingRadiusInUnits)
         {
             return false;
         }
 
+        bool posted = Events.Post(
+            new AiEventRecord(
+                AiEvent.Alert, -1, AiEventFilter.None, (float)AlertPingRadiusInUnits,
+                alerterPosition, source, 0),
+            owner: 0,
+            worldTests: null);
+        if (!posted)
+        {
+            return false;
+        }
+
         LastEventDistance = distance;
+        _combatPerceptionAlert = true;
 
         // The same target refresh arm handles both hearing and squad alert records. A nearby guard that
         // has never seen Jones therefore inherits the fighting guard's target record and turns on the
@@ -863,12 +907,6 @@ public sealed class AiSoldier
             Target?.Refresh(_lastSeenFeet);
         }
 
-        Events.Post(
-            new AiEventRecord(
-                AiEvent.Alert, -1, AiEventFilter.None, (float)AlertPingRadiusInUnits,
-                alerterPosition, source, 0),
-            owner: 0,
-            worldTests: null);
         return true;
     }
 
@@ -1579,7 +1617,8 @@ public sealed class AiSoldier
             RunScript();
         }
 
-        bool alert = alarmOn;
+        bool alert = alarmOn || _combatPerceptionAlert;
+        _combatPerceptionAlert = false;
 
         // The detection cascade in order: the phase gate, then the cone, then the line-of-sight cast behind
         // it -- the expensive test is never paid for someone outside the cone (ai.md 5.1).
@@ -1954,7 +1993,14 @@ public sealed class AiSoldier
             // A pending COMBAT event counts as the stimulus too -- it is what a SetCombat synthesizes
             // (0x48E560), and the engine's default answer to a dispatched COMBAT is AIAction_Combat.
             // A soldier thrown flat finishes the fall first, exactly as the scripted path defers it.
-            if (_playerSlot.IsVisible || Events.PendingCount(AiEvent.Combat) > 0)
+            // TakingDamage is deliberately not a fallback combat-install trigger: the patrol combat arm
+            // consumes its drained count for evasion, and re-installing combat for every hit interrupts
+            // persistent prone behavior.
+            if (_playerSlot.IsVisible
+                || Events.PendingCount(AiEvent.Combat) > 0
+                || Events.PendingCount(AiEvent.Gunshot) > 0
+                || Events.PendingCount(AiEvent.GunshotMiss) > 0
+                || Events.PendingCount(AiEvent.Alert) > 0)
             {
                 if (_fallFlatDeadline >= 0 || Activity == AiSoldierActivity.FallenFlat)
                 {
