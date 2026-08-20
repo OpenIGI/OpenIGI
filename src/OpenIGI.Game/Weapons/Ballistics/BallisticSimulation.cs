@@ -2,6 +2,7 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Time;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Game.Weapons;
 
 namespace OpenIGI.Game.Weapons.Ballistics;
 
@@ -124,10 +125,19 @@ public sealed class BallisticSimulation
             return false;
         }
 
+        // Guns stay on the profile speed so the Dragunov's authored 6000 m/s remains capped at
+        // 1500. Charged throws (and any explicit sub-profile override) still ride the projectile.
+        float launchUnitsPerSecond = profile.UnitsPerSecond;
+        if (shot.SpeedMetresPerSecond > 0f
+            && (weapon.Category == WeaponCategory.Grenade
+                || shot.SpeedMetresPerSecond * GunShotBallistics.UnitsPerMetre < profile.UnitsPerSecond))
+        {
+            launchUnitsPerSecond = shot.SpeedMetresPerSecond * GunShotBallistics.UnitsPerMetre;
+        }
         Vector3d velocity = new(
-            shot.Direction.X * profile.UnitsPerSecond,
-            shot.Direction.Y * profile.UnitsPerSecond,
-            shot.Direction.Z * profile.UnitsPerSecond);
+            shot.Direction.X * launchUnitsPerSecond,
+            shot.Direction.Y * launchUnitsPerSecond,
+            shot.Direction.Z * launchUnitsPerSecond);
 
         // The table's effective ranges were authored for the hit-scan ray and are SHORT for a
         // flying round -- an MP5's 80 m is under a fifth of a second of flight, which removed the
@@ -139,7 +149,7 @@ public sealed class BallisticSimulation
             Category = category,
             RemainingRange = Math.Max(
                 shot.RangeInUnits,
-                profile.UnitsPerSecond * Math.Max(0f, minimumFlightSeconds)),
+                launchUnitsPerSecond * Math.Max(0f, minimumFlightSeconds)),
             VisualOffset = visualOffset,
         });
         return true;

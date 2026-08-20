@@ -203,7 +203,23 @@ public sealed class MefCollisionMesh
         }
 
         ReadOnlySpan<byte> faceBytes = Payload(container, MefTags.CollisionFaces, meshIndex, faceCount, FaceStride);
-        ReadOnlySpan<byte> vertexBytes = Payload(container, MefTags.CollisionVertices, meshIndex, vertexCount, VertexStride);
+
+        // A small number of retail collision meshes carry a stale vertex count in HSMC. The XTVC
+        // payload is still a complete sequence of 16-byte records, and ECFC references the records
+        // beyond the stale header value (for example, M11's 000_01_1 declares 502 but stores 1189).
+        // Trust the self-delimiting payload for vertices while retaining exact count checks for the
+        // face, material, and sphere tables below.
+        ReadOnlySpan<byte> vertexBytes = Payload(
+            container, MefTags.CollisionVertices, meshIndex, vertexCount, VertexStride,
+            allowAdditionalRecords: true);
+        if (vertexBytes.Length % VertexStride != 0)
+        {
+            throw new PackFormatException(
+                $"The level {meshIndex} '{MefTags.CollisionVertices}' chunk is {vertexBytes.Length} bytes, "
+                + $"not a whole number of {VertexStride}-byte records.");
+        }
+
+        vertexCount = vertexBytes.Length / VertexStride;
         ReadOnlySpan<byte> sphereBytes = Payload(container, MefTags.CollisionSpheres, meshIndex, sphereCount, SphereStride);
         ReadOnlySpan<byte> materialBytes = Payload(container, MefTags.CollisionMaterials, meshIndex, materialCount, MaterialStride);
         int payloadVertexCount = vertexBytes.Length / VertexStride;
@@ -266,7 +282,13 @@ public sealed class MefCollisionMesh
         return true;
     }
 
-    private static ReadOnlySpan<byte> Payload(IlffContainer container, FourCc tag, int meshIndex, int count, int stride)
+    private static ReadOnlySpan<byte> Payload(
+        IlffContainer container,
+        FourCc tag,
+        int meshIndex,
+        int count,
+        int stride,
+        bool allowAdditionalRecords = false)
     {
         if (count == 0)
         {
@@ -283,7 +305,7 @@ public sealed class MefCollisionMesh
 
             if (currentIndex++ == meshIndex)
             {
-                return ValidatePayload(candidate, tag, meshIndex, count, stride);
+                return ValidatePayload(candidate, tag, meshIndex, count, stride, allowAdditionalRecords);
             }
         }
 
@@ -291,24 +313,40 @@ public sealed class MefCollisionMesh
             $"The collision mesh level {meshIndex} declares {count} '{tag}' records but that level's chunk is missing.");
     }
 
-    private static ReadOnlySpan<byte> ValidatePayload(IlffChunk chunk, FourCc tag, int meshIndex, int count, int stride)
+    private static ReadOnlySpan<byte> ValidatePayload(
+        IlffChunk chunk,
+        FourCc tag,
+        int meshIndex,
+        int count,
+        int stride,
+        bool allowAdditionalRecords)
     {
         ReadOnlySpan<byte> span = chunk.Payload.Span;
-        int needed = count * stride;
-        if (span.Length != needed)
+        long needed = (long)count * stride;
+        if (allowAdditionalRecords)
         {
-            // A shipped human model's HSMC header says 502 vertices although its XTVC chunk carries
-            // 1189 complete 16-byte rows. Keep the full aligned payload: faces in that model reference
-            // rows beyond the stale header count. Truncated or partially-recorded chunks remain errors.
-            if (tag == MefTags.CollisionVertices && span.Length > needed && span.Length % stride == 0)
+            // Keep the full aligned payload. A shipped human model's HSMC header says 502 vertices
+            // although its XTVC chunk carries 1189 complete 16-byte rows, and faces in that model
+            // reference rows beyond the stale header count. Truncated or partially-recorded chunks
+            // remain errors.
+            if (span.Length >= needed && span.Length % stride == 0)
             {
                 return span;
             }
-
-            throw new PackFormatException(
-                $"The level {meshIndex} '{tag}' chunk is {span.Length} bytes but {count} records at a {stride}-byte stride need {needed}.");
+        }
+        else if (span.Length == needed)
+        {
+            return span;
         }
 
-        return span;
+        if (allowAdditionalRecords)
+        {
+            throw new PackFormatException(
+                $"The level {meshIndex} '{tag}' chunk is {span.Length} bytes; it must contain at least "
+                + $"{count} records at a {stride}-byte stride and end on a record boundary.");
+        }
+
+        throw new PackFormatException(
+            $"The level {meshIndex} '{tag}' chunk is {span.Length} bytes but {count} records at a {stride}-byte stride need {needed}.");
     }
 }

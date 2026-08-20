@@ -49,6 +49,29 @@ public sealed class RetailWeaponTypeTests
     }
 
     [RequiresGameDataFact]
+    public void TheMilUsesItsRetailLoopPair()
+    {
+        WeaponType mil = Load(out _, out _, out _).Weapons
+            .Single(w => w.ScriptId == "WEAPON_ID_MIL");
+
+        Assert.Equal("mil_loop", mil.FireSound);
+        Assert.Equal("mil_loop_e", mil.FireLoopEndSound);
+        Assert.True(mil.MaximumRoundsPerBurst > 1);
+    }
+
+    [RequiresGameDataFact]
+    public void TheDualUziUsesTheRetailMultipartViewModel()
+    {
+        WeaponType uzix2 = Load(out _, out _, out _).Weapons
+            .Single(w => w.ScriptId == "WEAPON_ID_UZIX2");
+
+        Assert.Equal("111_04_1", uzix2.GunModel);
+        Assert.Equal(WeaponCategory.Gun, uzix2.Category);
+        Assert.Equal(1, uzix2.BulletsPerRound);
+        Assert.Equal("TASKTYPE_GUN", uzix2.Weapon.TypeName);
+    }
+
+    [RequiresGameDataFact]
     public void TheArgumentListIsVariableLength()
     {
         // The reason a fixed-49 reader would be wrong. Six of the twenty-four weapons carry a tail,

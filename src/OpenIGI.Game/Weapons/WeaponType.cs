@@ -17,6 +17,67 @@ namespace OpenIGI.Game.Weapons;
 /// </remarks>
 public sealed class WeaponType
 {
+    /// <summary>Gets the matching runtime entry loaded from <c>weapons/weaponconfig.qvm</c>.</summary>
+    /// <remarks>The config supplies the complete shared weapon record and task-specific tuning.</remarks>
+    public WeaponConfigTask? RetailConfig { get; internal set; }
+
+    /// <summary>Creates the runtime record represented by the matching weaponconfig.qvm entry.</summary>
+    internal WeaponType WithRetailConfig(WeaponConfigTask config) => new()
+    {
+        RetailConfig = config,
+        Index = Index,
+        WeaponId = config.WeaponId,
+        ScriptId = config.ScriptId,
+        DisplayName = config.DisplayName,
+        Manufacturer = config.Manufacturer,
+        Description = config.Description,
+        Category = (WeaponCategory)config.WeaponType,
+        SightDisplay = (SightDisplayType)config.SightDisplayType,
+        AmmoDisplay = (AmmoDisplayType)config.AmmoDisplayType,
+        MassInGrams = config.MassInGrams,
+        CalibreId = config.CalibreId,
+        DamageFactor = config.DamageFactor,
+        PenetrationPower = config.PenetrationPower,
+        ReloadTimeSeconds = config.ReloadTimeSeconds,
+        MuzzleVelocity = config.MuzzleVelocity,
+        BulletsPerRound = config.BulletsPerRound,
+        RoundsPerMinute = config.RoundsPerMinute,
+        RoundsPerClip = config.RoundsPerClip,
+        MaximumRoundsPerBurst = config.MaximumRoundsPerBurst,
+        MinimumSpread = config.MinimumSpread,
+        MaximumSpread = config.MaximumSpread,
+        FixedRecoilX = config.FixedRecoilX,
+        FixedRecoilZ = config.FixedRecoilZ,
+        RandomRecoilX = config.RandomRecoilX,
+        RandomRecoilZ = config.RandomRecoilZ,
+        TypeOfWeapon = config.TypeOfWeapon,
+        EffectiveRange = config.EffectiveRange,
+        WeaponUsers = config.WeaponUsers,
+        WeaponLength = config.WeaponLength,
+        BarrelLength = config.BarrelLength,
+        GunModel = config.GunModel,
+        CasingModel = config.CasingModel,
+        StandAnimation = config.StandAnimation,
+        MoveAnimation = config.MoveAnimation,
+        FireAnimation1 = config.FireAnimation1,
+        FireAnimation2 = config.FireAnimation2,
+        FireAnimation3 = config.FireAnimation3,
+        ReloadAnimation = config.ReloadAnimation,
+        UpperBodyStandAnimation = config.UpperBodyStandAnimation,
+        UpperBodyWalkAnimation = config.UpperBodyWalkAnimation,
+        UpperBodyCrouchAnimation = config.UpperBodyCrouchAnimation,
+        UpperBodyCrouchRunAnimation = config.UpperBodyCrouchRunAnimation,
+        UpperBodyRunAnimation = config.UpperBodyRunAnimation,
+        UpperBodyFireAnimation = config.UpperBodyFireAnimation,
+        UpperBodyReloadAnimation = config.UpperBodyReloadAnimation,
+        FireSound = config.FireSound,
+        FireLoopEndSound = config.FireLoopEndSound,
+        AiDetectionRange = config.AiDetectionRange,
+        Projectile = Projectile,
+        Weapon = Weapon,
+        SelectableWhenEmpty = config.SelectableWhenEmpty,
+    };
+
     /// <summary>Gets the numeric id the rest of the game addresses this weapon by.</summary>
     /// <remarks>Argument 0. Ids are unique — the original hangs outright on a repeat.</remarks>
     public int WeaponId { get; init; }

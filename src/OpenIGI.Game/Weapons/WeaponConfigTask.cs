@@ -27,7 +27,7 @@ public partial class WeaponConfigTask : GameTask
     /// The <c>WEAPON_ID_*</c> name, carried as a plain string. Pairing it with
     /// <see cref="WeaponId"/> is what gives those pattern-registered symbols their values.
     /// </remarks>
-    [ScriptParam(ScriptParamType.String16, "Script ID")]
+    [ScriptParam(ScriptParamType.String256, "Script ID")]
     public string ScriptId { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the weapon's display name — <c>GameTask.Name</c> is the task's own.</summary>
@@ -72,8 +72,8 @@ public partial class WeaponConfigTask : GameTask
     public float DamageFactor { get; set; }
 
     /// <summary>Gets or sets how much cover the round defeats.</summary>
-    [ScriptParam(ScriptParamType.Int32, "Penetration Power")]
-    public int PenetrationPower { get; set; }
+    [ScriptParam(ScriptParamType.Real32, "Penetration Power")]
+    public float PenetrationPower { get; set; }
 
     /// <summary>Gets or sets the reload time in seconds.</summary>
     [ScriptParam(ScriptParamType.Real32, "Reload Time")]
@@ -137,12 +137,12 @@ public partial class WeaponConfigTask : GameTask
     public string WeaponUsers { get; set; } = string.Empty;
 
     /// <summary>Gets or sets the overall length in millimetres.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Weapon Length")]
-    public float WeaponLength { get; set; }
+    [ScriptParam(ScriptParamType.Int32, "Weapon Length")]
+    public int WeaponLength { get; set; }
 
     /// <summary>Gets or sets the barrel length in millimetres.</summary>
-    [ScriptParam(ScriptParamType.Real32, "Barrel Length")]
-    public float BarrelLength { get; set; }
+    [ScriptParam(ScriptParamType.Int32, "Barrel Length")]
+    public int BarrelLength { get; set; }
 
     /// <summary>Gets or sets the model the weapon is drawn with.</summary>
     [ScriptParam(ScriptParamType.String16, "Gun Model")]

@@ -2115,6 +2115,34 @@ public sealed class SoldierRenderer : IDisposable
         }
     }
 
+    /// <summary>Delivers IGI1's type-21 explosion alert to every active soldier in the blast envelope.</summary>
+    /// <param name="origin">The explosion centre in engine units.</param>
+    /// <param name="rangeUnits">The authored full-radius plus falloff envelope.</param>
+    /// <remarks>
+    /// This is intentionally separate from <see cref="NotifyGunshot(Vector3d, double, SoldierView?)"/>. Retail registers and queues
+    /// <c>AIEVENT_EXPLOSION</c> (21), so an explosive object must not masquerade as a rifle shot.
+    /// </remarks>
+    public void NotifyExplosion(
+        Vector3d origin,
+        double rangeUnits = AiSoldier.FlashbangEventRadiusInUnits)
+    {
+        int heard = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveExplosion(origin, rangeUnits))
+            {
+                heard++;
+            }
+        }
+
+        ReportNoise("explosion", heard, rangeUnits);
+    }
+
     /// <summary>Delivers a player's world-impact event to every guard inside its authored radius.</summary>
     /// <param name="impact">The selected nearest world contact.</param>
     /// <param name="shooterPosition">The player's live position for source-based script actions.</param>
@@ -2160,6 +2188,70 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         ReportNoise("walk", heard, radiusUnits);
+    }
+
+    /// <summary>Delivers IGI1's visible grenade-takeoff event (type 17).</summary>
+    public void NotifyGrenadeThrown(Vector3d origin)
+    {
+        int seen = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveGrenadeThrown(origin))
+            {
+                seen++;
+            }
+        }
+
+        ReportNoise("grenade-thrown", seen, AiSoldier.GrenadeLandRadiusInUnits);
+    }
+
+    /// <summary>Delivers IGI1's five-metre grenade-land event (type 18).</summary>
+    public void NotifyGrenadeLand(
+        Vector3d origin,
+        double radiusUnits = AiSoldier.GrenadeLandRadiusInUnits)
+    {
+        int heard = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveGrenadeLand(origin, radiusUnits))
+            {
+                heard++;
+            }
+        }
+
+        ReportNoise("grenade-land", heard, radiusUnits);
+    }
+
+    /// <summary>Delivers IGI1's ten-metre in-view flashbang event (type 19).</summary>
+    public void NotifyFlashbang(
+        Vector3d origin,
+        double radiusUnits = AiSoldier.FlashbangEventRadiusInUnits)
+    {
+        int affected = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveFlashbang(origin, radiusUnits))
+            {
+                affected++;
+            }
+        }
+
+        ReportNoise("flashbang", affected, radiusUnits);
     }
 
     /// <summary>
@@ -3317,14 +3409,20 @@ public sealed class SoldierRenderer : IDisposable
                 int gunshot = brain.Events.DrainedCount(AiEvent.Gunshot);
                 int miss = brain.Events.DrainedCount(AiEvent.GunshotMiss);
                 int impact = brain.Events.DrainedCount(AiEvent.GroundImpact);
+                int explosion = brain.Events.DrainedCount(AiEvent.Explosion);
+                int grenadeThrown = brain.Events.DrainedCount(AiEvent.GrenadeThrown);
+                int grenadeLand = brain.Events.DrainedCount(AiEvent.GrenadeLand);
+                int flashbang = brain.Events.DrainedCount(AiEvent.Flashbang);
                 int walk = brain.Events.DrainedCount(AiEvent.Walk);
                 int damage = brain.Events.DrainedCount(AiEvent.TakingDamage);
-                if (gunshot + miss + impact + walk + damage > 0)
+                if (gunshot + miss + impact + explosion + grenadeThrown + grenadeLand + flashbang + walk + damage > 0)
                 {
                     _lastDrainLogTick = _tick;
                     _logger.Information(
                         LogCategory,
                         $"[aiflow] #{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
+                            + $"explosion={explosion} grenadeThrown={grenadeThrown} "
+                            + $"grenadeLand={grenadeLand} flashbang={flashbang} "
                             + $"impact={impact} walk={walk} dmg={damage} act={brain.Activity}");
                 }
             }
@@ -5683,6 +5781,88 @@ public sealed class SoldierRenderer : IDisposable
                 view.IsDead);
         }
         return occupants;
+    }
+
+    /// <summary>A nearest-human intersection that does not apply damage or AI events.</summary>
+    public HumanRayCast Probe() => TryIntersect;
+
+    /// <summary>A living-human proximity query for armed mines.</summary>
+    public HumanProximityCast ProximityProbe() => TryProximity;
+
+    /// <summary>Finds the nearest living soldier inside a mine's activation radius.</summary>
+    public bool TryProximity(Vector3d center, float radiusUnits, out HumanProximityTarget target)
+    {
+        target = default;
+        double radiusSquared = radiusUnits * radiusUnits;
+        bool found = false;
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
+                    || !_health.TryGetValue(soldier, out HumanHealth? health)
+                    || health.IsDead)
+                {
+                    continue;
+                }
+
+                Vector3d position = soldier.Position;
+                double distanceSquared = Vector3d.DistanceSquared(center, position);
+                if (distanceSquared > radiusSquared)
+                {
+                    continue;
+                }
+
+                double distance = Math.Sqrt(distanceSquared);
+                if (!found || distance < target.Distance)
+                {
+                    target = new HumanProximityTarget(position, distance);
+                    found = true;
+                }
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>Finds the nearest living soldier on a segment without scoring the hit.</summary>
+    public bool TryIntersect(Vector3d origin, Vector3d end, out HumanHit hit)
+    {
+        hit = default;
+        bool found = false;
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
+                    || !_health.TryGetValue(soldier, out HumanHealth? health)
+                    || health.IsDead)
+                {
+                    continue;
+                }
+
+                Matrix3f m = soldier.Orientation;
+                Vector3f facing = new(m.M12, m.M22, m.M32);
+                double snappedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+                Vector3d feet = new(soldier.Position.X, soldier.Position.Y, snappedZ);
+                bool met = group.CollisionMesh is { } collision
+                    ? HumanHitTest.TryCastMesh(
+                        origin, end, feet, facing, collision, soldier.Pose(), soldier.RootSample.Z, out HumanHit candidate)
+                    : HumanHitTest.TryCast(
+                        origin, end, feet, facing, soldier.Pose(), out candidate, soldier.RootSample.Z);
+                if (met && (!found || candidate.Distance < hit.Distance))
+                {
+                    hit = candidate;
+                    found = true;
+                }
+            }
+        }
+
+        return found;
     }
 
     /// <summary>Gets how many soldiers have been killed.</summary>

@@ -7,15 +7,13 @@ using OpenIGI.Scripting.Runtime;
 namespace OpenIGI.Game.Weapons;
 
 /// <summary>
-/// The weapon roster as <c>weapons/weaponconfig.qsc</c> declares it — <b>not</b> the table the game runs on.
+/// The weapon roster as <c>weapons/weaponconfig.qvm</c> declares it and the runtime consumes it.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The script is an ordinary task tree, so loading it is just running it against the task system, and
-/// it does describe all twenty-four weapons in the same field order as the live path. But it is
-/// <b>inert</b>: <c>0x402070</c> loads it after the weapons themselves, and the <c>WeaponConfig</c>
-/// ctor (<c>0x407BB0</c>) only zeroes its own storage and defaults the id to <c>-1</c>. Nothing in the
-/// firing, HUD or AI code reads the tree. <see cref="WeaponTypeRegistry"/> is the real roster.
+/// it describes all twenty-four weapons in the same field order as the live path. Mission startup
+/// applies each record to the matching <see cref="WeaponTypeRegistry"/> entry before gameplay begins.
 /// </para>
 /// <para>
 /// It is not dead weight, though. A <c>WeaponConfig</c> instance is 1800 bytes, which is exactly the
@@ -23,7 +21,8 @@ namespace OpenIGI.Game.Weapons;
 /// weapon selectable when empty</c> — lands at the very offset the live loader hardcodes to 1. So this
 /// is the <i>same struct</i>, declared a field further on: an intended replacement for
 /// <c>DefineWeaponType</c> that shipped without ever being wired up. That makes it a genuine
-/// cross-check on the live reader, which is what the tests use it for.
+/// cross-check on the live reader and the authoritative source for shared runtime tuning, which is
+/// what the parity tests verify.
 /// </para>
 /// </remarks>
 public sealed class WeaponConfigRegistry
@@ -59,8 +58,15 @@ public sealed class WeaponConfigRegistry
     public static void RegisterTypes(TaskTypeRegistry types)
     {
         ArgumentNullException.ThrowIfNull(types);
-        types.Register<WeaponConfigTask>(WeaponConfigType);
-        types.Register<WeaponConfigContainerTask>(WeaponConfigContainerType);
+        if (!types.TryGet(WeaponConfigType, out TaskType? weaponType) || weaponType.IsDeclarationOnly)
+        {
+            types.Register<WeaponConfigTask>(WeaponConfigType);
+        }
+
+        if (!types.TryGet(WeaponConfigContainerType, out TaskType? containerType) || containerType.IsDeclarationOnly)
+        {
+            types.Register<WeaponConfigContainerTask>(WeaponConfigContainerType);
+        }
     }
 
     /// <summary>Reads and runs the weapon configuration.</summary>
@@ -142,6 +148,69 @@ public sealed class WeaponConfigRegistry
     /// <param name="weapon">Receives the weapon when the id is known.</param>
     /// <returns><see langword="true"/> when the roster has that id.</returns>
     public bool TryGet(int weaponId, out WeaponConfigTask weapon) => _byId.TryGetValue(weaponId, out weapon!);
+
+    /// <summary>Associates the loaded script-config records with the executable-style weapon records.</summary>
+    public void AttachTo(WeaponTypeRegistry roster)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+        roster.ApplyRetailConfig(this);
+    }
+
+    /// <summary>Reads a tagged Real32 child from this weapon's config tree.</summary>
+    public static bool TryGetRealTag(WeaponConfigTask weapon, string tag, out float value)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        ArgumentNullException.ThrowIfNull(tag);
+        foreach (GameTask child in Descendants(weapon))
+        {
+            if (child is not DeclaredTask declared
+                || !string.Equals(child.Label, tag, StringComparison.Ordinal)
+                || declared.GetValue(declared.Type.Parameters.Count - 1) is not float candidate)
+            {
+                continue;
+            }
+
+            value = candidate;
+            return true;
+        }
+
+        value = 0f;
+        return false;
+    }
+
+    /// <summary>Reads a tagged String16 child from this weapon's config tree.</summary>
+    public static bool TryGetStringTag(WeaponConfigTask weapon, string tag, out string value)
+    {
+        ArgumentNullException.ThrowIfNull(weapon);
+        ArgumentNullException.ThrowIfNull(tag);
+        foreach (GameTask child in Descendants(weapon))
+        {
+            if (child is not DeclaredTask declared
+                || !string.Equals(child.Label, tag, StringComparison.Ordinal)
+                || declared.GetValue(declared.Type.Parameters.Count - 1) is not string candidate)
+            {
+                continue;
+            }
+
+            value = candidate;
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static IEnumerable<GameTask> Descendants(GameTask parent)
+    {
+        foreach (GameTask child in parent.Children)
+        {
+            yield return child;
+            foreach (GameTask nested in Descendants(child))
+            {
+                yield return nested;
+            }
+        }
+    }
 
     private void Collect(GameTask task)
     {

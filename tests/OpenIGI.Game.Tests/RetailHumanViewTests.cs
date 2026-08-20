@@ -112,6 +112,31 @@ public sealed class RetailHumanViewTests
     }
 
     [RequiresGameDataFact]
+    public void M16A2ReloadUsesTheRetailViewClipAndImmediateOneShotDispatch()
+    {
+        WeaponType m16 = RetailWeaponRoster.Value.Weapons.First(
+            weapon => weapon.ScriptId == "WEAPON_ID_M16A2");
+        WeaponAnimations reload = WeaponAnimationTable.Select(m16, WeaponAction.Reload);
+
+        // 0x4137E0 case 6 reads +684/+6A8 and gives both tracks zero blend. The shipped M16A2 record
+        // is full-body view clip 5 and player upper-body clip 136; substituting a generic rifle
+        // animation is what makes the reload visibly wrong even though ammo still transfers.
+        Assert.Equal(5, m16.ReloadAnimation);
+        Assert.Equal(136, m16.UpperBodyReloadAnimation);
+        Assert.Equal(5, reload.FullBody);
+        Assert.Equal(136, reload.UpperBody);
+        Assert.False(reload.LoopFullBody);
+        Assert.False(reload.LoopUpperBody);
+        Assert.Equal(0f, reload.FullBodyBlendSeconds);
+        Assert.Equal(0f, reload.UpperBodyBlendSeconds);
+
+        BoneAnimationSet view = ViewSet();
+        Assert.True(view.TryGet(reload.FullBody, out _));
+        HumanView humanView = new(view);
+        Assert.NotNull(humanView.PlayWeaponAnimation(reload.FullBody, loops: reload.LoopFullBody));
+    }
+
+    [RequiresGameDataFact]
     public void EveryFullBodyWeaponAnimationOfEveryWeaponResolvesInTheViewRigsSet()
     {
         BoneAnimationSet view = ViewSet();

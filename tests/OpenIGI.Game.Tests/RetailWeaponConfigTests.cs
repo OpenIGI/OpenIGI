@@ -17,6 +17,18 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class RetailWeaponConfigTests
 {
+    [Fact]
+    public void RegisteringWeaponConfigTypesIsSafeAcrossMissionReloads()
+    {
+        GameLoop loop = new(new ManualTimeSource());
+
+        WeaponConfigRegistry.RegisterTypes(loop.Types);
+        WeaponConfigRegistry.RegisterTypes(loop.Types);
+
+        Assert.False(loop.Types.Get(WeaponConfigRegistry.WeaponConfigType).IsDeclarationOnly);
+        Assert.False(loop.Types.Get(WeaponConfigRegistry.WeaponConfigContainerType).IsDeclarationOnly);
+    }
+
     [RequiresGameDataFact]
     public void TheRosterIsTwentyFourWeapons()
     {
@@ -42,6 +54,70 @@ public sealed class RetailWeaponConfigTests
         Assert.Equal(1, ids[0]);
         Assert.Equal(44, ids[^1]);
         Assert.True(ids.Count < ids[^1], "the id space is sparse");
+    }
+
+    [RequiresGameDataFact]
+    public void TaskTagsExposeRetailLauncherAndGrenadeTuning()
+    {
+        WeaponConfigRegistry weapons = Load(out _, out _);
+
+        WeaponConfigTask m16 = weapons.ById.Values.Single(w => w.ScriptId == "WEAPON_ID_M16A2");
+        Assert.True(WeaponConfigRegistry.TryGetRealTag(m16, "M203 - Muzzle velocity (km/h)", out float speed));
+        Assert.True(WeaponConfigRegistry.TryGetRealTag(m16, "M203 - Explosion radius (meters)", out float radius));
+        Assert.True(WeaponConfigRegistry.TryGetRealTag(m16, "M203 - Activate radius (meters)", out float activate));
+        Assert.True(WeaponConfigRegistry.TryGetStringTag(m16, "M203 - Model", out string model));
+        Assert.Equal(270f, speed);
+        Assert.Equal(5f, radius);
+        Assert.Equal(1f, activate);
+        Assert.Equal("108_05_1", model);
+
+        WeaponConfigTask grenade = weapons.ById.Values.Single(w => w.ScriptId == "WEAPON_ID_GRENADE");
+        Assert.True(WeaponConfigRegistry.TryGetRealTag(grenade, "Grenade - Explosion radius (meters)", out float grenadeRadius));
+        Assert.True(WeaponConfigRegistry.TryGetRealTag(grenade, "Grenade - Explosion falloff (meters)", out float falloff));
+        Assert.True(WeaponConfigRegistry.TryGetRealTag(grenade, "Grenade - Explosion damage factor", out float factor));
+        Assert.Equal(7f, grenadeRadius);
+        Assert.Equal(4f, falloff);
+        Assert.Equal(1.3f, factor);
+    }
+
+    [RequiresGameDataFact]
+    public void ApplyingTheConfigMakesEveryRuntimeWeaponMatchItsConfigRecord()
+    {
+        WeaponTypeRegistry runtime = LoadRuntimeRoster();
+        WeaponConfigRegistry config = Load(out _, out _);
+        config.AttachTo(runtime);
+
+        Assert.Equal(config.Weapons.Count, runtime.Weapons.Count);
+        foreach (WeaponType weapon in runtime.Weapons)
+        {
+            WeaponConfigTask declared = config.ById[weapon.WeaponId];
+            AssertWeaponFieldsMatch(declared, weapon);
+            // The config QVM's enum ids are global script constants; the managed task registry assigns
+            // its own local ids. Their semantic names and decoded tails are the stable parity contract.
+            Assert.NotEmpty(weapon.Projectile.TypeName);
+            Assert.NotEmpty(weapon.Weapon.TypeName);
+            Assert.Equal(
+                WeaponTaskParameters.ArgumentCount(weapon.Projectile.TypeName),
+                weapon.Projectile.ArgumentCount);
+            Assert.Equal(
+                WeaponTaskParameters.ArgumentCount(weapon.Weapon.TypeName),
+                weapon.Weapon.ArgumentCount);
+            Assert.Same(declared, weapon.RetailConfig);
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void EveryConfigWeaponIsCoveredByTheRuntimeRoster()
+    {
+        WeaponTypeRegistry runtime = LoadRuntimeRoster();
+        WeaponConfigRegistry config = Load(out _, out _);
+        config.AttachTo(runtime);
+
+        foreach (WeaponConfigTask declared in config.Weapons)
+        {
+            WeaponType runtimeWeapon = Assert.Single(runtime.Weapons, w => w.WeaponId == declared.WeaponId);
+            AssertWeaponFieldsMatch(declared, runtimeWeapon);
+        }
     }
 
     [RequiresGameDataFact]
@@ -190,6 +266,70 @@ public sealed class RetailWeaponConfigTests
     private static Formats.Animation.BoneAnimationSet LoadSet(string name) =>
         Formats.Animation.BoneAnimationSet.Read(
             File.ReadAllBytes(Path.Combine(GameData.RequireRoot(), "common", "anims", $"{name}.iff")));
+
+    private static void AssertWeaponFieldsMatch(WeaponConfigTask expected, WeaponType actual)
+    {
+        Assert.Equal(expected.WeaponId, actual.WeaponId);
+        Assert.Equal(expected.ScriptId, actual.ScriptId);
+        Assert.Equal(expected.DisplayName, actual.DisplayName);
+        Assert.Equal(expected.Manufacturer, actual.Manufacturer);
+        Assert.Equal(expected.Description, actual.Description);
+        Assert.Equal((WeaponCategory)expected.WeaponType, actual.Category);
+        Assert.Equal((SightDisplayType)expected.SightDisplayType, actual.SightDisplay);
+        Assert.Equal((AmmoDisplayType)expected.AmmoDisplayType, actual.AmmoDisplay);
+        Assert.Equal(expected.MassInGrams, actual.MassInGrams);
+        Assert.Equal(expected.CalibreId, actual.CalibreId);
+        Assert.Equal(expected.DamageFactor, actual.DamageFactor);
+        Assert.Equal(expected.PenetrationPower, actual.PenetrationPower);
+        Assert.Equal(expected.ReloadTimeSeconds, actual.ReloadTimeSeconds);
+        Assert.Equal(expected.MuzzleVelocity, actual.MuzzleVelocity);
+        Assert.Equal(expected.BulletsPerRound, actual.BulletsPerRound);
+        Assert.Equal(expected.RoundsPerMinute, actual.RoundsPerMinute);
+        Assert.Equal(expected.RoundsPerClip, actual.RoundsPerClip);
+        Assert.Equal(expected.MaximumRoundsPerBurst, actual.MaximumRoundsPerBurst);
+        Assert.Equal(expected.MinimumSpread, actual.MinimumSpread);
+        Assert.Equal(expected.MaximumSpread, actual.MaximumSpread);
+        Assert.Equal(expected.FixedRecoilX, actual.FixedRecoilX);
+        Assert.Equal(expected.FixedRecoilZ, actual.FixedRecoilZ);
+        Assert.Equal(expected.RandomRecoilX, actual.RandomRecoilX);
+        Assert.Equal(expected.RandomRecoilZ, actual.RandomRecoilZ);
+        Assert.Equal(expected.TypeOfWeapon, actual.TypeOfWeapon);
+        Assert.Equal(expected.EffectiveRange, actual.EffectiveRange);
+        Assert.Equal(expected.WeaponUsers, actual.WeaponUsers);
+        Assert.Equal(expected.WeaponLength, actual.WeaponLength);
+        Assert.Equal(expected.BarrelLength, actual.BarrelLength);
+        Assert.Equal(expected.GunModel, actual.GunModel);
+        Assert.Equal(expected.CasingModel, actual.CasingModel);
+        Assert.Equal(expected.StandAnimation, actual.StandAnimation);
+        Assert.Equal(expected.MoveAnimation, actual.MoveAnimation);
+        Assert.Equal(expected.FireAnimation1, actual.FireAnimation1);
+        Assert.Equal(expected.FireAnimation2, actual.FireAnimation2);
+        Assert.Equal(expected.FireAnimation3, actual.FireAnimation3);
+        Assert.Equal(expected.ReloadAnimation, actual.ReloadAnimation);
+        Assert.Equal(expected.UpperBodyStandAnimation, actual.UpperBodyStandAnimation);
+        Assert.Equal(expected.UpperBodyWalkAnimation, actual.UpperBodyWalkAnimation);
+        Assert.Equal(expected.UpperBodyCrouchAnimation, actual.UpperBodyCrouchAnimation);
+        Assert.Equal(expected.UpperBodyCrouchRunAnimation, actual.UpperBodyCrouchRunAnimation);
+        Assert.Equal(expected.UpperBodyRunAnimation, actual.UpperBodyRunAnimation);
+        Assert.Equal(expected.UpperBodyFireAnimation, actual.UpperBodyFireAnimation);
+        Assert.Equal(expected.UpperBodyReloadAnimation, actual.UpperBodyReloadAnimation);
+        Assert.Equal(expected.FireSound, actual.FireSound);
+        Assert.Equal(expected.FireLoopEndSound, actual.FireLoopEndSound);
+        Assert.Equal(expected.AiDetectionRange, actual.AiDetectionRange);
+        Assert.Equal(expected.SelectableWhenEmpty, actual.SelectableWhenEmpty);
+    }
+
+    private static WeaponTypeRegistry LoadRuntimeRoster()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        WeaponTypeRegistry weapons = new();
+        weapons.Register(loop.Natives);
+        weapons.Load(fileSystem, resources, loop.Natives);
+        return weapons;
+    }
 
     private static WeaponConfigRegistry Load(out ResourceRegistry resources, out NativeRegistry natives)
     {
