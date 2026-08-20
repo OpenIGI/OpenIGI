@@ -43,6 +43,16 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly MeshTextureDescriptorCache _meshTextureDescriptors;
     private readonly Deferred.DeferredRenderer _deferred;
 
+    // The hardware-ray-tracing foundation. Both are null on an adapter that cannot carry them, which is
+    // the one question every pass that wants to trace asks before it does.
+    private readonly RayTracing.VulkanRayTracingApi? _rayTracing;
+    private readonly Bindless.VulkanBindlessDescriptors? _bindless;
+
+    // Carries recorded work to the queues and retires it once the GPU is done. Threading is opt-in while
+    // the frame path still submits and presents in lock step; the machinery is the same either way, so
+    // turning it on is a change of one environment variable rather than of the code that uses it.
+    private readonly Queues.VulkanSubmissionQueue _submission;
+
     private readonly Dictionary<uint, VulkanTexture> _textures = [];
     private uint _nextTextureId = 1;
     private readonly TextureHandle _whiteTexture;
@@ -61,6 +71,12 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private Memory.VulkanBuffer? _captureStaging;
     private Extent2D _captureExtent;
     private int _captureCountdown;
+
+    // A session that was started to capture keeps the per-frame copy running from the first frame. That
+    // matters for correctness, not only cost: a copy recorded into the frame's own command buffer is
+    // ordered against the acquire that frame waited on, whereas reading an image that has already been
+    // handed to the presentation engine races with the engine still scanning it out.
+    private readonly bool _captureAlways;
     private bool _hasPresented;
 
     // Frame state. A frame's command buffer is opened lazily; no render pass begins until a draw needs
@@ -92,6 +108,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// Whether to offer the deferred capture path. Off by default while it awaits runtime validation, so
     /// the simpler direct path is what a Vulkan session renders unless it is opted into.
     /// </param>
+    /// <param name="enableCapture">
+    /// Whether the session will read frames back — a screenshot or a flight. When set, every frame copies
+    /// the back buffer as part of its own command buffer, which is both the only correctly synchronised
+    /// way to read a frame and a cost an ordinary session should not pay.
+    /// </param>
     /// <param name="logger">Where to report backend diagnostics.</param>
     /// <exception cref="GraphicsDeviceException">The device could not be created.</exception>
     public VulkanGraphicsDevice(
@@ -99,6 +120,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         in DisplayMode mode,
         bool enableValidation = false,
         bool enableDeferred = false,
+        bool enableCapture = false,
         IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(surfaceProvider);
@@ -106,12 +128,16 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         CurrentMode = mode;
         _vsync = true;
         _deferredEnabled = enableDeferred;
+        _captureAlways = enableCapture;
 
         _instance = new VulkanInstance(surfaceProvider, enableValidation, _logger);
         PhysicalDeviceSelection selection = new PhysicalDeviceSelector(_instance, _logger).Select();
         _device = new VulkanDevice(_instance, selection, _logger);
         _allocator = new VulkanAllocator(_device);
         _commands = new VulkanCommands(_instance.Vk, _device);
+        _submission = new Queues.VulkanSubmissionQueue(
+            _device.Queues,
+            threaded: Environment.GetEnvironmentVariable("OPENIGI_VK_SUBMIT_THREAD") == "1");
 
         int width = Math.Max(1, mode.Width);
         int height = Math.Max(1, mode.Height);
@@ -136,6 +162,26 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             VulkanFrameLoop.MaxFramesInFlight);
 
         RayTracingAvailable = selection.SupportsRayTracing;
+
+        // The bindless heaps come first: an acceleration structure is reached through them, so a scene
+        // that could be built but not reached would be of no use to anything.
+        if (_device.Capabilities.DescriptorBuffer)
+        {
+            _bindless = new Bindless.VulkanBindlessDescriptors(_instance, _device, _allocator);
+        }
+
+        if (RayTracingAvailable && _bindless is not null)
+        {
+            _rayTracing = new RayTracing.VulkanRayTracingApi(_instance, _device);
+
+            // Opt-in, like the other Vulkan paths. The test builds and traces a scene of its own, which is
+            // a few milliseconds and a little memory at start-up — worth paying deliberately when bringing
+            // the hardware path up or diagnosing it, and not worth paying on every launch.
+            if (Environment.GetEnvironmentVariable("OPENIGI_VK_RT_SELFTEST") == "1")
+            {
+                RunRayTracingSelfTest();
+            }
+        }
 
         // Compute is validated in isolation (the self-test passes) but not yet on the live per-frame path:
         // the engine's GI and distance-field passes run several dispatches a frame, and until they record
@@ -282,9 +328,13 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         // Copy the finished back buffer into a persistent staging buffer so a screenshot can read the last
         // presented frame — but only while a consumer is actually asking for captures.
-        if (_captureCountdown > 0)
+        if (_captureAlways || _captureCountdown > 0)
         {
-            _captureCountdown--;
+            if (_captureCountdown > 0)
+            {
+                _captureCountdown--;
+            }
+
             RecordBackbufferCapture();
         }
 
@@ -319,6 +369,41 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _projectionHeight = Math.Max(1, height);
     }
 
+    /// <summary>
+    /// Traces a scene with a known answer and reports whether the hardware path returned it.
+    /// </summary>
+    /// <returns>
+    /// <see langword="true"/> when every ray landed where it should have; <see langword="false"/> when a
+    /// ray was wrong or the adapter cannot trace at all.
+    /// </returns>
+    /// <remarks>
+    /// Worth running whenever the ray-tracing foundation is in doubt. Its parts — device addresses, build
+    /// flags, descriptor strides, the barrier between a build and a traversal — fail in ways that surface
+    /// downstream as indirect lighting that is subtly wrong rather than as an error, and this turns that
+    /// into a plain pass or fail.
+    /// </remarks>
+    public bool RunRayTracingSelfTest()
+    {
+        ThrowIfDisposed();
+
+        if (_rayTracing is null || _bindless is null)
+        {
+            _logger.Warning("Vulkan", "The ray-query self-test was asked for on an adapter that cannot trace.");
+            return false;
+        }
+
+        RayTracing.VulkanRayQuerySelfTest test = new(
+            _instance.Vk,
+            _device,
+            _allocator,
+            _commands,
+            _submission,
+            _shaderCompiler,
+            _bindless,
+            _rayTracing);
+        return test.Run(_logger);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
@@ -350,6 +435,9 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _textures.Clear();
         DisposeComputeResources();
         _captureStaging?.Dispose();
+        _submission.Dispose();
+        _rayTracing?.Dispose();
+        _bindless?.Dispose();
         _deferred.Dispose();
         _meshTextureDescriptors.Dispose();
         _mesh3D.Dispose();

@@ -140,9 +140,13 @@ public sealed partial class VulkanGraphicsDevice
         // last presented frame. If it was not (ordinary gameplay taking a one-off screenshot), grab the last
         // presented frame now with a single synchronous copy. Either way, keep the per-frame copy alive for
         // a few more frames so a caller that keeps asking gets the cheap path.
-        bool wasActive = _captureCountdown > 0;
+        bool wasActive = _captureAlways || _captureCountdown > 0;
         _captureCountdown = 3;
 
+        // Only where the per-frame copy was not already running is there nothing in the staging buffer to
+        // read. That path reads an image the presentation engine may still be scanning out, which is a
+        // race no synchronisation available here can close — so a session that intends to capture says so
+        // at construction and never reaches it.
         if (!wasActive && _hasPresented)
         {
             SynchronousCapture();

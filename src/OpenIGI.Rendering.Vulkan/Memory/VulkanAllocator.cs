@@ -36,19 +36,51 @@ internal sealed unsafe class VulkanAllocator
         _vk = Vk.GetApi();
         _device = device.Device;
         _memoryProperties = device.MemoryProperties;
+        SupportsDeviceAddress = device.Capabilities.BufferDeviceAddress;
+        ResizableBar = FindResizableBarType() is not null;
     }
+
+    /// <summary>Gets a value indicating whether allocations can back buffers that carry a device address.</summary>
+    public bool SupportsDeviceAddress { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the adapter exposes device-local memory the CPU can also write.
+    /// </summary>
+    /// <remarks>
+    /// A resizable BAR: the whole of video memory mapped into the host address space rather than the
+    /// traditional 256&#160;MB window. Where it exists, data the CPU produces and the GPU consumes every
+    /// frame — instance descriptors, shader binding tables, build scratch, descriptor heaps — can be
+    /// written straight to where the GPU reads it, with no staging buffer and no copy command.
+    /// </remarks>
+    public bool ResizableBar { get; }
 
     /// <summary>Allocates device memory of a type satisfying a resource's requirements.</summary>
     /// <param name="requirements">The requirements Vulkan reported for the buffer or image.</param>
     /// <param name="properties">The memory properties the resource needs — device-local, host-visible, and so on.</param>
+    /// <param name="deviceAddressable">
+    /// Whether the memory will back a buffer whose device address is taken. Vulkan requires this be
+    /// declared at allocation, not only at buffer creation, so a buffer created with the address usage
+    /// but backed by memory allocated without this flag is invalid.
+    /// </param>
     /// <returns>The allocated memory. The caller owns it and must free it with <see cref="Free"/>.</returns>
     /// <exception cref="GraphicsDeviceException">No memory type satisfies the requirements.</exception>
-    public DeviceMemory Allocate(in MemoryRequirements requirements, MemoryPropertyFlags properties)
+    public DeviceMemory Allocate(
+        in MemoryRequirements requirements,
+        MemoryPropertyFlags properties,
+        bool deviceAddressable = false)
     {
         uint typeIndex = FindMemoryType(requirements.MemoryTypeBits, properties);
+
+        MemoryAllocateFlagsInfo flagsInfo = new()
+        {
+            SType = StructureType.MemoryAllocateFlagsInfo,
+            Flags = MemoryAllocateFlags.AddressBit,
+        };
+
         MemoryAllocateInfo info = new()
         {
             SType = StructureType.MemoryAllocateInfo,
+            PNext = deviceAddressable && SupportsDeviceAddress ? &flagsInfo : null,
             AllocationSize = requirements.Size,
             MemoryTypeIndex = typeIndex,
         };
@@ -88,5 +120,34 @@ internal sealed unsafe class VulkanAllocator
 
         throw new GraphicsDeviceException(
             $"No memory type satisfies requirements 0x{typeBits:X} with properties {properties}.");
+    }
+
+    /// <summary>
+    /// Gets the memory properties for data the CPU writes and the GPU reads every frame, preferring
+    /// device-local memory the host can reach where the adapter offers it.
+    /// </summary>
+    /// <returns>The properties to ask <see cref="Allocate"/> for.</returns>
+    public MemoryPropertyFlags UploadMemoryProperties()
+    {
+        MemoryPropertyFlags host = MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit;
+        return ResizableBar ? host | MemoryPropertyFlags.DeviceLocalBit : host;
+    }
+
+    private uint? FindResizableBarType()
+    {
+        MemoryPropertyFlags wanted = MemoryPropertyFlags.DeviceLocalBit
+            | MemoryPropertyFlags.HostVisibleBit
+            | MemoryPropertyFlags.HostCoherentBit;
+
+        PhysicalDeviceMemoryProperties memory = _memoryProperties;
+        for (uint i = 0; i < memory.MemoryTypeCount; i++)
+        {
+            if ((memory.MemoryTypes[(int)i].PropertyFlags & wanted) == wanted)
+            {
+                return i;
+            }
+        }
+
+        return null;
     }
 }

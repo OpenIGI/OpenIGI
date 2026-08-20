@@ -136,7 +136,13 @@ using (window)
         "1",
         StringComparison.Ordinal);
     using IGraphicsDevice device = window.IsVulkan
-        ? new VulkanGraphicsDevice(new VulkanSurfaceProvider(window.VkSurface!), displayMode, vulkanValidation, vulkanDeferred, logger)
+        ? new VulkanGraphicsDevice(
+            new VulkanSurfaceProvider(window.VkSurface!),
+            displayMode,
+            vulkanValidation,
+            vulkanDeferred,
+            options.ScreenshotPath is not null,
+            logger)
         : new GLGraphicsDevice(GL.GetApi(window.GLContext), displayMode, window.SwapBuffers, logger);
 
     using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);

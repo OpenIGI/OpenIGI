@@ -42,7 +42,7 @@ internal sealed unsafe class VulkanCommands : IDisposable
         CommandPoolCreateInfo createInfo = new()
         {
             SType = StructureType.CommandPoolCreateInfo,
-            QueueFamilyIndex = device.Selection.Queues.Graphics,
+            QueueFamilyIndex = device.Selection.Queues.Graphics.Family,
 
             // The frame buffers are re-recorded every frame, so the pool must let a buffer be reset on
             // its own rather than only by resetting the whole pool.
@@ -60,7 +60,7 @@ internal sealed unsafe class VulkanCommands : IDisposable
         CommandPoolCreateInfo singleTimeInfo = new()
         {
             SType = StructureType.CommandPoolCreateInfo,
-            QueueFamilyIndex = device.Selection.Queues.Graphics,
+            QueueFamilyIndex = device.Selection.Queues.Graphics.Family,
             Flags = CommandPoolCreateFlags.TransientBit,
         };
         CommandPool singleTimePool;

@@ -36,6 +36,10 @@ internal sealed unsafe class ProbeVolumes : IDisposable
     private readonly Image[] _images = new Image[Channels];
     private readonly DeviceMemory[] _memory = new DeviceMemory[Channels];
     private readonly ImageView[] _views = new ImageView[Channels];
+
+    // Volumes replaced by a re-upload, each dated with the queue value that has to be reached before the
+    // frames still sampling them can possibly have finished.
+    private readonly List<Retired> _retiring = [];
     private Sampler _sampler;
     private int _countX;
     private int _countY;
@@ -98,9 +102,11 @@ internal sealed unsafe class ProbeVolumes : IDisposable
             return;
         }
 
+        RetireCompleted();
+
         if (!HasData || _countX != volume.CountX || _countY != volume.CountY || _countZ != volume.CountZ)
         {
-            DestroyImages();
+            RetireImages();
             _countX = volume.CountX;
             _countY = volume.CountY;
             _countZ = volume.CountZ;
@@ -271,6 +277,76 @@ internal sealed unsafe class ProbeVolumes : IDisposable
         return sampler;
     }
 
+    /// <summary>
+    /// Hands the current volumes over to be freed later, rather than destroying them where they stand.
+    /// </summary>
+    /// <remarks>
+    /// A field is re-uploaded during play, while frames that sample the volumes it replaces are still in
+    /// flight — their command buffers carry descriptors naming these very views. Destroying them here
+    /// would free memory the GPU is about to read. They are instead dated against the queue's timeline
+    /// and freed once it has passed the frame being recorded now, which is the first point at which
+    /// nothing can still be reading them.
+    /// </remarks>
+    private void RetireImages()
+    {
+        // The frame currently being recorded will signal this value, so everything recorded up to and
+        // including it has finished once the queue reaches it.
+        ulong retireAfter = _device.GraphicsQueue.LastSubmittedValue + 1;
+
+        for (int channel = 0; channel < Channels; channel++)
+        {
+            if (_images[channel].Handle == 0 && _views[channel].Handle == 0)
+            {
+                continue;
+            }
+
+            _retiring.Add(new Retired(retireAfter, _images[channel], _views[channel], _memory[channel]));
+            _images[channel] = default;
+            _views[channel] = default;
+            _memory[channel] = default;
+        }
+    }
+
+    /// <summary>Frees the retired volumes the queue has moved past.</summary>
+    private void RetireCompleted()
+    {
+        if (_retiring.Count == 0)
+        {
+            return;
+        }
+
+        ulong completed = _device.GraphicsQueue.CompletedValue;
+        for (int i = _retiring.Count - 1; i >= 0; i--)
+        {
+            Retired retired = _retiring[i];
+            if (retired.RetireAfter > completed)
+            {
+                continue;
+            }
+
+            Free(retired);
+            _retiring.RemoveAt(i);
+        }
+    }
+
+    private void Free(in Retired retired)
+    {
+        if (retired.View.Handle != 0)
+        {
+            _vk.DestroyImageView(_device.Device, retired.View, null);
+        }
+
+        if (retired.Image.Handle != 0)
+        {
+            _vk.DestroyImage(_device.Device, retired.Image, null);
+        }
+
+        if (retired.Memory.Handle != 0)
+        {
+            _allocator.Free(retired.Memory);
+        }
+    }
+
     private void DestroyImages()
     {
         for (int channel = 0; channel < Channels; channel++)
@@ -304,7 +380,21 @@ internal sealed unsafe class ProbeVolumes : IDisposable
         }
 
         _disposed = true;
+        // Teardown waits for the device, so anything still on the retirement list is certainly idle.
+        foreach (Retired retired in _retiring)
+        {
+            Free(retired);
+        }
+
+        _retiring.Clear();
         DestroyImages();
         _vk.DestroySampler(_device.Device, _sampler, null);
     }
+
+    /// <summary>A volume waiting for the GPU to finish with it.</summary>
+    /// <param name="RetireAfter">The queue timeline value past which nothing can still be sampling it.</param>
+    /// <param name="Image">The image.</param>
+    /// <param name="View">Its view.</param>
+    /// <param name="Memory">The memory backing it.</param>
+    private readonly record struct Retired(ulong RetireAfter, Image Image, ImageView View, DeviceMemory Memory);
 }

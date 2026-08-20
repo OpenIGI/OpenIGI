@@ -57,19 +57,31 @@ internal sealed unsafe class VulkanMesh : IDisposable
         // submit, which is the wrong shape for Vulkan. A static mesh stays device-local and is staged
         // once at load, where a blocking copy is fine.
         bool vertexHostVisible = animated || storage;
+
+        // Where the adapter can trace, a mesh's geometry is also a build input for an acceleration
+        // structure — read by the build through the buffer's device address rather than through a
+        // binding. Both usages have to be asked for at creation, so they are added to every mesh rather
+        // than to the ones that happen to be traced: which meshes those are is not known here, and a
+        // buffer cannot gain a usage later.
+        BufferUsageFlags rayTracing = device.Capabilities.AccelerationStructure
+            ? BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr
+                | BufferUsageFlags.ShaderDeviceAddressBit
+                | BufferUsageFlags.StorageBufferBit
+            : BufferUsageFlags.None;
+
         _vertexBuffer = CreateBuffer(
             vk,
             device,
             allocator,
             (ulong)(vertexCapacity * Vertex3D.Size),
-            BufferUsageFlags.VertexBufferBit,
+            BufferUsageFlags.VertexBufferBit | rayTracing,
             vertexHostVisible);
         _indexBuffer = CreateBuffer(
             vk,
             device,
             allocator,
             (ulong)(indexCapacity * sizeof(ushort)),
-            BufferUsageFlags.IndexBufferBit,
+            BufferUsageFlags.IndexBufferBit | rayTracing,
             storage);
     }
 
@@ -100,6 +112,17 @@ internal sealed unsafe class VulkanMesh : IDisposable
 
     /// <summary>Gets the index buffer handle, to bind before drawing.</summary>
     public Buffer IndexBuffer => _indexBuffer.Handle;
+
+    /// <summary>Gets the vertex buffer's device address, for an acceleration-structure build.</summary>
+    /// <remarks>
+    /// A build reads geometry straight out of memory rather than through a descriptor, so what it needs
+    /// is the address rather than the handle. Only meaningful on a device that can trace, since only then
+    /// were the buffers created addressable.
+    /// </remarks>
+    public ulong VertexBufferAddress => _vertexBuffer.DeviceAddress;
+
+    /// <summary>Gets the index buffer's device address, for an acceleration-structure build.</summary>
+    public ulong IndexBufferAddress => _indexBuffer.DeviceAddress;
 
     /// <summary>Gets how many vertices the mesh can hold.</summary>
     public int VertexCapacity { get; }

@@ -1,5 +1,6 @@
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Queues;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan;
@@ -104,6 +105,11 @@ internal sealed unsafe class VulkanFrameLoop : IDisposable
         Fence fence = _inFlight[_currentFrame];
         VkCheck.Ok(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
 
+        // The slot's previous frame has certainly finished by now, so this is where the queue retires
+        // whatever that frame was holding — staging buffers, replaced acceleration structures, descriptor
+        // slots. Nothing here waits; it only collects what the timeline says is already done.
+        _device.GraphicsQueue.Poll();
+
         Result acquire = _swapchain.AcquireNextImage(_imageAvailable[_currentFrame], out imageIndex);
         if (acquire == Result.ErrorOutOfDateKhr)
         {
@@ -133,25 +139,22 @@ internal sealed unsafe class VulkanFrameLoop : IDisposable
         CommandBuffer commandBuffer = _commandBuffers[_currentFrame];
         VkCheck.Ok(_vk.EndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 
-        Semaphore wait = _imageAvailable[_currentFrame];
         Semaphore signal = _renderFinished[imageIndex];
-        PipelineStageFlags waitStage = PipelineStageFlags.ColorAttachmentOutputBit;
 
-        SubmitInfo submitInfo = new()
-        {
-            SType = StructureType.SubmitInfo,
-            WaitSemaphoreCount = 1,
-            PWaitSemaphores = &wait,
-            PWaitDstStageMask = &waitStage,
-            CommandBufferCount = 1,
-            PCommandBuffers = &commandBuffer,
-            SignalSemaphoreCount = 1,
-            PSignalSemaphores = &signal,
-        };
+        // Submitted through the queue rather than straight to the driver, so the queue's timeline counts
+        // this frame. Everything that defers work until the GPU has caught up — resource retirement, the
+        // acceleration-structure compaction handshake — is expressed against that number, and a frame
+        // submitted behind the queue's back would leave it stale and those decisions wrong.
+        VulkanPayload payload = new(_device.GraphicsQueue);
+        payload.CommandBuffers.Add(commandBuffer);
+        payload.WaitOn(_imageAvailable[_currentFrame], PipelineStageFlags.ColorAttachmentOutputBit);
+        payload.SignalSemaphores.Add(signal);
 
-        VkCheck.Ok(
-            _vk.QueueSubmit(_device.Graphics, 1, &submitInfo, _inFlight[_currentFrame]),
-            "vkQueueSubmit");
+        // The fence stays as well as the timeline. It is what the next use of this slot waits on, and a
+        // fence wait is the cheapest way to ask that one question; the timeline answers the different
+        // question of how far the queue as a whole has got.
+        payload.Fence = _inFlight[_currentFrame];
+        _device.GraphicsQueue.Submit(payload);
 
         Result present = _swapchain.Present(signal, imageIndex);
         _currentFrame = (_currentFrame + 1) % MaxFramesInFlight;

@@ -1,6 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Vulkan.Capabilities;
 using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Queues;
 using Silk.NET.Core;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
@@ -10,32 +13,22 @@ namespace OpenIGI.Rendering.Vulkan;
 /// <summary>Chooses the adapter the backend runs on and works out how it will be used.</summary>
 /// <remarks>
 /// <para>
-/// The rule is the one every renderer uses: prefer a discrete GPU, fall back to whatever can present.
-/// A candidate is only eligible if it can do the two things the backend cannot start without — render
-/// to and present on the surface, and carry a swapchain — so the choice is made among devices already
-/// known to work rather than found to be unusable three calls later.
+/// The rule is the one every renderer uses: prefer a discrete GPU, fall back to whatever can present. A
+/// candidate is only eligible if it can do the two things the backend cannot start without — render to
+/// and present on the surface, and carry a swapchain — so the choice is made among devices already known
+/// to work rather than found to be unusable three calls later.
 /// </para>
 /// <para>
-/// Ray-tracing support is noted rather than required. The whole point of the backend is that the
-/// software-traced GI can later become hardware-traced; recording, at selection, whether the adapter
-/// carries the extensions for that is what lets the switch be a capability check rather than a second
-/// enumeration.
+/// Everything else is noted rather than required. Whether the adapter can trace rays in hardware, hold
+/// its descriptors in a buffer, or run compute on an engine of its own all decide which path a pass
+/// takes, not whether the backend starts; recording all of it at selection is what lets those be
+/// capability checks later rather than a second enumeration.
 /// </para>
 /// </remarks>
 internal sealed unsafe class PhysicalDeviceSelector
 {
     // The one extension no candidate can be without: presenting a rendered image needs a swapchain.
     private static readonly string[] RequiredExtensions = [KhrSwapchain.ExtensionName];
-
-    // The hardware ray-tracing set. Acceleration structures describe the scene, the ray-tracing
-    // pipeline traces through them, and deferred host operations is how the driver builds those
-    // structures across threads. All three, or the adapter is treated as raster-only.
-    private static readonly string[] RayTracingExtensions =
-    [
-        KhrAccelerationStructure.ExtensionName,
-        KhrRayTracingPipeline.ExtensionName,
-        KhrDeferredHostOperations.ExtensionName,
-    ];
 
     private readonly Vk _vk;
     private readonly Instance _instance;
@@ -97,9 +90,7 @@ internal sealed unsafe class PhysicalDeviceSelector
                 "No Vulkan adapter can both present to the window surface and support a swapchain.");
         }
 
-        _logger.Information(
-            "Vulkan",
-            $"Selected adapter '{best.Name}' (ray tracing {(best.SupportsRayTracing ? "available" : "unavailable")}).");
+        Report(best);
         return best;
     }
 
@@ -110,13 +101,40 @@ internal sealed unsafe class PhysicalDeviceSelector
         return candidateDiscrete && !incumbentDiscrete;
     }
 
+    private void Report(PhysicalDeviceSelection selection)
+    {
+
+        VulkanDeviceCapabilities capabilities = selection.Capabilities;
+        Version32 api = (Version32)selection.ApiVersion;
+
+        _logger.Information(
+            "Vulkan",
+            $"Selected adapter '{selection.Name}' (Vulkan {api.Major}.{api.Minor}.{api.Patch}).");
+
+        VulkanQueuePlan queues = selection.Queues;
+        string compute = queues.HasDedicatedCompute
+            ? $"family {queues.AsyncCompute.Family}"
+            : "shared with graphics";
+        string transfer = queues.HasDedicatedTransfer
+            ? $"family {queues.Transfer.Family}"
+            : "shared";
+        _logger.Information(
+            "Vulkan",
+            $"Queues: graphics family {queues.Graphics.Family}, async compute {compute}, transfer {transfer}.");
+
+        string tracing = capabilities.HardwareRayTracing
+            ? capabilities.RayTracingPipeline ? "ray query and ray-tracing pipeline" : "ray query only"
+            : "unavailable";
+        _logger.Information(
+            "Vulkan",
+            $"Hardware ray tracing: {tracing}. Bindless descriptor buffer: " +
+            $"{(capabilities.DescriptorBuffer ? "available" : "unavailable")}. " +
+            $"Synchronisation 2: {(capabilities.Synchronization2 ? "available" : "unavailable")}. " +
+            $"Timeline semaphores: {(capabilities.TimelineSemaphore ? "available" : "unavailable")}.");
+    }
+
     private PhysicalDeviceSelection? Evaluate(PhysicalDevice device)
     {
-        if (!TryFindQueueFamilies(device, out QueueFamilyIndices queues))
-        {
-            return null;
-        }
-
         HashSet<string> available = ReadDeviceExtensions(device);
         foreach (string required in RequiredExtensions)
         {
@@ -126,47 +144,37 @@ internal sealed unsafe class PhysicalDeviceSelector
             }
         }
 
-        List<string> enabled = [.. RequiredExtensions];
-
-        // Robustness2 makes every out-of-bounds access — including index-buffer reads, which plain
-        // robustBufferAccess does not cover — return zero rather than lose the device. Enabled whenever
-        // present, as a safety net across the draw paths.
-        if (available.Contains("VK_EXT_robustness2"))
-        {
-            enabled.Add("VK_EXT_robustness2");
-        }
-
-        bool rayTracing = true;
-        foreach (string rt in RayTracingExtensions)
-        {
-            if (!available.Contains(rt))
-            {
-                rayTracing = false;
-            }
-        }
-
-        if (rayTracing)
-        {
-            enabled.AddRange(RayTracingExtensions);
-
-            // The ray-tracing pipeline reaches its geometry through buffer device addresses, so the two
-            // travel together. It is core in 1.2 but still enumerated as an extension the device must
-            // enable, so it is added alongside the set that needs it.
-            const string bufferDeviceAddress = "VK_KHR_buffer_device_address";
-            if (available.Contains(bufferDeviceAddress))
-            {
-                enabled.Add(bufferDeviceAddress);
-            }
-        }
-
         _vk.GetPhysicalDeviceProperties(device, out PhysicalDeviceProperties properties);
+
+        if (!TryPlanQueues(device, out VulkanQueuePlan? queues))
+        {
+            return null;
+        }
+
+        VulkanDeviceCapabilities capabilities =
+            VulkanCapabilityProbe.Probe(_vk, device, available, properties.ApiVersion);
+
         string name = VkString.Read(properties.DeviceName);
-        return new PhysicalDeviceSelection(device, queues, properties, name, rayTracing, enabled);
+        return new PhysicalDeviceSelection(device, queues, properties, name, capabilities);
     }
 
-    private bool TryFindQueueFamilies(PhysicalDevice device, out QueueFamilyIndices indices)
+    /// <summary>Works out which queue of which family each kind of work will be submitted to.</summary>
+    /// <remarks>
+    /// <para>
+    /// What matters is independence from the graphics engine, so a family only counts as asynchronous
+    /// compute if it is a <em>different</em> family from the graphics one — a second queue drawn from the
+    /// graphics family is still the same hardware and the work still serialises. A transfer family is
+    /// stricter still: it must carry neither graphics nor compute, which is what identifies a real copy
+    /// engine rather than a general family that happens to accept transfers.
+    /// </para>
+    /// <para>
+    /// Not finding either is normal and not a failure. The slot falls back to the graphics queue, work
+    /// runs in order, and every caller is written the same way regardless.
+    /// </para>
+    /// </remarks>
+    private bool TryPlanQueues(PhysicalDevice device, [NotNullWhen(true)] out VulkanQueuePlan? plan)
     {
-        indices = default;
+        plan = null;
 
         uint count = 0;
         _vk.GetPhysicalDeviceQueueFamilyProperties(device, &count, null);
@@ -183,23 +191,16 @@ internal sealed unsafe class PhysicalDeviceSelector
 
         int graphics = -1;
         int present = -1;
-        int compute = -1;
         int unified = -1;
 
         for (uint i = 0; i < count; i++)
         {
             bool canGraphics = families[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit);
-            bool canCompute = families[i].QueueFlags.HasFlag(QueueFlags.ComputeBit);
             bool canPresent = PresentSupported(device, i);
 
             if (canGraphics && graphics < 0)
             {
                 graphics = (int)i;
-            }
-
-            if (canCompute && compute < 0)
-            {
-                compute = (int)i;
             }
 
             if (canPresent && present < 0)
@@ -213,20 +214,59 @@ internal sealed unsafe class PhysicalDeviceSelector
             }
         }
 
-        if (graphics < 0 || present < 0 || compute < 0)
+        if (graphics < 0 || present < 0)
         {
             return false;
         }
 
-        // Prefer the family that does both graphics and present, so the common path needs one queue and
-        // no cross-family image sharing on the swapchain.
+        // Prefer the family that does both, so the common path needs one queue and no cross-family image
+        // sharing on the swapchain.
         if (unified >= 0)
         {
             graphics = unified;
             present = unified;
         }
 
-        indices = new QueueFamilyIndices((uint)graphics, (uint)present, (uint)compute);
+        int asyncCompute = graphics;
+        for (uint i = 0; i < count; i++)
+        {
+            if (i != (uint)graphics && families[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
+            {
+                asyncCompute = (int)i;
+                break;
+            }
+        }
+
+        int transfer = graphics;
+        for (uint i = 0; i < count; i++)
+        {
+            QueueFlags flags = families[i].QueueFlags;
+            bool dedicated = flags.HasFlag(QueueFlags.TransferBit)
+                && !flags.HasFlag(QueueFlags.GraphicsBit)
+                && !flags.HasFlag(QueueFlags.ComputeBit);
+            if (dedicated && i != (uint)graphics && i != (uint)asyncCompute)
+            {
+                transfer = (int)i;
+                break;
+            }
+        }
+
+        // One queue per family is what the backend uses: a second queue from the same family shares the
+        // hardware, so it buys ordering flexibility rather than parallelism, and it is not needed here.
+        Dictionary<uint, uint> queueCounts = new()
+        {
+            [(uint)graphics] = 1,
+            [(uint)present] = 1,
+            [(uint)asyncCompute] = 1,
+            [(uint)transfer] = 1,
+        };
+
+        plan = new VulkanQueuePlan(
+            new VulkanQueueSlot((uint)graphics, 0),
+            new VulkanQueueSlot((uint)present, 0),
+            new VulkanQueueSlot((uint)asyncCompute, 0),
+            new VulkanQueueSlot((uint)transfer, 0),
+            queueCounts);
         return true;
     }
 

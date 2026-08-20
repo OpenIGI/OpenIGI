@@ -198,8 +198,8 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
             OldSwapchain = default,
         };
 
-        QueueFamilyIndices queues = _device.Selection.Queues;
-        uint* familyIndices = stackalloc uint[2] { queues.Graphics, queues.Present };
+        Queues.VulkanQueuePlan queues = _device.Selection.Queues;
+        uint* familyIndices = stackalloc uint[2] { queues.Graphics.Family, queues.Present.Family };
         if (queues.GraphicsAndPresentUnified)
         {
             createInfo.ImageSharingMode = SharingMode.Exclusive;
