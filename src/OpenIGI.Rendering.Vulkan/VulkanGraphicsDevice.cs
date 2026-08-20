@@ -48,6 +48,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly RayTracing.VulkanRayTracingApi? _rayTracing;
     private readonly Bindless.VulkanBindlessDescriptors? _bindless;
 
+    // The traceable copy of the world, accumulated from what the geometry pass is asked to draw. Null on
+    // an adapter that cannot trace, which is the one question every pass that wants a ray asks first.
+    private readonly RayTracing.VulkanWorldScene? _worldScene;
+
     // Carries recorded work to the queues and retires it once the GPU is done. Threading is opt-in while
     // the frame path still submits and presents in lock step; the machinery is the same either way, so
     // turning it on is a change of one environment variable rather than of the code that uses it.
@@ -173,6 +177,13 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         if (RayTracingAvailable && _bindless is not null)
         {
             _rayTracing = new RayTracing.VulkanRayTracingApi(_instance, _device);
+            // Opt-in while it is measured. Building the traceable world costs time on the frames that
+            // admit new geometry, and until that cost is known it is not something an ordinary session
+            // should pay for a shadow it is not yet using.
+            if (Environment.GetEnvironmentVariable("OPENIGI_VK_RT_SCENE") == "1")
+            {
+                _worldScene = new RayTracing.VulkanWorldScene(_instance.Vk, _rayTracing, _device, _allocator);
+            }
 
             // Opt-in, like the other Vulkan paths. The test builds and traces a scene of its own, which is
             // a few milliseconds and a little memory at start-up — worth paying deliberately when bringing
@@ -436,6 +447,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         DisposeComputeResources();
         _captureStaging?.Dispose();
         _submission.Dispose();
+        _worldScene?.Dispose();
         _rayTracing?.Dispose();
         _bindless?.Dispose();
         _deferred.Dispose();

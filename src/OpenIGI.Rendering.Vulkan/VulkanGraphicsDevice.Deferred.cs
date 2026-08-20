@@ -101,6 +101,11 @@ public sealed partial class VulkanGraphicsDevice
         // the one place they cannot be recorded.
         RecordSkyUpdate();
 
+        // The structure a shadow ray traces against, from everything the geometry pass has ever been asked
+        // to draw. Recorded here for the same reason the sky is: a build cannot happen inside a render
+        // pass, and the lighting subpass that traces against it is inside one.
+        _worldScene?.Record(_frameCommandBuffer, _device.GraphicsQueue);
+
         _capturing = true;
         _deferredSubpass = -1;
         return true;
@@ -225,7 +230,8 @@ public sealed partial class VulkanGraphicsDevice
             _frameLoop.CurrentFrame,
             worldSun,
             illuminance,
-            Sky.SkyAtmosphere.ViewHeightKm(2f));
+            Sky.SkyAtmosphere.ViewHeightKm(2f),
+            Math.Max(0f, _lighting.SkyLightIntensity));
     }
 
     /// <summary>Runs the ambient-occlusion compute over the stored depth, writing this frame's occlusion.</summary>
@@ -680,9 +686,12 @@ public sealed partial class VulkanGraphicsDevice
         // uProbeInvCount: xyz one-over-count, w spacing.
         u[8] = probes.InverseCount.X; u[9] = probes.InverseCount.Y; u[10] = probes.InverseCount.Z; u[11] = spacing;
 
-        // uProbeMisc: half-spacing normal offset, blend, light scale, unused.
+        // uProbeMisc: half-spacing normal offset, blend, light scale, and whether the sun's shadow comes
+        // from a ray rather than from the cascades. The world is accumulated from what has been drawn, so
+        // for the first frames of a level there is nothing to trace and the shadow map still answers.
         u[12] = spacing * 0.5f; u[13] = Math.Clamp(_volumeSettings.Blend, 0f, 1f);
-        u[14] = MathF.Max(_lighting.Scale, 0f); u[15] = 0f;
+        u[14] = MathF.Max(_lighting.Scale, 0f);
+        u[15] = _deferred.TracesShadows && _worldScene is { IsReady: true } ? 1f : 0f;
 
         // uProbeSky: the sky colour the grey visibility is tinted by, times its intensity.
         u[16] = _volumeSettings.SkyColour.X * intensity;
@@ -738,7 +747,8 @@ public sealed partial class VulkanGraphicsDevice
         _sceneTarget!.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize, giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
-            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler));
+            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
+            _deferred.TracesShadows ? _worldScene?.TopLevel?.Handle ?? default : default);
     }
 
     /// <summary>Resolves the screen-GI atlas to a view, sampler and layout, or the white texture when unset.</summary>

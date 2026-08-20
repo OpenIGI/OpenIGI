@@ -16,6 +16,10 @@ namespace OpenIGI.Rendering.Vulkan;
 public sealed partial class VulkanGraphicsDevice
 {
     private readonly Dictionary<uint, VulkanMesh> _meshes = [];
+
+    // The same registry the other way round. A draw is handed the mesh itself, but the traceable world
+    // keys its geometry by the identifier the seam knows it as, so one has to be found from the other.
+    private readonly Dictionary<VulkanMesh, uint> _meshIds = [];
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
     private DepthState _depthState = DepthState.Disabled;
@@ -84,6 +88,9 @@ public sealed partial class VulkanGraphicsDevice
         {
             return;
         }
+
+        _meshIds.Remove(resource);
+        _worldScene?.Forget(mesh.Id);
 
         // The mesh may still be referenced by a frame in flight, so it is not freed now; it is queued and
         // disposed once those frames have cycled — no device stall.
@@ -263,6 +270,12 @@ public sealed partial class VulkanGraphicsDevice
             modelView.M31, modelView.M32, modelView.M33);
         Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
 
+        // Tell the traceable world this mesh is here. The transform it wants is object to absolute world:
+        // the same rotation as the normal's, and the model-view's own translation rotated into world and
+        // offset by where the camera is. Absolute rather than camera-relative because a placement recorded
+        // now has to still be right in a frame whose camera has moved.
+        ObserveForRayTracing(mesh, modelView, normalMatrix);
+
         float* data = stackalloc float[32];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
         data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
@@ -342,6 +355,37 @@ public sealed partial class VulkanGraphicsDevice
     {
         uint id = _nextMeshId++;
         _meshes[id] = mesh;
+        _meshIds[mesh] = id;
         return new MeshHandle(id);
+    }
+
+    /// <summary>Records a geometry-pass draw into the traceable copy of the world.</summary>
+    /// <param name="mesh">The mesh being drawn.</param>
+    /// <param name="modelView">Its object-to-view transform.</param>
+    /// <param name="normalMatrix">Its object-to-world rotation, already composed for the normal.</param>
+    private void ObserveForRayTracing(VulkanMesh mesh, in Matrix4f modelView, in Matrix3f normalMatrix)
+    {
+        if (_worldScene is null)
+        {
+            return;
+        }
+
+        if (!_meshIds.TryGetValue(mesh, out uint meshId))
+        {
+            return;
+        }
+
+        Matrix3f m = _viewToWorld;
+        float tx = (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34);
+        float ty = (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34);
+        float tz = (m.M31 * modelView.M14) + (m.M32 * modelView.M24) + (m.M33 * modelView.M34);
+
+        Matrix4f world = new(
+            normalMatrix.M11, normalMatrix.M12, normalMatrix.M13, tx + _cameraPosition.X,
+            normalMatrix.M21, normalMatrix.M22, normalMatrix.M23, ty + _cameraPosition.Y,
+            normalMatrix.M31, normalMatrix.M32, normalMatrix.M33, tz + _cameraPosition.Z,
+            0f, 0f, 0f, 1f);
+
+        _worldScene.Observe(meshId, mesh, world);
     }
 }

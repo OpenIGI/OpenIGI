@@ -3262,7 +3262,12 @@ internal sealed partial class DesktopGame : IDisposable
                         // fill: the fog was calibrated against this value and boosting it whites the frame
                         // out. Kept independent of r_ambient_scale so the haze does not collapse when the
                         // flat ambient is dialled to zero to watch the GI carry the surfaces.
-                        light.Ambient));
+                        light.Ambient,
+
+                        // How brightly the sky lights the world, for a backend that models the sky as a
+                        // real light source rather than folding it into the flat ambient. Same dial that
+                        // scaled the flat stand-in, now driving the thing it stood in for.
+                        RenderCVars.SkyLight.Value));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

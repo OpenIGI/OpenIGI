@@ -144,12 +144,14 @@ internal sealed class SkyAtmosphere : IDisposable
     /// <param name="sunDirection">The world direction towards the sun.</param>
     /// <param name="sunIlluminance">The sun's colour and brightness outside the atmosphere.</param>
     /// <param name="viewHeightKm">The camera's height from the planet's centre.</param>
+    /// <param name="skyLightIntensity">How brightly the sky lights the world; one is its own brightness.</param>
     public void Record(
         CommandBuffer cmd,
         int frame,
         Vector3f sunDirection,
         Vector3f sunIlluminance,
-        float viewHeightKm)
+        float viewHeightKm,
+        float skyLightIntensity)
     {
         if (!_staticTablesBuilt)
         {
@@ -158,7 +160,7 @@ internal sealed class SkyAtmosphere : IDisposable
         }
 
         Span<float> p = stackalloc float[ParamSize / sizeof(float)];
-        WriteParameters(p, SkyViewWidth, SkyViewHeight, sunDirection, sunIlluminance, viewHeightKm);
+        WriteParameters(p, SkyViewWidth, SkyViewHeight, sunDirection, sunIlluminance, viewHeightKm, skyLightIntensity);
 
         _skyViewPass.Record(
             cmd,
@@ -211,7 +213,8 @@ internal sealed class SkyAtmosphere : IDisposable
         uint height,
         Vector3f sunDirection,
         Vector3f sunIlluminance,
-        float viewHeightKm)
+        float viewHeightKm,
+        float skyLightIntensity)
     {
         p[0] = width;
         p[1] = height;
@@ -226,7 +229,7 @@ internal sealed class SkyAtmosphere : IDisposable
         p[10] = sunIlluminance.Z;
         p[11] = 0f;
         p[12] = viewHeightKm;
-        p[13] = 0f;
+        p[13] = skyLightIntensity;
         p[14] = 0f;
         p[15] = 0f;
     }
@@ -235,7 +238,7 @@ internal sealed class SkyAtmosphere : IDisposable
     {
         Span<float> p = stackalloc float[ParamSize / sizeof(float)];
 
-        WriteParameters(p, TransmittanceWidth, TransmittanceHeight, default, default, 0f);
+        WriteParameters(p, TransmittanceWidth, TransmittanceHeight, default, default, 0f, 1f);
         _transmittancePass.Record(
             cmd,
             frame,
@@ -247,7 +250,7 @@ internal sealed class SkyAtmosphere : IDisposable
         // The multiple-scattering march reads the table the pass above just wrote.
         Barrier(cmd, _transmittance.Handle);
 
-        WriteParameters(p, MultiScatterSize, MultiScatterSize, default, default, 0f);
+        WriteParameters(p, MultiScatterSize, MultiScatterSize, default, default, 0f, 1f);
         _multiScatterPass.Record(
             cmd,
             frame,

@@ -141,11 +141,9 @@ internal sealed class VulkanRayTracingScene : IDisposable
             queue,
             replaced => _retiring.Add((submissionValue, replaced)));
 
-        if (_topLevel.InstanceCount == 0)
-        {
-            return;
-        }
-
+        // Built even with nothing in it. An empty structure is legal and every ray against it simply
+        // misses, which is what a shader binding needs: a descriptor that is always valid to name, rather
+        // than one that is only written once the world has been seen.
         // Everything above wrote acceleration structures the scene build is about to read.
         _barriers.AddAccelerationStructureBuild();
         _barriers.Flush(commandBuffer);

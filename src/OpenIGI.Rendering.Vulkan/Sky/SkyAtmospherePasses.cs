@@ -271,7 +271,7 @@ internal static class SkyAtmospherePasses
             vec4 uSize;
             vec4 uSunDir;
             vec4 uSunColour;
-            vec4 uMisc;       // view height km, _, _, _
+            vec4 uMisc;       // view height km, sky light intensity, _, _
         } p;
 
         {{SkyAtmosphereShaders.Common}}
@@ -292,7 +292,10 @@ internal static class SkyAtmospherePasses
             vec3 dir = vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
 
             const float solidAnglePerSample = (4.0 * kPi) / 64.0;
-            vec3 radiance = SampleSkyView(uSkyView, dir, p.uMisc.x) * solidAnglePerSample;
+            // The sky's own brightness, times how strongly the scene wants to be lit by it. The reference
+            // treats that as a property of the sky light rather than of the atmosphere, and so does this:
+            // the table itself stays physical and only what reads it is scaled.
+            vec3 radiance = SampleSkyView(uSkyView, dir, p.uMisc.x) * solidAnglePerSample * p.uMisc.y;
 
             // The real spherical-harmonic basis up to the second band.
             float basis[9];

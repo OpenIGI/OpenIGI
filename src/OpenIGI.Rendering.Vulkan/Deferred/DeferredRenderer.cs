@@ -31,6 +31,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly VulkanBuffer[] _giUniforms;
     private readonly ShadowMap _shadowMap;
     private readonly ShadowPipeline _shadowPipeline;
+    private readonly bool _rayQuery;
     private readonly SsaoPass _ssao;
     private readonly VelocityPass _velocity;
     private readonly Sky.SkyAtmosphere _sky;
@@ -64,6 +65,12 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(allocator);
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(compiler);
+        // The shadow ray wants to be traced where the shading happens, but the shader compiler this
+        // backend uses does not offer ray queries in a fragment shader — only in compute, which the
+        // self-test proves. Tracing from compute means the shading cannot be in the same render pass as
+        // the geometry it reads, which is the next change rather than this one. Until then the scene is
+        // still built and kept current; only the shader that would trace it is held back.
+        _rayQuery = false;
         _vk = vk;
         _device = device.Device;
 
@@ -93,7 +100,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             vk,
             device,
             compiler,
-            DeferredShaderSource.LightingFragment,
+            DeferredShaderSource.LightingFragment(_rayQuery),
             "deferred-lighting.frag",
             _lightingLayout,
             sizeof(float) * 12,
@@ -152,6 +159,16 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
+
+    /// <summary>
+    /// Gets a value indicating whether the lighting traces the sun's shadow against the scene rather than
+    /// reading it from the cascades.
+    /// </summary>
+    /// <remarks>
+    /// Also says whether the lighting's descriptor layout has a slot for the scene at all, so a caller
+    /// knows not to offer one it cannot hold.
+    /// </remarks>
+    public bool TracesShadows => _rayQuery;
 
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
@@ -230,8 +247,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // 0-3 the G-buffer input attachments, 4 the depth input attachment, 5-8 the four probe volumes as
         // sampled 3D textures, 9 the GI parameter uniform block, 10 the screen-GI near-field atlas, 11 the
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
-        // luminance by direction, the sun's transmittance, and the sky's light as harmonics.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[16];
+        // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
+        // scene's acceleration structure for the shadow ray, present only where one can be traced.
+        int bindingCount = _rayQuery ? 17 : 16;
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[17];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -297,10 +316,21 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             };
         }
 
+        if (_rayQuery)
+        {
+            bindings[16] = new DescriptorSetLayoutBinding
+            {
+                Binding = 16,
+                DescriptorType = DescriptorType.AccelerationStructureKhr,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
+
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 16,
+            BindingCount = (uint)bindingCount,
             PBindings = bindings,
         };
 
@@ -335,17 +365,18 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     {
         // Each frame's target uses four input attachments plus one sampler; a resize frees and
         // reallocates, so the pool allows freeing and is sized with headroom.
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4];
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
         sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 2) };
+        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.AccelerationStructureKhr, DescriptorCount = (uint)(framesInFlight * 2) };
 
         DescriptorPoolCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
             MaxSets = (uint)(framesInFlight * 2 * 2),
-            PoolSizeCount = 3,
+            PoolSizeCount = 4,
             PPoolSizes = sizes,
         };
 
