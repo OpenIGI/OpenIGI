@@ -62,7 +62,7 @@ public sealed class WorldScene
     public const string SecurityCameraType = "SCamera";
 
     /// <summary>The stationary-gun task type, whose holder is engine-created outside lightmap enumeration.</summary>
-    private const string StationaryGunType = "StationaryGun";
+    public const string StationaryGunType = "StationaryGun";
 
     /// <summary>The interactive switch task type, whose model a task declares in <see cref="SwitchModelParameter"/>.</summary>
     public const string SwitchType = "Switch";

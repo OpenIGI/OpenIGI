@@ -236,7 +236,7 @@ public sealed class RetailObjectLightmapTests
         foreach (GameTask task in Walk(owner))
         {
             if (task is DeclaredTask declared
-                && !string.Equals(declared.Type.Name, "StationaryGun", StringComparison.Ordinal))
+                && !string.Equals(declared.Type.Name, WorldScene.StationaryGunType, StringComparison.Ordinal))
             {
                 names.AddRange(WorldScene.PlacedModelNames(declared));
             }

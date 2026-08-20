@@ -494,7 +494,11 @@ public sealed class AiSoldierCombatWiringTests
             new AiProducedAction("AIAction_Combat", [], 0),
         ]);
         Vector3d farEnemy = new(start.X, start.Y + (500 * Metre), start.Z);
-        for (int tick = 1; tick <= 5000 && !soldier.IsMounted; tick++)
+        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
+
+        Assert.False(soldier.IsMounted, "combat must not discard the live activation route");
+
+        for (int tick = 2; tick <= 5000 && !soldier.IsMounted; tick++)
         {
             soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
         }

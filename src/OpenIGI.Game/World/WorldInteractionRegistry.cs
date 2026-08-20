@@ -424,21 +424,7 @@ public sealed class WorldInteraction
     }
 
     internal bool PointTouchesFence(Vector3d point)
-    {
-        if (Type != InteractionActivateType.Fence || !IsElectrified || !HasLocalBounds)
-        {
-            return false;
-        }
-
-        Vector3d local = Orientation.Transform(point - Anchor);
-        const double tolerance = HumanSeparation.RadiusInUnits;
-        return local.X >= LocalBoundsMinimum.X - tolerance
-            && local.X <= LocalBoundsMaximum.X + tolerance
-            && local.Y >= LocalBoundsMinimum.Y - tolerance
-            && local.Y <= LocalBoundsMaximum.Y + tolerance
-            && local.Z >= LocalBoundsMinimum.Z - tolerance
-            && local.Z <= LocalBoundsMaximum.Z + tolerance;
-    }
+        => SegmentTouchesFence(point, point);
 
     private static bool Slab(
         double origin,

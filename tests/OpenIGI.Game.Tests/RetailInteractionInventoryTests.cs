@@ -29,6 +29,25 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void SwitchPressPulseConsumesOneRegistryTickAtATime()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(1);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables);
+        WorldInteraction button = interactions.Items.First(
+            static item => item.Type == InteractionActivateType.Switch);
+
+        button.Press();
+        interactions.Tick();
+        Assert.True(button.Pressed.Value);
+        interactions.Tick();
+        Assert.True(button.Pressed.Value);
+        interactions.Tick();
+        Assert.False(button.Pressed.Value);
+        Assert.True(button.Pressed.IsFallingEdge);
+    }
+
+    [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {
         (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =

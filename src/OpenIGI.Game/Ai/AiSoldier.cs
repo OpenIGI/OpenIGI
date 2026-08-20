@@ -2984,8 +2984,11 @@ public sealed class AiSoldier
         Activity = AiSoldierActivity.Engaging;
         Route = null;
         RequestedAnimation = -1;
-        _route.Clear();
-        DestinationNode = -1;
+        if (_activate is null)
+        {
+            _route.Clear();
+            DestinationNode = -1;
+        }
     }
 
     /// <summary>Runs one tick of the combat behaviour and applies what it asks for.</summary>
