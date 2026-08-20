@@ -1,8 +1,7 @@
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
-using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -23,26 +22,21 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// waited on — no read races a write.
 /// </para>
 /// <para>
-/// Self-contained rather than routed through the generic compute path because it binds the depth
-/// attachment's own view, which is not a texture handle the seam knows: its descriptor set is written
-/// directly with the depth view, the occlusion image and one parameter block.
+/// Built on the backend's own compute-pass helper rather than routed through the engine's compute seam,
+/// because it binds the depth attachment's own view — which is not a texture handle the seam knows.
 /// </para>
 /// </remarks>
-internal sealed unsafe class SsaoPass : IDisposable
+internal sealed class SsaoPass : IDisposable
 {
-    private const int Frames = 2;
     private const int ParamSize = 48;
 
-    private readonly Vk _vk;
-    private readonly Device _device;
-    private readonly VulkanShaderModule _module;
-    private readonly DescriptorSetLayout _setLayout;
-    private readonly PipelineLayout _pipelineLayout;
-    private readonly Pipeline _pipeline;
-    private readonly DescriptorPool _pool;
-    private readonly DescriptorSet[] _sets = new DescriptorSet[Frames];
-    private readonly VulkanBuffer[] _params = new VulkanBuffer[Frames];
-    private readonly Sampler _depthSampler;
+    private static readonly ComputeBindingKind[] Bindings =
+    [
+        ComputeBindingKind.SampledImage,   // the scene depth
+        ComputeBindingKind.StorageImage,   // the occlusion written out
+    ];
+
+    private readonly VulkanComputePass _pass;
     private bool _disposed;
 
     private const string Source =
@@ -171,27 +165,25 @@ internal sealed unsafe class SsaoPass : IDisposable
     /// <param name="device">The device the pass lives on.</param>
     /// <param name="allocator">The allocator backing the parameter buffers.</param>
     /// <param name="compiler">The shader compiler.</param>
+    /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
     /// <exception cref="GraphicsDeviceException">The pass could not be created.</exception>
-    public SsaoPass(Vk vk, VulkanDevice device, VulkanAllocator allocator, ShaderCompiler compiler)
+    public SsaoPass(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        ShaderCompiler compiler,
+        int framesInFlight)
     {
-        _vk = vk;
-        _device = device.Device;
-
-        _module = new VulkanShaderModule(vk, _device, compiler.Compile(Source, ShaderStage.Compute, "ssao.comp"), ShaderStage.Compute);
-        _setLayout = CreateSetLayout();
-        _pipelineLayout = CreatePipelineLayout();
-        _pipeline = CreatePipeline();
-        _pool = CreatePool();
-        _depthSampler = CreateDepthSampler();
-
-        for (int i = 0; i < Frames; i++)
-        {
-            _sets[i] = AllocateSet();
-            _params[i] = new VulkanBuffer(
-                vk, device, allocator, ParamSize,
-                BufferUsageFlags.UniformBufferBit,
-                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-        }
+        _pass = new VulkanComputePass(
+            vk,
+            device,
+            allocator,
+            compiler,
+            "ssao.comp",
+            Source,
+            Bindings,
+            ParamSize,
+            framesInFlight);
     }
 
     /// <summary>Records the occlusion dispatch for one frame into a command buffer.</summary>
@@ -221,179 +213,20 @@ internal sealed unsafe class SsaoPass : IDisposable
         float radius,
         float intensity)
     {
-        Span<float> data =
+        ReadOnlySpan<float> data =
         [
             width, height, 1f / Math.Max(1, width), 1f / Math.Max(1, height),
             unprojectX, unprojectY, near, far,
             radius, intensity, 0.02f, 1.5f,
         ];
-        _params[frame].Write<float>(data);
 
-        WriteSet(frame, depthView, occlusionView);
+        ReadOnlySpan<ComputeResource> resources =
+        [
+            new ComputeResource(depthView),
+            new ComputeResource(occlusionView),
+        ];
 
-        DescriptorSet set = _sets[frame];
-        _vk.CmdBindPipeline(cmd, PipelineBindPoint.Compute, _pipeline);
-        _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Compute, _pipelineLayout, 0, 1, &set, 0, null);
-        _vk.CmdDispatch(cmd, (uint)((width + 7) / 8), (uint)((height + 7) / 8), 1);
-    }
-
-    private void WriteSet(int frame, ImageView depthView, ImageView occlusionView)
-    {
-        DescriptorImageInfo depthInfo = new()
-        {
-            Sampler = _depthSampler,
-            ImageView = depthView,
-            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        };
-        DescriptorImageInfo occlusionInfo = new() { ImageView = occlusionView, ImageLayout = ImageLayout.General };
-        DescriptorBufferInfo paramInfo = new() { Buffer = _params[frame].Handle, Offset = 0, Range = ParamSize };
-
-        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[3];
-        writes[0] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _sets[frame],
-            DstBinding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &depthInfo,
-        };
-        writes[1] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _sets[frame],
-            DstBinding = 1,
-            DescriptorType = DescriptorType.StorageImage,
-            DescriptorCount = 1,
-            PImageInfo = &occlusionInfo,
-        };
-        writes[2] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _sets[frame],
-            DstBinding = 2,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            PBufferInfo = &paramInfo,
-        };
-        _vk.UpdateDescriptorSets(_device, 3, writes, 0, null);
-    }
-
-    private DescriptorSetLayout CreateSetLayout()
-    {
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
-        bindings[0] = new DescriptorSetLayoutBinding { Binding = 0, DescriptorType = DescriptorType.CombinedImageSampler, DescriptorCount = 1, StageFlags = ShaderStageFlags.ComputeBit };
-        bindings[1] = new DescriptorSetLayoutBinding { Binding = 1, DescriptorType = DescriptorType.StorageImage, DescriptorCount = 1, StageFlags = ShaderStageFlags.ComputeBit };
-        bindings[2] = new DescriptorSetLayoutBinding { Binding = 2, DescriptorType = DescriptorType.UniformBuffer, DescriptorCount = 1, StageFlags = ShaderStageFlags.ComputeBit };
-
-        DescriptorSetLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 3,
-            PBindings = bindings,
-        };
-
-        DescriptorSetLayout layout;
-        VkCheck.Ok(_vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout), "vkCreateDescriptorSetLayout (ssao)");
-        return layout;
-    }
-
-    private PipelineLayout CreatePipelineLayout()
-    {
-        DescriptorSetLayout layout = _setLayout;
-        PipelineLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.PipelineLayoutCreateInfo,
-            SetLayoutCount = 1,
-            PSetLayouts = &layout,
-        };
-
-        PipelineLayout pipelineLayout;
-        VkCheck.Ok(_vk.CreatePipelineLayout(_device, &createInfo, null, &pipelineLayout), "vkCreatePipelineLayout (ssao)");
-        return pipelineLayout;
-    }
-
-    private Pipeline CreatePipeline()
-    {
-        nint entry = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
-        try
-        {
-            ComputePipelineCreateInfo createInfo = new()
-            {
-                SType = StructureType.ComputePipelineCreateInfo,
-                Stage = new PipelineShaderStageCreateInfo
-                {
-                    SType = StructureType.PipelineShaderStageCreateInfo,
-                    Stage = ShaderStageFlags.ComputeBit,
-                    Module = _module.Handle,
-                    PName = (byte*)entry,
-                },
-                Layout = _pipelineLayout,
-            };
-
-            Pipeline pipeline;
-            VkCheck.Ok(_vk.CreateComputePipelines(_device, default, 1, &createInfo, null, &pipeline), "vkCreateComputePipelines (ssao)");
-            return pipeline;
-        }
-        finally
-        {
-            SilkMarshal.Free(entry);
-        }
-    }
-
-    private DescriptorPool CreatePool()
-    {
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
-        sizes[0] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = Frames };
-        sizes[1] = new DescriptorPoolSize { Type = DescriptorType.StorageImage, DescriptorCount = Frames };
-        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = Frames };
-
-        DescriptorPoolCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            MaxSets = Frames,
-            PoolSizeCount = 3,
-            PPoolSizes = sizes,
-        };
-
-        DescriptorPool pool;
-        VkCheck.Ok(_vk.CreateDescriptorPool(_device, &createInfo, null, &pool), "vkCreateDescriptorPool (ssao)");
-        return pool;
-    }
-
-    private DescriptorSet AllocateSet()
-    {
-        DescriptorSetLayout layout = _setLayout;
-        DescriptorSetAllocateInfo allocInfo = new()
-        {
-            SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = _pool,
-            DescriptorSetCount = 1,
-            PSetLayouts = &layout,
-        };
-
-        DescriptorSet set;
-        VkCheck.Ok(_vk.AllocateDescriptorSets(_device, &allocInfo, &set), "vkAllocateDescriptorSets (ssao)");
-        return set;
-    }
-
-    private Sampler CreateDepthSampler()
-    {
-        SamplerCreateInfo createInfo = new()
-        {
-            SType = StructureType.SamplerCreateInfo,
-            MagFilter = Filter.Nearest,
-            MinFilter = Filter.Nearest,
-            MipmapMode = SamplerMipmapMode.Nearest,
-            AddressModeU = SamplerAddressMode.ClampToEdge,
-            AddressModeV = SamplerAddressMode.ClampToEdge,
-            AddressModeW = SamplerAddressMode.ClampToEdge,
-            BorderColor = BorderColor.FloatOpaqueWhite,
-        };
-
-        Sampler sampler;
-        VkCheck.Ok(_vk.CreateSampler(_device, &createInfo, null, &sampler), "vkCreateSampler (ssao depth)");
-        return sampler;
+        _pass.Record(cmd, frame, resources, data, (uint)((width + 7) / 8), (uint)((height + 7) / 8));
     }
 
     /// <inheritdoc/>
@@ -405,16 +238,6 @@ internal sealed unsafe class SsaoPass : IDisposable
         }
 
         _disposed = true;
-        foreach (VulkanBuffer buffer in _params)
-        {
-            buffer?.Dispose();
-        }
-
-        _vk.DestroySampler(_device, _depthSampler, null);
-        _vk.DestroyDescriptorPool(_device, _pool, null);
-        _vk.DestroyPipeline(_device, _pipeline, null);
-        _vk.DestroyPipelineLayout(_device, _pipelineLayout, null);
-        _vk.DestroyDescriptorSetLayout(_device, _setLayout, null);
-        _module.Dispose();
+        _pass.Dispose();
     }
 }

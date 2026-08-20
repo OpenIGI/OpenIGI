@@ -1,9 +1,8 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Shaders;
-using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
@@ -41,23 +40,18 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// where a float has precision to spare and a fixed-point encoding has least.
 /// </para>
 /// </remarks>
-internal sealed unsafe class VelocityPass : IDisposable
+internal sealed class VelocityPass : IDisposable
 {
-    private const int Frames = 2;
-
     // Two 4x4 matrices and four 4-vectors.
     private const int ParamSize = (2 * 64) + (4 * 16);
 
-    private readonly Vk _vk;
-    private readonly Device _device;
-    private readonly VulkanShaderModule _module;
-    private readonly DescriptorSetLayout _setLayout;
-    private readonly PipelineLayout _pipelineLayout;
-    private readonly Pipeline _pipeline;
-    private readonly DescriptorPool _pool;
-    private readonly DescriptorSet[] _sets = new DescriptorSet[Frames];
-    private readonly VulkanBuffer[] _params = new VulkanBuffer[Frames];
-    private readonly Sampler _depthSampler;
+    private static readonly ComputeBindingKind[] Bindings =
+    [
+        ComputeBindingKind.SampledImage,   // the scene depth
+        ComputeBindingKind.StorageImage,   // the motion written out
+    ];
+
+    private readonly VulkanComputePass _pass;
     private bool _disposed;
 
     private const string Source =
@@ -143,44 +137,29 @@ internal sealed unsafe class VelocityPass : IDisposable
     /// <param name="device">The device the pass lives on.</param>
     /// <param name="allocator">The allocator backing the parameter buffers.</param>
     /// <param name="compiler">The shader compiler.</param>
-    /// <exception cref="GraphicsDeviceException">The pass could not be created.</exception>
-    public VelocityPass(Vk vk, VulkanDevice device, VulkanAllocator allocator, ShaderCompiler compiler)
+    /// <param name="framesInFlight">How many frames may be recorded before one completes.</param>
+    public VelocityPass(
+        Vk vk,
+        VulkanDevice device,
+        VulkanAllocator allocator,
+        ShaderCompiler compiler,
+        int framesInFlight)
     {
-        ArgumentNullException.ThrowIfNull(vk);
-        ArgumentNullException.ThrowIfNull(device);
-        ArgumentNullException.ThrowIfNull(allocator);
-        ArgumentNullException.ThrowIfNull(compiler);
-
-        _vk = vk;
-        _device = device.Device;
-
-        _module = new VulkanShaderModule(
+        _pass = new VulkanComputePass(
             vk,
-            _device,
-            compiler.Compile(Source, ShaderStage.Compute, "velocity.comp"),
-            ShaderStage.Compute);
-        _setLayout = CreateSetLayout();
-        _pipelineLayout = CreatePipelineLayout();
-        _pipeline = CreatePipeline();
-        _pool = CreatePool();
-        _depthSampler = CreateDepthSampler();
-
-        for (int i = 0; i < Frames; i++)
-        {
-            _sets[i] = AllocateSet();
-            _params[i] = new VulkanBuffer(
-                vk,
-                device,
-                allocator,
-                ParamSize,
-                BufferUsageFlags.UniformBufferBit,
-                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-        }
+            device,
+            allocator,
+            compiler,
+            "velocity.comp",
+            Source,
+            Bindings,
+            ParamSize,
+            framesInFlight);
     }
 
     /// <summary>Records the velocity dispatch for one frame.</summary>
     /// <param name="cmd">The command buffer to record into.</param>
-    /// <param name="frame">The frame-in-flight index, selecting the set and parameter buffer.</param>
+    /// <param name="frame">The frame-in-flight index.</param>
     /// <param name="depthView">The scene depth view to read.</param>
     /// <param name="velocityView">The velocity image to write.</param>
     /// <param name="width">The render width.</param>
@@ -231,13 +210,19 @@ internal sealed unsafe class VelocityPass : IDisposable
         data[46] = previousUnprojection.Near;
         data[47] = previousUnprojection.Far;
 
-        _params[frame].Write<float>(data);
-        WriteSet(frame, depthView, velocityView);
+        ReadOnlySpan<ComputeResource> resources =
+        [
+            new ComputeResource(depthView),
+            new ComputeResource(velocityView),
+        ];
 
-        DescriptorSet set = _sets[frame];
-        _vk.CmdBindPipeline(cmd, PipelineBindPoint.Compute, _pipeline);
-        _vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Compute, _pipelineLayout, 0, 1, &set, 0, null);
-        _vk.CmdDispatch(cmd, (uint)((width + 7) / 8), (uint)((height + 7) / 8), 1);
+        _pass.Record(
+            cmd,
+            frame,
+            resources,
+            data,
+            (uint)((width + 7) / 8),
+            (uint)((height + 7) / 8));
     }
 
     /// <inheritdoc/>
@@ -249,18 +234,7 @@ internal sealed unsafe class VelocityPass : IDisposable
         }
 
         _disposed = true;
-
-        foreach (VulkanBuffer buffer in _params)
-        {
-            buffer?.Dispose();
-        }
-
-        _vk.DestroySampler(_device, _depthSampler, null);
-        _vk.DestroyDescriptorPool(_device, _pool, null);
-        _vk.DestroyPipeline(_device, _pipeline, null);
-        _vk.DestroyPipelineLayout(_device, _pipelineLayout, null);
-        _vk.DestroyDescriptorSetLayout(_device, _setLayout, null);
-        _module.Dispose();
+        _pass.Dispose();
     }
 
     /// <summary>
@@ -275,189 +249,5 @@ internal sealed unsafe class VelocityPass : IDisposable
         data[offset + 4] = m.M12; data[offset + 5] = m.M22; data[offset + 6] = m.M32; data[offset + 7] = 0f;
         data[offset + 8] = m.M13; data[offset + 9] = m.M23; data[offset + 10] = m.M33; data[offset + 11] = 0f;
         data[offset + 12] = 0f; data[offset + 13] = 0f; data[offset + 14] = 0f; data[offset + 15] = 1f;
-    }
-
-    private void WriteSet(int frame, ImageView depthView, ImageView velocityView)
-    {
-        DescriptorImageInfo depthInfo = new()
-        {
-            Sampler = _depthSampler,
-            ImageView = depthView,
-            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        };
-        DescriptorImageInfo velocityInfo = new() { ImageView = velocityView, ImageLayout = ImageLayout.General };
-        DescriptorBufferInfo paramInfo = new() { Buffer = _params[frame].Handle, Offset = 0, Range = ParamSize };
-
-        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[3];
-        writes[0] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _sets[frame],
-            DstBinding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &depthInfo,
-        };
-        writes[1] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _sets[frame],
-            DstBinding = 1,
-            DescriptorType = DescriptorType.StorageImage,
-            DescriptorCount = 1,
-            PImageInfo = &velocityInfo,
-        };
-        writes[2] = new WriteDescriptorSet
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = _sets[frame],
-            DstBinding = 2,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            PBufferInfo = &paramInfo,
-        };
-
-        _vk.UpdateDescriptorSets(_device, 3, writes, 0, null);
-    }
-
-    private DescriptorSetLayout CreateSetLayout()
-    {
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
-        bindings[0] = new DescriptorSetLayoutBinding
-        {
-            Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.ComputeBit,
-        };
-        bindings[1] = new DescriptorSetLayoutBinding
-        {
-            Binding = 1,
-            DescriptorType = DescriptorType.StorageImage,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.ComputeBit,
-        };
-        bindings[2] = new DescriptorSetLayoutBinding
-        {
-            Binding = 2,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.ComputeBit,
-        };
-
-        DescriptorSetLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 3,
-            PBindings = bindings,
-        };
-
-        DescriptorSetLayout layout;
-        VkCheck.Ok(
-            _vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout),
-            "vkCreateDescriptorSetLayout (velocity)");
-        return layout;
-    }
-
-    private PipelineLayout CreatePipelineLayout()
-    {
-        DescriptorSetLayout layout = _setLayout;
-        PipelineLayoutCreateInfo createInfo = new()
-        {
-            SType = StructureType.PipelineLayoutCreateInfo,
-            SetLayoutCount = 1,
-            PSetLayouts = &layout,
-        };
-
-        PipelineLayout pipelineLayout;
-        VkCheck.Ok(
-            _vk.CreatePipelineLayout(_device, &createInfo, null, &pipelineLayout),
-            "vkCreatePipelineLayout (velocity)");
-        return pipelineLayout;
-    }
-
-    private Pipeline CreatePipeline()
-    {
-        nint entryPoint = SilkMarshal.StringToPtr("main");
-        try
-        {
-            ComputePipelineCreateInfo createInfo = new()
-            {
-                SType = StructureType.ComputePipelineCreateInfo,
-                Stage = new PipelineShaderStageCreateInfo
-                {
-                    SType = StructureType.PipelineShaderStageCreateInfo,
-                    Stage = ShaderStageFlags.ComputeBit,
-                    Module = _module.Handle,
-                    PName = (byte*)entryPoint,
-                },
-                Layout = _pipelineLayout,
-            };
-
-            Pipeline pipeline;
-            VkCheck.Ok(
-                _vk.CreateComputePipelines(_device, default, 1, &createInfo, null, &pipeline),
-                "vkCreateComputePipelines (velocity)");
-            return pipeline;
-        }
-        finally
-        {
-            SilkMarshal.Free(entryPoint);
-        }
-    }
-
-    private DescriptorPool CreatePool()
-    {
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
-        sizes[0] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = Frames };
-        sizes[1] = new DescriptorPoolSize { Type = DescriptorType.StorageImage, DescriptorCount = Frames };
-        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = Frames };
-
-        DescriptorPoolCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            MaxSets = Frames,
-            PoolSizeCount = 3,
-            PPoolSizes = sizes,
-        };
-
-        DescriptorPool pool;
-        VkCheck.Ok(_vk.CreateDescriptorPool(_device, &createInfo, null, &pool), "vkCreateDescriptorPool (velocity)");
-        return pool;
-    }
-
-    private DescriptorSet AllocateSet()
-    {
-        DescriptorSetLayout layout = _setLayout;
-        DescriptorSetAllocateInfo allocInfo = new()
-        {
-            SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = _pool,
-            DescriptorSetCount = 1,
-            PSetLayouts = &layout,
-        };
-
-        DescriptorSet set;
-        VkCheck.Ok(_vk.AllocateDescriptorSets(_device, &allocInfo, &set), "vkAllocateDescriptorSets (velocity)");
-        return set;
-    }
-
-    private Sampler CreateDepthSampler()
-    {
-        SamplerCreateInfo createInfo = new()
-        {
-            SType = StructureType.SamplerCreateInfo,
-            MagFilter = Filter.Nearest,
-            MinFilter = Filter.Nearest,
-            MipmapMode = SamplerMipmapMode.Nearest,
-            AddressModeU = SamplerAddressMode.ClampToEdge,
-            AddressModeV = SamplerAddressMode.ClampToEdge,
-            AddressModeW = SamplerAddressMode.ClampToEdge,
-            BorderColor = BorderColor.FloatOpaqueBlack,
-        };
-
-        Sampler sampler;
-        VkCheck.Ok(_vk.CreateSampler(_device, &createInfo, null, &sampler), "vkCreateSampler (velocity depth)");
-        return sampler;
     }
 }
