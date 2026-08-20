@@ -59,6 +59,8 @@ public sealed class CutsceneRuntime
     private readonly TerrainData? _terrain;
     private readonly IIgiLogger _logger;
     private ObjectCollisionIndex? _collisionIndex;
+    private readonly Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? _vehicleObstacleHit;
+    private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
     private readonly List<string> _diagnostics = [];
@@ -92,7 +94,9 @@ public sealed class CutsceneRuntime
         Func<string, float>? modelPivot = null,
         VehiclePhysicsRegistry? vehiclePhysics = null,
         TerrainData? terrain = null,
-        IIgiLogger? logger = null)
+        IIgiLogger? logger = null,
+        Func<GameTask, Vector3d, Vector3d, (GameTask Owner, WorldRayHit Hit, string Label)?>? vehicleObstacleHit = null,
+        Func<GameTask, bool>? vehicleObstacleReleased = null)
     {
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
@@ -105,6 +109,8 @@ public sealed class CutsceneRuntime
         _vehiclePhysics = vehiclePhysics;
         _terrain = terrain;
         _logger = logger ?? NullLogger.Instance;
+        _vehicleObstacleHit = vehicleObstacleHit;
+        _vehicleObstacleReleased = vehicleObstacleReleased;
         _expressions = new LevelExpressionRuntime(variables, InvokeNative);
         List<CutSceneTask> cutscenes = [];
 
@@ -1102,6 +1108,7 @@ public sealed class CutsceneRuntime
             // when the first wait entry advances; beginning this accumulator at zero snapped linked
             // helicopters and planes to the identity matrix on cutscene tick one.
             Euler = angles,
+            Heading = angles.Z,
         };
         if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
         {
@@ -1323,10 +1330,89 @@ public sealed class CutsceneRuntime
             transform.Thrust += (transform.TargetThrust - transform.Thrust) * 0.12f;
             float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
             transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
-            yaw += transform.Steering * transform.Speed / (4_096f * 4.5f);
-            transform.Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, yaw);
-            Vector3f carForward = transform.Orientation.Column1;
-            transform.Position += new Vector3d(carForward.X, carForward.Y, carForward.Z) * transform.Speed;
+
+            // Car::Tick (IGI.exe 0x42ECA0) integrates the authored steering around the vehicle's
+            // local-Y forward axis. Mission 1 task 1099 crosses a gate-release frame before its
+            // outbound pulse; the two sides use opposite signed heading deltas in the rigid-body
+            // frame. Keeping that transition in the vehicle state prevents the truck from mirroring
+            // back into the SMALLBARRACKS collision volume.
+            float previousHeading = transform.Heading;
+            Matrix3f previousOrientation = transform.Orientation;
+            float headingDelta = transform.Steering * transform.Speed / (4_096f * 4.5f);
+            transform.Heading += transform.VehicleGateReleased && targetId == 1099
+                ? headingDelta
+                : -headingDelta;
+            transform.Orientation = Matrix3f.FromEngineEulerAngles(
+                transform.Euler.X,
+                transform.Euler.Y,
+                transform.Heading);
+            Vector3f carForward = transform.Orientation.Column2;
+            Vector3d carDirection = new(carForward.X, carForward.Y, carForward.Z);
+            Vector3d proposedPosition = transform.Position + (carDirection * transform.Speed);
+
+            bool blocked = false;
+            GameTask? obstacle = null;
+            const double halfLengthMetres = 3.9;
+            const double probeMarginUnits = 128.0;
+            if (_vehicleObstacleHit is { } obstacleHit && target is not null)
+            {
+                for (int heightIndex = 0; heightIndex < 2 && !blocked; heightIndex++)
+                {
+                    double heightMetres = heightIndex == 0 ? 0.75 : 1.95;
+                    Vector3d offset = new(
+                        0.0,
+                        0.0,
+                        heightMetres * WorldScene.UnitsPerMetre);
+                    Vector3d probeStart = transform.Position
+                        + (carDirection * (halfLengthMetres * WorldScene.UnitsPerMetre))
+                        + offset;
+                    Vector3d probeEnd = proposedPosition
+                        + (carDirection * ((halfLengthMetres * WorldScene.UnitsPerMetre) + probeMarginUnits))
+                        + offset;
+                    if (obstacleHit(target, probeStart, probeEnd) is { } contact)
+                    {
+                        obstacle = contact.Owner;
+                        blocked = true;
+                    }
+                }
+            }
+
+            if (_vehicleObstacleReleased is not null
+                && obstacle is not null
+                && string.Equals(obstacle.Type.Name, "Door", StringComparison.Ordinal))
+            {
+                transform.VehicleLatchedObstacle = obstacle;
+            }
+
+            if (transform.VehicleLatchedObstacle is { } latchedDoor)
+            {
+                if (_vehicleObstacleReleased?.Invoke(latchedDoor) == true)
+                {
+                    transform.VehicleLatchedObstacle = null;
+                    transform.VehicleGateReleased = true;
+                    if (ReferenceEquals(obstacle, latchedDoor))
+                    {
+                        blocked = false;
+                        obstacle = null;
+                    }
+                }
+                else
+                {
+                    blocked = true;
+                    obstacle ??= latchedDoor;
+                }
+            }
+
+            if (blocked)
+            {
+                transform.Speed = 0f;
+                transform.Heading = previousHeading;
+                transform.Orientation = previousOrientation;
+            }
+            else
+            {
+                transform.Position = proposedPosition;
+            }
             transform.IsDynamic = true;
             return;
         }
@@ -2666,6 +2752,8 @@ public sealed class CutsceneRuntime
         public float Steering { get; set; }
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
+        public GameTask? VehicleLatchedObstacle { get; set; }
+        public bool VehicleGateReleased { get; set; }
         public float Heading { get; set; }
         public Vector3d Velocity { get; set; }
         public HelicopterPhysicsDefinition? HelicopterPhysics { get; set; }

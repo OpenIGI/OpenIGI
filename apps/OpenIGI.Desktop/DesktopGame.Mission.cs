@@ -264,7 +264,25 @@ internal sealed partial class DesktopGame
             modelPivot: name => CutsceneModelPivot(loaded, name),
             vehiclePhysics: _vehiclePhysics,
             terrain: loaded.Terrain,
-            logger: _logger);
+            logger: _logger,
+            vehicleObstacleHit: (task, origin, end) =>
+            {
+                if (_worldSolids?.TryCastIgnoring(
+                        task,
+                        origin,
+                        end,
+                        out WorldRayHit hit,
+                        out GameTask? obstacle,
+                        out string obstacleLabel) == true
+                    && obstacle is not null)
+                {
+                    return (obstacle, hit, obstacleLabel);
+                }
+
+                return null;
+            },
+            vehicleObstacleReleased: obstacle =>
+                _doors?.Doors.FirstOrDefault(door => ReferenceEquals(door.Task, obstacle))?.State.IsFullyOpen == true);
         bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
         if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
         {

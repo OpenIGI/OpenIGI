@@ -690,6 +690,84 @@ public sealed class RetailCutsceneRuntimeTests
     }
 
     [RequiresGameDataFact]
+    public void MissionOneOutroTruckRouteProbe()
+    {
+        VirtualFileSystem fs = new();
+        fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fs, resources, loop.Natives);
+        _ = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        GameTask gate = Walk(root).First(task => string.Equals(task.Type.Name, "Door", StringComparison.Ordinal));
+        int obstacleProbes = 0;
+        bool gateReleased = false;
+        CutsceneRuntime runtime = new(
+            root,
+            loop.Variables,
+            vehicleObstacleHit: (_, _, _) =>
+            {
+                obstacleProbes++;
+                if (obstacleProbes is >= 65 and < 75)
+                {
+                    return (gate, default, "gate");
+                }
+
+                gateReleased = obstacleProbes >= 75;
+                return null;
+            },
+            vehicleObstacleReleased: _ => gateReleased);
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        DeclaredTask truck = Assert.IsType<DeclaredTask>(root.Tree.FromId(1099));
+
+        runtime.RequestBreak();
+        Step(objectives, runtime);
+        Assert.True(loop.Variables.TryWrite("EditVariable_199.nValue", QvmValue.FromInt32(1)));
+        Step(objectives, runtime);
+        Assert.Equal(1204, runtime.ActiveScene?.Id);
+
+        Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d before, out Matrix3f beforeOrientation));
+        for (int tick = 0; tick < 25; tick++)
+        {
+            Step(objectives, runtime);
+        }
+
+        Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d after, out _));
+        Vector3f forward = beforeOrientation.Column2;
+        Vector3d delta = after - before;
+        double forwardDistance = (delta.X * forward.X) + (delta.Y * forward.Y) + (delta.Z * forward.Z);
+        Assert.True(forwardDistance > 0.001d,
+            $"outro truck did not move along its authored forward column: delta={delta}, forward={forward}");
+
+        while (runtime.ActiveScene?.Ticks < 300)
+        {
+            Step(objectives, runtime);
+        }
+
+        Assert.True(runtime.TryGetDrawTransform(truck, out _, out Matrix3f turningOrientation));
+        Vector3f turningForward = turningOrientation.Column2;
+        float authoredExitCross = (forward.X * turningForward.Y) - (forward.Y * turningForward.X);
+        Assert.True(obstacleProbes >= 75 && gateReleased);
+        Assert.True(
+            authoredExitCross > 0f && turningForward.X > 0f,
+            $"outro truck did not take the authored right-side exit: before={forward}, after={turningForward}, cross={authoredExitCross}");
+
+        static void Step(MissionObjectiveRuntime objectives, CutsceneRuntime runtime)
+        {
+            objectives.TickLevelState();
+            runtime.Tick();
+            objectives.TickAfterLevelState();
+            runtime.FinishExpressionTick();
+        }
+    }
+
+    [RequiresGameDataFact]
     public void MissionOneJosefCameraFollowsItsFreightCar()
     {
         VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));

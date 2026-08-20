@@ -589,6 +589,55 @@ public sealed class ObjectCollisionIndex
     public bool TryCast(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         CastIndexed(_entries, _defaultGrid, _dynamicDefault, origin, end, out hit);
 
+    /// <summary>Casts against live world collision while excluding one task's attached placements.</summary>
+    /// <remarks>
+    /// A moving vehicle starts its obstacle probe at its front edge. Excluding the vehicle owner keeps
+    /// the probe from immediately striking its own collision mesh while retaining live doors and every
+    /// other placed obstacle.
+    /// </remarks>
+    public bool TryCastIgnoring(
+        GameTask ignoredOwner,
+        Vector3d origin,
+        Vector3d end,
+        out WorldRayHit hit) =>
+        TryCastIgnoring(ignoredOwner, origin, end, out hit, out _, out _);
+
+    /// <summary>Casts while excluding one owner and identifies the blocking task.</summary>
+    public bool TryCastIgnoring(
+        GameTask ignoredOwner,
+        Vector3d origin,
+        Vector3d end,
+        out WorldRayHit hit,
+        out GameTask? hitOwner) =>
+        TryCastIgnoring(ignoredOwner, origin, end, out hit, out hitOwner, out _);
+
+    /// <summary>Casts while excluding one owner and identifies the blocking task and placement label.</summary>
+    /// <remarks>
+    /// Through <see cref="TryTrace"/>, so the exclusion rides the same broad phase and the same
+    /// passable, collected, destroyed and dormant-container filters as every other live cast.
+    /// </remarks>
+    public bool TryCastIgnoring(
+        GameTask ignoredOwner,
+        Vector3d origin,
+        Vector3d end,
+        out WorldRayHit hit,
+        out GameTask? hitOwner,
+        out string hitLabel)
+    {
+        if (TryTrace(new WorldTraceRequest(origin, end, IgnoredOwner: ignoredOwner), out WorldTraceHit trace))
+        {
+            hit = trace.RayHit;
+            hitOwner = trace.Owner;
+            hitLabel = trace.Label;
+            return true;
+        }
+
+        hit = default;
+        hitOwner = null;
+        hitLabel = string.Empty;
+        return false;
+    }
+
     /// <summary>Replaces the set of living human collision bodies.</summary>
     /// <param name="bodies">The capsule bodies, in world units, for every solid human.</param>
     /// <remarks>
