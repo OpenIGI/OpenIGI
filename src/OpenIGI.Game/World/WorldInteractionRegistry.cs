@@ -310,14 +310,17 @@ public sealed class WorldInteraction
         _onPress?.Invoke();
     }
 
-    public void BeginUse()
+    /// <summary>Begins use and reports whether this interaction acquired its resource.</summary>
+    /// <returns><see langword="false"/> when another occupant owns a stationary gun.</returns>
+    public bool BeginUse()
     {
         if (StationaryGun is not null && !StationaryGun.TryMount(_userOccupant))
         {
-            return;
+            return false;
         }
 
         InUse.Value = true;
+        return true;
     }
 
     public void CancelUse()

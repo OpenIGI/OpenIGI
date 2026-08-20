@@ -1887,11 +1887,10 @@ public sealed class SoldierRenderer : IDisposable
     private void UpdateMountedWeapon(Member member, AiSoldier brain)
     {
         if (brain.MountedGun is { } mounted
-            && mounted.Weapon is { } weapon
+            && mounted.Weapon is not null
             && _stationaryWeaponVisuals.TryGetValue(mounted, out HeldWeapon? visual)
             && visual is not null)
         {
-            member.WeaponType = weapon;
             member.Weapon = visual;
             member.RenderedMountedGun = mounted;
             return;
@@ -1899,11 +1898,14 @@ public sealed class SoldierRenderer : IDisposable
 
         if (member.RenderedMountedGun is not null)
         {
-            member.WeaponType = member.CarriedWeaponType;
             member.Weapon = member.CarriedWeapon;
             member.RenderedMountedGun = null;
         }
     }
+
+    /// <summary>Chooses the simulation weapon that a dead soldier drops, independent of its drawn model.</summary>
+    internal static WeaponType? WeaponForDrop(WeaponType? carriedWeaponType, WeaponType? _renderedWeaponType) =>
+        carriedWeaponType;
 
     /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
     /// <remarks>
@@ -5415,7 +5417,8 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d ragdollOrigin = new(view.Position.X, view.Position.Y, grounded + view.RootSample.Z);
             Vector3d dropPosition = view.Position;
             Matrix3f dropRotation = view.Orientation;
-            if (member.WeaponType is not null)
+            WeaponType? droppedWeapon = WeaponForDrop(member.CarriedWeaponType, member.WeaponType);
+            if (droppedWeapon is not null)
             {
                 BonePose pose = view.UnrotatedPose();
                 if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
@@ -5441,7 +5444,7 @@ public sealed class SoldierRenderer : IDisposable
                 FindModel(view),
                 weapon: null);
 
-            if (member.WeaponType is { } dropped)
+            if (droppedWeapon is { } dropped)
             {
                 member.Weapon = null;
                 _weaponDrop?.Invoke(dropped, dropPosition, dropRotation);

@@ -77,6 +77,38 @@ public sealed class RetailInteractionInventoryTests
         Assert.Fail("No shipped StationaryGun task was loaded.");
     }
 
+    [Fact]
+    public void AiOccupiedStationaryGunRejectsPlayerUseWithoutSettingInUse()
+    {
+        AiStationaryGun stationaryGun = new(
+            taskId: 17,
+            position: default,
+            orientation: Matrix3f.Identity);
+        WorldInteraction interaction = new(
+            new DeclaredTask(),
+            InteractionActivateType.StationaryGun,
+            anchor: default,
+            end: default,
+            orientation: Matrix3f.Identity,
+            facing: 0f,
+            durationTicks: 0,
+            actionSprite: "stationary.spr",
+            door: null,
+            isPickable: false,
+            stationaryGun: stationaryGun,
+            localBoundsMinimum: default,
+            localBoundsMaximum: default,
+            hasLocalBounds: false);
+        object aiOwner = new();
+        Assert.True(stationaryGun.TryMount(aiOwner));
+
+        Assert.False(interaction.BeginUse());
+        Assert.False(interaction.InUse.Value);
+        Assert.False(interaction.IsPlayerUsingStationaryGun);
+
+        stationaryGun.Dismount(aiOwner);
+    }
+
     [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {

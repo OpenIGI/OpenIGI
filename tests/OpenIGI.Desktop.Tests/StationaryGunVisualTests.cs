@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Weapons;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -21,5 +22,14 @@ public sealed class StationaryGunVisualTests
         gun.Dismount(owner);
 
         Assert.True(SoldierRenderer.ShouldDrawStaticStationaryGun(gun, playerUsing: false));
+    }
+
+    [Fact]
+    public void MountedGunnerDeathDropsTheCarriedWeaponNotTheRenderedStationaryGun()
+    {
+        WeaponType carried = new() { ScriptId = "WEAPON_ID_MP5SD" };
+        WeaponType stationary = new() { ScriptId = "WEAPON_ID_M2HB" };
+
+        Assert.Same(carried, SoldierRenderer.WeaponForDrop(carried, stationary));
     }
 }

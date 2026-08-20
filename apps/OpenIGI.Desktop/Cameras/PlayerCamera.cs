@@ -1103,6 +1103,12 @@ public sealed class PlayerCamera
             case InteractionAction.ClimbFence:
             case InteractionAction.PickLock:
             case InteractionAction.EnterState:
+                if (interaction.Type == InteractionActivateType.StationaryGun && !interaction.BeginUse())
+                {
+                    _nearInteraction = null;
+                    return;
+                }
+
                 _activeInteraction = interaction;
                 _interactionTick = 0;
                 _interactionUseArmed = false;
@@ -1114,7 +1120,10 @@ public sealed class PlayerCamera
                 _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
                     ? interaction.FenceExitPoint(position)
                     : position;
-                interaction.BeginUse();
+                if (interaction.Type != InteractionActivateType.StationaryGun)
+                {
+                    interaction.BeginUse();
+                }
                 if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
                 {
                     _electricFenceContact = interaction;
