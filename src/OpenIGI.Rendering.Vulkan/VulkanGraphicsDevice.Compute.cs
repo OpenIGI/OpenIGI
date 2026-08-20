@@ -558,9 +558,11 @@ public sealed partial class VulkanGraphicsDevice
         // binding number, which the API also binds textures by.
         int slot = resource.ByUnit ? program.SamplerUnit(resource.Name) : (int)resource.Slot;
 
-        // A 3D sampler always resolves from the volume table; a 2D sampler from the volume table first
-        // (a storage texture bound for sampling) then the ordinary 2D textures.
-        if (_boundVolumes.TryGetValue(slot, out VulkanStorageImage? volume))
+        // GL gives a texture unit a separate binding point per target, so unit five can hold a 2D texture
+        // and a 3D one at the same time and each sampler picks the one matching its own type. A descriptor
+        // has no such split, so the dimension is what selects here: a 3D sampler will only take a volume,
+        // and a 2D sampler will only take something flat, whichever table it was bound through.
+        if (_boundVolumes.TryGetValue(slot, out VulkanStorageImage? volume) && volume.Is3D == resource.IsVolume)
         {
             return new DescriptorImageInfo
             {
@@ -570,22 +572,40 @@ public sealed partial class VulkanGraphicsDevice
             };
         }
 
-        if (!resource.IsVolume && slot < _boundTextures.Length && _boundTextures[slot].IsValid
-            && _textures.TryGetValue(_boundTextures[slot].Id, out VulkanTexture? texture))
+        if (slot < _boundTextures.Length && _boundTextures[slot].IsValid)
         {
-            return new DescriptorImageInfo
+            TextureHandle bound = _boundTextures[slot];
+
+            if (!resource.IsVolume && _textures.TryGetValue(bound.Id, out VulkanTexture? texture))
             {
-                Sampler = texture.Sampler,
-                ImageView = texture.View,
-                ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-            };
+                return new DescriptorImageInfo
+                {
+                    Sampler = texture.Sampler,
+                    ImageView = texture.View,
+                    ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+                };
+            }
+
+            // A storage image bound for sampling rather than writing: the card atlas and the lighting
+            // atlases are both handed over this way.
+            if (_storageImages.TryGetValue(bound.Id, out VulkanStorageImage? stored) && stored.Is3D == resource.IsVolume)
+            {
+                return new DescriptorImageInfo
+                {
+                    Sampler = stored.Sampler,
+                    ImageView = stored.View,
+                    ImageLayout = ImageLayout.General,
+                };
+            }
         }
 
         // Nothing is bound to the unit yet. Bind a matching-dimension dummy so the descriptor is valid
         // rather than left undefined — a 1x1x1 volume for a 3D sampler, the white texture for a 2D one.
         if (resource.IsVolume)
         {
-            _dummyVolume ??= new VulkanStorageImage(_instance.Vk, _device, _allocator, _commands, 1, 1, 1, VolumeFormat.Rgba8);
+            // Two deep, not one: a storage image is 3D only when its depth exceeds one, and a
+            // one-deep "volume" would be created with a 2D view that a 3D sampler cannot take.
+            _dummyVolume ??= new VulkanStorageImage(_instance.Vk, _device, _allocator, _commands, 1, 1, 2, VolumeFormat.Rgba8);
             return new DescriptorImageInfo
             {
                 Sampler = _dummyVolume.Sampler,

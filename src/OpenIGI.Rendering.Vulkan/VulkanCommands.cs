@@ -98,6 +98,21 @@ internal sealed unsafe class VulkanCommands : IDisposable
     {
         ArgumentNullException.ThrowIfNull(record);
 
+        CommandBuffer commandBuffer = BeginOneOff();
+        record(commandBuffer);
+        SubmitOneOff(commandBuffer);
+    }
+
+    /// <summary>Opens a one-off command buffer whose recording spans more than one call.</summary>
+    /// <returns>The command buffer, already begun.</returns>
+    /// <remarks>
+    /// <see cref="SingleTime"/> covers the usual case, where everything to be recorded is known at the
+    /// point of asking. Card capture is not that case: the caller opens the capture, draws into it over
+    /// many calls it decides one at a time, and closes it. This is the same buffer, held open.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">The buffer could not be allocated or begun.</exception>
+    public CommandBuffer BeginOneOff()
+    {
         CommandBufferAllocateInfo allocInfo = new()
         {
             SType = StructureType.CommandBufferAllocateInfo,
@@ -114,7 +129,14 @@ internal sealed unsafe class VulkanCommands : IDisposable
             Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
         };
         VkCheck.Ok(_vk.BeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
-        record(commandBuffer);
+        return commandBuffer;
+    }
+
+    /// <summary>Closes, submits and waits on a buffer from <see cref="BeginOneOff"/>.</summary>
+    /// <param name="commandBuffer">The buffer to finish.</param>
+    /// <exception cref="GraphicsDeviceException">The submission failed.</exception>
+    public void SubmitOneOff(CommandBuffer commandBuffer)
+    {
         VkCheck.Ok(_vk.EndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 
         SubmitInfo submitInfo = new()

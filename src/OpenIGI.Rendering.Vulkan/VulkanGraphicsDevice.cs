@@ -444,6 +444,8 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         }
 
         _textures.Clear();
+        // Before the compute registry, which owns the atlas images the render pass names.
+        DisposeCardAtlas();
         DisposeComputeResources();
         _captureStaging?.Dispose();
         _submission.Dispose();

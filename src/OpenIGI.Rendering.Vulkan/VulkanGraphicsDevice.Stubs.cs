@@ -72,38 +72,6 @@ public sealed partial class VulkanGraphicsDevice
     /// <inheritdoc/>
     public void SetColourLookup(ColourLookupTable? table) => ThrowIfDisposed();
 
-    // ---- The surface-cache card atlas (not yet offered) -------------------------------------------
-
-    /// <inheritdoc/>
-    public bool BeginCardCapture(int width, int height)
-    {
-        ThrowIfDisposed();
-        return false;
-    }
-
-    /// <inheritdoc/>
-    public void SetCardPage(int x, int y, int width, int height) =>
-        throw new GraphicsDeviceException("No card capture is open; the Vulkan backend offers none yet.");
-
-    /// <inheritdoc/>
-    public void EndCardCapture() =>
-        throw new GraphicsDeviceException("No card capture is open; the Vulkan backend offers none yet.");
-
-    /// <inheritdoc/>
-    public void ReadCardAtlas(int attachment, Span<Bgra32> destination) =>
-        throw new GraphicsDeviceException("There is no card atlas; the Vulkan backend offers none yet.");
-
-    /// <inheritdoc/>
-    public TextureHandle CardAlbedo => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle CardNormal => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle CardMaterial => TextureHandle.None;
-
-    /// <inheritdoc/>
-    public TextureHandle CardDepth => TextureHandle.None;
 
     // ---- Compute, storage buffers, storage images and volumes are in VulkanGraphicsDevice.Compute.cs.
 

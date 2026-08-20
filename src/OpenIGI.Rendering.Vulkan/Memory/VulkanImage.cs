@@ -25,6 +25,7 @@ internal sealed unsafe class VulkanImage : IDisposable
     private readonly Device _device;
     private readonly VulkanAllocator _allocator;
     private readonly DeviceMemory _memory;
+    private readonly ImageAspectFlags _aspect;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanImage"/> class.</summary>
@@ -38,6 +39,7 @@ internal sealed unsafe class VulkanImage : IDisposable
     /// <param name="depth">The depth in texels; one for a two-dimensional image.</param>
     /// <param name="usage">What the image is for.</param>
     /// <param name="initialLayout">The layout to leave the image in, ready for its first use.</param>
+    /// <param name="aspect">Which part of the image the view covers; depth for a depth buffer.</param>
     /// <exception cref="GraphicsDeviceException">The image could not be created or backed.</exception>
     public VulkanImage(
         Vk vk,
@@ -49,7 +51,8 @@ internal sealed unsafe class VulkanImage : IDisposable
         uint height,
         uint depth,
         ImageUsageFlags usage,
-        ImageLayout initialLayout = ImageLayout.General)
+        ImageLayout initialLayout = ImageLayout.General,
+        ImageAspectFlags aspect = ImageAspectFlags.ColorBit)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -64,6 +67,7 @@ internal sealed unsafe class VulkanImage : IDisposable
         Height = Math.Max(1, height);
         Depth = Math.Max(1, depth);
         Layout = initialLayout;
+        _aspect = aspect;
 
         bool volume = Depth > 1;
         ImageCreateInfo imageInfo = new()
@@ -97,7 +101,7 @@ internal sealed unsafe class VulkanImage : IDisposable
             Format = format,
             SubresourceRange = new ImageSubresourceRange
             {
-                AspectMask = ImageAspectFlags.ColorBit,
+                AspectMask = aspect,
                 BaseMipLevel = 0,
                 LevelCount = 1,
                 BaseArrayLayer = 0,
@@ -173,7 +177,7 @@ internal sealed unsafe class VulkanImage : IDisposable
             Image = image,
             SubresourceRange = new ImageSubresourceRange
             {
-                AspectMask = ImageAspectFlags.ColorBit,
+                AspectMask = _aspect,
                 BaseMipLevel = 0,
                 LevelCount = 1,
                 BaseArrayLayer = 0,

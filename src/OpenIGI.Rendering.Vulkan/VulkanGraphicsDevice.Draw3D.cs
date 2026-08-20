@@ -210,6 +210,14 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        // The card atlas is open: this draw is a model being photographed flat into one of its pages,
+        // not part of a frame at all.
+        if (_cardCaptureActive)
+        {
+            BindCard(mesh, modelView, diffuse, lightmap);
+            return;
+        }
+
         // A draw goes to one of three pipelines by where it is: the G-buffer during the geometry
         // subpass, the forward pipeline into the lit scene during the forward subpass, or the direct
         // mesh pipeline on the back buffer when there is no capture.

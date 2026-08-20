@@ -3057,7 +3057,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // it produced one the file held the UNSHADOWED load-time pass while looking exactly
                     // like the shadowed one. That is how a probe came back reporting nothing at all.
                     bool wantDump = !cardLightingDumped
-                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 };
+                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 }
+
+                        // Not the first qualifying frame. On a backend that records a frame's compute and
+                        // submits it at the end, a readback taken on the same frame as the dispatches sees
+                        // the atlas as it was before them -- which reads exactly like a bounce that
+                        // produced nothing, and cost a long detour to tell apart from one.
+                        && _cardBounceFrame >= 8;
 
                     if (_cardLighting is { } litCards)
                     {

@@ -42,7 +42,12 @@ internal sealed unsafe class VulkanStorageImage : IDisposable
     /// <param name="width">The width in texels.</param>
     /// <param name="height">The height in texels.</param>
     /// <param name="depth">The depth in texels; one for a 2D storage texture.</param>
-    /// <param name="format">The voxel format.</param>
+    /// <param name="format">The voxel format, and what a reader assumes when no exact one is given.</param>
+    /// <param name="exactFormat">
+    /// The Vulkan format to create, for an image whose format has no <see cref="VolumeFormat"/> — the card
+    /// atlas wants ten-bit normals and a half-float depth, neither of which a volume ever asks for.
+    /// </param>
+    /// <param name="extraUsage">Usage beyond storage and sampling; a card atlas is also drawn into.</param>
     /// <exception cref="GraphicsDeviceException">The image could not be created.</exception>
     public VulkanStorageImage(
         Vk vk,
@@ -52,7 +57,9 @@ internal sealed unsafe class VulkanStorageImage : IDisposable
         int width,
         int height,
         int depth,
-        VolumeFormat format)
+        VolumeFormat format,
+        Format? exactFormat = null,
+        ImageUsageFlags extraUsage = 0)
     {
         _vk = vk;
         _device = device.Device;
@@ -62,7 +69,7 @@ internal sealed unsafe class VulkanStorageImage : IDisposable
         Depth = depth;
         Format = format;
         Is3D = depth > 1;
-        VkFormat = ToVkFormat(format);
+        VkFormat = exactFormat ?? ToVkFormat(format);
 
         ImageCreateInfo imageInfo = new()
         {
@@ -75,7 +82,7 @@ internal sealed unsafe class VulkanStorageImage : IDisposable
             Samples = SampleCountFlags.Count1Bit,
             Tiling = ImageTiling.Optimal,
             Usage = ImageUsageFlags.StorageBit | ImageUsageFlags.SampledBit
-                | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit,
+                | ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | extraUsage,
             SharingMode = SharingMode.Exclusive,
             InitialLayout = ImageLayout.Undefined,
         };

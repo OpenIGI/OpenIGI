@@ -45,7 +45,16 @@ internal static partial class ComputeShaderAnalysis
     /// <param name="Name">The uniform's name, as the body references it.</param>
     /// <param name="Offset">Its byte offset within the block, by the std140 rule.</param>
     /// <param name="Size">How many bytes the value occupies.</param>
-    internal readonly record struct Uniform(string Name, int Offset, int Size);
+    /// <param name="Type">
+    /// The type it was declared with. Carried rather than inferred from <paramref name="Size"/>, because
+    /// a size does not identify a type — a float and an int are both four bytes, and re-declaring one as
+    /// the other silently reinterprets every value written to it.
+    /// </param>
+    /// <param name="ArrayLength">
+    /// How many elements, for an array; zero for a plain uniform, and negative for the per-element entry
+    /// that exists only so <c>name[i]</c> can be written to, which must not be declared a second time.
+    /// </param>
+    internal readonly record struct Uniform(string Name, int Offset, int Size, string Type = "", int ArrayLength = 0);
 
     /// <summary>The rewritten source and everything read out of it.</summary>
     /// <param name="Source">GLSL a Vulkan target accepts.</param>
@@ -173,10 +182,31 @@ internal static partial class ComputeShaderAnalysis
         {
             string type = match.Groups["type"].Value;
             string field = match.Groups["name"].Value;
+            string length = match.Groups["length"].Value;
             (int align, int size, int stored) = Std140(type, field, name);
 
+            if (length.Length > 0)
+            {
+                // std140 pads every element of an array out to sixteen bytes, whatever the element is.
+                int count = int.Parse(length, CultureInfo.InvariantCulture);
+                int stride = Align(size, 16);
+                cursor = Align(cursor, 16);
+
+                uniforms[field] = new Uniform(field, cursor, stride * count, type, count);
+                for (int i = 0; i < count; i++)
+                {
+                    // The caller names an element the way the shader body does. These are write targets
+                    // only; the array is declared once, above, so they are marked not to be declared.
+                    string element = string.Create(CultureInfo.InvariantCulture, $"{field}[{i}]");
+                    uniforms[element] = new Uniform(element, cursor + (i * stride), stored, type, -1);
+                }
+
+                cursor += stride * count;
+                return string.Empty;
+            }
+
             cursor = Align(cursor, align);
-            uniforms[field] = new Uniform(field, cursor, stored);
+            uniforms[field] = new Uniform(field, cursor, stored, type);
             cursor += size;
 
             // Removed from where it stood; re-declared together inside the injected block. A blank line
@@ -195,9 +225,15 @@ internal static partial class ComputeShaderAnalysis
         // uniform was — the body needs no rewriting.
         StringBuilder block = new();
         block.Append("layout(std140, set = 0, binding = ").Append(binding).Append(") uniform _IgiGlobals {\n");
-        foreach (Uniform uniform in uniforms.Values.OrderBy(u => u.Offset))
+        foreach (Uniform uniform in uniforms.Values.Where(u => u.ArrayLength >= 0).OrderBy(u => u.Offset))
         {
-            block.Append("    ").Append(TypeOf(uniform)).Append(' ').Append(uniform.Name).Append(";\n");
+            block.Append("    ").Append(TypeOf(uniform)).Append(' ').Append(uniform.Name);
+            if (uniform.ArrayLength > 0)
+            {
+                block.Append('[').Append(uniform.ArrayLength.ToString(CultureInfo.InvariantCulture)).Append(']');
+            }
+
+            block.Append(";\n");
         }
 
         block.Append("};\n");
@@ -208,17 +244,8 @@ internal static partial class ComputeShaderAnalysis
         return source[..insertAt] + block + source[insertAt..];
     }
 
-    /// <summary>The declared type a gathered uniform is re-emitted with, recovered from its stored size.</summary>
-    private static string TypeOf(Uniform uniform) => uniform.Size switch
-    {
-        4 => "int",
-        8 => "vec2",
-        12 => "vec3",
-        16 => "vec4",
-        48 => "mat3",
-        64 => "mat4",
-        _ => "vec4",
-    };
+    /// <summary>The type a gathered uniform is re-emitted with.</summary>
+    private static string TypeOf(Uniform uniform) => uniform.Type.Length > 0 ? uniform.Type : "vec4";
 
     private static int DirectivesEnd(string source)
     {
@@ -273,13 +300,13 @@ internal static partial class ComputeShaderAnalysis
 
     [GeneratedRegex(
         @"^(?<indent>[ \t]*)uniform[ \t]+(?<type>[iu]?sampler(?:2D|3D|Cube)(?:Array|Shadow)?)"
-        + @"[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_]*)[ \t]*;",
+        + @"[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_]*)[ \t]*;[ \t]*(?://[^\r\n]*)?$",
         RegexOptions.Compiled | RegexOptions.Multiline)]
     private static partial Regex DefaultSamplerRegex();
 
     [GeneratedRegex(
         @"^[ \t]*uniform[ \t]+(?<type>float|int|uint|bool|vec2|vec3|vec4|ivec2|ivec3|ivec4|uvec2|uvec3|uvec4|mat3|mat4)"
-        + @"[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_]*)[ \t]*;[ \t]*\r?$",
+        + @"[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_]*)(?:[ \t]*\[[ \t]*(?<length>\d+)[ \t]*\])?[ \t]*;[ \t]*(?://[^\r\n]*)?\r?$",
         RegexOptions.Compiled | RegexOptions.Multiline)]
     private static partial Regex UniformRegex();
 }
