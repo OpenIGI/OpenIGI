@@ -3072,6 +3072,10 @@ internal sealed partial class DesktopGame : IDisposable
 
                     if (_cardLighting is { } litCards)
                     {
+                        // How many frames the relight and the bounce spread their tiles across, from the cvar
+                        // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
+                        litCards.BounceFrameSpread = RenderCVars.GiAmortize.Value;
+
                         // The direct relight: the whole cache at once for a deterministic dump, otherwise a
                         // slice a frame. The sun is fixed, so the only thing the direct term has to track is
                         // the clipmap scrolling new coverage under a card as the camera moves -- and doing

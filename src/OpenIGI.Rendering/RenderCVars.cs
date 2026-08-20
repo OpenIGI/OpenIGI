@@ -366,6 +366,23 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Calibration on the radiance cache's bounce; 1 is the raw traced radiance.");
 
+    /// <summary>How many frames the surface-cache relight spreads its tiles across.</summary>
+    /// <remarks>
+    /// The real-time GI relight is world-space -- its cost is the same at any output resolution, so it is
+    /// the biggest single item in the budget on a high-resolution frame. It traces one slice of the cache a
+    /// frame and walks the cursor over this many frames; a static level under a fixed sun re-traces a tile to
+    /// the answer it already holds, so a wider spread is nearly free in a converged still and only slows how
+    /// fast a newly revealed surface fills its multi-bounce light. Raise it to trade that fill-in latency for
+    /// per-frame GPU time (roughly the whole GI stage divides by this), lower it for the snappiest response.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiAmortize = CVar.Int(
+        "r_gi_amortize",
+        12,
+        2,
+        48,
+        CVarOptions.Archive,
+        "Frames the surface-cache relight spreads its tiles across; higher is cheaper per frame, lags more.");
+
     /// <summary>The hour of day the interactive sun starts a level at, 0 to 24. Noon is the authored sun.</summary>
     /// <remarks>
     /// The day/night cycle sweeps the level's one authored sun across the sky by a time of day the player
