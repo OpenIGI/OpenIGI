@@ -96,6 +96,11 @@ public sealed partial class VulkanGraphicsDevice
         _captureWidth = Math.Max(1, description.Width);
         _captureHeight = Math.Max(1, description.Height);
         _sceneTarget = _deferred.Target(_frameLoop.CurrentFrame, _captureWidth, _captureHeight);
+
+        // Before anything opens a render pass, because these are compute dispatches and a render pass is
+        // the one place they cannot be recorded.
+        RecordSkyUpdate();
+
         _capturing = true;
         _deferredSubpass = -1;
         return true;
@@ -185,6 +190,42 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         _capturing = false;
+    }
+
+    /// <summary>Rebuilds the atmosphere's tables for where the sun is and where the camera stands.</summary>
+    /// <remarks>
+    /// The renderer seam hands the sun over in view space, because that is what the forward paths want.
+    /// The atmosphere is a world in its own right — a planet with air above it — so the direction is
+    /// rotated into world space here, once, rather than inside every table that reads it.
+    /// </remarks>
+    private void RecordSkyUpdate()
+    {
+        Vector3f viewSun = _lighting.SunDirection;
+        Matrix3f m = _viewToWorld;
+        Vector3f worldSun = new(
+            (m.M11 * viewSun.X) + (m.M12 * viewSun.Y) + (m.M13 * viewSun.Z),
+            (m.M21 * viewSun.X) + (m.M22 * viewSun.Y) + (m.M23 * viewSun.Z),
+            (m.M31 * viewSun.X) + (m.M32 * viewSun.Y) + (m.M33 * viewSun.Z));
+
+        float length = MathF.Sqrt((worldSun.X * worldSun.X) + (worldSun.Y * worldSun.Y) + (worldSun.Z * worldSun.Z));
+        worldSun = length > 1e-5f
+            ? new Vector3f(worldSun.X / length, worldSun.Y / length, worldSun.Z / length)
+            : new Vector3f(0f, 0f, 1f);
+
+        // The sun's colour and brightness as the level authored it. The reference's own sun is a fixed
+        // ten-lux white-ish disc; this follows the game's, so a mission's own time of day still drives
+        // the sky it produces.
+        Vector3f illuminance = new(
+            _lighting.SunColour.X * _lighting.Scale,
+            _lighting.SunColour.Y * _lighting.Scale,
+            _lighting.SunColour.Z * _lighting.Scale);
+
+        _deferred.Sky.Record(
+            _frameCommandBuffer,
+            _frameLoop.CurrentFrame,
+            worldSun,
+            illuminance,
+            Sky.SkyAtmosphere.ViewHeightKm(2f));
     }
 
     /// <summary>Runs the ambient-occlusion compute over the stored depth, writing this frame's occlusion.</summary>
@@ -658,7 +699,10 @@ public sealed partial class VulkanGraphicsDevice
         u[24] = screenGi ? _screenIndirectStrength : 0f;
         u[25] = screenGi && _screenIndirectFullResolution ? 1f : 0f;
         u[26] = _aoSettings.Enabled ? 1f : 0f;
-        u[27] = 0f;
+
+        // The camera's height from the planet's centre, so the lighting reads the atmosphere's tables with
+        // the same parameterisation the passes that built them used.
+        u[27] = Sky.SkyAtmosphere.ViewHeightKm(2f);
 
         // uViewToWorld: the row-major view-to-world rotation, written column-major as a mat4.
         u[28] = m.M11; u[29] = m.M21; u[30] = m.M31; u[31] = 0f;
@@ -690,9 +734,11 @@ public sealed partial class VulkanGraphicsDevice
 
         (ImageView giView, Sampler giSampler, ImageLayout giLayout) = ResolveScreenGi();
         Deferred.ShadowMap shadowMap = _deferred.ShadowMap;
+        Sky.SkyAtmosphere sky = _deferred.Sky;
         _sceneTarget!.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize, giView, giSampler, giLayout,
-            shadowMap.ArrayView, shadowMap.Sampler);
+            shadowMap.ArrayView, shadowMap.Sampler,
+            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler));
     }
 
     /// <summary>Resolves the screen-GI atlas to a view, sampler and layout, or the white texture when unset.</summary>

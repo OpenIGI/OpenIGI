@@ -33,6 +33,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly ShadowPipeline _shadowPipeline;
     private readonly SsaoPass _ssao;
     private readonly VelocityPass _velocity;
+    private readonly Sky.SkyAtmosphere _sky;
     private bool _disposed;
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
@@ -71,6 +72,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
+        _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
         _giUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
@@ -151,6 +153,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
 
+    /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
+    public Sky.SkyAtmosphere Sky => _sky;
+
     /// <summary>Gets the scene target for a frame in flight, built at the render size.</summary>
     /// <param name="frameIndex">The frame-in-flight index.</param>
     /// <param name="width">The render width in pixels.</param>
@@ -203,6 +208,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             uniform.Dispose();
         }
 
+        _sky.Dispose();
         _velocity.Dispose();
         _ssao.Dispose();
         _shadowPipeline.Dispose();
@@ -223,8 +229,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     {
         // 0-3 the G-buffer input attachments, 4 the depth input attachment, 5-8 the four probe volumes as
         // sampled 3D textures, 9 the GI parameter uniform block, 10 the screen-GI near-field atlas, 11 the
-        // cascaded shadow map, 12 the ambient-occlusion image.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[13];
+        // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
+        // luminance by direction, the sun's transmittance, and the sky's light as harmonics.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[16];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -279,10 +286,21 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             StageFlags = ShaderStageFlags.FragmentBit,
         };
 
+        for (uint i = 13; i < 16; i++)
+        {
+            bindings[i] = new DescriptorSetLayoutBinding
+            {
+                Binding = i,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
+
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 13,
+            BindingCount = 16,
             PBindings = bindings,
         };
 

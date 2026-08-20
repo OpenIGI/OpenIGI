@@ -10,8 +10,19 @@ namespace OpenIGI.Rendering.Vulkan.Compute;
 /// <summary>What a binding in a compute pass holds.</summary>
 internal enum ComputeBindingKind
 {
-    /// <summary>An image read through a sampler.</summary>
+    /// <summary>An image read through a sampler, in the layout optimal for reading.</summary>
     SampledImage,
+
+    /// <summary>
+    /// An image read through a sampler that is also written as a storage image elsewhere, and so is kept
+    /// in the general layout rather than moved between layouts around every use.
+    /// </summary>
+    /// <remarks>
+    /// The general layout is legal for both and costs a little bandwidth on some hardware. For a lookup
+    /// table written once and read a handful of times a frame that is a better trade than a pair of
+    /// barriers around every access.
+    /// </remarks>
+    SampledStorageImage,
 
     /// <summary>An image written directly, always in the general layout.</summary>
     StorageImage,
@@ -191,7 +202,8 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
     private static DescriptorType TypeOf(ComputeBindingKind kind) => kind switch
     {
-        ComputeBindingKind.SampledImage => DescriptorType.CombinedImageSampler,
+        ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage
+            => DescriptorType.CombinedImageSampler,
         _ => DescriptorType.StorageImage,
     };
 
@@ -203,12 +215,15 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
         for (int i = 0; i < _bindings.Length; i++)
         {
-            bool sampled = _bindings[i] == ComputeBindingKind.SampledImage;
+            ComputeBindingKind kind = _bindings[i];
+            bool sampled = kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage;
             images[i] = new DescriptorImageInfo
             {
                 Sampler = sampled ? _sampler : default,
                 ImageView = resources[i].View,
-                ImageLayout = sampled ? ImageLayout.ShaderReadOnlyOptimal : ImageLayout.General,
+                ImageLayout = kind == ComputeBindingKind.SampledImage
+                    ? ImageLayout.ShaderReadOnlyOptimal
+                    : ImageLayout.General,
             };
 
             writes[i] = new WriteDescriptorSet
@@ -340,7 +355,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         uint storage = 0;
         foreach (ComputeBindingKind kind in _bindings)
         {
-            if (kind == ComputeBindingKind.SampledImage)
+            if (kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage)
             {
                 sampled++;
             }
