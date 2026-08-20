@@ -67,7 +67,8 @@ public sealed class RetailMissionFourHelicopterTests
 
         double lowestZ = double.MaxValue;
         double lowestTerrainBelow = double.MaxValue;
-        int samples = 0;
+        int transformSamples = 0;
+        int terrainSamples = 0;
         for (int tick = 0; tick < 20_000; tick++)
         {
             runtime.Tick();
@@ -75,18 +76,20 @@ public sealed class RetailMissionFourHelicopterTests
 
             // Sample the whole flight. The old behaviour crossed below the surface around tick 1240
             // and never recovered, ending at -15 km; the fix keeps the body within about 1.4 m of the
-            // surface for the entire run. Only ticks that actually expose a draw transform are counted,
-            // and the run must produce at least one such sample, so a regression that breaks the lookup
-            // cannot pass the assertions vacuously.
-            if (tick % 100 == 0 && runtime.TryGetDrawTransform(heli356, out Vector3d position, out _))
+            // surface for the entire run. Every scheduled transform lookup is required to succeed.
+            if (tick % 100 == 0)
             {
+                Assert.True(
+                    runtime.TryGetDrawTransform(heli356, out Vector3d position, out _),
+                    $"heli 356 must expose a draw transform at tick {tick}");
+                transformSamples++;
                 if (!TerrainProbe.TryGetGroundHeight(
                         terrain, position.X, position.Y, 45_000.0, 42_000.0, out double terrainHeight))
                 {
                     continue; // no terrain at this XY: nothing to sink through, skip the sample
                 }
 
-                samples++;
+                terrainSamples++;
                 Assert.True(
                     position.Z >= terrainHeight - 1.0,
                     $"heli 356 sank below the terrain at tick {tick}: z={position.Z:F1}m terrain={terrainHeight:F1}m");
@@ -95,7 +98,8 @@ public sealed class RetailMissionFourHelicopterTests
             }
         }
 
-        Assert.True(samples > 0, "no terrain samples were collected for heli 356");
+        Assert.Equal(200, transformSamples);
+        Assert.True(terrainSamples > 0, "no terrain samples were collected for heli 356");
 
         // Never dive to the bottom of the level (the pre-fix flight reached -15 km), and never end up
         // meaningfully below the surface it is supposed to ride.
@@ -145,9 +149,12 @@ public sealed class RetailMissionFourHelicopterTests
         };
 
         GameTask heli800 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
+        ConfigureMissionFourGetawayLanding(runtime, root);
         double lowestZ = double.MaxValue;
         double lowestTerrainBelow = double.MaxValue;
         bool appeared = false;
+        int transformSamples = 0;
+        int supportSamples = 0;
         for (int tick = 0; tick < 20_000; tick++)
         {
             runtime.Tick();
@@ -155,39 +162,55 @@ public sealed class RetailMissionFourHelicopterTests
 
             // Sample the parked Bell whenever it is visible. It appears around tick 3080 once the level
             // timer passes the authored threshold, then must ride its pad instead of sinking.
-            if (tick % 100 == 0 && runtime.TryGetDrawTransform(heli800, out Vector3d position, out _))
+            if (tick % 100 != 0)
             {
-                appeared = true;
-                if (TerrainProbe.TryGetGroundHeight(
-                        terrain, position.X, position.Y, 45_000.0, 42_000.0, out double terrainHeight))
+                continue;
+            }
+
+            bool hasTransform = runtime.TryGetDrawTransform(heli800, out Vector3d position, out _);
+            if (!appeared && !hasTransform)
+            {
+                continue; // the authored conditional container has not opened yet
+            }
+
+            Assert.True(hasTransform, $"parked Bell 800 lost its draw transform at tick {tick}");
+            appeared = true;
+            transformSamples++;
+            if (TerrainProbe.TryGetGroundHeight(
+                    terrain, position.X, position.Y, 45_000.0, 42_000.0, out double terrainHeight))
+            {
+                supportSamples++;
+                lowestZ = Math.Min(lowestZ, position.Z);
+                lowestTerrainBelow = Math.Min(lowestTerrainBelow, terrainHeight);
+            }
+            else
+            {
+                // The terrain half is sparse at the pad, so fall back to the collision-index
+                // ray cast to confirm the Bell is resting on the surface rather than sinking.
+                if (runtime.CollisionIndex is { } index)
                 {
-                    lowestZ = Math.Min(lowestZ, position.Z);
-                    lowestTerrainBelow = Math.Min(lowestTerrainBelow, terrainHeight);
-                }
-                else
-                {
-                    // The terrain half is sparse at the pad, so fall back to the collision-index
-                    // ray cast to confirm the Bell is resting on the surface rather than sinking.
-                    if (runtime.CollisionIndex is { } index)
+                    WorldRayCast caster = index.Caster();
+                    if (caster(
+                        new Vector3d(position.X, position.Y, position.Z + 4096.0),
+                        new Vector3d(position.X, position.Y, position.Z - 262144.0),
+                        out WorldRayHit hit))
                     {
-                        WorldRayCast caster = index.Caster();
-                        if (caster(
-                            new Vector3d(position.X, position.Y, position.Z + 4096.0),
-                            new Vector3d(position.X, position.Y, position.Z - 262144.0),
-                            out WorldRayHit hit))
+                        double hitMetres = hit.Position.Z / WorldScene.UnitsPerMetre;
+                        if (hitMetres >= 42_000.0)
                         {
-                            double hitMetres = hit.Position.Z / WorldScene.UnitsPerMetre;
-                            if (hitMetres >= 42_000.0)
-                            {
-                                lowestZ = Math.Min(lowestZ, position.Z);
-                                lowestTerrainBelow = Math.Min(lowestTerrainBelow, hitMetres);
-                            }
+                            supportSamples++;
+                            lowestZ = Math.Min(lowestZ, position.Z);
+                            lowestTerrainBelow = Math.Min(lowestTerrainBelow, hitMetres);
                         }
                     }
                 }
-        }
+            }
         }
         Assert.True(appeared, "parked Bell 800 never appeared on the natural flow");
+        Assert.True(transformSamples > 0, "parked Bell 800 produced no scheduled draw-transform samples");
+        Assert.True(supportSamples > 0, "parked Bell 800 produced no terrain or support samples");
+        Assert.NotEqual(double.MaxValue, lowestZ);
+        Assert.NotEqual(double.MaxValue, lowestTerrainBelow);
         Assert.True(lowestZ > 42_000.0, $"parked Bell 800 sank to {lowestZ:F1}m");
         Assert.True(
             lowestZ >= lowestTerrainBelow - 1.0,
@@ -264,6 +287,64 @@ public sealed class RetailMissionFourHelicopterTests
         // airframe is going to the sky instead of along that corridor.
         Assert.True(vertical < horizontal * 0.5,
             $"heli 356 climbed {vertical:F1}m vs {horizontal:F1}m horizontal — path is vertical");
+    }
+
+    [RequiresGameDataFact]
+    public void MissionFourTransportBellContinuesAfterItsTerrainContact()
+    {
+        VirtualFileSystem fs = new();
+        fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs);
+        GameLoop loop = new(new ManualTimeSource());
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
+        loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+        VehiclePhysicsRegistry vehiclePhysics = new();
+        vehiclePhysics.Load(resources);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources),
+            terrainLoader: new TerrainLoader(resources, loop.Natives)).Load(4);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        CutsceneRuntime runtime = new(
+            root, loop.Variables, terrain: mission.Terrain, vehiclePhysics: vehiclePhysics)
+        {
+            CollisionIndex = solids,
+        };
+        ConfigureMissionFourGetawayLanding(runtime, root);
+
+        Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3902)).Condition = "1";
+        runtime.Tick();
+        runtime.FinishExpressionTick();
+        GameTask transport = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(356));
+        Assert.True(runtime.TryGetDrawTransform(transport, out Vector3d start, out _));
+
+        for (int tick = 0; tick < 3_000; tick++)
+        {
+            runtime.Tick();
+            runtime.FinishExpressionTick();
+        }
+
+        Assert.Contains(
+            runtime.Diagnostics,
+            line => line.Contains("ground-clamp id=356", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            runtime.Diagnostics,
+            line => line.Contains("heli-terminal-latch id=356", StringComparison.Ordinal));
+        Assert.True(runtime.TryGetDrawTransform(transport, out Vector3d end, out _));
+        double horizontal = Math.Sqrt(
+            ((end.X - start.X) * (end.X - start.X)) + ((end.Y - start.Y) * (end.Y - start.Y)));
+        Assert.True(
+            horizontal > 1_500.0,
+            $"an unrelated transport Bell froze after terrain contact: horizontal={horizontal:F1}m");
     }
 
     [RequiresGameDataFact]
@@ -348,6 +429,7 @@ public sealed class RetailMissionFourHelicopterTests
             CollisionIndex = ObjectCollisionIndex.Build(scene.Placements),
         };
 
+        ConfigureMissionFourGetawayLanding(runtime, root);
         GameTask heli800 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
         // CC 305 opens at LevelTimer_760 > 45 s. GAME_FREQUENCY is 60, so ~2700 ticks
         // plus the opening seconds of AnimTask 850's authored collective phase.
@@ -443,6 +525,7 @@ public sealed class RetailMissionFourHelicopterTests
         };
 
         GameTask heli800 = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
+        ConfigureMissionFourGetawayLanding(runtime, root);
         TerrainData terrain = Assert.IsAssignableFrom<TerrainData>(mission.Terrain);
         double upm = WorldScene.UnitsPerMetre;
         bool TryGetWarehouseSupport(Vector3d position, out WorldTraceHit support)
@@ -658,6 +741,7 @@ public sealed class RetailMissionFourHelicopterTests
                 CollisionIndex = ObjectCollisionIndex.Build(scene.Placements),
             };
 
+            ConfigureMissionFourGetawayLanding(runtime, root);
             // Same edge Escape uses (LevelFlow_GetBreakCutSceneKey). Mission 1 covers
             // the native; here we only need the Heli tick to keep running after break.
             runtime.RequestBreak();
@@ -776,10 +860,18 @@ public sealed class RetailMissionFourHelicopterTests
     {
         string source = File.ReadAllText(
             Path.Combine(RepoSrc(), "OpenIGI.Game", "World", "CutsceneRuntime.cs"));
-        Assert.DoesNotContain("parked.Id == 800", source);
-        Assert.DoesNotContain("Id == 800", source);
+        Assert.False(
+            System.Text.RegularExpressions.Regex.IsMatch(source, @"\b800\b"),
+            "generic CutsceneRuntime must not contain Mission 4's task-800 identifier");
         Assert.Contains("heli-park-rest", source);
+        Assert.Contains("TerminalLandingOnTerrain", source);
         Assert.Contains("ResolveEditCameraPosition", source);
+    }
+
+    private static void ConfigureMissionFourGetawayLanding(CutsceneRuntime runtime, LevelTask root)
+    {
+        GameTask getaway = Assert.IsAssignableFrom<GameTask>(root.Tree.FromId(800));
+        runtime.EnableTerminalTerrainLanding(getaway);
     }
 
     private static string RepoSrc()

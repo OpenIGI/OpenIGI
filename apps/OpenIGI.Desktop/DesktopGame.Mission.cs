@@ -308,6 +308,13 @@ internal sealed partial class DesktopGame
             _worldSolids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
+        // Mission 4's authored getaway Bell is a one-shot terminal landing. Configure that
+        // behavior explicitly here; CutsceneRuntime remains generic and does not infer it from ids.
+        if (id == 4 && levelRoot.Tree.FromId(800) is { } getawayBell)
+        {
+            _cutscenes.EnableTerminalTerrainLanding(getawayBell);
+        }
+
         _cutscenes.CollisionIndex = id == 4 ? solids : null;
         world.Cutscenes = _cutscenes;
 

@@ -246,6 +246,25 @@ public sealed class CutsceneRuntime
     /// <summary>Supplies live poses for targets owned by another simulation, such as animated humans.</summary>
     public void SetTargetPoseResolver(Func<int, CutsceneTargetPose?>? resolver) => _targetPoseResolver = resolver;
 
+    /// <summary>Marks an explicitly configured helicopter for terminal terrain landing.</summary>
+    /// <param name="task">The helicopter task whose first terrain contact is terminal.</param>
+    /// <remarks>
+    /// Mission setup supplies this state for authored one-shot landings. The generic cutscene runtime
+    /// does not infer terminal behavior from a task id, so unrelated helicopters continue their own
+    /// animation after touching terrain.
+    /// </remarks>
+    public void EnableTerminalTerrainLanding(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        if (!_taskTransforms.TryGetValue(task, out TransformState? state)
+            || !string.Equals(task.Type?.Name, "Heli", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Terminal terrain landing requires a captured Heli task.", nameof(task));
+        }
+
+        state.TerminalLandingOnTerrain = true;
+    }
+
     /// <summary>Gets the currently running scene, if any.</summary>
     public CutSceneTask? ActiveScene => _scenes.LastOrDefault(
         static state => state.Task.IsRun && ConditionalContainerGate.IsTaskActive(state.Task))?.Task;
@@ -259,8 +278,8 @@ public sealed class CutsceneRuntime
         SimulationTick++;
         RefreshContainers(executeTransitions: true);
         // Human_SetParent (0x462390 / 0x462CF0) binds cabin copies when the vehicle
-        // is registered. M4 Harrison 309 opens with Heli 800 at 45 s — a one-shot
-        // attach at construction leaves them on the dirt beside an empty hull.
+        // is registered. A staged mission vehicle can open after the initial walk — a one-shot
+        // attach at construction leaves its riders on the dirt beside an empty hull.
         AttachStagedHumansToNearestVehicle();
 
         foreach (TimerState timer in _timers)
@@ -902,7 +921,7 @@ public sealed class CutsceneRuntime
     {
         if (task is HumanSoldierTask soldier)
         {
-            // Cabin copies (M4 Heli 356/800 riders) ship with HumanSoldier id -1; the mind
+            // Cabin copies ship with HumanSoldier id -1; the mind
             // id is on the child HumanAI. Skipping NoId left them unparented so they froze
             // while the airframe left. Remember by task reference and attach via QVM parent.
             Matrix3f orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, soldier.Gamma);
@@ -1256,8 +1275,8 @@ public sealed class CutsceneRuntime
                 // flag keeps the airframe from sinking through the surface while its collective ramps
                 // below hover. Prefer a measurement from an authored pose that is already on a
                 // support, but never measure an arbitrary in-flight pose and freeze that gap as the
-                // rest height: Mission 4 Bell 800 reaches the warehouse while still ~28 m above its
-                // roof, and doing that made it stop in the air when its collective reached zero.
+                // rest height: an authored flight can reach an elevated surface while still above its
+                // roof, and measuring that in-flight gap would make it stop in the air when its collective reached zero.
                 double measuredRest = MeasureGroundRestOffset(transform.OriginPosition, target);
                 if (IsPlausibleGroundRestOffset(measuredRest, physics))
                 {
@@ -1289,10 +1308,10 @@ public sealed class CutsceneRuntime
                 return;
             }
 
-            // Bell 800's authored getaway path has reached its terminal touchdown. Keep the body
+            // An explicitly configured terminal landing has reached its touchdown. Keep the body
             // parked at the first terrain contact instead of feeding the next AnimTask sample back
             // through the rigid-flight integrator. Without this latch the terminal wait clears the
-            // collective, but the horizontal velocity carries the Bell on to the warehouse roof.
+            // collective, but the horizontal velocity carries the airframe onto the next elevated surface.
             if (transform.TerminalLandingLatched)
             {
                 transform.Position = transform.TerminalLandingPosition;
@@ -1982,11 +2001,10 @@ public sealed class CutsceneRuntime
         {
             transform.GroundContact = true;
 
-            // Bell 800's retail landing is a terminal authored state. Its first contact is with the
-            // terrain, while the warehouse roof is a later elevated ray hit reached only because the
-            // old port retained tangential velocity. Latch the terrain touchdown by the authored task
-            // id, then bypass all further flight integration.
-            if (IsTerminalTerrainLanding(ignoredOwner, supportSource))
+            // A mission may explicitly mark a one-shot airframe. Its first terrain contact is terminal;
+            // ordinary collision-enabled helicopters retain their authored controls after contact.
+            if (transform.TerminalLandingOnTerrain
+                && supportSource.StartsWith("terrain", StringComparison.Ordinal))
             {
                 transform.TerminalLandingLatched = true;
                 transform.TerminalLandingPosition = transform.Position;
@@ -2002,7 +2020,7 @@ public sealed class CutsceneRuntime
             }
         }
 
-        Note($"ground-clamp z={position.Z:R} rest={rest:R}");
+        Note($"ground-clamp id={ignoredOwner?.Id ?? -1} z={position.Z:R} rest={rest:R}");
 
         if (firstContact && !transform.GroundContactEventLogged)
         {
@@ -2203,13 +2221,6 @@ public sealed class CutsceneRuntime
         rest = surfaceHeight + restOffset;
         return true;
     }
-
-    private const int MissionFourGetawayHeliTaskId = 800;
-
-    private static bool IsTerminalTerrainLanding(GameTask? owner, string supportSource) =>
-        owner?.Id == MissionFourGetawayHeliTaskId
-        && string.Equals(owner.Type.Name, "Heli", StringComparison.Ordinal)
-        && supportSource.StartsWith("terrain", StringComparison.Ordinal);
 
     private static void ApplyRetailHelicopterPhysics(
         TransformState transform,
@@ -2562,6 +2573,7 @@ public sealed class CutsceneRuntime
         public bool GroundContactEventLogged { get; set; }
         public bool GroundContactLogged { get; set; }
         public bool CollisionEnabled { get; set; }
+        public bool TerminalLandingOnTerrain { get; set; }
         public bool TerminalLandingLatched { get; set; }
         public bool TerminalLandingEventLogged { get; set; }
         public Vector3d TerminalLandingPosition { get; set; }
