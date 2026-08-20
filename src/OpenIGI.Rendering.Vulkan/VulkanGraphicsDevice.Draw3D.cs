@@ -250,14 +250,24 @@ public sealed partial class VulkanGraphicsDevice
         BindMeshBuffers(mesh);
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
 
-        // The 128-byte push: the model-view-projection for position, the model-view's rotation columns
-        // for the view-space normal, and the material with the lightmap scale.
+        // The 128-byte push: the model-view-projection for position, a rotation for the normal, and the
+        // material with the lightmap scale.
         Matrix4f mvp = _projection * modelView;
+
+        // The G-buffer stores world-space normals, so the rotation pushed here is object-to-world: the
+        // model-view's own rotation followed by the view-to-world one. Composing the two on the processor
+        // costs nothing per vertex and saves the shader a second matrix and a second multiply.
+        Matrix3f modelViewRotation = new(
+            modelView.M11, modelView.M12, modelView.M13,
+            modelView.M21, modelView.M22, modelView.M23,
+            modelView.M31, modelView.M32, modelView.M33);
+        Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
+
         float* data = stackalloc float[32];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
-        data[16] = modelView.M11; data[17] = modelView.M21; data[18] = modelView.M31; data[19] = 0f;
-        data[20] = modelView.M12; data[21] = modelView.M22; data[22] = modelView.M32; data[23] = 0f;
-        data[24] = modelView.M13; data[25] = modelView.M23; data[26] = modelView.M33; data[27] = 0f;
+        data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
+        data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32; data[23] = 0f;
+        data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = 0f;
         data[28] = _material.Roughness;
         data[29] = _material.Metallic;
         data[30] = _material.Emissive;

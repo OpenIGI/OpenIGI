@@ -17,27 +17,47 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// schedules — there are no manual pipeline barriers to get wrong.
 /// </para>
 /// <para>
-/// The attachments are: an sRGB albedo, an octahedral normal in two float channels, a packed material,
-/// an HDR baked-light target, a reverse-Z depth buffer, and the HDR lit-scene colour that alone
-/// survives the pass to be resolved. The four G-buffer targets are written in subpass 0, read in subpass
-/// 1, and discarded; only the lit colour is stored, in the layout the resolve then samples.
+/// The attachment set follows the reference renderer's G-buffer, because the indirect-lighting passes
+/// ported on top of it read exactly these channels: an sRGB base colour, a world-space normal in
+/// 10-10-10-2, a packed metallic/specular/roughness/shading-model target, an HDR baked-light target the
+/// reference has no equivalent of, a reverse-Z depth-stencil buffer, and the HDR scene colour.
+/// </para>
+/// <para>
+/// The G-buffer targets are stored rather than discarded. On-tile they would be cheaper, and the
+/// lighting subpass still reads them that way — but the gather passes that follow the pass sample them
+/// as ordinary textures, and a transient attachment does not survive to be sampled.
 /// </para>
 /// </remarks>
 internal sealed unsafe class DeferredRenderPass : IDisposable
 {
-    /// <summary>The albedo G-buffer format: sRGB so lighting reads linear albedo for free.</summary>
-    public const Format AlbedoFormat = Format.R8G8B8A8Srgb;
+    /// <summary>The base-colour G-buffer format: sRGB, so lighting reads linear base colour for free.</summary>
+    /// <remarks>
+    /// The hardware encodes on write and decodes on read, so the shader works in linear throughout and the
+    /// eight bits are spent where the eye can see them rather than evenly across a linear range.
+    /// </remarks>
+    public const Format BaseColourFormat = Format.R8G8B8A8Srgb;
 
-    /// <summary>The normal G-buffer format: two float channels for an octahedral view-space normal.</summary>
-    public const Format NormalFormat = Format.R16G16Sfloat;
+    /// <summary>The normal G-buffer format: ten bits a channel for a world-space normal, two spare.</summary>
+    /// <remarks>
+    /// Ten bits a channel stored directly beats the two sixteen-bit channels an octahedral encoding needs:
+    /// it is smaller, it costs no encode or decode, and it avoids the octahedral seam. The two spare bits
+    /// carry per-object flags, which is what the reference uses them for.
+    /// </remarks>
+    public const Format NormalFormat = Format.A2B10G10R10UnormPack32;
 
-    /// <summary>The material G-buffer format: roughness, metallic, emissive, flags.</summary>
+    /// <summary>The material G-buffer format: metallic, specular, roughness and the shading model.</summary>
     public const Format MaterialFormat = Format.R8G8B8A8Unorm;
 
     /// <summary>The baked-light G-buffer format: a compact positive-only HDR triple.</summary>
     public const Format BakedFormat = Format.B10G11R11UfloatPack32;
 
     /// <summary>The depth format: 32-bit float, paired with reverse-Z.</summary>
+    /// <remarks>
+    /// Depth only, where the reference pairs it with stencil. Stencil is how the reference masks its
+    /// shading models and decals, and nothing here does either yet — the shading model travels in the
+    /// material target instead. Adding the stencil half costs an aspect mask on every barrier and a second
+    /// view on every sampled read, so it waits for the pass that actually reads it.
+    /// </remarks>
     public const Format DepthFormat = Format.D32Sfloat;
 
     /// <summary>The lit-scene format: 16-bit float HDR, the one attachment that survives the pass.</summary>
@@ -86,10 +106,10 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
     private RenderPass Create()
     {
         AttachmentDescription* attachments = stackalloc AttachmentDescription[6];
-        attachments[0] = ColourAttachment(AlbedoFormat, ImageLayout.ColorAttachmentOptimal, store: false);
-        attachments[1] = ColourAttachment(NormalFormat, ImageLayout.ColorAttachmentOptimal, store: false);
-        attachments[2] = ColourAttachment(MaterialFormat, ImageLayout.ColorAttachmentOptimal, store: false);
-        attachments[3] = ColourAttachment(BakedFormat, ImageLayout.ColorAttachmentOptimal, store: false);
+        attachments[0] = ColourAttachment(BaseColourFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
+        attachments[1] = ColourAttachment(NormalFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
+        attachments[2] = ColourAttachment(MaterialFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
+        attachments[3] = ColourAttachment(BakedFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
         attachments[4] = new AttachmentDescription
         {
             Format = DepthFormat,
