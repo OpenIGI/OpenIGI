@@ -29,11 +29,21 @@ internal enum ComputeBindingKind
 
     /// <summary>A three-dimensional image written directly.</summary>
     StorageVolume,
+
+    /// <summary>The scene's acceleration structure, for a pass that traces rays against it.</summary>
+    AccelerationStructure,
 }
 
 /// <summary>One resource bound for a dispatch.</summary>
-/// <param name="View">The image view.</param>
-internal readonly record struct ComputeResource(ImageView View);
+/// <param name="View">The image view, for an image binding.</param>
+/// <param name="Structure">The acceleration structure, for a binding that traces.</param>
+internal readonly record struct ComputeResource(ImageView View, AccelerationStructureKHR Structure = default)
+{
+    /// <summary>Wraps an acceleration structure as a bindable resource.</summary>
+    /// <param name="structure">The structure to bind.</param>
+    /// <returns>The resource.</returns>
+    public static ComputeResource Scene(AccelerationStructureKHR structure) => new(default, structure);
+}
 
 /// <summary>
 /// A compute pass the backend owns outright: one shader, a fixed set of image bindings and a block of
@@ -204,6 +214,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
     {
         ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage
             => DescriptorType.CombinedImageSampler,
+        ComputeBindingKind.AccelerationStructure => DescriptorType.AccelerationStructureKhr,
         _ => DescriptorType.StorageImage,
     };
 
@@ -212,10 +223,34 @@ internal sealed unsafe class VulkanComputePass : IDisposable
         int count = _bindings.Length + (_paramSize > 0 ? 1 : 0);
         DescriptorImageInfo* images = stackalloc DescriptorImageInfo[Math.Max(1, _bindings.Length)];
         WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[Math.Max(1, count)];
+        AccelerationStructureKHR* structures = stackalloc AccelerationStructureKHR[Math.Max(1, _bindings.Length)];
+        WriteDescriptorSetAccelerationStructureKHR* sceneInfos =
+            stackalloc WriteDescriptorSetAccelerationStructureKHR[Math.Max(1, _bindings.Length)];
 
         for (int i = 0; i < _bindings.Length; i++)
         {
             ComputeBindingKind kind = _bindings[i];
+            if (kind == ComputeBindingKind.AccelerationStructure)
+            {
+                structures[i] = resources[i].Structure;
+                sceneInfos[i] = new WriteDescriptorSetAccelerationStructureKHR
+                {
+                    SType = StructureType.WriteDescriptorSetAccelerationStructureKhr,
+                    AccelerationStructureCount = 1,
+                    PAccelerationStructures = &structures[i],
+                };
+                writes[i] = new WriteDescriptorSet
+                {
+                    SType = StructureType.WriteDescriptorSet,
+                    PNext = &sceneInfos[i],
+                    DstSet = _sets[frame],
+                    DstBinding = (uint)i,
+                    DescriptorType = DescriptorType.AccelerationStructureKhr,
+                    DescriptorCount = 1,
+                };
+                continue;
+            }
+
             bool sampled = kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage;
             images[i] = new DescriptorImageInfo
             {
@@ -350,14 +385,19 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
     private DescriptorPool CreatePool()
     {
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[3];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4];
         uint sampled = 0;
         uint storage = 0;
+        uint scenes = 0;
         foreach (ComputeBindingKind kind in _bindings)
         {
             if (kind is ComputeBindingKind.SampledImage or ComputeBindingKind.SampledStorageImage)
             {
                 sampled++;
+            }
+            else if (kind == ComputeBindingKind.AccelerationStructure)
+            {
+                scenes++;
             }
             else
             {
@@ -381,6 +421,15 @@ internal sealed unsafe class VulkanComputePass : IDisposable
             {
                 Type = DescriptorType.StorageImage,
                 DescriptorCount = storage * (uint)_frames,
+            };
+        }
+
+        if (scenes > 0)
+        {
+            sizes[count++] = new DescriptorPoolSize
+            {
+                Type = DescriptorType.AccelerationStructureKhr,
+                DescriptorCount = scenes * (uint)_frames,
             };
         }
 

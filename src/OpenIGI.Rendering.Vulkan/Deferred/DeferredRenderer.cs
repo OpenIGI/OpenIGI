@@ -32,6 +32,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly ShadowMap _shadowMap;
     private readonly ShadowPipeline _shadowPipeline;
     private readonly bool _rayQuery;
+    private readonly RayTracedShadowPass? _sunShadow;
     private readonly SsaoPass _ssao;
     private readonly VelocityPass _velocity;
     private readonly Sky.SkyAtmosphere _sky;
@@ -65,12 +66,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(allocator);
         ArgumentNullException.ThrowIfNull(commands);
         ArgumentNullException.ThrowIfNull(compiler);
-        // The shadow ray wants to be traced where the shading happens, but the shader compiler this
-        // backend uses does not offer ray queries in a fragment shader — only in compute, which the
-        // self-test proves. Tracing from compute means the shading cannot be in the same render pass as
-        // the geometry it reads, which is the next change rather than this one. Until then the scene is
-        // still built and kept current; only the shader that would trace it is held back.
-        _rayQuery = false;
+        _rayQuery = device.Capabilities.RayQuery;
         _vk = vk;
         _device = device.Device;
 
@@ -80,6 +76,11 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
+
+        // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
+        _sunShadow = _rayQuery
+            ? new RayTracedShadowPass(vk, device, allocator, compiler, framesInFlight)
+            : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
@@ -95,16 +96,16 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _pool = CreatePool(framesInFlight);
         _sampler = CreateSampler();
 
-        Geometry = new GBufferPipeline(vk, device, compiler, _renderPass.Handle, textureSetLayout);
+        Geometry = new GBufferPipeline(vk, device, compiler, _renderPass.Geometry, textureSetLayout);
         Lighting = new FullscreenPipeline(
             vk,
             device,
             compiler,
-            DeferredShaderSource.LightingFragment(_rayQuery),
+            DeferredShaderSource.LightingFragment(),
             "deferred-lighting.frag",
             _lightingLayout,
             sizeof(float) * 12,
-            _renderPass.Handle,
+            _renderPass.Shading,
             DeferredRenderPass.LightingSubpass);
         Resolve = new FullscreenPipeline(
             vk,
@@ -116,17 +117,23 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             sizeof(float) * 4,
             presentRenderPass,
             0);
-        Forward = new Mesh3DPipeline(vk, device, compiler, _renderPass.Handle, DeferredRenderPass.ForwardSubpass);
+        Forward = new Mesh3DPipeline(vk, device, compiler, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);
 
         _targets = new SceneTarget[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
-            _targets[i] = new SceneTarget(vk, device, allocator, commands, _renderPass.Handle, _lightingLayout, _resolveLayout, _pool, _sampler);
+            _targets[i] = new SceneTarget(
+                vk, device, allocator, commands,
+                _renderPass.Geometry, _renderPass.Shading,
+                _lightingLayout, _resolveLayout, _pool, _sampler);
         }
     }
 
-    /// <summary>Gets the deferred render pass handle.</summary>
-    public RenderPass RenderPass => _renderPass.Handle;
+    /// <summary>Gets the pass that fills the G-buffer.</summary>
+    public RenderPass GeometryPass => _renderPass.Geometry;
+
+    /// <summary>Gets the pass that shades the G-buffer and draws translucency over it.</summary>
+    public RenderPass ShadingPass => _renderPass.Shading;
 
     /// <summary>Gets the geometry (G-buffer) pipeline.</summary>
     public GBufferPipeline Geometry { get; }
@@ -169,6 +176,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// knows not to offer one it cannot hold.
     /// </remarks>
     public bool TracesShadows => _rayQuery;
+
+    /// <summary>Gets the pass that traces the sun's shadow, or null where the adapter cannot trace.</summary>
+    public RayTracedShadowPass? SunShadow => _sunShadow;
 
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
@@ -225,6 +235,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             uniform.Dispose();
         }
 
+        _sunShadow?.Dispose();
         _sky.Dispose();
         _velocity.Dispose();
         _ssao.Dispose();
@@ -248,8 +259,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // sampled 3D textures, 9 the GI parameter uniform block, 10 the screen-GI near-field atlas, 11 the
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
         // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
-        // scene's acceleration structure for the shadow ray, present only where one can be traced.
-        int bindingCount = _rayQuery ? 17 : 16;
+        // traced sun-shadow mask.
         DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[17];
         for (uint i = 0; i < 5; i++)
         {
@@ -316,21 +326,18 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             };
         }
 
-        if (_rayQuery)
+        bindings[16] = new DescriptorSetLayoutBinding
         {
-            bindings[16] = new DescriptorSetLayoutBinding
-            {
-                Binding = 16,
-                DescriptorType = DescriptorType.AccelerationStructureKhr,
-                DescriptorCount = 1,
-                StageFlags = ShaderStageFlags.FragmentBit,
-            };
-        }
+            Binding = 16,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
 
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = (uint)bindingCount,
+            BindingCount = 17,
             PBindings = bindings,
         };
 
@@ -369,7 +376,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
         sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 2) };
-        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.AccelerationStructureKhr, DescriptorCount = (uint)(framesInFlight * 2) };
+        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 2) };
 
         DescriptorPoolCreateInfo createInfo = new()
         {

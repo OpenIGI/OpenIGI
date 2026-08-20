@@ -60,7 +60,13 @@ public sealed partial class VulkanGraphicsDevice
     private readonly bool _deferredEnabled;
     private bool _capturing;
     private bool _deferredPassActive;
-    private int _deferredSubpass = -1;
+    // Which stage of the capture is open. Geometry and lighting are both the first subpass of their own
+    // render pass now, so a subpass index no longer identifies where we are.
+    private DeferredStage _deferredStage = DeferredStage.None;
+
+    // Whether this frame actually traced the sun's shadow. Until the world has been seen there is nothing
+    // to trace against, and the lighting keeps reading the cascades.
+    private bool _sunShadowTraced;
     private int _captureWidth;
     private int _captureHeight;
     private ScenePass _currentScenePass = ScenePass.None;
@@ -107,7 +113,8 @@ public sealed partial class VulkanGraphicsDevice
         _worldScene?.Record(_frameCommandBuffer, _device.GraphicsQueue);
 
         _capturing = true;
-        _deferredSubpass = -1;
+        _deferredStage = DeferredStage.None;
+        _sunShadowTraced = false;
         return true;
     }
 
@@ -123,13 +130,15 @@ public sealed partial class VulkanGraphicsDevice
         _currentScenePass = pass;
         if (pass == ScenePass.Geometry)
         {
-            BeginDeferredPass();
-            _deferredSubpass = (int)DeferredRenderPass.GeometrySubpass;
+            BeginGeometryPass();
+            _deferredStage = DeferredStage.Geometry;
         }
         else if (pass == ScenePass.Forward)
         {
+            // The shading pass is already open and its lighting subpass already drawn; translucency is its
+            // second subpass.
             _instance.Vk.CmdNextSubpass(_frameCommandBuffer, SubpassContents.Inline);
-            _deferredSubpass = (int)DeferredRenderPass.ForwardSubpass;
+            _deferredStage = DeferredStage.Forward;
         }
 
         if (_deferredPassActive)
@@ -147,13 +156,18 @@ public sealed partial class VulkanGraphicsDevice
             throw new GraphicsDeviceException("No pass is open.");
         }
 
-        // Ending the geometry pass is what triggers the lighting subpass: advance to it and draw the
-        // full-screen light that reads the G-buffer.
-        if (_deferredSubpass == (int)DeferredRenderPass.GeometrySubpass)
+        // Ending the geometry pass is what closes it, runs everything that needs a finished G-buffer and
+        // cannot run inside a render pass, and then opens the shading pass and draws the light.
+        if (_deferredStage == DeferredStage.Geometry)
         {
-            _instance.Vk.CmdNextSubpass(_frameCommandBuffer, SubpassContents.Inline);
+            _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
+            _deferredPassActive = false;
+
+            RecordBetweenPasses();
+
+            BeginShadingPass();
             RecordLighting();
-            _deferredSubpass = (int)DeferredRenderPass.LightingSubpass;
+            _deferredStage = DeferredStage.Lighting;
         }
 
         _currentScenePass = ScenePass.None;
@@ -172,10 +186,10 @@ public sealed partial class VulkanGraphicsDevice
         {
             // Every subpass must be entered before the render pass can end; a capture with no forward
             // draws still advances through the empty forward subpass.
-            while (_deferredSubpass < (int)DeferredRenderPass.ForwardSubpass)
+            if (_deferredStage == DeferredStage.Lighting)
             {
                 _instance.Vk.CmdNextSubpass(_frameCommandBuffer, SubpassContents.Inline);
-                _deferredSubpass++;
+                _deferredStage = DeferredStage.Forward;
             }
 
             _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
@@ -205,17 +219,7 @@ public sealed partial class VulkanGraphicsDevice
     /// </remarks>
     private void RecordSkyUpdate()
     {
-        Vector3f viewSun = _lighting.SunDirection;
-        Matrix3f m = _viewToWorld;
-        Vector3f worldSun = new(
-            (m.M11 * viewSun.X) + (m.M12 * viewSun.Y) + (m.M13 * viewSun.Z),
-            (m.M21 * viewSun.X) + (m.M22 * viewSun.Y) + (m.M23 * viewSun.Z),
-            (m.M31 * viewSun.X) + (m.M32 * viewSun.Y) + (m.M33 * viewSun.Z));
-
-        float length = MathF.Sqrt((worldSun.X * worldSun.X) + (worldSun.Y * worldSun.Y) + (worldSun.Z * worldSun.Z));
-        worldSun = length > 1e-5f
-            ? new Vector3f(worldSun.X / length, worldSun.Y / length, worldSun.Z / length)
-            : new Vector3f(0f, 0f, 1f);
+        Vector3f worldSun = WorldSunDirection();
 
         // The sun's colour and brightness as the level authored it. The reference's own sun is a fixed
         // ten-lux white-ish disc; this follows the game's, so a mission's own time of day still drives
@@ -592,20 +596,51 @@ public sealed partial class VulkanGraphicsDevice
     /// <remarks>The GI gather that reads these is not yet offered on the Vulkan path.</remarks>
     public TextureHandle SceneColour => TextureHandle.None;
 
-    private unsafe void BeginDeferredPass()
+    private unsafe void BeginGeometryPass()
     {
         if (_sceneTarget is null)
         {
             throw new GraphicsDeviceException("The scene target is not configured.");
         }
 
-        ClearValue* clears = stackalloc ClearValue[6];
+        ClearValue* clears = stackalloc ClearValue[5];
         for (int i = 0; i < 4; i++)
         {
             clears[i] = new ClearValue { Color = new ClearColorValue(0f, 0f, 0f, 0f) };
         }
 
         clears[4] = new ClearValue { DepthStencil = new ClearDepthStencilValue(0.0f, 0) };
+
+        RenderPassBeginInfo beginInfo = new()
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = _deferred.GeometryPass,
+            Framebuffer = _sceneTarget.GeometryFramebuffer,
+            RenderArea = new Rect2D(new Offset2D(0, 0), _sceneTarget.Extent),
+            ClearValueCount = 5,
+            PClearValues = clears,
+        };
+
+        FlushComputeBeforePass();
+        _instance.Vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
+        _deferredPassActive = true;
+    }
+
+    private unsafe void BeginShadingPass()
+    {
+        if (_sceneTarget is null)
+        {
+            throw new GraphicsDeviceException("The scene target is not configured.");
+        }
+
+        // The five the geometry pass filled are loaded rather than cleared, so only the scene colour has a
+        // clear value -- but a render pass wants one entry per attachment regardless.
+        ClearValue* clears = stackalloc ClearValue[6];
+        for (int i = 0; i < 5; i++)
+        {
+            clears[i] = default;
+        }
+
         clears[5] = new ClearValue
         {
             Color = new ClearColorValue(_clearColour.R / 255f, _clearColour.G / 255f, _clearColour.B / 255f, 1f),
@@ -614,16 +649,91 @@ public sealed partial class VulkanGraphicsDevice
         RenderPassBeginInfo beginInfo = new()
         {
             SType = StructureType.RenderPassBeginInfo,
-            RenderPass = _deferred.RenderPass,
-            Framebuffer = _sceneTarget.Framebuffer,
+            RenderPass = _deferred.ShadingPass,
+            Framebuffer = _sceneTarget.ShadingFramebuffer,
             RenderArea = new Rect2D(new Offset2D(0, 0), _sceneTarget.Extent),
             ClearValueCount = 6,
             PClearValues = clears,
         };
 
-        FlushComputeBeforePass();
         _instance.Vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
         _deferredPassActive = true;
+        ApplyViewportAndScissor(_frameCommandBuffer, _viewport);
+    }
+
+    /// <summary>
+    /// Everything that needs a finished G-buffer and cannot run inside a render pass.
+    /// </summary>
+    /// <remarks>
+    /// The whole reason the deferred path is two passes rather than one. A ray query is only available to
+    /// a compute shader here, and a dispatch cannot be recorded inside a render pass, so anything that
+    /// traces against the scene has to happen in the gap between the pass that fills the G-buffer and the
+    /// pass that shades it. The sun's shadow is the first thing to live here; the indirect-lighting
+    /// gathers will join it.
+    /// </remarks>
+    private void RecordBetweenPasses()
+    {
+        DispatchSunShadow();
+    }
+
+    /// <summary>Traces the sun's shadow against the scene, for the shading pass to read this same frame.</summary>
+    private unsafe void DispatchSunShadow()
+    {
+        if (_sceneTarget is null || _deferred.SunShadow is null)
+        {
+            return;
+        }
+
+        if (_worldScene is not { IsReady: true } scene || scene.TopLevel is not { } topLevel)
+        {
+            return;
+        }
+
+        Deferred.SceneTarget target = _sceneTarget;
+        CommandBuffer cmd = _frameCommandBuffer;
+
+        // The shading pass sampled this mask on the previous frame; separate that read from the write
+        // about to happen.
+        OcclusionBarrier(
+            cmd, target.SunShadowImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.SunShadow.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.DepthView,
+            target.NormalView,
+            topLevel.Handle,
+            target.SunShadowView,
+            _captureWidth,
+            _captureHeight,
+            _viewToWorld,
+            _cameraPosition,
+            WorldSunDirection(),
+            _unprojection);
+
+        OcclusionBarrier(
+            cmd, target.SunShadowImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
+
+        _sunShadowTraced = true;
+    }
+
+
+    /// <summary>The world direction towards the sun, from the view-space one the renderer seam hands over.</summary>
+    private Vector3f WorldSunDirection()
+    {
+        Vector3f viewSun = _lighting.SunDirection;
+        Matrix3f m = _viewToWorld;
+        Vector3f world = new(
+            (m.M11 * viewSun.X) + (m.M12 * viewSun.Y) + (m.M13 * viewSun.Z),
+            (m.M21 * viewSun.X) + (m.M22 * viewSun.Y) + (m.M23 * viewSun.Z),
+            (m.M31 * viewSun.X) + (m.M32 * viewSun.Y) + (m.M33 * viewSun.Z));
+
+        float length = MathF.Sqrt((world.X * world.X) + (world.Y * world.Y) + (world.Z * world.Z));
+        return length > 1e-5f
+            ? new Vector3f(world.X / length, world.Y / length, world.Z / length)
+            : new Vector3f(0f, 0f, 1f);
     }
 
     private unsafe void RecordLighting()
@@ -691,7 +801,7 @@ public sealed partial class VulkanGraphicsDevice
         // for the first frames of a level there is nothing to trace and the shadow map still answers.
         u[12] = spacing * 0.5f; u[13] = Math.Clamp(_volumeSettings.Blend, 0f, 1f);
         u[14] = MathF.Max(_lighting.Scale, 0f);
-        u[15] = _deferred.TracesShadows && _worldScene is { IsReady: true } ? 1f : 0f;
+        u[15] = _sunShadowTraced ? 1f : 0f;
 
         // uProbeSky: the sky colour the grey visibility is tinted by, times its intensity.
         u[16] = _volumeSettings.SkyColour.X * intensity;
@@ -747,8 +857,7 @@ public sealed partial class VulkanGraphicsDevice
         _sceneTarget!.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize, giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
-            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
-            _deferred.TracesShadows ? _worldScene?.TopLevel?.Handle ?? default : default);
+            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler));
     }
 
     /// <summary>Resolves the screen-GI atlas to a view, sampler and layout, or the white texture when unset.</summary>
@@ -767,5 +876,21 @@ public sealed partial class VulkanGraphicsDevice
 
         VulkanTexture white = _textures[_whiteTexture.Id];
         return (white.View, white.Sampler, ImageLayout.ShaderReadOnlyOptimal);
+    }
+
+    /// <summary>Which part of a deferred capture is currently open.</summary>
+    private enum DeferredStage
+    {
+        /// <summary>Nothing is open.</summary>
+        None,
+
+        /// <summary>The geometry pass, filling the G-buffer.</summary>
+        Geometry,
+
+        /// <summary>The shading pass, on its lighting subpass.</summary>
+        Lighting,
+
+        /// <summary>The shading pass, on its translucency subpass.</summary>
+        Forward,
     }
 }

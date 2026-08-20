@@ -213,11 +213,11 @@ public sealed partial class VulkanGraphicsDevice
         // A draw goes to one of three pipelines by where it is: the G-buffer during the geometry
         // subpass, the forward pipeline into the lit scene during the forward subpass, or the direct
         // mesh pipeline on the back buffer when there is no capture.
-        if (_capturing && _deferredSubpass == (int)Deferred.DeferredRenderPass.GeometrySubpass)
+        if (_capturing && _deferredStage == DeferredStage.Geometry)
         {
             BindGeometry(mesh, modelView, diffuse, lightmap);
         }
-        else if (_capturing && _deferredSubpass == (int)Deferred.DeferredRenderPass.ForwardSubpass)
+        else if (_capturing && _deferredStage == DeferredStage.Forward)
         {
             BindForward(_deferred.Forward, mesh, modelView, diffuse, lightmap, blend);
         }

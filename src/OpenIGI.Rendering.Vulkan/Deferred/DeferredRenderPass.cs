@@ -5,16 +5,21 @@ using Silk.NET.Vulkan;
 namespace OpenIGI.Rendering.Vulkan.Deferred;
 
 /// <summary>
-/// The deferred render pass: geometry into a G-buffer, a lighting subpass that reads it on-chip through
-/// input attachments, and a forward subpass for translucency — one pass, its stages synchronised by
-/// subpass dependencies rather than by hand.
+/// The deferred render passes: one that fills the G-buffer, and one that shades it and draws translucency
+/// over the result.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Keeping the whole of deferred inside one render pass is the Vulkan-native shape: the G-buffer is an
-/// input attachment to the lighting subpass, so on a tiled GPU it never leaves on-chip memory, and the
-/// barriers between geometry, lighting and forward are expressed as subpass dependencies the driver
-/// schedules — there are no manual pipeline barriers to get wrong.
+/// Two passes rather than one, with a gap between them. That gap is the point: it is where compute runs
+/// against a finished G-buffer. A sun shadow traced against the scene, and every gather the indirect
+/// lighting is built from, happen there — a dispatch cannot be recorded inside a render pass, and a
+/// gather needs the whole G-buffer finished before it can read anything but the pixel it is on.
+/// </para>
+/// <para>
+/// What the split does not cost is the on-chip read. The G-buffer is still an input attachment to the
+/// shading pass, which is what lets a tiled part shade without spilling it — an attachment written by an
+/// earlier render pass is a perfectly good input to a later one, so long as the layouts line up and the
+/// second pass loads rather than clears.
 /// </para>
 /// <para>
 /// The attachment set follows the reference renderer's G-buffer, because the indirect-lighting passes
@@ -63,14 +68,14 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
     /// <summary>The lit-scene format: 16-bit float HDR, the one attachment that survives the pass.</summary>
     public const Format LitFormat = Format.R16G16B16A16Sfloat;
 
-    /// <summary>The subpass that writes the G-buffer.</summary>
+    /// <summary>The only subpass of the geometry pass, which writes the G-buffer.</summary>
     public const uint GeometrySubpass = 0;
 
-    /// <summary>The subpass that lights the G-buffer into the lit colour.</summary>
-    public const uint LightingSubpass = 1;
+    /// <summary>The shading pass's first subpass, which lights the G-buffer into the scene's colour.</summary>
+    public const uint LightingSubpass = 0;
 
-    /// <summary>The subpass that draws translucency over the lit colour.</summary>
-    public const uint ForwardSubpass = 2;
+    /// <summary>The shading pass's second subpass, which draws translucency over the lit colour.</summary>
+    public const uint ForwardSubpass = 1;
 
     private readonly Vk _vk;
     private readonly Device _device;
@@ -85,11 +90,15 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
         ArgumentNullException.ThrowIfNull(vk);
         _vk = vk;
         _device = device;
-        Handle = Create();
+        Geometry = CreateGeometryPass();
+        Shading = CreateShadingPass();
     }
 
-    /// <summary>Gets the render pass handle.</summary>
-    public RenderPass Handle { get; }
+    /// <summary>Gets the pass that fills the G-buffer.</summary>
+    public RenderPass Geometry { get; }
+
+    /// <summary>Gets the pass that shades the G-buffer and draws translucency.</summary>
+    public RenderPass Shading { get; }
 
     /// <inheritdoc/>
     public void Dispose()
@@ -100,12 +109,13 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
         }
 
         _disposed = true;
-        _vk.DestroyRenderPass(_device, Handle, null);
+        _vk.DestroyRenderPass(_device, Shading, null);
+        _vk.DestroyRenderPass(_device, Geometry, null);
     }
 
-    private RenderPass Create()
+    private RenderPass CreateGeometryPass()
     {
-        AttachmentDescription* attachments = stackalloc AttachmentDescription[6];
+        AttachmentDescription* attachments = stackalloc AttachmentDescription[5];
         attachments[0] = ColourAttachment(BaseColourFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
         attachments[1] = ColourAttachment(NormalFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
         attachments[2] = ColourAttachment(MaterialFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
@@ -116,29 +126,95 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
             Samples = SampleCountFlags.Count1Bit,
             LoadOp = AttachmentLoadOp.Clear,
 
-            // Stored and left in the shader-read layout so the ambient-occlusion compute can sample it once
-            // the pass closes — a sampled read wants that layout, not the depth read-only one the lighting's
-            // input attachment uses inside the pass.
+            // Stored, and left where both a sampled compute read and the shading pass input attachment can
+            // take it.
             StoreOp = AttachmentStoreOp.Store,
             StencilLoadOp = AttachmentLoadOp.DontCare,
             StencilStoreOp = AttachmentStoreOp.DontCare,
             InitialLayout = ImageLayout.Undefined,
             FinalLayout = ImageLayout.ShaderReadOnlyOptimal,
         };
-        attachments[5] = ColourAttachment(LitFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
 
-        AttachmentReference* geometryColour = stackalloc AttachmentReference[4]
+        AttachmentReference* colour = stackalloc AttachmentReference[4]
         {
             new() { Attachment = 0, Layout = ImageLayout.ColorAttachmentOptimal },
             new() { Attachment = 1, Layout = ImageLayout.ColorAttachmentOptimal },
             new() { Attachment = 2, Layout = ImageLayout.ColorAttachmentOptimal },
             new() { Attachment = 3, Layout = ImageLayout.ColorAttachmentOptimal },
         };
-        AttachmentReference depthRef = new() { Attachment = 4, Layout = ImageLayout.DepthStencilAttachmentOptimal };
+        AttachmentReference depth = new() { Attachment = 4, Layout = ImageLayout.DepthStencilAttachmentOptimal };
 
-        // The four G-buffer targets plus the depth buffer as input attachments: the lighting pass
-        // reconstructs the view position from depth on-tile to sample the probe field, so depth is read
-        // here rather than stored and sampled in a later pass.
+        SubpassDescription subpass = new()
+        {
+            PipelineBindPoint = PipelineBindPoint.Graphics,
+            ColorAttachmentCount = 4,
+            PColorAttachments = colour,
+            PDepthStencilAttachment = &depth,
+        };
+
+        SubpassDependency* dependencies = stackalloc SubpassDependency[2];
+        dependencies[0] = new SubpassDependency
+        {
+            SrcSubpass = Vk.SubpassExternal,
+            DstSubpass = 0,
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+            SrcAccessMask = 0,
+            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+            DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
+        };
+        dependencies[1] = new SubpassDependency
+        {
+            SrcSubpass = 0,
+            DstSubpass = Vk.SubpassExternal,
+
+            // Everything the pass wrote has to be visible to what comes next, and what comes next is both
+            // the compute that traces against it and the shading pass that reads it as input attachments.
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.LateFragmentTestsBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
+            DstStageMask = PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
+            DstAccessMask = AccessFlags.ShaderReadBit | AccessFlags.InputAttachmentReadBit,
+        };
+
+        RenderPassCreateInfo createInfo = new()
+        {
+            SType = StructureType.RenderPassCreateInfo,
+            AttachmentCount = 5,
+            PAttachments = attachments,
+            SubpassCount = 1,
+            PSubpasses = &subpass,
+            DependencyCount = 2,
+            PDependencies = dependencies,
+        };
+
+        RenderPass renderPass;
+        VkCheck.Ok(_vk.CreateRenderPass(_device, &createInfo, null, &renderPass), "vkCreateRenderPass (geometry)");
+        return renderPass;
+    }
+
+    private RenderPass CreateShadingPass()
+    {
+        // The G-buffer arrives already written and already in the layout an input attachment wants, so it
+        // is loaded rather than cleared and left exactly as it was found -- later passes still read it.
+        AttachmentDescription* attachments = stackalloc AttachmentDescription[6];
+        attachments[0] = LoadedAttachment(BaseColourFormat, ImageLayout.ShaderReadOnlyOptimal);
+        attachments[1] = LoadedAttachment(NormalFormat, ImageLayout.ShaderReadOnlyOptimal);
+        attachments[2] = LoadedAttachment(MaterialFormat, ImageLayout.ShaderReadOnlyOptimal);
+        attachments[3] = LoadedAttachment(BakedFormat, ImageLayout.ShaderReadOnlyOptimal);
+
+        attachments[4] = new AttachmentDescription
+        {
+            Format = DepthFormat,
+            Samples = SampleCountFlags.Count1Bit,
+            LoadOp = AttachmentLoadOp.Load,
+            StoreOp = AttachmentStoreOp.Store,
+            StencilLoadOp = AttachmentLoadOp.DontCare,
+            StencilStoreOp = AttachmentStoreOp.DontCare,
+            InitialLayout = ImageLayout.ShaderReadOnlyOptimal,
+            FinalLayout = ImageLayout.ShaderReadOnlyOptimal,
+        };
+
+        attachments[5] = ColourAttachment(LitFormat, ImageLayout.ShaderReadOnlyOptimal, store: true);
+
         AttachmentReference* lightingInput = stackalloc AttachmentReference[5]
         {
             new() { Attachment = 0, Layout = ImageLayout.ShaderReadOnlyOptimal },
@@ -147,57 +223,44 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
             new() { Attachment = 3, Layout = ImageLayout.ShaderReadOnlyOptimal },
             new() { Attachment = 4, Layout = ImageLayout.DepthStencilReadOnlyOptimal },
         };
-        AttachmentReference litRef = new() { Attachment = 5, Layout = ImageLayout.ColorAttachmentOptimal };
+        AttachmentReference lit = new() { Attachment = 5, Layout = ImageLayout.ColorAttachmentOptimal };
+        AttachmentReference depth = new() { Attachment = 4, Layout = ImageLayout.DepthStencilAttachmentOptimal };
 
-        SubpassDescription* subpasses = stackalloc SubpassDescription[3];
+        SubpassDescription* subpasses = stackalloc SubpassDescription[2];
         subpasses[0] = new SubpassDescription
-        {
-            PipelineBindPoint = PipelineBindPoint.Graphics,
-            ColorAttachmentCount = 4,
-            PColorAttachments = geometryColour,
-            PDepthStencilAttachment = &depthRef,
-        };
-        subpasses[1] = new SubpassDescription
         {
             PipelineBindPoint = PipelineBindPoint.Graphics,
             InputAttachmentCount = 5,
             PInputAttachments = lightingInput,
             ColorAttachmentCount = 1,
-            PColorAttachments = &litRef,
+            PColorAttachments = &lit,
         };
-        subpasses[2] = new SubpassDescription
+        subpasses[1] = new SubpassDescription
         {
             PipelineBindPoint = PipelineBindPoint.Graphics,
             ColorAttachmentCount = 1,
-            PColorAttachments = &litRef,
-            PDepthStencilAttachment = &depthRef,
+            PColorAttachments = &lit,
+            PDepthStencilAttachment = &depth,
         };
 
-        SubpassDependency* dependencies = stackalloc SubpassDependency[5];
+        SubpassDependency* dependencies = stackalloc SubpassDependency[3];
         dependencies[0] = new SubpassDependency
         {
             SrcSubpass = Vk.SubpassExternal,
-            DstSubpass = GeometrySubpass,
-            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-            SrcAccessMask = 0,
-            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-            DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
-        };
-        dependencies[1] = new SubpassDependency
-        {
-            SrcSubpass = GeometrySubpass,
             DstSubpass = LightingSubpass,
 
-            // Both the colour targets and the depth buffer the geometry pass wrote must be visible to the
-            // lighting pass's input-attachment reads — the four G-buffer channels and the depth it
-            // reconstructs position from.
-            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.LateFragmentTestsBit,
-            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
+            // Whatever ran in the gap -- the shadow trace, the gathers -- wrote results this pass reads,
+            // and the geometry pass wrote the G-buffer it reads as input attachments.
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.LateFragmentTestsBit
+                | PipelineStageFlags.ComputeShaderBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit
+                | AccessFlags.DepthStencilAttachmentWriteBit
+                | AccessFlags.ShaderWriteBit,
             DstStageMask = PipelineStageFlags.FragmentShaderBit,
-            DstAccessMask = AccessFlags.InputAttachmentReadBit,
-            DependencyFlags = DependencyFlags.ByRegionBit,
+            DstAccessMask = AccessFlags.InputAttachmentReadBit | AccessFlags.ShaderReadBit,
         };
-        dependencies[2] = new SubpassDependency
+        dependencies[1] = new SubpassDependency
         {
             SrcSubpass = LightingSubpass,
             DstSubpass = ForwardSubpass,
@@ -207,22 +270,12 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
             DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.ColorAttachmentReadBit,
             DependencyFlags = DependencyFlags.ByRegionBit,
         };
-        dependencies[3] = new SubpassDependency
-        {
-            SrcSubpass = GeometrySubpass,
-            DstSubpass = ForwardSubpass,
-            SrcStageMask = PipelineStageFlags.LateFragmentTestsBit,
-            SrcAccessMask = AccessFlags.DepthStencilAttachmentWriteBit,
-            DstStageMask = PipelineStageFlags.EarlyFragmentTestsBit,
-            DstAccessMask = AccessFlags.DepthStencilAttachmentReadBit | AccessFlags.DepthStencilAttachmentWriteBit,
-        };
-        dependencies[4] = new SubpassDependency
+        dependencies[2] = new SubpassDependency
         {
             SrcSubpass = ForwardSubpass,
             DstSubpass = Vk.SubpassExternal,
 
-            // The lit colour to the resolve's fragment sample, and the depth to the occlusion compute's
-            // sample, are both made visible as the pass ends.
+            // The lit colour to the resolve sample, and the depth to the occlusion and motion passes.
             SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.LateFragmentTestsBit,
             SrcAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
             DstStageMask = PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
@@ -234,16 +287,28 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
             SType = StructureType.RenderPassCreateInfo,
             AttachmentCount = 6,
             PAttachments = attachments,
-            SubpassCount = 3,
+            SubpassCount = 2,
             PSubpasses = subpasses,
-            DependencyCount = 5,
+            DependencyCount = 3,
             PDependencies = dependencies,
         };
 
         RenderPass renderPass;
-        VkCheck.Ok(_vk.CreateRenderPass(_device, &createInfo, null, &renderPass), "vkCreateRenderPass (deferred)");
+        VkCheck.Ok(_vk.CreateRenderPass(_device, &createInfo, null, &renderPass), "vkCreateRenderPass (shading)");
         return renderPass;
     }
+
+    private static AttachmentDescription LoadedAttachment(Format format, ImageLayout layout) => new()
+    {
+        Format = format,
+        Samples = SampleCountFlags.Count1Bit,
+        LoadOp = AttachmentLoadOp.Load,
+        StoreOp = AttachmentStoreOp.Store,
+        StencilLoadOp = AttachmentLoadOp.DontCare,
+        StencilStoreOp = AttachmentStoreOp.DontCare,
+        InitialLayout = layout,
+        FinalLayout = layout,
+    };
 
     private static AttachmentDescription ColourAttachment(Format format, ImageLayout finalLayout, bool store) => new()
     {
