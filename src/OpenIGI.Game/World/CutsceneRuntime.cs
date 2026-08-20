@@ -1109,6 +1109,7 @@ public sealed class CutsceneRuntime
             // helicopters and planes to the identity matrix on cutscene tick one.
             Euler = angles,
             Heading = angles.Z,
+            CarRoute = CarRouteProfile.For(declared),
         };
         if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
         {
@@ -1332,14 +1333,28 @@ public sealed class CutsceneRuntime
             transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
 
             // Car::Tick (IGI.exe 0x42ECA0) integrates the authored steering around the vehicle's
-            // local-Y forward axis. Mission 1 task 1099 crosses a gate-release frame before its
-            // outbound pulse; the two sides use opposite signed heading deltas in the rigid-body
-            // frame. Keeping that transition in the vehicle state prevents the truck from mirroring
-            // back into the SMALLBARRACKS collision volume.
+            // local-Y forward axis. The only shipped route needing the post-gate sign is the Level 1
+            // "Truck which Jones will steal" (model 622_01_1); Mission 2 reuses that model for a
+            // different inbound route. Keep the authored identity and its probe dimensions together
+            // instead of applying an ID- or model-wide exception to every Car.
+            CarRouteProfile? route = transform.CarRoute;
+            if (!transform.VehicleGateReleased
+                && route is not null
+                && _vehicleObstacleReleased is not null
+                && _root.Tree.FromId(route.GateTaskId) is { } routeGate
+                && ConditionalContainerGate.IsTaskActive(routeGate)
+                && ActiveScene?.Ticks >= route.GateOpenTick
+                && _vehicleObstacleReleased(routeGate))
+            {
+                // The Level 1 gate is scripted to open on the cutscene clock. Once the truck reaches
+                // that doorway, use the gate's live state rather than waiting for a blocking collision:
+                // a fully open door is deliberately absent from the collision index.
+                transform.VehicleGateReleased = true;
+            }
             float previousHeading = transform.Heading;
             Matrix3f previousOrientation = transform.Orientation;
             float headingDelta = transform.Steering * transform.Speed / (4_096f * 4.5f);
-            transform.Heading += transform.VehicleGateReleased && targetId == 1099
+            transform.Heading += transform.VehicleGateReleased && route is not null
                 ? headingDelta
                 : -headingDelta;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
@@ -1352,24 +1367,23 @@ public sealed class CutsceneRuntime
 
             bool blocked = false;
             GameTask? obstacle = null;
-            const double halfLengthMetres = 3.9;
-            const double probeMarginUnits = 128.0;
-            if (_vehicleObstacleHit is { } obstacleHit && target is not null)
+            if (route is not null && target is not null)
             {
-                for (int heightIndex = 0; heightIndex < 2 && !blocked; heightIndex++)
+                for (int heightIndex = 0; heightIndex < route.ProbeHeightsMetres.Count && !blocked; heightIndex++)
                 {
-                    double heightMetres = heightIndex == 0 ? 0.75 : 1.95;
+                    double heightMetres = route.ProbeHeightsMetres[heightIndex];
                     Vector3d offset = new(
                         0.0,
                         0.0,
                         heightMetres * WorldScene.UnitsPerMetre);
                     Vector3d probeStart = transform.Position
-                        + (carDirection * (halfLengthMetres * WorldScene.UnitsPerMetre))
+                        + (carDirection * (route.FrontBumperMetres * WorldScene.UnitsPerMetre))
                         + offset;
                     Vector3d probeEnd = proposedPosition
-                        + (carDirection * ((halfLengthMetres * WorldScene.UnitsPerMetre) + probeMarginUnits))
+                        + (carDirection * ((route.FrontBumperMetres * WorldScene.UnitsPerMetre) + route.ProbeMarginUnits))
                         + offset;
-                    if (obstacleHit(target, probeStart, probeEnd) is { } contact)
+
+                    if (_vehicleObstacleHit?.Invoke(target, probeStart, probeEnd) is { } contact)
                     {
                         obstacle = contact.Owner;
                         blocked = true;
@@ -2752,6 +2766,7 @@ public sealed class CutsceneRuntime
         public float Steering { get; set; }
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
+        public CarRouteProfile? CarRoute { get; set; }
         public GameTask? VehicleLatchedObstacle { get; set; }
         public bool VehicleGateReleased { get; set; }
         public float Heading { get; set; }
@@ -2773,6 +2788,40 @@ public sealed class CutsceneRuntime
         public float RotorAxialCoefficient { get; set; }
         public Vector3f QueuedRotorForce { get; set; }
         public Vector3f QueuedRotorTorque { get; set; }
+    }
+
+    /// <summary>The only retail car route that changes steering side after crossing an opening gate.</summary>
+    private sealed record CarRouteProfile(
+        IReadOnlyList<double> ProbeHeightsMetres,
+        double FrontBumperMetres,
+        double ProbeMarginUnits,
+        int GateTaskId,
+        int GateOpenTick)
+    {
+        // LEVEL1/OBJECTS.QVM declares task 1099 as label "Truck which Jones will steal", model
+        // 622_01_1. LEVEL2 deliberately reuses model 622_01_1 for label "Car which Jones drives into
+        // base", so both the authored label and model are the route identity. The bumper/heights are
+        // the established dimensions of this one retail truck, not a policy for every Car.
+        private const string LevelOneStolenTruckLabel = "Truck which Jones will steal";
+        private const string TruckModel = "622_01_1";
+
+        // Door_401 is the nearer leaf of the garage exit. LEVEL1/OBJECTS.QVM places it at
+        // (24979312, -56202112, 174413120) in the loaded placement and opens it after
+        // CutScene_1204's eleven-second mark. That authored clock gate means an already-open door
+        // follows the same transition as the normal closed-then-open route.
+        private static readonly CarRouteProfile LevelOneStolenTruck = new(
+            [0.75, 1.95],
+            3.9,
+            128.0,
+            GateTaskId: 401,
+            GateOpenTick: 11 * Frequency);
+
+        public static CarRouteProfile? For(DeclaredTask task) =>
+            string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
+            && string.Equals(task.Label, LevelOneStolenTruckLabel, StringComparison.Ordinal)
+            && string.Equals(Text(task, WorldScene.ModelParameter), TruckModel, StringComparison.Ordinal)
+                ? LevelOneStolenTruck
+                : null;
     }
 }
 
