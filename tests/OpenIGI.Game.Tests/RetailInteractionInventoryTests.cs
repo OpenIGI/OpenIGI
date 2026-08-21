@@ -29,6 +29,44 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void LevelTwoGenericExplosiveChargesPublishTheirAuthoredBlastExactlyOnce()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+
+        List<WorldInteraction> charges = interactions.Items
+            .Where(static item => item.Type == InteractionActivateType.Generic && item.Explosion?.IsExplodable == true)
+            .ToList();
+        Assert.Equal(3, charges.Count);
+
+        WorldInteraction charge = Assert.Single(charges, static item => item.Task.Id == 282);
+        GenericTbaExplosionParameters payload = Assert.IsType<GenericTbaExplosionParameters>(charge.Explosion);
+        Assert.True(payload.ExplosionRadiusUnits > 0f);
+        Assert.True(payload.ExplosionFalloffUnits >= 0f);
+        Assert.Equal(5, payload.FragmentCount);
+        Assert.Equal(4, payload.FireballCount);
+        Assert.Equal("explo_02_m", payload.ExplosionSound);
+
+        charge.BeginUse();
+        charge.CompleteUse();
+
+        Assert.True(charge.IsCompleted);
+        Assert.True(charge.IsDestroyed);
+        (WorldInteraction emitted, GenericTbaExplosionParameters emittedPayload) = Assert.Single(
+            interactions.ConsumeExplosions());
+        Assert.Same(charge, emitted);
+        Assert.Equal(payload, emittedPayload);
+        Assert.Empty(interactions.ConsumeExplosions());
+
+        interactions.Tick();
+        Assert.Empty(interactions.ConsumeExplosions());
+    }
+
+    [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {
         (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =

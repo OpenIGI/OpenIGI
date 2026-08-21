@@ -3,11 +3,41 @@ using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
 using OpenIGI.Game.Ai;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Rendering;
 
 #pragma warning disable CS1591 // Public data members are documented by the owning interaction contract.
 
 namespace OpenIGI.Game.World;
+
+/// <summary>Authored explosion data carried by a <c>GenericTBA</c> interaction.</summary>
+/// <remarks>
+/// This is the interaction-to-runtime handoff. The desktop presentation owns applying the event to
+/// models, actors, particles and audio; keeping the authored values here prevents that layer from
+/// falling back to the generic <c>isFinished</c> flag or to grenade defaults.
+/// </remarks>
+public sealed record GenericTbaExplosionParameters(
+    bool Explodable,
+    string DestroyedModelName,
+    float DamageScale,
+    float ExplosionRadiusMetres,
+    float ExplosionFalloffMetres,
+    float ExplosionDamageScale,
+    float ExplosionDelaySeconds,
+    int FragmentCount,
+    int FireballCount,
+    string ExplosionExpression,
+    string ExplosionSound)
+{
+    /// <summary>Gets whether the authored task marks itself as explodable.</summary>
+    public bool IsExplodable => Explodable;
+
+    /// <summary>Gets the full-damage radius in the engine's world units.</summary>
+    public float ExplosionRadiusUnits => ExplosionDamage.ToUnits(ExplosionRadiusMetres);
+
+    /// <summary>Gets the falloff distance in the engine's world units.</summary>
+    public float ExplosionFalloffUnits => ExplosionDamage.ToUnits(ExplosionFalloffMetres);
+}
 
 /// <summary>One retail task which can answer the human player's <c>GetActivate</c> query.</summary>
 public sealed class WorldInteraction
@@ -26,6 +56,7 @@ public sealed class WorldInteraction
     private readonly Vector3d _authoredEnd;
     private Func<Vector3d>? _dynamicOffset;
     private Vector3d _offset;
+    private bool _explosionConsumed;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -41,7 +72,8 @@ public sealed class WorldInteraction
         AiStationaryGun? stationaryGun,
         Vector3d localBoundsMinimum,
         Vector3d localBoundsMaximum,
-        bool hasLocalBounds)
+        bool hasLocalBounds,
+        GenericTbaExplosionParameters? explosion)
     {
         Task = task;
         Type = type;
@@ -57,6 +89,7 @@ public sealed class WorldInteraction
         LocalBoundsMinimum = localBoundsMinimum;
         LocalBoundsMaximum = localBoundsMaximum;
         HasLocalBounds = hasLocalBounds;
+        Explosion = explosion;
     }
 
     public DeclaredTask Task { get; }
@@ -79,6 +112,9 @@ public sealed class WorldInteraction
     public bool IsOn { get; set; } = true;
     public bool IsCompleted { get; private set; }
     public bool CompletedThisTick { get; private set; }
+    public bool IsDestroyed { get; private set; }
+    public bool ExplosionTriggeredThisTick { get; private set; }
+    public GenericTbaExplosionParameters? Explosion { get; }
     public bool IsSearched { get; private set; }
     public bool IsPicked { get; private set; }
     public bool IsLocked { get; private set; }
@@ -320,6 +356,11 @@ public sealed class WorldInteraction
 
     public void CompleteUse()
     {
+        if (Type == InteractionActivateType.Generic && IsCompleted)
+        {
+            return;
+        }
+
         StationaryGun?.Dismount(_userOccupant);
         InUse.Value = false;
         CompletedThisTick = true;
@@ -334,8 +375,30 @@ public sealed class WorldInteraction
                 break;
             default:
                 IsCompleted = true;
+                if (Type == InteractionActivateType.Generic && Explosion is not null)
+                {
+                    // GenericTBA has a second authored lifecycle on top of isFinished. Keep the
+                    // destruction edge explicit so a presentation/runtime owner can consume the
+                    // model/effect payload exactly once without guessing from the script flag.
+                    IsDestroyed = true;
+                    ExplosionTriggeredThisTick = true;
+                }
                 break;
         }
+    }
+
+    /// <summary>Consumes this tick's authored GenericTBA explosion edge exactly once.</summary>
+    public bool TryConsumeExplosion(out GenericTbaExplosionParameters parameters)
+    {
+        if (!ExplosionTriggeredThisTick || _explosionConsumed || Explosion is null)
+        {
+            parameters = null!;
+            return false;
+        }
+
+        _explosionConsumed = true;
+        parameters = Explosion;
+        return true;
     }
 
     internal void EvaluateConditions()
@@ -359,6 +422,7 @@ public sealed class WorldInteraction
     internal void CommitTick()
     {
         CompletedThisTick = false;
+        ExplosionTriggeredThisTick = false;
         InUse.CommitTick();
         if (_pressedTicks > 0)
         {
@@ -481,6 +545,18 @@ public sealed class WorldInteractionRegistry
     /// <summary>Resolves the live stationary-gun task a HumanAI's gunner id names.</summary>
     public AiStationaryGun? FindStationaryGun(int taskId) =>
         _items.FirstOrDefault(item => item.Task.Id == taskId)?.StationaryGun;
+
+    /// <summary>Consumes authored GenericTBA explosion edges emitted during the current tick.</summary>
+    public IEnumerable<(WorldInteraction Interaction, GenericTbaExplosionParameters Parameters)> ConsumeExplosions()
+    {
+        foreach (WorldInteraction item in _items)
+        {
+            if (item.TryConsumeExplosion(out GenericTbaExplosionParameters parameters))
+            {
+                yield return (item, parameters);
+            }
+        }
+    }
 
     /// <summary>Finds the eligible task nearest the centre of the player's aim.</summary>
     public WorldInteraction? Resolve(Vector3d eye, float yaw, float pitch = 0f)
@@ -607,7 +683,8 @@ public sealed class WorldInteractionRegistry
                 declared, type, start, end, orientation, facing,
                 DurationOf(declared, type), SpriteOf(declared, type), door,
                 ReadBool(declared, "Pickable"), stationaryGun,
-                localBoundsMinimum, localBoundsMaximum, hasLocalBounds);
+                localBoundsMinimum, localBoundsMaximum, hasLocalBounds,
+                type == InteractionActivateType.Generic ? ExplosionOf(declared) : null);
             if (elevators is not null)
             {
                 // Interaction anchors, activation radii and player positions are engine units. The
@@ -881,6 +958,61 @@ public sealed class WorldInteractionRegistry
 
     private static string ReadString(DeclaredTask task, string name, string fallback) =>
         task.TryGetValue(name, out object? value) && value is string text && text.Length > 0 ? text : fallback;
+
+    private static GenericTbaExplosionParameters? ExplosionOf(DeclaredTask task)
+    {
+        string destroyedModel = ReadString(task, "Destroyed model", string.Empty);
+        float damageScale = ReadReal(task, "Damage scale", 1f);
+        float radius = ReadReal(task, "Explosion radius", 0f);
+        float falloff = ReadReal(task, "Explosion falloff radius", 0f);
+        float explosionDamageScale = ReadReal(task, "Explosion damage scale", 1f);
+        float delay = ReadReal(task, "Explosion delay", 0f);
+        int fragments = ReadInt(task, "Explosion fragments", 0);
+        int fireballs = ReadInt(task, "Explosion fireballs", 0);
+        string expression = ReadString(task, "Explosion expression", string.Empty);
+        string sound = ReadString(task, "Explosion sound", string.Empty);
+        bool explodable = ReadBool(task, "Explodable");
+
+        // A GenericTBA type is shared by non-explosive authored interactions. Retail Level 2 carries
+        // the complete blast tuple but stores the legacy Explodable flag as FALSE, so the presence of
+        // authored blast content is the authoritative discriminator rather than that flag alone.
+        bool hasExplosionContent = explodable
+            || destroyedModel.Length > 0
+            || fragments > 0
+            || fireballs > 0
+            || expression.Length > 0
+            || sound.Length > 0
+            || radius > 0f
+            || falloff > 0f
+            || delay > 0f;
+        if (!hasExplosionContent)
+        {
+            return null;
+        }
+
+        return new GenericTbaExplosionParameters(
+            hasExplosionContent,
+            destroyedModel,
+            damageScale,
+            radius,
+            falloff,
+            explosionDamageScale,
+            delay,
+            fragments,
+            fireballs,
+            expression,
+            sound);
+    }
+
+    private static int ReadInt(DeclaredTask task, string name, int fallback) =>
+        task.TryGetValue(name, out object? value) ? value switch
+        {
+            int integer => integer,
+            short small => small,
+            float real => (int)real,
+            double real => (int)real,
+            _ => fallback,
+        } : fallback;
 
     private static Dictionary<string, MefModel> ModelsByName(LoadedMission mission)
     {
