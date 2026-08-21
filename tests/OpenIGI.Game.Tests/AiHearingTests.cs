@@ -89,6 +89,7 @@ public sealed class AiHearingTests
         AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.HearGunshot(new Vector3d(2 * Metre, 0, 0), 4 * Metre));
+        Assert.False(soldier.Alerted);
         soldier.Tick(0, default, rootMotionThisTick: 0.0);
 
         Assert.True(soldier.Alerted);
@@ -100,6 +101,7 @@ public sealed class AiHearingTests
         AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
 
         Assert.True(soldier.ReceiveAlert(new Vector3d(2 * Metre, 0, 0), source: 7));
+        Assert.False(soldier.Alerted);
         soldier.Tick(0, default, rootMotionThisTick: 0.0);
 
         Assert.True(soldier.Alerted);
@@ -115,8 +117,83 @@ public sealed class AiHearingTests
 
         Assert.Equal(1, soldier.Events.PendingCount(AiEvent.TakingDamage));
         Assert.Equal(3 * Metre, soldier.LastEventDistance);
+        Assert.False(soldier.Alerted);
         soldier.Tick(0, default, rootMotionThisTick: 0.0);
         Assert.True(soldier.Alerted);
+    }
+
+    [Fact]
+    public void BulletDamagePublishesOnlyAcceptedDamageToANearbySquadmate()
+    {
+        AiSoldier struck = new(graph: null, default, facing: 0f, phase: 0, seed: 1)
+        {
+            RuntimeId = 1,
+        };
+        AiSoldier recipient = new(graph: null, new Vector3d(Metre, 0, 0), facing: 0f, phase: 0, seed: 2);
+
+        bool accepted = struck.ReceiveDamage(new Vector3d(-2 * Metre, 0, 0));
+        Assert.True(accepted);
+        Assert.True(recipient.ReceiveAlert(struck.Position, struck.RuntimeId));
+        Assert.Equal(1, recipient.Events.PendingCount(AiEvent.Alert));
+        Assert.False(recipient.Alerted);
+
+        recipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.True(recipient.Alerted);
+
+        AiSoldier rejected = new(graph: null, default, facing: 0f, phase: 0, seed: 3)
+        {
+            RuntimeId = 3,
+        };
+        rejected.Events.SetEnabled(AiEvent.TakingDamage, false);
+        AiSoldier rejectedRecipient = new(
+            graph: null,
+            new Vector3d(Metre, 0, 0),
+            facing: 0f,
+            phase: 0,
+            seed: 4);
+
+        accepted = rejected.ReceiveDamage(new Vector3d(-2 * Metre, 0, 0));
+        Assert.False(accepted);
+        Assert.Equal(0, rejectedRecipient.Events.PendingCount(AiEvent.Alert));
+        rejectedRecipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.False(rejectedRecipient.Alerted);
+    }
+
+    [Fact]
+    public void ExplosionDamagePublishesOnlyAcceptedDamageToANearbySquadmate()
+    {
+        AiSoldier struck = new(graph: null, default, facing: 0f, phase: 0, seed: 1)
+        {
+            RuntimeId = 1,
+        };
+        AiSoldier recipient = new(graph: null, new Vector3d(Metre, 0, 0), facing: 0f, phase: 0, seed: 2);
+
+        bool accepted = struck.ReceiveDamage(new Vector3d(2 * Metre, 0, 0));
+        Assert.True(accepted);
+        Assert.True(recipient.ReceiveAlert(struck.Position, struck.RuntimeId));
+        Assert.Equal(1, recipient.Events.PendingCount(AiEvent.Alert));
+        Assert.False(recipient.Alerted);
+
+        recipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.True(recipient.Alerted);
+
+        AiSoldier rejected = new(graph: null, default, facing: 0f, phase: 0, seed: 3)
+        {
+            RuntimeId = 3,
+        };
+        rejected.Events.SetEnabled(AiEvent.TakingDamage, false);
+        AiSoldier rejectedRecipient = new(
+            graph: null,
+            new Vector3d(Metre, 0, 0),
+            facing: 0f,
+            phase: 0,
+            seed: 4);
+
+        accepted = rejected.ReceiveDamage(new Vector3d(2 * Metre, 0, 0));
+        Assert.False(accepted);
+        Assert.Equal(0, rejectedRecipient.Events.PendingCount(AiEvent.Alert));
+        rejectedRecipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.False(rejectedRecipient.Alerted);
     }
 
     [Fact]
