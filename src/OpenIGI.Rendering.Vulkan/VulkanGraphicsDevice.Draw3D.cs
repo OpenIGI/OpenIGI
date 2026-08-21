@@ -504,6 +504,20 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        // The cut-out surfaces stay out of the traceable world too. Glass, wire fences and foliage carry
+        // an alpha channel the raster shadow path tests per texel -- the sun reaches the floor through a
+        // clear pane and between the wires. The trace has no such per-texel test: every triangle it holds
+        // is a solid occluder. So a glass pane built into the structure blocks the sun ray from every
+        // floor point that sees the sky through a window, and the traced mask comes back shadowed over the
+        // whole sunlit pattern the cascade correctly leaves lit. The same flag that keeps these surfaces
+        // out of the ambient occlusion -- a depth buffer cannot describe a thin cut-out either -- keeps
+        // them out of the trace, which is the honest reading of it until an any-hit shader can sample the
+        // alpha at the hit.
+        if (!_material.CastsOcclusion)
+        {
+            return;
+        }
+
         Matrix3f m = _viewToWorld;
         float tx = (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34);
         float ty = (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34);
