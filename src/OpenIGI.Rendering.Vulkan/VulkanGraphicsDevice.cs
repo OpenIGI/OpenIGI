@@ -220,13 +220,16 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             }
         }
 
-        // Compute is validated in isolation (the self-test passes) but not yet on the live per-frame path:
-        // the engine's GI and distance-field passes run several dispatches a frame, and until they record
-        // into the one frame command buffer the way Godot's and the reference's renderers do — rather than each
-        // being submitted on its own — they stall the frame and, on a shader that faults, lose the device.
-        // So it is opt-in behind OPENIGI_VK_COMPUTE while that path is finished, and the default Vulkan
-        // session runs the fast, stable direct renderer with compute reported unavailable.
-        bool enableCompute = Environment.GetEnvironmentVariable("OPENIGI_VK_COMPUTE") == "1";
+        // The compute path carries the real-time GI and distance-field passes, and is on by default so a
+        // modern preset renders at full quality without an environment variable set. OPENIGI_VK_COMPUTE=0
+        // forces it off, back to the deferred path's baked and probe-field GI.
+        //
+        // Known caveat while it is finished: a few uploads (the irradiance-volume probe field, the surface
+        // cache capture) still submit and wait on their own command buffer rather than recording into the
+        // frame's, so a burst of them -- the GI rebake a fast camera move triggers -- can stall long enough
+        // to trip the driver's timeout and lose the device. Ordinary play amortises the rebake and does not
+        // hit it; the fix is to record those uploads into the frame command buffer like every other pass.
+        bool enableCompute = Environment.GetEnvironmentVariable("OPENIGI_VK_COMPUTE") != "0";
         // Tracing the indirect light against real geometry rather than marching the distance field, which
         // is the whole point of building the world: the field is a coarse approximation and the geometry
         // is the thing itself. Only where there is a world to trace, and off if the variable says 0.

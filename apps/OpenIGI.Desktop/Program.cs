@@ -131,9 +131,13 @@ using (window)
         Environment.GetEnvironmentVariable("OPENIGI_VK_VALIDATION"),
         "1",
         StringComparison.Ordinal);
-    bool vulkanDeferred = string.Equals(
+    // The deferred, HDR renderer -- the G-buffer, cascaded shadows and the GI passes -- is the modern
+    // path; the direct renderer is the vanilla fallback. It is on by default and chosen per preset by the
+    // r_hdr/r_deferred cvars (BeginSceneCapture declines it where a preset does not ask for it), so vanilla
+    // still draws direct. OPENIGI_VK_DEFERRED=0 forces the direct path for debugging.
+    bool vulkanDeferred = !string.Equals(
         Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
-        "1",
+        "0",
         StringComparison.Ordinal);
     using IGraphicsDevice device = window.IsVulkan
         ? new VulkanGraphicsDevice(
