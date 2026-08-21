@@ -68,11 +68,12 @@ public sealed class RetailSightOcclusionTests
             && placement.Instance.Name == "500_01_1");
         ObjectCollisionIndex index = ObjectCollisionIndex.Build(scene.Placements);
         ObjectCollisionIndex doorOnly = ObjectCollisionIndex.Build([door]);
-        (Vector3d centre, double radius) = doorOnly.Bounds(0);
+        (Vector3d centre, _) = doorOnly.Bounds(0);
 
         // Through the door slab, along its thin axis (local X for 500_01_1).
-        Vector3d from = new(centre.X - radius - U, centre.Y, centre.Z);
-        Vector3d to = new(centre.X + radius + U, centre.Y, centre.Z);
+        double rayHalfLength = 0.5 * U;
+        Vector3d from = new(centre.X - rayHalfLength, centre.Y, centre.Z);
+        Vector3d to = new(centre.X + rayHalfLength, centre.Y, centre.Z);
         Assert.True(
             index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out _),
             "closed door slab should block sight");
