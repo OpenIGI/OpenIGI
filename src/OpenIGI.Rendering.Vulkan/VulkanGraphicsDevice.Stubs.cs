@@ -39,10 +39,21 @@ public sealed partial class VulkanGraphicsDevice
     // ---- Pipeline state the direct path still sets -------------------------------------------------
 
     /// <inheritdoc/>
-    public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha) => ThrowIfDisposed();
+    public void SetDetailFade(float scale, float offset, float slope, bool fadeAlpha)
+    {
+        ThrowIfDisposed();
+
+        // The fourth component is what the vertex stage reads as "this draw is terrain", and whether it is
+        // a detail layer that has to fade out with distance rather than a base one that does not.
+        _detailFade = (scale, offset, slope, fadeAlpha ? 2f : 1f);
+    }
 
     /// <inheritdoc/>
-    public void ClearDetailFade() => ThrowIfDisposed();
+    public void ClearDetailFade()
+    {
+        ThrowIfDisposed();
+        _detailFade = default;
+    }
 
     /// <inheritdoc/>
     public void SetAlphaHash(float seed) => ThrowIfDisposed();

@@ -22,6 +22,10 @@ public sealed partial class VulkanGraphicsDevice
     private readonly Dictionary<VulkanMesh, uint> _meshIds = [];
     private uint _nextMeshId = 1;
     private Matrix4f _projection = Matrix4f.Identity;
+
+    // The terrain's level-of-detail fade: scale, offset, slope, and which kind of terrain page this is.
+    // All zero for everything that is not terrain, which is how the vertex stage tells them apart.
+    private (float Scale, float Offset, float Slope, float Mode) _detailFade;
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
 
@@ -261,6 +265,35 @@ public sealed partial class VulkanGraphicsDevice
         return true;
     }
 
+    /// <summary>Whether a rotation is the identity, within what single precision leaves of one.</summary>
+    private static bool IsIdentity(in Matrix3f m)
+    {
+        const float slack = 1e-4f;
+        return MathF.Abs(m.M11 - 1f) < slack && MathF.Abs(m.M22 - 1f) < slack && MathF.Abs(m.M33 - 1f) < slack
+            && MathF.Abs(m.M12) < slack && MathF.Abs(m.M13) < slack
+            && MathF.Abs(m.M21) < slack && MathF.Abs(m.M23) < slack
+            && MathF.Abs(m.M31) < slack && MathF.Abs(m.M32) < slack;
+    }
+
+    /// <summary>Where a terrain page's origin sits relative to the camera, in world axes.</summary>
+    /// <param name="modelView">The page's object-to-view transform.</param>
+    /// <param name="offset">The page origin minus the camera position.</param>
+    /// <returns><see langword="true"/> when the offset could be worked out.</returns>
+    /// <remarks>
+    /// The model-view carries the camera subtraction already, folded in while it was still in double
+    /// precision. Undoing its rotation recovers the offset in world axes, which is the frame the page's
+    /// own vertices are in.
+    /// </remarks>
+    private bool TerrainCameraOffset(in Matrix4f modelView, out Vector3f offset)
+    {
+        Matrix3f m = _viewToWorld;
+        offset = new Vector3f(
+            (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34),
+            (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34),
+            (m.M31 * modelView.M14) + (m.M32 * modelView.M24) + (m.M33 * modelView.M34));
+        return true;
+    }
+
     private unsafe void BindShadow(VulkanMesh mesh, in Matrix4f modelView, TextureHandle diffuse)
     {
         Vk vk = _instance.Vk;
@@ -315,9 +348,32 @@ public sealed partial class VulkanGraphicsDevice
 
         float* data = stackalloc float[32];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
-        data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
-        data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32; data[23] = 0f;
-        data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = 0f;
+
+        // Terrain slides each vertex along the offset in its normal channel as the ground changes level of
+        // detail, and the distance that slide is measured against is the vertex's own, so it has to happen
+        // per vertex. That needs three numbers for the ramp and three for where the page sits relative to
+        // the camera, and the push block is full.
+        //
+        // It has room all the same, because a terrain page is drawn with no rotation of its own: its
+        // normal matrix is the view rotation undone by its own inverse, which is the identity, and nine
+        // floats of identity carry nothing. So a terrain draw puts the ramp and the offset there instead,
+        // and the fourth component of the first row — zero for everything else — is what says it has. The
+        // identity is checked rather than assumed; a page that ever came in rotated keeps its matrix and
+        // simply does not morph.
+        if (_detailFade.Mode > 0f && IsIdentity(normalMatrix) && TerrainCameraOffset(modelView, out Vector3f offset))
+        {
+            data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
+            data[19] = _detailFade.Mode;
+            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z; data[23] = 0f;
+            data[24] = 0f; data[25] = 0f; data[26] = 0f; data[27] = 0f;
+        }
+        else
+        {
+            data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
+            data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32; data[23] = 0f;
+            data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = 0f;
+        }
+
         data[28] = _material.Roughness;
         data[29] = _material.Metallic;
         data[30] = _material.Emissive;

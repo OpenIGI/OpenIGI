@@ -828,8 +828,6 @@ public sealed class TerrainRenderer : IDisposable
 
         private readonly List<Vertex3D> _vertices = [];
 
-        // Reused across appends so streaming terrain does not leave a trail of one-chunk arrays.
-        private Vector3f[] _chunkNormals = new Vector3f[256];
         private readonly List<ushort> _indices = [];
         private readonly List<VisibleDraw> _visible = [];
         private readonly List<MeshDrawRange> _visibleRanges = [];
@@ -907,87 +905,6 @@ public sealed class TerrainRenderer : IDisposable
 
         public bool CanFit(int vertices) => _vertices.Count + vertices <= MaximumBatchVertices;
 
-        /// <summary>Scratch space for one chunk's accumulated normals, grown once and reused.</summary>
-        private Span<Vector3f> ChunkNormals(int count)
-        {
-            if (_chunkNormals.Length < count)
-            {
-                _chunkNormals = new Vector3f[Math.Max(count, _chunkNormals.Length * 2)];
-            }
-
-            Span<Vector3f> normals = _chunkNormals.AsSpan(0, count);
-            normals.Clear();
-            return normals;
-        }
-
-        /// <summary>Works out a smooth normal for every vertex of a chunk from the triangles that meet there.</summary>
-        /// <param name="vertices">The chunk's vertices.</param>
-        /// <param name="indices">Its triangles, addressing <paramref name="sourceVertex"/>-relative slots.</param>
-        /// <param name="sourceVertex">The slot the chunk's indices are relative to.</param>
-        /// <param name="normals">Filled with one unnormalised normal per vertex.</param>
-        /// <remarks>
-        /// <para>
-        /// The terrain has no shading normal of its own — the channel a mesh would keep one in carries the
-        /// offset each vertex slides along as the ground morphs between levels of detail. Lighting the
-        /// ground with that offset is what made distant terrain read as a chequerboard of lit and unlit
-        /// patches: a morph target swings smoothly from pointing up to pointing sideways across a chunk,
-        /// and a surface lit by <c>max(dot(n, sun), 0)</c> turns that smooth swing into a hard edge.
-        /// </para>
-        /// <para>
-        /// So the normal is taken from the surface itself, once, here — the sum of the facing of every
-        /// triangle meeting a vertex, weighted by area because the cross product's length is twice the
-        /// triangle's. That is a smooth per-vertex normal rather than the flat per-triangle one a pixel
-        /// shader's derivatives would give, and a flat one over triangles this size would keep the patches.
-        /// </para>
-        /// <para>
-        /// The ground is a heightfield, so every normal is turned to face upwards. That costs nothing where
-        /// the winding was already consistent and saves the case where it was not, which for this port's
-        /// geometry is not a hypothetical.
-        /// </para>
-        /// </remarks>
-        private static void AccumulateNormals(
-            ReadOnlySpan<Vertex3D> vertices,
-            ReadOnlySpan<ushort> indices,
-            int sourceVertex,
-            Span<Vector3f> normals)
-        {
-            for (int i = 0; i + 2 < indices.Length; i += 3)
-            {
-                int a = indices[i] - sourceVertex;
-                int b = indices[i + 1] - sourceVertex;
-                int c = indices[i + 2] - sourceVertex;
-
-                if ((uint)a >= (uint)vertices.Length
-                    || (uint)b >= (uint)vertices.Length
-                    || (uint)c >= (uint)vertices.Length)
-                {
-                    continue;
-                }
-
-                Vector3f pa = vertices[a].Position;
-                Vector3f pb = vertices[b].Position;
-                Vector3f pc = vertices[c].Position;
-
-                float ux = pb.X - pa.X, uy = pb.Y - pa.Y, uz = pb.Z - pa.Z;
-                float vx = pc.X - pa.X, vy = pc.Y - pa.Y, vz = pc.Z - pa.Z;
-
-                float nx = (uy * vz) - (uz * vy);
-                float ny = (uz * vx) - (ux * vz);
-                float nz = (ux * vy) - (uy * vx);
-
-                if (nz < 0f)
-                {
-                    nx = -nx;
-                    ny = -ny;
-                    nz = -nz;
-                }
-
-                normals[a] = new Vector3f(normals[a].X + nx, normals[a].Y + ny, normals[a].Z + nz);
-                normals[b] = new Vector3f(normals[b].X + nx, normals[b].Y + ny, normals[b].Z + nz);
-                normals[c] = new Vector3f(normals[c].X + nx, normals[c].Y + ny, normals[c].Z + nz);
-            }
-        }
-
         public MeshDrawRange Append(
             ReadOnlySpan<Vertex3D> vertices,
             ReadOnlySpan<ushort> indices,
@@ -1002,12 +919,8 @@ public sealed class TerrainRenderer : IDisposable
             _vertices.EnsureCapacity(vertexBase + vertices.Length);
             _indices.EnsureCapacity(indexBase + indices.Length);
 
-            Span<Vector3f> surfaceNormals = ChunkNormals(vertices.Length);
-            AccumulateNormals(vertices, indices, sourceVertex, surfaceNormals);
-
-            for (int v = 0; v < vertices.Length; v++)
+            foreach (Vertex3D vertex in vertices)
             {
-                Vertex3D vertex = vertices[v];
                 Vector3f position = new(
                     vertex.Position.X + translation.X,
                     vertex.Position.Y + translation.Y,
@@ -1026,7 +939,7 @@ public sealed class TerrainRenderer : IDisposable
                     vertex.LightmapU,
                     vertex.LightmapV,
                     vertex.Colour,
-                    Vertex3D.PackSurfaceNormal(surfaceNormals[v])));
+                    vertex.SurfaceNormal));
             }
 
             foreach (ushort index in indices)
