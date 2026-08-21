@@ -11,4 +11,7 @@ internal enum ComputeResourceKind
 
     /// <summary>A sampled texture, bound with <c>SetTexture</c> or <c>SetVolumeTexture</c>.</summary>
     SampledImage,
+
+    /// <summary>The world's acceleration structure, for a pass that traces rays against it.</summary>
+    Scene,
 }

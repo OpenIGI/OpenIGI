@@ -52,6 +52,9 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     // an adapter that cannot trace, which is the one question every pass that wants a ray asks first.
     private readonly RayTracing.VulkanWorldScene? _worldScene;
 
+    // Something legal for a tracing shader to bind before the world's own structure exists.
+    private readonly RayTracing.VulkanPlaceholderScene? _placeholderScene;
+
     // Carries recorded work to the queues and retires it once the GPU is done. Threading is opt-in while
     // the frame path still submits and presents in lock step; the machinery is the same either way, so
     // turning it on is a change of one environment variable rather than of the code that uses it.
@@ -185,6 +188,14 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
                 _worldScene = new RayTracing.VulkanWorldScene(_instance.Vk, _rayTracing, _device, _allocator);
             }
 
+            // Built whenever the adapter can trace, world scene or not: a shader that names a structure
+            // needs one written into its descriptor from its very first dispatch.
+            if (_device.Capabilities.RayQuery)
+            {
+                _placeholderScene = new RayTracing.VulkanPlaceholderScene(
+                    _instance.Vk, _rayTracing, _device, _allocator, _commands, _device.GraphicsQueue);
+            }
+
             // Opt-in, like the other Vulkan paths. The test builds and traces a scene of its own, which is
             // a few milliseconds and a little memory at start-up — worth paying deliberately when bringing
             // the hardware path up or diagnosing it, and not worth paying on every launch.
@@ -201,7 +212,15 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // So it is opt-in behind OPENIGI_VK_COMPUTE while that path is finished, and the default Vulkan
         // session runs the fast, stable direct renderer with compute reported unavailable.
         bool enableCompute = Environment.GetEnvironmentVariable("OPENIGI_VK_COMPUTE") == "1";
-        Capabilities = BuildCapabilities(selection, enableDeferred, enableCompute);
+        // Tracing the indirect light against real geometry rather than marching the distance field. Opt
+        // in, and only where there is a world to trace: the structure is rebuilt as the level streams in
+        // and something in that overlap still loses the device intermittently, so this is not yet the
+        // path an ordinary session takes.
+        bool rayTracedGi = _placeholderScene is not null
+            && _worldScene is not null
+            && Environment.GetEnvironmentVariable("OPENIGI_VK_RT_GI") == "1";
+
+        Capabilities = BuildCapabilities(selection, enableDeferred, enableCompute, rayTracedGi);
         _viewport = new Viewport(0, 0, width, height);
         _projectionWidth = width;
         _projectionHeight = height;
@@ -445,6 +464,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         _textures.Clear();
         // Before the compute registry, which owns the atlas images the render pass names.
+        _placeholderScene?.Dispose();
         DisposeSceneTextures();
         DisposeCardAtlas();
         DisposeComputeResources();
@@ -468,7 +488,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _instance.Dispose();
     }
 
-    private static GraphicsCapabilities BuildCapabilities(PhysicalDeviceSelection selection, bool deferred, bool compute)
+    private static GraphicsCapabilities BuildCapabilities(
+        PhysicalDeviceSelection selection,
+        bool deferred,
+        bool compute,
+        bool rayQuery)
     {
         int maxTexture = (int)selection.Properties.Limits.MaxImageDimension2D;
         return new GraphicsCapabilities(
@@ -483,6 +507,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             SupportsSceneCapture = deferred,
             SupportsFloatRenderTargets = true,
             SupportsCompute = compute,
+
+            // Only where there is something to trace against as well as the means to trace: a placeholder
+            // scene stands in until the world's own is built, so the answer does not change mid-level.
+            SupportsRayQuery = compute && rayQuery,
             MaxSampleCount = 1,
         };
     }

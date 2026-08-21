@@ -94,7 +94,9 @@ internal static partial class ComputeShaderAnalysis
                 ? ComputeResourceKind.StorageBuffer
                 : match.Groups["image"].Success
                     ? ComputeResourceKind.StorageImage
-                    : ComputeResourceKind.SampledImage;
+                    : match.Groups["scene"].Success
+                        ? ComputeResourceKind.Scene
+                        : ComputeResourceKind.SampledImage;
 
             // Two resources of the same kind at one number is a genuine fault, not a namespace overlap.
             if (!perKind.Add((kind, slot)))
@@ -142,7 +144,31 @@ internal static partial class ComputeShaderAnalysis
             body = InsertUniformBlock(body, blockBinding, uniforms);
         }
 
+        if (resources.Any(r => r.Kind == ComputeResourceKind.Scene))
+        {
+            body = EnableRayQuery(body);
+        }
+
         return new Analysis(body, resources, uniforms, blockBinding, blockSize);
+    }
+
+    /// <summary>Raises a shader to the language ray query is defined against, and asks for it.</summary>
+    /// <param name="source">The rewritten source.</param>
+    /// <returns>The source with a version and an extension a ray query compiles under.</returns>
+    /// <remarks>
+    /// These shaders are authored for GL 4.3, and ray query does not exist there. A 4.50 shader is not told
+    /// the version is too low either — it is told <c>rayQueryEXT</c> is an undeclared identifier, which
+    /// reads like the stage does not support it and sends you looking in the wrong place entirely. So the
+    /// version is raised where a trace is present and left alone everywhere else.
+    /// </remarks>
+    private static string EnableRayQuery(string source)
+    {
+        Match version = VersionRegex().Match(source);
+        const string raised = "#version 460\n#extension GL_EXT_ray_query : require\n";
+
+        return version.Success
+            ? source[..version.Index] + raised + source[(version.Index + version.Length)..]
+            : raised + source;
     }
 
     private static string ApplyRewrites(string source, List<(int Index, int Length, string Text)> rewrites)
@@ -290,10 +316,17 @@ internal static partial class ComputeShaderAnalysis
     [GeneratedRegex(
         @"layout\s*\(\s*(?<layout>[^)]*)\)\s*(?:readonly|writeonly|restrict|coherent|volatile|\s)*"
         + @"(?:(?<ssbo>buffer)|uniform\s+(?:readonly|writeonly|restrict|coherent|volatile|\s)*"
-        + @"(?:(?<image>[iu]?image[23]D(?:Array)?)|(?<sampler>[iu]?sampler[23]D(?:Array|Shadow)?)))"
+        + @"(?:(?<image>[iu]?image[23]D(?:Array)?)|(?<sampler>[iu]?sampler[23]D(?:Array|Shadow)?)"
+        + @"|(?<scene>accelerationStructureEXT)))"
         + @"\s+(?<res>[A-Za-z_][A-Za-z0-9_]*)",
         RegexOptions.Compiled)]
     private static partial Regex ResourceRegex();
+
+    [GeneratedRegex(@"^[ 	]*#version[^
+]*
+?
+", RegexOptions.Compiled | RegexOptions.Multiline)]
+    private static partial Regex VersionRegex();
 
     [GeneratedRegex(@"binding\s*=\s*(\d+)", RegexOptions.Compiled)]
     private static partial Regex BindingRegex();

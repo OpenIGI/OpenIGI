@@ -452,6 +452,9 @@ public sealed partial class VulkanGraphicsDevice
         WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[count];
         DescriptorBufferInfo* buffers = stackalloc DescriptorBufferInfo[count];
         DescriptorImageInfo* images = stackalloc DescriptorImageInfo[count];
+        AccelerationStructureKHR* structures = stackalloc AccelerationStructureKHR[count];
+        WriteDescriptorSetAccelerationStructureKHR* sceneInfos =
+            stackalloc WriteDescriptorSetAccelerationStructureKHR[count];
         int index = 0;
 
         if (program.UniformBinding >= 0)
@@ -499,6 +502,31 @@ public sealed partial class VulkanGraphicsDevice
 
                     images[index] = new DescriptorImageInfo { ImageView = bound.View, ImageLayout = ImageLayout.General };
                     writes[index] = ImageWrite(instance.Set, resource.Binding, DescriptorType.StorageImage, &images[index]);
+                    break;
+
+                case ComputeResourceKind.Scene:
+                    if (TraceableScene() is not { } structure)
+                    {
+                        throw new GraphicsDeviceException(
+                            $"Compute shader '{program.Name}' traces rays, but this device has no scene to trace.");
+                    }
+
+                    structures[index] = structure.Handle;
+                    sceneInfos[index] = new WriteDescriptorSetAccelerationStructureKHR
+                    {
+                        SType = StructureType.WriteDescriptorSetAccelerationStructureKhr,
+                        AccelerationStructureCount = 1,
+                        PAccelerationStructures = &structures[index],
+                    };
+                    writes[index] = new WriteDescriptorSet
+                    {
+                        SType = StructureType.WriteDescriptorSet,
+                        PNext = &sceneInfos[index],
+                        DstSet = instance.Set,
+                        DstBinding = resource.Binding,
+                        DescriptorType = DescriptorType.AccelerationStructureKhr,
+                        DescriptorCount = 1,
+                    };
                     break;
 
                 default:

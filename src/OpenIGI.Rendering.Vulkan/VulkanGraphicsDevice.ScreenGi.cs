@@ -152,6 +152,24 @@ public sealed partial class VulkanGraphicsDevice
         return true;
     }
 
+    /// <summary>The structure a tracing compute shader binds: the world's, or an empty stand-in.</summary>
+    /// <returns>The structure, or null when this adapter cannot trace at all.</returns>
+    /// <remarks>
+    /// The world's own is not built until the level has been drawn once and its geometry gathered, and a
+    /// descriptor cannot be left unwritten in the meantime. So the frames before it exists trace against a
+    /// scene with one triangle placed far outside any level, where every ray misses — which is the answer
+    /// an empty world would give anyway.
+    /// </remarks>
+    private RayTracing.VulkanAccelerationStructure? TraceableScene()
+    {
+        if (_worldScene is { IsReady: true, TopLevel: { } world })
+        {
+            return world;
+        }
+
+        return _placeholderScene?.TopLevel;
+    }
+
     private unsafe void DisposeSceneTextures()
     {
         if (_sceneSampler.Handle != 0)

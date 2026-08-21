@@ -263,12 +263,13 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     private void GrowPool()
     {
         const uint setsPerPool = 64;
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[5];
         int used = 0;
         used += AddSize(sizes, used, DescriptorType.UniformBuffer, UniformBinding >= 0 ? (int)setsPerPool : 0);
         used += AddSize(sizes, used, DescriptorType.StorageBuffer, CountKind(ComputeResourceKind.StorageBuffer) * (int)setsPerPool);
         used += AddSize(sizes, used, DescriptorType.StorageImage, CountKind(ComputeResourceKind.StorageImage) * (int)setsPerPool);
         used += AddSize(sizes, used, DescriptorType.CombinedImageSampler, CountKind(ComputeResourceKind.SampledImage) * (int)setsPerPool);
+        used += AddSize(sizes, used, DescriptorType.AccelerationStructureKhr, CountKind(ComputeResourceKind.Scene) * (int)setsPerPool);
         if (used == 0)
         {
             sizes[used++] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = setsPerPool };
@@ -383,6 +384,7 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
     {
         ComputeResourceKind.StorageBuffer => DescriptorType.StorageBuffer,
         ComputeResourceKind.StorageImage => DescriptorType.StorageImage,
+        ComputeResourceKind.Scene => DescriptorType.AccelerationStructureKhr,
         _ => DescriptorType.CombinedImageSampler,
     };
 
