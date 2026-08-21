@@ -492,6 +492,18 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        // The sky stays out of it. The dome is drawn as geometry like everything else, but it is light
+        // rather than a lit surface -- which is what this flag says, and what the G-buffer turns into an
+        // unlit shading model a few lines further on. Built into the structure it becomes a closed shell
+        // around the level, and every ray fired at the sun from anywhere inside it hits: the traced mask
+        // came back shadowed for every sun-facing pixel in the frame, indoors and out, which reads as a
+        // level with no sunlight at all rather than as a bug in the sky. The reference keeps its sky out
+        // of the ray-tracing scene for the same reason.
+        if (_material.Emissive > 0.5f)
+        {
+            return;
+        }
+
         Matrix3f m = _viewToWorld;
         float tx = (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34);
         float ty = (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34);
