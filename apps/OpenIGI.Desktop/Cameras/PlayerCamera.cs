@@ -1919,7 +1919,10 @@ public sealed class PlayerCamera
         {
             foreach (M203Projectile shot in _weapons.M203Shots)
             {
-                _m203.Spawn(shot);
+                if (!_m203.Spawn(shot))
+                {
+                    _weapons.RefundRejectedSimulationShot();
+                }
             }
 
             return;
@@ -2028,13 +2031,16 @@ public sealed class PlayerCamera
                         shot.Direction.Y * shot.RangeInUnits,
                         shot.Direction.Z * shot.RangeInUnits);
 
-                _missiles.Spawn(
+                if (!_missiles.Spawn(
                     shot.Origin,
                     target,
                     missileType,
                     MissileFlight.LaunchSpeedMetresPerSecond(missileWeapon),
                     shot.Direction,
-                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text);
+                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text))
+                {
+                    _weapons.RefundRejectedSimulationShot();
+                }
             }
 
             return;

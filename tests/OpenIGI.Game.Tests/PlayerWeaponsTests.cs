@@ -1430,6 +1430,25 @@ public sealed class PlayerWeaponsTests
         Assert.Empty(weapons.Shots);
     }
 
+    [Fact]
+    public void RejectedM203SimulationShotRefundsItsConsumedRoundThroughTheWeaponContract()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(M203Ammo.AmmoId, 1);
+        weapons.SetM203Ammunition(M203Ammo);
+        Equip(weapons);
+
+        Tick(weapons, new PlayerInputState(), Frame(PlayerInputSlot.AlternateFire));
+
+        Assert.Equal(0, weapons.Ammunition.Count(M203Ammo.AmmoId));
+        Assert.True(weapons.RefundRejectedSimulationShot());
+        Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
+        Assert.False(weapons.RefundRejectedSimulationShot());
+        Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
+    }
+
     /// <summary>The throw charges while fire is held and releases the round when it is let go.</summary>
     /// <remarks>The 0x40F590/0x40F640 charge-and-release, with <c>Human+1248</c> as the charge.</remarks>
     [Fact]

@@ -84,6 +84,10 @@ public sealed class MissileSimulation
     /// <summary>Gets the maximum number of live launcher missiles.</summary>
     public const int MaximumLive = 16;
 
+    /// <summary>The safety lifetime for a missile that never reaches a traced surface, in 30 Hz ticks.</summary>
+    /// <remarks>Thirty seconds prevents an escaped missile from permanently exhausting the launcher pool.</remarks>
+    public const int MaximumLifetimeTicks = 30 * 30;
+
     /// <summary>Gravity per tick², in world units — the ragdoll's own 9.8 m/s², for falling bombs.</summary>
     private const float GravityPerTick = 44.600887f;
 
@@ -176,6 +180,10 @@ public sealed class MissileSimulation
             }
 
             missile.Position = candidate;
+            if (missile.Age >= MaximumLifetimeTicks)
+            {
+                _missiles.RemoveAt(i);
+            }
         }
     }
 

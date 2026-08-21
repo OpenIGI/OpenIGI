@@ -566,6 +566,60 @@ public sealed class PlayerWeapons
         Request(WeaponAction.None);
     }
 
+    /// <summary>Refunds a projectile whose simulation could not accept the round.</summary>
+    /// <returns><see langword="true"/> when one fired round was returned to its source.</returns>
+    /// <remarks>
+    /// The launcher simulation has a finite live-object pool. A rejected spawn is not an impact and
+    /// must not consume ammunition or leave the presentation layer reporting a shot that never entered
+    /// the world. This is called immediately after <see cref="ResolveFire"/> for a rejected launcher
+    /// or M203 round, before the next weapon tick clears the scratch projectile list.
+    /// </remarks>
+    public bool RefundRejectedSimulationShot()
+    {
+        if (_m203Shots.Count > 0)
+        {
+            if (_m203Ammunition is null)
+            {
+                return false;
+            }
+
+            Ammunition.Add(_m203Ammunition.AmmoId, _m203Shots.Count);
+            _m203Shots.Clear();
+            _firedThisTick = false;
+            if (_shotSequence > 0)
+            {
+                _shotSequence--;
+            }
+
+            return true;
+        }
+
+        if (_shots.Count == 0
+            || InHand is not { } held
+            || !held.Gun.ConsumesAmmunition
+            || held.Gun.State.RoundsInClip < 0)
+        {
+            return false;
+        }
+
+        int bulletsPerRound = Math.Max(1, held.Weapon.BulletsPerRound);
+        int rounds = _shots.Count / bulletsPerRound;
+        if (rounds <= 0)
+        {
+            return false;
+        }
+
+        held.Gun.State.RoundsInClip += rounds;
+        _shots.Clear();
+        _firedThisTick = false;
+        if (_shotSequence > 0)
+        {
+            _shotSequence--;
+        }
+
+        return true;
+    }
+
     /// <summary>
     /// Turns this tick's raised byte into a message to the gun — the original's <c>0x462E50</c>.
     /// </summary>

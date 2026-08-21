@@ -189,4 +189,37 @@ public sealed class MissileSimulationTests
         Assert.Equal(z0, missile.Position.Z, 0.01);
         Assert.Equal(0f, missile.Velocity.Z, 0.01);
     }
+
+    [Fact]
+    public void MissedMissilesExpireAndFreeALauncherLiveSlot()
+    {
+        MissileSimulation simulation = new();
+        for (int i = 0; i < MissileSimulation.MaximumLive; i++)
+        {
+            Assert.True(simulation.Spawn(
+                Vector3d.Zero,
+                new Vector3d(409600, 0, 0),
+                MissileType.MissileDirect,
+                muzzleVelocityMetresPerSecond: 5f));
+        }
+
+        Assert.False(simulation.Spawn(
+            Vector3d.Zero,
+            new Vector3d(409600, 0, 0),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 5f));
+
+        for (int tick = 0; tick < MissileSimulation.MaximumLifetimeTicks; tick++)
+        {
+            simulation.Tick(walls: null, humans: null);
+        }
+
+        Assert.Empty(simulation.Missiles);
+        Assert.True(simulation.Spawn(
+            Vector3d.Zero,
+            new Vector3d(409600, 0, 0),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 5f));
+    }
+
 }
