@@ -47,6 +47,10 @@ public sealed partial class VulkanGraphicsDevice
     private int _shadowCascadeCount;
     private readonly Matrix4f[] _cascadeMatrices = new Matrix4f[ShadowSettings.MaxCascades];
     private readonly float[] _cascadeSplits = new float[ShadowSettings.MaxCascades];
+
+    // Each cascade's world-to-light rotation. The shadow pass draws through a camera that sits where the
+    // eye does but looks along the light, so undoing this is what recovers a page's offset from the eye.
+    private readonly Matrix3f[] _cascadeLightRotations = new Matrix3f[ShadowSettings.MaxCascades];
     private ShadowSettings _shadowSettings = ShadowSettings.Off;
     private bool _inShadowPass;
     private int _shadowCascade;
@@ -499,6 +503,7 @@ public sealed partial class VulkanGraphicsDevice
         {
             _cascadeSplits[i] = cascades[i].SplitDistance;
             _cascadeMatrices[i] = ComposeCascade(cascades[i]);
+            _cascadeLightRotations[i] = cascades[i].LightRotation;
         }
 
         if (_shadowCascadeCount > 0 && _deferredEnabled)

@@ -80,7 +80,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         {
             StageFlags = ShaderStageFlags.VertexBit,
             Offset = 0,
-            Size = sizeof(float) * 16,
+            Size = sizeof(float) * 24,
         };
 
         PipelineLayoutCreateInfo createInfo = new()
@@ -126,7 +126,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 Stride = (uint)Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[3];
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[5];
             attributes[0] = new VertexInputAttributeDescription
             {
                 Location = 0,
@@ -148,12 +148,28 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 Format = Format.R8G8B8A8Unorm,
                 Offset = (uint)Vertex3D.ColourOffset,
             };
+
+            // The terrain's morph offset, and the texture offset that travels with it.
+            attributes[3] = new VertexInputAttributeDescription
+            {
+                Location = 1,
+                Binding = 0,
+                Format = Format.R32G32B32Sfloat,
+                Offset = 12,
+            };
+            attributes[4] = new VertexInputAttributeDescription
+            {
+                Location = 3,
+                Binding = 0,
+                Format = Format.R32G32Sfloat,
+                Offset = 32,
+            };
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
                 VertexBindingDescriptionCount = 1,
                 PVertexBindingDescriptions = &binding,
-                VertexAttributeDescriptionCount = 3,
+                VertexAttributeDescriptionCount = 5,
                 PVertexAttributeDescriptions = attributes,
             };
 

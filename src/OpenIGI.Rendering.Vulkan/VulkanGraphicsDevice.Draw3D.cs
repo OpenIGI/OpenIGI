@@ -277,6 +277,7 @@ public sealed partial class VulkanGraphicsDevice
 
     /// <summary>Where a terrain page's origin sits relative to the camera, in world axes.</summary>
     /// <param name="modelView">The page's object-to-view transform.</param>
+    /// <param name="viewToWorld">The rotation that undoes that view's, whichever view it is.</param>
     /// <param name="offset">The page origin minus the camera position.</param>
     /// <returns><see langword="true"/> when the offset could be worked out.</returns>
     /// <remarks>
@@ -284,9 +285,9 @@ public sealed partial class VulkanGraphicsDevice
     /// precision. Undoing its rotation recovers the offset in world axes, which is the frame the page's
     /// own vertices are in.
     /// </remarks>
-    private bool TerrainCameraOffset(in Matrix4f modelView, out Vector3f offset)
+    private static bool TerrainCameraOffset(in Matrix4f modelView, in Matrix3f viewToWorld, out Vector3f offset)
     {
-        Matrix3f m = _viewToWorld;
+        Matrix3f m = viewToWorld;
         offset = new Vector3f(
             (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34),
             (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34),
@@ -309,9 +310,32 @@ public sealed partial class VulkanGraphicsDevice
         // The cascade's model-view-projection: the frame's projection is the cascade's orthographic one and
         // the model-view is the light-camera view, both set by the shadow pass before it draws.
         Matrix4f mvp = _projection * modelView;
-        float* data = stackalloc float[16];
+        float* data = stackalloc float[24];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
-        vk.CmdPushConstants(cmd, _deferred.ShadowPipeline.PipelineLayout, ShaderStageFlags.VertexBit, 0, sizeof(float) * 16, data);
+
+        // Terrain slides between levels of detail, and it has to cast from where it ended up rather than
+        // where it started, or the ground shadows itself along a shape it no longer has. The slide is
+        // measured from the eye, not from the light — it has to be the same slide the frame drew — and
+        // this pass looks along the light from where the eye stands, so the light's rotation is what
+        // undoes its own view.
+        Matrix3f lightToWorld = _cascadeLightRotations[Math.Clamp(_shadowCascade, 0, ShadowSettings.MaxCascades - 1)]
+            .Transposed();
+
+        if (_detailFade.Mode > 0f && TerrainCameraOffset(modelView, lightToWorld, out Vector3f offset))
+        {
+            data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
+            data[19] = _detailFade.Mode;
+            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z; data[23] = 0f;
+        }
+        else
+        {
+            for (int i = 16; i < 24; i++)
+            {
+                data[i] = 0f;
+            }
+        }
+
+        vk.CmdPushConstants(cmd, _deferred.ShadowPipeline.PipelineLayout, ShaderStageFlags.VertexBit, 0, sizeof(float) * 24, data);
     }
 
     private unsafe void BindGeometry(
@@ -360,7 +384,7 @@ public sealed partial class VulkanGraphicsDevice
         // and the fourth component of the first row — zero for everything else — is what says it has. The
         // identity is checked rather than assumed; a page that ever came in rotated keeps its matrix and
         // simply does not morph.
-        if (_detailFade.Mode > 0f && IsIdentity(normalMatrix) && TerrainCameraOffset(modelView, out Vector3f offset))
+        if (_detailFade.Mode > 0f && IsIdentity(normalMatrix) && TerrainCameraOffset(modelView, _viewToWorld, out Vector3f offset))
         {
             data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
             data[19] = _detailFade.Mode;
