@@ -1917,12 +1917,15 @@ public sealed class PlayerCamera
 
         if (_weapons.M203Shots.Count > 0)
         {
+            bool rejected = false;
             foreach (M203Projectile shot in _weapons.M203Shots)
             {
-                if (!_m203.Spawn(shot))
-                {
-                    _weapons.RefundRejectedSimulationShot();
-                }
+                rejected |= !_m203.Spawn(shot);
+            }
+
+            if (rejected)
+            {
+                _weapons.RefundRejectedSimulationShot();
             }
 
             return;
@@ -2016,6 +2019,7 @@ public sealed class PlayerCamera
         if (missileWeapon is not null
             && string.Equals(missileWeapon.Projectile.TypeName, "TASKTYPE_MISSILE", StringComparison.Ordinal))
         {
+            bool rejected = false;
             foreach (GunProjectile shot in _weapons.Shots)
             {
                 MissileType missileType = MissileFlight.TypeForLauncher(missileWeapon);
@@ -2031,16 +2035,18 @@ public sealed class PlayerCamera
                         shot.Direction.Y * shot.RangeInUnits,
                         shot.Direction.Z * shot.RangeInUnits);
 
-                if (!_missiles.Spawn(
+                rejected |= !_missiles.Spawn(
                     shot.Origin,
                     target,
                     missileType,
                     MissileFlight.LaunchSpeedMetresPerSecond(missileWeapon),
                     shot.Direction,
-                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text))
-                {
-                    _weapons.RefundRejectedSimulationShot();
-                }
+                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text);
+            }
+
+            if (rejected)
+            {
+                _weapons.RefundRejectedSimulationShot();
             }
 
             return;
