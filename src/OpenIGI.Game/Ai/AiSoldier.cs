@@ -53,7 +53,7 @@ public enum AiSoldierActivity
 /// <para>
 /// <b>What is faithful:</b> the cones and their alert-selected ranges, the detection phase gate and rate
 /// limits, the 0.3 m box arrival test, the route table being followed one step at a time with no A*, the
-/// walk-versus-run gait, the idle fallback, and the line-of-sight rule including its 0.79 tolerance.
+/// walk-versus-run gait, the idle fallback, and the line-of-sight rule including its 1.0 world-blocker tolerance.
 /// Script events/actions, authored patrol routes, combat target sharing, and hearing are handled by the
 /// same facade so they consume the same HumanAI state rather than a second coarse activity model.
 /// </para>
