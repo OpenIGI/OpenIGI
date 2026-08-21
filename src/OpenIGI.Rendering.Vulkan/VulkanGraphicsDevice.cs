@@ -180,10 +180,12 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         if (RayTracingAvailable && _bindless is not null)
         {
             _rayTracing = new RayTracing.VulkanRayTracingApi(_instance, _device);
-            // Opt-in while it is measured. Building the traceable world costs time on the frames that
-            // admit new geometry, and until that cost is known it is not something an ordinary session
-            // should pay for a shadow it is not yet using.
-            if (Environment.GetEnvironmentVariable("OPENIGI_VK_RT_SCENE") == "1")
+
+            // On by default where the hardware traces at all. Building the world costs time on the frames
+            // that admit new geometry, but it is what the indirect light is gathered against, and the
+            // structures are built once as the level streams rather than per frame. Set the variable to 0
+            // to run without it — the distance field is still there to march.
+            if (Environment.GetEnvironmentVariable("OPENIGI_VK_RT_SCENE") != "0")
             {
                 _worldScene = new RayTracing.VulkanWorldScene(_instance.Vk, _rayTracing, _device, _allocator);
             }
@@ -212,13 +214,12 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // So it is opt-in behind OPENIGI_VK_COMPUTE while that path is finished, and the default Vulkan
         // session runs the fast, stable direct renderer with compute reported unavailable.
         bool enableCompute = Environment.GetEnvironmentVariable("OPENIGI_VK_COMPUTE") == "1";
-        // Tracing the indirect light against real geometry rather than marching the distance field. Opt
-        // in, and only where there is a world to trace: the structure is rebuilt as the level streams in
-        // and something in that overlap still loses the device intermittently, so this is not yet the
-        // path an ordinary session takes.
+        // Tracing the indirect light against real geometry rather than marching the distance field, which
+        // is the whole point of building the world: the field is a coarse approximation and the geometry
+        // is the thing itself. Only where there is a world to trace, and off if the variable says 0.
         bool rayTracedGi = _placeholderScene is not null
             && _worldScene is not null
-            && Environment.GetEnvironmentVariable("OPENIGI_VK_RT_GI") == "1";
+            && Environment.GetEnvironmentVariable("OPENIGI_VK_RT_GI") != "0";
 
         Capabilities = BuildCapabilities(selection, enableDeferred, enableCompute, rayTracedGi);
         _viewport = new Viewport(0, 0, width, height);
