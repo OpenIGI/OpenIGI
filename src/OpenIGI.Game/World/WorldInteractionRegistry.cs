@@ -377,13 +377,21 @@ public sealed class WorldInteraction
                 IsCompleted = true;
                 if (Type == InteractionActivateType.Generic && Explosion is not null)
                 {
-                    // GenericTBA has a second authored lifecycle on top of isFinished. Keep the
-                    // destruction edge explicit so a presentation/runtime owner can consume the
-                    // model/effect payload exactly once without guessing from the script flag.
-                    IsDestroyed = true;
+                    // GenericTBA has a second authored lifecycle on top of isFinished. The runtime
+                    // owner marks the object destroyed when the authored blast is presented; this
+                    // preserves the live model during a nonzero Explosion delay.
                     ExplosionTriggeredThisTick = true;
                 }
                 break;
+        }
+    }
+
+    /// <summary>Marks a GenericTBA destroyed when its authored explosion reaches presentation.</summary>
+    public void MarkExplosionPresented()
+    {
+        if (Type == InteractionActivateType.Generic && Explosion is not null && IsCompleted)
+        {
+            IsDestroyed = true;
         }
     }
 

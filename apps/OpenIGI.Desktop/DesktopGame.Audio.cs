@@ -121,10 +121,12 @@ internal sealed partial class DesktopGame
     private readonly List<PendingGenericTbaExplosion> _pendingGenericTbaExplosions = [];
 
     private sealed class PendingGenericTbaExplosion(
+        WorldInteraction interaction,
         Vector3d position,
         GenericTbaExplosionParameters parameters,
         int remainingTicks)
     {
+        public WorldInteraction Interaction { get; } = interaction;
         public Vector3d Position { get; } = position;
         public GenericTbaExplosionParameters Parameters { get; } = parameters;
         public int RemainingTicks { get; set; } = remainingTicks;
@@ -874,7 +876,7 @@ internal sealed partial class DesktopGame
                     0,
                     (int)MathF.Round(Math.Max(0f, parameters.ExplosionDelaySeconds) * GameClock.DefaultTickRate));
                 _pendingGenericTbaExplosions.Add(
-                    new PendingGenericTbaExplosion(interaction.Anchor, parameters, delayTicks));
+                    new PendingGenericTbaExplosion(interaction, interaction.Anchor, parameters, delayTicks));
             }
         }
 
@@ -887,6 +889,7 @@ internal sealed partial class DesktopGame
                 continue;
             }
 
+            pending.Interaction.MarkExplosionPresented();
             PresentGenericTbaExplosion(pending.Position, pending.Parameters);
             _pendingGenericTbaExplosions.RemoveAt(i);
         }

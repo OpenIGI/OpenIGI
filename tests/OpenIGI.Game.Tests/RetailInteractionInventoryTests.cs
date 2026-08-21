@@ -61,7 +61,7 @@ public sealed class RetailInteractionInventoryTests
         charge.CompleteUse();
 
         Assert.True(charge.IsCompleted);
-        Assert.True(charge.IsDestroyed);
+        Assert.False(charge.IsDestroyed);
         Assert.True(variables.TryRead("GenericTBA_282.isFinished", out var finished));
         Assert.Equal(1, finished.Integer);
         Assert.True(variables.TryRead("GenericTBA_282.isFinishedThisTick", out var finishedThisTick));
@@ -71,6 +71,9 @@ public sealed class RetailInteractionInventoryTests
         Assert.Same(charge, emitted);
         Assert.Equal(payload, emittedPayload);
         Assert.Empty(interactions.ConsumeExplosions());
+
+        charge.MarkExplosionPresented();
+        Assert.True(charge.IsDestroyed);
 
         interactions.Tick();
         Assert.Empty(interactions.ConsumeExplosions());
