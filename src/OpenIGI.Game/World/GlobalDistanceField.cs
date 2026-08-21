@@ -254,6 +254,11 @@ public sealed class GlobalDistanceField : IDisposable
         }
     }
 
+    // How many already-built clipmap levels may be re-voxelised in one frame. Two, matching the
+    // reference's clipmap budget: a fast camera drifts every level at once, and doing all of them a frame
+    // is the GI spike. The first build of a level is exempt, so the field always exists complete.
+    private const int MaxRebuildsPerFrame = 2;
+
     /// <summary>Rebuilds whichever levels the camera has walked out of.</summary>
     /// <param name="camera">Where the camera is, in world space.</param>
     /// <param name="force">Rebuilds every level whether or not it has drifted.</param>
@@ -284,6 +289,20 @@ public sealed class GlobalDistanceField : IDisposable
             if (!force && _built[level] && Same(wanted, _origins[level]))
             {
                 continue;
+            }
+
+            // Only so many ALREADY-BUILT levels are re-voxelised in one frame. A slow walk drifts one
+            // level at a time and never reaches this, but a fast move -- flying -- drifts every level at
+            // once, and rebuilding all of them each frame was the GI spike the overlay showed. Innermost
+            // first (this loop runs inner to outer), because the fine level nearest the camera is what the
+            // eye reads; the coarse outer levels keep their old contents a few frames and catch up when
+            // the camera slows, imperceptible while it is moving fast. the reference bounds it by clipmaps-per-frame,
+            // Godot by one cascade's dirty slab. The cap is only for the drift rebuild: a level's FIRST
+            // build is never held back, so the field is complete the frame it first exists and no trace
+            // ever reads a half-built clipmap -- which had seeded the temporal GI bright and stuck there.
+            if (!force && _built[level] && rebuilt >= MaxRebuildsPerFrame)
+            {
+                break;
             }
 
             _origins[level] = wanted;
