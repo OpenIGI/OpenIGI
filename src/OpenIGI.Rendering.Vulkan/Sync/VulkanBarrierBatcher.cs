@@ -73,6 +73,22 @@ internal sealed unsafe class VulkanBarrierBatcher
         _hasMemoryBarrier = true;
     }
 
+    /// <summary>Orders a build after the traversals that were reading what it is about to overwrite.</summary>
+    /// <remarks>
+    /// The other direction to <see cref="AddAccelerationStructureBuild"/>, and the one that is easy to
+    /// forget: a structure is rebuilt where it stands, so a build is a write into memory that rays were
+    /// reading a moment ago — and on this queue "a moment ago" includes a frame that has been submitted
+    /// and is still running. The reference never states this itself; its render graph tracks the scene
+    /// buffer's access and turns it from read to write, which is the same barrier arrived at by
+    /// bookkeeping rather than by hand.
+    /// </remarks>
+    public void AddAccelerationStructureReadToBuild()
+    {
+        (PipelineStageFlags2 srcStages, AccessFlags2 src, PipelineStageFlags2 dstStages, AccessFlags2 dst) =
+            VulkanAccessMap.AccelerationStructureReadToBuildBarrier();
+        AddMemory(srcStages, src, dstStages, dst);
+    }
+
     /// <summary>Adds the barrier that makes an acceleration-structure build visible to what reads it.</summary>
     public void AddAccelerationStructureBuild()
     {

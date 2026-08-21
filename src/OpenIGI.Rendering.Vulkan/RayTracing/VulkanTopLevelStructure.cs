@@ -28,7 +28,9 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
     private readonly VulkanDevice _device;
     private readonly VulkanAllocator _allocator;
     private readonly uint _capacity;
-    private readonly VulkanBuffer _instances;
+    // Every instance buffer ever allocated, with the submission that last read it.
+    private readonly List<(VulkanBuffer Buffer, ulong LastUsed)> _instancePool = [];
+    private readonly VulkanRayTracingInstance[] _staged;
 
     private VulkanAccelerationStructure? _structure;
     private readonly ulong _structureSize;
@@ -58,16 +60,7 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
         _allocator = allocator;
         _capacity = Math.Max(1, capacity);
 
-        _instances = new VulkanBuffer(
-            vk,
-            device,
-            allocator,
-            (ulong)_capacity * VulkanRayTracingInstance.Size,
-            BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr
-                | BufferUsageFlags.ShaderDeviceAddressBit
-                | BufferUsageFlags.TransferDstBit,
-            allocator.UploadMemoryProperties(),
-            persistentlyMapped: true);
+        _staged = new VulkanRayTracingInstance[_capacity];
 
         // Sized once, for the worst case. The structure's size depends only on how many instances it can
         // hold, so allocating for capacity means a frame that adds an instance never has to reallocate
@@ -101,7 +94,9 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
                 nameof(instances));
         }
 
-        _instances.Write(instances);
+        // Staged rather than written: which buffer this frame's build reads is not known until the build
+        // is recorded, because it depends on what the queue has finished.
+        instances.CopyTo(_staged);
         InstanceCount = (uint)instances.Length;
     }
 
@@ -110,12 +105,24 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
     /// <param name="scratchAddress">
     /// The device address of scratch memory at least <see cref="BuildScratchSize"/> bytes long.
     /// </param>
+    /// <param name="submissionValue">The timeline value this frame's work will signal.</param>
+    /// <param name="completedValue">The timeline value the queue has reached.</param>
     /// <remarks>
     /// The caller is responsible for the barriers on either side: the bottom-level builds this reads must
     /// have completed before it runs, and it must have completed before anything traces against it.
     /// </remarks>
-    public void RecordBuild(CommandBuffer commandBuffer, ulong scratchAddress)
+    public void RecordBuild(
+        CommandBuffer commandBuffer,
+        ulong scratchAddress,
+        ulong submissionValue,
+        ulong completedValue)
     {
+        VulkanBuffer instanceBuffer = AcquireInstanceBuffer(submissionValue, completedValue);
+
+        // Refilled every frame, not only when the placements change: this is a different buffer from the
+        // one the last frame read, so whatever it held is not this scene.
+        instanceBuffer.Write<VulkanRayTracingInstance>(_staged.AsSpan(0, (int)InstanceCount));
+
         _structure ??= VulkanAccelerationStructure.Create(
             _vk,
             _api,
@@ -134,7 +141,7 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
                 {
                     SType = StructureType.AccelerationStructureGeometryInstancesDataKhr,
                     ArrayOfPointers = false,
-                    Data = new DeviceOrHostAddressConstKHR { DeviceAddress = _instances.DeviceAddress },
+                    Data = new DeviceOrHostAddressConstKHR { DeviceAddress = instanceBuffer.DeviceAddress },
                 },
             },
             Flags = GeometryFlagsKHR.OpaqueBitKhr,
@@ -174,7 +181,53 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
 
         _disposed = true;
         _structure?.Dispose();
-        _instances.Dispose();
+        foreach ((VulkanBuffer buffer, _) in _instancePool)
+        {
+            buffer.Dispose();
+        }
+
+        _instancePool.Clear();
+    }
+
+    /// <summary>Takes an instance buffer that nothing still running is reading, growing the pool if none is.</summary>
+    /// <param name="submissionValue">The timeline value this frame's work will signal.</param>
+    /// <param name="completedValue">The timeline value the queue has reached.</param>
+    /// <returns>The buffer to fill and build from.</returns>
+    /// <remarks>
+    /// The same rule the build scratch keeps, and for the same reason. The instances are written by the
+    /// CPU while the previous frame is still on the GPU, and that frame's scene build is reading them —
+    /// so writing into the buffer it is reading hands it a scene half of one frame and half of the next,
+    /// including placements whose structures have since been freed. The reference never hits this because
+    /// its instance buffer is created inside the render graph each frame and the graph does not hand back
+    /// memory that is still in flight; this is that rule, kept by hand.
+    /// </remarks>
+    private VulkanBuffer AcquireInstanceBuffer(ulong submissionValue, ulong completedValue)
+    {
+        for (int i = 0; i < _instancePool.Count; i++)
+        {
+            (VulkanBuffer buffer, ulong lastUsed) = _instancePool[i];
+            if (lastUsed > completedValue)
+            {
+                continue;
+            }
+
+            _instancePool[i] = (buffer, submissionValue);
+            return buffer;
+        }
+
+        VulkanBuffer fresh = new(
+            _vk,
+            _device,
+            _allocator,
+            (ulong)_capacity * VulkanRayTracingInstance.Size,
+            BufferUsageFlags.AccelerationStructureBuildInputReadOnlyBitKhr
+                | BufferUsageFlags.ShaderDeviceAddressBit
+                | BufferUsageFlags.TransferDstBit,
+            _allocator.UploadMemoryProperties(),
+            persistentlyMapped: true);
+
+        _instancePool.Add((fresh, submissionValue));
+        return fresh;
     }
 
     private BuildAccelerationStructureFlagsKHR BuildFlags()

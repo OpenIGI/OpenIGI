@@ -191,6 +191,32 @@ internal static class VulkanAccessMap
     }
 
     /// <summary>
+    /// The barrier that orders a build after the traversals still reading what it is about to overwrite.
+    /// </summary>
+    /// <remarks>
+    /// A structure is rebuilt where it stands, so a build is a write into memory rays were reading a moment
+    /// ago — and on this queue "a moment ago" reaches back into a frame that was submitted and is still
+    /// running. The two sides are not symmetric: anything may traverse a structure, but only the build stage
+    /// may write one, so the destination is the narrower of the two.
+    /// </remarks>
+    /// <returns>The source and destination stage and access masks.</returns>
+    public static (PipelineStageFlags2 SrcStages, AccessFlags2 SrcAccess, PipelineStageFlags2 DstStages, AccessFlags2 DstAccess)
+        AccelerationStructureReadToBuildBarrier()
+    {
+        // Everything here that may traverse: the ray-query dispatches, and a top-level build reading the
+        // bottom-level structures underneath it. No ray-tracing-pipeline stage — this backend traces from
+        // compute, and naming a stage the enabled features do not cover is itself an error.
+        const PipelineStageFlags2 readers =
+            PipelineStageFlags2.ComputeShaderBit | PipelineStageFlags2.AccelerationStructureBuildBitKhr;
+
+        return (
+            readers,
+            AccessFlags2.AccelerationStructureReadBitKhr,
+            PipelineStageFlags2.AccelerationStructureBuildBitKhr,
+            AccessFlags2.AccelerationStructureWriteBitKhr);
+    }
+
+    /// <summary>
     /// The barrier the backend puts around an acceleration-structure build: everything a build wrote is
     /// visible to whatever traverses or builds on top of it next.
     /// </summary>
@@ -201,7 +227,7 @@ internal static class VulkanAccessMap
     /// barrier over the build and compute stages.
     /// </remarks>
     /// <returns>The source and destination stage and access masks.</returns>
-    public static (PipelineStageFlags2 Stages, AccessFlags2 SrcAccess, AccessFlags2 DstAccess)
+    public static (PipelineStageFlags2 Stages, AccessFlags2 Source, AccessFlags2 Destination)
         AccelerationStructureBuildBarrier()
     {
         const PipelineStageFlags2 stages =

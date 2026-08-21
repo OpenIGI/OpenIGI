@@ -210,15 +210,25 @@ internal sealed class VulkanWorldScene : IDisposable
     {
         _frame++;
         _newThisFrame = 0;
+
+        // Run from inside the update rather than here: the addresses are only final once this frame's
+        // compaction has swapped whatever it is going to swap.
+        _scene.BeforeTopLevelBuild = PublishInstances;
+        _scene.RecordUpdate(commandBuffer, queue);
+    }
+
+    /// <summary>Repoints every placement at its structure and hands the list to the scene.</summary>
+    private void PublishInstances()
+    {
         RefreshStructureAddresses();
 
-        if (_instancesChanged)
+        if (!_instancesChanged)
         {
-            _scene.SetInstances(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_instances));
-            _instancesChanged = false;
+            return;
         }
 
-        _scene.RecordUpdate(commandBuffer, queue);
+        _scene.SetInstances(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_instances));
+        _instancesChanged = false;
     }
 
     /// <summary>

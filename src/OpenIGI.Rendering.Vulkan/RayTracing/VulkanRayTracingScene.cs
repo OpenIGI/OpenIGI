@@ -135,11 +135,21 @@ internal sealed class VulkanRayTracingScene : IDisposable
         // sized for the mesh builds and the scene build together — and every range below comes out of it.
         BeginScratchBatch(submissionValue, queue.CompletedValue);
 
+        // Before anything is written: the structures about to be rebuilt are the ones the frames already
+        // in flight are tracing rays against, and a build is a write over what those rays are reading.
+        _barriers.AddAccelerationStructureReadToBuild();
+        _barriers.Flush(commandBuffer);
+
         RecordGeometryBuilds(commandBuffer, submissionValue);
         _compaction.Record(
             commandBuffer,
             queue,
             replaced => _retiring.Add((submissionValue, replaced)));
+
+        // Only now are the geometry addresses settled. Compacting one moves it, and the placements that
+        // name it have to be repointed before the scene is built over them — do it any earlier and this
+        // frame's scene is built over the address of a structure this same frame has just retired.
+        BeforeTopLevelBuild?.Invoke();
 
         // Built even with nothing in it. An empty structure is legal and every ray against it simply
         // misses, which is what a shader binding needs: a descriptor that is always valid to name, rather
@@ -148,11 +158,23 @@ internal sealed class VulkanRayTracingScene : IDisposable
         _barriers.AddAccelerationStructureBuild();
         _barriers.Flush(commandBuffer);
 
-        _topLevel.RecordBuild(commandBuffer, _scratch.Allocate(_topLevel.BuildScratchSize));
+        _topLevel.RecordBuild(
+            commandBuffer,
+            _scratch.Allocate(_topLevel.BuildScratchSize),
+            submissionValue,
+            queue.CompletedValue);
 
         _barriers.AddAccelerationStructureBuild();
         _barriers.Flush(commandBuffer);
     }
+
+    /// <summary>Gets or sets what to run once the geometry is built and compacted, before the scene is.</summary>
+    /// <remarks>
+    /// The window a caller needs if its instances name geometry by device address: compaction replaces a
+    /// structure with a smaller copy and frees the original, so an address read before this point may be
+    /// one that no longer exists by the time the scene is built over it.
+    /// </remarks>
+    public Action? BeforeTopLevelBuild { get; set; }
 
     /// <inheritdoc/>
     public void Dispose()
