@@ -70,6 +70,9 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly PresentTarget _presentTarget;
     private readonly VulkanFrameLoop _frameLoop;
 
+    // GPU per-stage timing, when the device can carry timestamps. Null on a device that cannot.
+    private readonly VulkanStageProfiler? _stageProfiler;
+
     // A persistent copy of the last presented back buffer, for non-disruptive screenshots. The copy runs
     // only for a few frames after CaptureFrame is last called, not every frame: a full-resolution back
     // buffer read-back on a frame nobody screenshots is pure waste, and it is what made ordinary gameplay
@@ -151,6 +154,16 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _swapchain = new VulkanSwapchain(_instance, _device, width, height, _vsync);
         _presentTarget = new PresentTarget(_instance.Vk, _device, _allocator, _swapchain);
         _frameLoop = new VulkanFrameLoop(_instance.Vk, _device, _commands, _swapchain);
+
+        // GPU stage timing rides in the command stream on timestamp queries. Only stand it up where the
+        // device times all graphics and compute work and reports a tick period to scale by; where it does
+        // not, the profiler stays null and the overlay simply shows no per-stage figures.
+        _instance.Vk.GetPhysicalDeviceProperties(_device.PhysicalDevice, out PhysicalDeviceProperties deviceProperties);
+        if (deviceProperties.Limits.TimestampComputeAndGraphics && deviceProperties.Limits.TimestampPeriod > 0f)
+        {
+            _stageProfiler = new VulkanStageProfiler(
+                _instance.Vk, _device, deviceProperties.Limits.TimestampPeriod, VulkanFrameLoop.MaxFramesInFlight);
+        }
 
         _shaderCompiler = new ShaderCompiler();
         _sprite2D = new Sprite2DPipeline(_instance.Vk, _device, _shaderCompiler, _presentTarget.RenderPass);
@@ -481,6 +494,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _sprite2DGeometry.Dispose();
         _sprite2D.Dispose();
         _shaderCompiler.Dispose();
+        _stageProfiler?.Dispose();
         _frameLoop.Dispose();
         _presentTarget.Dispose();
         _swapchain.Dispose();
@@ -539,6 +553,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         _frameOpen = true;
         _presentPassActive = false;
+
+        // Read back the timestamps this slot last carried and reset its block for the frame about to record.
+        // Outside any render pass, which is exactly where a fresh frame's command buffer is here.
+        _stageProfiler?.BeginFrame(_frameCommandBuffer, _frameLoop.CurrentFrame);
     }
 
     /// <summary>Queues a resource to be freed once the frames that might still reference it have cycled.</summary>

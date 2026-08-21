@@ -146,17 +146,38 @@ public sealed partial class VulkanGraphicsDevice
     public void DestroyOcclusionQuery(OcclusionQueryHandle query) => ThrowIfDisposed();
 
     /// <inheritdoc/>
-    public void SetStageTiming(bool enabled) => ThrowIfDisposed();
+    public void SetStageTiming(bool enabled)
+    {
+        ThrowIfDisposed();
+        if (_stageProfiler is { } profiler)
+        {
+            profiler.Enabled = enabled;
+        }
+    }
 
     /// <inheritdoc/>
-    public void BeginStageTiming(RenderStage stage) => ThrowIfDisposed();
+    public void BeginStageTiming(RenderStage stage)
+    {
+        ThrowIfDisposed();
+        if (_frameOpen)
+        {
+            _stageProfiler?.Begin(stage, _frameCommandBuffer, _frameLoop.CurrentFrame);
+        }
+    }
 
     /// <inheritdoc/>
-    public void EndStageTiming() => ThrowIfDisposed();
+    public void EndStageTiming()
+    {
+        ThrowIfDisposed();
+        if (_frameOpen)
+        {
+            _stageProfiler?.End(_frameCommandBuffer, _frameLoop.CurrentFrame);
+        }
+    }
 
     /// <inheritdoc/>
-    public IReadOnlyList<RenderStageTiming> StageTimings() => [];
+    public IReadOnlyList<RenderStageTiming> StageTimings() => _stageProfiler?.Timings() ?? [];
 
     /// <inheritdoc/>
-    public GpuFrameTiming GpuTiming() => default;
+    public GpuFrameTiming GpuTiming() => _stageProfiler?.TotalTiming() ?? default;
 }
