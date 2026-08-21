@@ -81,9 +81,8 @@ public sealed class RetailSightOcclusionTests
         index.SetPassable(door.Owner, passable: true);
 
         Assert.False(
-            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out WorldTraceHit leftover)
-            && leftover.Owner == door.Owner,
-            $"open door still blocked sight via '{leftover.Label}'");
+            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out WorldTraceHit leftover),
+            $"open doorway still blocked sight via '{leftover.Label}'");
     }
 
     [RequiresGameDataFact]
