@@ -763,7 +763,8 @@ public sealed class SoldierRenderer : IDisposable
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (ConditionalContainerGate.IsTaskActive(view.Soldier)
-                && _health.TryGetValue(view, out HumanHealth? health) && !health.IsDead)
+                && !view.IsDead
+                && (!_health.TryGetValue(view, out HumanHealth? health) || health is not { IsDead: true }))
             {
                 contacts.Add(brain.Position);
             }
@@ -5802,8 +5803,8 @@ public sealed class SoldierRenderer : IDisposable
             {
                 SoldierView soldier = member.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
-                    || !_health.TryGetValue(soldier, out HumanHealth? health)
-                    || health.IsDead)
+                    || soldier.IsDead
+                    || (_health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
                 {
                     continue;
                 }
@@ -5839,8 +5840,8 @@ public sealed class SoldierRenderer : IDisposable
             {
                 SoldierView soldier = member.View;
                 if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
-                    || !_health.TryGetValue(soldier, out HumanHealth? health)
-                    || health.IsDead)
+                    || soldier.IsDead
+                    || (_health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
                 {
                     continue;
                 }

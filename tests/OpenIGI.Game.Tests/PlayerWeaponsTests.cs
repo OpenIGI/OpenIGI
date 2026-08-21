@@ -1141,6 +1141,32 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void DeathClearsPendingM203FireAndTheLastM203Shot()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(M203Ammo.AmmoId, 2);
+        weapons.SetM203Ammunition(M203Ammo);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.AlternateFire));
+        Assert.Single(weapons.M203Shots);
+
+        weapons.StopForDeath();
+
+        Assert.Empty(weapons.M203Shots);
+        Assert.False(weapons.Flags.HasFlag(HumanWeaponFlagWord.AlternateFire));
+        Assert.False(weapons.ResolveFire(
+            default,
+            new Vector3f(0f, 1f, 0f),
+            new Vector3f(1f, 0f, 0f),
+            new Vector3f(0f, 0f, 1f)));
+        Assert.Empty(weapons.M203Shots);
+    }
+
+    [Fact]
     public void TheMp5SdsBurstCapAndItsMagazineRunOutTogether()
     {
         // Maximum Rounds/Burst equals Rounds/Clip on every automatic weapon in the roster, which is

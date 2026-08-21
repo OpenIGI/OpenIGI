@@ -77,9 +77,10 @@ public sealed class ImpactParticleRenderer : IDisposable
     private const float UnitsPerMetre = (float)WorldScene.UnitsPerMetre;
     // FUN_004810a0 stores param_2 (the ExplodeMagicObj caller passes 1) as Explosion0's repeat
     // count at +0x38. FUN_00480f40 runs FUN_0047f200 once, decrements that count, then destroys the
-    // parent and its 1009_01_1 child. The caller's 0x15 is a FUN_00450CE0 child-task descriptor
-    // argument, not this model's lifetime.
+    // parent and its 1009_01_1 child. The child fireball/fragment sprites retain their authored
+    // 0x15-tick lifetime independently.
     private const int RetailExplosionLifeTicks = 1;
+    private const int RetailExplosionSpriteLifeTicks = 0x15;
     private const int RetailFireballLifeTicks = 75;
     private const int RetailExplosionSmokeTicks = 150;
     private const int RetailExplosionSmokeSecondSpawnAge = 15;
@@ -118,8 +119,10 @@ public sealed class ImpactParticleRenderer : IDisposable
     private MeshHandle _mesh = MeshHandle.None;
     private TextureHandle _sparkTexture = TextureHandle.None;
     private TextureHandle _dustTexture = TextureHandle.None;
-    private readonly RetailSpriteFrame[] _sparkFrames;
-    private readonly RetailSpriteFrame[] _dustFrames;
+    private TextureHandle _retailFireballSpriteTexture = TextureHandle.None;
+    private TextureHandle _retailSmokeSpriteTexture = TextureHandle.None;
+    private readonly RetailSpriteFrame[] _retailFireballFrames;
+    private readonly RetailSpriteFrame[] _retailSmokeFrames;
     private TextureHandle _glassTexture = TextureHandle.None;
     private MeshGeometry? _retailExplosionGeometry;
     private MeshHandle _retailExplosionMesh = MeshHandle.None;
@@ -150,16 +153,16 @@ public sealed class ImpactParticleRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(device);
         _device = device;
         _resources = resources;
-        _sparkFrames = [];
-        _dustFrames = [];
+        _retailFireballFrames = [];
+        _retailSmokeFrames = [];
         if (fileSystem is not null)
         {
             RetailSpriteAsset spark = LoadRetailSprite(fileSystem, "fireball.spr");
-            _sparkTexture = spark.Texture;
-            _sparkFrames = spark.Frames;
+            _retailFireballSpriteTexture = spark.Texture;
+            _retailFireballFrames = spark.Frames;
             RetailSpriteAsset dust = LoadRetailSprite(fileSystem, "smoke2.spr");
-            _dustTexture = dust.Texture;
-            _dustFrames = dust.Frames;
+            _retailSmokeSpriteTexture = dust.Texture;
+            _retailSmokeFrames = dust.Frames;
         }
     }
 
@@ -167,13 +170,13 @@ public sealed class ImpactParticleRenderer : IDisposable
     public int LiveCount => _count;
 
     /// <summary>Gets whether the retail fireball and smoke sprites were loaded from the common archive.</summary>
-    public bool UsesRetailEffectSprites => _sparkTexture.IsValid && _dustTexture.IsValid;
+    public bool UsesRetailEffectSprites => _retailFireballSpriteTexture.IsValid && _retailSmokeSpriteTexture.IsValid;
 
     /// <summary>Gets the decoded retail fireball frame count, for parity diagnostics and tests.</summary>
-    internal int RetailFireballFrameCount => _sparkFrames.Length;
+    internal int RetailFireballFrameCount => _retailFireballFrames.Length;
 
     /// <summary>Gets the decoded retail smoke frame count, for parity diagnostics and tests.</summary>
-    internal int RetailSmokeFrameCount => _dustFrames.Length;
+    internal int RetailSmokeFrameCount => _retailSmokeFrames.Length;
 
     /// <summary>Gets whether the IGI1 common pack supplied the native <c>1009_01_1</c> effect model.</summary>
     public bool UsesRetailExplosionModel => _retailExplosionGeometry is not null
@@ -394,7 +397,7 @@ public sealed class ImpactParticleRenderer : IDisposable
                 positionUnits,
                 velocity: Vector3f.Zero,
                 sizeMetres: 0.9f * authoredScale,
-                lifeTicks: RetailExplosionLifeTicks,
+                lifeTicks: RetailExplosionSpriteLifeTicks,
                 smoke: false);
 
             for (int i = 0; i < Math.Max(0, fragments); i++)
@@ -404,7 +407,7 @@ public sealed class ImpactParticleRenderer : IDisposable
                     positionUnits,
                     ScatterAround(new Vector3f(0f, 0f, 0.25f), spread: 1f) * speed,
                     sizeMetres: 0.12f * authoredScale,
-                    lifeTicks: RetailExplosionLifeTicks,
+                    lifeTicks: RetailExplosionSpriteLifeTicks,
                     smoke: false);
             }
 
@@ -963,7 +966,7 @@ public sealed class ImpactParticleRenderer : IDisposable
 
             if (p.IsRetailSprite)
             {
-                int frameCount = p.IsRetailSmoke ? _dustFrames.Length : _sparkFrames.Length;
+                int frameCount = p.IsRetailSmoke ? _retailSmokeFrames.Length : _retailFireballFrames.Length;
                 int frameIndex = frameCount > 0
                     ? Math.Min(frameCount - 1, (int)(((long)p.AgeTicks * frameCount) / p.LifeTicks))
                     : 0;
@@ -1127,7 +1130,7 @@ public sealed class ImpactParticleRenderer : IDisposable
                     retailSmokeFirst * 6,
                     retailSmokeCount * 6,
                     modelView,
-                    GetDustTexture(),
+                    _retailSmokeSpriteTexture,
                     TextureHandle.None,
                     BlendMode.AlphaBlend);
             }
@@ -1139,7 +1142,7 @@ public sealed class ImpactParticleRenderer : IDisposable
                     retailFireballFirst * 6,
                     retailFireballCount * 6,
                     modelView,
-                    GetSparkTexture(),
+                    _retailFireballSpriteTexture,
                     TextureHandle.None,
                     BlendMode.Additive);
             }
@@ -1201,6 +1204,18 @@ public sealed class ImpactParticleRenderer : IDisposable
         {
             _device.DestroyTexture(_dustTexture);
             _dustTexture = TextureHandle.None;
+        }
+
+        if (_retailFireballSpriteTexture.IsValid)
+        {
+            _device.DestroyTexture(_retailFireballSpriteTexture);
+            _retailFireballSpriteTexture = TextureHandle.None;
+        }
+
+        if (_retailSmokeSpriteTexture.IsValid)
+        {
+            _device.DestroyTexture(_retailSmokeSpriteTexture);
+            _retailSmokeSpriteTexture = TextureHandle.None;
         }
 
         if (_glassTexture.IsValid)
@@ -1731,7 +1746,7 @@ public sealed class ImpactParticleRenderer : IDisposable
 
     private void SelectRetailSpriteFrame(ref Particle particle, bool smoke, int frameIndex)
     {
-        RetailSpriteFrame[] frames = smoke ? _dustFrames : _sparkFrames;
+        RetailSpriteFrame[] frames = smoke ? _retailSmokeFrames : _retailFireballFrames;
         if (frames.Length == 0)
         {
             particle.RetailU0 = 0f;

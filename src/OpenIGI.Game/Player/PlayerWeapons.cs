@@ -557,8 +557,10 @@ public sealed class PlayerWeapons
             | HumanWeaponFlagWord.Dead
             | HumanWeaponFlagWord.Dying;
         _wantFire = false;
+        _wantAlternateFire = false;
         _firedThisTick = false;
         _shots.Clear();
+        _m203Shots.Clear();
         _throwReleased = false;
         _actionComplete = false;
         Request(WeaponAction.None);
