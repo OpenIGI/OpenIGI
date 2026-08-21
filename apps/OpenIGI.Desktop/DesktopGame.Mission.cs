@@ -675,7 +675,7 @@ internal sealed partial class DesktopGame
                         _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal,
                         (int)AiDifficulty.Easy,
                         (int)AiDifficulty.Hard);
-                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace);
+                WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
                 _soldiers.Animate(
                     graphs, levelCast, _resources, _loop.Natives, levelRoot, _aiConfig, effectiveDifficulty,
                     _loop.Variables);

@@ -753,6 +753,9 @@ public sealed class SoldierRenderer : IDisposable
         return contacts;
     }
 
+    /// <summary>Gets the live AI brains for focused renderer-path tests.</summary>
+    internal IReadOnlyList<AiSoldier> BrainsForTesting => [.. _brains.Values];
+
     /// <summary>Resolves a human task's live pose for an EditCamera link or target.</summary>
     public CutsceneTargetPose? CutscenePose(int taskId)
     {
