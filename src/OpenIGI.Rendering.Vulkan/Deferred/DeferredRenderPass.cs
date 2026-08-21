@@ -157,8 +157,19 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
         {
             SrcSubpass = Vk.SubpassExternal,
             DstSubpass = 0,
-            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-            SrcAccessMask = 0,
+
+            // What these images were doing before this pass overwrites them is being READ -- by the
+            // shading pass that took them as input attachments, and by every compute pass that sampled
+            // them in the gap. Clearing them has to wait for those readers, so the wait names the shader
+            // stages rather than only the attachment ones it is about to use.
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.EarlyFragmentTestsBit
+                | PipelineStageFlags.FragmentShaderBit
+                | PipelineStageFlags.ComputeShaderBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit
+                | AccessFlags.DepthStencilAttachmentWriteBit
+                | AccessFlags.InputAttachmentReadBit
+                | AccessFlags.ShaderReadBit,
             DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
             DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
         };
@@ -257,17 +268,52 @@ internal sealed unsafe class DeferredRenderPass : IDisposable
             SrcAccessMask = AccessFlags.ColorAttachmentWriteBit
                 | AccessFlags.DepthStencilAttachmentWriteBit
                 | AccessFlags.ShaderWriteBit,
-            DstStageMask = PipelineStageFlags.FragmentShaderBit,
-            DstAccessMask = AccessFlags.InputAttachmentReadBit | AccessFlags.ShaderReadBit,
+
+            // Both halves of what this pass does at its start, not just the shader's. Reading the
+            // G-buffer as input attachments happens in the fragment stage, but LOADING five of these
+            // attachments and transitioning them into the layout this pass wants happens before any
+            // shader runs -- at colour output for the colour ones and at the depth test for depth. A
+            // dependency naming only the shader leaves that load unordered against the geometry pass
+            // that wrote them, which is a hazard the synchronisation layer names precisely and which
+            // otherwise shows up as nothing at all until it does.
+            //
+            // Both depth stages, not just the early one: the transition into this subpass writes depth,
+            // and so does storing it when the pass ends -- and a store happens at the late test. Naming
+            // only the early stage leaves those two writes unordered against each other.
+            DstStageMask = PipelineStageFlags.FragmentShaderBit
+                | PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.EarlyFragmentTestsBit
+                | PipelineStageFlags.LateFragmentTestsBit,
+            DstAccessMask = AccessFlags.InputAttachmentReadBit
+                | AccessFlags.ShaderReadBit
+                | AccessFlags.ColorAttachmentReadBit
+                | AccessFlags.ColorAttachmentWriteBit
+                | AccessFlags.DepthStencilAttachmentReadBit
+                | AccessFlags.DepthStencilAttachmentWriteBit,
         };
         dependencies[1] = new SubpassDependency
         {
             SrcSubpass = LightingSubpass,
             DstSubpass = ForwardSubpass,
-            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
-            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
-            DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.ColorAttachmentReadBit,
+
+            // Depth as well as colour. The depth attachment is read-only while the lighting subpass
+            // samples it and written again once the forward subpass draws into it, so crossing this
+            // boundary transitions it -- and that transition is a write. Left out of the dependency it
+            // is ordered against nothing, including the store that writes the same depth when the pass
+            // ends, which is the write-after-write the synchronisation layer reports.
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.EarlyFragmentTestsBit
+                | PipelineStageFlags.LateFragmentTestsBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit
+                | AccessFlags.DepthStencilAttachmentWriteBit
+                | AccessFlags.DepthStencilAttachmentReadBit,
+            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.EarlyFragmentTestsBit
+                | PipelineStageFlags.LateFragmentTestsBit,
+            DstAccessMask = AccessFlags.ColorAttachmentWriteBit
+                | AccessFlags.ColorAttachmentReadBit
+                | AccessFlags.DepthStencilAttachmentWriteBit
+                | AccessFlags.DepthStencilAttachmentReadBit,
             DependencyFlags = DependencyFlags.ByRegionBit,
         };
         dependencies[2] = new SubpassDependency
