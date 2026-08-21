@@ -116,12 +116,13 @@ public sealed class ObjectCollisionIndex
     /// </summary>
     /// <param name="owner">The exact <c>Door</c> task.</param>
     /// <param name="open">Whether the door is no longer fully closed.</param>
+    /// <param name="displacementMetres">World translation of a carrier such as an elevator.</param>
     /// <remarks>
     /// Walking always skips portal faces. Sight does not, so a closed room is cover. Once the door
     /// leaves its shut pose the portal has to become a hole again or a guard standing in an open
     /// doorway cannot see through it.
     /// </remarks>
-    public void SetSightOpening(GameTask owner, bool open)
+    public void SetSightOpening(GameTask owner, bool open, Vector3d displacementMetres = default)
     {
         ArgumentNullException.ThrowIfNull(owner);
         if (!open)
@@ -137,9 +138,12 @@ public sealed class ObjectCollisionIndex
 
         Vector3d min = new(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
         Vector3d max = new(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity);
+        Vector3d displacementUnits = displacementMetres * WorldScene.UnitsPerMetre;
         foreach (Entry entry in entries)
         {
             (Vector3d lo, Vector3d hi) = entry.ClosedBounds;
+            lo += displacementUnits;
+            hi += displacementUnits;
             min = new(Math.Min(min.X, lo.X), Math.Min(min.Y, lo.Y), Math.Min(min.Z, lo.Z));
             max = new(Math.Max(max.X, hi.X), Math.Max(max.Y, hi.Y), Math.Max(max.Z, hi.Z));
         }

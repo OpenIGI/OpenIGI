@@ -2532,7 +2532,7 @@ public sealed class SoldierRenderer : IDisposable
 
                     // Sight treats building portals as solid. Once this leaf is off its shut pose,
                     // open the portal it filled so a guard in the doorway can see through.
-                    solids.SetSightOpening(door.Task, !door.State.IsFullyClosed);
+                    solids.SetSightOpening(door.Task, !door.State.IsFullyClosed, elevatorOffset);
                 }
             }
         }

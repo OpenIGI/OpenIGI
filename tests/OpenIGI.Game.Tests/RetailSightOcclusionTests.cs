@@ -66,7 +66,7 @@ public sealed class RetailSightOcclusionTests
         WorldPlacement door = scene.Placements.First(placement =>
             string.Equals(placement.Owner.Type.Name, "Door", StringComparison.Ordinal)
             && placement.Instance.Name == "500_01_1");
-        ObjectCollisionIndex index = ObjectCollisionIndex.Build(scene.Placements);
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build([door]);
         ObjectCollisionIndex doorOnly = ObjectCollisionIndex.Build([door]);
         (Vector3d centre, _) = doorOnly.Bounds(0);
 
@@ -84,6 +84,43 @@ public sealed class RetailSightOcclusionTests
         Assert.False(
             index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out WorldTraceHit leftover),
             $"open doorway still blocked sight via '{leftover.Label}'");
+    }
+
+    [RequiresGameDataFact]
+    public void TranslatedOpenDoorUsesTheTranslatedSightOpening()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        WorldPlacement door = scene.Placements.First(placement =>
+            string.Equals(placement.Owner.Type.Name, "Door", StringComparison.Ordinal)
+            && placement.Instance.Name == "500_01_1");
+        WorldPlacement building = scene.Placements.First(placement => placement.Instance.Name == "400_02_1");
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build([door, building]);
+        ObjectCollisionIndex doorOnly = ObjectCollisionIndex.Build([door]);
+        (Vector3d centre, _) = doorOnly.Bounds(0);
+
+        Vector3d displacementMetres = new(0.0, 0.0, 8.0);
+        Vector3d displacementUnits = displacementMetres * U;
+        Assert.True(index.UpdateTransform(building.Owner, building.Position + displacementMetres, building.Orientation));
+        Assert.True(index.UpdateTransform(door.Owner, door.Position + displacementMetres, door.Orientation));
+
+        double rayHalfLength = 0.5 * U;
+        Vector3d translatedCentre = centre + displacementUnits;
+        Vector3d from = new(translatedCentre.X - rayHalfLength, translatedCentre.Y, translatedCentre.Z);
+        Vector3d to = new(translatedCentre.X + rayHalfLength, translatedCentre.Y, translatedCentre.Z);
+        Assert.True(
+            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out _),
+            "translated closed door should block sight");
+
+        index.SetPassable(door.Owner, passable: true);
+        index.SetSightOpening(door.Owner, open: true);
+        Assert.True(
+            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out _),
+            "an authored-position opening must not open a translated doorway");
+
+        index.SetSightOpening(door.Owner, open: true, displacementMetres: displacementMetres);
+        Assert.False(
+            index.TryTrace(new WorldTraceRequest(from, to, TracePortals: true), out WorldTraceHit leftover),
+            $"translated open doorway still blocked sight via '{leftover.Label}'");
     }
 
     [RequiresGameDataFact]
