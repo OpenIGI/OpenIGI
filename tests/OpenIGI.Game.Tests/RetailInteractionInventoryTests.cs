@@ -39,16 +39,22 @@ public sealed class RetailInteractionInventoryTests
             variables);
 
         List<WorldInteraction> charges = interactions.Items
-            .Where(static item => item.Type == InteractionActivateType.Generic && item.Explosion?.IsExplodable == true)
+            .Where(static item => item.Type == InteractionActivateType.Generic && item.Explosion is not null)
             .ToList();
         Assert.Equal(3, charges.Count);
 
         WorldInteraction charge = Assert.Single(charges, static item => item.Task.Id == 282);
         GenericTbaExplosionParameters payload = Assert.IsType<GenericTbaExplosionParameters>(charge.Explosion);
-        Assert.True(payload.ExplosionRadiusUnits > 0f);
-        Assert.True(payload.ExplosionFalloffUnits >= 0f);
+        Assert.False(payload.IsExplodable);
+        Assert.Equal(1f, payload.DamageScale);
+        Assert.Equal(0.5f, payload.ExplosionRadiusMetres);
+        Assert.Equal(0.5f, payload.ExplosionFalloffMetres);
+        Assert.Equal(1f, payload.ExplosionDamageScale);
+        Assert.Equal(0f, payload.ExplosionDelaySeconds);
         Assert.Equal(5, payload.FragmentCount);
         Assert.Equal(4, payload.FireballCount);
+        Assert.Equal(string.Empty, payload.DestroyedModelName);
+        Assert.Equal(string.Empty, payload.ExplosionExpression);
         Assert.Equal("explo_02_m", payload.ExplosionSound);
 
         charge.BeginUse();
@@ -56,6 +62,10 @@ public sealed class RetailInteractionInventoryTests
 
         Assert.True(charge.IsCompleted);
         Assert.True(charge.IsDestroyed);
+        Assert.True(variables.TryRead("GenericTBA_282.isFinished", out var finished));
+        Assert.Equal(1, finished.Integer);
+        Assert.True(variables.TryRead("GenericTBA_282.isFinishedThisTick", out var finishedThisTick));
+        Assert.Equal(1, finishedThisTick.Integer);
         (WorldInteraction emitted, GenericTbaExplosionParameters emittedPayload) = Assert.Single(
             interactions.ConsumeExplosions());
         Assert.Same(charge, emitted);

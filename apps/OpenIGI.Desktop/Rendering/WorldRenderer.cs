@@ -91,6 +91,9 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the live generic pickups whose consumed models no longer draw.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
 
+    /// <summary>Gets or sets the live direct interactions whose destroyed models no longer draw.</summary>
+    public WorldInteractionRegistry? Interactions { get; set; }
+
     /// <summary>Sets the shared presentation point used by every tick-driven world transform.</summary>
     public void BeginFrame(float tickFraction, bool smooth)
     {
@@ -135,6 +138,10 @@ public sealed class WorldRenderer : IDisposable
         }
 
         WorldPlacement placement = DisplayedPlacement(scene.Placements[index]);
+        if (placement.IsSuppressed)
+        {
+            return true;
+        }
 
         MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
         if (geometry is null)
@@ -193,6 +200,10 @@ public sealed class WorldRenderer : IDisposable
             }
 
             WorldPlacement placement = DisplayedPlacement(authoredPlacement);
+            if (placement.IsSuppressed)
+            {
+                continue;
+            }
             // Bent geometry is unique to its placement — a spline segment shaped to its own span — so
             // it is cached under the placement's task name rather than the shared model name.
             MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
@@ -298,6 +309,24 @@ public sealed class WorldRenderer : IDisposable
                 Pack = replacement.Pack,
                 Model = replacement.Model,
             };
+        }
+
+        if (Interactions?.TryGet(placement.Owner, out WorldInteraction? interaction) == true
+            && interaction?.IsDestroyed == true)
+        {
+            if (placement.DestroyedReplacement is { } genericReplacement)
+            {
+                displayed = placement with
+                {
+                    Instance = genericReplacement.Instance,
+                    Pack = genericReplacement.Pack,
+                    Model = genericReplacement.Model,
+                };
+            }
+            else
+            {
+                displayed = placement with { IsSuppressed = true };
+            }
         }
 
         if (SecurityCameras?.TryGetHeadOrientation(
@@ -466,6 +495,10 @@ public sealed class WorldRenderer : IDisposable
         }
 
         WorldPlacement placement = DisplayedPlacement(scene.Placements[placementIndex]);
+        if (placement.IsSuppressed)
+        {
+            return false;
+        }
         MeshGeometry? geometry = placement.BentGeometry ?? GetGeometry(placement);
         if (geometry is null)
         {

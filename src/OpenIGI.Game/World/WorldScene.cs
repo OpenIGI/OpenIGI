@@ -577,6 +577,26 @@ public sealed class WorldScene
                     };
                 }
 
+                // GenericTBA uses the same replacement contract as SCameraLens. Level 2 leaves this
+                // name empty, which means the charge disappears after its authored blast rather than
+                // leaving the live 202_01_1 model in the scene. A named replacement remains drawable.
+                if (string.Equals(declared.Type.Name, "GenericTBA", StringComparison.Ordinal)
+                    && declared.TryGetValue("Destroyed model", out object? rawGenericDestroyed)
+                    && rawGenericDestroyed is string genericDestroyedName
+                    && genericDestroyedName.Length > 0)
+                {
+                    if (byName.TryGetValue(genericDestroyedName, out var genericDestroyed))
+                    {
+                        placement = placement with
+                        {
+                            DestroyedReplacement = new WorldModelBinding(
+                                genericDestroyed.Instance,
+                                genericDestroyed.Pack,
+                                genericDestroyed.Model),
+                        };
+                    }
+                }
+
                 // Empty render geometry does not make this placement disposable. Attachment holders
                 // can carry HSMC collision of their own (Mission 14's room floors do), while the world
                 // renderer already ignores the null mesh MefMeshBuilder returns for them.

@@ -292,6 +292,7 @@ internal sealed partial class DesktopGame
         _elevators = ElevatorRegistry.Build(levelRoot, _loop.Variables);
         _interactions = WorldInteractionRegistry.Build(levelRoot, loaded, _doors, _loop.Variables, _elevators);
         _genericPickups = GenericPickupRegistry.Build(levelRoot, _loop.Variables);
+        world.Interactions = _interactions;
         world.GenericPickups = _genericPickups;
         solids.GenericPickups = _genericPickups;
         _soldiers.SetAiTaskActivator(id => _interactions?.ActivateFromAi(id));
@@ -759,6 +760,7 @@ internal sealed partial class DesktopGame
         _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
         _player = null;
         _playerMode = false;
+        _pendingGenericTbaExplosions.Clear();
 
         // A fresh mission is a fresh life: the last one's death, its red wash and its death camera do not
         // carry over.
@@ -1318,6 +1320,7 @@ internal sealed partial class DesktopGame
         _arms = null;
         _player = null;
         _playerMode = false;
+        _pendingGenericTbaExplosions.Clear();
         _scene = null;
         _playerTerrain = null;
         _worldSolids = null;

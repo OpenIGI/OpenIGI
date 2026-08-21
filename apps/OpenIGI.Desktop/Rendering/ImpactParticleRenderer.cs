@@ -193,6 +193,18 @@ public sealed class ImpactParticleRenderer : IDisposable
     /// upward bias is retail's own — the explosion task jitters its bursts −0.3 to +0.7 in Z.
     /// </remarks>
     public void SpawnExplosion(Vector3d positionUnits, float intensity)
+        => SpawnExplosion(positionUnits, intensity, fragmentCount: 0, fireballCount: 0);
+
+    /// <summary>Spawns an explosion using authored GenericTBA fragment and fireball counts.</summary>
+    /// <param name="positionUnits">The blast's centre, in world units.</param>
+    /// <param name="intensity">The particle-count scale.</param>
+    /// <param name="fragmentCount">The authored debris count, or zero for the grenade fallback.</param>
+    /// <param name="fireballCount">The authored fireball count, or zero for the grenade fallback.</param>
+    public void SpawnExplosion(
+        Vector3d positionUnits,
+        float intensity,
+        int fragmentCount,
+        int fireballCount)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -201,8 +213,8 @@ public sealed class ImpactParticleRenderer : IDisposable
             return;
         }
 
-        int embers = (int)(26 * Math.Min(intensity, 2f));
-        int smoke = (int)(14 * Math.Min(intensity, 2f));
+        int embers = (int)((fireballCount > 0 ? fireballCount * 6 : 26) * Math.Min(intensity, 2f));
+        int smoke = (int)((fragmentCount > 0 ? fragmentCount * 3 : 14) * Math.Min(intensity, 2f));
         Vector3f up = new(0f, 0f, 1f);
 
         for (int i = 0; i < embers; i++)

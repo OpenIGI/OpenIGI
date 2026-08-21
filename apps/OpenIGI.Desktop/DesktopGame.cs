@@ -1779,6 +1779,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
                     // and the casualties.
                     ResolveGrenadeDetonations();
+                    ResolveGenericTbaExplosions();
                     _flashbangStrength = Math.Max(0f, _flashbangStrength - FlashbangDecayPerTick);
 
                     // The alarm speakers, following their own level expressions -- the siren the

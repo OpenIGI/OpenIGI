@@ -546,6 +546,14 @@ public sealed class WorldInteractionRegistry
     public AiStationaryGun? FindStationaryGun(int taskId) =>
         _items.FirstOrDefault(item => item.Task.Id == taskId)?.StationaryGun;
 
+    /// <summary>Finds the interaction owned by a placed task.</summary>
+    public bool TryGet(GameTask task, out WorldInteraction? interaction)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        interaction = _items.FirstOrDefault(item => ReferenceEquals(item.Task, task));
+        return interaction is not null;
+    }
+
     /// <summary>Consumes authored GenericTBA explosion edges emitted during the current tick.</summary>
     public IEnumerable<(WorldInteraction Interaction, GenericTbaExplosionParameters Parameters)> ConsumeExplosions()
     {
@@ -991,7 +999,7 @@ public sealed class WorldInteractionRegistry
         }
 
         return new GenericTbaExplosionParameters(
-            hasExplosionContent,
+            explodable,
             destroyedModel,
             damageScale,
             radius,
