@@ -406,6 +406,11 @@ public sealed partial class VulkanGraphicsDevice
         // Its dependencies are ordered by the barriers MemoryBarrier records and the one drawn before the
         // next render pass. Outside a frame — load time — a dispatch is submitted and waited on its own,
         // which is safe because no frame is in flight to disturb.
+        // A dispatch during the geometry stage is something wanting to read the finished G-buffer -- the
+        // screen-probe gather is the one that does. Close the geometry pass for it rather than falling
+        // back to a separate submission, which would read attachments this frame has not written yet.
+        CloseGeometryForCompute();
+
         bool inFrame = _frameOpen && !_presentPassActive && !_deferredPassActive;
         VulkanComputeShader.Instance instance = program.Acquire(inFrame, _frameLoop.CurrentFrame);
         WriteDescriptorSet(program, instance);
@@ -583,6 +588,17 @@ public sealed partial class VulkanGraphicsDevice
                     Sampler = texture.Sampler,
                     ImageView = texture.View,
                     ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+                };
+            }
+
+            // A G-buffer attachment, offered to the gather as an ordinary texture.
+            if (!resource.IsVolume && TryResolveSceneTexture(bound, out SceneTexture scene))
+            {
+                return new DescriptorImageInfo
+                {
+                    Sampler = SceneSampler,
+                    ImageView = scene.View,
+                    ImageLayout = scene.Layout,
                 };
             }
 

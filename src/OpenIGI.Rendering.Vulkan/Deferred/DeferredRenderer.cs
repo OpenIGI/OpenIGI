@@ -72,7 +72,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
         _probes = new ProbeVolumes(vk, device, allocator, commands);
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
-        _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass);
+        _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);

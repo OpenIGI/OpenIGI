@@ -135,7 +135,11 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         VulkanMesh resource = Resolve(mesh);
-        BindMeshState(resource, modelView, diffuse, lightmap, blend);
+        if (!BindMeshState(resource, modelView, diffuse, lightmap, blend))
+        {
+            return;
+        }
+
         _instance.Vk.CmdDrawIndexed(_frameCommandBuffer, (uint)indexCount, 1, (uint)indexOffset, 0, 0);
     }
 
@@ -155,7 +159,10 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         VulkanMesh resource = Resolve(mesh);
-        BindMeshState(resource, modelView, diffuse, lightmap, blend);
+        if (!BindMeshState(resource, modelView, diffuse, lightmap, blend))
+        {
+            return;
+        }
 
         // State is shared across the ranges, so it is bound once and each range is a draw into the same
         // buffers — the multi-draw the seam documents, done as a run of indexed draws.
@@ -196,7 +203,14 @@ public sealed partial class VulkanGraphicsDevice
         }
     }
 
-    private void BindMeshState(
+    /// <summary>Binds everything a draw needs, and says whether the draw should happen at all.</summary>
+    /// <param name="mesh">The mesh being drawn.</param>
+    /// <param name="modelView">Its transform.</param>
+    /// <param name="diffuse">Its colour texture.</param>
+    /// <param name="lightmap">Its lightmap.</param>
+    /// <param name="blend">How it blends.</param>
+    /// <returns><see langword="false"/> when this draw has no business in the pass that is open.</returns>
+    private bool BindMeshState(
         VulkanMesh mesh,
         in Matrix4f modelView,
         TextureHandle diffuse,
@@ -206,8 +220,8 @@ public sealed partial class VulkanGraphicsDevice
         // A shadow cascade is being rendered: the mesh casts depth into the shadow map and nothing else.
         if (_inShadowPass)
         {
-            BindShadow(mesh, modelView);
-            return;
+            BindShadow(mesh, modelView, diffuse);
+            return true;
         }
 
         // The card atlas is open: this draw is a model being photographed flat into one of its pages,
@@ -215,7 +229,7 @@ public sealed partial class VulkanGraphicsDevice
         if (_cardCaptureActive)
         {
             BindCard(mesh, modelView, diffuse, lightmap);
-            return;
+            return true;
         }
 
         // A draw goes to one of three pipelines by where it is: the G-buffer during the geometry
@@ -234,15 +248,21 @@ public sealed partial class VulkanGraphicsDevice
             EnsurePresentPass();
             BindForward(_mesh3D, mesh, modelView, diffuse, lightmap, blend);
         }
+
+        return true;
     }
 
-    private unsafe void BindShadow(VulkanMesh mesh, in Matrix4f modelView)
+    private unsafe void BindShadow(VulkanMesh mesh, in Matrix4f modelView, TextureHandle diffuse)
     {
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _deferred.ShadowPipeline.Pipeline);
         BindMeshBuffers(mesh);
+
+        // The colour texture, for its alpha alone: a cut-out must cast the shadow of the shape that is
+        // there, not of the quad it was cut from.
+        BindMeshTextures(_deferred.ShadowPipeline.PipelineLayout, diffuse, TextureHandle.None);
 
         // The cascade's model-view-projection: the frame's projection is the cascade's orthographic one and
         // the model-view is the light-camera view, both set by the shadow pass before it draws.

@@ -29,8 +29,14 @@ internal sealed unsafe class ShadowPipeline : IDisposable
     /// <param name="device">The device the pipeline lives on.</param>
     /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The shadow render pass.</param>
+    /// <param name="textureSetLayout">The two-sampler texture set, for the cut-out test's alpha.</param>
     /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
-    public ShadowPipeline(Vk vk, VulkanDevice device, ShaderCompiler compiler, RenderPass renderPass)
+    public ShadowPipeline(
+        Vk vk,
+        VulkanDevice device,
+        ShaderCompiler compiler,
+        RenderPass renderPass,
+        DescriptorSetLayout textureSetLayout)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -43,7 +49,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         _fragment = new VulkanShaderModule(
             vk, _device, compiler.Compile(DeferredShaderSource.ShadowFragment, ShaderStage.Fragment, "shadow.frag"), ShaderStage.Fragment);
 
-        PipelineLayout = CreateLayout();
+        PipelineLayout = CreateLayout(textureSetLayout);
         Pipeline = CreatePipeline(renderPass);
     }
 
@@ -68,7 +74,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         _vertex.Dispose();
     }
 
-    private PipelineLayout CreateLayout()
+    private PipelineLayout CreateLayout(DescriptorSetLayout textureSetLayout)
     {
         PushConstantRange push = new()
         {
@@ -80,6 +86,8 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         PipelineLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.PipelineLayoutCreateInfo,
+            SetLayoutCount = 1,
+            PSetLayouts = &textureSetLayout,
             PushConstantRangeCount = 1,
             PPushConstantRanges = &push,
         };
@@ -110,27 +118,36 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 PName = (byte*)entryPoint,
             };
 
-            // The same vertex buffer the world draws from, reading only the position at offset zero.
+            // The same vertex buffer the world draws from: the position, and the texture coordinate the
+            // cut-out test needs.
             VertexInputBindingDescription binding = new()
             {
                 Binding = 0,
                 Stride = (uint)Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
-            VertexInputAttributeDescription attribute = new()
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[2];
+            attributes[0] = new VertexInputAttributeDescription
             {
                 Location = 0,
                 Binding = 0,
                 Format = Format.R32G32B32Sfloat,
                 Offset = 0,
             };
+            attributes[1] = new VertexInputAttributeDescription
+            {
+                Location = 2,
+                Binding = 0,
+                Format = Format.R32G32Sfloat,
+                Offset = 24,
+            };
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
                 VertexBindingDescriptionCount = 1,
                 PVertexBindingDescriptions = &binding,
-                VertexAttributeDescriptionCount = 1,
-                PVertexAttributeDescriptions = &attribute,
+                VertexAttributeDescriptionCount = 2,
+                PVertexAttributeDescriptions = attributes,
             };
 
             PipelineInputAssemblyStateCreateInfo inputAssembly = new()

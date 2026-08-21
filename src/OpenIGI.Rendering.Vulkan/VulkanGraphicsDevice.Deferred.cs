@@ -103,6 +103,10 @@ public sealed partial class VulkanGraphicsDevice
         _captureHeight = Math.Max(1, description.Height);
         _sceneTarget = _deferred.Target(_frameLoop.CurrentFrame, _captureWidth, _captureHeight);
 
+        // The gather holds its scene-texture handles for the life of the level, so what they point
+        // at is refreshed here rather than the handles themselves changing.
+        RefreshSceneTextures();
+
         // Before anything opens a render pass, because these are compute dispatches and a render pass is
         // the one place they cannot be recorded.
         RecordSkyUpdate();
@@ -158,12 +162,18 @@ public sealed partial class VulkanGraphicsDevice
 
         // Ending the geometry pass is what closes it, runs everything that needs a finished G-buffer and
         // cannot run inside a render pass, and then opens the shading pass and draws the light.
-        if (_deferredStage == DeferredStage.Geometry)
+        if (_deferredStage is DeferredStage.Geometry or DeferredStage.Gap)
         {
-            _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
-            _deferredPassActive = false;
+            // Already closed if a compute pass asked to read the G-buffer; closing it here is the ordinary
+            // case, where nothing did.
+            CloseGeometryForCompute();
 
-            RecordBetweenPasses();
+            if (_deferredStage == DeferredStage.Geometry)
+            {
+                _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
+                _deferredPassActive = false;
+                RecordBetweenPasses();
+            }
 
             BeginShadingPass();
             RecordLighting();
@@ -584,18 +594,6 @@ public sealed partial class VulkanGraphicsDevice
         _cameraPosition = cameraPosition;
     }
 
-    /// <inheritdoc/>
-    /// <remarks>The GI gather that reads these is not yet offered on the Vulkan path.</remarks>
-    public TextureHandle SceneDepth => TextureHandle.None;
-
-    /// <inheritdoc/>
-    /// <remarks>The GI gather that reads these is not yet offered on the Vulkan path.</remarks>
-    public TextureHandle SceneNormal => TextureHandle.None;
-
-    /// <inheritdoc/>
-    /// <remarks>The GI gather that reads these is not yet offered on the Vulkan path.</remarks>
-    public TextureHandle SceneColour => TextureHandle.None;
-
     private unsafe void BeginGeometryPass()
     {
         if (_sceneTarget is null)
@@ -886,6 +884,9 @@ public sealed partial class VulkanGraphicsDevice
 
         /// <summary>The geometry pass, filling the G-buffer.</summary>
         Geometry,
+
+        /// <summary>The G-buffer is filled and its pass closed, with the shading pass not yet open.</summary>
+        Gap,
 
         /// <summary>The shading pass, on its lighting subpass.</summary>
         Lighting,
