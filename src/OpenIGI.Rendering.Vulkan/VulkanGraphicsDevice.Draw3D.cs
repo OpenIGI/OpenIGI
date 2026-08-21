@@ -220,6 +220,15 @@ public sealed partial class VulkanGraphicsDevice
         // A shadow cascade is being rendered: the mesh casts depth into the shadow map and nothing else.
         if (_inShadowPass)
         {
+            // Only what is solid casts. A blended draw is a decal over something that has already cast --
+            // the terrain's detail layers sit on a base that is itself opaque -- and its alpha is a smooth
+            // blend, not a cut-out. Putting it through the cut-out test turns that gradient into a hard
+            // half-and-half stipple, and every detail tile then casts the shadow of a chequerboard.
+            if (blend != BlendMode.Opaque)
+            {
+                return false;
+            }
+
             BindShadow(mesh, modelView, diffuse);
             return true;
         }

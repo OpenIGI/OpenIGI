@@ -126,7 +126,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 Stride = (uint)Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[2];
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[3];
             attributes[0] = new VertexInputAttributeDescription
             {
                 Location = 0,
@@ -141,12 +141,19 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 Format = Format.R32G32Sfloat,
                 Offset = 24,
             };
+            attributes[2] = new VertexInputAttributeDescription
+            {
+                Location = 4,
+                Binding = 0,
+                Format = Format.R8G8B8A8Unorm,
+                Offset = (uint)Vertex3D.ColourOffset,
+            };
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
                 VertexBindingDescriptionCount = 1,
                 PVertexBindingDescriptions = &binding,
-                VertexAttributeDescriptionCount = 2,
+                VertexAttributeDescriptionCount = 3,
                 PVertexAttributeDescriptions = attributes,
             };
 
