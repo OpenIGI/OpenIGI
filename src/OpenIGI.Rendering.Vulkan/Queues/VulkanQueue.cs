@@ -181,7 +181,13 @@ internal sealed unsafe class VulkanQueue : IDisposable
                     PSignalSemaphores = firstSignal,
                 };
 
-                VkCheck.Ok(_vk.QueueSubmit(Handle, 1, &submitInfo, payload.Fence), "vkQueueSubmit");
+                Result submitResult = _vk.QueueSubmit(Handle, 1, &submitInfo, payload.Fence);
+                if (submitResult == Result.ErrorDeviceLost)
+                {
+                    _device.ReportDeviceFault();
+                }
+
+                VkCheck.Ok(submitResult, "vkQueueSubmit");
             }
 
             payload.TimelineValue = signalValue;

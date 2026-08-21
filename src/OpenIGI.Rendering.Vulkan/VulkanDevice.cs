@@ -5,6 +5,7 @@ using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Queues;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace OpenIGI.Rendering.Vulkan;
@@ -22,6 +23,9 @@ namespace OpenIGI.Rendering.Vulkan;
 internal sealed unsafe class VulkanDevice : IDisposable
 {
     private readonly Vk _vk;
+    private readonly Instance _instance;
+    private readonly IIgiLogger _logger;
+    private readonly bool _deviceFaultEnabled;
     private readonly List<VulkanQueue> _queues = [];
     private bool _disposed;
 
@@ -35,6 +39,9 @@ internal sealed unsafe class VulkanDevice : IDisposable
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(selection);
         _vk = instance.Vk;
+        _instance = instance.Instance;
+        _logger = logger;
+        _deviceFaultEnabled = selection.Capabilities.EnabledExtensions.Contains("VK_EXT_device_fault");
         Selection = selection;
         Capabilities = selection.Capabilities;
 
@@ -139,6 +146,74 @@ internal sealed unsafe class VulkanDevice : IDisposable
     /// point at which resources a command buffer might still reference can be destroyed. Per-frame
     /// completion is tracked through each queue's timeline instead.
     /// </remarks>
+    /// <summary>Logs whatever the driver recorded about a device loss, when the fault extension is on.</summary>
+    /// <remarks>
+    /// Called the instant a submit or wait returns <c>ErrorDeviceLost</c>, before the exception unwinds.
+    /// A hang leaves no address behind and reports only a vendor code or nothing; a real fault reports the
+    /// address it read, wrote or executed at, and whether it was invalid -- which is what tells a timeout
+    /// apart from an out-of-bounds and points at the resource behind it.
+    /// </remarks>
+    public unsafe void ReportDeviceFault()
+    {
+        if (!_deviceFaultEnabled)
+        {
+            _logger.Warning("Vulkan", "Device lost; VK_EXT_device_fault is not enabled, so no fault detail is available.");
+            return;
+        }
+
+        if (!_vk.TryGetDeviceExtension(_instance, Device, out ExtDeviceFault ext))
+        {
+            return;
+        }
+
+        // Pre-size the arrays to a capacity and read in one call, rather than the counts-then-info two
+        // step -- the null-info counts call marshalled badly and faulted the process before it could say
+        // anything at all.
+        const int capacity = 256;
+        DeviceFaultAddressInfoEXT* addresses = stackalloc DeviceFaultAddressInfoEXT[capacity];
+        DeviceFaultVendorInfoEXT* vendors = stackalloc DeviceFaultVendorInfoEXT[capacity];
+
+        DeviceFaultCountsEXT counts = new()
+        {
+            SType = StructureType.DeviceFaultCountsExt,
+            AddressInfoCount = capacity,
+            VendorInfoCount = capacity,
+        };
+
+        DeviceFaultInfoEXT info = new()
+        {
+            SType = StructureType.DeviceFaultInfoExt,
+            PAddressInfos = addresses,
+            PVendorInfos = vendors,
+        };
+
+        Result read = ext.GetDeviceFaultInfo(Device, &counts, &info);
+        if (read != Result.Success && read != Result.Incomplete)
+        {
+            _logger.Warning("Vulkan", $"vkGetDeviceFaultInfoEXT returned {read}.");
+            return;
+        }
+
+        string description = new((sbyte*)info.Description);
+        _logger.Error("Vulkan", $"DEVICE FAULT: '{description}' ({counts.AddressInfoCount} address(es), {counts.VendorInfoCount} vendor code(s)).");
+
+        for (int i = 0; i < (int)Math.Min(counts.AddressInfoCount, (uint)capacity); i++)
+        {
+            DeviceFaultAddressInfoEXT a = addresses[i];
+            _logger.Error(
+                "Vulkan",
+                $"  fault address[{i}]: type={a.AddressType} at 0x{a.ReportedAddress:X} (precision mask 0x{a.AddressPrecision:X}).");
+        }
+
+        for (int i = 0; i < (int)Math.Min(counts.VendorInfoCount, (uint)capacity); i++)
+        {
+            DeviceFaultVendorInfoEXT v = vendors[i];
+            _logger.Error(
+                "Vulkan",
+                $"  vendor fault[{i}]: code=0x{v.VendorFaultCode:X} data=0x{v.VendorFaultData:X}.");
+        }
+    }
+
     public void WaitIdle() => _vk.DeviceWaitIdle(Device);
 
     /// <inheritdoc/>

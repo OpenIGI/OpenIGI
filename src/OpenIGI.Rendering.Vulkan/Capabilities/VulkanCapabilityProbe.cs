@@ -296,6 +296,15 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
+        if (capabilities.EnabledExtensions.Contains("VK_EXT_device_fault"))
+        {
+            chain.Add(new PhysicalDeviceFaultFeaturesEXT
+            {
+                SType = StructureType.PhysicalDeviceFaultFeaturesExt,
+                DeviceFault = true,
+            });
+        }
+
         if (capabilities.DynamicRenderingLocalRead)
         {
             chain.Add(new PhysicalDeviceDynamicRenderingLocalReadFeaturesKHR
@@ -453,6 +462,7 @@ internal static unsafe class VulkanCapabilityProbe
             Take(VulkanExtensionNames.Robustness2);
         }
 
+        Take("VK_EXT_device_fault");
         Take(VulkanExtensionNames.MemoryBudget);
         Take(VulkanExtensionNames.MemoryPriority);
         Take(KhrMaintenance4.ExtensionName);
