@@ -145,6 +145,10 @@ public sealed partial class VulkanGraphicsDevice
         _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
         _deferredPassActive = false;
 
+        // The G-buffer pass has ended; close the Geometry range the BeginPass opened before the compute in
+        // the gap (the sun-shadow trace) is timed as its own stage.
+        EndStageTiming();
+
         // Everything the backend itself wants done over a finished G-buffer, so the gather that follows
         // sees the same world the shading will.
         RecordBetweenPasses();

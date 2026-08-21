@@ -175,6 +175,33 @@ public sealed partial class VulkanGraphicsDevice
         }
     }
 
+    /// <summary>
+    /// Times <paramref name="stage"/> on the GPU for as long as the returned scope is alive, the backend's
+    /// own bracket for a deferred pass the game does not bracket itself.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to the OpenGL backend's <c>Measure</c>. The deferred passes -- geometry, lighting,
+    /// forward, the resolve -- run entirely inside the backend, so unless the backend brackets them nothing
+    /// does and the whole GPU frame reads as the one stage the game happens to bracket around it (the GI
+    /// gather). Ranges cannot nest, so a scope must be disposed before the next stage opens; the deferred
+    /// passes are strictly sequential, so that holds. Same-stage ranges in one frame sum, so a shadow
+    /// cascade drawn several times still reports one Shadows figure.
+    /// </remarks>
+    private StageScope Measure(RenderStage stage) => new(this, stage);
+
+    private readonly struct StageScope : IDisposable
+    {
+        private readonly VulkanGraphicsDevice _device;
+
+        public StageScope(VulkanGraphicsDevice device, RenderStage stage)
+        {
+            _device = device;
+            device.BeginStageTiming(stage);
+        }
+
+        public void Dispose() => _device.EndStageTiming();
+    }
+
     /// <inheritdoc/>
     public IReadOnlyList<RenderStageTiming> StageTimings() => _stageProfiler?.Timings() ?? [];
 

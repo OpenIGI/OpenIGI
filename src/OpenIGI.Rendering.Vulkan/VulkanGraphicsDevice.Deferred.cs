@@ -146,6 +146,11 @@ public sealed partial class VulkanGraphicsDevice
         {
             BeginGeometryPass();
             _deferredStage = DeferredStage.Geometry;
+
+            // The game brackets geometry itself only on the vanilla direct path; on this deferred path it
+            // does not, so the backend owns the timing. Closed in CloseGeometryForCompute, where the pass
+            // that fills the G-buffer ends.
+            BeginStageTiming(RenderStage.Geometry);
         }
         else if (pass == ScenePass.Forward)
         {
@@ -153,6 +158,10 @@ public sealed partial class VulkanGraphicsDevice
             // second subpass.
             _instance.Vk.CmdNextSubpass(_frameCommandBuffer, SubpassContents.Inline);
             _deferredStage = DeferredStage.Forward;
+
+            // Closed in EndSceneCapture, where the shading pass ends. Same reason as geometry: on the
+            // deferred path the game leaves this to the backend.
+            BeginStageTiming(RenderStage.Forward);
         }
 
         if (_deferredPassActive)
@@ -212,6 +221,10 @@ public sealed partial class VulkanGraphicsDevice
                 _deferredStage = DeferredStage.Forward;
             }
 
+            // Close the Forward range the BeginPass opened, before the shading pass ends. A no-op on the
+            // empty-forward path above, where nothing opened it.
+            EndStageTiming();
+
             _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
             _deferredPassActive = false;
 
@@ -266,6 +279,8 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        using StageScope occlusion = Measure(RenderStage.AmbientOcclusionSearch);
+
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
         Image ao = target.AoImage;
@@ -303,6 +318,8 @@ public sealed partial class VulkanGraphicsDevice
         {
             return;
         }
+
+        using StageScope velocityTiming = Measure(RenderStage.TemporalResolve);
 
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
@@ -408,6 +425,12 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         EnsurePresentPass();
+
+        // Exposure and the tone-map curve are the one fullscreen draw that resolves the scene into the back
+        // buffer; it reports as ToneMapGrade. It must close before the UI draws into the same present pass,
+        // which the method returning here does. Bloom, camera effects and spatial AA are not ported, so
+        // there is nothing to fold into it and those stages stay dark.
+        using StageScope tone = Measure(RenderStage.ToneMapGrade);
 
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
@@ -585,6 +608,9 @@ public sealed partial class VulkanGraphicsDevice
         _inShadowPass = true;
         _shadowCascade = cascade;
         ApplyViewportAndScissor(_frameCommandBuffer, new Viewport(0, 0, (int)size, (int)size));
+
+        // Each cascade is its own range; the profiler sums them into one Shadows figure for the frame.
+        BeginStageTiming(RenderStage.Shadows);
         return true;
     }
 
@@ -597,6 +623,7 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        EndStageTiming();
         _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
         _inShadowPass = false;
     }
@@ -702,6 +729,9 @@ public sealed partial class VulkanGraphicsDevice
     /// </remarks>
     private void RecordBetweenPasses()
     {
+        // The ray-traced sun shadow is the compute that lives in the gap between the two passes. It is a
+        // shadow, so it reports under Shadows alongside any rasterised cascades.
+        using StageScope shadow = Measure(RenderStage.Shadows);
         DispatchSunShadow();
     }
 
@@ -771,6 +801,8 @@ public sealed partial class VulkanGraphicsDevice
         {
             return;
         }
+
+        using StageScope lighting = Measure(RenderStage.Lighting);
 
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
