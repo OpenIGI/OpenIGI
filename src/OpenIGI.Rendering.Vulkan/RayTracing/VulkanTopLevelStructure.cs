@@ -32,7 +32,12 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
     private readonly List<(VulkanBuffer Buffer, ulong LastUsed)> _instancePool = [];
     private readonly VulkanRayTracingInstance[] _staged;
 
-    private VulkanAccelerationStructure? _structure;
+    // Every structure ever built, with the submission that last traced it -- the same rule the instance
+    // pool keeps. A build overwrites the structure it targets, and a frame already in flight is tracing
+    // against the one it built, so this frame must build into a different one: writing the structure a
+    // trace is reading is a scene built over rays mid-flight, which the hardware does not survive.
+    private readonly List<(VulkanAccelerationStructure Structure, ulong LastUsed)> _structurePool = [];
+    private VulkanAccelerationStructure? _current;
     private readonly ulong _structureSize;
     private bool _disposed;
 
@@ -70,8 +75,8 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
         _structureSize = sizes.AccelerationStructureSize;
     }
 
-    /// <summary>Gets the structure, or <see langword="null"/> before the first build.</summary>
-    public VulkanAccelerationStructure? Structure => _structure;
+    /// <summary>Gets the structure the last build wrote, or <see langword="null"/> before the first build.</summary>
+    public VulkanAccelerationStructure? Structure => _current;
 
     /// <summary>Gets the scratch memory a build needs.</summary>
     public ulong BuildScratchSize { get; }
@@ -123,13 +128,11 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
         // one the last frame read, so whatever it held is not this scene.
         instanceBuffer.Write<VulkanRayTracingInstance>(_staged.AsSpan(0, (int)InstanceCount));
 
-        _structure ??= VulkanAccelerationStructure.Create(
-            _vk,
-            _api,
-            _device,
-            _allocator,
-            AccelerationStructureTypeKHR.TopLevelKhr,
-            _structureSize);
+        // A structure nothing still on the GPU is tracing, for the same reason the instance buffer is
+        // taken this way -- built in place, it would otherwise be written over the rays a frame in flight
+        // is casting through it.
+        VulkanAccelerationStructure structure = AcquireStructure(submissionValue, completedValue);
+        _current = structure;
 
         AccelerationStructureGeometryKHR geometry = new()
         {
@@ -161,7 +164,7 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
             Type = AccelerationStructureTypeKHR.TopLevelKhr,
             Flags = BuildFlags(),
             Mode = BuildAccelerationStructureModeKHR.BuildKhr,
-            DstAccelerationStructure = _structure.Handle,
+            DstAccelerationStructure = structure.Handle,
             GeometryCount = 1,
             PGeometries = &geometry,
             ScratchData = new DeviceOrHostAddressKHR { DeviceAddress = scratchAddress },
@@ -180,7 +183,12 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
         }
 
         _disposed = true;
-        _structure?.Dispose();
+        foreach ((VulkanAccelerationStructure structure, _) in _structurePool)
+        {
+            structure.Dispose();
+        }
+
+        _structurePool.Clear();
         foreach ((VulkanBuffer buffer, _) in _instancePool)
         {
             buffer.Dispose();
@@ -227,6 +235,36 @@ internal sealed unsafe class VulkanTopLevelStructure : IDisposable
             persistentlyMapped: true);
 
         _instancePool.Add((fresh, submissionValue));
+        return fresh;
+    }
+
+    /// <summary>Takes a structure nothing still running is tracing against, growing the pool if none is.</summary>
+    /// <param name="submissionValue">The timeline value this frame's work will signal.</param>
+    /// <param name="completedValue">The timeline value the queue has reached.</param>
+    /// <returns>The structure to build into and trace against this frame.</returns>
+    private VulkanAccelerationStructure AcquireStructure(ulong submissionValue, ulong completedValue)
+    {
+        for (int i = 0; i < _structurePool.Count; i++)
+        {
+            (VulkanAccelerationStructure structure, ulong lastUsed) = _structurePool[i];
+            if (lastUsed > completedValue)
+            {
+                continue;
+            }
+
+            _structurePool[i] = (structure, submissionValue);
+            return structure;
+        }
+
+        VulkanAccelerationStructure fresh = VulkanAccelerationStructure.Create(
+            _vk,
+            _api,
+            _device,
+            _allocator,
+            AccelerationStructureTypeKHR.TopLevelKhr,
+            _structureSize);
+
+        _structurePool.Add((fresh, submissionValue));
         return fresh;
     }
 

@@ -37,6 +37,11 @@ public sealed partial class VulkanGraphicsDevice
     private IrradianceVolumeSettings _volumeSettings = IrradianceVolumeSettings.Off;
     private bool _hasProbeField;
 
+    // The irradiance field waiting to be uploaded into the probe volumes. Set out of frame during the
+    // probe collect and applied at the top of the frame, so the transfer lands in the frame's own command
+    // buffer -- one submission, in order -- rather than on a private submit racing the frame in flight.
+    private IrradianceVolume? _pendingProbeVolume;
+
     // The screen-probe gather's near-field atlas, fed each frame it is traced.
     private TextureHandle _screenIndirect;
     private float _screenIndirectStrength;
@@ -114,6 +119,7 @@ public sealed partial class VulkanGraphicsDevice
         // Before anything opens a render pass, because these are compute dispatches and a render pass is
         // the one place they cannot be recorded.
         RecordSkyUpdate();
+        ApplyPendingProbeVolume();
 
         // The structure a shadow ray traces against, from everything the geometry pass has ever been asked
         // to draw. Recorded here for the same reason the sky is: a build cannot happen inside a render
@@ -439,6 +445,20 @@ public sealed partial class VulkanGraphicsDevice
         _lightmapScale = scale;
     }
 
+    // Uploads the field the probe collect handed over, into this frame's command buffer. Called at the
+    // top of a scene capture, before any render pass opens, so the transfer is a plain pre-pass copy on
+    // the frame's own timeline; the staging is freed once the frames that sample it have cycled.
+    private void ApplyPendingProbeVolume()
+    {
+        if (_pendingProbeVolume is not { } volume)
+        {
+            return;
+        }
+
+        _pendingProbeVolume = null;
+        _deferred.Probes.Update(volume, _frameCommandBuffer, QueueDeletion);
+    }
+
     /// <inheritdoc/>
     /// <remarks>Uploads the field into the probe volumes the lighting pass samples; null clears it.</remarks>
     public void SetIrradianceVolume(IrradianceVolume? volume)
@@ -446,12 +466,18 @@ public sealed partial class VulkanGraphicsDevice
         ThrowIfDisposed();
         if (volume is null || volume.ProbeCount == 0)
         {
+            _pendingProbeVolume = null;
             _deferred.Probes.Clear();
             _hasProbeField = false;
             return;
         }
 
-        _deferred.Probes.Update(volume);
+        // Not uploaded here: this is called during the probe collect, before the frame's command buffer is
+        // open. Held instead and uploaded at the top of the frame (ApplyPendingProbeVolume) into that
+        // command buffer, so the transfer shares the frame's submission and in-order timeline rather than
+        // a private submit that would write the field a frame in flight is still reading -- which lost the
+        // device under a moving camera. The last field set before a frame opens is the one that frame uses.
+        _pendingProbeVolume = volume;
         _hasProbeField = true;
     }
 

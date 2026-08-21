@@ -67,7 +67,7 @@ internal sealed unsafe class ProbeVolumes : IDisposable
         for (int channel = 0; channel < Channels; channel++)
         {
             CreateImage(channel);
-            Upload(channel, new float[4]);
+            Upload(channel, new float[4], default, null);
         }
     }
 
@@ -93,7 +93,12 @@ internal sealed unsafe class ProbeVolumes : IDisposable
 
     /// <summary>Uploads a field, rebuilding the volumes if its dimensions changed.</summary>
     /// <param name="volume">The field.</param>
-    public void Update(IrradianceVolume volume)
+    /// <param name="frameCommandBuffer">The open frame's command buffer to record the upload into.</param>
+    /// <param name="deferCleanup">
+    /// Takes ownership of the staging buffer to free once the frame has cycled, or <see langword="null"/>
+    /// to upload on a private submit-and-wait instead (before any frame is open).
+    /// </param>
+    public void Update(IrradianceVolume volume, CommandBuffer frameCommandBuffer, Action<IDisposable>? deferCleanup)
     {
         ArgumentNullException.ThrowIfNull(volume);
         if (volume.ProbeCount == 0)
@@ -139,10 +144,10 @@ internal sealed unsafe class ProbeVolumes : IDisposable
             distance[to + 1] = moments[(probe * 2) + 1];
         }
 
-        Upload(0, red);
-        Upload(1, green);
-        Upload(2, blue);
-        Upload(3, distance);
+        Upload(0, red, frameCommandBuffer, deferCleanup);
+        Upload(1, green, frameCommandBuffer, deferCleanup);
+        Upload(2, blue, frameCommandBuffer, deferCleanup);
+        Upload(3, distance, frameCommandBuffer, deferCleanup);
 
         Origin = volume.Origin;
         Spacing = volume.Spacing;
@@ -199,9 +204,11 @@ internal sealed unsafe class ProbeVolumes : IDisposable
         _views[channel] = view;
     }
 
-    private void Upload(int channel, float[] data)
+    // Records one channel's copy into the frame command buffer (deferring the staging buffer) when a
+    // deferral is given, or onto a private submit-and-wait when it is not.
+    private void Upload(int channel, float[] data, CommandBuffer frameCommandBuffer, Action<IDisposable>? deferCleanup)
     {
-        using VulkanBuffer staging = new(
+        VulkanBuffer staging = new(
             _vk,
             _device,
             _allocator,
@@ -215,7 +222,8 @@ internal sealed unsafe class ProbeVolumes : IDisposable
         int x = _countX;
         int y = _countY;
         int z = _countZ;
-        _commands.SingleTime(cmd =>
+
+        void Record(CommandBuffer cmd)
         {
             Transition(cmd, image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal,
                 PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
@@ -229,7 +237,24 @@ internal sealed unsafe class ProbeVolumes : IDisposable
 
             Transition(cmd, image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
                 PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
-        });
+        }
+
+        // The frame's own command buffer when there is one, so this upload lands in the same submission --
+        // and so the same in-order timeline -- as the passes that read the field, rather than on its own
+        // submission racing the frame in flight (which is what lost the device under a moving camera). The
+        // staging buffer has to outlive the frame it feeds, so it is handed to the deferred deletion the
+        // caller owns rather than disposed here. Outside a frame -- a load-time first upload -- there is
+        // nothing in flight and its own submit-and-wait is both safe and simplest.
+        if (deferCleanup is not null)
+        {
+            Record(frameCommandBuffer);
+            deferCleanup(staging);
+        }
+        else
+        {
+            _commands.SingleTime(Record);
+            staging.Dispose();
+        }
     }
 
     private void Transition(

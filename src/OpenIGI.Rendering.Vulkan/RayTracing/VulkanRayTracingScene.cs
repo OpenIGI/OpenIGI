@@ -39,6 +39,10 @@ internal sealed class VulkanRayTracingScene : IDisposable
     private readonly List<(ulong RetireAfter, IDisposable Resource)> _retiring = [];
     private readonly List<VulkanBottomLevelStructure> _pendingRetire = [];
 
+    // Frames beyond the retiring one to hold a replaced or compacted structure before freeing it: the
+    // frame-in-flight depth (two) plus a frame of slack, so no frame still tracing it reads freed memory.
+    private const ulong RetireSafetyFrames = 3;
+
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanRayTracingScene"/> class.</summary>
@@ -152,11 +156,21 @@ internal sealed class VulkanRayTracingScene : IDisposable
         // deferred off this frame is dated against.
         ulong submissionValue = queue.LastSubmittedValue + 1;
 
+        // A structure a build replaced or a compaction shrank is freed only after this many frames beyond
+        // the one retiring it. The tight bound is the frame that retires it, but a structure can still be
+        // named by the instances of a frame already in flight -- an outer bottom-level whose compacted copy
+        // moved it, its old copy still traced by the frame the move has not reached yet. Freeing it on the
+        // retiring frame's own value raced that trace and read freed acceleration-structure memory, which
+        // the device-fault report caught as an invalid read under a fast-moving camera. Holding it past the
+        // frames-in-flight depth (with a frame of slack) closes the window; the cost is a few structures
+        // kept a little longer, which the compaction they came from more than pays back.
+        ulong retireAfter = submissionValue + RetireSafetyFrames;
+
         // Structures a rebuild replaced this frame: freed once the queue passes this frame, by when the
         // scenes still tracing against them have all completed.
         for (int i = 0; i < _pendingRetire.Count; i++)
         {
-            _retiring.Add((submissionValue, _pendingRetire[i]));
+            _retiring.Add((retireAfter, _pendingRetire[i]));
         }
 
         _pendingRetire.Clear();
@@ -174,7 +188,7 @@ internal sealed class VulkanRayTracingScene : IDisposable
         _compaction.Record(
             commandBuffer,
             queue,
-            replaced => _retiring.Add((submissionValue, replaced)));
+            replaced => _retiring.Add((retireAfter, replaced)));
 
         // Only now are the geometry addresses settled. Compacting one moves it, and the placements that
         // name it have to be repointed before the scene is built over them — do it any earlier and this

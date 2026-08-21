@@ -296,7 +296,36 @@ internal sealed class VulkanWorldScene : IDisposable
     /// The placements that referred to it stay in the instance list until the scene is next reset. They
     /// point at a structure that has been freed, so a mesh is only ever forgotten together with a reset.
     /// </remarks>
-    public void Forget(uint meshId) => _geometries.Remove(meshId);
+    public void Forget(uint meshId)
+    {
+        // The structure and every placement that named it both leave the scene -- but the structure is
+        // retired rather than freed here. A frame in flight is still tracing the scene it was last built
+        // into, and freeing its geometry on the spot is exactly the read of freed memory the next trace
+        // faults on -- the device loss a streamed-out terrain chunk produced, reported by the fault
+        // extension as an invalid read. Retired, it lives until the frames that traced it have finished.
+        if (_geometries.Remove(meshId, out Geometry geometry))
+        {
+            _scene.RetireStructure(geometry.Structure);
+        }
+
+        // Drop this mesh's placements so the next scene build stops naming its structure at all. Without
+        // this the instances stayed, pointing at geometry that had gone, and every later trace read it.
+        for (int i = _instances.Count - 1; i >= 0; i--)
+        {
+            if (_instanceMeshIds[i] != meshId)
+            {
+                continue;
+            }
+
+            _instances.RemoveAt(i);
+            _instanceMeshIds.RemoveAt(i);
+        }
+
+        _placed.RemoveWhere(placement => placement.MeshId == meshId);
+        _streaming.Remove(meshId);
+        _settled.Remove(meshId);
+        _instancesChanged = true;
+    }
 
     /// <summary>Drops the whole accumulated world, for a level change.</summary>
     public void Reset()

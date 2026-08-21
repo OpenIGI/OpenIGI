@@ -21,9 +21,13 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 /// </remarks>
 internal sealed unsafe class VulkanBottomLevelStructure : IDisposable
 {
-    // Compacting costs a query, a wait and a copy. Below a few hundred triangles the structure is small
-    // enough that the bytes saved are not worth the round trip, which is the same threshold the reference draws.
-    private const uint MinimumPrimitivesToCompact = 128;
+    // Compaction is off. Its retirement path frees a structure a frame in flight can still be tracing --
+    // the device fault caught it as an invalid read of acceleration-structure memory when a fast camera
+    // streamed terrain, and a retirement margin only narrowed the window rather than closing it. Off, the
+    // structures stay a little larger but nothing is ever freed under a live trace. Re-enable this -- back
+    // to a real threshold, a few hundred triangles as the reference draws it -- only once the compacted-structure
+    // retirement holds until every frame that could name the old copy has finished.
+    private const uint MinimumPrimitivesToCompact = uint.MaxValue;
 
     private readonly Vk _vk;
     private readonly VulkanRayTracingApi _api;
