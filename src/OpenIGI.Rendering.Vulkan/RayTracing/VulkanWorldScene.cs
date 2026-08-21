@@ -49,10 +49,18 @@ internal sealed class VulkanWorldScene : IDisposable
     // placements that name it have to be able to find their way back to it and be corrected.
     private readonly List<uint> _instanceMeshIds = [];
 
+    // Streamed meshes waiting to stop growing, and the ones that have.
+    private readonly Dictionary<uint, Streaming> _streaming = [];
+    private readonly HashSet<uint> _settled = [];
+    private int _frame;
+
     // Building a structure is not free, and the first frame of a level offers every mesh in it at once.
     // Admitting a few a frame spreads that over the first second of play, which nobody sees, rather than
     // stalling on the frame the level appears.
     private const int MaxNewGeometriesPerFrame = 8;
+
+    // How many frames a streamed mesh's size must hold still before it is built over.
+    private const int SettleFrames = 30;
 
     private int _newThisFrame;
     private bool _instancesChanged;
@@ -107,13 +115,21 @@ internal sealed class VulkanWorldScene : IDisposable
             return;
         }
 
-        // Only geometry that was uploaded once and in full. A mesh that is appended to as the world
-        // streams, or rewritten as a body animates, has memory that is not yet — or no longer — the
-        // triangles it claims: an appendable mesh reports the highest slot written, not that every slot
-        // below it holds real vertices, and a builder handed uninitialised positions does not politely
-        // produce a bad tree. Streamed and skinned geometry needs its structure rebuilt as it changes,
-        // which is its own piece of work.
-        if (mesh.Storage || mesh.Animated)
+        // Skinned geometry is rewritten every frame as the body moves, so the triangles a structure was
+        // built over are not the ones that are there now.
+        if (mesh.Animated)
+        {
+            return;
+        }
+
+        // Streamed geometry -- the terrain, which is the only thing that uses mesh storage -- is appended
+        // to as the world loads. Its written range only ever grows and is always contiguous from zero, so
+        // a structure built over it is sound; the danger is building one while it is still growing, and
+        // then tracing against triangles that have since been replaced by a larger buffer. So it waits
+        // until its size has held still for a while, and is taken as it stood then. Terrain that streams
+        // in afterwards is not traced: the structure is not rebuilt, which is the next piece of work here
+        // and the reason this is still behind a flag.
+        if (mesh.Storage && !IsSettled(meshId, mesh.DrawableIndexCount))
         {
             return;
         }
@@ -160,11 +176,39 @@ internal sealed class VulkanWorldScene : IDisposable
         _instancesChanged = true;
     }
 
+    /// <summary>Whether a streamed mesh has stopped growing for long enough to be worth building over.</summary>
+    /// <param name="meshId">The mesh's identifier.</param>
+    /// <param name="indexCount">How many indices it currently claims.</param>
+    /// <returns><see langword="true"/> once the size has held still, and for every frame after.</returns>
+    private bool IsSettled(uint meshId, int indexCount)
+    {
+        if (_settled.Contains(meshId))
+        {
+            return true;
+        }
+
+        if (!_streaming.TryGetValue(meshId, out Streaming state) || state.IndexCount != indexCount)
+        {
+            _streaming[meshId] = new Streaming(indexCount, _frame);
+            return false;
+        }
+
+        if (_frame - state.Since < SettleFrames)
+        {
+            return false;
+        }
+
+        _settled.Add(meshId);
+        _streaming.Remove(meshId);
+        return true;
+    }
+
     /// <summary>Records whatever building the scene needs this frame.</summary>
     /// <param name="commandBuffer">The command buffer to record into. Must not be inside a render pass.</param>
     /// <param name="queue">The queue the frame is submitted to.</param>
     public void Record(CommandBuffer commandBuffer, VulkanQueue queue)
     {
+        _frame++;
         _newThisFrame = 0;
         RefreshStructureAddresses();
 
@@ -266,6 +310,11 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <param name="Structure">The structure over its triangles.</param>
     /// <param name="IndexCount">How many indices it covered when it was built.</param>
     private readonly record struct Geometry(VulkanBottomLevelStructure Structure, int IndexCount);
+
+    /// <summary>A streamed mesh's size, and the frame it last changed on.</summary>
+    /// <param name="IndexCount">How many indices it claimed then.</param>
+    /// <param name="Since">The frame the size was last seen to change.</param>
+    private readonly record struct Streaming(int IndexCount, int Since);
 
     /// <summary>A mesh at a place, quantised so that the same placement is recognised as the same one.</summary>
     /// <remarks>
