@@ -412,6 +412,8 @@ public sealed partial class VulkanGraphicsDevice
         CloseGeometryForCompute();
 
         bool inFrame = _frameOpen && !_presentPassActive && !_deferredPassActive;
+
+
         VulkanComputeShader.Instance instance = program.Acquire(inFrame, _frameLoop.CurrentFrame);
         WriteDescriptorSet(program, instance);
 
@@ -428,6 +430,18 @@ public sealed partial class VulkanGraphicsDevice
             dispatch(cmd);
             _computeInFrame = true;
             return;
+        }
+
+        // A dispatch submitted on its own runs alongside whatever the queue is already executing, and
+        // "already executing" includes the frame that rebuilds the world's acceleration structure. A
+        // traversal overlapping that rebuild is reading a structure while it is being written, which the
+        // hardware does not survive — intermittently, which is exactly how it presented. The reference
+        // never has this shape: its build and every trace of it live in one render graph on one timeline,
+        // so the graph orders them. This is the same guarantee made the blunt way, and only for the
+        // shaders that actually trace.
+        if (program.Traces)
+        {
+            _device.GraphicsQueue.WaitForValue(_device.GraphicsQueue.LastSubmittedValue);
         }
 
         _commands.SingleTime(cmd =>

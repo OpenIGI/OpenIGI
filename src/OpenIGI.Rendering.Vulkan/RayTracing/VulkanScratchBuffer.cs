@@ -14,7 +14,21 @@ namespace OpenIGI.Rendering.Vulkan.RayTracing;
 /// no bookkeeping, since every build in the batch finishes before the batch's barrier.
 /// </para>
 /// <para>
-/// It grows and never shrinks. The largest batch the scene ever builds is the size it settles at, which
+/// There is more than one of them, and which one a batch gets depends on what the GPU has finished. A
+/// build reads and writes its scratch for as long as it runs, and a frame is recorded while the previous
+/// one is still executing — so handing the next frame the same memory is handing it memory a build is
+/// still using. That does not fail every time. It fails when the two overlap, which is why it looked
+/// intermittent and why it never happened under the validation layers, which slow the recording side
+/// enough that the previous frame is always done.
+/// </para>
+/// <para>
+/// The reference does the same thing by a different route: its build scratch is a transient buffer
+/// created inside the render graph each frame, and the graph will not hand back memory it knows is still
+/// in flight. This is that rule, kept by hand — a buffer is only reused once the queue says the
+/// submission that last used it has completed.
+/// </para>
+/// <para>
+/// They grow and never shrink. The largest batch the scene ever builds is the size they settle at, which
 /// happens in the first frames and then stops.
 /// </para>
 /// </remarks>
@@ -25,6 +39,8 @@ internal sealed class VulkanScratchBuffer : IDisposable
     private readonly VulkanAllocator _allocator;
     private readonly ulong _alignment;
 
+    // Every buffer ever allocated, with the submission that last used it. One of them is current.
+    private readonly List<(VulkanBuffer Buffer, ulong LastUsed)> _pool = [];
     private VulkanBuffer? _buffer;
     private ulong _offset;
     private bool _disposed;
@@ -53,29 +69,36 @@ internal sealed class VulkanScratchBuffer : IDisposable
     /// starts handing ranges out from the beginning again.
     /// </summary>
     /// <param name="requiredBytes">The total the batch will ask for, alignment padding included.</param>
-    /// <returns>
-    /// The buffer that was replaced when the reallocation grew it, for the caller to retire once the GPU
-    /// has finished with it; <see langword="null"/> when nothing was replaced.
-    /// </returns>
-    /// <remarks>
-    /// The old buffer is returned rather than freed because a previous frame's builds may still be
-    /// reading it. It is the caller — which knows what the GPU has reached — that can safely retire it.
-    /// </remarks>
-    public VulkanBuffer? BeginBatch(ulong requiredBytes)
+    /// <param name="submissionValue">The queue value this batch will be signalled by.</param>
+    /// <param name="completedValue">The queue value the GPU has already reached.</param>
+    /// <returns>Always null; nothing is handed back for the caller to retire any more.</returns>
+    public VulkanBuffer? BeginBatch(ulong requiredBytes, ulong submissionValue, ulong completedValue)
     {
         _offset = 0;
 
-        if (_buffer is not null && _buffer.Size >= requiredBytes)
+        // A buffer big enough whose last use the GPU has passed. Anything still in flight is left alone,
+        // however much room it has.
+        for (int i = 0; i < _pool.Count; i++)
         {
-            return null;
+            (VulkanBuffer buffer, ulong lastUsed) = _pool[i];
+            if (buffer.Size >= requiredBytes && lastUsed <= completedValue)
+            {
+                _pool[i] = (buffer, submissionValue);
+                _buffer = buffer;
+                return null;
+            }
         }
 
-        VulkanBuffer? replaced = _buffer;
+        // Nothing free and large enough, so another one. Grown generously rather than exactly, so a batch
+        // that creeps up by one mesh at a time does not allocate every frame.
+        ulong largest = 0;
+        foreach ((VulkanBuffer buffer, ulong _) in _pool)
+        {
+            largest = Math.Max(largest, buffer.Size);
+        }
 
-        // Grow generously rather than exactly, so a batch that creeps up by one mesh at a time does not
-        // reallocate every frame.
-        ulong size = Math.Max(requiredBytes, Math.Max(64 * 1024, (_buffer?.Size ?? 0) * 2));
-        _buffer = new VulkanBuffer(
+        ulong size = Math.Max(requiredBytes, Math.Max(64 * 1024, largest * 2));
+        VulkanBuffer fresh = new(
             _vk,
             _device,
             _allocator,
@@ -83,7 +106,12 @@ internal sealed class VulkanScratchBuffer : IDisposable
             BufferUsageFlags.StorageBufferBit | BufferUsageFlags.ShaderDeviceAddressBit,
             MemoryPropertyFlags.DeviceLocalBit);
 
-        return replaced;
+        _pool.Add((fresh, submissionValue));
+        _buffer = fresh;
+
+        // Nothing is replaced any more: a buffer the GPU may still be reading stays in the pool until it
+        // says otherwise, rather than being handed back for someone else to time.
+        return null;
     }
 
     /// <summary>Hands out an aligned range and advances past it.</summary>
@@ -119,7 +147,12 @@ internal sealed class VulkanScratchBuffer : IDisposable
         }
 
         _disposed = true;
-        _buffer?.Dispose();
+        foreach ((VulkanBuffer buffer, ulong _) in _pool)
+        {
+            buffer.Dispose();
+        }
+
+        _pool.Clear();
         _buffer = null;
     }
 }

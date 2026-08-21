@@ -1,3 +1,4 @@
+using System.Linq;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -102,6 +103,9 @@ internal sealed unsafe class VulkanComputeShader : IDisposable
 
     /// <summary>Gets the pipeline layout the descriptor set is bound through.</summary>
     public PipelineLayout PipelineLayout => _pipelineLayout;
+
+    /// <summary>Whether this shader traces rays against the world's acceleration structure.</summary>
+    public bool Traces => Resources.Any(r => r.Kind == ComputeResourceKind.Scene);
 
     /// <summary>Gets the binding the gathered globals block sits at, or -1 when there are none.</summary>
     public int UniformBinding { get; }

@@ -133,7 +133,7 @@ internal sealed class VulkanRayTracingScene : IDisposable
 
         // The scratch buffer is carved up afresh every frame, so the batch is opened exactly once here —
         // sized for the mesh builds and the scene build together — and every range below comes out of it.
-        BeginScratchBatch(submissionValue);
+        BeginScratchBatch(submissionValue, queue.CompletedValue);
 
         RecordGeometryBuilds(commandBuffer, submissionValue);
         _compaction.Record(
@@ -183,7 +183,7 @@ internal sealed class VulkanRayTracingScene : IDisposable
         _scratch.Dispose();
     }
 
-    private void BeginScratchBatch(ulong submissionValue)
+    private void BeginScratchBatch(ulong submissionValue, ulong completedValue)
     {
         ulong total = VulkanRayTracingApi.Align(_topLevel.BuildScratchSize, _api.ScratchAlignment);
         foreach (VulkanBottomLevelStructure structure in _pendingBuilds)
@@ -191,13 +191,10 @@ internal sealed class VulkanRayTracingScene : IDisposable
             total += VulkanRayTracingApi.Align(structure.BuildScratchSize, _api.ScratchAlignment);
         }
 
-        VulkanBuffer? replaced = _scratch.BeginBatch(total);
-        if (replaced is not null)
-        {
-            // A frame still in flight may be building out of the buffer that was just replaced, so it is
-            // dated against this frame rather than freed now.
-            _retiring.Add((submissionValue, replaced));
-        }
+        // The scratch handed back is one no build still in flight is using, which is why the completed
+        // value goes in: a batch recorded now must not write memory the previous frame is still building
+        // out of.
+        _scratch.BeginBatch(total, submissionValue, completedValue);
     }
 
     private void RecordGeometryBuilds(CommandBuffer commandBuffer, ulong submissionValue)
