@@ -51,7 +51,7 @@ internal sealed class VulkanWorldScene : IDisposable
 
     // Streamed meshes waiting to stop growing, and the ones that have.
     private readonly Dictionary<uint, Streaming> _streaming = [];
-    private readonly HashSet<uint> _settled = [];
+    private readonly Dictionary<uint, int> _settled = [];
     private int _frame;
 
     // Building a structure is not free, and the first frame of a level offers every mesh in it at once.
@@ -134,6 +134,24 @@ internal sealed class VulkanWorldScene : IDisposable
             return;
         }
 
+        // A settled terrain mesh that has since grown is rebuilt over its new, larger extent. Its
+        // structure was taken when it first settled; the triangles the world streamed in afterwards are
+        // not in it, so a ray passes straight through terrain that is plainly there on screen. Now that
+        // it has settled again at the larger size, build a fresh structure over the whole of it, retire
+        // the old one once the frames still tracing against it have finished, and let the placements
+        // repoint themselves to the new address on the next scene build. Held to the same per-frame
+        // budget as a new mesh, and never done while the old structure is still moving under compaction.
+        if (mesh.Storage
+            && _geometries.TryGetValue(meshId, out Geometry built)
+            && built.IndexCount != mesh.DrawableIndexCount
+            && !_scene.IsCompacting(built.Structure)
+            && _newThisFrame < MaxNewGeometriesPerFrame)
+        {
+            _geometries[meshId] = new Geometry(BuildStructure(mesh), mesh.DrawableIndexCount);
+            _scene.RetireStructure(built.Structure);
+            _newThisFrame++;
+        }
+
         Placement placement = Placement.From(meshId, worldTransform);
         if (!_placed.Add(placement))
         {
@@ -182,9 +200,19 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <returns><see langword="true"/> once the size has held still, and for every frame after.</returns>
     private bool IsSettled(uint meshId, int indexCount)
     {
-        if (_settled.Contains(meshId))
+        if (_settled.TryGetValue(meshId, out int settledCount))
         {
-            return true;
+            if (settledCount == indexCount)
+            {
+                return true;
+            }
+
+            // It has grown since the structure was built over it -- the world streamed more of the
+            // terrain in as the camera reached it. Treat it as unsettled again, so it is taken afresh
+            // at the new size and rebuilt once it has held still there.
+            _settled.Remove(meshId);
+            _streaming[meshId] = new Streaming(indexCount, _frame);
+            return false;
         }
 
         if (!_streaming.TryGetValue(meshId, out Streaming state) || state.IndexCount != indexCount)
@@ -198,7 +226,7 @@ internal sealed class VulkanWorldScene : IDisposable
             return false;
         }
 
-        _settled.Add(meshId);
+        _settled[meshId] = indexCount;
         _streaming.Remove(meshId);
         return true;
     }
@@ -282,6 +310,8 @@ internal sealed class VulkanWorldScene : IDisposable
         _placed.Clear();
         _instances.Clear();
         _instanceMeshIds.Clear();
+        _streaming.Clear();
+        _settled.Clear();
         _instancesChanged = true;
     }
 

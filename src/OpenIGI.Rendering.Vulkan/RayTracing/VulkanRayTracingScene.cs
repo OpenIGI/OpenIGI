@@ -37,6 +37,7 @@ internal sealed class VulkanRayTracingScene : IDisposable
     private readonly List<VulkanBottomLevelStructure> _geometries = [];
     private readonly List<VulkanBottomLevelStructure> _pendingBuilds = [];
     private readonly List<(ulong RetireAfter, IDisposable Resource)> _retiring = [];
+    private readonly List<VulkanBottomLevelStructure> _pendingRetire = [];
 
     private bool _disposed;
 
@@ -106,6 +107,26 @@ internal sealed class VulkanRayTracingScene : IDisposable
         }
     }
 
+    /// <summary>Whether a structure is still moving under compaction and cannot yet be retired.</summary>
+    /// <param name="structure">The structure a rebuild wants to replace.</param>
+    /// <returns><see langword="true"/> while the compactor still names it.</returns>
+    public bool IsCompacting(VulkanBottomLevelStructure structure) => _compaction.IsQueued(structure);
+
+    /// <summary>Retires a structure a rebuild has replaced.</summary>
+    /// <param name="structure">The structure no new build will name any more.</param>
+    /// <remarks>
+    /// It is dropped from the live set at once -- nothing built after this frame refers to it -- but its
+    /// memory is only freed once the queue has passed this frame, because the scenes already in flight are
+    /// still tracing rays against it. The freeing is dated in <see cref="RecordUpdate"/>, where the frame's
+    /// submission value is known.
+    /// </remarks>
+    public void RetireStructure(VulkanBottomLevelStructure structure)
+    {
+        ArgumentNullException.ThrowIfNull(structure);
+        _geometries.Remove(structure);
+        _pendingRetire.Add(structure);
+    }
+
     /// <summary>Sets where every mesh sits this frame.</summary>
     /// <param name="instances">The placements.</param>
     public void SetInstances(ReadOnlySpan<VulkanRayTracingInstance> instances) =>
@@ -130,6 +151,15 @@ internal sealed class VulkanRayTracingScene : IDisposable
         // This frame's work will be signalled by the queue's next value, which is what everything
         // deferred off this frame is dated against.
         ulong submissionValue = queue.LastSubmittedValue + 1;
+
+        // Structures a rebuild replaced this frame: freed once the queue passes this frame, by when the
+        // scenes still tracing against them have all completed.
+        for (int i = 0; i < _pendingRetire.Count; i++)
+        {
+            _retiring.Add((submissionValue, _pendingRetire[i]));
+        }
+
+        _pendingRetire.Clear();
 
         // The scratch buffer is carved up afresh every frame, so the batch is opened exactly once here —
         // sized for the mesh builds and the scene build together — and every range below comes out of it.
@@ -192,6 +222,13 @@ internal sealed class VulkanRayTracingScene : IDisposable
         }
 
         _retiring.Clear();
+
+        foreach (VulkanBottomLevelStructure structure in _pendingRetire)
+        {
+            structure.Dispose();
+        }
+
+        _pendingRetire.Clear();
 
         foreach (VulkanBottomLevelStructure structure in _geometries)
         {

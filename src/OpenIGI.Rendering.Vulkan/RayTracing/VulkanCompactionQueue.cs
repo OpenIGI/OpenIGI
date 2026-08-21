@@ -65,6 +65,29 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
     /// <summary>Gets a value indicating whether anything is waiting to be compacted.</summary>
     public bool HasWork => _requested.Count > 0 || _active.Count > 0;
 
+    /// <summary>Whether a structure is still somewhere in the compaction handshake.</summary>
+    /// <param name="structure">The structure to check for.</param>
+    /// <returns>
+    /// <see langword="true"/> while the structure is queued for a size query or has one in flight -- the
+    /// compactor is about to read it and copy from it, so it must not be freed. <see langword="false"/>
+    /// once it has left the handshake, whether it was compacted or dropped for not shrinking, after which
+    /// it can be replaced.
+    /// </returns>
+    public bool IsQueued(VulkanBottomLevelStructure structure)
+    {
+        ArgumentNullException.ThrowIfNull(structure);
+
+        foreach (Pending pending in _requested)
+        {
+            if (ReferenceEquals(pending.Structure, structure))
+            {
+                return true;
+            }
+        }
+
+        return _active.Contains(structure);
+    }
+
     /// <summary>Asks for a structure to be compacted once its build has completed.</summary>
     /// <param name="structure">The structure to compact.</param>
     /// <param name="buildCompletesAt">
