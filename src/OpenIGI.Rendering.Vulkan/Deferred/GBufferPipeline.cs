@@ -137,19 +137,20 @@ internal sealed unsafe class GBufferPipeline : IDisposable
                 InputRate = VertexInputRate.Vertex,
             };
 
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[5];
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[6];
             attributes[0] = new VertexInputAttributeDescription { Location = 0, Binding = 0, Format = Format.R32G32B32Sfloat, Offset = 0 };
             attributes[1] = new VertexInputAttributeDescription { Location = 1, Binding = 0, Format = Format.R32G32B32Sfloat, Offset = 12 };
             attributes[2] = new VertexInputAttributeDescription { Location = 2, Binding = 0, Format = Format.R32G32Sfloat, Offset = 24 };
             attributes[3] = new VertexInputAttributeDescription { Location = 3, Binding = 0, Format = Format.R32G32Sfloat, Offset = 32 };
             attributes[4] = new VertexInputAttributeDescription { Location = 4, Binding = 0, Format = Format.R8G8B8A8Unorm, Offset = (uint)Vertex3D.ColourOffset };
+            attributes[5] = new VertexInputAttributeDescription { Location = 5, Binding = 0, Format = Format.R8G8B8A8Unorm, Offset = (uint)Vertex3D.SurfaceNormalOffset };
 
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
                 VertexBindingDescriptionCount = 1,
                 PVertexBindingDescriptions = &vertexBinding,
-                VertexAttributeDescriptionCount = 5,
+                VertexAttributeDescriptionCount = 6,
                 PVertexAttributeDescriptions = attributes,
             };
 
