@@ -347,10 +347,17 @@ internal sealed partial class DesktopGame
         {
             foreach ((string assignmentName, string assignmentValue) in _testOutroTickWrites)
             {
+                double parsed = double.Parse(assignmentValue, System.Globalization.CultureInfo.InvariantCulture);
+                if (parsed != Math.Floor(parsed))
+                {
+                    _logger.Warning(
+                        "Mission",
+                        $"Test capture write {assignmentName}={assignmentValue} is not an integer; "
+                            + $"script variables carry ints, so it truncates to {(int)parsed}.");
+                }
+
                 _logger.Information("Mission", $"Test capture write: {assignmentName}={assignmentValue}.");
-                _loop.Variables.TryWrite(
-                    assignmentName,
-                    QvmValue.FromInt32((int)double.Parse(assignmentValue, System.Globalization.CultureInfo.InvariantCulture)));
+                _loop.Variables.TryWrite(assignmentName, QvmValue.FromInt32((int)parsed));
             }
 
             _cutscenes.RequestBreak();
