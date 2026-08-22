@@ -57,6 +57,16 @@ public sealed class RetailGameMaterialTests
     }
 
     [RequiresGameDataFact]
+    public void GroundUsesTheSharedTerrainMaterialRow()
+    {
+        GameMaterialRegistry materials = Load();
+
+        Assert.True(materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground));
+        Assert.Equal(FootstepSounds.TerrainMaterialIndex, ground.Index);
+        Assert.Equal("hole_concrete1.tex", ground.Entry.EntryTexture);
+    }
+
+    [RequiresGameDataFact]
     public void WoodNamesItsOwnBulletHoleAndItsOwnSounds()
     {
         GameMaterialRegistry materials = Load();

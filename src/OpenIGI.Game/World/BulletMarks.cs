@@ -63,6 +63,22 @@ public sealed class BulletMarks
         TotalAdded = 0;
     }
 
+    /// <summary>The shared Concrete row name retained for focused impact fixtures.</summary>
+    /// <remarks>
+    /// <para>
+    /// A collision face's fourth field selects a row of its own mesh's <c>TAMC</c> table. The collision
+    /// resolver translates that local selector through TAMC's global-material field before it creates
+    /// the <see cref="WorldRayHit"/>, so the hit's <c>Material</c> is already the shared game-material
+    /// row that owns the decal effect.
+    /// </para>
+    /// <para>
+    /// The local selector must not be used as a shared material ID here: the same selector value can
+    /// mean different global materials in different meshes. The effect's texture and size still come
+    /// from the resolved material row, including the material's no-mark guard.
+    /// </para>
+    /// </remarks>
+    public const string FallbackMaterial = "Concrete";
+
     /// <summary>Records what one impact leaves behind, if the material leaves anything.</summary>
     /// <param name="hit">Where the round landed, with the material its face names.</param>
     /// <param name="materials">The game material table.</param>

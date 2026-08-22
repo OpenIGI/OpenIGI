@@ -77,6 +77,10 @@ public static class FootstepSounds
         return lowest is null ? null : index;
     }
 
+    /// <summary>The shared material-table row declared for bare terrain.</summary>
+    /// <remarks>The shared MATERIAL QSC calls <c>SetActiveMaterial(1)</c> before declaring Ground.</remarks>
+    public const int TerrainMaterialIndex = 1;
+
     /// <summary>How far above the ground the material probe starts, in engine units.</summary>
     public const double ProbeAboveInUnits = 204.8;
 

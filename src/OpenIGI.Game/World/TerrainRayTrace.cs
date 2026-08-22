@@ -179,7 +179,8 @@ public static class TerrainRayTrace
                     origin.Y + (direction.Y * fraction),
                     origin.Z + (direction.Z * fraction)),
                 new Vector3f((float)normal.X, (float)normal.Y, (float)normal.Z),
-                length * fraction);
+                length * fraction,
+                FootstepSounds.TerrainMaterialIndex);
         }
     }
 
