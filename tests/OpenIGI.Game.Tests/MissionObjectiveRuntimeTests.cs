@@ -270,11 +270,111 @@ public sealed class MissionObjectiveRuntimeTests
         Assert.Equal(0, runtime.InterfaceTimerRemainingTicks);
     }
 
+    [Fact]
+    public void LevelFlowFailureBindingReachesAuthoredStatusMessageOnTheFollowingTickAndReleases()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Initial value"), QvmExpression.Text("Int32"),
+                QvmExpression.Text("Add"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Sub"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Interface timer enabled"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Max level play time"), QvmExpression.Text("Real32"),
+                QvmExpression.Text("Complete"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Failed"), QvmExpression.Text("VarString")),
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Send"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Text"), QvmExpression.Text("VarString"),
+                QvmExpression.Text("Is send once"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Cutscene message"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Duration"), QvmExpression.Text("Real32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(2),
+                QvmExpression.Text("EditVariable"),
+                QvmExpression.Text("Failure switch"),
+                QvmExpression.Int(0),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text(string.Empty)),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(17),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Level flow"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text("EditVariable_2.nValue")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(29),
+                QvmExpression.Text("LevelFlow"),
+                QvmExpression.Text("Secondary level flow"),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0f),
+                QvmExpression.Text(string.Empty),
+                QvmExpression.Text("EditVariable_2.nValue")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(23),
+                QvmExpression.Text("StatusMessage"),
+                QvmExpression.Text("Mission Failed"),
+                QvmExpression.Text("LevelFlow_17.isFailed"),
+                QvmExpression.Text("MISSIONFAILED"),
+                QvmExpression.Int(1),
+                QvmExpression.Int(0),
+                QvmExpression.Real(2f))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        DeclaredTask levelFlow = Assert.IsType<DeclaredTask>(loop.Tasks.FromId(17));
+        loop.Variables.BindInt(levelFlow, "unrelated", () => 7, _ => { });
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.isFailed", out QvmValue initialFailure));
+        Assert.Equal(0, initialFailure.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_29.isFailed", out QvmValue initialSecondFailure));
+        Assert.Equal(0, initialSecondFailure.ToInt32());
+        Assert.True(loop.Variables.TryWrite("StatusMessage_23.nTickSendt", QvmValue.FromInt32(-211)));
+        Assert.True(loop.Variables.TryWrite("EditVariable_2.nValue", QvmValue.FromInt32(1)));
+
+        runtime.Tick();
+
+        Assert.True(runtime.IsFailed);
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.isFailed", out QvmValue failureAfterFlow));
+        Assert.Equal(1, failureAfterFlow.ToInt32());
+        Assert.True(loop.Variables.TryRead("LevelFlow_29.isFailed", out QvmValue secondFailureAfterFlow));
+        Assert.Equal(1, secondFailureAfterFlow.ToInt32());
+        Assert.True(new LevelExpressionRuntime(loop.Variables).EvaluateCondition("LevelFlow_17.isFailed", emptyValue: false));
+        Assert.True(loop.Variables.TryRead("StatusMessage_23.isSendt", out QvmValue sentBeforeBinding));
+        Assert.Equal(0, sentBeforeBinding.ToInt32());
+
+        runtime.Tick();
+
+        Assert.True(loop.Variables.TryRead("StatusMessage_23.isSendt", out QvmValue sentAfterBinding));
+        Assert.Equal(1, sentAfterBinding.ToInt32());
+
+        runtime.Release();
+
+        Assert.False(loop.Variables.TryRead("LevelFlow_17.isFailed", out _));
+        Assert.False(loop.Variables.TryRead("LevelFlow_29.isFailed", out _));
+        Assert.True(loop.Variables.TryRead("LevelFlow_17.unrelated", out QvmValue unrelated));
+        Assert.Equal(7, unrelated.ToInt32());
+    }
+
     [RequiresGameDataFact]
     public void EveryRetailMissionPublishesObjectivesAndLevelFlow()
     {
         IReadOnlyList<string> scripts = GameData.EnumerateFiles("objects.qvm");
         Assert.Equal(14, scripts.Count);
+        int failureMessageCount = 0;
 
         foreach (string script in scripts)
         {
@@ -286,11 +386,27 @@ public sealed class MissionObjectiveRuntimeTests
             LevelLoader loader = new(root, loop.TaskCommands, loop.Natives, resources);
             loader.LoadScript(resourceName);
 
+            List<DeclaredTask> levelFlows = Walk(root)
+                .OfType<DeclaredTask>()
+                .Where(task => string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
+                .ToList();
             MissionObjectiveRuntime runtime = new(root, loop.Variables);
             Assert.True(runtime.HasLevelFlow, $"{script} has no LevelFlow task.");
+            Assert.NotEmpty(levelFlows);
             Assert.True(runtime.DefinitionCount > 0, $"{script} has no DefineComputerObjective task.");
             Assert.True(runtime.StatusMessageCount > 0, $"{script} has no StatusMessage task.");
             Assert.InRange(runtime.Objectives.Count, 0, MissionObjectiveRuntime.ObjectiveSlotCount);
+
+            foreach (DeclaredTask levelFlow in levelFlows)
+            {
+                Assert.True(loop.Variables.TryRead($"{levelFlow.Name}.isFailed", out _));
+            }
+
+            failureMessageCount += Walk(root)
+                .OfType<DeclaredTask>()
+                .Count(message => string.Equals(message.Type.Name, "StatusMessage", StringComparison.Ordinal)
+                    && levelFlows.Any(levelFlow => String(message, "Send").Contains(
+                        $"{levelFlow.Name}.isFailed", StringComparison.Ordinal)));
 
             if (runtime.InterfaceTimerEnabled)
             {
@@ -318,6 +434,29 @@ public sealed class MissionObjectiveRuntimeTests
                 Assert.Equal(1, active.ToInt32());
                 Assert.True(loop.Variables.TryRead("EditVariable_199.nValue", out var edit));
                 Assert.Equal(1, edit.ToInt32());
+            }
+
+            runtime.Release();
+            foreach (DeclaredTask levelFlow in levelFlows)
+            {
+                Assert.False(loop.Variables.TryRead($"{levelFlow.Name}.isFailed", out _));
+            }
+        }
+
+        Assert.True(failureMessageCount > 0, "No retail StatusMessage reads a LevelFlow isFailed field.");
+    }
+
+    private static string String(DeclaredTask task, string name) =>
+        task.TryGetValue(name, out object? value) && value is string text ? text.TrimEnd('\r', '\n') : string.Empty;
+
+    private static IEnumerable<GameTask> Walk(GameTask root)
+    {
+        foreach (GameTask child in root.Children)
+        {
+            yield return child;
+            foreach (GameTask descendant in Walk(child))
+            {
+                yield return descendant;
             }
         }
     }

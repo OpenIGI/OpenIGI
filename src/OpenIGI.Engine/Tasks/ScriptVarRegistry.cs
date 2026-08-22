@@ -217,6 +217,32 @@ public sealed class ScriptVarRegistry
         }
     }
 
+    /// <summary>Removes one binding a task owns.</summary>
+    /// <param name="task">The owning task.</param>
+    /// <param name="field">The task-local field name.</param>
+    /// <returns><see langword="true"/> when that exact field was bound.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="task"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="field"/> is empty.</exception>
+    public bool Unbind(GameTask task, string field)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        ArgumentException.ThrowIfNullOrEmpty(field);
+
+        string symbol = $"{task.Name}.{field}";
+        if (!_byTask.TryGetValue(task, out List<string>? names) || !names.Remove(symbol))
+        {
+            return false;
+        }
+
+        _symbols.Unregister(symbol);
+        if (names.Count == 0)
+        {
+            _byTask.Remove(task);
+        }
+
+        return true;
+    }
+
     /// <summary>Gets the symbol names a task has bound.</summary>
     /// <param name="task">The task.</param>
     /// <returns>The bound names, empty when the task has exported nothing.</returns>

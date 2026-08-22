@@ -23,6 +23,7 @@ public sealed class MissionObjectiveRuntime
     public const int MessageSlotCount = 24;
 
     private readonly GameTask _levelRoot;
+    private readonly ScriptVarRegistry _variables;
     private readonly LevelExpressionRuntime _expressions;
     private readonly Func<string, string> _resolveText;
     private readonly List<Definition> _definitions = [];
@@ -30,6 +31,7 @@ public sealed class MissionObjectiveRuntime
     private readonly List<EditVariable> _editVariables = [];
     private readonly List<StatusMessage> _statusMessages = [];
     private readonly List<StatusMessage> _transientMessages = [];
+    private readonly List<DeclaredTask> _levelFlows = [];
 
     /// <summary>The live message slots, exactly as many as <c>0x486650</c> searches.</summary>
     /// <remarks>
@@ -50,6 +52,7 @@ public sealed class MissionObjectiveRuntime
     private bool _playerAlive = true;
     private int _tick;
     private int _levelFlowTick;
+    private bool _released;
 
     /// <summary>Builds the runtime from the authored level task tree.</summary>
     public MissionObjectiveRuntime(
@@ -61,6 +64,7 @@ public sealed class MissionObjectiveRuntime
         ArgumentNullException.ThrowIfNull(levelRoot);
         ArgumentNullException.ThrowIfNull(variables);
         _levelRoot = levelRoot;
+        _variables = variables;
         _expressions = new LevelExpressionRuntime(variables, native);
         _resolveText = resolveText ?? (static key => key);
 
@@ -104,12 +108,18 @@ public sealed class MissionObjectiveRuntime
             }
             else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
             {
+                _levelFlows.Add(declared);
                 _hasLevelFlow = true;
                 _levelFlowTask = declared;
                 _completeExpression = String(declared, "Complete");
                 _failedExpression = String(declared, "Failed");
                 _interfaceTimerEnabled = Bool(declared, "Interface timer enabled");
                 _maximumLevelPlayTimeSeconds = Math.Max(0f, Real(declared, "Max level play time", 0f));
+
+                // LevelFlow publishes its evaluated failure state for authored status messages. This
+                // remains a live alias, so messages evaluated before LevelFlow in this tick see the
+                // preceding tick's result.
+                variables.BindBool(declared, "isFailed", () => IsFailed, value => IsFailed = value);
             }
             else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
@@ -314,6 +324,27 @@ public sealed class MissionObjectiveRuntime
 
     /// <summary>Gets the result of the LevelFlow <c>Failed</c> expression.</summary>
     public bool IsFailed { get; private set; }
+
+    /// <summary>Releases the script fields this runtime adds to the loaded mission.</summary>
+    /// <remarks>
+    /// Level task deletion intentionally preserves exported fields. This runtime owns only
+    /// <c>LevelFlow_N.isFailed</c>, so release removes that exact field rather than changing task-tree
+    /// teardown or unbinding fields owned by other mission systems.
+    /// </remarks>
+    public void Release()
+    {
+        if (_released)
+        {
+            return;
+        }
+
+        foreach (DeclaredTask levelFlow in _levelFlows)
+        {
+            _variables.Unbind(levelFlow, "isFailed");
+        }
+
+        _released = true;
+    }
 
     /// <summary>Evaluates the authored definitions once, after the rest of the mission's tick.</summary>
     public void Tick(Vector3d? playerPosition = null)

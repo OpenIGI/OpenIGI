@@ -2446,6 +2446,7 @@ internal sealed partial class GameHost
         _messages?.Dispose();
         _messages = null;
         _computerHighlights = null;
+        _missionObjectives?.Release();
         _missionObjectives = null;
         _cutscenes = null;
         _securityCameras = null;
