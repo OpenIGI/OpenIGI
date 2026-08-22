@@ -21,6 +21,8 @@ namespace OpenIGI.Desktop;
 
 internal sealed partial class DesktopGame
 {
+    /// <summary>Test-only outro forcing writes re-applied on every logic tick.</summary>
+    private List<(string Name, string Value)> _testOutroTickWrites = [];
     private void StartMission(int id)
     {
         if (!_missions.TryGet(id, out MissionDescriptor? chosen))
@@ -333,6 +335,30 @@ internal sealed partial class DesktopGame
             _cutscenes.Tick();
             _cutscenes.FinishExpressionTick();
             StopCutsceneSounds();
+        }
+
+        // Test-only capture switch: exercise an authored outro through its real QVM gate rather than
+        // injecting a scene. OPENIGI_TEST_OUTRO_WRITES is a comma list of script writes, e.g.
+        // "EditVariable_199.nValue=1,AreaActivate_5.nActive=1"; the same writes are re-applied on
+        // every logic tick while the run lasts, so gates the level scripts reset stay satisfied.
+        string? testOutroWrites = Environment.GetEnvironmentVariable("OPENIGI_TEST_OUTRO_WRITES");
+        _testOutroTickWrites = TestOutroWrites(testOutroWrites);
+        if (_testOutroTickWrites.Count > 0)
+        {
+            foreach ((string assignmentName, string assignmentValue) in _testOutroTickWrites)
+            {
+                _logger.Information("Mission", $"Test capture write: {assignmentName}={assignmentValue}.");
+                _loop.Variables.TryWrite(
+                    assignmentName,
+                    QvmValue.FromInt32((int)double.Parse(assignmentValue, System.Globalization.CultureInfo.InvariantCulture)));
+            }
+
+            _cutscenes.RequestBreak();
+            _cutscenes.Tick();
+            _missionObjectives.TickLevelState();
+            _missionObjectives.TickAfterLevelState();
+            _cutscenes.FinishExpressionTick();
+            _logger.Information("Mission", "Test capture outro forcing active.");
         }
         _computerHighlights = new ComputerHighlightCatalog(levelRoot, _loop.Variables);
         _mapComputer = new MapComputerRenderer(_device, _resources, _logger, missionText.Get);
@@ -2422,5 +2448,25 @@ internal sealed partial class DesktopGame
             _logger.Information("Weapon", $"Holding {weapon.ScriptId} ('{weapon.GunModel}') on view bone "
                 + $"{HumanAttachPoints.FirstPersonWeapon}.");
         }
+    }
+
+    /// <summary>Parses the test-only outro forcing list: "Var=Value,Var=Value".</summary>
+    private static List<(string Name, string Value)> TestOutroWrites(string? spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec))
+        {
+            return [];
+        }
+
+        List<(string, string)> writes = [];
+        foreach (string part in spec.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            int equals = part.IndexOf('=');
+            if (equals > 0)
+            {
+                writes.Add((part[..equals].Trim(), part[(equals + 1)..].Trim()));
+            }
+        }
+        return writes;
     }
 }

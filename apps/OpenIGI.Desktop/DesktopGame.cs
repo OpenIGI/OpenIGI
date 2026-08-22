@@ -25,6 +25,7 @@ using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
 using OpenIGI.UI.Layout;
@@ -769,6 +770,27 @@ internal sealed partial class DesktopGame : IDisposable
         bool climbActive = false;
         bool worldInteractionActive = false;
         int temporalFrame = 0;
+
+        // Test-only authored-cutscene capture harness. Set OPENIGI_CUTSCENE_CAPTURE_DIR to enable;
+        // OPENIGI_CUTSCENE_CAPTURE_SCENE selects one scene id (unset/0 captures whichever scene is
+        // active), OPENIGI_CUTSCENE_CAPTURE_START_TICK is the first scene tick written and
+        // OPENIGI_CUTSCENE_CAPTURE_COUNT the still budget (default 5). One still is written every
+        // 90 logic ticks (3 s) while the scene runs, named mission-NN-scene-ID-tick-NNNNNN.bmp.
+        string? cutsceneCaptureDirectory = Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_DIR");
+        int cutsceneCaptureScene = 0;
+        bool captureCutscene = cutsceneCaptureDirectory is not null;
+        _ = int.TryParse(Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_SCENE"), out cutsceneCaptureScene);
+        int cutsceneCaptureTick = int.TryParse(
+            Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_START_TICK"),
+            out int configuredCaptureTick)
+            ? Math.Max(0, configuredCaptureTick)
+            : 90;
+        int cutsceneCaptureCount = 0;
+        int cutsceneCaptureLimit = int.TryParse(
+            Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_COUNT"),
+            out int configuredCaptureCount) && configuredCaptureCount > 0
+            ? configuredCaptureCount
+            : 5;
 
         // A scripted free-camera flight (-camend), if one was asked for. The opening pose is captured on
         // the first rendered frame and the camera is moved along a straight line to the end pose across the
@@ -2730,6 +2752,15 @@ internal sealed partial class DesktopGame : IDisposable
                     cutsceneViewMetres,
                     freeViewMetres,
                     playerAlive: !_playerDead);
+
+                // Test-only outro forcing: re-apply the env-specified gate writes every tick so gates
+                // whose variables the level scripts reset stay satisfied while the scene plays.
+                foreach ((string writeName, string writeValue) in _testOutroTickWrites)
+                {
+                    _loop.Variables.TryWrite(
+                        writeName,
+                        QvmValue.FromInt32((int)double.Parse(writeValue, System.Globalization.CultureInfo.InvariantCulture)));
+                }
                 _cutscenes?.FinishExpressionTick();
                 if (_securityCameras is { } cameras)
                 {
@@ -5603,6 +5634,28 @@ internal sealed partial class DesktopGame : IDisposable
                 string numbered = Path.Combine(directory, FormattableString.Invariant($"{stem}.{flightFrame:0000}{extension}"));
                 BitmapWriter.Write(numbered, _window.Width, _window.Height, frame);
                 flightFrame++;
+            }
+
+            // Authored-scene capture: write numbered stills of the requested scene every 90 logic ticks
+            // (3 s) up to the still budget. Test-only; driven by environment variables.
+            if (captureCutscene
+                && cutsceneCaptureCount < cutsceneCaptureLimit
+                && _cutscenes?.ActiveScene is { } activeCutscene
+                && (cutsceneCaptureScene <= 0 || activeCutscene.Id == cutsceneCaptureScene)
+                && activeCutscene.Ticks >= cutsceneCaptureTick)
+            {
+                Directory.CreateDirectory(cutsceneCaptureDirectory!);
+                Bgra32[] capture = new Bgra32[_window.Width * _window.Height];
+                _device.CaptureFrame(_window.Width, _window.Height, capture);
+                int missionId = _activeMission?.Id ?? 0;
+                string path = Path.Combine(
+                    cutsceneCaptureDirectory!,
+                    FormattableString.Invariant(
+                        $"mission-{missionId:00}-scene-{activeCutscene.Id}-tick-{activeCutscene.Ticks:000000}.bmp"));
+                BitmapWriter.Write(path, _window.Width, _window.Height, capture);
+                _logger.Information("CutsceneCapture", $"Wrote {path}.");
+                cutsceneCaptureTick += 90;
+                cutsceneCaptureCount++;
             }
 
             if (_options.ExitAfterFrames > 0 && _loop.Clock.FrameCount >= _options.ExitAfterFrames)
