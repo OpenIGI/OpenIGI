@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -36,6 +37,101 @@ public sealed class RetailBulletImpactMaterialTests
         BulletMark mark = Assert.Single(marks.Marks);
         Assert.Equal(selected.Value.Material.Entry.EntryTexture, mark.Texture);
         Assert.NotEqual(concrete.Entry.EntryTexture, mark.Texture);
+    }
+
+    [RequiresGameDataFact]
+    public void AnObjectTraceReportsTheGlobalTAMCMaterialRow()
+    {
+        (_, GameMaterialRegistry materials) = Load(1);
+        WorldScene scene = RetailLevelOneGround.Scene();
+        bool foundMappedFace = false;
+
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!MefCollisionMesh.TryRead(placement.Model.Container, meshIndex: 0, out MefCollisionMesh? mesh)
+                || mesh is null)
+            {
+                continue;
+            }
+
+            foreach (MefCollisionFace face in mesh.Faces)
+            {
+                if (mesh.IsPortal(face.Material))
+                {
+                    continue;
+                }
+
+                int global = mesh.GlobalMaterial(face.Material);
+                if (global == face.Material
+                    || !materials.TryGet(global, out GameMaterial material)
+                    || !material.RecordsImpacts)
+                {
+                    continue;
+                }
+
+                foundMappedFace = true;
+                ObjectCollisionIndex index = ObjectCollisionIndex.Build([placement]);
+                if (!TryCastThroughFace(placement, mesh, face, index, out WorldRayHit hit))
+                {
+                    continue;
+                }
+
+                Assert.Equal(global, hit.Material);
+                BulletMarks marks = new();
+                Assert.True(marks.TryAdd(hit, materials));
+                Assert.Equal(material.Entry.TextureFor(isEntry: true), Assert.Single(marks.Marks).Texture);
+                return;
+            }
+        }
+
+        Assert.True(foundMappedFace, "Level 1 has no mapped, impact-recording collision face to trace");
+        Assert.Fail("No mapped Level 1 collision face could be reached through ObjectCollisionIndex");
+    }
+
+    private static bool TryCastThroughFace(
+        WorldPlacement placement,
+        MefCollisionMesh mesh,
+        MefCollisionFace face,
+        ObjectCollisionIndex index,
+        out WorldRayHit hit)
+    {
+        Matrix3f rotation = placement.Orientation.Transposed();
+        Vector3f localA = rotation.Transform(mesh.Vertices[face.I0]);
+        Vector3f localB = rotation.Transform(mesh.Vertices[face.I1]);
+        Vector3f localC = rotation.Transform(mesh.Vertices[face.I2]);
+        Vector3d origin = placement.Position * WorldScene.UnitsPerMetre;
+        Vector3d a = origin + new Vector3d(localA.X, localA.Y, localA.Z);
+        Vector3d b = origin + new Vector3d(localB.X, localB.Y, localB.Z);
+        Vector3d c = origin + new Vector3d(localC.X, localC.Y, localC.Z);
+
+        Vector3d ab = b - a;
+        Vector3d ac = c - a;
+        Vector3d normal = new(
+            (ab.Y * ac.Z) - (ab.Z * ac.Y),
+            (ab.Z * ac.X) - (ab.X * ac.Z),
+            (ab.X * ac.Y) - (ab.Y * ac.X));
+        double length = Math.Sqrt(
+            (normal.X * normal.X) + (normal.Y * normal.Y) + (normal.Z * normal.Z));
+        if (length <= 1e-9)
+        {
+            hit = default;
+            return false;
+        }
+
+        normal /= length;
+        Vector3d centre = new(
+            (a.X + b.X + c.X) / 3.0,
+            (a.Y + b.Y + c.Y) / 3.0,
+            (a.Z + b.Z + c.Z) / 3.0);
+        const double reach = 128.0;
+        Vector3d from = centre - (normal * reach);
+        Vector3d to = centre + (normal * reach);
+        if (index.TryCast(from, to, out hit))
+        {
+            return true;
+        }
+
+        return index.TryCast(to, from, out hit);
     }
 
     private static (LoadedMission Mission, GameMaterialRegistry Materials) Load(int missionId)
