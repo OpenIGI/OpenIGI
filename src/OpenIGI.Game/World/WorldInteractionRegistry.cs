@@ -387,11 +387,13 @@ public sealed class WorldInteraction
     }
 
     /// <summary>Marks a GenericTBA destroyed when its authored explosion reaches presentation.</summary>
-    public void MarkExplosionPresented()
+    /// <param name="collision">The live collision index, when the placement must become passable.</param>
+    public void MarkExplosionPresented(ObjectCollisionIndex? collision = null)
     {
         if (Type == InteractionActivateType.Generic && Explosion is not null && IsCompleted)
         {
             IsDestroyed = true;
+            collision?.SetPassable(Task, passable: true);
         }
     }
 

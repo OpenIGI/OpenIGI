@@ -80,6 +80,72 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void LevelTwoGenericExplosiveChargeStopsBlockingWorldTracesAfterPresentation()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+        WorldInteraction charge = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
+        WorldScene scene = WorldScene.Build(mission, root, magic);
+        WorldPlacement placement = Assert.Single(
+            scene.Placements,
+            candidate => ReferenceEquals(candidate.Owner, charge.Task)
+                && string.Equals(candidate.Instance.Name, "202_01_1", StringComparison.OrdinalIgnoreCase));
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+
+        WorldTraceRequest request = TraceThrough(placement.Position);
+        Assert.True(
+            HitsOwner(solids, request, charge.Task),
+            "the authored charge has no collision trace");
+
+        charge.BeginUse();
+        charge.CompleteUse();
+        Assert.False(charge.IsDestroyed);
+
+        charge.MarkExplosionPresented(solids);
+
+        Assert.True(charge.IsDestroyed);
+        Assert.False(
+            HitsOwner(solids, request, charge.Task),
+            "the destroyed charge remained solid after detonation");
+
+        static WorldTraceRequest TraceThrough(Vector3d positionMetres)
+        {
+            Vector3d centre = new(
+                positionMetres.X * WorldScene.UnitsPerMetre,
+                positionMetres.Y * WorldScene.UnitsPerMetre,
+                positionMetres.Z * WorldScene.UnitsPerMetre);
+            double span = WorldScene.UnitsPerMetre * 2.0;
+            return new WorldTraceRequest(
+                centre - new Vector3d(span, 0.0, 0.0),
+                centre + new Vector3d(span, 0.0, 0.0),
+                WorldTraceMask.World);
+        }
+
+        static bool HitsOwner(ObjectCollisionIndex solids, WorldTraceRequest request, GameTask owner)
+        {
+            if (!solids.TryTrace(request, out WorldTraceHit hit))
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(hit.Owner, owner))
+            {
+                return true;
+            }
+
+            return hit.Owner is { } blocker
+                && solids.TryTrace(request with { IgnoredOwner = blocker }, out WorldTraceHit next)
+                && ReferenceEquals(next.Owner, owner);
+        }
+    }
+
+    [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {
         (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =

@@ -889,7 +889,7 @@ internal sealed partial class DesktopGame
                 continue;
             }
 
-            pending.Interaction.MarkExplosionPresented();
+            pending.Interaction.MarkExplosionPresented(_worldSolids);
             PresentGenericTbaExplosion(pending.Position, pending.Parameters);
             _pendingGenericTbaExplosions.RemoveAt(i);
         }
