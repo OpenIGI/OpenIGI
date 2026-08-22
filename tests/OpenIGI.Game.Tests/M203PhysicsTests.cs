@@ -119,39 +119,4 @@ public sealed class M203PhysicsTests
         Assert.Empty(simulation.Projectiles);
     }
 
-    [Fact]
-    public void MissedRoundsExpireAndFreeAnM203LiveSlot()
-    {
-        M203Simulation simulation = new();
-        for (int i = 0; i < M203Simulation.MaximumLive; i++)
-        {
-            Assert.True(simulation.Spawn(new M203Projectile(
-                default,
-                new Vector3f(0f, 1f, 0f),
-                85f,
-                3f,
-                1f)));
-        }
-
-        Assert.False(simulation.Spawn(new M203Projectile(
-            default,
-            new Vector3f(0f, 1f, 0f),
-            85f,
-            3f,
-            1f)));
-
-        for (int tick = 0; tick < M203Simulation.MaximumLifetimeTicks; tick++)
-        {
-            simulation.Tick(walls: null, humans: null);
-        }
-
-        Assert.Empty(simulation.Projectiles);
-        Assert.True(simulation.Spawn(new M203Projectile(
-            default,
-            new Vector3f(0f, 1f, 0f),
-            85f,
-            3f,
-            1f)));
-    }
-
 }

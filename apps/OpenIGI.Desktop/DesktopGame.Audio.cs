@@ -976,7 +976,16 @@ internal sealed partial class DesktopGame
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
             ScorchSurface(blast.Position, blast.Normal);
             _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+            // Launcher impacts use Explosion0's full collision envelope. Keep the speaker pass for
+            // alarms, but disable its legacy nearest-destructible fallback so one object cannot be
+            // destroyed twice or hide the other authored contacts in the blast.
+            HandleDestructibleBlast(
+                source: null,
+                originUnits: blast.Position,
+                radiusUnits: blast.RadiusUnits,
+                falloffUnits: blast.FalloffUnits,
+                damageFactor: blast.DamageFactor);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
 
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(
@@ -1014,7 +1023,15 @@ internal sealed partial class DesktopGame
             SpawnBlast(blast.Position, Math.Max(1f, RenderCVars.ImpactParticles.Value));
             ScorchSurface(blast.Position, blast.Normal);
             _soldiers?.ApplyExplosion(blast.Position, blast.RadiusUnits, blast.FalloffUnits, blast.DamageFactor);
-            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits);
+            // Match the native explosion callback: visit every visible destructible in the blast
+            // envelope, then handle alarms separately without the nearest-object fallback.
+            HandleDestructibleBlast(
+                source: null,
+                originUnits: blast.Position,
+                radiusUnits: blast.RadiusUnits,
+                falloffUnits: blast.FalloffUnits,
+                damageFactor: blast.DamageFactor);
+            DamageAlarmSpeakers(blast.Position, blast.RadiusUnits, affectDestructibles: false);
 
             float playerDistance = (float)(_player.Body.Position - blast.Position).Length;
             float dose = ExplosionDamage.Dose(

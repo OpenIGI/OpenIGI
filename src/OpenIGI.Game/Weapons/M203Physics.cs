@@ -168,10 +168,6 @@ public sealed class M203Simulation
     /// <summary>The maximum number of M203 projectiles alive at once.</summary>
     public const int MaximumLive = 16;
 
-    /// <summary>The safety lifetime for a round that never reaches a traced surface, in 30 Hz ticks.</summary>
-    /// <remarks>Thirty seconds prevents missed rounds from permanently exhausting the native-style pool.</remarks>
-    public const int MaximumLifetimeTicks = 30 * 30;
-
     private readonly List<M203ProjectileState> _projectiles = [];
     private readonly List<M203Detonation> _detonations = [];
 
@@ -253,10 +249,6 @@ public sealed class M203Simulation
 
             projectile.Position = candidate;
             projectile.Age++;
-            if (projectile.Age >= MaximumLifetimeTicks)
-            {
-                _projectiles.RemoveAt(i);
-            }
         }
     }
 

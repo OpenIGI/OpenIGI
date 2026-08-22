@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
@@ -237,5 +238,51 @@ public sealed class DestructibleObjectTests
 
         Assert.Empty(affected);
         Assert.False(target.IsDestroyed);
+    }
+
+    [RequiresGameDataFact]
+    public void OrdnanceBlastDestroysEveryNearbyVisiblePaneOnlyOnce()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        DestructibleObjectRegistry registry = DestructibleObjectRegistry.Build(
+            RetailLevelOneGround.LevelRoot(),
+            scene.Placements,
+            new ScriptVarRegistry(new NativeRegistry()));
+
+        DestructibleObject[] panes = [.. registry.Objects.Where(item => item.Kind == DestructibleObjectKind.Glass)];
+        (DestructibleObject First, DestructibleObject Second)? pair = panes
+            .SelectMany((first, index) => panes
+                .Skip(index + 1)
+                .Select(second => (First: first, Second: second)))
+            .Where(candidate =>
+                (candidate.Second.PositionUnits - candidate.First.PositionUnits).Length
+                    <= M203Physics.DefaultExplosionRadiusMetres * M203Physics.UnitsPerMetre)
+            .OrderBy(candidate =>
+                (candidate.Second.PositionUnits - candidate.First.PositionUnits).Length)
+            .Select(candidate => ((DestructibleObject First, DestructibleObject Second)?)candidate)
+            .FirstOrDefault();
+
+        Assert.NotNull(pair);
+        DestructibleObject first = pair.Value.First;
+        DestructibleObject second = pair.Value.Second;
+
+        IReadOnlyList<DestructibleObject> affected = registry.ApplyExplosionHits(
+            source: null,
+            first.PositionUnits,
+            radiusUnits: M203Physics.DefaultExplosionRadiusMetres * M203Physics.UnitsPerMetre,
+            falloffUnits: 0f,
+            damageFactor: M203Physics.DamageFactor,
+            canContact: _ => true);
+
+        Assert.Contains(first, affected);
+        Assert.Contains(second, affected);
+        Assert.Equal(affected.Count, affected.Distinct(ReferenceEqualityComparer.Instance).Count());
+
+        IReadOnlyList<DestructibleObject> duplicate = registry.ApplyExplosionHits(
+            source: null,
+            first.PositionUnits,
+            radiusUnits: M203Physics.DefaultExplosionRadiusMetres * M203Physics.UnitsPerMetre,
+            damageFactor: M203Physics.DamageFactor);
+        Assert.Empty(duplicate);
     }
 }
