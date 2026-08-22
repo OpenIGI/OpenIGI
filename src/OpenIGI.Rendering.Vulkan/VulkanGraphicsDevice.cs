@@ -42,6 +42,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly Mesh3DPipeline _mesh3D;
     private readonly MeshTextureDescriptorCache _meshTextureDescriptors;
     private readonly Deferred.DeferredRenderer _deferred;
+    private readonly VulkanOcclusionQueries _occlusion;
 
     // The hardware-ray-tracing foundation. Both are null on an adapter that cannot carry them, which is
     // the one question every pass that wants to trace asks before it does.
@@ -180,6 +181,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             _mesh3D.DescriptorSetLayout,
             _presentTarget.RenderPass,
             VulkanFrameLoop.MaxFramesInFlight);
+
+        // The box a query draws tests against the geometry pass's depth, so it shares that pass; it is
+        // built here, once the deferred renderer's render passes exist.
+        _occlusion = new VulkanOcclusionQueries(
+            _instance.Vk, _device, _shaderCompiler, _deferred.GeometryPass, VulkanFrameLoop.MaxFramesInFlight);
 
         RayTracingAvailable = selection.SupportsRayTracing;
 
@@ -490,6 +496,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _worldScene?.Dispose();
         _rayTracing?.Dispose();
         _bindless?.Dispose();
+        _occlusion.Dispose();
         _deferred.Dispose();
         _meshTextureDescriptors.Dispose();
         _mesh3D.Dispose();
@@ -564,6 +571,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // Read back the timestamps this slot last carried and reset its block for the frame about to record.
         // Outside any render pass, which is exactly where a fresh frame's command buffer is here.
         _stageProfiler?.BeginFrame(_frameCommandBuffer, _frameLoop.CurrentFrame);
+
+        // The occlusion queries reset and read back the same way, and for the same reason must be outside
+        // a render pass — a query pool is reset here before any of this frame's boxes are drawn into it.
+        _occlusion.BeginFrame(_frameCommandBuffer, _frameLoop.CurrentFrame);
     }
 
     /// <summary>Queues a resource to be freed once the frames that might still reference it have cycled.</summary>

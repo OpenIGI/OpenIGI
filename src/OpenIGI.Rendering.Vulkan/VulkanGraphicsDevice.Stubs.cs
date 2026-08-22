@@ -125,25 +125,46 @@ public sealed partial class VulkanGraphicsDevice
     /// <inheritdoc/>
     public void SetDebugView(DebugView view) => ThrowIfDisposed();
 
-    // ---- Occlusion queries and GPU timing (conservative placeholders) -----------------------------
+    // ---- Occlusion queries -------------------------------------------------------------------------
 
     /// <inheritdoc/>
     public OcclusionQueryHandle CreateOcclusionQuery()
     {
         ThrowIfDisposed();
-        return default;
+        return _occlusion.Create();
     }
 
     /// <inheritdoc/>
-    /// <remarks>Conservatively visible: without a real query, treating everything as visible never hides geometry.</remarks>
-    public bool OcclusionVisible(OcclusionQueryHandle query) => true;
-
-    /// <inheritdoc/>
-    public void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds) =>
+    public bool OcclusionVisible(OcclusionQueryHandle query)
+    {
         ThrowIfDisposed();
+        return _occlusion.Visible(query);
+    }
 
     /// <inheritdoc/>
-    public void DestroyOcclusionQuery(OcclusionQueryHandle query) => ThrowIfDisposed();
+    /// <remarks>
+    /// A box is drawn against the geometry pass's depth, so a query can only be issued while that pass is
+    /// open. Outside it — the direct render path, or between the deferred passes — the object is left
+    /// conservatively visible rather than probed.
+    /// </remarks>
+    public void IssueOcclusionQuery(OcclusionQueryHandle query, in Matrix4f modelView, in OcclusionBounds bounds)
+    {
+        ThrowIfDisposed();
+        if (!_deferredPassActive || _deferredStage != DeferredStage.Geometry)
+        {
+            return;
+        }
+
+        Matrix4f modelViewProjection = _projection * modelView;
+        _occlusion.Issue(_frameCommandBuffer, _frameLoop.CurrentFrame, query, modelViewProjection, bounds);
+    }
+
+    /// <inheritdoc/>
+    public void DestroyOcclusionQuery(OcclusionQueryHandle query)
+    {
+        ThrowIfDisposed();
+        _occlusion.Destroy(query);
+    }
 
     /// <inheritdoc/>
     public void SetStageTiming(bool enabled)
