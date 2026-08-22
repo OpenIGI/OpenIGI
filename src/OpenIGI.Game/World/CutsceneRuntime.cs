@@ -457,6 +457,20 @@ public sealed class CutsceneRuntime
     /// <summary>Serves cutscene-specific level-expression natives to sibling mission runtimes.</summary>
     public QvmValue? TryInvokeNative(string name, ScriptArguments arguments) => InvokeNative(name, arguments);
 
+    /// <summary>Evaluates one scene's camera frame at an arbitrary scene time in seconds.</summary>
+    /// <remarks>
+    /// Uses exactly the production interpolation path (same knot selection, Hermite basis, link/
+    /// target remap and presentation fields) so tests can compare the emitted camera against the
+    /// authored EditCamera data without driving the whole level simulation. Callers must accumulate
+    /// shot start times exactly like <see cref="SceneState.Timed"/> (double += float duration) so
+    /// knot times match bit-for-bit and the current-shot scan selects the asserted shot.
+    /// </remarks>
+    internal CutsceneFrame? EvaluateSceneFrame(CutSceneTask scene, double time)
+    {
+        SceneState? state = _scenes.FirstOrDefault(item => ReferenceEquals(item.Task, scene));
+        return state is null ? null : BuildFrame(state, time);
+    }
+
     /// <summary>Clears one-tick cutscene input after every level expression has had a chance to read it.</summary>
     public void FinishExpressionTick() => _breakRequested = false;
 
@@ -885,8 +899,13 @@ public sealed class CutsceneRuntime
             return;
         }
 
+        Frame = BuildFrame(state, state.Task.Ticks / (double)Frequency);
+    }
+
+    /// <summary>Interpolates one scene's authored camera at an arbitrary scene time.</summary>
+    private CutsceneFrame? BuildFrame(SceneState state, double time)
+    {
         CutSceneTask scene = state.Task;
-        double time = scene.Ticks / (double)Frequency;
         List<TimedShot> timed = state.Timed(scene.TimeScale);
         // An EditCamera with no duration is a spline/filter endpoint, not a frame-owning shot. Retail
         // keeps the preceding camera live on the two completion-boundary ticks; selecting a terminal
@@ -1005,7 +1024,7 @@ public sealed class CutsceneRuntime
                 (float)((time - p1.Start) / ((p2.Start - p1.Start) - 0.5)), 0f, 1f);
         }
 
-        Frame = new CutsceneFrame(
+        return new CutsceneFrame(
             // EditCamera keeps a proper engine rotation (determinant +1), whereas Camera3D's left-handed
             // right/up/forward view basis has determinant -1. Its columns become our rows and the up row
             // changes sign at that boundary. A transpose alone points the cinematic camera's up axis down,
