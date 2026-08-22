@@ -76,6 +76,14 @@ internal static partial class ComputeShaderAnalysis
     /// <exception cref="GraphicsDeviceException">Two resources share a binding, or a uniform is unsupported.</exception>
     public static Analysis Analyse(string source, string name)
     {
+        // Every pattern below is written against a line that ends where the newline does, and several
+        // capture to the end of one. A source carried in with Windows line endings leaves a carriage
+        // return inside those captures -- a uniform's name comes out as "uSunColour\r", which matches
+        // nothing the layout is later asked for, and the shader silently loses its bindings. Which
+        // endings the working tree happens to hold is a property of how it was checked out, not of the
+        // shader, and it must not be able to change what the shader compiles to.
+        source = source.Replace("\r\n", "\n").Replace('\r', '\n');
+
         // GL keeps storage buffers, images and samplers in three separate binding spaces, so the same
         // number can mean an SSBO here and an image there; Vulkan has one space per set. Each resource is
         // given a fresh, unique Vulkan binding in declaration order, and the number the source wrote is
