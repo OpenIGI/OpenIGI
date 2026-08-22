@@ -23,8 +23,8 @@ public static class HumanIdleTransitions
     /// <summary>The state the jump edge leads to.</summary>
     public const int Jump = 28;
 
-    /// <summary>The state <see cref="HumanMotionState.Turn"/> leads to.</summary>
-    public const int Turn = 19;
+    /// <summary>The state <see cref="HumanMotionState.Crouch"/> leads to.</summary>
+    public const int CrouchingIdle = HumanLocomotionStates.CrouchingIdle;
 
     /// <summary>The value <see cref="Next"/> returns when nothing fires.</summary>
     public const int Stay = 0;
@@ -88,9 +88,9 @@ public static class HumanIdleTransitions
             return Jump;
         }
 
-        if ((flags & HumanMotionState.Turn) != 0)
+        if ((flags & HumanMotionState.Crouch) != 0)
         {
-            return Turn;
+            return CrouchingIdle;
         }
 
         return Stay;

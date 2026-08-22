@@ -20,7 +20,7 @@ public sealed class HumanIdleTransitionTests
         // First test in the chain: even a dying human that is also moving and jumping falls.
         HumanMotionState everything =
             HumanMotionState.Death46 | HumanMotionState.Death47 |
-            HumanMotionState.MoveForward | HumanMotionState.Turn;
+            HumanMotionState.MoveForward | HumanMotionState.Crouch;
 
         Assert.Equal(
             HumanIdleTransitions.Falling,
@@ -86,15 +86,15 @@ public sealed class HumanIdleTransitionTests
     }
 
     [Fact]
-    public void TheJumpEdgeBeatsTurning()
+    public void TheJumpEdgeBeatsCrouching()
     {
         Assert.Equal(
             HumanIdleTransitions.Jump,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Turn, jumpEdge: true));
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.Crouch, jumpEdge: true));
 
         Assert.Equal(
-            HumanIdleTransitions.Turn,
-            HumanIdleTransitions.Next(Grounded | HumanMotionState.Turn, jumpEdge: false));
+            HumanIdleTransitions.CrouchingIdle,
+            HumanIdleTransitions.Next(Grounded | HumanMotionState.Crouch, jumpEdge: false));
     }
 
     [Fact]
@@ -123,5 +123,5 @@ public sealed class HumanIdleTransitionTests
     [Fact]
     public void ANonMovementBitIsRejectedByTheDirectionLookup() =>
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => HumanIdleTransitions.ForDirection(HumanMotionState.Turn, walking: false));
+            () => HumanIdleTransitions.ForDirection(HumanMotionState.Crouch, walking: false));
 }

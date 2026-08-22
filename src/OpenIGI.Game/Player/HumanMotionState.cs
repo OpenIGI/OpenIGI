@@ -48,8 +48,10 @@ public enum HumanMotionState : uint
     /// <summary>Moving backward.</summary>
     MoveBackward = 0x100,
 
-    /// <summary>Drives idle → state 19, the lowest-priority transition out of idle.</summary>
-    Turn = 0x2000,
+    /// <summary>
+    /// Drives idle → the stationary crouch state, 19, as the lowest-priority transition out of idle.
+    /// </summary>
+    Crouch = 0x2000,
 
     /// <summary>
     /// Cleared at the top of every <c>HumanPlayer_Update</c>. Drives idle → state 46, one of the two

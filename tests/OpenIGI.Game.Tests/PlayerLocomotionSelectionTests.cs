@@ -1,6 +1,7 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Animation;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using Xunit;
 
@@ -14,7 +15,7 @@ public sealed class PlayerLocomotionSelectionTests
     {
         HumanLocomotionAnimator animator = Tick(new PlayerCommand(1f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: false));
 
-        Assert.Equal(1, animator.State);
+        AssertStateAndTorsoAction(animator, state: 1, WeaponAction.Run);
     }
 
     [Fact]
@@ -22,7 +23,7 @@ public sealed class PlayerLocomotionSelectionTests
     {
         HumanLocomotionAnimator animator = Tick(new PlayerCommand(1f, 0f, 0f, 0f, Run: false, Crouch: false, Jump: false));
 
-        Assert.Equal(9, animator.State);
+        AssertStateAndTorsoAction(animator, state: 9, WeaponAction.Walk);
     }
 
     [Theory]
@@ -32,14 +33,42 @@ public sealed class PlayerLocomotionSelectionTests
     {
         HumanLocomotionAnimator animator = Tick(new PlayerCommand(1f, 0f, 0f, 0f, Run: run, Crouch: true, Jump: false));
 
-        Assert.Equal(20, animator.State);
+        AssertStateAndTorsoAction(animator, state: 20, WeaponAction.CrouchRun);
     }
 
     [Fact]
     public void StationaryCommandsSelectTheirMatchingIdleStates()
     {
-        Assert.Equal(0, Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: false)).State);
-        Assert.Equal(19, Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: false, Crouch: true, Jump: false)).State);
+        AssertStateAndTorsoAction(
+            Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: false)),
+            state: 0,
+            WeaponAction.Stand);
+        AssertStateAndTorsoAction(
+            Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: false, Crouch: true, Jump: false)),
+            state: 19,
+            WeaponAction.Crouch);
+    }
+
+    [Fact]
+    public void TheConfiguredWalkRunToggleSelectsWalkAtThePureSelectorBoundary()
+    {
+        Assert.True(PlayerInputBindings.TryGetSlot(PlayerAction.ToggleWalkRun, out PlayerInputSlot slot));
+        Assert.Equal(PlayerInputSlot.ToggleWalkRun, slot);
+        Assert.Equal((uint)PlayerAction.ToggleWalkRun, (uint)HumanMotionState.Walking);
+
+        int state = HumanLocomotionStates.ForDirection(
+            HumanMotionState.OnGround | HumanMotionState.Walking | HumanMotionState.MoveForward);
+
+        Assert.Equal(9, state);
+        Assert.True(HumanLocomotionWeaponActions.TryGet(state, out WeaponAction action));
+        Assert.Equal(WeaponAction.Walk, action);
+    }
+
+    private static void AssertStateAndTorsoAction(HumanLocomotionAnimator animator, int state, WeaponAction expectedAction)
+    {
+        Assert.Equal(state, animator.State);
+        Assert.True(HumanLocomotionWeaponActions.TryGet(animator.State, out WeaponAction action));
+        Assert.Equal(expectedAction, action);
     }
 
     private static HumanLocomotionAnimator Tick(PlayerCommand command)
