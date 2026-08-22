@@ -43,6 +43,43 @@ public static class BulletImpactSounds
         return count == 0 ? string.Empty : material.BulletSounds[(int)random.NextBounded((uint)count)];
     }
 
+    /// <summary>Resolves a contact to the retail material row and picks its impact sound.</summary>
+    /// <param name="materials">The loaded material table.</param>
+    /// <param name="struckHuman">Whether the contact was a human rather than a surface.</param>
+    /// <param name="surfaceMaterial">The world material index for a surface contact.</param>
+    /// <param name="random">The stream the pick is drawn from.</param>
+    /// <returns>A sound definition's name, or an empty string when no row can provide one.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    public static string PickForImpact(
+        GameMaterialRegistry materials,
+        bool struckHuman,
+        int surfaceMaterial,
+        IgiRandom random)
+    {
+        ArgumentNullException.ThrowIfNull(materials);
+        ArgumentNullException.ThrowIfNull(random);
+
+        if (struckHuman)
+        {
+            return materials.TryGetByName(FleshMaterialName, out GameMaterial flesh)
+                ? Pick(flesh, random)
+                : string.Empty;
+        }
+
+        if (materials.TryGet(surfaceMaterial, out GameMaterial struck))
+        {
+            string sound = Pick(struck, random);
+            if (sound.Length > 0)
+            {
+                return sound;
+            }
+        }
+
+        return materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground)
+            ? Pick(ground, random)
+            : string.Empty;
+    }
+
     /// <summary>How long the whole set stays quiet after one plays.</summary>
     /// <param name="random">The stream the extra is drawn from.</param>
     /// <returns>Between six and eleven ticks — a fifth to a third of a second.</returns>

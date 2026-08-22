@@ -29,6 +29,37 @@ public sealed class BulletImpactSoundTests
         Assert.Equal(string.Empty, BulletImpactSounds.Pick(new GameMaterial { Name = "Air" }, new IgiRandom()));
     }
 
+    [Fact]
+    public void HumanAndSurfaceContactsResolveTheirRetailRows()
+    {
+        GameMaterialRegistry materials = new();
+        materials.Add(new GameMaterial { Index = 0, Name = "Ground", BulletSounds = ["bul_dirt_1"] });
+        materials.Add(new GameMaterial { Index = 6, Name = "Metal", BulletSounds = ["bul_metal_nrm_1"] });
+        materials.Add(new GameMaterial { Index = 62, Name = "Flesh", BulletSounds = ["bul_flesh_1"] });
+
+        Assert.Equal(
+            "bul_flesh_1",
+            BulletImpactSounds.PickForImpact(
+                materials,
+                struckHuman: true,
+                surfaceMaterial: 6,
+                random: new IgiRandom()));
+        Assert.Equal(
+            "bul_metal_nrm_1",
+            BulletImpactSounds.PickForImpact(
+                materials,
+                struckHuman: false,
+                surfaceMaterial: 6,
+                random: new IgiRandom()));
+        Assert.Equal(
+            "bul_dirt_1",
+            BulletImpactSounds.PickForImpact(
+                materials,
+                struckHuman: false,
+                surfaceMaterial: 999,
+                random: new IgiRandom()));
+    }
+
     /// <summary>The retail limit: a timestamp plus <c>rand(6)+6</c> ticks, for the whole set.</summary>
     [Fact]
     public void TheQuietSpellIsSixToElevenTicks()

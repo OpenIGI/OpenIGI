@@ -2605,7 +2605,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                     // What this tick's ballistic rounds landed on -- dirt, steel or flesh, out of the
                     // material table, where the round arrived rather than where it was fired.
-                    PlayBallisticImpactSounds();
+                    PlayBulletImpactSounds();
 
                     // The same impacts, seen: sparks and dust composed from the struck material.
                     // Ticked before spawning so a new burst draws its birth frame unmoved.

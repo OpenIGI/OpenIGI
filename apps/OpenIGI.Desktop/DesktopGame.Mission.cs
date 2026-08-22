@@ -1112,6 +1112,11 @@ internal sealed partial class DesktopGame
                             _player.Marks.TryAdd(worldHit, table);
                         }
 
+                        PlayBulletImpactSound(
+                            worldHit.Position,
+                            struckHuman: false,
+                            surfaceMaterial: worldHit.Material);
+
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
                         DamageAlarmSpeakers(
@@ -1190,6 +1195,7 @@ internal sealed partial class DesktopGame
                     }
 
                     _playerHealth.Apply(hit.Zone, weapon.DamageFactor);
+                    PlayBulletImpactSound(hit.Position, struckHuman: true, surfaceMaterial: 0);
                     _guardHits++;
 
                     // The retail handler transforms the round into camera space before writing the four

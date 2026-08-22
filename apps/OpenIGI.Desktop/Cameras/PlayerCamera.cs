@@ -2269,7 +2269,9 @@ public sealed class PlayerCamera
             _impacts.Add(new GunImpact(
                 impact.Position,
                 impact.StruckHuman || impact.StruckWall,
-                impact.RangeInUnits));
+                impact.RangeInUnits,
+                StruckHuman: impact.StruckHuman,
+                Wall: impact.StruckWall ? impact.Wall : default));
         }
     }
 
@@ -2300,7 +2302,11 @@ public sealed class PlayerCamera
         {
             HumanHits++;
             LastHumanZone = human.Zone;
-            return new GunImpact(human.Position, true, shot.RangeInUnits);
+            return new GunImpact(
+                human.Position,
+                true,
+                shot.RangeInUnits,
+                StruckHuman: true);
         }
 
         if (struckWall)
@@ -2313,7 +2319,13 @@ public sealed class PlayerCamera
                 Marks.TryAdd(hit, materials);
             }
 
-            return new GunImpact(hit.Position, true, shot.RangeInUnits, richHit.Owner, richHit.Placement);
+            return new GunImpact(
+                hit.Position,
+                true,
+                shot.RangeInUnits,
+                richHit.Owner,
+                richHit.Placement,
+                Wall: hit);
         }
 
         return new GunImpact(end, false, shot.RangeInUnits);

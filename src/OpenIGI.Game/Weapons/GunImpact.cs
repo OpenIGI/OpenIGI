@@ -12,6 +12,8 @@ namespace OpenIGI.Game.Weapons;
 /// <param name="RangeInUnits">How far it was allowed to travel, from the weapon's effective range.</param>
 /// <param name="Owner">The exact placed task struck by a rich world trace, when available.</param>
 /// <param name="Placement">The exact rendered placement struck, including an attached magic object.</param>
+/// <param name="StruckHuman">Whether the contact was a human rather than a world surface.</param>
+/// <param name="Wall">The world contact, when a surface stopped the shot.</param>
 /// <remarks>
 /// <para>
 /// <b>This is one cast, not the original's loop.</b> <c>0x47B750</c> keeps casting while range is left,
@@ -27,4 +29,6 @@ public readonly record struct GunImpact(
     bool HitSomething,
     float RangeInUnits,
     GameTask? Owner = null,
-    WorldPlacement? Placement = null);
+    WorldPlacement? Placement = null,
+    bool StruckHuman = false,
+    WorldRayHit Wall = default);
