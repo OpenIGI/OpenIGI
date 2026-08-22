@@ -68,32 +68,34 @@ public sealed class HumanLocomotionGraphTests
     }
 
     [Fact]
-    public void TheStanceToggleIsAlwaysTheFourthTest()
+    public void TheRunWalkToggleIsAlwaysTheFourthTest()
     {
-        // States 1..16 are eight motions in two stances. Each one's fourth target is exactly its
-        // partner, which is what establishes the pairing rather than assuming it from the numbering.
+        // States 1..16 are eight directions at run and walk speeds. Each one's fourth target is exactly
+        // its counterpart, which establishes the pairing rather than assuming it from the numbering.
         for (int state = 1; state <= 16; state++)
         {
             Assert.Equal(
-                HumanLocomotionGraph.OppositeStance(state),
+                HumanLocomotionGraph.RunWalkCounterpart(state),
                 HumanLocomotionGraph.From(state)[3]);
         }
     }
 
     [Fact]
-    public void PairingIsSymmetric()
+    public void RunWalkPairingIsSymmetric()
     {
         for (int state = 1; state <= 16; state++)
         {
-            Assert.Equal(state, HumanLocomotionGraph.OppositeStance(HumanLocomotionGraph.OppositeStance(state)));
+            Assert.Equal(
+                state,
+                HumanLocomotionGraph.RunWalkCounterpart(HumanLocomotionGraph.RunWalkCounterpart(state)));
         }
     }
 
     [Fact]
-    public void EveryStandingMotionCanJumpAndItsCrouchedTwinCannotBeToldApart()
+    public void EveryRunOrWalkMotionCanJump()
     {
-        // 1..16 all reach the jump state, and always as the fifth test - immediately after the stance
-        // toggle. Crouched or not makes no difference to that.
+        // 1..16 all reach the jump state, always as the fifth test — immediately after the run/walk
+        // toggle.
         for (int state = 1; state <= 16; state++)
         {
             Assert.Equal(HumanLocomotionGraph.Jump, HumanLocomotionGraph.From(state)[4]);
@@ -104,7 +106,8 @@ public sealed class HumanLocomotionGraphTests
     public void IdleTestsMoreThanAnyOtherState()
     {
         // State 0 has the longest chain: it is the only one that can reach all eight motions plus
-        // both stances directly, because every other motion state is already committed to a direction.
+        // both run and walk sets directly, because every other motion state is already committed to a
+        // direction.
         int idle = HumanLocomotionGraph.From(0).Count;
 
         for (int state = 1; state < HumanLocomotionGraph.MovementStateCount; state++)
@@ -179,9 +182,9 @@ public sealed class HumanLocomotionGraphTests
     }
 
     [Fact]
-    public void OppositeStanceRejectsStatesOutsideThePairedRange()
+    public void RunWalkCounterpartRejectsStatesOutsideThePairedRange()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => HumanLocomotionGraph.OppositeStance(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => HumanLocomotionGraph.OppositeStance(17));
+        Assert.Throws<ArgumentOutOfRangeException>(() => HumanLocomotionGraph.RunWalkCounterpart(0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => HumanLocomotionGraph.RunWalkCounterpart(17));
     }
 }
