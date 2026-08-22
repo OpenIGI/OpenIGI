@@ -3,7 +3,7 @@ param([string] $Root = (Join-Path (Split-Path -Parent $PSScriptRoot) 'artifacts/
 $ErrorActionPreference = 'Stop'
 function Median([double[]] $values) {
     $ordered = $values | Sort-Object
-    if ($ordered.Count % 2) { return $ordered[[int]($ordered.Count / 2)] }
+    if ($ordered.Count % 2) { return $ordered[[int][math]::Floor(($ordered.Count - 1) / 2)] }
     return ($ordered[$ordered.Count / 2 - 1] + $ordered[$ordered.Count / 2]) / 2
 }
 
