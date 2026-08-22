@@ -517,9 +517,17 @@ public sealed class PlayerBody
             flags |= HumanMotionState.MoveLeft;
         }
 
-        return command.Crouch
+        int state = command.Crouch
             ? HumanLocomotionStates.CrouchingForDirection(flags)
             : HumanLocomotionStates.ForDirection(flags);
+
+        // State 0 tests the movement bits before the jump edge and the crouch bit. Preserve that
+        // priority: a stationary jump enters state 28, while a jump pressed with a direction keeps
+        // the selected run, walk, or crouch movement state for this tick.
+        bool stationary = state is HumanLocomotionStates.Idle or HumanLocomotionStates.CrouchingIdle;
+        return stationary && command.Jump
+            ? HumanLocomotionGraph.Jump
+            : state;
     }
 
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>

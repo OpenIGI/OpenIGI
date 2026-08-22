@@ -50,6 +50,17 @@ public sealed class PlayerLocomotionSelectionTests
     }
 
     [Fact]
+    public void AStationaryJumpSelectsTheJumpStateBeforeCrouch()
+    {
+        Assert.Equal(
+            HumanLocomotionGraph.Jump,
+            Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: true, Crouch: false, Jump: true)).State);
+        Assert.Equal(
+            HumanLocomotionGraph.Jump,
+            Tick(new PlayerCommand(0f, 0f, 0f, 0f, Run: false, Crouch: true, Jump: true)).State);
+    }
+
+    [Fact]
     public void TheConfiguredWalkRunToggleSelectsWalkAtThePureSelectorBoundary()
     {
         Assert.True(PlayerInputBindings.TryGetSlot(PlayerAction.ToggleWalkRun, out PlayerInputSlot slot));
