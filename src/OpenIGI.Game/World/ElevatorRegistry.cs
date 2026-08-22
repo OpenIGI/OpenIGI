@@ -102,6 +102,10 @@ public sealed class ElevatorRegistry
 
     public void Tick()
     {
+        // The retail elevator start path is evaluated against the live human's ground-hit owner. A
+        // caller that wires a player provider must therefore be inside the specific cab being started;
+        // keeping the null-provider fallback preserves the registry's data-only test contract.
+        Vector3d? playerPosition = _playerPositionProvider?.Invoke();
         foreach (ElevatorCommand command in _commands)
         {
             bool wasMoving = command.Elevator.State.HasMovementRequest;
@@ -117,8 +121,11 @@ public sealed class ElevatorRegistry
                 }
             }
 
+            bool playerInside = !playerPosition.HasValue
+                || (IsPlayerInsideElevator(playerPosition.Value, out PlacedElevator? containing)
+                    && ReferenceEquals(containing, command.Elevator));
             command.Elevator.State.Tick(
-                command.CanStart(),
+                command.CanStart() && playerInside,
                 command.FloorUp(),
                 command.FloorDown(),
                 wantedFloor);
