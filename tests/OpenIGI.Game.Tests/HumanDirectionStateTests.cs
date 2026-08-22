@@ -91,7 +91,7 @@ public sealed class HumanDirectionStateTests
         AssertTravels(set, 5, +1, -1);
         AssertTravels(set, 6, -1, -1);
 
-        // And the crouched four, eight higher.
+        // And the walking four, eight higher.
         AssertTravels(set, 10, +1, +1);
         AssertTravels(set, 11, -1, +1);
         AssertTravels(set, 13, +1, -1);

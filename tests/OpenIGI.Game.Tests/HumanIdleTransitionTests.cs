@@ -75,7 +75,7 @@ public sealed class HumanIdleTransitionTests
     public void MovementBeatsTheJumpEdge()
     {
         // The jump test comes after all four directions, so holding a direction the tick the jump
-        // button goes down takes the walk state and the jump edge is spent.
+        // button goes down takes the run state and the jump edge is spent.
         Assert.Equal(
             1,
             HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward, jumpEdge: true));

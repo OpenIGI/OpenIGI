@@ -81,8 +81,9 @@ public static class HumanIdleTransitions
             return walking ? 16 : 8;
         }
 
-        // The jump edge is tested after movement, so walking into a jump keeps the walk state for the
-        // tick the button goes down and only jumps once the direction keys are released.
+        // The jump edge is tested after movement, so movement into a jump keeps its gait-dependent
+        // run or walk state for the tick the button goes down and only jumps once the direction keys
+        // are released.
         if (jumpEdge)
         {
             return Jump;

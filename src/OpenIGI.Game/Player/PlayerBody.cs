@@ -8,7 +8,7 @@ namespace OpenIGI.Game.Player;
 /// <param name="Strafe">Sideways intent, −1 to 1.</param>
 /// <param name="YawDelta">How far to turn this tick, in radians.</param>
 /// <param name="PitchDelta">How far to look up or down this tick, in radians.</param>
-/// <param name="Run">Whether the run modifier is held.</param>
+/// <param name="Run">Whether the latched walk/run toggle selects running.</param>
 /// <param name="Crouch">Whether the crouch modifier is held.</param>
 /// <param name="Jump">Whether jump was pressed this tick — the rising edge, not the level.</param>
 public readonly record struct PlayerCommand(
