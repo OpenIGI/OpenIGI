@@ -474,8 +474,8 @@ public sealed class PlayerBody
     /// <summary>Turns this tick's intent into the locomotion state the original would be in.</summary>
     /// <remarks>
     /// <para>
-    /// Airborne first, then the stance, then the four movement bits, and
-    /// <see cref="HumanLocomotionStates.ForDirection"/> turns them into a state.
+    /// Airborne first, then the four movement bits. A running command selects states 1–8 and a walking
+    /// command selects 9–16; crouch bypasses both gait sets for states 19–27.
     /// </para>
     /// <para>
     /// <b>Correction.</b> This used to take the first movement bit that matched, on the reading that
@@ -494,9 +494,9 @@ public sealed class PlayerBody
 
         HumanMotionState flags = HumanMotionState.OnGround;
 
-        if (command.Crouch)
+        if (!command.Run)
         {
-            flags |= HumanMotionState.Crouched;
+            flags |= HumanMotionState.Walking;
         }
 
         if (command.Forward > 0f)
@@ -517,7 +517,9 @@ public sealed class PlayerBody
             flags |= HumanMotionState.MoveLeft;
         }
 
-        return HumanLocomotionStates.ForDirection(flags);
+        return command.Crouch
+            ? HumanLocomotionStates.CrouchingForDirection(flags)
+            : HumanLocomotionStates.ForDirection(flags);
     }
 
     /// <summary>The body's orientation about the vertical, as the root-motion rotation uses it.</summary>

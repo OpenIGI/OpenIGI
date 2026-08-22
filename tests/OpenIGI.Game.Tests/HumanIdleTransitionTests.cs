@@ -40,7 +40,7 @@ public sealed class HumanIdleTransitionTests
     }
 
     [Fact]
-    public void TheFourDirectionsMapToTheirStandingStates()
+    public void TheFourDirectionsMapToTheirRunningStates()
     {
         Assert.Equal(1, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveForward, false));
         Assert.Equal(4, HumanIdleTransitions.Next(Grounded | HumanMotionState.MoveBackward, false));
@@ -49,14 +49,14 @@ public sealed class HumanIdleTransitionTests
     }
 
     [Fact]
-    public void CrouchingRetargetsAllFourAtOnce()
+    public void WalkingRetargetsAllFourAtOnce()
     {
-        HumanMotionState crouched = Grounded | HumanMotionState.Crouched;
+        HumanMotionState walking = Grounded | HumanMotionState.Walking;
 
-        Assert.Equal(9, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveForward, false));
-        Assert.Equal(12, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveBackward, false));
-        Assert.Equal(15, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveRight, false));
-        Assert.Equal(16, HumanIdleTransitions.Next(crouched | HumanMotionState.MoveLeft, false));
+        Assert.Equal(9, HumanIdleTransitions.Next(walking | HumanMotionState.MoveForward, false));
+        Assert.Equal(12, HumanIdleTransitions.Next(walking | HumanMotionState.MoveBackward, false));
+        Assert.Equal(15, HumanIdleTransitions.Next(walking | HumanMotionState.MoveRight, false));
+        Assert.Equal(16, HumanIdleTransitions.Next(walking | HumanMotionState.MoveLeft, false));
     }
 
     [Fact]
@@ -123,5 +123,5 @@ public sealed class HumanIdleTransitionTests
     [Fact]
     public void ANonMovementBitIsRejectedByTheDirectionLookup() =>
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => HumanIdleTransitions.ForDirection(HumanMotionState.Turn, crouched: false));
+            () => HumanIdleTransitions.ForDirection(HumanMotionState.Turn, walking: false));
 }

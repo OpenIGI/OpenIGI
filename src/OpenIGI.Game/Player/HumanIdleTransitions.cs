@@ -57,27 +57,28 @@ public static class HumanIdleTransitions
             return 47;
         }
 
-        bool crouched = (flags & HumanMotionState.Crouched) != 0;
+        bool walking = (flags & HumanMotionState.Walking) != 0;
 
-        // The four directions are tested in the same order either way; only the target changes.
+        // The four directions are tested in the same order either way; walking selects the second
+        // standing gait set. Crouching takes its own state 19–27 path.
         if ((flags & HumanMotionState.MoveForward) != 0)
         {
-            return crouched ? 9 : 1;
+            return walking ? 9 : 1;
         }
 
         if ((flags & HumanMotionState.MoveBackward) != 0)
         {
-            return crouched ? 12 : 4;
+            return walking ? 12 : 4;
         }
 
         if ((flags & HumanMotionState.MoveRight) != 0)
         {
-            return crouched ? 15 : 7;
+            return walking ? 15 : 7;
         }
 
         if ((flags & HumanMotionState.MoveLeft) != 0)
         {
-            return crouched ? 16 : 8;
+            return walking ? 16 : 8;
         }
 
         // The jump edge is tested after movement, so walking into a jump keeps the walk state for the
@@ -97,15 +98,15 @@ public static class HumanIdleTransitions
 
     /// <summary>Gets the state a direction bit leads to.</summary>
     /// <param name="direction">One of the four movement bits.</param>
-    /// <param name="crouched">Whether <see cref="HumanMotionState.Crouched"/> is set.</param>
+    /// <param name="walking">Whether <see cref="HumanMotionState.Walking"/> is set.</param>
     /// <returns>The state id.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="direction"/> is not a movement bit.</exception>
-    public static int ForDirection(HumanMotionState direction, bool crouched) => direction switch
+    public static int ForDirection(HumanMotionState direction, bool walking) => direction switch
     {
-        HumanMotionState.MoveForward => crouched ? 9 : 1,
-        HumanMotionState.MoveBackward => crouched ? 12 : 4,
-        HumanMotionState.MoveRight => crouched ? 15 : 7,
-        HumanMotionState.MoveLeft => crouched ? 16 : 8,
+        HumanMotionState.MoveForward => walking ? 9 : 1,
+        HumanMotionState.MoveBackward => walking ? 12 : 4,
+        HumanMotionState.MoveRight => walking ? 15 : 7,
+        HumanMotionState.MoveLeft => walking ? 16 : 8,
         _ => throw new ArgumentOutOfRangeException(nameof(direction), direction, "Not a movement bit."),
     };
 }

@@ -41,7 +41,7 @@ public sealed class HumanDirectionStateTests
     }
 
     [Fact]
-    public void CrouchingIsTheSameEightDirectionsEightStatesHigher()
+    public void WalkingIsTheSameEightDirectionsEightStatesHigher()
     {
         for (HumanMotionState held = 0; (int)held < 16; held++)
         {
@@ -53,7 +53,7 @@ public sealed class HumanDirectionStateTests
                 continue;
             }
 
-            Assert.Equal(standing + 8, Select(flags | HumanMotionState.Crouched));
+            Assert.Equal(standing + 8, Select(flags | HumanMotionState.Walking));
         }
     }
 
@@ -61,7 +61,7 @@ public sealed class HumanDirectionStateTests
     public void HoldingNothingIsIdleAndBeingAirborneIsFalling()
     {
         Assert.Equal(HumanLocomotionStates.Idle, Select(0));
-        Assert.Equal(HumanLocomotionStates.Idle, Select(HumanMotionState.Crouched));
+        Assert.Equal(HumanLocomotionStates.Idle, Select(HumanMotionState.Walking));
 
         // Airborne wins over everything: the movement bits are still read while falling, but by the
         // airborne integrator's air control rather than by the state machine.
