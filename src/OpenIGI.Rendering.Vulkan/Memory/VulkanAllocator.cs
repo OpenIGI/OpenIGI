@@ -21,12 +21,35 @@ namespace OpenIGI.Rendering.Vulkan.Memory;
 /// resources out of a few large blocks. Keeping every allocation behind this one seam is what lets that
 /// pass be a change here rather than everywhere.
 /// </para>
+/// <para>
+/// A <em>freed block is retained rather than returned to the driver</em>, keyed by the exact shape it
+/// was allocated for (memory type, byte size, whether it carries a device address), and the next
+/// allocation of that same shape is handed a retained block instead of calling <c>vkAllocateMemory</c>
+/// again. A fresh host-visible allocation is a blocking driver call of tens to hundreds of milliseconds
+/// — the terrain streams growing pages in and out as the camera turns, and re-using a retired page's
+/// memory turns that per-page stall into a dictionary lookup. Retained memory is capped so the pool
+/// cannot grow without bound; over the cap a freed block is genuinely returned.
+/// </para>
 /// </remarks>
-internal sealed unsafe class VulkanAllocator
+internal sealed unsafe class VulkanAllocator : IDisposable
 {
+    /// <summary>The most retained-but-unused memory the pool keeps before it starts genuinely freeing.</summary>
+    private const long MaxPooledBytes = 256L * 1024 * 1024;
+
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly PhysicalDeviceMemoryProperties _memoryProperties;
+
+    // Retained free blocks, bucketed by the exact shape an allocation asked for, so a reused block always
+    // satisfies the new resource's size, type and device-address requirements without re-checking them.
+    private readonly object _gate = new();
+    private readonly Dictionary<PoolKey, Stack<DeviceMemory>> _free = new();
+
+    // The shape each live block was allocated for, so Free can bucket a block back without the caller
+    // carrying its requirements. Keyed by the raw memory handle, and stable across reuse.
+    private readonly Dictionary<ulong, PoolKey> _shapes = new();
+    private long _pooledBytes;
+    private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanAllocator"/> class.</summary>
     /// <param name="device">The device to allocate on.</param>
@@ -70,6 +93,19 @@ internal sealed unsafe class VulkanAllocator
         bool deviceAddressable = false)
     {
         uint typeIndex = FindMemoryType(requirements.MemoryTypeBits, properties);
+        bool addressable = deviceAddressable && SupportsDeviceAddress;
+        PoolKey key = new(typeIndex, requirements.Size, addressable);
+
+        // Hand back a retired block of the identical shape before asking the driver for a new one.
+        lock (_gate)
+        {
+            if (_free.TryGetValue(key, out Stack<DeviceMemory>? bucket) && bucket.Count > 0)
+            {
+                DeviceMemory reused = bucket.Pop();
+                _pooledBytes -= (long)requirements.Size;
+                return reused;
+            }
+        }
 
         MemoryAllocateFlagsInfo flagsInfo = new()
         {
@@ -80,23 +116,82 @@ internal sealed unsafe class VulkanAllocator
         MemoryAllocateInfo info = new()
         {
             SType = StructureType.MemoryAllocateInfo,
-            PNext = deviceAddressable && SupportsDeviceAddress ? &flagsInfo : null,
+            PNext = addressable ? &flagsInfo : null,
             AllocationSize = requirements.Size,
             MemoryTypeIndex = typeIndex,
         };
 
         DeviceMemory memory;
         VkCheck.Ok(_vk.AllocateMemory(_device, &info, null, &memory), "vkAllocateMemory");
+
+        lock (_gate)
+        {
+            _shapes[memory.Handle] = key;
+        }
+
         return memory;
     }
 
     /// <summary>Frees an allocation made by <see cref="Allocate"/>.</summary>
+    /// <remarks>
+    /// The block is retained for re-use, keyed by the shape it was allocated for, unless the pool is over
+    /// its cap — then it is returned to the driver. A caller never sees the difference: a freed block is
+    /// no longer bound to anything, so whether its memory is recycled or released is the allocator's
+    /// concern alone.
+    /// </remarks>
     /// <param name="memory">The memory to free. A null handle is ignored.</param>
     public void Free(DeviceMemory memory)
     {
-        if (memory.Handle != 0)
+        if (memory.Handle == 0)
         {
-            _vk.FreeMemory(_device, memory, null);
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (!_disposed
+                && _shapes.TryGetValue(memory.Handle, out PoolKey key)
+                && _pooledBytes + (long)key.Size <= MaxPooledBytes)
+            {
+                if (!_free.TryGetValue(key, out Stack<DeviceMemory>? bucket))
+                {
+                    bucket = new Stack<DeviceMemory>();
+                    _free[key] = bucket;
+                }
+
+                bucket.Push(memory);
+                _pooledBytes += (long)key.Size;
+                return;
+            }
+
+            _shapes.Remove(memory.Handle);
+        }
+
+        _vk.FreeMemory(_device, memory, null);
+    }
+
+    /// <summary>Returns every retained block to the driver.</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _disposed = true;
+            foreach (Stack<DeviceMemory> bucket in _free.Values)
+            {
+                while (bucket.Count > 0)
+                {
+                    _vk.FreeMemory(_device, bucket.Pop(), null);
+                }
+            }
+
+            _free.Clear();
+            _shapes.Clear();
+            _pooledBytes = 0;
         }
     }
 
@@ -150,4 +245,10 @@ internal sealed unsafe class VulkanAllocator
 
         return null;
     }
+
+    /// <summary>The shape a retained block was allocated for: identical shapes are interchangeable.</summary>
+    /// <param name="TypeIndex">The memory type the block lives in.</param>
+    /// <param name="Size">The block's byte size.</param>
+    /// <param name="Addressable">Whether the block was allocated to carry a device address.</param>
+    private readonly record struct PoolKey(uint TypeIndex, ulong Size, bool Addressable);
 }

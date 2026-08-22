@@ -502,6 +502,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _presentTarget.Dispose();
         _swapchain.Dispose();
         _commands.Dispose();
+
+        // Last of the resource owners: every buffer and image has by now returned its memory to the pool,
+        // so this releases what the pool retained while the device is still alive to free it against.
+        _allocator.Dispose();
         _device.Dispose();
         _instance.Dispose();
     }
