@@ -360,8 +360,8 @@ public sealed class CutsceneRuntime
 
             if (scene.IsRun)
             {
-                // The retail CutScene run callback begins at IGI.exe 0x43A450 (0x43A470 is
-                // inside that function). It runs child AnimTasks before the scene,
+                // CutScene_RunHandler (IGI.exe 0x4F63C0; 0x43A470 is mid-instruction in AlarmLight) runs
+                // child AnimTasks before the scene,
                 // evaluates Run, and then calls CutScene_SetCamera with the *current* nTick. The
                 // camera marks isFinished only when that old tick is beyond the authored duration;
                 // Run stays latched for this frame and nTick is incremented afterwards. The Run
@@ -1279,6 +1279,21 @@ public sealed class CutsceneRuntime
 
         GameTask? target = _root.Tree.FromId(targetId);
         string type = target?.Type.Name ?? string.Empty;
+
+        // Retail dispatch is table-driven (handler table slot*384 + typeId @ 0xA96AE0) and only
+        // Train/Car/Heli/Plane register ReadChannels handlers (ANIMTASK-RE.md §5-6). Human's
+        // registration sub_45E450 registers none, so AnimProgram_End (0x4F4060) skips delivery:
+        // an AnimTask targeting a human delivers NOTHING — no translation, no speed, no animation
+        // id. Humans animate through their own state machine (state tick 0x4550B0, playback rate
+        // engineDelta * 1.5 per Human_GetCutSceneDeltaTime 0x45EAE0), and their pose reaches the
+        // cutscene via SetTargetPoseResolver / attachment parenting. Reproduce that here: drop
+        // the packet instead of the former thrust-and-slide fallback.
+        if (target is not DeclaredTask
+            || !(type is "Train" or "Car" or "Heli" or "Plane"))
+        {
+            return;
+        }
+
         ReadOnlySpan<float> channels = program.Channels;
 
         if (string.Equals(type, "Train", StringComparison.Ordinal)
@@ -1323,7 +1338,6 @@ public sealed class CutsceneRuntime
         }
 
         float yaw = MathF.Atan2(transform.Orientation.M21, transform.Orientation.M11);
-        float thrust;
         if (string.Equals(type, "Car", StringComparison.Ordinal))
         {
             if (program.Tick > 0)
@@ -1346,8 +1360,11 @@ public sealed class CutsceneRuntime
             // throttle), rather than level parameters.  Keep the same first-order state shape here;
             // the probe records the exact per-model response and pose so these defaults can be
             // replaced without changing the timeline contract.
-            transform.Steering += (transform.TargetSteering - transform.Steering) * 0.18f;
-            transform.Thrust += (transform.TargetThrust - transform.Thrust) * 0.12f;
+            // Retail smooths steer/throttle with data-driven factors from the model's CAR.QVM
+            // physics blob (cutscene_truck/TRUCK: retention 0.95, response 0.05 per channel;
+            // ANIMTASK-RE.md §4b) — x += (target - x) * response.
+            transform.Steering += (transform.TargetSteering - transform.Steering) * 0.05f;
+            transform.Thrust += (transform.TargetThrust - transform.Thrust) * 0.05f;
             float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
             transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
 
@@ -1651,26 +1668,6 @@ public sealed class CutsceneRuntime
             LogAirframePath(targetId, "Plane", target, transform);
             return;
         }
-        else
-        {
-            thrust = channels[0];
-        }
-
-        if (thrust != -1f)
-        {
-            transform.Speed += thrust / Frequency;
-        }
-        transform.Speed *= 0.995f;
-        Vector3f forward = transform.Orientation.Row2;
-        transform.Position += new Vector3d(forward.X, forward.Y, forward.Z) * transform.Speed;
-        if (transform.Railroad is { } railroad)
-        {
-            transform.TrackPosition += transform.Speed;
-            railroad.Evaluate(transform.TrackPosition, out Vector3d railPosition, out Matrix3f railOrientation);
-            transform.Position = railPosition;
-            transform.Orientation = railOrientation;
-        }
-        transform.IsDynamic = true;
     }
 
     private bool TryPose(int id, out TransformState? state)
