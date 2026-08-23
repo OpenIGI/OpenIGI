@@ -80,6 +80,36 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void LevelTwoAiGenericExplosiveChargeSurvivesResolverBeforeActivationExactlyOnce()
+    {
+        (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root,
+            mission,
+            DoorRegistry.Build(root),
+            variables);
+        WorldInteraction charge = Assert.Single(
+            interactions.Items,
+            static item => item.Type == InteractionActivateType.Generic && item.Task.Id == 282);
+
+        // This is the desktop tick order: the resolver has already drained this tick before the AI
+        // reaches the task. The next interaction tick must not discard the AI's one-shot edge.
+        interactions.Tick();
+        Assert.Empty(interactions.ConsumeExplosions());
+        Assert.True(interactions.ActivateFromAi(charge.Task.Id));
+        Assert.True(charge.IsCompleted);
+        Assert.True(charge.ExplosionTriggeredThisTick);
+
+        interactions.Tick();
+
+        (WorldInteraction emitted, GenericTbaExplosionParameters payload) = Assert.Single(
+            interactions.ConsumeExplosions());
+        Assert.Same(charge, emitted);
+        Assert.Same(charge.Explosion, payload);
+        Assert.Empty(interactions.ConsumeExplosions());
+    }
+
+    [RequiresGameDataFact]
     public void LevelTwoGenericExplosiveChargeStopsBlockingWorldTracesAfterPresentation()
     {
         (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) = Load(2);

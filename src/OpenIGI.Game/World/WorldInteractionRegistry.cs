@@ -57,6 +57,7 @@ public sealed class WorldInteraction
     private Func<Vector3d>? _dynamicOffset;
     private Vector3d _offset;
     private bool _explosionConsumed;
+    private bool _explosionPending;
 
     internal WorldInteraction(
         DeclaredTask task,
@@ -381,6 +382,7 @@ public sealed class WorldInteraction
                     // owner marks the object destroyed when the authored blast is presented; this
                     // preserves the live model during a nonzero Explosion delay.
                     ExplosionTriggeredThisTick = true;
+                    _explosionPending = true;
                 }
                 break;
         }
@@ -397,16 +399,20 @@ public sealed class WorldInteraction
         }
     }
 
-    /// <summary>Consumes this tick's authored GenericTBA explosion edge exactly once.</summary>
+    /// <summary>
+    /// Consumes the authored GenericTBA explosion edge exactly once. The pending edge survives the
+    /// interaction pulse reset when an AI completes after the desktop resolver has already run.
+    /// </summary>
     public bool TryConsumeExplosion(out GenericTbaExplosionParameters parameters)
     {
-        if (!ExplosionTriggeredThisTick || _explosionConsumed || Explosion is null)
+        if (!_explosionPending || _explosionConsumed || Explosion is null)
         {
             parameters = null!;
             return false;
         }
 
         _explosionConsumed = true;
+        _explosionPending = false;
         parameters = Explosion;
         return true;
     }
