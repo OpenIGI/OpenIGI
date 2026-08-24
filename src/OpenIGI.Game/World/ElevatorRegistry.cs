@@ -60,9 +60,10 @@ public sealed class ElevatorRegistry
 
     /// <summary>Sets the provider that returns the human player's current world position.</summary>
     /// <remarks>
-    /// The lift must not move without the player inside the cab. This provider lets the start gate
-    /// read the player's position each tick; without it the player-inside check is skipped (tests that
-    /// do not wire a player still pass).
+    /// Cabin requests must not move the lift without the player inside the cab. Authored exterior hall
+    /// calls are the exception: those requests are allowed to bring an empty cab to the caller. This
+    /// provider lets the start gate read the player's position each tick; without it the player-inside
+    /// check is skipped (data-only tests that do not wire a player still pass).
     /// </remarks>
     public void SetPlayerPositionProvider(Func<Vector3d>? provider) => _playerPositionProvider = provider;
 
@@ -125,10 +126,11 @@ public sealed class ElevatorRegistry
                 || (IsPlayerInsideElevator(playerPosition.Value, out PlacedElevator? containing)
                     && ReferenceEquals(containing, command.Elevator));
             command.Elevator.State.Tick(
-                command.CanStart() && playerInside,
+                command.CanStart() && (playerInside || command.HasExteriorRequest),
                 command.FloorUp(),
                 command.FloorDown(),
                 wantedFloor);
+            command.ClearExteriorRequestAfterStart();
 
             if (_sounds is not null)
             {
@@ -499,6 +501,15 @@ public sealed class ElevatorRegistry
         public Func<bool> FloorDown { get; } = FloorDown;
         public List<Func<bool>> WantedFloors { get; } = WantedFloors;
         public List<ExteriorSwitchCall> ExteriorCalls { get; } = ExteriorCalls;
+        public bool HasExteriorRequest { get; private set; }
+
+        public void ClearExteriorRequestAfterStart()
+        {
+            if (Elevator.State.IsStart)
+            {
+                HasExteriorRequest = false;
+            }
+        }
 
         public bool TryRequestFromExteriorSwitch(DeclaredTask switchTask)
         {
@@ -507,6 +518,11 @@ public sealed class ElevatorRegistry
                 if (ReferenceEquals(call.Switch, switchTask))
                 {
                     Elevator.State.RequestFloor(call.FloorIndex);
+                    if (call.FloorIndex != Elevator.State.CurrentFloorIndex)
+                    {
+                        HasExteriorRequest = true;
+                    }
+
                     return true;
                 }
             }
