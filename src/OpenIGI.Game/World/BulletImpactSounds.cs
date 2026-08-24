@@ -66,13 +66,12 @@ public static class BulletImpactSounds
                 : string.Empty;
         }
 
+        // An authored row with no sounds is intentionally silent (Air/Water are examples). Only an
+        // unknown collision index uses the terrain row as the defensive fallback; turning a known
+        // silent row into Ground audio would make non-solid contacts sound like dirt.
         if (materials.TryGet(surfaceMaterial, out GameMaterial struck))
         {
-            string sound = Pick(struck, random);
-            if (sound.Length > 0)
-            {
-                return sound;
-            }
+            return Pick(struck, random);
         }
 
         return materials.TryGetByName(FootstepSounds.TerrainMaterialName, out GameMaterial ground)

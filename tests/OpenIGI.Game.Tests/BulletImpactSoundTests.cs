@@ -60,6 +60,22 @@ public sealed class BulletImpactSoundTests
                 random: new IgiRandom()));
     }
 
+    [Fact]
+    public void AKnownSilentSurfaceRowDoesNotFallBackToGround()
+    {
+        GameMaterialRegistry materials = new();
+        materials.Add(new GameMaterial { Index = 0, Name = "Ground", BulletSounds = ["bul_dirt_1"] });
+        materials.Add(new GameMaterial { Index = 2, Name = "Water" });
+
+        Assert.Equal(
+            string.Empty,
+            BulletImpactSounds.PickForImpact(
+                materials,
+                struckHuman: false,
+                surfaceMaterial: 2,
+                random: new IgiRandom()));
+    }
+
     /// <summary>The retail limit: a timestamp plus <c>rand(6)+6</c> ticks, for the whole set.</summary>
     [Fact]
     public void TheQuietSpellIsSixToElevenTicks()
