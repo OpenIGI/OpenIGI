@@ -48,6 +48,20 @@ public sealed class MissileFlightTests
     }
 
     [Fact]
+    public void UnrelatedWeaponTaskValuesDoNotSelectMissileGuidance()
+    {
+        WeaponType weapon = new()
+        {
+            ScriptId = "WEAPON_ID_M16A2",
+            DisplayName = "M16A2",
+            Weapon = new WeaponTaskBinding("TASKTYPE_GUNM16A2", 0, [85f, 3f, 1f], string.Empty, 3),
+            Projectile = new WeaponTaskBinding("TASKTYPE_MISSILE", 0, [], "108_01_1", 0),
+        };
+
+        Assert.Equal(MissileType.MissileDirect, MissileFlight.TypeForLauncher(weapon));
+    }
+
+    [Fact]
     public void AntiTankNearRegimeUsesTheThreeDimensionalBallisticLob()
     {
         // 0x004280B0 flattens Z only to choose the regime, then 0x00428040 lobs with the 3D length.

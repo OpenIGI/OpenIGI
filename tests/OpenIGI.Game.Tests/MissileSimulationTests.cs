@@ -61,6 +61,25 @@ public sealed class MissileSimulationTests
     }
 
     [Fact]
+    public void OpenAirMissileExpiresAndReleasesItsPoolSlot()
+    {
+        MissileSimulation simulation = new();
+        Assert.True(simulation.Spawn(
+            Vector3d.Zero,
+            new Vector3d(4_096_000_000, 0, 0),
+            MissileType.MissileDirect,
+            muzzleVelocityMetresPerSecond: 5f));
+
+        for (int tick = 0; tick < MissileSimulation.MaximumLifetimeTicks; tick++)
+        {
+            simulation.Tick(walls: null, humans: null);
+        }
+
+        Assert.Empty(simulation.Missiles);
+        Assert.Empty(simulation.Detonations);
+    }
+
+    [Fact]
     public void LauncherMissileDetonatesAtItsFirstWorldImpact()
     {
         MissileSimulation simulation = new();

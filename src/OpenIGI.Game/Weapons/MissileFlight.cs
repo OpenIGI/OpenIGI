@@ -78,16 +78,6 @@ public static class MissileFlight
     {
         ArgumentNullException.ThrowIfNull(weapon);
 
-        foreach (float value in weapon.Weapon.Values)
-        {
-            int code = (int)value;
-            if (code is >= (int)MissileType.MissileDirect and <= (int)MissileType.Bomb
-                && value == code)
-            {
-                return (MissileType)code;
-            }
-        }
-
         string haystack = string.Join(
             ' ',
             weapon.ScriptId,

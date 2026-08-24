@@ -84,6 +84,10 @@ public sealed class MissileSimulation
     /// <summary>Gets the maximum number of live launcher missiles.</summary>
     public const int MaximumLive = 16;
 
+    /// <summary>Maximum open-air lifetime before a missile is discarded.</summary>
+    /// <remarks>The retail task cannot occupy the fixed-size live-missile pool indefinitely.</remarks>
+    public const int MaximumLifetimeTicks = 30 * 30;
+
     /// <summary>Gravity per tick², in world units — the ragdoll's own 9.8 m/s², for falling bombs.</summary>
     private const float GravityPerTick = 44.600887f;
 
@@ -171,6 +175,12 @@ public sealed class MissileSimulation
                     MissileExplosion.RadiusUnits,
                     MissileExplosion.FalloffUnits,
                     normal));
+                _missiles.RemoveAt(i);
+                continue;
+            }
+
+            if (missile.Age >= MaximumLifetimeTicks)
+            {
                 _missiles.RemoveAt(i);
                 continue;
             }

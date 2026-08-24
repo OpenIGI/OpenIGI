@@ -165,6 +165,7 @@ public sealed class WeaponConfigRegistry
         {
             if (child is not DeclaredTask declared
                 || !string.Equals(child.Label, tag, StringComparison.Ordinal)
+                || declared.Type.Parameters.Count == 0
                 || declared.GetValue(declared.Type.Parameters.Count - 1) is not float candidate)
             {
                 continue;
@@ -187,6 +188,7 @@ public sealed class WeaponConfigRegistry
         {
             if (child is not DeclaredTask declared
                 || !string.Equals(child.Label, tag, StringComparison.Ordinal)
+                || declared.Type.Parameters.Count == 0
                 || declared.GetValue(declared.Type.Parameters.Count - 1) is not string candidate)
             {
                 continue;
