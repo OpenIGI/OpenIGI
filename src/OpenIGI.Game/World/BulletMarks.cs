@@ -83,7 +83,7 @@ public sealed class BulletMarks
     /// <param name="hit">Where the round landed, with the material its face names.</param>
     /// <param name="materials">The game material table.</param>
     /// <param name="isEntry">Whether the round was entering the surface.</param>
-    /// <returns><see langword="false"/> when the material leaves no mark, or names no row.</returns>
+    /// <returns><see langword="false"/> when the material leaves no mark and no Concrete fallback is available.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="materials"/> is <see langword="null"/>.</exception>
     /// <remarks>
     /// The material's <b>entry</b> effect is the one consulted for the guard, because that is the block
@@ -147,11 +147,12 @@ public sealed class BulletMarks
         TotalAdded++;
     }
 
-    // The face's own row, which the collision index now reports as a global material index rather
-    // than a per-mesh face index. Standing Concrete in for every surface -- as this did while that
-    // mapping was unread -- put a concrete hole on wood, glass and metal alike, and put one on the
-    // rows that record no impact at all: Air, Water, Fence, MetalFence, MetalLadder and
-    // HumanCollision each name no entry texture, and the original skips them outright.
-    private static bool TryResolve(in WorldRayHit hit, GameMaterialRegistry materials, out GameMaterial material) =>
-        materials.TryGet(hit.Material, out material!);
+    private static bool TryResolve(in WorldRayHit hit, GameMaterialRegistry materials, out GameMaterial material)
+    {
+        // A collision face normally carries a valid global row. If a malformed or absent row reaches
+        // this boundary, retail's shared Concrete effect is the safe authored fallback; a valid Air or
+        // Water row must still win and remain mark-free through RecordsImpacts above.
+        return materials.TryGet(hit.Material, out material!)
+            || materials.TryGetByName(FallbackMaterial, out material);
+    }
 }

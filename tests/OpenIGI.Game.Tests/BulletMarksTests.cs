@@ -48,6 +48,14 @@ public sealed class BulletMarksTests
             Entry = new GunShotEffect(true, true, string.Empty, string.Empty, 0.03f, string.Empty),
         });
 
+        // The row an index the table does not hold falls back to.
+        registry.Add(new GameMaterial
+        {
+            Index = 4,
+            Name = BulletMarks.FallbackMaterial,
+            Entry = new GunShotEffect(true, true, "hole_concrete1.tex", "hole_concrete1.tex", 0.03f, "1009_01_1"),
+        });
+
         return registry;
     }
 
@@ -75,6 +83,17 @@ public sealed class BulletMarksTests
         BulletMarks marks = new();
         Assert.False(marks.TryAdd(Hit(99), new GameMaterialRegistry()));
         Assert.Empty(marks.Marks);
+    }
+
+    [Fact]
+    public void AnUnknownMaterialUsesTheAuthoredConcreteFallback()
+    {
+        GameMaterialRegistry table = Table();
+        BulletMarks marks = new();
+
+        Assert.True(table.TryGetByName(BulletMarks.FallbackMaterial, out GameMaterial concrete));
+        Assert.True(marks.TryAdd(Hit(99), table));
+        Assert.Equal(concrete.Entry.EntryTexture, Assert.Single(marks.Marks).Texture);
     }
 
     [Fact]
