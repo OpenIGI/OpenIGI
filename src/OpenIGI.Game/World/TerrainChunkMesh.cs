@@ -1,3 +1,4 @@
+﻿using System.Buffers;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.World;
@@ -80,24 +81,48 @@ public static class TerrainChunkMesh
             return null;
         }
 
-        Span<Vector3d> offsets = vertexCount <= 64 ? stackalloc Vector3d[vertexCount] : new Vector3d[vertexCount];
-        Span<Vector3d> morphs = vertexCount <= 64 ? stackalloc Vector3d[vertexCount] : new Vector3d[vertexCount];
-        Span<int> materials = vertexCount <= 64 ? stackalloc int[vertexCount] : new int[vertexCount];
+        // Rented rather than allocated. A chunk is built whenever one comes into view at a level of detail
+        // it is not already cached at, which during movement is tens of chunks a frame, and every one of
+        // these is scratch that dies with the call -- the offsets and the triangle list are read into the
+        // vertices below and never looked at again. Allocated, they were most of the megabytes a second
+        // the profiler saw while the camera moved.
+        Vector3d[]? offsetsRented = vertexCount <= 64 ? null : ArrayPool<Vector3d>.Shared.Rent(vertexCount);
+        Vector3d[]? morphsRented = vertexCount <= 64 ? null : ArrayPool<Vector3d>.Shared.Rent(vertexCount);
+        int[]? materialsRented = vertexCount <= 64 ? null : ArrayPool<int>.Shared.Rent(vertexCount);
+        ushort[]? trianglesRented = null;
+        int[]? passesRented = null;
+
+        try
+        {
+        Span<Vector3d> offsets = offsetsRented is null ? stackalloc Vector3d[vertexCount] : offsetsRented.AsSpan(0, vertexCount);
+        Span<Vector3d> morphs = morphsRented is null ? stackalloc Vector3d[vertexCount] : morphsRented.AsSpan(0, vertexCount);
+        Span<int> materials = materialsRented is null ? stackalloc int[vertexCount] : materialsRented.AsSpan(0, vertexCount);
         Unpack(chunk, block, surface, heights, offsets, morphs, materials);
 
-        ushort[] triangles = ReadTriangles(block, vertexCount, chunk.Orientation);
-        if (triangles.Length == 0)
+        // A rented array is at least as long as asked for and usually longer, so the count travels
+        // separately and Length is never the answer to how much of it is real.
+        trianglesRented = ArrayPool<ushort>.Shared.Rent(block.TriangleCount * 3);
+        int triangleCount = ReadTriangles(block, vertexCount, chunk.Orientation, trianglesRented);
+        if (triangleCount == 0)
         {
             return null;
         }
 
-        int[] passes = OrderMaterials(surface, materials);
+        ReadOnlySpan<ushort> triangles = trianglesRented.AsSpan(0, triangleCount);
+
+        passesRented = ArrayPool<int>.Shared.Rent(vertexCount);
+        int passCount = OrderMaterials(surface, materials, passesRented);
+        ReadOnlySpan<int> passes = passesRented.AsSpan(0, passCount);
 
         // Two texture passes per material: the band's first scale, and its second at twice the density,
         // which the renderer fades in with proximity. sub_510010 emits both unconditionally.
         Vertex3D[] vertices = new Vertex3D[passes.Length * 2 * vertexCount];
-        ushort[] indices = new ushort[passes.Length * 2 * triangles.Length];
-        List<TerrainChunkLayer> layers = new(passes.Length * 2);
+        ushort[] indices = new ushort[passes.Length * 2 * triangleCount];
+
+        // Exactly as many layers as the loop below writes, filled in place. The list this used to collect
+        // into was copied into an array of the same length on the way out, for two allocations where the
+        // count was known before either of them.
+        TerrainChunkLayer[] layers = new TerrainChunkLayer[passes.Length * 2];
 
         int layerIndex = 0;
         for (int pass = 0; pass < passes.Length; pass++)
@@ -108,7 +133,7 @@ public static class TerrainChunkMesh
             for (int detail = 0; detail < 2; detail++)
             {
                 int vertexBase = layerIndex * vertexCount;
-                int indexBase = layerIndex * triangles.Length;
+                int indexBase = layerIndex * triangleCount;
                 bool isDetail = detail == 1;
 
                 ChunkProjection projection = Project(chunk, surface, materialId, isDetail);
@@ -150,19 +175,36 @@ public static class TerrainChunkMesh
                         new Bgra32(255, 255, 255, alpha));
                 }
 
-                for (int i = 0; i < triangles.Length; i++)
+                for (int i = 0; i < triangleCount; i++)
                 {
                     indices[indexBase + i] = (ushort)(triangles[i] + vertexBase);
                 }
 
                 FillSurfaceNormals(vertices, triangles, vertexBase);
 
-                layers.Add(new TerrainChunkLayer(materialId, projection.Tile, indexBase, triangles.Length, isBase && !isDetail, isDetail));
+                layers[layerIndex] = new TerrainChunkLayer(materialId, projection.Tile, indexBase, triangleCount, isBase && !isDetail, isDetail);
                 layerIndex++;
             }
         }
 
-        return new TerrainChunkGeometry(vertices, indices, [.. layers]);
+        return new TerrainChunkGeometry(vertices, indices, layers);
+        }
+        finally
+        {
+            Return(offsetsRented);
+            Return(morphsRented);
+            Return(materialsRented);
+            Return(trianglesRented);
+            Return(passesRented);
+        }
+
+        static void Return<T>(T[]? rented)
+        {
+            if (rented is not null)
+            {
+                ArrayPool<T>.Shared.Return(rented);
+            }
+        }
     }
 
     /// <summary>Gives a layer's vertices a shading normal taken from the surface they describe.</summary>
@@ -201,8 +243,12 @@ public static class TerrainChunkMesh
             return;
         }
 
-        Span<Vector3f> normals = count <= 128 ? stackalloc Vector3f[count] : new Vector3f[count];
+        Vector3f[]? rented = count <= 128 ? null : ArrayPool<Vector3f>.Shared.Rent(count);
+        Span<Vector3f> normals = rented is null ? stackalloc Vector3f[count] : rented.AsSpan(0, count);
         normals.Clear();
+
+        try
+        {
 
         for (int i = 0; i + 2 < triangles.Length; i += 3)
         {
@@ -245,6 +291,14 @@ public static class TerrainChunkMesh
                 vertex.LightmapV,
                 vertex.Colour,
                 Vertex3D.PackSurfaceNormal(normals[i]));
+        }
+        }
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<Vector3f>.Shared.Return(rented);
+            }
         }
     }
 
@@ -359,9 +413,14 @@ public static class TerrainChunkMesh
     /// <c>0xA7E06C</c> as its cull seed): a reflected chunk's transformed triangles wind the other way,
     /// so its triples are emitted swapped and every chunk lands with the same facing.
     /// </remarks>
-    private static ushort[] ReadTriangles(in TerrainCommandBlock block, int vertexCount, int orientation)
+    /// <param name="block">The chunk's command block.</param>
+    /// <param name="vertexCount">How many vertices the block holds, for rejecting out-of-range indices.</param>
+    /// <param name="orientation">The chunk's orientation, whose mirror bit flips the winding.</param>
+    /// <param name="destination">Receives the indices; at least <c>block.TriangleCount * 3</c> long.</param>
+    /// <returns>How many indices were written, which is short of the block's own count when it drops one.</returns>
+    private static int ReadTriangles(in TerrainCommandBlock block, int vertexCount, int orientation, ushort[] destination)
     {
-        ushort[] indices = new ushort[block.TriangleCount * 3];
+        ushort[] indices = destination;
         int cursor = 0;
         bool flip = (orientation & TerrainOrientation.Mirror) != 0;
 
@@ -380,12 +439,9 @@ public static class TerrainChunkMesh
             indices[cursor++] = (ushort)(flip ? triangle.I1 : triangle.I2);
         }
 
-        if (cursor != indices.Length)
-        {
-            Array.Resize(ref indices, cursor);
-        }
-
-        return indices;
+        // No resize to fit: the count is the caller's answer to how much of the buffer is real, which is
+        // what lets the buffer be a rented one that outlives no call.
+        return cursor;
     }
 
     /// <summary>Lists the materials a chunk needs, least specific first.</summary>
@@ -395,23 +451,51 @@ public static class TerrainChunkMesh
     /// material's specificity is the layer that produced it, and the layers are already sorted with the
     /// smallest first, so the last layer to declare a material is the least specific place it comes from.
     /// </remarks>
-    private static int[] OrderMaterials(TerrainSurface surface, ReadOnlySpan<int> materials)
+    /// <param name="surface">The level's ground materials, which rank them.</param>
+    /// <param name="materials">The material selected at each vertex.</param>
+    /// <param name="destination">Receives the material ids; at least as long as <paramref name="materials"/>.</param>
+    /// <returns>How many distinct materials were written.</returns>
+    private static int OrderMaterials(TerrainSurface surface, ReadOnlySpan<int> materials, int[] destination)
     {
-        List<int> present = [];
+        // Into the caller's buffer, and sorted in place. This used to collect into a list, copy it to an
+        // array, and sort through a lambda that captured the surface -- three allocations for a handful of
+        // ids, once per chunk built.
+        int count = 0;
         foreach (int material in materials)
         {
-            if (!present.Contains(material))
+            bool seen = false;
+            for (int i = 0; i < count; i++)
             {
-                present.Add(material);
+                if (destination[i] == material)
+                {
+                    seen = true;
+                    break;
+                }
+            }
+
+            if (!seen && count < destination.Length)
+            {
+                destination[count++] = material;
             }
         }
 
-        if (present.Count > 1)
+        // Insertion sort, descending by rank: a chunk carries a handful of materials at most, and this
+        // keeps the comparison a direct call rather than a delegate.
+        for (int i = 1; i < count; i++)
         {
-            present.Sort((a, b) => Rank(surface, b).CompareTo(Rank(surface, a)));
+            int material = destination[i];
+            int rank = Rank(surface, material);
+            int j = i - 1;
+            while (j >= 0 && Rank(surface, destination[j]) < rank)
+            {
+                destination[j + 1] = destination[j];
+                j--;
+            }
+
+            destination[j + 1] = material;
         }
 
-        return [.. present];
+        return count;
 
         static int Rank(TerrainSurface surface, int material)
         {
