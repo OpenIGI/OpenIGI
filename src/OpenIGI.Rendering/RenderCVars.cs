@@ -872,6 +872,15 @@ public static class RenderCVars
         ultra: "13.61");
 
     /// <summary>How strongly the occlusion is applied, where 1 is the physical amount.</summary>
+    /// <remarks>
+    /// Above about one and a half this stops being occlusion and starts removing the picture. The radius
+    /// this backend uses is room-scale rather than contact-scale, so the term already overlaps what the
+    /// indirect gather computes; multiplying that overlap by three darkened an office corner until the
+    /// lockers standing in it dissolved into the noise floor, while the sunlit floor it could not reach
+    /// stayed too bright — the two errors then hid each other in any average over the frame. Measured
+    /// against the reference across five regions, three scored 8.2 levels of mean error against 5.6 at
+    /// the physical amount, and only the physical amount kept the corner readable.
+    /// </remarks>
     public static readonly NumericCVar<float> AmbientOcclusionIntensity = Presets.Define(
         CVar.Float(
             "r_ao_intensity",
@@ -883,7 +892,7 @@ public static class RenderCVars
         vanilla: "1.2",
         enhanced: "1.2",
         high: "1.2",
-        ultra: "3");
+        ultra: "1.2");
 
     /// <summary>How many samples gather bounced colour, or 0 for no screen-space bounce.</summary>
     /// <remarks>
@@ -1228,9 +1237,9 @@ public static class RenderCVars
 
             // Seven eighths lands mission 1's authored sun — about eight lux along its warm chromaticity —
             // on the reference scene's seven, so the two renders share an illuminance and every remaining
-            // difference is the transport's fault, not the key light's. Ultra carries a hand-set 0.96 on
-            // top of that derivation, so its key is about a tenth of a stop over the reference's: a
-            // deliberate choice to be re-examined once the transport is matched, not a second measurement.
+            // difference is the transport's fault, not the key light's. Ultra carried a hand-set 0.96 for
+            // a while, about a tenth of a stop over; measured against the reference across five regions
+            // it was worth about half a level of error, and the derivation is the better authority.
             0.875f,
             0.1f,
             2f,
@@ -1239,7 +1248,7 @@ public static class RenderCVars
         vanilla: "0.875",
         enhanced: "0.875",
         high: "0.875",
-        ultra: "0.96");
+        ultra: "0.875");
 
     /// <summary>Scales the flat ambient stand-in the dynamic model fills unlit surfaces with.</summary>
     /// <remarks>
