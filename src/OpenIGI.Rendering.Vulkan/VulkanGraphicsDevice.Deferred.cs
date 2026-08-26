@@ -288,6 +288,23 @@ public sealed partial class VulkanGraphicsDevice
     /// silhouette shimmers, because the projection is deliberately jittered every frame and nothing was
     /// averaging the jitter out.
     /// </remarks>
+    /// <summary>
+    /// The vertical jitter's sign once it reaches history space.
+    /// </summary>
+    /// <remarks>
+    /// The app hands over a jitter in the OpenGL clip convention, and this backend's G-buffer vertex
+    /// stage is what flips Y into Vulkan's — so a positive vertical jitter displaces the rasterised image
+    /// <em>up</em> the framebuffer, and the history has to look for that frame's sample in the opposite
+    /// direction from the one the number reads as. Horizontal is untouched by the flip.
+    ///
+    /// Settled by measurement rather than by reading back through the projection chain, because getting
+    /// it wrong does not break the picture — it quietly blurs it, by attributing each sample to the wrong
+    /// sub-pixel texel. All four sign pairs were rendered at the office camera and scored on detail: the
+    /// two axes came out independent and consistent (x positive won in both y cases, y negative in both
+    /// x cases), over a 4.4% spread between best and worst.
+    /// </remarks>
+    private const float VerticalJitterSign = -1f;
+
     private unsafe void DispatchTemporalResolve()
     {
         _temporalResolved = false;
@@ -301,55 +318,83 @@ public sealed partial class VulkanGraphicsDevice
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        // The history is the OTHER frame slot's resolved output — written exactly one frame ago, which
-        // is the frame the velocity spans. Reading this slot's own output as history would be TWO frames
-        // old, and reprojecting two frames of motion with one frame's velocity smears every edge into a
-        // double image the moment the camera moves. When the other slot has not been built at this size
-        // (first frames, a resize), this slot's own cleared output stands in: its zero sample count makes
-        // the pass restart from the current frame, which is the honest answer there anyway.
+        // The history is the OTHER frame slot's — written exactly one frame ago, which is the frame the
+        // velocity spans. Reading this slot's own history would be TWO frames old, and reprojecting two
+        // frames of motion with one frame's velocity smears every edge into a double image the moment the
+        // camera moves. When the other slot has not been built at this size (first frames, a resize),
+        // this slot's own cleared history stands in: its zero sample count makes the pass restart from
+        // the current frame, which is the honest answer there anyway.
         Deferred.SceneTarget previous = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
         bool previousUsable = previous.Extent.Width == target.Extent.Width
             && previous.Extent.Height == target.Extent.Height
-            && previous.UpscaleOutputView.Handle != 0;
-        ImageView historyView = previousUsable ? previous.UpscaleOutputView : target.UpscaleOutputView;
+            && previous.UpscaleHistoryColourView.Handle != 0;
+        ImageView historyColourView = previousUsable ? previous.UpscaleHistoryColourView : target.UpscaleHistoryColourView;
+        ImageView historyMetadataView = previousUsable ? previous.UpscaleHistoryMetadataView : target.UpscaleHistoryMetadataView;
 
         // The shading pass's colour write, ordered before the compute read of the lit image.
         LitReadBarrier(cmd, target.LitImage, PipelineStageFlags.ComputeShaderBit);
 
-        // The velocity pass wrote the motion this frame; the history slot's output was written by the
-        // previous frame's temporal pass and read by its tone map; this slot's output was last read a
-        // frame ago. One barrier over each image covers all of it — same queue, so the ordering reaches
-        // back across submissions.
+        // The velocity pass wrote the motion this frame; the history slot's images were written by the
+        // previous frame's update and read by its resolve. One barrier over each covers all of it — same
+        // queue, so the ordering reaches back across submissions.
         OcclusionBarrier(
             cmd, target.VelocityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
         if (previousUsable)
         {
             OcclusionBarrier(
-                cmd, previous.UpscaleOutputImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                cmd, previous.UpscaleHistoryColourImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+            OcclusionBarrier(
+                cmd, previous.UpscaleHistoryMetadataImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
                 PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
         }
 
+        // This slot's own history was last read a frame ago, by its resolve.
+        OcclusionBarrier(
+            cmd, target.UpscaleHistoryColourImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.UpscaleHistoryMetadataImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.UpdateHistory.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LitView,
+            target.VelocityView,
+            historyColourView,
+            historyMetadataView,
+            target.UpscaleHistoryColourView,
+            target.UpscaleHistoryMetadataView,
+            _captureWidth,
+            _captureHeight,
+            Deferred.SceneTarget.HistoryScale,
+            temporalOn: true,
+            maxSamples: 16f,
+            _taaSettings.JitterX,
+            _taaSettings.JitterY * VerticalJitterSign);
+
+        // The resolve reads the history the update just wrote, and writes the frame-sized image.
+        OcclusionBarrier(
+            cmd, target.UpscaleHistoryColourImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
         OcclusionBarrier(
             cmd, target.UpscaleOutputImage,
             AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
             PipelineStageFlags.ComputeShaderBit);
 
-        _deferred.Temporal.Record(
+        _deferred.ResolveHistory.Record(
             cmd,
             _frameLoop.CurrentFrame,
-            target.LitView,
-            target.VelocityView,
-            historyView,
+            target.UpscaleHistoryColourView,
             target.UpscaleOutputView,
             _captureWidth,
             _captureHeight,
-            temporalOn: true,
-            maxSamples: 16f,
-            _taaSettings.MotionSharpening);
+            Deferred.SceneTarget.HistoryScale);
 
-        // The tone-map resolve samples the output next; the following frame samples it as history.
+        // The tone-map resolve samples the output next.
         OcclusionBarrier(
             cmd, target.UpscaleOutputImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit,

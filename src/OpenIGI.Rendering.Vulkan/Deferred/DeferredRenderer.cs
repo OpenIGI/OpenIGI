@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Pipelines;
@@ -36,7 +36,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
-    private readonly TemporalResolvePass _temporal;
+    private readonly Tsr.UpdateHistoryPass _updateHistory;
+    private readonly Tsr.ResolveHistoryPass _resolveHistory;
     private readonly Sky.SkyAtmosphere _sky;
     private bool _disposed;
 
@@ -77,7 +78,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
-        _temporal = new TemporalResolvePass(vk, device, allocator, compiler, framesInFlight);
+        _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
+        _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
         _autoExposure = new AutoExposurePass(vk, device, allocator, commands, compiler, framesInFlight);
 
@@ -171,8 +173,11 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
 
-    /// <summary>Gets the temporal resolve pass, which accumulates the jittered frames into a stable image.</summary>
-    public TemporalResolvePass Temporal => _temporal;
+    /// <summary>Gets the pass that accumulates the frame into the super-sampled history.</summary>
+    public Tsr.UpdateHistoryPass UpdateHistory => _updateHistory;
+
+    /// <summary>Gets the pass that filters the history back down to the frame's own size.</summary>
+    public Tsr.ResolveHistoryPass ResolveHistory => _resolveHistory;
 
     /// <summary>
     /// Gets a value indicating whether the lighting traces the sun's shadow against the scene rather than
@@ -249,7 +254,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _sky.Dispose();
         _autoExposure.Dispose();
         _velocity.Dispose();
-        _temporal.Dispose();
+        _updateHistory.Dispose();
+        _resolveHistory.Dispose();
         _ssao.Dispose();
         _shadowPipeline.Dispose();
         _shadowMap.Dispose();
