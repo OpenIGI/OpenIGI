@@ -1422,6 +1422,18 @@ internal sealed partial class DesktopGame
                     _playerMode
                         ? $"Standing at {candidate.Position}; F1 for the free camera."
                         : $"Free camera; F1 to stand at {candidate.Position}.");
+
+                // The eye, spelled the way the capture flags take it. Walking and flying are supposed to
+                // draw the same picture from the same place, and the only way to check that is to put the
+                // free camera exactly where the walking eye is -- which needs the eye, not the feet the
+                // line above reports, and needs it before a capture run can be scripted around it.
+                Camera3D spawnEye = candidate.Camera;
+                _logger.Information(
+                    "Player",
+                    FormattableString.Invariant(
+                        $"Eye at -campos {spawnEye.Position.X:F3},{spawnEye.Position.Y:F3},{spawnEye.Position.Z:F3} ")
+                        + FormattableString.Invariant(
+                            $"-yaw {candidate.Body.Yaw:F4} -pitch {candidate.Body.Pitch:F4}"));
             }
             else
             {

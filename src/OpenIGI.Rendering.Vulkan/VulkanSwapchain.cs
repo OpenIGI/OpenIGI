@@ -300,9 +300,18 @@ internal sealed unsafe class VulkanSwapchain : IDisposable
     {
         // A driver that fixes the extent reports it in currentExtent; otherwise the window's size is
         // used, clamped to the range the surface allows.
+        //
+        // A window with no client area -- minimised, or momentarily placed with nothing on screen --
+        // reports a current extent of zero, and zero is not a size anything can be built at: the scene
+        // target, its framebuffers, the viewport and the capture staging buffer all reject it, and the
+        // frame dies partway through having already recorded commands. One texel keeps every one of
+        // those valid and costs nothing to draw; the next resize, which is what un-minimising raises,
+        // rebuilds at the real size.
         if (capabilities.CurrentExtent.Width != uint.MaxValue)
         {
-            return capabilities.CurrentExtent;
+            return new Extent2D(
+                Math.Max(capabilities.CurrentExtent.Width, 1),
+                Math.Max(capabilities.CurrentExtent.Height, 1));
         }
 
         uint clampedWidth = Math.Clamp(
