@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Queues;
@@ -49,6 +49,15 @@ internal sealed class VulkanWorldScene : IDisposable
     // placements that name it have to be able to find their way back to it and be corrected.
     private readonly List<uint> _instanceMeshIds = [];
 
+    // Meshes forgotten since the last scene build, swept out of the lists above in one pass rather than
+    // one pass each. Eviction destroys a whole neighbourhood of terrain pages at once, and a per-mesh
+    // removal walks every placement in the level for each of them -- quadratic in exactly the moment the
+    // player is moving fast enough to trigger it, which is where the freeze came from.
+    private readonly HashSet<uint> _forgotten = [];
+
+    // Held rather than written inline, so the sweep below binds no closure and allocates nothing.
+    private readonly Predicate<Placement> _forgottenPlacement;
+
     // Streamed meshes waiting to stop growing, and the ones that have.
     private readonly Dictionary<uint, Streaming> _streaming = [];
     private readonly Dictionary<uint, int> _settled = [];
@@ -83,6 +92,7 @@ internal sealed class VulkanWorldScene : IDisposable
         _device = device;
         _allocator = allocator;
         _scene = new VulkanRayTracingScene(vk, api, device, allocator, MaxInstances);
+        _forgottenPlacement = placement => _forgotten.Contains(placement.MeshId);
     }
 
     /// <summary>Gets the scene structure, or <see langword="null"/> before anything has been built.</summary>
@@ -270,6 +280,8 @@ internal sealed class VulkanWorldScene : IDisposable
     /// </remarks>
     private void RefreshStructureAddresses()
     {
+        CompactForgotten();
+
         for (int i = 0; i < _instances.Count; i++)
         {
             if (!_geometries.TryGetValue(_instanceMeshIds[i], out Geometry geometry))
@@ -290,6 +302,43 @@ internal sealed class VulkanWorldScene : IDisposable
         }
     }
 
+    /// <summary>Drops every placement of a forgotten mesh, in one pass over the lists.</summary>
+    /// <remarks>
+    /// Runs immediately before the placements are handed to the scene, so a forgotten mesh's structure is
+    /// never named by a scene that is built -- the same guarantee removing them one at a time gave, at one
+    /// walk of the list per frame instead of one per mesh. The order of the survivors is preserved, which
+    /// matters only in that the two lists stay parallel.
+    /// </remarks>
+    private void CompactForgotten()
+    {
+        if (_forgotten.Count == 0)
+        {
+            return;
+        }
+
+        int kept = 0;
+        for (int i = 0; i < _instances.Count; i++)
+        {
+            if (_forgotten.Contains(_instanceMeshIds[i]))
+            {
+                continue;
+            }
+
+            _instances[kept] = _instances[i];
+            _instanceMeshIds[kept] = _instanceMeshIds[i];
+            kept++;
+        }
+
+        _instances.RemoveRange(kept, _instances.Count - kept);
+        _instanceMeshIds.RemoveRange(kept, _instanceMeshIds.Count - kept);
+
+        // The dedupe set has to lose them too, or it holds a placement for every mesh the level ever
+        // streamed out. A cached predicate, because RemoveWhere over a capturing lambda allocated a
+        // closure per forgotten mesh -- once per evicted page, every time the player moved.
+        _placed.RemoveWhere(_forgottenPlacement);
+        _forgotten.Clear();
+    }
+
     /// <summary>Forgets a mesh that has been destroyed, so its structure is not kept alive by the scene.</summary>
     /// <param name="meshId">The mesh's identifier.</param>
     /// <remarks>
@@ -308,20 +357,11 @@ internal sealed class VulkanWorldScene : IDisposable
             _scene.RetireStructure(geometry.Structure);
         }
 
-        // Drop this mesh's placements so the next scene build stops naming its structure at all. Without
-        // this the instances stayed, pointing at geometry that had gone, and every later trace read it.
-        for (int i = _instances.Count - 1; i >= 0; i--)
-        {
-            if (_instanceMeshIds[i] != meshId)
-            {
-                continue;
-            }
-
-            _instances.RemoveAt(i);
-            _instanceMeshIds.RemoveAt(i);
-        }
-
-        _placed.RemoveWhere(placement => placement.MeshId == meshId);
+        // This mesh's placements have to stop naming its structure before the next scene is built, or
+        // every later trace reads geometry that has gone. They are marked here and swept in
+        // CompactForgotten, which the same pre-build pass that repoints every placement already runs --
+        // so a hundred evicted pages cost one walk of the instance list between them, not a hundred.
+        _forgotten.Add(meshId);
         _streaming.Remove(meshId);
         _settled.Remove(meshId);
         _instancesChanged = true;
