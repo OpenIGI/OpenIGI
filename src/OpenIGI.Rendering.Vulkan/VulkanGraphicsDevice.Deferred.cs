@@ -1148,7 +1148,13 @@ public sealed partial class VulkanGraphicsDevice
             _viewToWorld,
             _cameraPosition,
             WorldSunDirection(),
-            _unprojection);
+            _unprojection,
+            RenderCVars.SunAngle.Value,
+
+            // Cycled over a short period rather than handed the raw counter: the ray direction is built
+            // from this through a fract(), and a float large enough to be a frame count has lost the
+            // low bits that were the whole point of varying it.
+            (float)(_frameCounter % 64UL));
 
         OcclusionBarrier(
             cmd, target.SunShadowImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,

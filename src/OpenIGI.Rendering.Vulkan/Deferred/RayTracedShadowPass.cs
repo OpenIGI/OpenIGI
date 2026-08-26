@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Compute;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -46,8 +46,8 @@ internal sealed class RayTracedShadowPass : IDisposable
     // world is a few thousand units across means only the horizon is given the benefit of the doubt.
     private const float RayLength = 4000f;
 
-    // One 4x4 rotation and four 4-vectors.
-    private const int ParamSize = 64 + (4 * 16);
+    // One 4x4 rotation and five 4-vectors.
+    private const int ParamSize = 64 + (5 * 16);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -79,8 +79,55 @@ internal sealed class RayTracedShadowPass : IDisposable
             vec4 uUnproject;     // xScale, yScale, near, far
             vec4 uResolution;    // width, height, 1/width, 1/height
             vec4 uSunAndCamera;  // xyz world direction towards the sun, w how far to look
-            vec4 uCamera;        // xyz camera position, w unused
+            vec4 uCamera;        // xyz camera position, w the sine of the sun's half-angle
+            vec4 uJitter;        // frame index, unused
         } p;
+
+        // The reference's sun is a disc a little over half a degree wide, not a point, and that is the
+        // whole of why a shadow softens with distance from what casts it: near the contact almost the
+        // whole disc is blocked or almost none of it is, and far away the two answers overlap over
+        // several pixels. Sampling the disc is therefore not a quality setting -- a point sun has no
+        // penumbra at any sample count.
+        //
+        // From the reference's UniformSampleConeRobust. The series expansion is not an optimisation:
+        // 1 - sqrt(1 - x) loses almost all its significant digits for x this small, and the sun's
+        // sin-squared half-angle is about 2e-5.
+        vec3 SampleSunCone(vec2 rand, float sinThetaMax2)
+        {
+            float phi = 2.0 * 3.14159265359 * rand.x;
+            float oneMinusCosThetaMax = sinThetaMax2 < 0.01
+                ? sinThetaMax2 * (0.5 + (0.125 * sinThetaMax2))
+                : 1.0 - sqrt(1.0 - sinThetaMax2);
+
+            float cosTheta = 1.0 - (oneMinusCosThetaMax * rand.y);
+            float sinTheta = sqrt(max(1.0 - (cosTheta * cosTheta), 0.0));
+
+            return vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+        }
+
+        // The reference's GetTangentBasis: an orthonormal frame around a direction with no branches and
+        // no degenerate case, which matters because the sun can point straight down any axis.
+        vec3 TangentToWorld(vec3 v, vec3 axis)
+        {
+            float sign = axis.z >= 0.0 ? 1.0 : -1.0;
+            float a = -1.0 / (sign + axis.z);
+            float b = axis.x * axis.y * a;
+
+            vec3 tangentX = vec3(1.0 + (sign * a * axis.x * axis.x), sign * b, -sign * axis.x);
+            vec3 tangentY = vec3(b, sign + (a * axis.y * axis.y), -axis.y);
+
+            return (v.x * tangentX) + (v.y * tangentY) + (v.z * axis);
+        }
+
+        // Decorrelated per pixel and per frame. One ray a frame is far too few to resolve a penumbra on
+        // its own -- what resolves it is the temporal pass averaging a different ray every frame, and
+        // that only works if consecutive frames disagree. The reference reaches for its path-tracing
+        // sequence here; this is the same idea and is the noise our temporal pass was built to eat.
+        float InterleavedGradientNoise(vec2 pos, float frame)
+        {
+            pos += frame * (vec2(47.0, 17.0) * 0.695);
+            return fract(52.9829189 * fract(dot(pos, vec2(0.06711056, 0.00583715))));
+        }
 
         // The view-space position a depth sample came from. Reverse-Z, so the stored depth is mapped back
         // to the normalised z the closed-form inverse expects; the vertical is negated because the
@@ -132,6 +179,18 @@ internal sealed class RayTracedShadowPass : IDisposable
             // of the position it is happening to.
             float offset = 0.02 + (0.0005 * viewPos.z);
 
+            // One ray, aimed somewhere on the sun's disc rather than at its centre. The reference traces
+            // one sample per pixel here too and runs no denoiser over the result: it leaves the averaging
+            // to the temporal pass, which is why the jitter has to move every frame.
+            vec2 rand = vec2(
+                InterleavedGradientNoise(vec2(px), p.uJitter.x),
+                InterleavedGradientNoise(vec2(px) + 97.0, p.uJitter.x));
+
+            float sinThetaMax = p.uCamera.w;
+            vec3 traceDirection = sinThetaMax > 0.0
+                ? normalize(TangentToWorld(SampleSunCone(rand, sinThetaMax * sinThetaMax), sunDirection))
+                : sunDirection;
+
             rayQueryEXT query;
             rayQueryInitializeEXT(
                 query,
@@ -143,7 +202,7 @@ internal sealed class RayTracedShadowPass : IDisposable
                 0xFF,
                 worldPos + (normal * offset),
                 0.01,
-                sunDirection,
+                traceDirection,
                 p.uSunAndCamera.w);
 
             while (rayQueryProceedEXT(query))
@@ -193,6 +252,8 @@ internal sealed class RayTracedShadowPass : IDisposable
     /// <param name="cameraPosition">Where the camera is, in absolute world space.</param>
     /// <param name="sunDirection">The world direction towards the sun.</param>
     /// <param name="unprojection">The projection's scales and planes.</param>
+    /// <param name="sunAngleDegrees">How wide the sun's disc is, which is what gives a shadow its penumbra.</param>
+    /// <param name="frameIndex">A number that changes every frame, so the one ray lands somewhere new.</param>
     public void Record(
         CommandBuffer cmd,
         int frame,
@@ -205,7 +266,9 @@ internal sealed class RayTracedShadowPass : IDisposable
         Matrix3f viewToWorld,
         Vector3f cameraPosition,
         Vector3f sunDirection,
-        DepthUnprojection unprojection)
+        DepthUnprojection unprojection,
+        float sunAngleDegrees,
+        float frameIndex)
     {
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
 
@@ -232,7 +295,15 @@ internal sealed class RayTracedShadowPass : IDisposable
         data[28] = cameraPosition.X;
         data[29] = cameraPosition.Y;
         data[30] = cameraPosition.Z;
-        data[31] = 0f;
+
+        // The sine of the sun's half-angle, which is the form the cone sampler wants. Zero collapses the
+        // disc to a point and the trace back to the hard-edged one this replaced.
+        data[31] = MathF.Sin(0.5f * float.DegreesToRadians(Math.Max(sunAngleDegrees, 0f)));
+
+        data[32] = frameIndex;
+        data[33] = 0f;
+        data[34] = 0f;
+        data[35] = 0f;
 
         ReadOnlySpan<ComputeResource> resources =
         [

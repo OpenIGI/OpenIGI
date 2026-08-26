@@ -311,6 +311,35 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>How wide the sun's disc is, in degrees, which is what gives a shadow its penumbra.</summary>
+    /// <remarks>
+    /// <para>
+    /// The sun is not a point. It subtends a little over half a degree from here, and that is the entire
+    /// reason a shadow is sharp where it meets its caster and soft a few metres away: near the contact a
+    /// surface sees almost all of the disc or almost none of it, and further away the two answers overlap
+    /// across several pixels. A point sun has no penumbra at any sample count, so this is not a quality
+    /// dial — it is the physical fact the softness is derived from.
+    /// </para>
+    /// <para>
+    /// Every preset carries the same figure for that reason, and it is the real one: 0.5357 degrees, which
+    /// is also what the reference render this preset is matched against uses. It only reaches the picture
+    /// where the sun's shadow is traced rather than sampled from the cascades, which today means ultra
+    /// with <c>r_rt</c> on; the cascaded path has no disc to sample.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> SunAngle = Presets.Define(
+        CVar.Float(
+            "r_sun_angle",
+            0.5357f,
+            0f,
+            10f,
+            CVarOptions.Archive,
+            "The sun's angular diameter in degrees; 0 makes it a point and its shadows hard-edged."),
+        vanilla: "0.5357",
+        enhanced: "0.5357",
+        high: "0.5357",
+        ultra: "0.5357");
+
     /// <summary>How bright a single screen-traced ray may come back, before it feeds the next frame.</summary>
     /// <remarks>
     /// The screen trace resolves a hit from the previous frame's lit scene, and this frame's indirect is
