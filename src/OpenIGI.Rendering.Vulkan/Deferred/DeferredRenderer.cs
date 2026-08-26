@@ -36,6 +36,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
+    private readonly BloomPass _bloom;
     private readonly Tsr.DilateVelocityPass _dilateVelocity;
     private readonly Tsr.DecimateHistoryPass _decimateHistory;
     private readonly Tsr.UpdateHistoryPass _updateHistory;
@@ -80,6 +81,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
+        _bloom = new BloomPass(vk, device, allocator, commands, compiler, framesInFlight);
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
         _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
@@ -177,6 +179,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
 
+    /// <summary>Gets the bloom pyramid, the lens scatter the reference composites before its tone map.</summary>
+    public BloomPass Bloom => _bloom;
+
     /// <summary>Gets the pass that dilates screen motion onto the closest surface around each pixel.</summary>
     public Tsr.DilateVelocityPass DilateVelocity => _dilateVelocity;
 
@@ -264,6 +269,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _sky.Dispose();
         _autoExposure.Dispose();
         _velocity.Dispose();
+        _bloom.Dispose();
         _dilateVelocity.Dispose();
         _decimateHistory.Dispose();
         _updateHistory.Dispose();
@@ -378,19 +384,24 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     private DescriptorSetLayout CreateResolveLayout()
     {
-        DescriptorSetLayoutBinding binding = new()
+        // Binding 0 is the resolved scene, binding 1 the bloom the reference composites into it.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
+        for (uint i = 0; i < 2; i++)
         {
-            Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
+            bindings[i] = new DescriptorSetLayoutBinding
+            {
+                Binding = i,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
 
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 1,
-            PBindings = &binding,
+            BindingCount = 2,
+            PBindings = bindings,
         };
 
         DescriptorSetLayout layout;

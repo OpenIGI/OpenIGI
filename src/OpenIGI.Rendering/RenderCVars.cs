@@ -1343,7 +1343,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.25",
         high: "0.35",
-        ultra: "0.45");
+        ultra: "0.2");
 
     /// <summary>The luminance above which a pixel starts to bloom.</summary>
     public static readonly NumericCVar<float> BloomThreshold = Presets.Define(

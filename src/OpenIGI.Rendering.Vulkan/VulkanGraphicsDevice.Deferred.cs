@@ -704,6 +704,26 @@ public sealed partial class VulkanGraphicsDevice
         // pass. The histogram it copies down is read a couple of frames later, and the exposure applied
         // below eases toward what the metering reports — the reference's histogram eye adaptation, with
         // r_exposure as the compensation on top of the adapted value rather than the whole of it.
+        CommandBuffer cmd = _frameCommandBuffer;
+
+        // The lens scatter, built from the lit scene before it is tone mapped. A mask debug view is a
+        // code value rather than radiance and gets neither this nor the vignette.
+        bool bloomRan = false;
+        if (post.WantsBloom && _sceneTarget is { } bloomTarget && _debugView is DebugView.None or DebugView.Lighting)
+        {
+            using StageScope bloomTiming = Measure(RenderStage.Bloom);
+            _deferred.Bloom.Resize(_captureWidth, _captureHeight);
+            bloomTarget.WriteBloom(_deferred.Bloom.ResultView(_frameLoop.CurrentFrame));
+
+            LitReadBarrier(cmd, bloomTarget.LitImage, PipelineStageFlags.ComputeShaderBit);
+            _deferred.Bloom.Record(
+                cmd,
+                _frameLoop.CurrentFrame,
+                _temporalResolved ? bloomTarget.UpscaleOutputView : bloomTarget.LitView,
+                post.BloomIntensity);
+            bloomRan = true;
+        }
+
         float adaptedExposure = 1f;
         if (post.AutoExposure && _debugView is DebugView.None or DebugView.Lighting)
         {
@@ -720,7 +740,6 @@ public sealed partial class VulkanGraphicsDevice
         using StageScope tone = Measure(RenderStage.ToneMapGrade);
 
         Vk vk = _instance.Vk;
-        CommandBuffer cmd = _frameCommandBuffer;
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.Pipeline);
 
         // The stable accumulated colour when the temporal pass ran this frame; the raw lit colour when
@@ -744,7 +763,7 @@ public sealed partial class VulkanGraphicsDevice
 
             maskView ? 0f : post.Vignette,
             _captureHeight / (float)Math.Max(1, _captureWidth),
-            0f,
+            bloomRan ? 1f : 0f,
             0f,
         };
         vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 8, parameters);
