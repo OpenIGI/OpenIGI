@@ -19,6 +19,51 @@ public sealed class GraphicsPresetRegistryTests
         Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
     }
 
+    /// <summary>
+    /// Every archived render setting has to be named by the presets, so that choosing one fully
+    /// determines the picture.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An archived setting outside the preset table keeps whatever it was last set to across a preset
+    /// change, so two machines "on ultra" render differently and a capture does not reproduce what the
+    /// player sees — silently, because nothing reports it. That is exactly how a session running four
+    /// times the probe irradiance and nine times the occlusion radius of its own reference captures went
+    /// unnoticed. A new archived <c>r_</c> variable therefore has to be given preset values or listed
+    /// here with the reason it is a preference rather than a quality level.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void EveryArchivedRenderSettingIsNamedByThePresets()
+    {
+        // Not quality levels: the first four are the scene's own state rather than how well it is drawn,
+        // the next two are the player's own display and performance preferences, and the last names a
+        // directory on their disk. A preset has no business overwriting any of them.
+        string[] preferences =
+        [
+            "r_time_of_day", "r_weather_enabled", "r_weather_kind", "r_weather_speed",
+            "r_vsync", "r_scale", "r_material_pack",
+        ];
+
+        _ = RenderCVars.Lighting;
+        HashSet<string> managed = [.. GraphicsPresetRegistry.Default.Managed.Select(variable => variable.Name)];
+
+        string[] unmanaged =
+        [
+            .. CVarRegistry.Default.All
+                .Where(variable => variable.Name.StartsWith("r_", StringComparison.Ordinal))
+                .Where(variable => variable.Flags.HasFlag(CVarOptions.Archive))
+                .Select(variable => variable.Name)
+                .Where(name => !managed.Contains(name) && !preferences.Contains(name))
+                .Order(StringComparer.Ordinal),
+        ];
+
+        Assert.True(
+            unmanaged.Length == 0,
+            "These archived render settings are outside every preset, so choosing a preset leaves them "
+                + "wherever they were last set: " + string.Join(", ", unmanaged));
+    }
+
     private readonly CVarRegistry _variables = new();
 
     [Fact]

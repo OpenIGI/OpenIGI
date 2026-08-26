@@ -42,4 +42,25 @@ public readonly record struct GraphicsCapabilities(
 
     /// <summary>Gets the highest sample count the backend will honour for a scene target.</summary>
     public int MaxSampleCount { get; init; }
+
+    /// <summary>Gets the names of the settings this backend accepts and records but does not yet act on.</summary>
+    /// <remarks>
+    /// <para>
+    /// A setting that is stored and then ignored is the worst kind of dead control: the value persists,
+    /// the options screen shows it, and the picture never changes — so the person changing it concludes
+    /// the effect is broken rather than absent, and anyone comparing two renders is comparing
+    /// configurations that were never the same. Naming them here lets the app say so out loud at
+    /// start-up instead, and the entry disappears from the list on the day the pass lands.
+    /// </para>
+    /// <para>
+    /// These are console-variable names, so a reader can match them against what the settings file holds.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> UnimplementedSettings
+    {
+        get => _unimplementedSettings ?? [];
+        init => _unimplementedSettings = value;
+    }
+
+    private readonly IReadOnlyList<string>? _unimplementedSettings;
 }

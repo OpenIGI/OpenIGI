@@ -541,8 +541,41 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             // scene stands in until the world's own is built, so the answer does not change mid-level.
             SupportsRayQuery = compute && rayQuery,
             MaxSampleCount = 1,
+            UnimplementedSettings = UnimplementedOnVulkan,
         };
     }
+
+    /// <summary>
+    /// The settings this backend still takes and stores without acting on, named so the app can say so
+    /// rather than let them look broken.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Three groups. The post-process chain past the tone map — the resolve applies exposure, the curve
+    /// and the white point and nothing else, so bloom, the grade, the camera effects and the colour
+    /// lookup are all read past. The lighting features whose device setters record their arguments and
+    /// return: reflections, the floor sheen, the detail maps, the alpha hash, the realtime probe volume.
+    /// And the volumetric fog, which keeps only the camera it was handed.
+    /// </para>
+    /// <para>
+    /// Keep this list honest in both directions: an entry that has since been implemented is as
+    /// misleading as a missing one, so delete the name in the same change that lands the pass.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] UnimplementedOnVulkan =
+    [
+        // Post-process past the tone map.
+        "r_bloom", "r_bloom_threshold", "r_vignette", "r_grain", "r_chromatic", "r_sharpen",
+        "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur", "r_motion_blur",
+        "r_camera_taps", "r_lut",
+
+        // Lighting features whose setters record and return.
+        "r_ssr", "r_ssr_intensity", "r_ssr_max_roughness", "r_floor_gloss", "r_material_detail",
+        "r_alpha_hash",
+
+        // Volumetric fog: the setter keeps the camera and nothing else.
+        "r_fog_density", "r_fog_height", "r_fog_anisotropy", "r_fog_quality", "r_fog_distance",
+    ];
 
     private void EnsureFrame()
     {

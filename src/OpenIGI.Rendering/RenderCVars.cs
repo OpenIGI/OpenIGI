@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Rendering;
@@ -99,11 +99,16 @@ public static class RenderCVars
     /// as much for diagnosis as for taste: decals are one of a handful of world-space quad renderers,
     /// and being able to rule them in or out from the console in seconds is worth a variable.
     /// </remarks>
-    public static readonly BoolCVar BulletMarks = CVar.Bool(
-        "r_bulletmarks",
-        true,
-        CVarOptions.Archive,
-        "Draw the marks rounds leave on surfaces.");
+    public static readonly BoolCVar BulletMarks = Presets.Define(
+        CVar.Bool(
+            "r_bulletmarks",
+            true,
+            CVarOptions.Archive,
+            "Draw the marks rounds leave on surfaces."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether the authored level weather is rendered.</summary>
     public static readonly BoolCVar WeatherEnabled = CVar.Bool(
@@ -209,13 +214,18 @@ public static class RenderCVars
     /// old fixed value of 4 spent the curve's whole range compressing a span that was not there. One
     /// disables the roll-off completely.
     /// </remarks>
-    public static readonly NumericCVar<float> WhitePoint = CVar.Float(
-        "r_white_point",
-        1.1f,
-        1f,
-        8f,
-        CVarOptions.Archive,
-        "Linear value that maps to display white. Lower is more contrast; 1 disables the roll-off.");
+    public static readonly NumericCVar<float> WhitePoint = Presets.Define(
+        CVar.Float(
+            "r_white_point",
+            1.1f,
+            1f,
+            8f,
+            CVarOptions.Archive,
+            "Linear value that maps to display white. Lower is more contrast; 1 disables the roll-off."),
+        vanilla: "1.1",
+        enhanced: "1.1",
+        high: "1.1",
+        ultra: "3");
 
     /// <summary>A linear multiplier applied to the scene before tone mapping.</summary>
     /// <remarks>
@@ -290,11 +300,16 @@ public static class RenderCVars
     /// path is the only path and the flag is ignored. Bound to a key by default so the two can be
     /// compared in place.
     /// </remarks>
-    public static readonly BoolCVar HardwareRayTracing = CVar.Bool(
-        "r_rt",
-        true,
-        CVarOptions.Archive,
-        "Trace with the hardware ray query (1) or the software distance field (0). Toggle live to compare.");
+    public static readonly BoolCVar HardwareRayTracing = Presets.Define(
+        CVar.Bool(
+            "r_rt",
+            true,
+            CVarOptions.Archive,
+            "Trace with the hardware ray query (1) or the software distance field (0). Toggle live to compare."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How bright a single screen-traced ray may come back, before it feeds the next frame.</summary>
     /// <remarks>
@@ -303,13 +318,18 @@ public static class RenderCVars
     /// loop does not settle: past a certain gather strength each pass is brighter than the last. The
     /// reference bounds the same read for the same reason, and calls it the maximum ray intensity.
     /// </remarks>
-    public static readonly NumericCVar<float> ScreenGatherMaxIntensity = CVar.Float(
-        "r_screen_gi_max",
-        10f,
-        0.1f,
-        1000f,
-        CVarOptions.Archive,
-        "Ceiling on a single screen-traced ray's radiance; stops the gather feeding itself.");
+    public static readonly NumericCVar<float> ScreenGatherMaxIntensity = Presets.Define(
+        CVar.Float(
+            "r_screen_gi_max",
+            10f,
+            0.1f,
+            1000f,
+            CVarOptions.Archive,
+            "Ceiling on a single screen-traced ray's radiance; stops the gather feeding itself."),
+        vanilla: "10",
+        enhanced: "10",
+        high: "10",
+        ultra: "50.1");
 
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
@@ -417,13 +437,18 @@ public static class RenderCVars
     /// also amplify is cut at its source instead (see the sky-leak reject in the cache trace), not by keeping
     /// the whole bounce dim.
     /// </remarks>
-    public static readonly NumericCVar<float> RadianceCacheScale = CVar.Float(
-        "r_radiance_cache_scale",
-        3f,
-        0f,
-        8f,
-        CVarOptions.Archive,
-        "Calibration on the radiance cache's bounce; 1 is the raw traced radiance.");
+    public static readonly NumericCVar<float> RadianceCacheScale = Presets.Define(
+        CVar.Float(
+            "r_radiance_cache_scale",
+            3f,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "Calibration on the radiance cache's bounce; 1 is the raw traced radiance."),
+        vanilla: "3",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
 
     /// <summary>How many frames the surface-cache relight spreads its tiles across.</summary>
     /// <remarks>
@@ -434,13 +459,18 @@ public static class RenderCVars
     /// fast a newly revealed surface fills its multi-bounce light. Raise it to trade that fill-in latency for
     /// per-frame GPU time (roughly the whole GI stage divides by this), lower it for the snappiest response.
     /// </remarks>
-    public static readonly NumericCVar<int> GiAmortize = CVar.Int(
-        "r_gi_amortize",
-        12,
-        2,
-        48,
-        CVarOptions.Archive,
-        "Frames the surface-cache relight spreads its tiles across; higher is cheaper per frame, lags more.");
+    public static readonly NumericCVar<int> GiAmortize = Presets.Define(
+        CVar.Int(
+            "r_gi_amortize",
+            12,
+            2,
+            48,
+            CVarOptions.Archive,
+            "Frames the surface-cache relight spreads its tiles across; higher is cheaper per frame, lags more."),
+        vanilla: "12",
+        enhanced: "12",
+        high: "12",
+        ultra: "12");
 
     /// <summary>The hour of day the interactive sun starts a level at, 0 to 24. Noon is the authored sun.</summary>
     /// <remarks>
@@ -492,16 +522,21 @@ public static class RenderCVars
     /// only ever reaches a preset that runs the gather or the probe field, so vanilla and the baked path
     /// are untouched.
     /// </remarks>
-    public static readonly NumericCVar<float> SkyLight = CVar.Float(
-        "r_sky_light",
+    public static readonly NumericCVar<float> SkyLight = Presets.Define(
+        CVar.Float(
+            "r_sky_light",
 
-        // The reference scene's SkyLight multiplies its captured sky by three; matching it here keeps
-        // the two renders' window light on the same scale.
-        3f,
-        0f,
-        16f,
-        CVarOptions.Archive,
-        "Skylight brightness the GI fill sees; 1 is the level's own ambient. Lifts outdoor and window-lit surfaces.");
+            // The reference scene's SkyLight multiplies its captured sky by three; matching it here keeps
+            // the two renders' window light on the same scale.
+            3f,
+            0f,
+            16f,
+            CVarOptions.Archive,
+            "Skylight brightness the GI fill sees; 1 is the level's own ambient. Lifts outdoor and window-lit surfaces."),
+        vanilla: "3",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
 
     /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
     /// <remarks>
@@ -511,11 +546,16 @@ public static class RenderCVars
     /// through to the cache only when the ray leaves the screen or finds nothing. A knob to turn off for
     /// comparison; it does nothing when the gather itself is off.
     /// </remarks>
-    public static readonly BoolCVar ScreenGatherTrace = CVar.Bool(
-        "r_screen_gi_trace",
-        true,
-        CVarOptions.Archive,
-        "Trace on-screen geometry from the frame before falling back to the surface cache.");
+    public static readonly BoolCVar ScreenGatherTrace = Presets.Define(
+        CVar.Bool(
+            "r_screen_gi_trace",
+            true,
+            CVarOptions.Archive,
+            "Trace on-screen geometry from the frame before falling back to the surface cache."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How far the screen probe gather's spatial denoise blur reaches, in probes. Zero is off.</summary>
     /// <remarks>
@@ -525,13 +565,18 @@ public static class RenderCVars
     /// smooths that. One probe each way is usually enough; higher is smoother but softer. Only ever runs
     /// while <see cref="ScreenGather"/> is up.
     /// </remarks>
-    public static readonly NumericCVar<int> ScreenGatherFilter = CVar.Int(
-        "r_screen_gi_filter",
-        2,
-        0,
-        4,
-        CVarOptions.Archive,
-        "Radius, in probes, of the screen probe gather's spatial denoise. 0 is off.");
+    public static readonly NumericCVar<int> ScreenGatherFilter = Presets.Define(
+        CVar.Int(
+            "r_screen_gi_filter",
+            2,
+            0,
+            4,
+            CVarOptions.Archive,
+            "Radius, in probes, of the screen probe gather's spatial denoise. 0 is off."),
+        vanilla: "2",
+        enhanced: "2",
+        high: "2",
+        ultra: "2");
 
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
@@ -614,11 +659,16 @@ public static class RenderCVars
     /// The query result is consumed only after OpenGL reports it ready, so this never stalls the CPU.
     /// Keeping this as a CVar also makes the query cost directly A/B testable on a given mission.
     /// </remarks>
-    public static readonly BoolCVar TerrainOcclusion = CVar.Bool(
-        "r_terrain_occlusion",
-        false,
-        CVarOptions.Archive,
-        "Cull fully hidden terrain batch pages with asynchronous GPU visibility queries. Opt-in because sparse scenes can cost more to query than they save.");
+    public static readonly BoolCVar TerrainOcclusion = Presets.Define(
+        CVar.Bool(
+            "r_terrain_occlusion",
+            false,
+            CVarOptions.Archive,
+            "Cull fully hidden terrain batch pages with asynchronous GPU visibility queries. Opt-in because sparse scenes can cost more to query than they save."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "1");
 
     /// <summary>Whether placed world objects use asynchronous visibility queries in the geometry pass.</summary>
     /// <remarks>
@@ -626,11 +676,16 @@ public static class RenderCVars
     /// them, a frustum does not. On by default because interiors are where the geometry pass was
     /// measured most over budget; a CVar so the gain is A/B testable per mission like the terrain's.
     /// </remarks>
-    public static readonly BoolCVar WorldOcclusion = CVar.Bool(
-        "r_world_occlusion",
-        true,
-        CVarOptions.Archive,
-        "Cull placed objects hidden behind walls and hills with asynchronous GPU visibility queries.");
+    public static readonly BoolCVar WorldOcclusion = Presets.Define(
+        CVar.Bool(
+            "r_world_occlusion",
+            true,
+            CVarOptions.Archive,
+            "Cull placed objects hidden behind walls and hills with asynchronous GPU visibility queries."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether surfaces are recorded into a G-buffer and lit afterwards.</summary>
     /// <remarks>
@@ -803,22 +858,32 @@ public static class RenderCVars
         ultra: "6");
 
     /// <summary>How far a surface may occlude another, in metres.</summary>
-    public static readonly NumericCVar<float> AmbientOcclusionRadius = CVar.Float(
-        "r_ao_radius",
-        1.5f,
-        0.05f,
-        16f,
-        CVarOptions.Archive,
-        "How far, in metres, one surface can shade another.");
+    public static readonly NumericCVar<float> AmbientOcclusionRadius = Presets.Define(
+        CVar.Float(
+            "r_ao_radius",
+            1.5f,
+            0.05f,
+            16f,
+            CVarOptions.Archive,
+            "How far, in metres, one surface can shade another."),
+        vanilla: "1.5",
+        enhanced: "1.5",
+        high: "1.5",
+        ultra: "13.61");
 
     /// <summary>How strongly the occlusion is applied, where 1 is the physical amount.</summary>
-    public static readonly NumericCVar<float> AmbientOcclusionIntensity = CVar.Float(
-        "r_ao_intensity",
-        1.2f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "How deeply ambient occlusion darkens; 1 is the physical amount.");
+    public static readonly NumericCVar<float> AmbientOcclusionIntensity = Presets.Define(
+        CVar.Float(
+            "r_ao_intensity",
+            1.2f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How deeply ambient occlusion darkens; 1 is the physical amount."),
+        vanilla: "1.2",
+        enhanced: "1.2",
+        high: "1.2",
+        ultra: "3");
 
     /// <summary>How many samples gather bounced colour, or 0 for no screen-space bounce.</summary>
     /// <remarks>
@@ -841,13 +906,18 @@ public static class RenderCVars
         ultra: "0");
 
     /// <summary>How strongly the bounced colour is added back.</summary>
-    public static readonly NumericCVar<float> ScreenSpaceGiIntensity = CVar.Float(
-        "r_ssgi_intensity",
-        1f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "How strongly surfaces bounce their colour onto each other.");
+    public static readonly NumericCVar<float> ScreenSpaceGiIntensity = Presets.Define(
+        CVar.Float(
+            "r_ssgi_intensity",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How strongly surfaces bounce their colour onto each other."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "2");
 
     /// <summary>How far, in metres, the camera is focused, or 0 for no depth of field.</summary>
     /// <remarks>
@@ -855,31 +925,46 @@ public static class RenderCVars
     /// look at, and a renderer that blurs everything else is fighting them. Its place is the menu
     /// camera and the sniper scope, which decide where the eye is going anyway.
     /// </remarks>
-    public static readonly NumericCVar<float> FocalDistance = CVar.Float(
-        "r_dof",
-        0f,
-        0f,
-        500f,
-        CVarOptions.Archive,
-        "Focal distance in metres; 0 turns depth of field off.");
+    public static readonly NumericCVar<float> FocalDistance = Presets.Define(
+        CVar.Float(
+            "r_dof",
+            0f,
+            0f,
+            500f,
+            CVarOptions.Archive,
+            "Focal distance in metres; 0 turns depth of field off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "40");
 
     /// <summary>Over how many metres a surface goes from sharp to fully defocused.</summary>
-    public static readonly NumericCVar<float> FocalRange = CVar.Float(
-        "r_dof_range",
-        12f,
-        0.5f,
-        200f,
-        CVarOptions.Archive,
-        "Metres from the focal plane over which a surface defocuses completely.");
+    public static readonly NumericCVar<float> FocalRange = Presets.Define(
+        CVar.Float(
+            "r_dof_range",
+            12f,
+            0.5f,
+            200f,
+            CVarOptions.Archive,
+            "Metres from the focal plane over which a surface defocuses completely."),
+        vanilla: "12",
+        enhanced: "12",
+        high: "12",
+        ultra: "18");
 
     /// <summary>The widest the defocus gets, in pixels.</summary>
-    public static readonly NumericCVar<float> FocalBlur = CVar.Float(
-        "r_dof_blur",
-        8f,
-        0f,
-        64f,
-        CVarOptions.Archive,
-        "The widest defocus, in pixels.");
+    public static readonly NumericCVar<float> FocalBlur = Presets.Define(
+        CVar.Float(
+            "r_dof_blur",
+            8f,
+            0f,
+            64f,
+            CVarOptions.Archive,
+            "The widest defocus, in pixels."),
+        vanilla: "8",
+        enhanced: "8",
+        high: "8",
+        ultra: "1");
 
     /// <summary>How much of a frame's movement is smeared.</summary>
     public static readonly NumericCVar<float> MotionBlur = Presets.Define(
@@ -1021,13 +1106,18 @@ public static class RenderCVars
     /// The dial that decides both the atlas size and how much detail a bounce carries. Higher resolves
     /// a doorway rather than averaging over a wall, and costs the square of itself.
     /// </remarks>
-    public static readonly NumericCVar<float> SurfaceCacheDensity = CVar.Float(
-        "r_cards_density",
-        8f,
-        1f,
-        64f,
-        CVarOptions.Archive | CVarOptions.RequiresRestart,
-        "Texels of card per world unit of surface.");
+    public static readonly NumericCVar<float> SurfaceCacheDensity = Presets.Define(
+        CVar.Float(
+            "r_cards_density",
+            8f,
+            1f,
+            64f,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Texels of card per world unit of surface."),
+        vanilla: "8",
+        enhanced: "8",
+        high: "8",
+        ultra: "23.05");
 
     /// <summary>Where to write the captured atlas as images, or empty to write none.</summary>
     /// <remarks>
@@ -1098,13 +1188,18 @@ public static class RenderCVars
     /// gives this game's crates and huts voxels of a few centimetres, which is fine enough for a trace
     /// to land on the right side of a wall.
     /// </remarks>
-    public static readonly NumericCVar<int> DistanceFieldResolution = CVar.Int(
-        "r_sdf_resolution",
-        32,
-        8,
-        128,
-        CVarOptions.Archive | CVarOptions.RequiresRestart,
-        "Voxels along the longest axis of each model's distance field.");
+    public static readonly NumericCVar<int> DistanceFieldResolution = Presets.Define(
+        CVar.Int(
+            "r_sdf_resolution",
+            32,
+            8,
+            128,
+            CVarOptions.Archive | CVarOptions.RequiresRestart,
+            "Voxels along the longest axis of each model's distance field."),
+        vanilla: "32",
+        enhanced: "32",
+        high: "32",
+        ultra: "46");
 
     /// <summary>Whether the built clipmaps are checked against the exact field once, after a load.</summary>
     /// <remarks>
@@ -1127,17 +1222,24 @@ public static class RenderCVars
     /// on the brightest textures -- which is why the sand and the snow blew out while the concrete
     /// looked right. The default is measured against the artists' own bakes rather than chosen.
     /// </remarks>
-    public static readonly NumericCVar<float> LightScale = CVar.Float(
-        "r_light_scale",
+    public static readonly NumericCVar<float> LightScale = Presets.Define(
+        CVar.Float(
+            "r_light_scale",
 
-        // Seven eighths lands mission 1's authored sun — about eight lux along its warm chromaticity —
-        // on the reference scene's seven, so the two renders share an illuminance and every remaining
-        // difference is the transport's fault, not the key light's.
-        0.875f,
-        0.1f,
-        2f,
-        CVarOptions.Archive,
-        "Scales dynamic lighting to match what the level's textures were painted for.");
+            // Seven eighths lands mission 1's authored sun — about eight lux along its warm chromaticity —
+            // on the reference scene's seven, so the two renders share an illuminance and every remaining
+            // difference is the transport's fault, not the key light's. Ultra carries a hand-set 0.96 on
+            // top of that derivation, so its key is about a tenth of a stop over the reference's: a
+            // deliberate choice to be re-examined once the transport is matched, not a second measurement.
+            0.875f,
+            0.1f,
+            2f,
+            CVarOptions.Archive,
+            "Scales dynamic lighting to match what the level's textures were painted for."),
+        vanilla: "0.875",
+        enhanced: "0.875",
+        high: "0.875",
+        ultra: "0.96");
 
     /// <summary>Scales the flat ambient stand-in the dynamic model fills unlit surfaces with.</summary>
     /// <remarks>
@@ -1207,13 +1309,18 @@ public static class RenderCVars
         ultra: "0");
 
     /// <summary>The contrast below which a pixel is left untouched.</summary>
-    public static readonly NumericCVar<float> SpatialAaThreshold = CVar.Float(
-        "r_aa_threshold",
-        0.05f,
-        0.005f,
-        0.5f,
-        CVarOptions.Archive,
-        "Luminance contrast below which a pixel is not treated as an edge.");
+    public static readonly NumericCVar<float> SpatialAaThreshold = Presets.Define(
+        CVar.Float(
+            "r_aa_threshold",
+            0.05f,
+            0.005f,
+            0.5f,
+            CVarOptions.Archive,
+            "Luminance contrast below which a pixel is not treated as an edge."),
+        vanilla: "0.05",
+        enhanced: "0.05",
+        high: "0.05",
+        ultra: "0.33");
 
     /// <summary>How much of the blurred bright pass is mixed back in, or 0 for no bloom.</summary>
     public static readonly NumericCVar<float> Bloom = Presets.Define(
@@ -1230,13 +1337,18 @@ public static class RenderCVars
         ultra: "0.45");
 
     /// <summary>The luminance above which a pixel starts to bloom.</summary>
-    public static readonly NumericCVar<float> BloomThreshold = CVar.Float(
-        "r_bloom_threshold",
-        1f,
-        0.1f,
-        8f,
-        CVarOptions.Archive,
-        "The brightness a pixel has to pass before it spills.");
+    public static readonly NumericCVar<float> BloomThreshold = Presets.Define(
+        CVar.Float(
+            "r_bloom_threshold",
+            1f,
+            0.1f,
+            8f,
+            CVarOptions.Archive,
+            "The brightness a pixel has to pass before it spills."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "2.47");
 
     /// <summary>How far colour is pushed away from mid-grey.</summary>
     public static readonly NumericCVar<float> Contrast = Presets.Define(
@@ -1386,13 +1498,18 @@ public static class RenderCVars
         ultra: "64");
 
     /// <summary>How strongly reflections are mixed in.</summary>
-    public static readonly NumericCVar<float> ReflectionIntensity = CVar.Float(
-        "r_ssr_intensity",
-        1f,
-        0f,
-        2f,
-        CVarOptions.Archive,
-        "How strongly surfaces reflect; 1 is the physical amount.");
+    public static readonly NumericCVar<float> ReflectionIntensity = Presets.Define(
+        CVar.Float(
+            "r_ssr_intensity",
+            1f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "How strongly surfaces reflect; 1 is the physical amount."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1.7");
 
     /// <summary>The roughness past which a surface stops marching a screen ray and keeps the smooth fallback.</summary>
     /// <remarks>
@@ -1405,13 +1522,18 @@ public static class RenderCVars
     /// everything rougher keeps the probe field's smooth, bright, stable fallback. The reference denoises a
     /// many-ray reflection instead; this is the single-ray equivalent of not marching where it cannot help.
     /// </remarks>
-    public static readonly NumericCVar<float> ReflectionMaxRoughness = CVar.Float(
-        "r_ssr_max_roughness",
-        0.22f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "Roughest surface that still marches a screen ray; rougher ones keep the smooth probe fallback.");
+    public static readonly NumericCVar<float> ReflectionMaxRoughness = Presets.Define(
+        CVar.Float(
+            "r_ssr_max_roughness",
+            0.22f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Roughest surface that still marches a screen ray; rougher ones keep the smooth probe fallback."),
+        vanilla: "0.22",
+        enhanced: "0.22",
+        high: "0.22",
+        ultra: "0.22");
 
     /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
     /// <remarks>
@@ -1471,13 +1593,18 @@ public static class RenderCVars
         ultra: "2");
 
     /// <summary>How far apart the probes sit, in metres.</summary>
-    public static readonly NumericCVar<float> GlobalIlluminationSpacing = CVar.Float(
-        "r_gi_probe_spacing",
-        6f,
-        1f,
-        32f,
-        CVarOptions.Archive,
-        "Metres between irradiance probes. Finer resolves smaller rooms and takes longer to bake.");
+    public static readonly NumericCVar<float> GlobalIlluminationSpacing = Presets.Define(
+        CVar.Float(
+            "r_gi_probe_spacing",
+            6f,
+            1f,
+            32f,
+            CVarOptions.Archive,
+            "Metres between irradiance probes. Finer resolves smaller rooms and takes longer to bake."),
+        vanilla: "6",
+        enhanced: "6",
+        high: "6",
+        ultra: "3");
 
     /// <summary>The escape fraction below which a radiance-cache probe's sky is treated as a wall leak.</summary>
     /// <remarks>
@@ -1488,13 +1615,18 @@ public static class RenderCVars
     /// day outside, while a window room, whose probes escape freely, keeps its sky. A window room is lit
     /// mostly by its sunlit floor bouncing regardless, so this can be firm without darkening it.
     /// </remarks>
-    public static readonly NumericCVar<float> GlobalIlluminationLeakReject = CVar.Float(
-        "r_gi_leak_reject",
-        0.3f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "Escape fraction under which a cache probe's sky is treated as a wall leak and dropped.");
+    public static readonly NumericCVar<float> GlobalIlluminationLeakReject = Presets.Define(
+        CVar.Float(
+            "r_gi_leak_reject",
+            0.3f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Escape fraction under which a cache probe's sky is treated as a wall leak and dropped."),
+        vanilla: "0.3",
+        enhanced: "0.3",
+        high: "0.3",
+        ultra: "0");
 
     /// <summary>Whether the inferred lamp fixtures light the surface cache, so interiors lit by their own lamps.</summary>
     /// <remarks>
@@ -1505,22 +1637,32 @@ public static class RenderCVars
     /// off such a room reads dark, which is the honest state until the survey is dialled in. On lights
     /// interiors from their fixtures.
     /// </remarks>
-    public static readonly NumericCVar<int> GlobalIlluminationLamps = CVar.Int(
-        "r_gi_lamps",
-        1,
-        0,
-        1,
-        CVarOptions.Archive,
-        "Light the surface cache from the level's inferred lamp fixtures, so lamplit rooms bounce.");
+    public static readonly NumericCVar<int> GlobalIlluminationLamps = Presets.Define(
+        CVar.Int(
+            "r_gi_lamps",
+            1,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Light the surface cache from the level's inferred lamp fixtures, so lamplit rooms bounce."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How strongly the probe field's light is applied.</summary>
-    public static readonly NumericCVar<float> GlobalIlluminationIntensity = CVar.Float(
-        "r_gi_intensity",
-        1f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "How strongly the probe field lights surfaces; 1 is the amount the bake computed.");
+    public static readonly NumericCVar<float> GlobalIlluminationIntensity = Presets.Define(
+        CVar.Float(
+            "r_gi_intensity",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How strongly the probe field lights surfaces; 1 is the amount the bake computed."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "4");
 
     /// <summary>The diffuse colour boost the surface cache reflects light through — the reference's DiffuseColorBoost.</summary>
     /// <remarks>
@@ -1615,13 +1757,18 @@ public static class RenderCVars
         ultra: "0.1");
 
     /// <summary>How much of the history's resampling blur is subtracted back out.</summary>
-    public static readonly NumericCVar<float> TemporalSharpening = CVar.Float(
-        "r_taa_sharpen",
-        0.25f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "How much of the temporal history's resampling blur is sharpened back out.");
+    public static readonly NumericCVar<float> TemporalSharpening = Presets.Define(
+        CVar.Float(
+            "r_taa_sharpen",
+            0.25f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of the temporal history's resampling blur is sharpened back out."),
+        vanilla: "0.25",
+        enhanced: "0.25",
+        high: "0.25",
+        ultra: "0.7");
 
     /// <summary>Whether cut-outs use a temporally-resolved hashed alpha test rather than a hard one.</summary>
     /// <remarks>
@@ -1660,32 +1807,47 @@ public static class RenderCVars
         ultra: "96");
 
     /// <summary>Extinction per metre at the fog's base height, or 0 to take the level's own.</summary>
-    public static readonly NumericCVar<float> FogDensity = CVar.Float(
-        "r_fog_density",
-        0f,
-        0f,
-        0.2f,
-        CVarOptions.Archive,
-        "Fog extinction per metre at its base height; 0 derives it from the level's own FlatSky data.");
+    public static readonly NumericCVar<float> FogDensity = Presets.Define(
+        CVar.Float(
+            "r_fog_density",
+            0f,
+            0f,
+            0.2f,
+            CVarOptions.Archive,
+            "Fog extinction per metre at its base height; 0 derives it from the level's own FlatSky data."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0.11");
 
     /// <summary>The height in metres over which fog density falls to a third.</summary>
     /// <remarks>What makes fog pool in valleys rather than hang as a flat sheet.</remarks>
-    public static readonly NumericCVar<float> FogHeightFalloff = CVar.Float(
-        "r_fog_height",
-        24f,
-        1f,
-        400f,
-        CVarOptions.Archive,
-        "Height in metres over which fog thins out. Lower pools it harder into valleys.");
+    public static readonly NumericCVar<float> FogHeightFalloff = Presets.Define(
+        CVar.Float(
+            "r_fog_height",
+            24f,
+            1f,
+            400f,
+            CVarOptions.Archive,
+            "Height in metres over which fog thins out. Lower pools it harder into valleys."),
+        vanilla: "24",
+        enhanced: "24",
+        high: "24",
+        ultra: "240.4");
 
     /// <summary>How strongly the fog scatters forward.</summary>
-    public static readonly NumericCVar<float> FogAnisotropy = CVar.Float(
-        "r_fog_anisotropy",
-        0.7f,
-        -0.95f,
-        0.95f,
-        CVarOptions.Archive,
-        "Forward scattering, -0.95 to 0.95. Positive makes fog glow towards the sun.");
+    public static readonly NumericCVar<float> FogAnisotropy = Presets.Define(
+        CVar.Float(
+            "r_fog_anisotropy",
+            0.7f,
+            -0.95f,
+            0.95f,
+            CVarOptions.Archive,
+            "Forward scattering, -0.95 to 0.95. Positive makes fog glow towards the sun."),
+        vanilla: "0.7",
+        enhanced: "0.7",
+        high: "0.7",
+        ultra: "-0.38");
 
     /// <summary>How far, in metres, the fog is marched before the cheaper haze takes over.</summary>
     public static readonly NumericCVar<float> FogDistance = Presets.Define(

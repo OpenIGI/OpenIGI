@@ -453,6 +453,8 @@ internal sealed partial class DesktopGame : IDisposable
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
 
+        WarnAboutSettingsTheBackendIgnores();
+
         // The default hotkey for comparing the two GI modes in place: F6 flips r_rt between the
         // hardware ray query and the software distance-field trace. Only when the key is free, so a
         // binding the player saved is never stolen.
@@ -4823,6 +4825,39 @@ internal sealed partial class DesktopGame : IDisposable
             $"Shutting down after {_loop.Clock.TickCount} ticks and {_loop.Clock.FrameCount} frames.");
 
         return 0;
+    }
+
+    /// <summary>
+    /// Says out loud which of the settings in force this backend does not act on yet.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only for settings moved off their default: a variable sitting where it shipped is not asking for
+    /// anything, and warning about it every launch would bury the ones that are. A variable that has been
+    /// turned up and then read past is the case worth a line, because nothing else in the run reports it —
+    /// the value persists, the options screen shows it, and the picture never changes, so it reads as a
+    /// broken effect rather than an absent one. It also silently divides a comparison: two renders of
+    /// "the same settings" are not the same picture if one backend honours a setting and the other drops it.
+    /// </para>
+    /// </remarks>
+    private void WarnAboutSettingsTheBackendIgnores()
+    {
+        IReadOnlyList<string> ignored = _device.Capabilities.UnimplementedSettings;
+        if (ignored.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string name in ignored)
+        {
+            if (CVarRegistry.Default.TryGet(name, out ICVar? variable) && !variable.IsDefault)
+            {
+                _logger.Warning(
+                    "Render",
+                    $"{name} is {variable.ValueText}, but {_device.Capabilities.Renderer} does not implement it yet — "
+                        + $"the value is kept and does nothing until that pass lands (default {variable.DefaultText}).");
+            }
+        }
     }
 
     private void ApplyWeatherSettings()
