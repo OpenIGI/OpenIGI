@@ -35,6 +35,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly RayTracedShadowPass? _sunShadow;
     private readonly SsaoPass _ssao;
     private readonly VelocityPass _velocity;
+    private readonly TemporalResolvePass _temporal;
     private readonly Sky.SkyAtmosphere _sky;
     private bool _disposed;
 
@@ -75,6 +76,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
+        _temporal = new TemporalResolvePass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
 
         // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
@@ -167,6 +169,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
 
+    /// <summary>Gets the temporal resolve pass, which accumulates the jittered frames into a stable image.</summary>
+    public TemporalResolvePass Temporal => _temporal;
+
     /// <summary>
     /// Gets a value indicating whether the lighting traces the sun's shadow against the scene rather than
     /// reading it from the cascades.
@@ -238,6 +243,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _sunShadow?.Dispose();
         _sky.Dispose();
         _velocity.Dispose();
+        _temporal.Dispose();
         _ssao.Dispose();
         _shadowPipeline.Dispose();
         _shadowMap.Dispose();

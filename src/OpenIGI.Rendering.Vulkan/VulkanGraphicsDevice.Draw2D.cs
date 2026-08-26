@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Textures;
 using Silk.NET.Vulkan;
@@ -45,6 +45,7 @@ public sealed partial class VulkanGraphicsDevice
         CommandBuffer cmd = _frameCommandBuffer;
 
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _sprite2D.ForBlend(blend));
+        InvalidateBoundState();
 
         Buffer vertexBuffer = _sprite2DGeometry.VertexBuffer(frame);
         ulong vertexBufferOffset = 0;

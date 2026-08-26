@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
@@ -157,6 +157,9 @@ public sealed partial class VulkanGraphicsDevice
 
         Matrix4f modelViewProjection = _projection * modelView;
         _occlusion.Issue(_frameCommandBuffer, _frameLoop.CurrentFrame, query, modelViewProjection, bounds);
+
+        // The box binds a pipeline of its own, so whatever the last mesh draw left bound is gone.
+        InvalidateBoundState();
     }
 
     /// <inheritdoc/>

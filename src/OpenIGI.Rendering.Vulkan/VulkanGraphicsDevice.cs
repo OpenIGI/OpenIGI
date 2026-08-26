@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
@@ -633,6 +633,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         FlushComputeBeforePass();
         vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
+
+        // Defensive: nothing draws 3D into the present pass today, but a pipeline belongs to the render
+        // pass it was built for, so what the scene passes left bound must not be assumed here.
+        InvalidateBoundState();
         _presentPassActive = true;
         ApplyViewportAndScissor(_frameCommandBuffer, _viewport);
     }

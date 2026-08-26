@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Deferred;
@@ -135,6 +135,9 @@ public sealed partial class VulkanGraphicsDevice
     /// <inheritdoc/>
     public void BeginPass(ScenePass pass)
     {
+        // A pipeline is built against one render pass, so nothing bound for the last one carries over.
+        InvalidateBoundState();
+
         ThrowIfDisposed();
         if (!_capturing)
         {
@@ -438,6 +441,7 @@ public sealed partial class VulkanGraphicsDevice
 
         DescriptorSet set = _sceneTarget.ResolveSet;
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.PipelineLayout, 0, 1, &set, 0, null);
+        InvalidateBoundState();
 
         float* parameters = stackalloc float[4] { post.Exposure, (int)post.ToneMap, post.WhitePoint, 0f };
         vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 4, parameters);
@@ -813,6 +817,7 @@ public sealed partial class VulkanGraphicsDevice
 
         DescriptorSet set = _sceneTarget.LightingSet;
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Lighting.PipelineLayout, 0, 1, &set, 0, null);
+        InvalidateBoundState();
 
         float* light = stackalloc float[12];
         light[0] = _lighting.SunDirection.X;

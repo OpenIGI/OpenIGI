@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering.Vulkan.Compute;
@@ -174,6 +174,7 @@ public sealed partial class VulkanGraphicsDevice
         CommandBuffer cmd = _cardCommandBuffer;
 
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _cardPipeline.Pipeline);
+        InvalidateBoundState();
         BindMeshBuffers(mesh);
         BindMeshTextures(_cardPipeline.PipelineLayout, diffuse, lightmap);
 

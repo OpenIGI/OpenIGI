@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Textures;
@@ -28,6 +28,56 @@ public sealed partial class VulkanGraphicsDevice
     private (float Scale, float Offset, float Slope, float Mode) _detailFade;
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
+
+    // What the frame's command buffer already has bound, so a draw asking for what is there records
+    // nothing. The shadow pass binds one pipeline for every mesh in every cascade, and the terrain draws
+    // range after range out of a single page mesh, so most of these calls were restating the state they
+    // found. The buffer is remembered with them: Cards swaps _frameCommandBuffer for one of its own, and
+    // state recorded into one buffer says nothing about another.
+    private CommandBuffer _boundCommandBuffer;
+    private Pipeline _boundPipeline;
+    private Buffer _boundVertexBuffer;
+    private Buffer _boundIndexBuffer;
+    private DescriptorSet _boundDescriptorSet;
+    private PipelineLayout _boundDescriptorLayout;
+
+    /// <summary>Forgets what is bound, so the next draw restates all of it.</summary>
+    /// <remarks>
+    /// Every path that records a graphics bind without going through the helpers below must call this.
+    /// Forgetting costs a redundant bind; failing to forget skips one that was needed, which draws the
+    /// last mesh's geometry or the last pass's textures.
+    /// </remarks>
+    internal void InvalidateBoundState()
+    {
+        _boundPipeline = default;
+        _boundVertexBuffer = default;
+        _boundIndexBuffer = default;
+        _boundDescriptorSet = default;
+        _boundDescriptorLayout = default;
+    }
+
+    /// <summary>Binds a graphics pipeline unless it is the one already bound.</summary>
+    private void BindGraphicsPipeline(Pipeline pipeline)
+    {
+        if (_boundCommandBuffer.Handle != _frameCommandBuffer.Handle)
+        {
+            _boundCommandBuffer = _frameCommandBuffer;
+            InvalidateBoundState();
+        }
+
+        if (_boundPipeline.Handle == pipeline.Handle)
+        {
+            return;
+        }
+
+        _instance.Vk.CmdBindPipeline(_frameCommandBuffer, PipelineBindPoint.Graphics, pipeline);
+        _boundPipeline = pipeline;
+
+        // A pipeline built against a different layout unbinds the descriptor sets, so what was bound for
+        // the last one cannot be assumed to have survived this.
+        _boundDescriptorSet = default;
+        _boundDescriptorLayout = default;
+    }
 
     /// <inheritdoc/>
     public MeshHandle CreateMesh(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<ushort> indices)
@@ -300,7 +350,7 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _deferred.ShadowPipeline.Pipeline);
+        BindGraphicsPipeline(_deferred.ShadowPipeline.Pipeline);
         BindMeshBuffers(mesh);
 
         // The colour texture, for its alpha alone: a cut-out must cast the shadow of the shape that is
@@ -347,7 +397,7 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _deferred.Geometry.ForState(_depthState, _cullMode));
+        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode));
         BindMeshBuffers(mesh);
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
 
@@ -422,7 +472,7 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, pipeline.ForState(_depthState, _cullMode, blend));
+        BindGraphicsPipeline(pipeline.ForState(_depthState, _cullMode, blend));
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
 
@@ -438,9 +488,23 @@ public sealed partial class VulkanGraphicsDevice
     {
         Vk vk = _instance.Vk;
         Buffer vertexBuffer = mesh.VertexBuffer;
-        ulong vertexOffset = 0;
-        vk.CmdBindVertexBuffers(_frameCommandBuffer, 0, 1, &vertexBuffer, &vertexOffset);
-        vk.CmdBindIndexBuffer(_frameCommandBuffer, mesh.IndexBuffer, 0, IndexType.Uint16);
+        Buffer indexBuffer = mesh.IndexBuffer;
+
+        // A terrain page is one mesh holding every chunk batched into it, drawn as a run of ranges, and a
+        // model is drawn once per cascade and again for the frame. Both arrive here with the buffers they
+        // asked for last time still bound.
+        if (_boundVertexBuffer.Handle != vertexBuffer.Handle)
+        {
+            ulong vertexOffset = 0;
+            vk.CmdBindVertexBuffers(_frameCommandBuffer, 0, 1, &vertexBuffer, &vertexOffset);
+            _boundVertexBuffer = vertexBuffer;
+        }
+
+        if (_boundIndexBuffer.Handle != indexBuffer.Handle)
+        {
+            vk.CmdBindIndexBuffer(_frameCommandBuffer, indexBuffer, 0, IndexType.Uint16);
+            _boundIndexBuffer = indexBuffer;
+        }
     }
 
     private unsafe void BindMeshTextures(PipelineLayout layout, TextureHandle diffuse, TextureHandle lightmap)
@@ -452,7 +516,17 @@ public sealed partial class VulkanGraphicsDevice
             _textures[diffuseId],
             lightmapId,
             _textures[lightmapId]);
+
+        // The layout travels with the set: the same set bound under a different pipeline layout is a
+        // different binding, and the shadow, geometry and forward pipelines do not share one.
+        if (_boundDescriptorSet.Handle == descriptorSet.Handle && _boundDescriptorLayout.Handle == layout.Handle)
+        {
+            return;
+        }
+
         _instance.Vk.CmdBindDescriptorSets(_frameCommandBuffer, PipelineBindPoint.Graphics, layout, 0, 1, &descriptorSet, 0, null);
+        _boundDescriptorSet = descriptorSet;
+        _boundDescriptorLayout = layout;
     }
 
     private uint TextureKey(TextureHandle handle) =>
