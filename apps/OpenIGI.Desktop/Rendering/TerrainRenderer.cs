@@ -83,6 +83,9 @@ public sealed class TerrainRenderer : IDisposable
     private readonly IIgiLogger _logger;
     private readonly List<TerrainChunk> _chunks = [];
     private readonly Dictionary<ChunkKey, Entry> _cache = [];
+
+    // The arrays evicted chunks give up, for the chunks coming into view to build into.
+    private readonly TerrainGeometryPool _geometryPool = new();
     private readonly Dictionary<BatchKey, List<BatchPage>> _batchPages = [];
     private readonly List<BatchPage> _drawPages = [];
     private readonly List<BatchPage> _queryPages = [];
@@ -563,6 +566,7 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         _cache.Clear();
+        _geometryPool.Clear();
         _batchPages.Clear();
         _drawPages.Clear();
         _queryPages.Clear();
@@ -650,7 +654,8 @@ public sealed class TerrainRenderer : IDisposable
             chunk,
             block,
             _surface,
-            (float)(1.0 / WorldScene.UnitsPerMetre));
+            (float)(1.0 / WorldScene.UnitsPerMetre),
+            pool: _geometryPool);
 
         if (geometry is null)
         {
@@ -794,6 +799,11 @@ public sealed class TerrainRenderer : IDisposable
                 _device.DestroyMesh(entry.DirectMesh);
             }
             _cache.Remove(key);
+
+            // Nothing refers to this chunk's geometry once it leaves the cache: its vertices were copied
+            // into a batch page and uploaded to the device when it arrived, and the rebuild below only
+            // reads the geometry of chunks that survived. So the arrays go back for the next chunk in.
+            _geometryPool.Return(entry.Geometry);
         }
 
         foreach (BatchPage page in _affectedPages)

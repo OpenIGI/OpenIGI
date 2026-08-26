@@ -64,6 +64,10 @@ public static class TerrainChunkMesh
     /// <c>1 / <see cref="WorldScene.UnitsPerMetre"/></c> to get metres.
     /// </param>
     /// <param name="heights">The heightmap binding, if the level has one bound.</param>
+    /// <param name="pool">
+    /// Recycles the vertex and index arrays the geometry keeps, for a caller that evicts chunks as fast as
+    /// it builds them. Omit it and each build allocates its own.
+    /// </param>
     /// <returns>The geometry, or <see langword="null"/> when the block draws nothing.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="surface"/> is <see langword="null"/>.</exception>
     public static TerrainChunkGeometry? Build(
@@ -71,7 +75,8 @@ public static class TerrainChunkMesh
         in TerrainCommandBlock block,
         TerrainSurface surface,
         float scale = 1f,
-        TerrainHeightBinding heights = default)
+        TerrainHeightBinding heights = default,
+        TerrainGeometryPool? pool = null)
     {
         ArgumentNullException.ThrowIfNull(surface);
 
@@ -116,8 +121,12 @@ public static class TerrainChunkMesh
 
         // Two texture passes per material: the band's first scale, and its second at twice the density,
         // which the renderer fades in with proximity. sub_510010 emits both unconditionally.
-        Vertex3D[] vertices = new Vertex3D[passes.Length * 2 * vertexCount];
-        ushort[] indices = new ushort[passes.Length * 2 * triangleCount];
+        // Every element of both is written by the loops below -- one layer's worth per pass per detail,
+        // covering the whole length -- so a recycled array needs no clearing first.
+        int vertexTotal = passes.Length * 2 * vertexCount;
+        int indexTotal = passes.Length * 2 * triangleCount;
+        Vertex3D[] vertices = pool is null ? new Vertex3D[vertexTotal] : pool.RentVertices(vertexTotal);
+        ushort[] indices = pool is null ? new ushort[indexTotal] : pool.RentIndices(indexTotal);
 
         // Exactly as many layers as the loop below writes, filled in place. The list this used to collect
         // into was copied into an array of the same length on the way out, for two allocations where the
