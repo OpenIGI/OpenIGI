@@ -64,11 +64,22 @@ internal sealed unsafe class ProbeVolumes : IDisposable
         _countX = 1;
         _countY = 1;
         _countZ = 1;
+        VulkanBuffer placeholder = new(
+            _vk,
+            _device,
+            _allocator,
+            4 * sizeof(float),
+            BufferUsageFlags.TransferSrcBit,
+            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+        placeholder.Write<float>(stackalloc float[4]);
+
         for (int channel = 0; channel < Channels; channel++)
         {
             CreateImage(channel);
-            Upload(channel, new float[4], default, null);
+            _commands.SingleTime(cmd => RecordUpload(channel, placeholder, 0, cmd));
         }
+
+        placeholder.Dispose();
     }
 
     /// <summary>Gets a value indicating whether a field has been uploaded and can be sampled.</summary>
@@ -121,14 +132,29 @@ internal sealed unsafe class ProbeVolumes : IDisposable
             }
         }
 
+        // One staging buffer for all four channels, filled through its mapping. The field is re-uploaded
+        // every frame while a streaming bake is being eased toward, so this path must not allocate on the
+        // managed heap — four fresh channel arrays per frame here were most of the game's allocation rate
+        // during a bake, and the collections they forced read as stutter.
         int count = volume.ProbeCount;
-        float[] red = new float[count * 4];
-        float[] green = new float[count * 4];
-        float[] blue = new float[count * 4];
-        float[] distance = new float[count * 4];
+        ulong channelBytes = (ulong)count * 4 * sizeof(float);
+        VulkanBuffer staging = new(
+            _vk,
+            _device,
+            _allocator,
+            channelBytes * Channels,
+            BufferUsageFlags.TransferSrcBit,
+            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
+            persistentlyMapped: true);
 
         ReadOnlySpan<float> source = volume.Coefficients;
         ReadOnlySpan<float> moments = volume.Distances;
+        float* mapped = (float*)staging.MappedPointer;
+        float* red = mapped;
+        float* green = mapped + (count * 4);
+        float* blue = mapped + (count * 8);
+        float* distance = mapped + (count * 12);
+
         for (int probe = 0; probe < count; probe++)
         {
             int from = probe * IrradianceVolume.CoefficientsPerProbe;
@@ -142,12 +168,33 @@ internal sealed unsafe class ProbeVolumes : IDisposable
 
             distance[to] = moments[probe * 2];
             distance[to + 1] = moments[(probe * 2) + 1];
+            distance[to + 2] = 0f;
+            distance[to + 3] = 0f;
         }
 
-        Upload(0, red, frameCommandBuffer, deferCleanup);
-        Upload(1, green, frameCommandBuffer, deferCleanup);
-        Upload(2, blue, frameCommandBuffer, deferCleanup);
-        Upload(3, distance, frameCommandBuffer, deferCleanup);
+        // The frame's own command buffer when there is one, so the upload shares the frame's in-order
+        // submission and the staging lives until the frames copying from it have cycled. Outside a frame
+        // — a load-time first upload — nothing is in flight and a submit-and-wait is simplest.
+        if (deferCleanup is not null)
+        {
+            for (int channel = 0; channel < Channels; channel++)
+            {
+                RecordUpload(channel, staging, channelBytes * (ulong)channel, frameCommandBuffer);
+            }
+
+            deferCleanup(staging);
+        }
+        else
+        {
+            _commands.SingleTime(cmd =>
+            {
+                for (int channel = 0; channel < Channels; channel++)
+                {
+                    RecordUpload(channel, staging, channelBytes * (ulong)channel, cmd);
+                }
+            });
+            staging.Dispose();
+        }
 
         Origin = volume.Origin;
         Spacing = volume.Spacing;
@@ -206,55 +253,23 @@ internal sealed unsafe class ProbeVolumes : IDisposable
 
     // Records one channel's copy into the frame command buffer (deferring the staging buffer) when a
     // deferral is given, or onto a private submit-and-wait when it is not.
-    private void Upload(int channel, float[] data, CommandBuffer frameCommandBuffer, Action<IDisposable>? deferCleanup)
+    private void RecordUpload(int channel, VulkanBuffer staging, ulong byteOffset, CommandBuffer cmd)
     {
-        VulkanBuffer staging = new(
-            _vk,
-            _device,
-            _allocator,
-            (ulong)(data.Length * sizeof(float)),
-            BufferUsageFlags.TransferSrcBit,
-            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
-        staging.Write<float>(data);
-
         Image image = _images[channel];
-        Buffer source = staging.Handle;
-        int x = _countX;
-        int y = _countY;
-        int z = _countZ;
 
-        void Record(CommandBuffer cmd)
+        Transition(cmd, image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal,
+            PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+
+        BufferImageCopy region = new()
         {
-            Transition(cmd, image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal,
-                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+            BufferOffset = byteOffset,
+            ImageSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, LayerCount = 1 },
+            ImageExtent = new Extent3D((uint)_countX, (uint)_countY, (uint)_countZ),
+        };
+        _vk.CmdCopyBufferToImage(cmd, staging.Handle, image, ImageLayout.TransferDstOptimal, 1, &region);
 
-            BufferImageCopy region = new()
-            {
-                ImageSubresource = new ImageSubresourceLayers { AspectMask = ImageAspectFlags.ColorBit, LayerCount = 1 },
-                ImageExtent = new Extent3D((uint)x, (uint)y, (uint)z),
-            };
-            _vk.CmdCopyBufferToImage(cmd, source, image, ImageLayout.TransferDstOptimal, 1, &region);
-
-            Transition(cmd, image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
-                PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
-        }
-
-        // The frame's own command buffer when there is one, so this upload lands in the same submission --
-        // and so the same in-order timeline -- as the passes that read the field, rather than on its own
-        // submission racing the frame in flight (which is what lost the device under a moving camera). The
-        // staging buffer has to outlive the frame it feeds, so it is handed to the deferred deletion the
-        // caller owns rather than disposed here. Outside a frame -- a load-time first upload -- there is
-        // nothing in flight and its own submit-and-wait is both safe and simplest.
-        if (deferCleanup is not null)
-        {
-            Record(frameCommandBuffer);
-            deferCleanup(staging);
-        }
-        else
-        {
-            _commands.SingleTime(Record);
-            staging.Dispose();
-        }
+        Transition(cmd, image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
     }
 
     private void Transition(

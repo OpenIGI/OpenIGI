@@ -46,7 +46,24 @@ try
 {
     persistentLogger = new(RuntimePaths.GetLogPath());
 }
-catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+catch (IOException)
+{
+    // Another instance already owns the log — a second copy for a capture or a comparison is a normal
+    // thing to run, and it should not die over a file name. It logs beside the first, named by process.
+    try
+    {
+        string sidecar = Path.Combine(
+            Path.GetDirectoryName(RuntimePaths.GetLogPath()) ?? ".",
+            FormattableString.Invariant($"runtime.{Environment.ProcessId}.log"));
+        persistentLogger = new(sidecar);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+    {
+        Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
+        return 2;
+    }
+}
+catch (Exception ex) when (ex is UnauthorizedAccessException or ArgumentException or NotSupportedException)
 {
     Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
     return 2;

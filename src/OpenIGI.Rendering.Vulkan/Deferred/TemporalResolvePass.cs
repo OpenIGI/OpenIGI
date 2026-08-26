@@ -23,7 +23,7 @@ internal sealed class TemporalResolvePass : IDisposable
     [
         ComputeBindingKind.SampledImage,          // this frame's lit colour, left shader-readable by its pass
         ComputeBindingKind.SampledStorageImage,   // the motion vectors, which the velocity pass keeps in General
-        ComputeBindingKind.SampledImage,          // the previous frame's history
+        ComputeBindingKind.SampledStorageImage,   // the history: the PREVIOUS frame slot's resolved output, in General
         ComputeBindingKind.StorageImage,          // the resolved colour written out
     ];
 

@@ -90,10 +90,11 @@ internal sealed class SkyAtmosphere : IDisposable
             SkyViewWidth, SkyViewHeight, 1, usage);
 
         // Full precision: these are the sky's light reduced to eight numbers, and every surface in the
-        // frame is lit from them, so a rounding error here is a tint over everything.
+        // frame is lit from them, so a rounding error here is a tint over everything. Transfer source as
+        // well, because the harmonics are copied down to the host each frame for the game-layer gathers.
         _irradiance = new VulkanImage(
             vk, device, allocator, commands, Format.R32G32B32A32Sfloat,
-            IrradianceWidth, 1, 1, usage);
+            IrradianceWidth, 1, 1, usage | ImageUsageFlags.TransferSrcBit);
 
         _transmittancePass = new VulkanComputePass(
             vk, device, allocator, compiler, "sky.transmittance.comp", SkyAtmospherePasses.Transmittance,

@@ -1241,6 +1241,7 @@ internal sealed partial class DesktopGame : IDisposable
         int lastShellMilliseconds = _loop.TimeSource.Milliseconds;
         int lastMenuCameraMilliseconds = _loop.TimeSource.Milliseconds;
         int lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+        int probeChaseFrame = 0;
 
         // A capture run is a background process as far as the person at the keyboard is concerned: it must
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
@@ -1326,7 +1327,13 @@ internal sealed partial class DesktopGame : IDisposable
             // looks the same however fast frames go out, and it keeps running after the bake handle is gone
             // until the last pass has settled -- at which point the field points straight at the target and
             // the per-frame re-upload stops.
-            if (_probeTarget is not null && _probeField is not null && !ReferenceEquals(_probeField, _probeTarget))
+            if (_probeTarget is not null && _probeField is not null && !ReferenceEquals(_probeField, _probeTarget)
+
+                // Every fourth frame, not every frame. The blend walks the whole field on the CPU and the
+                // re-upload sends the four probe volumes over again -- together roughly ten milliseconds
+                // and half a gigabyte a second while a bake streams. The ease runs over about a second, so
+                // a quarter-rate step is invisible; the elapsed-time step below keeps the pace identical.
+                && (++probeChaseFrame & 3) == 0)
             {
                 int chaseNow = _loop.TimeSource.Milliseconds;
                 float chaseSeconds = MathF.Max(0f, (chaseNow - lastProbeChaseMilliseconds) / 1000f);

@@ -300,26 +300,48 @@ public sealed partial class VulkanGraphicsDevice
 
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
-        Vk vk = _instance.Vk;
+
+        // The history is the OTHER frame slot's resolved output — written exactly one frame ago, which
+        // is the frame the velocity spans. Reading this slot's own output as history would be TWO frames
+        // old, and reprojecting two frames of motion with one frame's velocity smears every edge into a
+        // double image the moment the camera moves. When the other slot has not been built at this size
+        // (first frames, a resize), this slot's own cleared output stands in: its zero sample count makes
+        // the pass restart from the current frame, which is the honest answer there anyway.
+        Deferred.SceneTarget previous = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+        bool previousUsable = previous.Extent.Width == target.Extent.Width
+            && previous.Extent.Height == target.Extent.Height
+            && previous.UpscaleOutputView.Handle != 0;
+        ImageView historyView = previousUsable ? previous.UpscaleOutputView : target.UpscaleOutputView;
 
         // The shading pass's colour write, ordered before the compute read of the lit image.
         LitReadBarrier(cmd, target.LitImage, PipelineStageFlags.ComputeShaderBit);
 
-        // The velocity pass wrote the motion this frame; the resolve output was last read by the
-        // previous frame's tone map.
+        // The velocity pass wrote the motion this frame; the history slot's output was written by the
+        // previous frame's temporal pass and read by its tone map; this slot's output was last read a
+        // frame ago. One barrier over each image covers all of it — same queue, so the ordering reaches
+        // back across submissions.
         OcclusionBarrier(
             cmd, target.VelocityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        if (previousUsable)
+        {
+            OcclusionBarrier(
+                cmd, previous.UpscaleOutputImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        }
+
         OcclusionBarrier(
-            cmd, target.UpscaleOutputImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
-            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+            cmd, target.UpscaleOutputImage,
+            AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.ComputeShaderBit);
 
         _deferred.Temporal.Record(
             cmd,
             _frameLoop.CurrentFrame,
             target.LitView,
             target.VelocityView,
-            target.UpscaleHistoryView,
+            historyView,
             target.UpscaleOutputView,
             _captureWidth,
             _captureHeight,
@@ -327,51 +349,11 @@ public sealed partial class VulkanGraphicsDevice
             maxSamples: 16f,
             _taaSettings.MotionSharpening);
 
-        // Carry the resolved image into the history the NEXT frame reprojects: output to transfer read,
-        // history to transfer write, copy, and both back to what their readers expect.
+        // The tone-map resolve samples the output next; the following frame samples it as history.
         OcclusionBarrier(
-            cmd, target.UpscaleOutputImage, AccessFlags.ShaderWriteBit, AccessFlags.TransferReadBit,
-            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit);
-        TransitionSimple(
-            cmd, target.UpscaleHistoryImage,
-            ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal,
-            AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit,
-            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit);
-
-        ImageCopy region = new()
-        {
-            SrcSubresource = new ImageSubresourceLayers
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                MipLevel = 0,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-            },
-            DstSubresource = new ImageSubresourceLayers
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                MipLevel = 0,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-            },
-            Extent = new Extent3D((uint)_captureWidth, (uint)_captureHeight, 1),
-        };
-        vk.CmdCopyImage(
-            cmd,
-            target.UpscaleOutputImage, ImageLayout.General,
-            target.UpscaleHistoryImage, ImageLayout.TransferDstOptimal,
-            1, &region);
-
-        TransitionSimple(
-            cmd, target.UpscaleHistoryImage,
-            ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
-            AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit,
-            PipelineStageFlags.TransferBit, PipelineStageFlags.ComputeShaderBit);
-
-        // The tone-map resolve samples the output next.
-        OcclusionBarrier(
-            cmd, target.UpscaleOutputImage, AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit,
-            PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit);
+            cmd, target.UpscaleOutputImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit);
 
         _temporalResolved = true;
     }
@@ -400,40 +382,6 @@ public sealed partial class VulkanGraphicsDevice
         };
         _instance.Vk.CmdPipelineBarrier(
             cmd, PipelineStageFlags.ColorAttachmentOutputBit, destinationStage, 0, 0, null, 0, null, 1, &barrier);
-    }
-
-    /// <summary>A single-image layout transition with explicit accesses and stages.</summary>
-    private unsafe void TransitionSimple(
-        CommandBuffer cmd,
-        Image image,
-        ImageLayout from,
-        ImageLayout to,
-        AccessFlags sourceAccess,
-        AccessFlags destinationAccess,
-        PipelineStageFlags sourceStage,
-        PipelineStageFlags destinationStage)
-    {
-        ImageMemoryBarrier barrier = new()
-        {
-            SType = StructureType.ImageMemoryBarrier,
-            OldLayout = from,
-            NewLayout = to,
-            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-            Image = image,
-            SubresourceRange = new ImageSubresourceRange
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = 1,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-            },
-            SrcAccessMask = sourceAccess,
-            DstAccessMask = destinationAccess,
-        };
-        _instance.Vk.CmdPipelineBarrier(
-            cmd, sourceStage, destinationStage, 0, 0, null, 0, null, 1, &barrier);
     }
 
     /// <summary>Meters the lit scene for the eye adaptation, before the present pass opens.</summary>
