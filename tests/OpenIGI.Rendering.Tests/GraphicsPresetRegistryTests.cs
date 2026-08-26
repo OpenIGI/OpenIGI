@@ -9,14 +9,32 @@ namespace OpenIGI.Rendering.Tests;
 /// </summary>
 public sealed class GraphicsPresetRegistryTests
 {
+    /// <summary>
+    /// Ultra lights in real time; every cheaper preset keeps the artists' bakes.
+    /// </summary>
+    /// <remarks>
+    /// This assertion used to run the other way — ultra held <see cref="LightingModel.Baked"/> "until
+    /// probe irradiance exists", because a dynamic preset without it would have thrown away
+    /// hand-authored lighting for a flat ambient term. The probe irradiance field exists now and ultra
+    /// lights from the screen gather floored against it, so the wait is over and the pin is that ultra
+    /// is the ONE preset that made the move. Pinning the cheaper three matters as much as pinning
+    /// ultra: they are what a machine that cannot afford the gather falls back to, and a preset that
+    /// silently went dynamic would light those machines from a screen field they never render.
+    /// </remarks>
     [Fact]
-    public void UltraKeepsAuthoredLightingUntilProbeIrradianceExists()
+    public void OnlyUltraLightsInRealTime()
     {
         _ = RenderCVars.Lighting;
 
         GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Ultra);
+        Assert.Equal(LightingModel.Dynamic, RenderCVars.Lighting.Value);
 
-        Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
+        foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
+            [GraphicsPreset.Vanilla, GraphicsPreset.Enhanced, GraphicsPreset.High])
+        {
+            GraphicsPresetRegistry.Default.Apply(preset);
+            Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
+        }
     }
 
     /// <summary>

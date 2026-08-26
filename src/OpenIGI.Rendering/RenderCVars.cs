@@ -706,9 +706,10 @@ public static class RenderCVars
 
     /// <summary>Where surfaces take their light from.</summary>
     /// <remarks>
-    /// Stays on <c>baked</c> for every preset until the sun of stage R3 and the probe irradiance of R7
-    /// exist. Promoting it before then would trade hand-authored lighting for a flat ambient term,
-    /// which is not an improvement in anybody's judgement.
+    /// This waited on <c>baked</c> for every preset until the sun of stage R3 and the probe irradiance of
+    /// R7 existed, because promoting it before then would have traded hand-authored lighting for a flat
+    /// ambient term. Both exist now, so ultra has been promoted and the cheaper presets have not — see
+    /// the note on the ultra row for what carries the surfaces the screen gather cannot resolve.
     /// </remarks>
     public static readonly EnumCVar<LightingModel> Lighting = Presets.Define(
         CVar.Choice(
