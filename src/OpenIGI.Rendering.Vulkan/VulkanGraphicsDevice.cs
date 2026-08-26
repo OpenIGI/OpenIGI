@@ -566,7 +566,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     [
         // Post-process past the tone map.
         "r_bloom_threshold", "r_grain", "r_chromatic", "r_sharpen",
-        "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur", "r_motion_blur",
+        "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
         "r_camera_taps", "r_lut",
 
         // Lighting features whose setters record and return.

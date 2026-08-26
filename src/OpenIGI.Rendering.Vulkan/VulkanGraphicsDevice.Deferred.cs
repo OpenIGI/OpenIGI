@@ -706,21 +706,52 @@ public sealed partial class VulkanGraphicsDevice
         // r_exposure as the compensation on top of the adapted value rather than the whole of it.
         CommandBuffer cmd = _frameCommandBuffer;
 
-        // The lens scatter, built from the lit scene before it is tone mapped. A mask debug view is a
+        // The frame's last word on colour before any of the lens work: the temporal pass's stable output
+        // when it ran, the raw lit image when it did not.
+        ImageView sceneColour = _temporalResolved ? _sceneTarget.UpscaleOutputView : _sceneTarget.LitView;
+        bool sceneIsShaded = _debugView is DebugView.None or DebugView.Lighting;
+
+        // The shutter, first, because everything after it is lens behaviour and a lens sees the smeared
+        // picture. The reference orders it the same way: motion blur, then bloom, then the tone map --
+        // which is why a bright moving highlight blooms along its own smear rather than from where it
+        // no longer is.
+        bool motionBlurred = false;
+        if (post.MotionBlur > 0.001f && sceneIsShaded && _sceneTarget is { } motionTarget)
+        {
+            using StageScope motionTiming = Measure(RenderStage.CameraEffects);
+            LitReadBarrier(cmd, motionTarget.LitImage, PipelineStageFlags.ComputeShaderBit);
+            _deferred.MotionBlur.Record(
+                cmd,
+                _frameLoop.CurrentFrame,
+                motionTarget,
+                sceneColour,
+                _captureWidth,
+                _captureHeight,
+                post.MotionBlur,
+                MotionBlurPass.MaxPercentOfScreenWidth,
+                post.FrameDeltaSeconds,
+                _unprojection.Near,
+                _unprojection.Far);
+
+            sceneColour = motionTarget.MotionBlurredView;
+            motionBlurred = true;
+        }
+
+        // The lens scatter, built from the scene before it is tone mapped. A mask debug view is a
         // code value rather than radiance and gets neither this nor the vignette.
         bool bloomRan = false;
-        if (post.WantsBloom && _sceneTarget is { } bloomTarget && _debugView is DebugView.None or DebugView.Lighting)
+        if (post.WantsBloom && _sceneTarget is { } bloomTarget && sceneIsShaded)
         {
             using StageScope bloomTiming = Measure(RenderStage.Bloom);
             _deferred.Bloom.Resize(_captureWidth, _captureHeight);
             bloomTarget.WriteBloom(_deferred.Bloom.ResultView(_frameLoop.CurrentFrame));
 
-            LitReadBarrier(cmd, bloomTarget.LitImage, PipelineStageFlags.ComputeShaderBit);
-            _deferred.Bloom.Record(
-                cmd,
-                _frameLoop.CurrentFrame,
-                _temporalResolved ? bloomTarget.UpscaleOutputView : bloomTarget.LitView,
-                post.BloomIntensity);
+            if (!motionBlurred)
+            {
+                LitReadBarrier(cmd, bloomTarget.LitImage, PipelineStageFlags.ComputeShaderBit);
+            }
+
+            _deferred.Bloom.Record(cmd, _frameLoop.CurrentFrame, sceneColour, post.BloomIntensity);
             bloomRan = true;
         }
 
@@ -744,7 +775,9 @@ public sealed partial class VulkanGraphicsDevice
 
         // The stable accumulated colour when the temporal pass ran this frame; the raw lit colour when
         // nothing accumulated and the lit image is already the final word.
-        DescriptorSet set = _temporalResolved ? _sceneTarget.ResolveSetTsr : _sceneTarget.ResolveSet;
+        DescriptorSet set = motionBlurred
+            ? _sceneTarget.ResolveSetMotionBlur
+            : _temporalResolved ? _sceneTarget.ResolveSetTsr : _sceneTarget.ResolveSet;
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.PipelineLayout, 0, 1, &set, 0, null);
         InvalidateBoundState();
 

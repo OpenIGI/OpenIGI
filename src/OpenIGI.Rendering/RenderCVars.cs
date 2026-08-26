@@ -934,6 +934,12 @@ public static class RenderCVars
     /// Off by default and deliberately so: in a first-person shooter the player's eye chooses what to
     /// look at, and a renderer that blurs everything else is fighting them. Its place is the menu
     /// camera and the sniper scope, which decide where the eye is going anyway.
+    /// <para>
+    /// Ultra briefly carried 40 metres, which arrived with a preset seeded from a saved config rather
+    /// than from a decision — it contradicted the paragraph above, and it does not match the reference
+    /// render either, whose focal distance and depth blur radius are both zero and whose depth of field
+    /// is therefore switched off entirely. Every preset is back to off.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> FocalDistance = Presets.Define(
         CVar.Float(
@@ -946,7 +952,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "40");
+        ultra: "0");
 
     /// <summary>Over how many metres a surface goes from sharp to fully defocused.</summary>
     public static readonly NumericCVar<float> FocalRange = Presets.Define(
@@ -993,7 +999,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0.4");
+        ultra: "0.5");
 
     /// <summary>How many samples the defocus and motion gather takes.</summary>
     public static readonly NumericCVar<int> CameraTaps = Presets.Define(
@@ -1480,6 +1486,13 @@ public static class RenderCVars
         "Load Assets/luts/<name>.cube instead of the mission's own grade. Empty uses the mission's.");
 
     /// <summary>How much local contrast is restored after the temporal accumulation softens the frame.</summary>
+    /// <remarks>
+    /// Ultra takes 0, which is what the reference render this preset is matched against uses — its
+    /// tonemapper sharpen is left to the volume and the volume asks for none. That is not the reference
+    /// declining a free improvement: sharpening is a correction for a soft resolve, and ultra now runs
+    /// the same temporal reconstruction the reference does, so it inherits the same answer. The cheaper
+    /// presets resolve more crudely and still want the correction, which is why they keep theirs.
+    /// </remarks>
     public static readonly NumericCVar<float> Sharpen = Presets.Define(
         CVar.Float(
             "r_sharpen",
@@ -1491,7 +1504,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.1",
         high: "0.15",
-        ultra: "0.2");
+        ultra: "0");
 
     /// <summary>How many steps a reflected ray takes, or 0 for the fallback alone.</summary>
     public static readonly NumericCVar<int> Reflections = Presets.Define(

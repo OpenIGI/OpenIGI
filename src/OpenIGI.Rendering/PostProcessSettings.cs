@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering;
+﻿namespace OpenIGI.Rendering;
 
 /// <summary>
 /// What happens to the scene between it being drawn and it reaching the screen.
@@ -71,6 +71,11 @@ namespace OpenIGI.Rendering;
 /// </param>
 /// <param name="FocalRange">Over how many metres a surface goes from sharp to fully defocused.</param>
 /// <param name="FocalBlur">The widest the defocus gets, in pixels.</param>
+/// <param name="FrameDeltaSeconds">
+/// How long the frame being resolved took. Motion blur needs it because the velocity buffer holds one
+/// frame's travel: without rescaling to a fixed shutter, the same movement would smear half as far at
+/// double the frame rate and the look would be a readout of the hardware rather than of the scene.
+/// </param>
 /// <param name="MotionBlur">
 /// How much of a frame's movement is smeared, where 1 is the whole of it. A real shutter is open for
 /// part of a frame rather than all of it, so values below 1 are the physical range.
@@ -144,7 +149,8 @@ public readonly record struct PostProcessSettings(
     bool GreenPhosphor = false,
     TacticalDisplaySettings Tactical = default,
     BinocularDisplaySettings Binocular = default,
-    float ExposureRate = 0.04f)
+    float ExposureRate = 0.04f,
+    float FrameDeltaSeconds = 1f / 60f)
 {
     /// <summary>
     /// Gets the settings that pass the scene through untouched.

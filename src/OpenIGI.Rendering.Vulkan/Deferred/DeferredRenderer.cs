@@ -37,6 +37,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
     private readonly BloomPass _bloom;
+    private readonly MotionBlurPass _motionBlur;
     private readonly Tsr.DilateVelocityPass _dilateVelocity;
     private readonly Tsr.DecimateHistoryPass _decimateHistory;
     private readonly Tsr.UpdateHistoryPass _updateHistory;
@@ -82,6 +83,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _bloom = new BloomPass(vk, device, allocator, commands, compiler, framesInFlight);
+        _motionBlur = new MotionBlurPass(vk, device, allocator, compiler, framesInFlight);
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
         _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
@@ -182,6 +184,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the bloom pyramid, the lens scatter the reference composites before its tone map.</summary>
     public BloomPass Bloom => _bloom;
 
+    /// <summary>Gets the pass that smears the frame along what moved in it.</summary>
+    public MotionBlurPass MotionBlur => _motionBlur;
+
     /// <summary>Gets the pass that dilates screen motion onto the closest surface around each pixel.</summary>
     public Tsr.DilateVelocityPass DilateVelocity => _dilateVelocity;
 
@@ -270,6 +275,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _autoExposure.Dispose();
         _velocity.Dispose();
         _bloom.Dispose();
+        _motionBlur.Dispose();
         _dilateVelocity.Dispose();
         _decimateHistory.Dispose();
         _updateHistory.Dispose();

@@ -264,6 +264,7 @@ internal sealed partial class DesktopGame : IDisposable
     private readonly MapComputerCamera _computerFlight = new();
     private readonly BinocularOptics _binocularOptics = new();
     private int _lastBinocularMilliseconds;
+    private int _lastMotionBlurMilliseconds;
 
     // The performance overlay's managed-allocation sampler. The GPU stage timers see none of this: a frame
     // that allocates megabytes churns Gen0 and, on the large-object heap, triggers the Gen2 collections that
@@ -2717,6 +2718,12 @@ internal sealed partial class DesktopGame : IDisposable
                 // The binocular glass, raised on its own wall clock so the lens fades in at the same
                 // rate whatever the frame rate. Gated on the device being open (the fade sits at 0
                 // otherwise) and the lens cvar; the map tube above and this glass are never both up.
+                // How long this frame took, for the shutter the motion blur measures its smear against.
+                int motionNow = _loop.TimeSource.Milliseconds;
+                float frameDeltaSeconds =
+                    Math.Clamp((motionNow - _lastMotionBlurMilliseconds) / 1000f, 1f / 1000f, 1f / 10f);
+                _lastMotionBlurMilliseconds = motionNow;
+
                 int binocularNow = _loop.TimeSource.Milliseconds;
                 float binocularElapsed = Math.Clamp((binocularNow - _lastBinocularMilliseconds) / 1000f, 0f, 0.1f);
                 _lastBinocularMilliseconds = binocularNow;
@@ -2759,7 +2766,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // Fast while the GI is still filling in after a load, slow once it has settled. Counted
                     // down here so a frame that never reaches the cache update (a menu, a paused load) does
                     // not burn the window; the cache's own reset above is what refills it.
-                    ExposureRate: _giExposureWarmup > 0 ? GiExposureWarmupRate : ExposureSteadyRate);
+                    ExposureRate: _giExposureWarmup > 0 ? GiExposureWarmupRate : ExposureSteadyRate,
+
+                    // Read off the loop's own time source rather than the wall clock, which is what makes
+                    // a -lockstep capture reproducible: that mode swaps in a synthetic clock advanced a
+                    // fixed amount per pass, so every captured frame smears by exactly the same length.
+                    // Clamped because a frame that stalled on a load should not smear the whole screen.
+                    FrameDeltaSeconds: frameDeltaSeconds);
 
                 if (_giExposureWarmup > 0)
                 {
