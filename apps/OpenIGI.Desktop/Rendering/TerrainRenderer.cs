@@ -44,6 +44,14 @@ public sealed class TerrainRenderer : IDisposable
     /// <remarks>The original bounds the same cache and aborts with "Out of terrain renderchunks".</remarks>
     public const int CacheCapacity = 4096;
 
+    /// <summary>How far under <see cref="CacheCapacity"/> an over-capacity trim drops the cache.</summary>
+    /// <remarks>
+    /// Without it a trim that evicts exactly the excess leaves the cache one chunk under its bound, so the
+    /// next chunk to stream in puts it back over and the next frame trims again — a page rebuild every
+    /// frame for as long as the player keeps moving. The margin buys a few hundred chunks of quiet.
+    /// </remarks>
+    private const int EvictionMargin = 256;
+
     /// <summary>How many frames an unused chunk is kept for before it becomes a candidate for eviction.</summary>
     /// <remarks>
     /// Ten seconds at the simulation rate. Long enough that turning round and back again, or stepping
@@ -61,6 +69,9 @@ public sealed class TerrainRenderer : IDisposable
     private readonly List<BatchPage> _drawPages = [];
     private readonly List<BatchPage> _queryPages = [];
     private readonly List<ChunkKey> _evictions = [];
+
+    // The cache ordered by the frame that last drew it, for the over-capacity path below.
+    private readonly List<(ChunkKey Key, long LastUsed)> _evictionOrder = [];
     private readonly HashSet<BatchPage> _affectedPages = [];
     private readonly List<BatchKey> _emptyBatchKeys = [];
     private readonly TextureHandle[] _tiles;
@@ -685,14 +696,34 @@ public sealed class TerrainRenderer : IDisposable
 
         // Nothing has aged out yet and the cache is still over its bound, so the oldest go instead —
         // otherwise it would grow without limit while the camera sweeps.
+        //
+        // The oldest, and only as many as the bound is over by. This used to drop every chunk the current
+        // frame did not draw, which is the thing the remark above warns against rather than the thing it
+        // describes: on any one frame a sweep leaves most of the cache undrawn, so turning evicted nearly
+        // the whole world, rebuilt it as the camera came back, and evicted it again on the way past --
+        // page destroys and re-appends every frame, which is where the stutter and the missing ground came
+        // from. A margin comes with them so the next frame is not straight back here.
         if (_evictions.Count == 0)
         {
+            int excess = _cache.Count - CacheCapacity + EvictionMargin;
+
+            _evictionOrder.Clear();
+            _evictionOrder.EnsureCapacity(_cache.Count);
             foreach ((ChunkKey key, Entry entry) in _cache)
             {
+                // Never what the current frame is drawing: it is on screen now, whatever its age.
                 if (entry.LastUsedFrame != _frame)
                 {
-                    _evictions.Add(key);
+                    _evictionOrder.Add((key, entry.LastUsedFrame));
                 }
+            }
+
+            _evictionOrder.Sort(static (left, right) => left.LastUsed.CompareTo(right.LastUsed));
+
+            int take = Math.Min(excess, _evictionOrder.Count);
+            for (int i = 0; i < take; i++)
+            {
+                _evictions.Add(_evictionOrder[i].Key);
             }
         }
 
