@@ -36,6 +36,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
+    private readonly Tsr.DilateVelocityPass _dilateVelocity;
     private readonly Tsr.UpdateHistoryPass _updateHistory;
     private readonly Tsr.ResolveHistoryPass _resolveHistory;
     private readonly Sky.SkyAtmosphere _sky;
@@ -78,6 +79,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
+        _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
@@ -173,6 +175,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
 
+    /// <summary>Gets the pass that dilates screen motion onto the closest surface around each pixel.</summary>
+    public Tsr.DilateVelocityPass DilateVelocity => _dilateVelocity;
+
     /// <summary>Gets the pass that accumulates the frame into the super-sampled history.</summary>
     public Tsr.UpdateHistoryPass UpdateHistory => _updateHistory;
 
@@ -254,6 +259,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _sky.Dispose();
         _autoExposure.Dispose();
         _velocity.Dispose();
+        _dilateVelocity.Dispose();
         _updateHistory.Dispose();
         _resolveHistory.Dispose();
         _ssao.Dispose();

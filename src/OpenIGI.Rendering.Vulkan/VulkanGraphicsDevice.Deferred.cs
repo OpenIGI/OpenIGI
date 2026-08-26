@@ -362,7 +362,7 @@ public sealed partial class VulkanGraphicsDevice
             cmd,
             _frameLoop.CurrentFrame,
             target.LitView,
-            target.VelocityView,
+            _velocityDilated ? target.DilatedVelocityView : target.VelocityView,
             historyColourView,
             historyMetadataView,
             target.UpscaleHistoryColourView,
@@ -511,6 +511,7 @@ public sealed partial class VulkanGraphicsDevice
     /// <summary>Works out this frame's screen motion from the stored depth and the two frames' cameras.</summary>
     private unsafe void DispatchVelocity()
     {
+        _velocityDilated = false;
         if (_sceneTarget is null)
         {
             return;
@@ -556,7 +557,40 @@ public sealed partial class VulkanGraphicsDevice
             cmd, velocity, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
 
+        // Straight on into the dilation, which is the form of the motion everything temporal actually
+        // reads: a silhouette has to reproject with its own surface's motion rather than the
+        // background's, or the temporal filter drags its outline along with whatever stands behind it.
+        OcclusionBarrier(
+            cmd, target.DilatedVelocityImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.ClosestDepthImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.DilateVelocity.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.DepthView,
+            target.VelocityView,
+            target.DilatedVelocityView,
+            target.ClosestDepthView,
+            _captureWidth,
+            _captureHeight,
+            _unprojection);
+
+        OcclusionBarrier(
+            cmd, target.DilatedVelocityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.ClosestDepthImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _velocityDilated = true;
     }
+
+    // Whether this frame ran the dilation. The first captured frame has no motion to dilate, and the
+    // history update must then read the cleared raw velocity rather than a stale dilation.
+    private bool _velocityDilated;
 
     private unsafe void DepthReadBarrier(CommandBuffer cmd, Image depth)
     {
