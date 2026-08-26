@@ -40,6 +40,24 @@ public sealed class TerrainRenderer : IDisposable
     private const int ProductiveVisibleQueryInterval = 4;
     private const int ProductiveOccludedChunkThreshold = 64;
 
+    /// <summary>How many frames the view must hold still before a visibility verdict is trusted again.</summary>
+    /// <remarks>
+    /// A verdict is not measured against the frame that acts on it. The box is drawn, the result is read
+    /// once the slot's fence comes round, and the renderer skips the page a frame or two after the depth
+    /// that judged it was written. Standing still that is exactly right. Turning it is a statement about
+    /// where the camera was looking, not where it is: a page that has just come out from behind a hill is
+    /// still carrying the verdict it earned while hidden, so it is skipped -- the hole -- until its retest
+    /// lands and it is drawn again. Long enough to cover the deepest frame queue the backends run.
+    /// </remarks>
+    private const int OcclusionSettleFrames = 3;
+
+    /// <summary>How far the camera may drift per frame and still count as holding still, in metres.</summary>
+    private const double OcclusionSettlePosition = 0.05;
+
+    /// <summary>How far any orientation element may move per frame and still count as holding still.</summary>
+    /// <remarks>About a fifth of a degree: below what a hand on a mouse holds, above sensor noise.</remarks>
+    private const float OcclusionSettleOrientation = 0.003f;
+
     /// <summary>How many uploaded chunks to keep before dropping the ones no recent frame used.</summary>
     /// <remarks>The original bounds the same cache and aborts with "Out of terrain renderchunks".</remarks>
     public const int CacheCapacity = 4096;
@@ -78,6 +96,7 @@ public sealed class TerrainRenderer : IDisposable
     private long _frame;
     private Camera3D _previousCamera;
     private bool _hasPreviousCamera;
+    private int _occlusionSettle;
     private int _previousOccludedChunks;
     private bool _disposed;
 
@@ -231,7 +250,7 @@ public sealed class TerrainRenderer : IDisposable
             }
         }
 
-        bool bypassOcclusion = !occlusionCulling || IsCameraCut(camera);
+        bool bypassOcclusion = !occlusionCulling || !OcclusionVerdictsUsable(camera);
         int visibleQueryInterval = _previousOccludedChunks >= ProductiveOccludedChunkThreshold
             ? ProductiveVisibleQueryInterval
             : SparseVisibleQueryInterval;
@@ -466,9 +485,34 @@ public sealed class TerrainRenderer : IDisposable
     }
 
     /// <summary>Rejects stale query decisions after a teleport or abrupt camera cut.</summary>
-    private bool IsCameraCut(in Camera3D camera)
+    /// <summary>Gets whether visibility verdicts may be acted on: the view has held still long enough.</summary>
+    /// <remarks>
+    /// Not a test of this frame alone. A view that has just stopped still has verdicts in flight that were
+    /// measured while it moved, so the count runs on for <see cref="OcclusionSettleFrames"/> frames after
+    /// the last movement and only then lets the culler skip anything again.
+    /// </remarks>
+    private bool OcclusionVerdictsUsable(in Camera3D camera)
     {
-        if (!_hasPreviousCamera || (camera.Position - _previousCamera.Position).Length > 4.0)
+        if (ViewMoved(camera))
+        {
+            _occlusionSettle = OcclusionSettleFrames;
+        }
+        else if (_occlusionSettle > 0)
+        {
+            _occlusionSettle--;
+        }
+
+        return _occlusionSettle == 0;
+    }
+
+    private bool ViewMoved(in Camera3D camera)
+    {
+        if (!_hasPreviousCamera)
+        {
+            return true;
+        }
+
+        if ((camera.Position - _previousCamera.Position).Length > OcclusionSettlePosition)
         {
             return true;
         }
@@ -485,7 +529,7 @@ public sealed class TerrainRenderer : IDisposable
         largest = Math.Max(largest, Math.Abs(a.M31 - b.M31));
         largest = Math.Max(largest, Math.Abs(a.M32 - b.M32));
         largest = Math.Max(largest, Math.Abs(a.M33 - b.M33));
-        return largest > 0.15f;
+        return largest > OcclusionSettleOrientation;
     }
 
     /// <inheritdoc/>
