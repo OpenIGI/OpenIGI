@@ -565,7 +565,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private static readonly string[] UnimplementedOnVulkan =
     [
         // Post-process past the tone map.
-        "r_bloom", "r_bloom_threshold", "r_vignette", "r_grain", "r_chromatic", "r_sharpen",
+        "r_bloom", "r_bloom_threshold", "r_grain", "r_chromatic", "r_sharpen",
         "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur", "r_motion_blur",
         "r_camera_taps", "r_lut",
 

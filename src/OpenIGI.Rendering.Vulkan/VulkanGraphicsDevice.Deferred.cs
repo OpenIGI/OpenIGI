@@ -729,7 +729,10 @@ public sealed partial class VulkanGraphicsDevice
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.PipelineLayout, 0, 1, &set, 0, null);
         InvalidateBoundState();
 
-        float* parameters = stackalloc float[4]
+        // A mask view is a code value rather than radiance, so it keeps neither the curve nor the lens.
+        bool maskView = _debugView is not DebugView.None and not DebugView.Lighting;
+
+        float* parameters = stackalloc float[8]
         {
             post.Exposure * adaptedExposure,
             (int)post.ToneMap,
@@ -737,9 +740,14 @@ public sealed partial class VulkanGraphicsDevice
 
             // The mask debug views are code values, not radiance; the neutral-grey lighting view is the
             // one debug view that is still a shaded scene and keeps the full chain.
-            _debugView is not DebugView.None and not DebugView.Lighting ? 1f : 0f,
+            maskView ? 1f : 0f,
+
+            maskView ? 0f : post.Vignette,
+            _captureHeight / (float)Math.Max(1, _captureWidth),
+            0f,
+            0f,
         };
-        vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 4, parameters);
+        vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 8, parameters);
 
         // The resolve fills the whole back buffer regardless of any scene sub-viewport that was set.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_presentTarget.Extent.Width, (int)_presentTarget.Extent.Height));

@@ -124,7 +124,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             DeferredShaderSource.ResolveFragment,
             "resolve.frag",
             _resolveLayout,
-            sizeof(float) * 4,
+            sizeof(float) * 8,
             presentRenderPass,
             0);
         Forward = new Mesh3DPipeline(vk, device, compiler, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);

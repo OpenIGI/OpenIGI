@@ -1399,7 +1399,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.25",
         high: "0.3",
-        ultra: "0.35");
+        ultra: "0.4");
 
     /// <summary>How much film grain is added.</summary>
     public static readonly NumericCVar<float> Grain = Presets.Define(
