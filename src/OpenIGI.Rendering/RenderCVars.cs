@@ -1396,6 +1396,13 @@ public static class RenderCVars
         ultra: "2.47");
 
     /// <summary>How far colour is pushed away from mid-grey.</summary>
+    /// <remarks>
+    /// Ultra sits at 1, which is neutral, because the reference render this preset is matched
+    /// against grades to identity — its colour contrast, gamma and gain are all 1, its offset 0, and
+    /// it has no lookup table. It had been carrying a value that came in with a preset seeded from a
+    /// saved config, and tinting a picture that is supposed to match an untinted one only ever moves
+    /// it away. The cheaper presets keep their look.
+    /// </remarks>
     public static readonly NumericCVar<float> Contrast = Presets.Define(
         CVar.Float(
             "r_contrast",
@@ -1407,9 +1414,16 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1.04",
         high: "1.06",
-        ultra: "1.08");
+        ultra: "1");
 
     /// <summary>How far colour is pushed away from its own luminance.</summary>
+    /// <remarks>
+    /// Ultra sits at 1, which is neutral, because the reference render this preset is matched
+    /// against grades to identity — its colour saturation, gamma and gain are all 1, its offset 0, and
+    /// it has no lookup table. It had been carrying a value that came in with a preset seeded from a
+    /// saved config, and tinting a picture that is supposed to match an untinted one only ever moves
+    /// it away. The cheaper presets keep their look.
+    /// </remarks>
     public static readonly NumericCVar<float> Saturation = Presets.Define(
         CVar.Float(
             "r_saturation",
@@ -1421,7 +1435,7 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1.05",
         high: "1.08",
-        ultra: "1.1");
+        ultra: "1");
 
     /// <summary>How much the corners of the frame are darkened.</summary>
     public static readonly NumericCVar<float> Vignette = Presets.Define(

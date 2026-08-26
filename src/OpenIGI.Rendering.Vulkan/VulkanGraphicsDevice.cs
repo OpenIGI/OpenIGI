@@ -551,20 +551,23 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Three groups. The post-process chain past the tone map — the resolve applies exposure, the curve
-    /// and the white point and nothing else, so bloom, the grade, the camera effects and the colour
-    /// lookup are all read past. The lighting features whose device setters record their arguments and
-    /// return: reflections, the floor sheen, the detail maps, the alpha hash, the realtime probe volume.
-    /// And the volumetric fog, which keeps only the camera it was handed.
+    /// Three groups. What is left of the post-process chain — the resolve now runs the lens scatter, the
+    /// shutter, the vignette, exposure and the curve, so what remains unread is the grade (contrast,
+    /// saturation, the colour lookup) and the effects the reference does not use here. The lighting
+    /// features whose device setters record their arguments and return: reflections, the floor sheen, the
+    /// detail maps, the alpha hash, the realtime probe volume. And the volumetric fog, which keeps only
+    /// the camera it was handed.
     /// </para>
     /// <para>
     /// Keep this list honest in both directions: an entry that has since been implemented is as
-    /// misleading as a missing one, so delete the name in the same change that lands the pass.
+    /// misleading as a missing one, so delete the name in the same change that lands the pass. What keeps
+    /// it honest is <c>tools/sweep-cvars.ps1</c>, which flips each of these and fails on any that changes
+    /// the picture — or that does not change it and is not named here.
     /// </para>
     /// </remarks>
     private static readonly string[] UnimplementedOnVulkan =
     [
-        // Post-process past the tone map.
+        // The grade, and the post-process effects the reference leaves switched off.
         "r_bloom_threshold", "r_grain", "r_chromatic", "r_sharpen",
         "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
         "r_camera_taps", "r_lut",
