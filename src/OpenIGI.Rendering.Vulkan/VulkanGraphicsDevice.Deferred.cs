@@ -367,6 +367,8 @@ public sealed partial class VulkanGraphicsDevice
             historyMetadataView,
             target.UpscaleHistoryColourView,
             target.UpscaleHistoryMetadataView,
+            target.HistoryRejectionView,
+            _historyDecimated,
             _captureWidth,
             _captureHeight,
             Deferred.SceneTarget.HistoryScale,
@@ -512,6 +514,7 @@ public sealed partial class VulkanGraphicsDevice
     private unsafe void DispatchVelocity()
     {
         _velocityDilated = false;
+        _historyDecimated = false;
         if (_sceneTarget is null)
         {
             return;
@@ -585,12 +588,54 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.ClosestDepthImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // And then the verdict on the history the update is about to read. It compares against the
+        // OTHER slot's closest depth -- the previous frame's -- so it needs that slot to have been built
+        // at this size; on the first frames it has not, and the update falls back to trusting the
+        // reprojection, which is what it did before this pass existed.
+        Deferred.SceneTarget previousFrame = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+        if (previousFrame.Extent.Width == target.Extent.Width
+            && previousFrame.Extent.Height == target.Extent.Height
+            && previousFrame.DepthView.Handle != 0)
+        {
+            OcclusionBarrier(
+                cmd, target.HistoryRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+            _deferred.DecimateHistory.Record(
+                cmd,
+                _frameLoop.CurrentFrame,
+                target.DepthView,
+                target.DilatedVelocityView,
+                previousFrame.DepthView,
+                target.HistoryRejectionView,
+                _captureWidth,
+                _captureHeight,
+                _viewToWorld,
+                _previousViewToWorld,
+                new Vector3f(
+                    _cameraPosition.X - _previousCameraPosition.X,
+                    _cameraPosition.Y - _previousCameraPosition.Y,
+                    _cameraPosition.Z - _previousCameraPosition.Z),
+                _unprojection,
+                _previousUnprojection);
+
+            OcclusionBarrier(
+                cmd, target.HistoryRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+            _historyDecimated = true;
+        }
+
         _velocityDilated = true;
     }
 
     // Whether this frame ran the dilation. The first captured frame has no motion to dilate, and the
     // history update must then read the cleared raw velocity rather than a stale dilation.
     private bool _velocityDilated;
+
+    // Whether this frame produced a history-rejection verdict. Without one the update trusts the
+    // reprojection everywhere, which is what it did before that pass existed.
+    private bool _historyDecimated;
 
     private unsafe void DepthReadBarrier(CommandBuffer cmd, Image depth)
     {
