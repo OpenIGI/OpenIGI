@@ -21,10 +21,10 @@ internal sealed class TemporalResolvePass : IDisposable
 
     private static readonly ComputeBindingKind[] Bindings =
     [
-        ComputeBindingKind.SampledImage,   // this frame's lit colour
-        ComputeBindingKind.SampledImage,   // the motion vectors
-        ComputeBindingKind.SampledImage,   // the previous frame's history
-        ComputeBindingKind.StorageImage,   // the resolved colour written out
+        ComputeBindingKind.SampledImage,          // this frame's lit colour, left shader-readable by its pass
+        ComputeBindingKind.SampledStorageImage,   // the motion vectors, which the velocity pass keeps in General
+        ComputeBindingKind.SampledImage,          // the previous frame's history
+        ComputeBindingKind.StorageImage,          // the resolved colour written out
     ];
 
     private readonly VulkanComputePass _pass;

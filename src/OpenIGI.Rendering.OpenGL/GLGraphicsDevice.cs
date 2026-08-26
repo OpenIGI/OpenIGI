@@ -1899,6 +1899,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle SceneColour => Register(_sceneTarget?.FrontColorTexture ?? 0);
 
+    /// <inheritdoc/>
+    public SceneTextureConvention SceneConvention => SceneTextureConvention.OpenGl;
+
+    /// <inheritdoc/>
+    /// <remarks>This backend has no atmosphere tables; its sky fill stays the flat mission colour.</remarks>
+    public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
+
     /// <summary>Drops the handle registered for a backend-owned texture, if there is one.</summary>
     private void ForgetRegistration(uint name)
     {

@@ -36,6 +36,10 @@ internal sealed unsafe class VulkanTexture : IDisposable
     /// <param name="commands">The pool the upload's one-off command comes from.</param>
     /// <param name="description">The texture's size, mip count and sampling.</param>
     /// <param name="pixels">The whole mip chain, largest level first, each level tightly packed.</param>
+    /// <param name="maxAnisotropy">
+    /// The sampler's anisotropic ratio; one leaves anisotropy off. Ignored where the device lacks the
+    /// feature, and on point-sampled or unmipped textures, which gain nothing from it.
+    /// </param>
     /// <exception cref="GraphicsDeviceException">The texture could not be created or uploaded.</exception>
     public VulkanTexture(
         Vk vk,
@@ -43,7 +47,8 @@ internal sealed unsafe class VulkanTexture : IDisposable
         VulkanAllocator allocator,
         VulkanCommands commands,
         in TextureDescription description,
-        ReadOnlySpan<Bgra32> pixels)
+        ReadOnlySpan<Bgra32> pixels,
+        float maxAnisotropy = 1f)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -83,7 +88,7 @@ internal sealed unsafe class VulkanTexture : IDisposable
         Upload(device, allocator, commands, description, pixels);
 
         View = CreateView();
-        Sampler = CreateSampler(description);
+        Sampler = CreateSampler(description, device.SamplerAnisotropy ? maxAnisotropy : 1f);
     }
 
     /// <summary>Gets the image handle.</summary>
@@ -330,12 +335,18 @@ internal sealed unsafe class VulkanTexture : IDisposable
         return view;
     }
 
-    private Sampler CreateSampler(in TextureDescription description)
+    private Sampler CreateSampler(in TextureDescription description, float maxAnisotropy)
     {
         Filter filter = description.Filter == TextureFilter.Point ? Filter.Nearest : Filter.Linear;
         SamplerAddressMode address = description.AddressMode == TextureAddressMode.Repeat
             ? SamplerAddressMode.Repeat
             : SamplerAddressMode.ClampToEdge;
+
+        // Anisotropy is what keeps a texture legible at a grazing angle: without it the sampler falls to
+        // a coarse, isotropically-averaged mip, and a cut-out surface like a wire fence averages toward
+        // transparent and fades out of the picture. Only on a filtered, mipped texture — a point-sampled
+        // UI atlas gains nothing.
+        bool anisotropic = maxAnisotropy > 1f && filter == Filter.Linear && MipLevels > 1;
 
         SamplerCreateInfo createInfo = new()
         {
@@ -349,8 +360,8 @@ internal sealed unsafe class VulkanTexture : IDisposable
             MinLod = 0,
             MaxLod = MipLevels,
             BorderColor = BorderColor.IntOpaqueBlack,
-            AnisotropyEnable = false,
-            MaxAnisotropy = 1.0f,
+            AnisotropyEnable = anisotropic,
+            MaxAnisotropy = anisotropic ? Math.Clamp(maxAnisotropy, 1f, 16f) : 1.0f,
         };
 
         Sampler sampler;

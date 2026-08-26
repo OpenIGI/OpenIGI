@@ -34,6 +34,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly bool _rayQuery;
     private readonly RayTracedShadowPass? _sunShadow;
     private readonly SsaoPass _ssao;
+    private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
     private readonly TemporalResolvePass _temporal;
     private readonly Sky.SkyAtmosphere _sky;
@@ -78,6 +79,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _temporal = new TemporalResolvePass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
+        _autoExposure = new AutoExposurePass(vk, device, allocator, commands, compiler, framesInFlight);
 
         // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
         _sunShadow = _rayQuery
@@ -188,6 +190,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
 
+    /// <summary>Gets the histogram metering the resolve's exposure adapts by.</summary>
+    public AutoExposurePass AutoExposure => _autoExposure;
+
     /// <summary>Gets the scene target for a frame in flight, built at the render size.</summary>
     /// <param name="frameIndex">The frame-in-flight index.</param>
     /// <param name="width">The render width in pixels.</param>
@@ -242,6 +247,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
         _sunShadow?.Dispose();
         _sky.Dispose();
+        _autoExposure.Dispose();
         _velocity.Dispose();
         _temporal.Dispose();
         _ssao.Dispose();
@@ -382,13 +388,15 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
         sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 2) };
-        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 2) };
+
+        // The two resolve sets — the raw lit and the temporally-resolved — each carry one sampler.
+        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 4) };
 
         DescriptorPoolCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-            MaxSets = (uint)(framesInFlight * 2 * 2),
+            MaxSets = (uint)(framesInFlight * 3 * 2),
             PoolSizeCount = 4,
             PPoolSizes = sizes,
         };

@@ -52,6 +52,11 @@ internal sealed class SkyAtmosphere : IDisposable
     private readonly VulkanComputePass _skyViewPass;
     private readonly VulkanComputePass _irradiancePass;
 
+    // The harmonics copied down to the host, one buffer per frame in flight so a read never races the
+    // copy still being recorded. The game-layer gather evaluates its sky rays from these, one frame old.
+    private readonly VulkanBuffer[] _readback;
+    private readonly bool[] _readbackWritten;
+
     private bool _staticTablesBuilt;
     private bool _disposed;
 
@@ -112,6 +117,18 @@ internal sealed class SkyAtmosphere : IDisposable
             vk, device, allocator, compiler, "sky.irradiance.comp", SkyAtmospherePasses.SkyIrradiance,
             [ComputeBindingKind.SampledStorageImage, ComputeBindingKind.StorageImage],
             ParamSize, framesInFlight);
+
+        _readback = new VulkanBuffer[framesInFlight];
+        _readbackWritten = new bool[framesInFlight];
+        for (int i = 0; i < framesInFlight; i++)
+        {
+            _readback[i] = new VulkanBuffer(
+                vk, device, allocator,
+                IrradianceWidth * 4 * sizeof(float),
+                BufferUsageFlags.TransferDstBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
+                persistentlyMapped: true);
+        }
     }
 
     /// <summary>Gets the sky's luminance in every direction, for the pass that draws it.</summary>
@@ -186,6 +203,84 @@ internal sealed class SkyAtmosphere : IDisposable
             1);
 
         Barrier(cmd, _irradiance.Handle);
+        RecordReadback(cmd, frame);
+    }
+
+    /// <summary>Copies this frame's harmonics down to the host, for the game layer to read next frame.</summary>
+    private unsafe void RecordReadback(CommandBuffer cmd, int frame)
+    {
+        BufferImageCopy region = new()
+        {
+            BufferOffset = 0,
+            BufferRowLength = 0,
+            BufferImageHeight = 0,
+            ImageSubresource = new ImageSubresourceLayers
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                MipLevel = 0,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            ImageOffset = default,
+            ImageExtent = new Extent3D(IrradianceWidth, 1, 1),
+        };
+
+        // The compute write above has only been made visible to shader reads; the transfer needs its own.
+        ImageMemoryBarrier toTransfer = new()
+        {
+            SType = StructureType.ImageMemoryBarrier,
+            OldLayout = ImageLayout.General,
+            NewLayout = ImageLayout.General,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = _irradiance.Handle,
+            SubresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            SrcAccessMask = AccessFlags.ShaderWriteBit,
+            DstAccessMask = AccessFlags.TransferReadBit,
+        };
+        _vk.CmdPipelineBarrier(
+            cmd, PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit, 0, 0, null, 0, null, 1, &toTransfer);
+
+        _vk.CmdCopyImageToBuffer(cmd, _irradiance.Handle, ImageLayout.General, _readback[frame].Handle, 1, &region);
+
+        // Make the copy visible to the host that reads it after the frame's fence.
+        BufferMemoryBarrier toHost = new()
+        {
+            SType = StructureType.BufferMemoryBarrier,
+            SrcAccessMask = AccessFlags.TransferWriteBit,
+            DstAccessMask = AccessFlags.HostReadBit,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Buffer = _readback[frame].Handle,
+            Offset = 0,
+            Size = Vk.WholeSize,
+        };
+        _vk.CmdPipelineBarrier(
+            cmd, PipelineStageFlags.TransferBit, PipelineStageFlags.HostBit, 0, 0, null, 1, &toHost, 0, null);
+
+        _readbackWritten[frame] = true;
+    }
+
+    /// <summary>Reads the harmonics the given frame slot last copied down.</summary>
+    /// <param name="frame">The frame-in-flight slot whose fence has completed.</param>
+    /// <param name="destination">Room for 28 floats: the seven coefficient vectors.</param>
+    /// <returns><see langword="true"/> once that slot has been written at least once.</returns>
+    public unsafe bool TryReadIrradiance(int frame, Span<float> destination)
+    {
+        if (!_readbackWritten[frame] || destination.Length < 28)
+        {
+            return false;
+        }
+
+        new ReadOnlySpan<float>(_readback[frame].MappedPointer, 28).CopyTo(destination);
+        return true;
     }
 
     /// <inheritdoc/>
@@ -205,6 +300,10 @@ internal sealed class SkyAtmosphere : IDisposable
         _skyView.Dispose();
         _multiScatter.Dispose();
         _transmittance.Dispose();
+        foreach (VulkanBuffer buffer in _readback)
+        {
+            buffer.Dispose();
+        }
     }
 
     private static void WriteParameters(

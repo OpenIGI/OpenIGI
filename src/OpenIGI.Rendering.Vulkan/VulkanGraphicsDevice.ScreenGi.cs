@@ -39,6 +39,21 @@ public sealed partial class VulkanGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle SceneColour => _sceneColour;
 
+    /// <inheritdoc/>
+    public SceneTextureConvention SceneConvention => SceneTextureConvention.Vulkan;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Read from the atmosphere's own harmonics, copied down to the host each frame. The slot read here
+    /// is the one whose fence the frame loop has already waited on, so the values are a frame or two old
+    /// — the sun does not move fast enough for that to show.
+    /// </remarks>
+    public bool TryGetSkyIrradiance(Span<float> coefficients)
+    {
+        ThrowIfDisposed();
+        return _deferred.Sky.TryReadIrradiance(_frameLoop.CurrentFrame, coefficients);
+    }
+
     /// <summary>One G-buffer attachment offered to compute as a sampled texture.</summary>
     /// <param name="View">The attachment's view.</param>
     /// <param name="Layout">The layout it sits in once its pass has ended.</param>

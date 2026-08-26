@@ -96,6 +96,7 @@ public readonly record struct DesktopOptions(
         float cameraPitch = -0.12f;
         float cameraHeight = 0f;
         int terrainViewDistance = 0;
+        float? fieldOfView = null;
         int startScreen = 0;
         int startMission = 0;
         bool vanillaMenu = false;
@@ -279,6 +280,22 @@ public readonly record struct DesktopOptions(
             {
                 cameraPitchEnd = ParseNumber(Next(args, ref i, "pitchend"), "pitchend", args);
             }
+            else if (arg.Equals("fov", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "fov");
+                if (!float.TryParse(
+                        value,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float parsedFov)
+                    || parsedFov <= 1f
+                    || parsedFov >= 179f)
+                {
+                    throw new ArgumentException($"-fov expects horizontal degrees between 1 and 179, got '{value}'.", nameof(args));
+                }
+
+                fieldOfView = parsedFov;
+            }
             else if (arg.Equals("viewdist", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "viewdist");
@@ -439,6 +456,7 @@ public readonly record struct DesktopOptions(
         {
             CameraPosition = cameraPosition,
             SunDirection = sunDirection,
+            FieldOfView = fieldOfView,
             CameraEnd = cameraEnd,
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
@@ -500,6 +518,12 @@ public readonly record struct DesktopOptions(
 
     /// <summary>Gets a fixed sun direction (pointing towards the sun) that overrides the level's, or <see langword="null"/> to use the level's own. For matching an external reference render.</summary>
     public (float X, float Y, float Z)? SunDirection { get; init; }
+
+    /// <summary>
+    /// Gets a fixed horizontal field of view in degrees, or null for the game's own ninety. For lining a
+    /// capture up against a reference render whose camera lens differs.
+    /// </summary>
+    public float? FieldOfView { get; init; }
 
     /// <summary>
     /// Gets the world position in metres the fly-through camera ends a flight at, or <see langword="null"/>

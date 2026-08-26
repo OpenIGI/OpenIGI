@@ -251,7 +251,50 @@ public static class RenderCVars
         // interior. Auto-exposure still adapts around this; it is the bias on that, near the +0.4 EV the
         // reference biases a daylight interior by. Measured on the office (bright, filled, window held under
         // the shoulder, its channel means on the reference's) and the outdoor spawn (balanced, not blown).
-        ultra: "1.3");
+        // Now 1.414: exactly the reference's auto-exposure bias of half a stop (2^0.5), applied the same
+        // way -- as compensation multiplied onto the adapted exposure -- so the two meters agree.
+        ultra: "1.414");
+
+    /// <summary>How much of the surface cache's bounced radiance a traced gather ray keeps.</summary>
+    /// <remarks>
+    /// One is the physical answer: the cache holds real outgoing radiance and a ray that hits a card
+    /// should keep all of it. The reference render this project matches bounces far less than that —
+    /// its surface cache reports no coverage over most of this level's imported geometry, so its rays
+    /// hit surfaces that have no cached lighting to return and its interiors go near-black beyond the
+    /// direct sun. This scales OUR cache's answer down toward that look without touching the sky, which
+    /// the reference does resolve. Applies to the screen gather and the radiance cache alike.
+    /// </remarks>
+    public static readonly NumericCVar<float> GiBounce = Presets.Define(
+        CVar.Float(
+            "r_gi_bounce",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "Traced bounce strength off the surface cache. 1 is physical; lower matches the reference's sparser bounce."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+
+        // Matched against the reference office shot: 0.15 lands the walls and ceiling on its values with
+        // the window, the sun pools and the exterior already aligned. Raise toward one for the physical
+        // answer — the room fills with real multi-bounce — at the cost of the reference's darker mood.
+        ultra: "0.15");
+
+    /// <summary>Whether tracing uses the hardware ray query rather than the software distance field.</summary>
+    /// <remarks>
+    /// The switch between the two GI modes, live: on, every trace that can reach the acceleration
+    /// structure does — the screen gather, the radiance cache, the surface-cache relight and the sun's
+    /// shadow — and off, the same shaders march the signed distance field and the sun falls back to the
+    /// cascaded map. It only means anything on a backend that can trace at all; elsewhere the software
+    /// path is the only path and the flag is ignored. Bound to a key by default so the two can be
+    /// compared in place.
+    /// </remarks>
+    public static readonly BoolCVar HardwareRayTracing = CVar.Bool(
+        "r_rt",
+        true,
+        CVarOptions.Archive,
+        "Trace with the hardware ray query (1) or the software distance field (0). Toggle live to compare.");
 
     /// <summary>How bright a single screen-traced ray may come back, before it feeds the next frame.</summary>
     /// <remarks>
@@ -306,10 +349,11 @@ public static class RenderCVars
         // BRIGHTER of it and the far field: the radiance cache runs at this same tier, so a surface the
         // gather has not yet resolved -- a freshly disoccluded pixel -- falls to the cache's stable answer
         // rather than to black, which is the dropout the screen estimate had with no world-space field
-        // behind it. Strength compensates for the cache holding outgoing radiance the fill takes albedo
-        // against a second time; three lands the interior on the reference's warmth without over-driving the
-        // gather's variance into the temporal flicker a higher one would show.
-        ultra: "3");
+        // behind it. One, because the gather now returns physically-normalised irradiance -- the
+        // pi-over-N estimator with the sky integrated ray by ray -- and the deferred fill takes it
+        // through the Lambert response. Anything other than one is an artistic bias on real light
+        // transport, not a calibration.
+        ultra: "1");
 
     /// <summary>Whether the world-space radiance cache updates and feeds the deferred fill's indirect.</summary>
     /// <remarks>
@@ -450,7 +494,10 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> SkyLight = CVar.Float(
         "r_sky_light",
-        0.8f,
+
+        // The reference scene's SkyLight multiplies its captured sky by three; matching it here keeps
+        // the two renders' window light on the same scale.
+        3f,
         0f,
         16f,
         CVarOptions.Archive,
@@ -1082,7 +1129,11 @@ public static class RenderCVars
     /// </remarks>
     public static readonly NumericCVar<float> LightScale = CVar.Float(
         "r_light_scale",
-        0.7f,
+
+        // Seven eighths lands mission 1's authored sun — about eight lux along its warm chromaticity —
+        // on the reference scene's seven, so the two renders share an illuminance and every remaining
+        // difference is the transport's fault, not the key light's.
+        0.875f,
         0.1f,
         2f,
         CVarOptions.Archive,

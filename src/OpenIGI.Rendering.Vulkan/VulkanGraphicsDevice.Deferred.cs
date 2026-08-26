@@ -76,6 +76,8 @@ public sealed partial class VulkanGraphicsDevice
     // Whether this frame actually traced the sun's shadow. Until the world has been seen there is nothing
     // to trace against, and the lighting keeps reading the cascades.
     private bool _sunShadowTraced;
+    private TemporalAaSettings _taaSettings;
+    private bool _temporalResolved;
     private int _captureWidth;
     private int _captureHeight;
     private ScenePass _currentScenePass = ScenePass.None;
@@ -236,6 +238,7 @@ public sealed partial class VulkanGraphicsDevice
             // contents), so a read-before-write barrier separates that from the compute write below.
             DispatchOcclusion();
             DispatchVelocity();
+            DispatchTemporalResolve();
 
             // Everything temporal measures against this, so it moves on exactly once per captured frame.
             _previousViewToWorld = _viewToWorld;
@@ -272,6 +275,204 @@ public sealed partial class VulkanGraphicsDevice
             illuminance,
             Sky.SkyAtmosphere.ViewHeightKm(2f),
             Math.Max(0f, _lighting.SkyLightIntensity));
+    }
+
+    /// <summary>
+    /// Accumulates this jittered frame onto the temporal history, so the tone map reads a stable image.
+    /// </summary>
+    /// <remarks>
+    /// The core of the reference's temporal upscaler: reproject the history by the velocity pass's motion, reject what
+    /// no longer matches the neighbourhood, blend the new sample in, and carry the result forward as the
+    /// next frame's history. Runs after the shading pass has ended and the velocity is written; the
+    /// resolve then samples the accumulated output instead of the raw lit colour. Without this every
+    /// silhouette shimmers, because the projection is deliberately jittered every frame and nothing was
+    /// averaging the jitter out.
+    /// </remarks>
+    private unsafe void DispatchTemporalResolve()
+    {
+        _temporalResolved = false;
+        if (_sceneTarget is null || !_taaSettings.Accumulates)
+        {
+            return;
+        }
+
+        using StageScope temporal = Measure(RenderStage.TemporalResolve);
+
+        Deferred.SceneTarget target = _sceneTarget;
+        CommandBuffer cmd = _frameCommandBuffer;
+        Vk vk = _instance.Vk;
+
+        // The shading pass's colour write, ordered before the compute read of the lit image.
+        LitReadBarrier(cmd, target.LitImage, PipelineStageFlags.ComputeShaderBit);
+
+        // The velocity pass wrote the motion this frame; the resolve output was last read by the
+        // previous frame's tone map.
+        OcclusionBarrier(
+            cmd, target.VelocityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.UpscaleOutputImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.Temporal.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LitView,
+            target.VelocityView,
+            target.UpscaleHistoryView,
+            target.UpscaleOutputView,
+            _captureWidth,
+            _captureHeight,
+            temporalOn: true,
+            maxSamples: 16f,
+            _taaSettings.MotionSharpening);
+
+        // Carry the resolved image into the history the NEXT frame reprojects: output to transfer read,
+        // history to transfer write, copy, and both back to what their readers expect.
+        OcclusionBarrier(
+            cmd, target.UpscaleOutputImage, AccessFlags.ShaderWriteBit, AccessFlags.TransferReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit);
+        TransitionSimple(
+            cmd, target.UpscaleHistoryImage,
+            ImageLayout.ShaderReadOnlyOptimal, ImageLayout.TransferDstOptimal,
+            AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit);
+
+        ImageCopy region = new()
+        {
+            SrcSubresource = new ImageSubresourceLayers
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                MipLevel = 0,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            DstSubresource = new ImageSubresourceLayers
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                MipLevel = 0,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            Extent = new Extent3D((uint)_captureWidth, (uint)_captureHeight, 1),
+        };
+        vk.CmdCopyImage(
+            cmd,
+            target.UpscaleOutputImage, ImageLayout.General,
+            target.UpscaleHistoryImage, ImageLayout.TransferDstOptimal,
+            1, &region);
+
+        TransitionSimple(
+            cmd, target.UpscaleHistoryImage,
+            ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
+            AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.ComputeShaderBit);
+
+        // The tone-map resolve samples the output next.
+        OcclusionBarrier(
+            cmd, target.UpscaleOutputImage, AccessFlags.TransferReadBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit);
+
+        _temporalResolved = true;
+    }
+
+    /// <summary>Orders the shading pass's colour write before a later read of the lit image.</summary>
+    private unsafe void LitReadBarrier(CommandBuffer cmd, Image lit, PipelineStageFlags destinationStage)
+    {
+        ImageMemoryBarrier barrier = new()
+        {
+            SType = StructureType.ImageMemoryBarrier,
+            OldLayout = ImageLayout.ShaderReadOnlyOptimal,
+            NewLayout = ImageLayout.ShaderReadOnlyOptimal,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = lit,
+            SubresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+            DstAccessMask = AccessFlags.ShaderReadBit,
+        };
+        _instance.Vk.CmdPipelineBarrier(
+            cmd, PipelineStageFlags.ColorAttachmentOutputBit, destinationStage, 0, 0, null, 0, null, 1, &barrier);
+    }
+
+    /// <summary>A single-image layout transition with explicit accesses and stages.</summary>
+    private unsafe void TransitionSimple(
+        CommandBuffer cmd,
+        Image image,
+        ImageLayout from,
+        ImageLayout to,
+        AccessFlags sourceAccess,
+        AccessFlags destinationAccess,
+        PipelineStageFlags sourceStage,
+        PipelineStageFlags destinationStage)
+    {
+        ImageMemoryBarrier barrier = new()
+        {
+            SType = StructureType.ImageMemoryBarrier,
+            OldLayout = from,
+            NewLayout = to,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = image,
+            SubresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            SrcAccessMask = sourceAccess,
+            DstAccessMask = destinationAccess,
+        };
+        _instance.Vk.CmdPipelineBarrier(
+            cmd, sourceStage, destinationStage, 0, 0, null, 0, null, 1, &barrier);
+    }
+
+    /// <summary>Meters the lit scene for the eye adaptation, before the present pass opens.</summary>
+    private unsafe void RecordExposureMetering()
+    {
+        if (_sceneTarget is not { } target)
+        {
+            return;
+        }
+
+        // The shading pass wrote the lit colour and its render pass left it shader-readable for the
+        // resolve; this orders that write before the metering's compute read of the same image.
+        ImageMemoryBarrier barrier = new()
+        {
+            SType = StructureType.ImageMemoryBarrier,
+            OldLayout = ImageLayout.ShaderReadOnlyOptimal,
+            NewLayout = ImageLayout.ShaderReadOnlyOptimal,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = target.LitImage,
+            SubresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+            DstAccessMask = AccessFlags.ShaderReadBit,
+        };
+        _instance.Vk.CmdPipelineBarrier(
+            _frameCommandBuffer,
+            PipelineStageFlags.ColorAttachmentOutputBit,
+            PipelineStageFlags.ComputeShaderBit,
+            0, 0, null, 0, null, 1, &barrier);
+
+        _deferred.AutoExposure.Record(
+            _frameCommandBuffer, _frameLoop.CurrentFrame, target.LitView, _captureWidth, _captureHeight);
     }
 
     /// <summary>Runs the ambient-occlusion compute over the stored depth, writing this frame's occlusion.</summary>
@@ -427,6 +628,17 @@ public sealed partial class VulkanGraphicsDevice
             throw new GraphicsDeviceException("Nothing has been captured this frame.");
         }
 
+        // The metering, before the present pass opens: a dispatch cannot be recorded inside a render
+        // pass. The histogram it copies down is read a couple of frames later, and the exposure applied
+        // below eases toward what the metering reports — the reference's histogram eye adaptation, with
+        // r_exposure as the compensation on top of the adapted value rather than the whole of it.
+        float adaptedExposure = 1f;
+        if (post.AutoExposure && _debugView is DebugView.None or DebugView.Lighting)
+        {
+            RecordExposureMetering();
+            adaptedExposure = _deferred.AutoExposure.Adapt(_frameLoop.CurrentFrame, 1f / 60f);
+        }
+
         EnsurePresentPass();
 
         // Exposure and the tone-map curve are the one fullscreen draw that resolves the scene into the back
@@ -439,11 +651,22 @@ public sealed partial class VulkanGraphicsDevice
         CommandBuffer cmd = _frameCommandBuffer;
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.Pipeline);
 
-        DescriptorSet set = _sceneTarget.ResolveSet;
+        // The stable accumulated colour when the temporal pass ran this frame; the raw lit colour when
+        // nothing accumulated and the lit image is already the final word.
+        DescriptorSet set = _temporalResolved ? _sceneTarget.ResolveSetTsr : _sceneTarget.ResolveSet;
         vk.CmdBindDescriptorSets(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.PipelineLayout, 0, 1, &set, 0, null);
         InvalidateBoundState();
 
-        float* parameters = stackalloc float[4] { post.Exposure, (int)post.ToneMap, post.WhitePoint, 0f };
+        float* parameters = stackalloc float[4]
+        {
+            post.Exposure * adaptedExposure,
+            (int)post.ToneMap,
+            post.WhitePoint,
+
+            // The mask debug views are code values, not radiance; the neutral-grey lighting view is the
+            // one debug view that is still a shaded scene and keeps the full chain.
+            _debugView is not DebugView.None and not DebugView.Lighting ? 1f : 0f,
+        };
         vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 4, parameters);
 
         // The resolve fills the whole back buffer regardless of any scene sub-viewport that was set.
@@ -641,6 +864,7 @@ public sealed partial class VulkanGraphicsDevice
         Matrix3f viewToWorld)
     {
         ThrowIfDisposed();
+        _taaSettings = settings;
         _cameraPosition = cameraPosition;
         _viewToWorld = viewToWorld;
     }
@@ -747,6 +971,13 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        // The app's word governs: shadows off means no sun shadow of any kind, and the software mode
+        // leaves the sun to the cascades — the trace never runs, and the lighting's flag stays off.
+        if (!_shadowSettings.Enabled || !_shadowSettings.TracedSun)
+        {
+            return;
+        }
+
         if (_worldScene is not { IsReady: true } scene || scene.TopLevel is not { } topLevel)
         {
             return;
@@ -831,7 +1062,7 @@ public sealed partial class VulkanGraphicsDevice
         light[8] = _lighting.AmbientColour.X;
         light[9] = _lighting.AmbientColour.Y;
         light[10] = _lighting.AmbientColour.Z;
-        light[11] = 0f;
+        light[11] = (int)_debugView;
         vk.CmdPushConstants(cmd, _deferred.Lighting.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 12, light);
 
         // The light covers the whole G-buffer regardless of the geometry viewport.

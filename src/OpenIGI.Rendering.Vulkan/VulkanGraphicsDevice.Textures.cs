@@ -35,7 +35,7 @@ public sealed partial class VulkanGraphicsDevice
                 nameof(pixels));
         }
 
-        VulkanTexture texture = new(_instance.Vk, _device, _allocator, _commands, description, pixels);
+        VulkanTexture texture = new(_instance.Vk, _device, _allocator, _commands, description, pixels, _maxAnisotropy);
         uint id = _nextTextureId++;
         _textures[id] = texture;
         return new TextureHandle(id);

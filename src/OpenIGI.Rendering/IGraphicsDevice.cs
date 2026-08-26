@@ -512,6 +512,28 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     TextureHandle SceneColour { get; }
 
+    /// <summary>Gets which contract <see cref="SceneDepth"/> and <see cref="SceneNormal"/> follow.</summary>
+    /// <remarks>
+    /// The OpenGL renderer stores standard depth (the sky at one) and view-space normals; the Vulkan
+    /// renderer stores reverse depth (the sky at zero) and world-space normals, rasterised through a
+    /// vertical flip. A compute pass reconstructing world positions from these buffers must be told which
+    /// contract it is reading, because reading one as the other places every sample at the near plane.
+    /// </remarks>
+    SceneTextureConvention SceneConvention { get; }
+
+    /// <summary>Copies the sky's irradiance harmonics into <paramref name="coefficients"/>.</summary>
+    /// <param name="coefficients">Room for 28 floats: seven vectors of four.</param>
+    /// <returns><see langword="true"/> when the backend has an atmosphere to report.</returns>
+    /// <remarks>
+    /// The seven coefficient vectors of the deferred sky term — third-order harmonics of the sky's light,
+    /// cosine-convolved with the Lambert one-over-pi folded in, exactly as the lighting pass consumes
+    /// them. A game-layer pass that traces its own rays evaluates these along each escaping ray so its
+    /// sky matches the sky the lighting shows, one frame behind (the values are read back from the
+    /// device). A backend with no atmosphere tables returns <see langword="false"/> and the caller keeps
+    /// whatever flat approximation it has.
+    /// </remarks>
+    bool TryGetSkyIrradiance(Span<float> coefficients);
+
     /// <summary>Feeds a screen probe gather's indirect light into the deferred lighting.</summary>
     /// <param name="indirect">The probe atlas of indirect irradiance, covering the frame.</param>
     /// <param name="strength">How strongly to apply it. Zero, or an invalid handle, is a no-op.</param>

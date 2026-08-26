@@ -453,6 +453,14 @@ internal sealed partial class DesktopGame : IDisposable
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
 
+        // The default hotkey for comparing the two GI modes in place: F6 flips r_rt between the
+        // hardware ray query and the software distance-field trace. Only when the key is free, so a
+        // binding the player saved is never stolen.
+        if (!console.System.Binds.ContainsKey("f6"))
+        {
+            console.System.SetBind("f6", "toggle r_rt");
+        }
+
         // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
         // the console and the flag can never report different things.
         if (!_options.VSync)
@@ -2641,7 +2649,13 @@ internal sealed partial class DesktopGame : IDisposable
                     : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
-                float horizontalTangent = sight.TanX;
+
+                // A pinned lens for reference comparisons: -fov overrides the game's own ninety-degree
+                // horizontal, so a capture can be framed exactly as a reference render whose camera
+                // differs. The sight zoom still governs ordinary play.
+                float horizontalTangent = _options.FieldOfView is { } fixedFov
+                    ? MathF.Tan(fixedFov * (MathF.PI / 360f))
+                    : sight.TanX;
                 float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
 
                 // Kept for the developer inspector, which projects a selected entity to the screen and
@@ -2919,13 +2933,13 @@ internal sealed partial class DesktopGame : IDisposable
                     light = _dayNight.Apply(_sun ?? defaultSun);
                 }
 
-                // Re-light with daylight chromaticity, keeping the level's own brightness. The level authors
-                // a saturated warm sun; the reference lights the same cold morning with a near-white sun,
-                // and it is that neutral key -- not a grade on the finished frame -- that reads as clean
-                // daylight. The ambient is left as authored; the sky's own colour is set below.
+                // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
+                // reference scene lights with — because rewriting it to a neutral key is exactly the kind
+                // of grade that made the two renders impossible to compare channel for channel. Only the
+                // ambient is re-pointed, since the level's flat cool triple stands in for a sky the
+                // dynamic model now largely derives itself.
                 light = light with
                 {
-                    Colour = DaylightColour(light.Colour, new Vector3f(1.0f, 0.9f, 0.8f)),
                     Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
                 };
 
@@ -2958,6 +2972,10 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         ContactReach = RenderCVars.ContactShadows.Value,
                         FilterRadius = RenderCVars.ShadowSoftness.Value,
+
+                        // The live software/hardware switch: off, a tracing backend leaves the sun to the
+                        // cascaded map like everyone else.
+                        TracedSun = RenderCVars.HardwareRayTracing.Value,
                     }
                     : ShadowSettings.Off;
 
@@ -3091,7 +3109,11 @@ internal sealed partial class DesktopGame : IDisposable
                         // instead of being re-seeded from scratch on every scroll.
                         litCards.Light(
                             light is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
-                            light.Colour,
+
+                            // The SAME effective sun the deferred lighting shades with -- colour times both
+                            // scales -- or the bounce is lit by a different key than the screen and the two
+                            // disagree wherever indirect light dominates.
+                            light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
                             SkyFillColour(),
                             liveField,
                             RenderCVars.SurfaceCacheProbe.Value,

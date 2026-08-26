@@ -69,8 +69,18 @@ public sealed partial class VulkanGraphicsDevice
     public void SetFloorGloss(float gloss) => ThrowIfDisposed();
 
     /// <inheritdoc/>
-    /// <remarks>Recorded for when textures are created; the sampler rebuild is layered on with the 3D path.</remarks>
-    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps) => ThrowIfDisposed();
+    /// <remarks>
+    /// Taken up by every texture created from here on — the app sets it before a level uploads anything,
+    /// which is why no existing sampler is rebuilt. Mip generation is already unconditional on this
+    /// backend, so only the anisotropy is recorded.
+    /// </remarks>
+    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps)
+    {
+        ThrowIfDisposed();
+        _maxAnisotropy = Math.Max(1, maxAnisotropy);
+    }
+
+    private float _maxAnisotropy = 1f;
 
     // ---- Deferred effects fed into the lighting (no-op until compute lands) ------------------------
 
@@ -123,7 +133,18 @@ public sealed partial class VulkanGraphicsDevice
     public void ClearPoseInterpolation() => ThrowIfDisposed();
 
     /// <inheritdoc/>
-    public void SetDebugView(DebugView view) => ThrowIfDisposed();
+    /// <remarks>
+    /// Routed into the lighting pass, which substitutes the requested channel for the shaded scene.
+    /// The resolve leaves the mask views untouched by exposure and the tone map, so a visibility of
+    /// one reads as white rather than as whatever the curve makes of it.
+    /// </remarks>
+    public void SetDebugView(DebugView view)
+    {
+        ThrowIfDisposed();
+        _debugView = view;
+    }
+
+    private DebugView _debugView;
 
     // ---- Occlusion queries -------------------------------------------------------------------------
 

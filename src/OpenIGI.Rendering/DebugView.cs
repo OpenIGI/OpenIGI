@@ -60,4 +60,11 @@ public enum DebugView
     /// materials confusing the two.
     /// </summary>
     Lighting = 11,
+
+    /// <summary>
+    /// How much of the sun reaches each surface after shadowing, white for lit and black for occluded.
+    /// The view that separates "the sun never arrives" from "the surface faces away", because both look
+    /// identical once multiplied into the shaded scene.
+    /// </summary>
+    SunShadow = 12,
 }

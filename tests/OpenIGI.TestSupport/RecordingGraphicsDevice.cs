@@ -210,6 +210,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <inheritdoc/>
     public TextureHandle SceneColour => new(90_007);
 
+    public SceneTextureConvention SceneConvention => SceneTextureConvention.OpenGl;
+
+    public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
+
     /// <inheritdoc/>
     public void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false)
     {

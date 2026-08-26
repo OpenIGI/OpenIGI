@@ -42,6 +42,17 @@ public readonly record struct ShadowSettings(
     /// <summary>The most cascades any backend has to support.</summary>
     public const int MaxCascades = 4;
 
+    /// <summary>
+    /// Gets a value indicating whether the sun's shadow may be traced against the scene's acceleration
+    /// structure instead of read from the cascades, on a backend that can trace at all.
+    /// </summary>
+    /// <remarks>
+    /// Off falls back to the cascaded map everywhere — the software path. The backend never reads the
+    /// console itself, so the app decides here and every consumer (the deferred sun, the gathers that
+    /// share the flag's spirit) follows the same answer.
+    /// </remarks>
+    public bool TracedSun { get; init; } = true;
+
     /// <summary>Gets settings with shadows switched off.</summary>
     public static ShadowSettings Off { get; } = new(CascadeCount: 0);
 
