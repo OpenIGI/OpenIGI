@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using Silk.NET.OpenGL;
@@ -1479,6 +1479,17 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         ThrowIfDisposed();
         _debugView = view;
     }
+
+    /// <inheritdoc/>
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Recorded and unused on this backend: its eye adaptation and screen gather read the lit colour the
+    /// same way, so the same separation is wanted here, but the deferred path being matched against the
+    /// reference is the Vulkan one and that is where it is implemented first.
+    /// </remarks>
+    public void SetFirstPersonGeometry(bool firstPerson) => _firstPersonGeometry = firstPerson;
+
+    private bool _firstPersonGeometry;
 
     /// <inheritdoc/>
     public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)

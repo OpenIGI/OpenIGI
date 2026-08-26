@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
@@ -321,6 +321,24 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     /// <remarks>Device state, like <see cref="SetMaterialOverride"/>: it spans a run of draws.</remarks>
     void SetLightmapScale(float scale);
+
+    /// <summary>Marks the draws that follow as geometry that exists only in front of the eye.</summary>
+    /// <param name="firstPerson">Whether the following draws are the view model rather than the world.</param>
+    /// <remarks>
+    /// <para>
+    /// The arms and the held weapon are drawn into the same lit colour as the world, and two passes read
+    /// that colour back as though everything in it were world: the eye adaptation meters it, and the
+    /// screen-space indirect gather traces against it. Neither is true of a view model. A white knife
+    /// held up to the camera raises the metered luminance and darkens the whole frame, and bounces light
+    /// off itself onto the room -- so pressing the free-camera key, which simply stops drawing it,
+    /// visibly changes the lighting of a scene that has not moved.
+    /// </para>
+    /// <para>
+    /// Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws and must be cleared
+    /// after them. A backend that does not separate the two may ignore it.
+    /// </para>
+    /// </remarks>
+    void SetFirstPersonGeometry(bool firstPerson);
 
     /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
     /// <param name="seed">

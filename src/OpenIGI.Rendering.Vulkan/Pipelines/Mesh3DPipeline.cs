@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Silk.NET.Core.Native;
@@ -144,9 +144,9 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
     {
         PushConstantRange push = new()
         {
-            StageFlags = ShaderStageFlags.VertexBit,
+            StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
             Offset = 0,
-            Size = sizeof(float) * 16,
+            Size = sizeof(float) * 17,
         };
 
         PipelineLayoutCreateInfo createInfo = new()

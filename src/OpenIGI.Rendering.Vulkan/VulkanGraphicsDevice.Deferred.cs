@@ -804,6 +804,18 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    public void SetFirstPersonGeometry(bool firstPerson)
+    {
+        ThrowIfDisposed();
+        _firstPersonGeometry = firstPerson;
+    }
+
+    // Whether the draws being recorded are the view model rather than the world. Read by the forward
+    // draw path, which puts it in the lit target's alpha so the passes that read that colour back can
+    // tell the two apart.
+    private bool _firstPersonGeometry;
+
+    /// <inheritdoc/>
     public void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings)
     {
         ThrowIfDisposed();

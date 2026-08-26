@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
@@ -99,6 +99,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void SetAlphaHash(float seed)
     {
     }
+
+    /// <summary>Gets a value indicating whether the draws being recorded were marked first-person.</summary>
+    public bool FirstPersonGeometry { get; private set; }
+
+    /// <inheritdoc/>
+    public void SetFirstPersonGeometry(bool firstPerson) => FirstPersonGeometry = firstPerson;
 
     /// <summary>The detail map attached to each diffuse texture, in the order they were attached.</summary>
     public List<(TextureHandle Diffuse, TextureHandle Detail)> TextureDetails { get; } = [];

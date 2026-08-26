@@ -479,9 +479,22 @@ public sealed partial class VulkanGraphicsDevice
         // The forward and direct pipelines take only the combined model-view-projection; their shader
         // applies the OpenGL-to-Vulkan clip correction.
         Matrix4f mvp = _projection * modelView;
-        float* data = stackalloc float[16];
+        float* data = stackalloc float[17];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
-        vk.CmdPushConstants(cmd, pipeline.PipelineLayout, ShaderStageFlags.VertexBit, 0, sizeof(float) * 16, data);
+
+        // What this draw leaves in the lit target's alpha. A translucent draw keeps its own alpha,
+        // because that is the blend's source; an opaque one has no use for it and carries the marker
+        // instead, so a pass reading the lit colour back can tell the world from what is only in front
+        // of the eye.
+        data[16] = blend != BlendMode.Opaque ? -1f : (_firstPersonGeometry ? 0f : 1f);
+
+        vk.CmdPushConstants(
+            cmd,
+            pipeline.PipelineLayout,
+            ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+            0,
+            sizeof(float) * 17,
+            data);
     }
 
     private unsafe void BindMeshBuffers(VulkanMesh mesh)

@@ -1,4 +1,4 @@
-using OpenIGI.Audio;
+﻿using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Desktop.World;
@@ -3915,6 +3915,10 @@ internal sealed partial class DesktopGame : IDisposable
                     // layer, so an already-rendered wall must not be allowed to cut through the hands or
                     // weapon. Resetting only depth keeps normal arm-versus-weapon self-occlusion.
                     ViewModelDepth.Begin(_device);
+                    // The arms and the weapon are not the world: the eye adaptation must not meter them
+                    // and the indirect gather must not bounce light off them, or holstering changes the
+                    // lighting of a room that has not moved.
+                    _device.SetFirstPersonGeometry(true);
                     _arms?.Draw(rig, eye, viewModelProjection, rigOriginUnits, previousPoseShare, rigOrientation);
 
                     // Cycling weapons changes the model as well as the animations, so the renderer has to
@@ -3933,6 +3937,8 @@ internal sealed partial class DesktopGame : IDisposable
                             _player.FiredThisTick,
                             _player.ShotSequence);
                     }
+
+                    _device.SetFirstPersonGeometry(false);
                 }
 
                 // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
