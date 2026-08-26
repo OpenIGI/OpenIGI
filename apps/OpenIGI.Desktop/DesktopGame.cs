@@ -4802,7 +4802,7 @@ internal sealed partial class DesktopGame : IDisposable
                 _logger.Information(
                     "Perf",
                     FormattableString.Invariant(
-                        $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 120 Hz frame has; {over} stage(s) over budget."));
+                        $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 60 Hz frame has; {over} stage(s) over budget."));
             }
         }
 
