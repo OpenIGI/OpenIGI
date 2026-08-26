@@ -31,6 +31,15 @@ public readonly record struct GraphicsCapabilities(
     /// <remarks>Only ever an accelerator: every effect has a path that does not need it.</remarks>
     public bool SupportsCompute { get; init; }
 
+    /// <summary>Whether a compute shader on this device can trace rays against the world directly.</summary>
+    /// <remarks>
+    /// The difference between marching a distance field towards a surface and asking the hardware where
+    /// the ray actually lands. Both answer the same question; the ray answers it exactly, and against
+    /// geometry rather than an approximation of it. A backend that says yes here is expected to accept a
+    /// compute shader that declares an acceleration structure and to have one bound for it.
+    /// </remarks>
+    public bool SupportsRayQuery { get; init; }
+
     /// <summary>Gets the highest sample count the backend will honour for a scene target.</summary>
     public int MaxSampleCount { get; init; }
 }

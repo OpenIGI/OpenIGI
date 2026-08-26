@@ -1,0 +1,307 @@
+using System.Diagnostics.CodeAnalysis;
+using OpenIGI.Core.Diagnostics;
+using OpenIGI.Rendering;
+using OpenIGI.Rendering.Vulkan.Capabilities;
+using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Queues;
+using Silk.NET.Core;
+using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.KHR;
+
+namespace OpenIGI.Rendering.Vulkan;
+
+/// <summary>Chooses the adapter the backend runs on and works out how it will be used.</summary>
+/// <remarks>
+/// <para>
+/// The rule is the one every renderer uses: prefer a discrete GPU, fall back to whatever can present. A
+/// candidate is only eligible if it can do the two things the backend cannot start without — render to
+/// and present on the surface, and carry a swapchain — so the choice is made among devices already known
+/// to work rather than found to be unusable three calls later.
+/// </para>
+/// <para>
+/// Everything else is noted rather than required. Whether the adapter can trace rays in hardware, hold
+/// its descriptors in a buffer, or run compute on an engine of its own all decide which path a pass
+/// takes, not whether the backend starts; recording all of it at selection is what lets those be
+/// capability checks later rather than a second enumeration.
+/// </para>
+/// </remarks>
+internal sealed unsafe class PhysicalDeviceSelector
+{
+    // The one extension no candidate can be without: presenting a rendered image needs a swapchain.
+    private static readonly string[] RequiredExtensions = [KhrSwapchain.ExtensionName];
+
+    private readonly Vk _vk;
+    private readonly Instance _instance;
+    private readonly KhrSurface _khrSurface;
+    private readonly SurfaceKHR _surface;
+    private readonly IIgiLogger _logger;
+
+    /// <summary>Initialises a new instance of the <see cref="PhysicalDeviceSelector"/> class.</summary>
+    /// <param name="instance">The instance and its surface to select against.</param>
+    /// <param name="logger">Where to report the choice made.</param>
+    public PhysicalDeviceSelector(VulkanInstance instance, IIgiLogger logger)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        _vk = instance.Vk;
+        _instance = instance.Instance;
+        _khrSurface = instance.KhrSurface;
+        _surface = instance.Surface;
+        _logger = logger;
+    }
+
+    /// <summary>Selects an adapter and works out how it will be used.</summary>
+    /// <returns>The chosen adapter and the facts gathered while choosing it.</returns>
+    /// <exception cref="GraphicsDeviceException">No adapter can render to and present on the surface.</exception>
+    public PhysicalDeviceSelection Select()
+    {
+        uint count = 0;
+        VkCheck.Ok(_vk.EnumeratePhysicalDevices(_instance, &count, null), "vkEnumeratePhysicalDevices");
+        if (count == 0)
+        {
+            throw new GraphicsDeviceException("No Vulkan physical devices are present.");
+        }
+
+        PhysicalDevice[] devices = new PhysicalDevice[count];
+        fixed (PhysicalDevice* first = devices)
+        {
+            VkCheck.Ok(_vk.EnumeratePhysicalDevices(_instance, &count, first), "vkEnumeratePhysicalDevices");
+        }
+
+        PhysicalDeviceSelection? best = null;
+        foreach (PhysicalDevice device in devices)
+        {
+            PhysicalDeviceSelection? candidate = Evaluate(device);
+            if (candidate is null)
+            {
+                continue;
+            }
+
+            // A discrete GPU always wins; among equals the first found is kept, which on a single-GPU
+            // machine is the only one anyway.
+            if (best is null || IsPreferredOver(candidate, best))
+            {
+                best = candidate;
+            }
+        }
+
+        if (best is null)
+        {
+            throw new GraphicsDeviceException(
+                "No Vulkan adapter can both present to the window surface and support a swapchain.");
+        }
+
+        Report(best);
+        return best;
+    }
+
+    private static bool IsPreferredOver(PhysicalDeviceSelection candidate, PhysicalDeviceSelection incumbent)
+    {
+        bool candidateDiscrete = candidate.Properties.DeviceType == PhysicalDeviceType.DiscreteGpu;
+        bool incumbentDiscrete = incumbent.Properties.DeviceType == PhysicalDeviceType.DiscreteGpu;
+        return candidateDiscrete && !incumbentDiscrete;
+    }
+
+    private void Report(PhysicalDeviceSelection selection)
+    {
+
+        VulkanDeviceCapabilities capabilities = selection.Capabilities;
+        Version32 api = (Version32)selection.ApiVersion;
+
+        _logger.Information(
+            "Vulkan",
+            $"Selected adapter '{selection.Name}' (Vulkan {api.Major}.{api.Minor}.{api.Patch}).");
+
+        VulkanQueuePlan queues = selection.Queues;
+        string compute = queues.HasDedicatedCompute
+            ? $"family {queues.AsyncCompute.Family}"
+            : "shared with graphics";
+        string transfer = queues.HasDedicatedTransfer
+            ? $"family {queues.Transfer.Family}"
+            : "shared";
+        _logger.Information(
+            "Vulkan",
+            $"Queues: graphics family {queues.Graphics.Family}, async compute {compute}, transfer {transfer}.");
+
+        string tracing = capabilities.HardwareRayTracing
+            ? capabilities.RayTracingPipeline ? "ray query and ray-tracing pipeline" : "ray query only"
+            : "unavailable";
+        _logger.Information(
+            "Vulkan",
+            $"Hardware ray tracing: {tracing}. Bindless descriptor buffer: " +
+            $"{(capabilities.DescriptorBuffer ? "available" : "unavailable")}. " +
+            $"Synchronisation 2: {(capabilities.Synchronization2 ? "available" : "unavailable")}. " +
+            $"Timeline semaphores: {(capabilities.TimelineSemaphore ? "available" : "unavailable")}.");
+    }
+
+    private PhysicalDeviceSelection? Evaluate(PhysicalDevice device)
+    {
+        HashSet<string> available = ReadDeviceExtensions(device);
+        foreach (string required in RequiredExtensions)
+        {
+            if (!available.Contains(required))
+            {
+                return null;
+            }
+        }
+
+        _vk.GetPhysicalDeviceProperties(device, out PhysicalDeviceProperties properties);
+
+        if (!TryPlanQueues(device, out VulkanQueuePlan? queues))
+        {
+            return null;
+        }
+
+        VulkanDeviceCapabilities capabilities =
+            VulkanCapabilityProbe.Probe(_vk, device, available, properties.ApiVersion);
+
+        string name = VkString.Read(properties.DeviceName);
+        return new PhysicalDeviceSelection(device, queues, properties, name, capabilities);
+    }
+
+    /// <summary>Works out which queue of which family each kind of work will be submitted to.</summary>
+    /// <remarks>
+    /// <para>
+    /// What matters is independence from the graphics engine, so a family only counts as asynchronous
+    /// compute if it is a <em>different</em> family from the graphics one — a second queue drawn from the
+    /// graphics family is still the same hardware and the work still serialises. A transfer family is
+    /// stricter still: it must carry neither graphics nor compute, which is what identifies a real copy
+    /// engine rather than a general family that happens to accept transfers.
+    /// </para>
+    /// <para>
+    /// Not finding either is normal and not a failure. The slot falls back to the graphics queue, work
+    /// runs in order, and every caller is written the same way regardless.
+    /// </para>
+    /// </remarks>
+    private bool TryPlanQueues(PhysicalDevice device, [NotNullWhen(true)] out VulkanQueuePlan? plan)
+    {
+        plan = null;
+
+        uint count = 0;
+        _vk.GetPhysicalDeviceQueueFamilyProperties(device, &count, null);
+        if (count == 0)
+        {
+            return false;
+        }
+
+        QueueFamilyProperties[] families = new QueueFamilyProperties[count];
+        fixed (QueueFamilyProperties* first = families)
+        {
+            _vk.GetPhysicalDeviceQueueFamilyProperties(device, &count, first);
+        }
+
+        int graphics = -1;
+        int present = -1;
+        int unified = -1;
+
+        for (uint i = 0; i < count; i++)
+        {
+            bool canGraphics = families[i].QueueFlags.HasFlag(QueueFlags.GraphicsBit);
+            bool canPresent = PresentSupported(device, i);
+
+            if (canGraphics && graphics < 0)
+            {
+                graphics = (int)i;
+            }
+
+            if (canPresent && present < 0)
+            {
+                present = (int)i;
+            }
+
+            if (canGraphics && canPresent && unified < 0)
+            {
+                unified = (int)i;
+            }
+        }
+
+        if (graphics < 0 || present < 0)
+        {
+            return false;
+        }
+
+        // Prefer the family that does both, so the common path needs one queue and no cross-family image
+        // sharing on the swapchain.
+        if (unified >= 0)
+        {
+            graphics = unified;
+            present = unified;
+        }
+
+        int asyncCompute = graphics;
+        for (uint i = 0; i < count; i++)
+        {
+            if (i != (uint)graphics && families[i].QueueFlags.HasFlag(QueueFlags.ComputeBit))
+            {
+                asyncCompute = (int)i;
+                break;
+            }
+        }
+
+        int transfer = graphics;
+        for (uint i = 0; i < count; i++)
+        {
+            QueueFlags flags = families[i].QueueFlags;
+            bool dedicated = flags.HasFlag(QueueFlags.TransferBit)
+                && !flags.HasFlag(QueueFlags.GraphicsBit)
+                && !flags.HasFlag(QueueFlags.ComputeBit);
+            if (dedicated && i != (uint)graphics && i != (uint)asyncCompute)
+            {
+                transfer = (int)i;
+                break;
+            }
+        }
+
+        // One queue per family is what the backend uses: a second queue from the same family shares the
+        // hardware, so it buys ordering flexibility rather than parallelism, and it is not needed here.
+        Dictionary<uint, uint> queueCounts = new()
+        {
+            [(uint)graphics] = 1,
+            [(uint)present] = 1,
+            [(uint)asyncCompute] = 1,
+            [(uint)transfer] = 1,
+        };
+
+        plan = new VulkanQueuePlan(
+            new VulkanQueueSlot((uint)graphics, 0),
+            new VulkanQueueSlot((uint)present, 0),
+            new VulkanQueueSlot((uint)asyncCompute, 0),
+            new VulkanQueueSlot((uint)transfer, 0),
+            queueCounts);
+        return true;
+    }
+
+    private bool PresentSupported(PhysicalDevice device, uint queueFamily)
+    {
+        Bool32 supported = false;
+        VkCheck.Ok(
+            _khrSurface.GetPhysicalDeviceSurfaceSupport(device, queueFamily, _surface, &supported),
+            "vkGetPhysicalDeviceSurfaceSupportKHR");
+        return supported;
+    }
+
+    private HashSet<string> ReadDeviceExtensions(PhysicalDevice device)
+    {
+        uint count = 0;
+        if (_vk.EnumerateDeviceExtensionProperties(device, (byte*)null, &count, null) != Result.Success || count == 0)
+        {
+            return [];
+        }
+
+        ExtensionProperties[] properties = new ExtensionProperties[count];
+        HashSet<string> names = new((int)count, StringComparer.Ordinal);
+        fixed (ExtensionProperties* first = properties)
+        {
+            if (_vk.EnumerateDeviceExtensionProperties(device, (byte*)null, &count, first) != Result.Success)
+            {
+                return [];
+            }
+
+            for (uint i = 0; i < count; i++)
+            {
+                names.Add(VkString.Read(first[i].ExtensionName));
+            }
+        }
+
+        return names;
+    }
+}

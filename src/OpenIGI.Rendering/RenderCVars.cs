@@ -253,6 +253,21 @@ public static class RenderCVars
         // the shoulder, its channel means on the reference's) and the outdoor spawn (balanced, not blown).
         ultra: "1.3");
 
+    /// <summary>How bright a single screen-traced ray may come back, before it feeds the next frame.</summary>
+    /// <remarks>
+    /// The screen trace resolves a hit from the previous frame's lit scene, and this frame's indirect is
+    /// built out of what it returns — which then lights the scene the next trace reads. Unbounded, that
+    /// loop does not settle: past a certain gather strength each pass is brighter than the last. The
+    /// reference bounds the same read for the same reason, and calls it the maximum ray intensity.
+    /// </remarks>
+    public static readonly NumericCVar<float> ScreenGatherMaxIntensity = CVar.Float(
+        "r_screen_gi_max",
+        10f,
+        0.1f,
+        1000f,
+        CVarOptions.Archive,
+        "Ceiling on a single screen-traced ray's radiance; stops the gather feeding itself.");
+
     /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
     /// <remarks>
     /// Zero is off, which is every preset below ultra: above zero, the gather traces the surface cache per

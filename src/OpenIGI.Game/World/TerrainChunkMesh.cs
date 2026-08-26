@@ -155,12 +155,97 @@ public static class TerrainChunkMesh
                     indices[indexBase + i] = (ushort)(triangles[i] + vertexBase);
                 }
 
+                FillSurfaceNormals(vertices, triangles, vertexBase);
+
                 layers.Add(new TerrainChunkLayer(materialId, projection.Tile, indexBase, triangles.Length, isBase && !isDetail, isDetail));
                 layerIndex++;
             }
         }
 
         return new TerrainChunkGeometry(vertices, indices, [.. layers]);
+    }
+
+    /// <summary>Gives a layer's vertices a shading normal taken from the surface they describe.</summary>
+    /// <param name="vertices">Every vertex of the chunk; only this layer's slice is touched.</param>
+    /// <param name="triangles">The layer's triangles, as vertex indices within the layer.</param>
+    /// <param name="vertexBase">The slot this layer's vertices start at.</param>
+    /// <remarks>
+    /// <para>
+    /// The terrain has no normal to give: the channel a mesh keeps one in carries the offset to where the
+    /// vertex sits at the next level of detail, and the one beside it the texture offset that goes with
+    /// it. A renderer that lights the ground with that offset gets a chequerboard — the offset swings
+    /// smoothly from pointing up to pointing sideways across a chunk, and a surface lit by the cosine of
+    /// its angle to the sun turns a smooth swing into a hard edge.
+    /// </para>
+    /// <para>
+    /// So the normal comes from the surface itself: the sum of the facing of every triangle meeting a
+    /// vertex, weighted by area because a cross product's length is twice its triangle's. That is smooth
+    /// across the chunk, where a normal taken per triangle in the pixel shader would be flat, and flat
+    /// over triangles this size keeps the very patchwork it was meant to remove.
+    /// </para>
+    /// <para>
+    /// Every normal is turned to face upwards. The ground is a heightfield, so none of them legitimately
+    /// points down, and the winding these triangles arrive with is not dependable.
+    /// </para>
+    /// </remarks>
+    private static void FillSurfaceNormals(Vertex3D[] vertices, ReadOnlySpan<ushort> triangles, int vertexBase)
+    {
+        int count = 0;
+        for (int i = 0; i < triangles.Length; i++)
+        {
+            count = Math.Max(count, triangles[i] + 1);
+        }
+
+        if (count <= 0)
+        {
+            return;
+        }
+
+        Span<Vector3f> normals = count <= 128 ? stackalloc Vector3f[count] : new Vector3f[count];
+        normals.Clear();
+
+        for (int i = 0; i + 2 < triangles.Length; i += 3)
+        {
+            int a = triangles[i];
+            int b = triangles[i + 1];
+            int c = triangles[i + 2];
+
+            Vector3f pa = vertices[vertexBase + a].Position;
+            Vector3f pb = vertices[vertexBase + b].Position;
+            Vector3f pc = vertices[vertexBase + c].Position;
+
+            float ux = pb.X - pa.X, uy = pb.Y - pa.Y, uz = pb.Z - pa.Z;
+            float vx = pc.X - pa.X, vy = pc.Y - pa.Y, vz = pc.Z - pa.Z;
+
+            float nx = (uy * vz) - (uz * vy);
+            float ny = (uz * vx) - (ux * vz);
+            float nz = (ux * vy) - (uy * vx);
+
+            if (nz < 0f)
+            {
+                nx = -nx;
+                ny = -ny;
+                nz = -nz;
+            }
+
+            normals[a] = new Vector3f(normals[a].X + nx, normals[a].Y + ny, normals[a].Z + nz);
+            normals[b] = new Vector3f(normals[b].X + nx, normals[b].Y + ny, normals[b].Z + nz);
+            normals[c] = new Vector3f(normals[c].X + nx, normals[c].Y + ny, normals[c].Z + nz);
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            Vertex3D vertex = vertices[vertexBase + i];
+            vertices[vertexBase + i] = new Vertex3D(
+                vertex.Position,
+                vertex.Normal,
+                vertex.DiffuseU,
+                vertex.DiffuseV,
+                vertex.LightmapU,
+                vertex.LightmapV,
+                vertex.Colour,
+                Vertex3D.PackSurfaceNormal(normals[i]));
+        }
     }
 
     /// <summary>Builds one vertex's texture coordinate from its pass's projection.</summary>

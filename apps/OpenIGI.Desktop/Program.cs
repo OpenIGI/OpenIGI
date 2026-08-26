@@ -7,12 +7,20 @@ using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.OpenGL;
+using OpenIGI.Rendering.Vulkan;
 using Silk.NET.OpenGL;
+
+// The backend is chosen with a bare -vulkan flag (or OPENIGI_BACKEND=vulkan), kept out of the option
+// parser so its grammar is untouched. OpenGL stays the default.
+bool useVulkan = args.Any(a => a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase))
+    || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BACKEND"), "vulkan", StringComparison.OrdinalIgnoreCase);
+GraphicsBackend backend = useVulkan ? GraphicsBackend.Vulkan : GraphicsBackend.OpenGL;
 
 DesktopOptions options;
 try
 {
-    options = DesktopOptions.Parse(args);
+    options = DesktopOptions.Parse(
+        args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
 catch (ArgumentException ex)
 {
@@ -87,7 +95,8 @@ WindowSettings settings = new(
     Height: options.Height,
     Mode: options.Mode,
     CursorVisible: false,
-    VSync: options.VSync);
+    VSync: options.VSync,
+    Backend: backend);
 
 SilkGameWindow window;
 try
@@ -112,15 +121,33 @@ using (window)
 {
     DisplayReport.Report(window, options, logger);
 
-    GL gl = GL.GetApi(window.GLContext);
-
     int width = window.Width > 0 ? window.Width : options.Width > 0 ? options.Width : 640;
     int height = window.Height > 0 ? window.Height : options.Height > 0 ? options.Height : 480;
-    using GLGraphicsDevice device = new(
-        gl,
-        new DisplayMode(width, height, 32, window.RefreshRate),
-        window.SwapBuffers,
-        logger);
+    DisplayMode displayMode = new(width, height, 32, window.RefreshRate);
+
+    // The Vulkan device presents through its own swapchain, so it takes the window's surface rather than
+    // a GL context and no present callback; the OpenGL device keeps the context-and-swap path unchanged.
+    bool vulkanValidation = string.Equals(
+        Environment.GetEnvironmentVariable("OPENIGI_VK_VALIDATION"),
+        "1",
+        StringComparison.Ordinal);
+    // The deferred, HDR renderer -- the G-buffer, cascaded shadows and the GI passes -- is the modern
+    // path; the direct renderer is the vanilla fallback. It is on by default and chosen per preset by the
+    // r_hdr/r_deferred cvars (BeginSceneCapture declines it where a preset does not ask for it), so vanilla
+    // still draws direct. OPENIGI_VK_DEFERRED=0 forces the direct path for debugging.
+    bool vulkanDeferred = !string.Equals(
+        Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
+        "0",
+        StringComparison.Ordinal);
+    using IGraphicsDevice device = window.IsVulkan
+        ? new VulkanGraphicsDevice(
+            new VulkanSurfaceProvider(window.VkSurface!),
+            displayMode,
+            vulkanValidation,
+            vulkanDeferred,
+            options.ScreenshotPath is not null,
+            logger)
+        : new GLGraphicsDevice(GL.GetApi(window.GLContext), displayMode, window.SwapBuffers, logger);
 
     using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);
     return game.Run();

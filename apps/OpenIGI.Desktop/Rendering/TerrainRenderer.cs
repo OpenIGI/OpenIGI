@@ -827,6 +827,7 @@ public sealed class TerrainRenderer : IDisposable
         private const int MinimumIndexCapacity = 12288;
 
         private readonly List<Vertex3D> _vertices = [];
+
         private readonly List<ushort> _indices = [];
         private readonly List<VisibleDraw> _visible = [];
         private readonly List<MeshDrawRange> _visibleRanges = [];
@@ -937,7 +938,8 @@ public sealed class TerrainRenderer : IDisposable
                     vertex.DiffuseV,
                     vertex.LightmapU,
                     vertex.LightmapV,
-                    vertex.Colour));
+                    vertex.Colour,
+                    vertex.SurfaceNormal));
             }
 
             foreach (ushort index in indices)

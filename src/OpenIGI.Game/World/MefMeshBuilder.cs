@@ -80,6 +80,12 @@ public static class MefMeshBuilder
     }
 
     /// <summary>Makes every triangle wind to agree with its vertices' own normals, so a front face exists.</summary>
+    /// <remarks>
+    /// Public because it is not only this builder's business: anything that assembles world geometry from a
+    /// model's raw draw records has the same unwound triangles and must be repaired the same way, or back
+    /// face culling removes it. Spline segments are bent into shape rather than built here, and were the
+    /// case that proved it.
+    /// </remarks>
     /// <param name="vertices">The mesh's vertices, whose normals point out of the surface.</param>
     /// <param name="indices">The triangle-list indices, rewound in place.</param>
     /// <remarks>
@@ -92,7 +98,7 @@ public static class MefMeshBuilder
     /// is what stops a thin object's two coincident faces from fighting over the same pixel, and halves the
     /// indoor fill besides. A degenerate triangle, whose cross product is near zero, is left as it is.
     /// </remarks>
-    private static void RepairWinding(Vertex3D[] vertices, ushort[] indices)
+    public static void RepairWinding(Vertex3D[] vertices, ushort[] indices)
     {
         for (int t = 0; t + 2 < indices.Length; t += 3)
         {

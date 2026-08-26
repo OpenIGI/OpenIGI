@@ -56,7 +56,7 @@ internal sealed partial class DesktopGame : IDisposable
     // --- Environment, supplied by the composition root ---
     private readonly DesktopPlatformHost _platform;
     private readonly SilkGameWindow _window;
-    private readonly GLGraphicsDevice _device;
+    private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
     private readonly DesktopOptions _options;
     private readonly string _gamePath;
@@ -332,7 +332,7 @@ internal sealed partial class DesktopGame : IDisposable
     public DesktopGame(
         DesktopPlatformHost platform,
         SilkGameWindow window,
-        GLGraphicsDevice device,
+        IGraphicsDevice device,
         VirtualFileSystem fileSystem,
         DesktopOptions options,
         string gamePath,
@@ -3068,7 +3068,13 @@ internal sealed partial class DesktopGame : IDisposable
                     // it produced one the file held the UNSHADOWED load-time pass while looking exactly
                     // like the shadowed one. That is how a probe came back reporting nothing at all.
                     bool wantDump = !cardLightingDumped
-                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 };
+                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 }
+
+                        // Not the first qualifying frame. On a backend that records a frame's compute and
+                        // submits it at the end, a readback taken on the same frame as the dispatches sees
+                        // the atlas as it was before them -- which reads exactly like a bounce that
+                        // produced nothing, and cost a long detour to tell apart from one.
+                        && _cardBounceFrame >= 8;
 
                     if (_cardLighting is { } litCards)
                     {
@@ -3277,7 +3283,12 @@ internal sealed partial class DesktopGame : IDisposable
                         // fill: the fog was calibrated against this value and boosting it whites the frame
                         // out. Kept independent of r_ambient_scale so the haze does not collapse when the
                         // flat ambient is dialled to zero to watch the GI carry the surfaces.
-                        light.Ambient));
+                        light.Ambient,
+
+                        // How brightly the sky lights the world, for a backend that models the sky as a
+                        // real light source rather than folding it into the flat ambient. Same dial that
+                        // scaled the flat stand-in, now driving the thing it stood in for.
+                        RenderCVars.SkyLight.Value));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
@@ -3654,7 +3665,12 @@ internal sealed partial class DesktopGame : IDisposable
                             intensity);
                     }
 
-                    _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    // Local deferred lights are an OpenGL-backend extra outside the graphics seam; the
+                    // Vulkan backend reports no scene capture, so this path is not reached on it.
+                    if (_device is GLGraphicsDevice localLightDevice)
+                    {
+                        localLightDevice.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                    }
                 }
 
                 if (mapScene is not null)

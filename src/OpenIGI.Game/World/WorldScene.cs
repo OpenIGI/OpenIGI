@@ -888,6 +888,12 @@ public sealed class WorldScene
             subsets.Add(new MeshSubset(start, run.Length, record.MaterialSlot, record.LightmapPage));
         }
 
+        // The same repair the ordinary mesh builder makes, and for the same reason: a model's flattened
+        // draw order does not wind uniformly, and the world pass culls back faces. Without it a bent
+        // segment keeps whichever facing it was authored with and half of it is removed -- which is what
+        // hid the railway at the one preset that culls, while every other preset drew it.
+        MefMeshBuilder.RepairWinding(vertices, indices);
+
         return new MeshGeometry(vertices, indices, [.. subsets]);
     }
 

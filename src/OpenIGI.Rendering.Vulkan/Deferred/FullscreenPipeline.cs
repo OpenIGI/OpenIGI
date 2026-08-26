@@ -1,0 +1,228 @@
+using OpenIGI.Rendering;
+using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Shaders;
+using Silk.NET.Core.Native;
+using Silk.NET.Vulkan;
+
+namespace OpenIGI.Rendering.Vulkan.Deferred;
+
+/// <summary>
+/// A pipeline that draws a single full-screen triangle — the shape both the deferred lighting and the
+/// resolve take: one descriptor set, a small push constant, no vertex input, no depth.
+/// </summary>
+/// <remarks>
+/// The triangle is generated from the vertex index, so there is no vertex buffer to bind; the draw is a
+/// three-vertex <c>vkCmdDraw</c>. The lighting instance reads the G-buffer as input attachments and the
+/// resolve instance samples the lit scene — the only difference is the descriptor layout and the
+/// fragment shader handed in.
+/// </remarks>
+internal sealed unsafe class FullscreenPipeline : IDisposable
+{
+    private readonly Vk _vk;
+    private readonly Device _device;
+    private readonly VulkanShaderModule _vertex;
+    private readonly VulkanShaderModule _fragment;
+    private bool _disposed;
+
+    /// <summary>Initialises a new instance of the <see cref="FullscreenPipeline"/> class.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pipeline lives on.</param>
+    /// <param name="compiler">The shader compiler.</param>
+    /// <param name="fragmentSource">The fragment shader source.</param>
+    /// <param name="name">A name for the shaders, used in diagnostics.</param>
+    /// <param name="descriptorSetLayout">The single descriptor set the shader reads.</param>
+    /// <param name="pushConstantSize">The push constant size in bytes, or zero for none.</param>
+    /// <param name="renderPass">The render pass the pipeline is compatible with.</param>
+    /// <param name="subpass">The subpass index within that render pass.</param>
+    /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
+    public FullscreenPipeline(
+        Vk vk,
+        VulkanDevice device,
+        ShaderCompiler compiler,
+        string fragmentSource,
+        string name,
+        DescriptorSetLayout descriptorSetLayout,
+        uint pushConstantSize,
+        RenderPass renderPass,
+        uint subpass)
+    {
+        ArgumentNullException.ThrowIfNull(vk);
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(compiler);
+        _vk = vk;
+        _device = device.Device;
+
+        _vertex = new VulkanShaderModule(
+            vk,
+            _device,
+            compiler.Compile(DeferredShaderSource.FullscreenVertex, ShaderStage.Vertex, "fullscreen.vert"),
+            ShaderStage.Vertex);
+        _fragment = new VulkanShaderModule(
+            vk,
+            _device,
+            compiler.Compile(fragmentSource, ShaderStage.Fragment, name),
+            ShaderStage.Fragment);
+
+        PipelineLayout = CreatePipelineLayout(descriptorSetLayout, pushConstantSize);
+        Pipeline = CreatePipeline(renderPass, subpass);
+    }
+
+    /// <summary>Gets the pipeline.</summary>
+    public Pipeline Pipeline { get; }
+
+    /// <summary>Gets the pipeline layout.</summary>
+    public PipelineLayout PipelineLayout { get; }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _vk.DestroyPipeline(_device, Pipeline, null);
+        _vk.DestroyPipelineLayout(_device, PipelineLayout, null);
+        _fragment.Dispose();
+        _vertex.Dispose();
+    }
+
+    private PipelineLayout CreatePipelineLayout(DescriptorSetLayout setLayout, uint pushConstantSize)
+    {
+        PushConstantRange push = new()
+        {
+            StageFlags = ShaderStageFlags.FragmentBit,
+            Offset = 0,
+            Size = pushConstantSize,
+        };
+
+        PipelineLayoutCreateInfo createInfo = new()
+        {
+            SType = StructureType.PipelineLayoutCreateInfo,
+            SetLayoutCount = 1,
+            PSetLayouts = &setLayout,
+            PushConstantRangeCount = pushConstantSize > 0 ? 1u : 0u,
+            PPushConstantRanges = pushConstantSize > 0 ? &push : null,
+        };
+
+        PipelineLayout layout;
+        VkCheck.Ok(_vk.CreatePipelineLayout(_device, &createInfo, null, &layout), "vkCreatePipelineLayout (fullscreen)");
+        return layout;
+    }
+
+    private Pipeline CreatePipeline(RenderPass renderPass, uint subpass)
+    {
+        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        try
+        {
+            PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
+            stages[0] = new PipelineShaderStageCreateInfo
+            {
+                SType = StructureType.PipelineShaderStageCreateInfo,
+                Stage = ShaderStageFlags.VertexBit,
+                Module = _vertex.Handle,
+                PName = (byte*)entryPoint,
+            };
+            stages[1] = new PipelineShaderStageCreateInfo
+            {
+                SType = StructureType.PipelineShaderStageCreateInfo,
+                Stage = ShaderStageFlags.FragmentBit,
+                Module = _fragment.Handle,
+                PName = (byte*)entryPoint,
+            };
+
+            PipelineVertexInputStateCreateInfo vertexInput = new()
+            {
+                SType = StructureType.PipelineVertexInputStateCreateInfo,
+            };
+
+            PipelineInputAssemblyStateCreateInfo inputAssembly = new()
+            {
+                SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+                Topology = PrimitiveTopology.TriangleList,
+            };
+
+            PipelineViewportStateCreateInfo viewport = new()
+            {
+                SType = StructureType.PipelineViewportStateCreateInfo,
+                ViewportCount = 1,
+                ScissorCount = 1,
+            };
+
+            PipelineRasterizationStateCreateInfo rasterization = new()
+            {
+                SType = StructureType.PipelineRasterizationStateCreateInfo,
+                PolygonMode = PolygonMode.Fill,
+                CullMode = CullModeFlags.None,
+                FrontFace = FrontFace.CounterClockwise,
+                LineWidth = 1.0f,
+            };
+
+            PipelineMultisampleStateCreateInfo multisample = new()
+            {
+                SType = StructureType.PipelineMultisampleStateCreateInfo,
+                RasterizationSamples = SampleCountFlags.Count1Bit,
+            };
+
+            // A full-screen pass neither tests nor writes depth, but a subpass it draws into can still own
+            // a depth attachment — the resolve's present pass does — so the state must be supplied, disabled,
+            // rather than left null.
+            PipelineDepthStencilStateCreateInfo depthStencil = new()
+            {
+                SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                DepthTestEnable = false,
+                DepthWriteEnable = false,
+                DepthCompareOp = CompareOp.Always,
+                DepthBoundsTestEnable = false,
+                StencilTestEnable = false,
+            };
+
+            const ColorComponentFlags writeAll = ColorComponentFlags.RBit | ColorComponentFlags.GBit
+                | ColorComponentFlags.BBit | ColorComponentFlags.ABit;
+            PipelineColorBlendAttachmentState blendAttachment = new() { ColorWriteMask = writeAll, BlendEnable = false };
+            PipelineColorBlendStateCreateInfo colorBlend = new()
+            {
+                SType = StructureType.PipelineColorBlendStateCreateInfo,
+                AttachmentCount = 1,
+                PAttachments = &blendAttachment,
+            };
+
+            DynamicState* dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
+            PipelineDynamicStateCreateInfo dynamic = new()
+            {
+                SType = StructureType.PipelineDynamicStateCreateInfo,
+                DynamicStateCount = 2,
+                PDynamicStates = dynamicStates,
+            };
+
+            GraphicsPipelineCreateInfo createInfo = new()
+            {
+                SType = StructureType.GraphicsPipelineCreateInfo,
+                StageCount = 2,
+                PStages = stages,
+                PVertexInputState = &vertexInput,
+                PInputAssemblyState = &inputAssembly,
+                PViewportState = &viewport,
+                PRasterizationState = &rasterization,
+                PMultisampleState = &multisample,
+                PDepthStencilState = &depthStencil,
+                PColorBlendState = &colorBlend,
+                PDynamicState = &dynamic,
+                Layout = PipelineLayout,
+                RenderPass = renderPass,
+                Subpass = subpass,
+            };
+
+            Pipeline pipeline;
+            VkCheck.Ok(
+                _vk.CreateGraphicsPipelines(_device, default, 1, &createInfo, null, &pipeline),
+                "vkCreateGraphicsPipelines (fullscreen)");
+            return pipeline;
+        }
+        finally
+        {
+            SilkMarshal.Free(entryPoint);
+        }
+    }
+}

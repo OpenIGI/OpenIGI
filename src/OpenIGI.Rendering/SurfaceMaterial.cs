@@ -27,10 +27,13 @@ namespace OpenIGI.Rendering;
 /// How much light the surface gives off on its own, as a multiple of its albedo. Lamps and screens.
 /// </param>
 /// <param name="CastsOcclusion">
-/// Whether this surface takes part in the ambient occlusion, as an occluder and as a receiver. False
-/// for the surfaces a depth buffer cannot describe: it records where a surface starts and never where
-/// it ends, so the horizon search treats anything thin as reaching to infinity and darkens whatever
-/// stands behind it. Soldiers and wire fences are the two that matter.
+/// Whether this surface is a solid occluder of light. False for the thin and cut-out surfaces neither
+/// a depth buffer nor an opaque ray can describe honestly: a depth buffer records where a surface
+/// starts and never where it ends, so the horizon search treats anything thin as reaching to infinity
+/// and darkens whatever stands behind it; an opaque triangle in a ray-tracing structure blocks a
+/// shadow or gather ray whole, with no per-texel alpha test to let the light through a pane of glass or
+/// between the wires of a fence. So the flag gates both the ambient occlusion and the traceable world.
+/// Glass, wire fences, foliage and soldiers are the ones that matter.
 /// </param>
 /// <param name="NoHistory">
 /// Whether the temporal resolve must not blend history onto this surface this frame. For the draws
