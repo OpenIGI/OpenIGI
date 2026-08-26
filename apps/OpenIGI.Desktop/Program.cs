@@ -10,17 +10,28 @@ using OpenIGI.Rendering.OpenGL;
 using OpenIGI.Rendering.Vulkan;
 using Silk.NET.OpenGL;
 
-// The backend is chosen with a bare -vulkan flag (or OPENIGI_BACKEND=vulkan), kept out of the option
-// parser so its grammar is untouched. OpenGL stays the default.
-bool useVulkan = args.Any(a => a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase))
-    || string.Equals(Environment.GetEnvironmentVariable("OPENIGI_BACKEND"), "vulkan", StringComparison.OrdinalIgnoreCase);
-GraphicsBackend backend = useVulkan ? GraphicsBackend.Vulkan : GraphicsBackend.OpenGL;
+// The backend is chosen with a bare -opengl or -vulkan flag (or OPENIGI_BACKEND), kept out of the
+// option parser so its grammar is untouched. Vulkan is the default: it is the path the deferred and
+// ray-traced work is built on, and -opengl is the way back to the legacy renderer. An explicit flag
+// wins over the environment variable, so a shell that exports one can still be overridden per run.
+bool wantsOpenGL = args.Any(a => a.Equals("-opengl", StringComparison.OrdinalIgnoreCase));
+bool wantsVulkan = args.Any(a => a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase));
+if (!wantsOpenGL && !wantsVulkan)
+{
+    string? requested = Environment.GetEnvironmentVariable("OPENIGI_BACKEND");
+    wantsOpenGL = string.Equals(requested, "opengl", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(requested, "gl", StringComparison.OrdinalIgnoreCase);
+}
+
+GraphicsBackend backend = wantsOpenGL ? GraphicsBackend.OpenGL : GraphicsBackend.Vulkan;
 
 DesktopOptions options;
 try
 {
     options = DesktopOptions.Parse(
-        args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
+        args.Where(a =>
+            !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)
+            && !a.Equals("-opengl", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
 catch (ArgumentException ex)
 {
