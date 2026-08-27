@@ -364,6 +364,43 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.UpscaleHistoryMetadataImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // What this frame's shading makes of the history, before the history is touched. It reprojects
+        // the previous frame's guide, so it has to run while that image still holds it.
+        bool shadingRejected = false;
+        if (previousUsable)
+        {
+            OcclusionBarrier(
+                cmd, target.ShadingRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+            OcclusionBarrier(
+                cmd, previous.GuideImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+            OcclusionBarrier(
+                cmd, target.GuideImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+            _deferred.RejectShading.Record(
+                cmd,
+                _frameLoop.CurrentFrame,
+                target.LitView,
+                _velocityDilated ? target.DilatedVelocityView : target.VelocityView,
+                previous.GuideView,
+                target.HistoryRejectionView,
+                target.ShadingRejectionView,
+                target.GuideView,
+                _captureWidth,
+                _captureHeight,
+                _lastAdaptedExposure,
+                1f / 16f,
+                _historyDecimated);
+
+            OcclusionBarrier(
+                cmd, target.ShadingRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+            shadingRejected = true;
+        }
+
         // Thin geometry, before anything reads the rejection. A hardware rasteriser draws a triangle
         // only where it covers a pixel's centre, so a wire narrower than a pixel blinks in and out with
         // the jitter -- which is the distant fence crawling, and then fading. This finds those one-pixel
@@ -423,6 +460,8 @@ public sealed partial class VulkanGraphicsDevice
             _historyDecimated,
             target.SpatialAaView,
             hasSpatialAa: true,
+            target.ShadingRejectionView,
+            shadingRejected,
             _captureWidth,
             _captureHeight,
             Deferred.SceneTarget.HistoryScale,

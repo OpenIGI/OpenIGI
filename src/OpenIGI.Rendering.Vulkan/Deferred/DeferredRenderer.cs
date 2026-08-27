@@ -44,6 +44,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly Tsr.UpdateHistoryPass _updateHistory;
     private readonly Tsr.SpatialAntiAliasingPass _spatialAntiAliasing;
     private readonly Tsr.ThinGeometryPass _thinGeometry;
+    private readonly Tsr.RejectShadingPass _rejectShading;
     private readonly Tsr.ResolveHistoryPass _resolveHistory;
     private readonly Sky.SkyAtmosphere _sky;
     private bool _disposed;
@@ -92,6 +93,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _spatialAntiAliasing = new Tsr.SpatialAntiAliasingPass(vk, device, allocator, compiler, framesInFlight);
         _thinGeometry = new Tsr.ThinGeometryPass(vk, device, allocator, compiler, framesInFlight);
+        _rejectShading = new Tsr.RejectShadingPass(vk, device, allocator, compiler, framesInFlight);
         _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
         _autoExposure = new AutoExposurePass(vk, device, allocator, commands, compiler, framesInFlight);
@@ -210,6 +212,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that keeps the history alive on geometry one pixel wide.</summary>
     public Tsr.ThinGeometryPass ThinGeometry => _thinGeometry;
 
+    /// <summary>Gets the pass that decides how much of the history this frame's shading still allows.</summary>
+    public Tsr.RejectShadingPass RejectShading => _rejectShading;
+
     /// <summary>Gets the pass that filters the history back down to the frame's own size.</summary>
     public Tsr.ResolveHistoryPass ResolveHistory => _resolveHistory;
 
@@ -296,6 +301,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _sunShadowDenoise?.Dispose();
         _spatialAntiAliasing.Dispose();
         _thinGeometry.Dispose();
+        _rejectShading.Dispose();
         _dilateVelocity.Dispose();
         _decimateHistory.Dispose();
         _updateHistory.Dispose();
