@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -35,7 +35,8 @@ public sealed partial class VulkanGraphicsDevice
                 nameof(pixels));
         }
 
-        VulkanTexture texture = new(_instance.Vk, _device, _allocator, _commands, description, pixels, _maxAnisotropy);
+        VulkanTexture texture = new(
+            _instance.Vk, _device, _allocator, _commands, description, pixels, _maxAnisotropy, TextureMipLodBias());
         uint id = _nextTextureId++;
         _textures[id] = texture;
         return new TextureHandle(id);

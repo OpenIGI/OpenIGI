@@ -88,6 +88,27 @@ public sealed partial class VulkanGraphicsDevice
 
     private float _maxAnisotropy = 1f;
 
+    /// <summary>How far to bias every mipped sampler's level-of-detail choice, negative for sharper.</summary>
+    /// <remarks>
+    /// <para>
+    /// The reference's automatic view mip bias, and it exists for a specific reason: a temporal filter
+    /// sees a different sub-pixel offset each frame and averages them, so it recovers detail that the
+    /// level-of-detail rule assumes has been lost. The rule therefore picks a level coarser than the
+    /// picture can actually resolve, and the world comes out softer than it should.
+    /// </para>
+    /// <para>
+    /// The reference's own formula is
+    /// <c>clamp(max(-max(-log2(resolutionFraction), 0) + offset, min), -4, 4)</c> with an offset of −0.3
+    /// and a floor of −2. At full resolution, which is what this renders at, that reduces to −0.3.
+    /// </para>
+    /// <para>
+    /// Only where a temporal filter actually runs. Applying it without one does not recover anything; it
+    /// just samples above the sampling rate and aliases, which is the artefact mipmaps exist to remove.
+    /// </para>
+    /// </remarks>
+    private static float TextureMipLodBias() =>
+        RenderCVars.TemporalFeedback.Value < 1f ? -0.3f : 0f;
+
     // ---- Deferred effects fed into the lighting (no-op until compute lands) ------------------------
 
     // SetScreenIndirect and SetVolumetricFog are implemented in VulkanGraphicsDevice.Deferred.cs — the

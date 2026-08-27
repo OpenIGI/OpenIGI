@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -36,6 +36,10 @@ internal sealed unsafe class VulkanTexture : IDisposable
     /// <param name="commands">The pool the upload's one-off command comes from.</param>
     /// <param name="description">The texture's size, mip count and sampling.</param>
     /// <param name="pixels">The whole mip chain, largest level first, each level tightly packed.</param>
+    /// <param name="mipLodBias">
+    /// How far to bias the level-of-detail choice, negative for sharper. The reference's automatic view
+    /// mip bias, which exists because its temporal filter recovers detail the rule assumes is gone.
+    /// </param>
     /// <param name="maxAnisotropy">
     /// The sampler's anisotropic ratio; one leaves anisotropy off. Ignored where the device lacks the
     /// feature, and on point-sampled or unmipped textures, which gain nothing from it.
@@ -48,7 +52,8 @@ internal sealed unsafe class VulkanTexture : IDisposable
         VulkanCommands commands,
         in TextureDescription description,
         ReadOnlySpan<Bgra32> pixels,
-        float maxAnisotropy = 1f)
+        float maxAnisotropy = 1f,
+        float mipLodBias = 0f)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -88,7 +93,7 @@ internal sealed unsafe class VulkanTexture : IDisposable
         Upload(device, allocator, commands, description, pixels);
 
         View = CreateView();
-        Sampler = CreateSampler(description, device.SamplerAnisotropy ? maxAnisotropy : 1f);
+        Sampler = CreateSampler(description, device.SamplerAnisotropy ? maxAnisotropy : 1f, mipLodBias);
     }
 
     /// <summary>Gets the image handle.</summary>
@@ -335,7 +340,7 @@ internal sealed unsafe class VulkanTexture : IDisposable
         return view;
     }
 
-    private Sampler CreateSampler(in TextureDescription description, float maxAnisotropy)
+    private Sampler CreateSampler(in TextureDescription description, float maxAnisotropy, float mipLodBias)
     {
         Filter filter = description.Filter == TextureFilter.Point ? Filter.Nearest : Filter.Linear;
         SamplerAddressMode address = description.AddressMode == TextureAddressMode.Repeat
@@ -359,6 +364,14 @@ internal sealed unsafe class VulkanTexture : IDisposable
             AddressModeW = address,
             MinLod = 0,
             MaxLod = MipLevels,
+
+            // The reference's automatic view mip bias. A temporal filter sees a different sub-pixel offset
+            // every frame and averages them, so it recovers detail the level-of-detail rule assumes is
+            // lost -- which means the rule picks a level coarser than the picture can actually resolve,
+            // and the world comes out softer than it should. The reference biases the choice by a third of
+            // a level to compensate, and without it a renderer that has just GAINED mipmaps goes straight
+            // past correct into blurry.
+            MipLodBias = MipLevels > 1 ? mipLodBias : 0f,
             BorderColor = BorderColor.IntOpaqueBlack,
             AnisotropyEnable = anisotropic,
             MaxAnisotropy = anisotropic ? Math.Clamp(maxAnisotropy, 1f, 16f) : 1.0f,
