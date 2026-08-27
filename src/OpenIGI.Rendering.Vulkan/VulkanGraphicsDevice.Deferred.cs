@@ -131,14 +131,22 @@ public sealed partial class VulkanGraphicsDevice
         RefreshSceneTextures();
 
         // Before anything opens a render pass, because these are compute dispatches and a render pass is
-        // the one place they cannot be recorded.
-        RecordSkyUpdate();
-        ApplyPendingProbeVolume();
+        // the one place they cannot be recorded. Timed, because until they were the overlay could report
+        // a frame far shorter than the one being drawn -- these run before every stage the table knew
+        // about, so their cost showed up only in the gap nobody was measuring.
+        {
+            using StageScope setup = Measure(RenderStage.Setup);
+            RecordSkyUpdate();
+            ApplyPendingProbeVolume();
+        }
 
         // The structure a shadow ray traces against, from everything the geometry pass has ever been asked
         // to draw. Recorded here for the same reason the sky is: a build cannot happen inside a render
         // pass, and the lighting subpass that traces against it is inside one.
-        _worldScene?.Record(_frameCommandBuffer, _device.GraphicsQueue);
+        {
+            using StageScope structures = Measure(RenderStage.AccelerationStructure);
+            _worldScene?.Record(_frameCommandBuffer, _device.GraphicsQueue);
+        }
 
         _capturing = true;
         _deferredStage = DeferredStage.None;
@@ -545,6 +553,10 @@ public sealed partial class VulkanGraphicsDevice
         {
             return;
         }
+
+        // The histogram build and its reduction, which the reference runs every frame and so do we. It
+        // had no stage, so the one pass that reads the whole lit image back was invisible on the overlay.
+        using StageScope exposure = Measure(RenderStage.Exposure);
 
         // The shading pass wrote the lit colour and its render pass left it shader-readable for the
         // resolve; this orders that write before the metering's compute read of the same image.
