@@ -392,7 +392,9 @@ public sealed partial class VulkanGraphicsDevice
             _captureHeight,
             _unprojection,
             _historyDecimated,
-            RenderCVars.ThinGeometry.Value);
+            RenderCVars.ThinGeometry.Value,
+            _velocityDilated ? target.DilatedVelocityView : target.VelocityView,
+            hasVelocity: true);
 
         OcclusionBarrier(
             cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
