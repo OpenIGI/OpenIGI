@@ -1,4 +1,4 @@
-﻿using OpenIGI.Rendering;
+using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Pipelines;
@@ -34,6 +34,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly bool _rayQuery;
     private readonly RayTracedShadowPass? _sunShadow;
     private readonly ShadowDenoisePass? _sunShadowDenoise;
+    private readonly ShadowAccumulatePass? _sunShadowAccumulate;
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
@@ -104,6 +105,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             : null;
         _sunShadowDenoise = _rayQuery
             ? new ShadowDenoisePass(vk, device, allocator, compiler, framesInFlight)
+            : null;
+        _sunShadowAccumulate = _rayQuery
+            ? new ShadowAccumulatePass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
@@ -234,6 +238,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that spreads the traced shadow across its penumbra's real width.</summary>
     public ShadowDenoisePass? SunShadowDenoise => _sunShadowDenoise;
 
+    /// <summary>Gets the pass that averages the traced sun shadow over time, if the adapter can trace.</summary>
+    public ShadowAccumulatePass? SunShadowAccumulate => _sunShadowAccumulate;
+
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
 
@@ -299,6 +306,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _bloom.Dispose();
         _motionBlur.Dispose();
         _sunShadowDenoise?.Dispose();
+        _sunShadowAccumulate?.Dispose();
         _spatialAntiAliasing.Dispose();
         _thinGeometry.Dispose();
         _rejectShading.Dispose();

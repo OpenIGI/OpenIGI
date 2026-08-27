@@ -384,6 +384,39 @@ public static class RenderCVars
         high: "0.5357",
         ultra: "0.5357");
 
+    /// <summary>How many frames the traced sun shadow is averaged over before it is turned into light.</summary>
+    /// <remarks>
+    /// <para>
+    /// The trace fires one ray per pixel per frame, so its answer is a coin toss weighted by how much of
+    /// the sun that pixel can see. The spatial reconstruction turns the worst of that into a penumbra, but
+    /// a mask built from eight samples of a binary signal still visibly differs frame to frame — and this
+    /// is what was seen as distant shadows redrawing themselves.
+    /// </para>
+    /// <para>
+    /// Leaving it to the temporal filter downstream does not work, and the reason is circular: shadow
+    /// noise arrives there as a colour that changed, a changed colour reads as a history that no longer
+    /// describes the surface, and rejecting the history is precisely refusing to do the averaging that
+    /// would have removed the noise. So the mask is averaged here, on its own, where nothing has to be
+    /// protected from being blurred — a shadow on static geometry carries no sub-pixel detail.
+    /// </para>
+    /// <para>
+    /// The number is a cap on a running mean rather than a fixed window, so a surface just come into view
+    /// is not held back by frames it never had. One switches the averaging off.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> ShadowAccumulate = Presets.Define(
+        CVar.Float(
+            "r_shadow_accumulate",
+            16f,
+            1f,
+            64f,
+            CVarOptions.Archive,
+            "How many frames the traced sun shadow is averaged over; 1 disables the averaging."),
+        vanilla: "1",
+        enhanced: "8",
+        high: "16",
+        ultra: "16");
+
     /// <summary>How bright a single screen-traced ray may come back, before it feeds the next frame.</summary>
     /// <remarks>
     /// The screen trace resolves a hit from the previous frame's lit scene, and this frame's indirect is

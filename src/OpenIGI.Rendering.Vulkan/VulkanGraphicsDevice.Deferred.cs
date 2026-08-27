@@ -364,6 +364,32 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.UpscaleHistoryMetadataImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // Thin geometry first, because the shading rejection below reads it. A hardware rasteriser draws
+        // a triangle only where it covers a pixel's centre, so a wire narrower than a pixel blinks in and
+        // out with the jitter -- which is the distant fence crawling, and then fading. This finds those
+        // one-pixel runs; the two passes below each use the finding differently, one to stop the
+        // reprojection being called a disocclusion and the other to stop the colour test rejecting a
+        // history the frame simply missed.
+        OcclusionBarrier(
+            cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.ThinGeometry.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.DepthView,
+            target.HistoryRejectionView,
+            target.ThinRelaxedRejectionView,
+            _captureWidth,
+            _captureHeight,
+            _unprojection,
+            _historyDecimated,
+            RenderCVars.ThinGeometry.Value);
+
+        OcclusionBarrier(
+            cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
         // What this frame's shading makes of the history, before the history is touched. It reprojects
         // the previous frame's guide, so it has to run while that image still holds it.
         bool shadingRejected = false;
@@ -388,11 +414,13 @@ public sealed partial class VulkanGraphicsDevice
                 target.HistoryRejectionView,
                 target.ShadingRejectionView,
                 target.GuideView,
+                target.ThinRelaxedRejectionView,
                 _captureWidth,
                 _captureHeight,
                 _lastAdaptedExposure,
                 1f / 16f,
-                _historyDecimated);
+                _historyDecimated,
+                RenderCVars.ThinGeometry.Value);
 
             OcclusionBarrier(
                 cmd, target.ShadingRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
@@ -400,30 +428,6 @@ public sealed partial class VulkanGraphicsDevice
 
             shadingRejected = true;
         }
-
-        // Thin geometry, before anything reads the rejection. A hardware rasteriser draws a triangle
-        // only where it covers a pixel's centre, so a wire narrower than a pixel blinks in and out with
-        // the jitter -- which is the distant fence crawling, and then fading. This finds those one-pixel
-        // runs and lets the history carry them instead of rejecting them as disocclusions.
-        OcclusionBarrier(
-            cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
-            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
-
-        _deferred.ThinGeometry.Record(
-            cmd,
-            _frameLoop.CurrentFrame,
-            target.DepthView,
-            target.HistoryRejectionView,
-            target.ThinRelaxedRejectionView,
-            _captureWidth,
-            _captureHeight,
-            _unprojection,
-            _historyDecimated,
-            RenderCVars.ThinGeometry.Value);
-
-        OcclusionBarrier(
-            cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
-            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
         // The spatial anti-aliaser, before the history update it feeds. It finds where each edge really
         // lies between pixel centres, so a wire thinner than a pixel is sampled from where it is rather
@@ -1271,6 +1275,61 @@ public sealed partial class VulkanGraphicsDevice
             _captureHeight,
             _unprojection,
             RenderCVars.SunAngle.Value);
+
+        // And the temporal half of the same denoiser. Eight spatial samples of a binary signal still
+        // leave a mask that differs every frame, and leaving that to the filter downstream cannot work:
+        // it reaches that filter as a colour that changed, a changed colour reads as a stale history, and
+        // rejecting the history is exactly refusing to average. So the mask is averaged here instead,
+        // before it is ever turned into light.
+        float shadowFrames = RenderCVars.ShadowAccumulate.Value;
+        if (_deferred.SunShadowAccumulate is { } accumulate && shadowFrames > 1f)
+        {
+            Deferred.SceneTarget previousShadow = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+            bool hasShadowHistory = previousShadow.Extent.Width == target.Extent.Width
+                && previousShadow.Extent.Height == target.Extent.Height
+                && previousShadow.ShadowHistoryView.Handle != 0;
+            ImageView previousHistory = hasShadowHistory
+                ? previousShadow.ShadowHistoryView
+                : target.ShadowHistoryView;
+
+            OcclusionBarrier(
+                cmd, target.SunShadowImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+            if (hasShadowHistory)
+            {
+                OcclusionBarrier(
+                    cmd, previousShadow.ShadowHistoryImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                    PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+            }
+
+            OcclusionBarrier(
+                cmd, target.ShadowHistoryImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+            accumulate.Record(
+                cmd,
+                _frameLoop.CurrentFrame,
+                target.DepthView,
+                previousHistory,
+                target.SunShadowView,
+                target.ShadowHistoryView,
+                _captureWidth,
+                _captureHeight,
+                _viewToWorld,
+                _previousViewToWorld,
+                new Vector3f(
+                    _cameraPosition.X - _previousCameraPosition.X,
+                    _cameraPosition.Y - _previousCameraPosition.Y,
+                    _cameraPosition.Z - _previousCameraPosition.Z),
+                _unprojection,
+                _previousUnprojection,
+                shadowFrames,
+                hasShadowHistory);
+
+            OcclusionBarrier(
+                cmd, target.ShadowHistoryImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        }
 
         OcclusionBarrier(
             cmd, target.SunShadowImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
