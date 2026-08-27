@@ -444,6 +444,26 @@ public sealed partial class VulkanGraphicsDevice
                 cmd, target.ShadingRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
                 PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+            // The pessimistic filter of that verdict, once, at this resolution. The history update needs
+            // it per texel and runs at twice this size in each axis, so building it there evaluated a
+            // frame-resolution filter four times over -- and the expensive way, since a min over a
+            // three-by-three of medians reaches across a five-by-five footprint.
+            OcclusionBarrier(
+                cmd, target.RejectionBlendImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+            _deferred.RejectionDilate.Record(
+                cmd,
+                _frameLoop.CurrentFrame,
+                target.ShadingRejectionView,
+                target.RejectionBlendView,
+                _captureWidth,
+                _captureHeight);
+
+            OcclusionBarrier(
+                cmd, target.RejectionBlendImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
             shadingRejected = true;
         }
 
@@ -483,6 +503,7 @@ public sealed partial class VulkanGraphicsDevice
             target.SpatialAaView,
             hasSpatialAa: true,
             target.ShadingRejectionView,
+            target.RejectionBlendView,
             shadingRejected,
             _captureWidth,
             _captureHeight,
