@@ -2869,6 +2869,28 @@ internal sealed partial class DesktopGame : IDisposable
                     eye = _player.SmoothedCamera(tickBlend);
                 }
 
+                // The pose the frame is actually drawn from, whichever camera supplied it, in the form
+                // -campos/-yaw/-pitch take. Without this a viewpoint reached by WALKING to it cannot be
+                // captured: the free camera opens over the middle of the level, so the two modes can only
+                // ever be compared at different places -- which is exactly the confusion that hid a
+                // difference between them.
+                if (_options.LogCamera)
+                {
+                    Vector3f eyeForward = eye.Orientation.Row3;
+                    float eyePitch = MathF.Asin(Math.Clamp(eyeForward.Z, -1f, 1f));
+                    float eyeYaw = MathF.Atan2(eyeForward.X, eyeForward.Y);
+
+                    // Warning rather than Information, which reads wrong and is not: the shell's logger
+                    // is built at Warning, so every Information call in the app is discarded and this
+                    // flag produced no output at all -- the flag existed and did nothing. It is opt-in
+                    // and its whole purpose is to be read, so it has to be emitted at a level that
+                    // survives. The same is true of the older mouse-look line just above.
+                    _logger.Warning(
+                        "Camera",
+                        $"eye {(_playerMode ? "player" : "free")} -campos {eye.Position.X:0.###},{eye.Position.Y:0.###},"
+                            + $"{eye.Position.Z:0.###} -yaw {eyeYaw:0.#####} -pitch {eyePitch:0.#####}");
+                }
+
                 // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
                 // camera the scene would otherwise have used. Not behind the pause menu: the camera the
                 // scene would otherwise have used is the player's own, and orbiting away from where they

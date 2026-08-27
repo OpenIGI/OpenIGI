@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Deferred;
@@ -975,6 +975,14 @@ public sealed partial class VulkanGraphicsDevice
     public void SetFirstPersonGeometry(bool firstPerson)
     {
         ThrowIfDisposed();
+        if (_firstPersonGeometry != firstPerson)
+        {
+            // Ends the foreground depth sliver ClearDepth put the rig into, so the world's own draws --
+            // and, more importantly, the depth the post passes read once this pass closes -- are back on
+            // the full range. See ClearDepth for why the sliver exists instead of a cleared buffer.
+            ApplyForegroundDepthRange(firstPerson);
+        }
+
         _firstPersonGeometry = firstPerson;
     }
 

@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
@@ -336,15 +336,48 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         }
     }
 
+    /// <summary>The depth range the first-person layer is given instead of a cleared depth buffer.</summary>
+    /// <remarks>
+    /// Reverse-Z, so one is the near plane and the whole world sits below this floor: at a tenth of a
+    /// metre near plane, 0.9 is about eleven centimetres, and no world surface is ever that close to the
+    /// eye. Anything drawn inside the sliver therefore wins the GreaterOrEqual test against everything
+    /// the world pass wrote, which is what clearing the depth used to buy, while the parts of the rig
+    /// still occlude each other normally within it.
+    /// </remarks>
+    private const float ForegroundDepthFloor = 0.9f;
+
     /// <inheritdoc/>
     /// <remarks>
+    /// <para>
     /// Clears only the depth attachment to its far value, so a foreground 3D layer keeps its own depth
     /// ordering without comparing against the scene already drawn. Colour and depth state are untouched.
+    /// </para>
+    /// <para>
+    /// <b>Except inside the deferred pass, where clearing would destroy the frame.</b> On this backend the
+    /// depth attachment is not only the pass's own depth test — it is the input every post pass reads once
+    /// the pass ends: the ambient occlusion, the velocity, the whole temporal stack, the motion blur.
+    /// Wiping it left all of them looking at an empty scene containing nothing but the held weapon, which
+    /// is drawn immediately after this call. That made the entire game render differently the moment a
+    /// weapon was in hand: no occlusion, no velocity, and a temporal filter with no parallax to reason
+    /// about, all of it invisible in the free camera because the free camera draws no view model.
+    /// </para>
+    /// <para>
+    /// The contract's intent is a foreground layer no already-drawn wall can cut through, and that is
+    /// honoured a different way here — the layer is given the nearest sliver of the depth range instead
+    /// (see <see cref="ForegroundDepthFloor"/>), which the world can never reach into. The range is put
+    /// back by <c>SetFirstPersonGeometry(false)</c>, which brackets those draws.
+    /// </para>
     /// </remarks>
     public unsafe void ClearDepth()
     {
         ThrowIfDisposed();
-        if (!_presentPassActive && !DeferredPassActive)
+        if (DeferredPassActive)
+        {
+            ApplyForegroundDepthRange(true);
+            return;
+        }
+
+        if (!_presentPassActive)
         {
             return;
         }
@@ -708,6 +741,27 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         };
 
         _instance.Vk.CmdClearAttachments(_frameCommandBuffer, 1, &attachment, 1, &rect);
+    }
+
+    /// <summary>Puts subsequent draws in the foreground depth sliver, or back on the full range.</summary>
+    /// <param name="foreground">Whether the first-person layer is being drawn.</param>
+    internal void ApplyForegroundDepthRange(bool foreground)
+    {
+        if (!DeferredPassActive && !_presentPassActive)
+        {
+            return;
+        }
+
+        Extent2D extent = CurrentExtent;
+        ApplyViewportAndScissor(
+            _frameCommandBuffer,
+            new Viewport(
+                0,
+                0,
+                (int)extent.Width,
+                (int)extent.Height,
+                foreground ? ForegroundDepthFloor : 0.0f,
+                1.0f));
     }
 
     private unsafe void ApplyViewportAndScissor(CommandBuffer commandBuffer, in Viewport viewport)
