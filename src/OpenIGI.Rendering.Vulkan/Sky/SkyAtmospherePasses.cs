@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering.Vulkan.Sky;
+﻿namespace OpenIGI.Rendering.Vulkan.Sky;
 
 /// <summary>The compute shaders that build the atmosphere's lookup tables.</summary>
 /// <remarks>
@@ -55,9 +55,13 @@ internal static class SkyAtmospherePasses
             vec3 worldPos = vec3(0.0, 0.0, viewHeight);
             vec3 worldDir = vec3(0.0, sqrt(max(0.0, 1.0 - (viewZenithCos * viewZenithCos))), viewZenithCos);
 
+            // Ten samples, the reference's transmittance count. Fewer than seem right for an integral
+            // over the whole atmosphere, and correct anyway: the closed-form step integration makes a
+            // short march behave like a long one, and this table is read by everything downstream, so
+            // matching the reference here matters more than being independently more precise.
             ScatteringResult r = IntegrateScatteredLuminance(
                 worldPos, worldDir, vec3(0.0, 0.0, 1.0), vec3(0.0),
-                false, 40.0, false, false);
+                false, 10.0, false, false, false);
 
             imageStore(uTransmittance, px, vec4(EncodeTransmittance(exp(-r.opticalDepth)), 1.0));
         }
@@ -125,12 +129,13 @@ internal static class SkyAtmospherePasses
             // A pure white sun, so the table is a transfer function rather than a lit result — the real
             // sun's colour and brightness are applied wherever it is read.
             const vec3 white = vec3(1.0);
-            const float samples = 20.0;
+            // The reference's multiple-scattering count.
+            const float samples = 15.0;
 
             ScatteringResult r0 = IntegrateScatteredLuminance(
-                worldPos, up, sunDir, white, true, samples, false, false);
+                worldPos, up, sunDir, white, true, samples, false, false, false);
             ScatteringResult r1 = IntegrateScatteredLuminance(
-                worldPos, -up, sunDir, white, true, samples, false, false);
+                worldPos, -up, sunDir, white, true, samples, false, false, false);
 
             const float sphereSolidAngle = 4.0 * kPi;
             const float isotropicPhase = 1.0 / sphereSolidAngle;
@@ -223,6 +228,10 @@ internal static class SkyAtmospherePasses
             vec3 worldDir = vec3(sinZenith * cos(azimuth), sinZenith * sin(azimuth), cosZenith);
             vec3 worldPos = vec3(0.0, 0.0, viewHeight);
 
+            // Variable rate: the count and the step spacing both come from how far this ray runs, which
+            // is what the fixed thirty-two was standing in for. A horizon ray crosses hundreds of
+            // kilometres of which only the first few contain any air, so equal steps put almost every
+            // sample in vacuum -- the count below is ignored when the rate varies.
             ScatteringResult r = IntegrateScatteredLuminance(
                 worldPos,
                 worldDir,
@@ -230,6 +239,7 @@ internal static class SkyAtmospherePasses
                 p.uSunColour.rgb,
                 false,
                 32.0,
+                true,
                 true,
                 true);
 
