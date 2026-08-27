@@ -72,7 +72,7 @@ internal sealed class RayTracedShadowPass : IDisposable
         layout(set = 0, binding = 0) uniform sampler2D uDepth;
         layout(set = 0, binding = 1) uniform sampler2D uNormal;
         layout(set = 0, binding = 2) uniform accelerationStructureEXT uScene;
-        layout(set = 0, binding = 3, r8) uniform writeonly image2D uShadow;
+        layout(set = 0, binding = 3, rg16f) uniform writeonly image2D uShadow;  // visibility, occluder distance
         layout(set = 0, binding = 4) uniform Params
         {
             mat4 uViewToWorld;   // view rotation, camera relative
@@ -157,7 +157,7 @@ internal sealed class RayTracedShadowPass : IDisposable
             // Sky. Nothing there to be shadowed, and the shading pass never asks.
             if (depth <= 0.0)
             {
-                imageStore(uShadow, px, vec4(1.0));
+                imageStore(uShadow, px, vec4(1.0, 0.0, 0.0, 0.0));
                 return;
             }
 
@@ -167,7 +167,7 @@ internal sealed class RayTracedShadowPass : IDisposable
             // Facing away from the sun. The surface shadows itself, and no ray is needed to know it.
             if (dot(normal, sunDirection) <= 0.0)
             {
-                imageStore(uShadow, px, vec4(0.0));
+                imageStore(uShadow, px, vec4(0.0, 0.0, 0.0, 0.0));
                 return;
             }
 
@@ -219,7 +219,12 @@ internal sealed class RayTracedShadowPass : IDisposable
             }
 
             bool hit = rayQueryGetIntersectionTypeEXT(query, true) != gl_RayQueryCommittedIntersectionNoneEXT;
-            imageStore(uShadow, px, vec4(hit ? 0.0 : 1.0));
+
+            // How far the ray got before something stopped it. This is what sets the width of the
+            // penumbra: the sun is a disc, so a caster twice as far from the surface casts an edge twice
+            // as soft, and the filter downstream cannot know how far to spread without it.
+            float hitDistance = hit ? rayQueryGetIntersectionTEXT(query, true) : 0.0;
+            imageStore(uShadow, px, vec4(hit ? 0.0 : 1.0, hitDistance, 0.0, 0.0));
         }
         """;
 

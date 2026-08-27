@@ -1142,7 +1142,7 @@ public sealed partial class VulkanGraphicsDevice
             target.DepthView,
             target.NormalView,
             topLevel.Handle,
-            target.SunShadowView,
+            target.SunShadowRawView,
             _captureWidth,
             _captureHeight,
             _viewToWorld,
@@ -1155,6 +1155,28 @@ public sealed partial class VulkanGraphicsDevice
             // from this through a fract(), and a float large enough to be a frame count has lost the
             // low bits that were the whole point of varying it.
             (float)(_frameCounter % 64UL));
+
+        // The reconstruction, before anything reads the mask. One ray a pixel answers lit or not lit, so
+        // the penumbra arrives as noise that merely averages to the right thing; this spreads each
+        // pixel's answer over the width its own occluder distance says the penumbra actually has. The
+        // reference denoises here too, ahead of its temporal pass rather than instead of it.
+        OcclusionBarrier(
+            cmd, target.SunShadowRawImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.SunShadowImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.SunShadowDenoise?.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.SunShadowRawView,
+            target.DepthView,
+            target.SunShadowView,
+            _captureWidth,
+            _captureHeight,
+            _unprojection,
+            RenderCVars.SunAngle.Value);
 
         OcclusionBarrier(
             cmd, target.SunShadowImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,

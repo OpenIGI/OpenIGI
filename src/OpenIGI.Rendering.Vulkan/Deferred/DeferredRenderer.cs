@@ -33,6 +33,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly ShadowPipeline _shadowPipeline;
     private readonly bool _rayQuery;
     private readonly RayTracedShadowPass? _sunShadow;
+    private readonly ShadowDenoisePass? _sunShadowDenoise;
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
@@ -94,6 +95,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // The sun's shadow, traced between the two render passes. Only where the adapter can trace at all.
         _sunShadow = _rayQuery
             ? new RayTracedShadowPass(vk, device, allocator, compiler, framesInFlight)
+            : null;
+        _sunShadowDenoise = _rayQuery
+            ? new ShadowDenoisePass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
@@ -212,6 +216,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that traces the sun's shadow, or null where the adapter cannot trace.</summary>
     public RayTracedShadowPass? SunShadow => _sunShadow;
 
+    /// <summary>Gets the pass that spreads the traced shadow across its penumbra's real width.</summary>
+    public ShadowDenoisePass? SunShadowDenoise => _sunShadowDenoise;
+
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
 
@@ -276,6 +283,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _velocity.Dispose();
         _bloom.Dispose();
         _motionBlur.Dispose();
+        _sunShadowDenoise?.Dispose();
         _dilateVelocity.Dispose();
         _decimateHistory.Dispose();
         _updateHistory.Dispose();
