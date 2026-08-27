@@ -1888,6 +1888,20 @@ public static class RenderCVars
     /// where the temporal filter runs, so it follows the same presets: off where <see cref="TemporalFeedback"/>
     /// is one, on above it.
     /// </remarks>
+    /// <para>
+    /// <b>Off at every preset now, on two independent grounds.</b> The reference render this port is
+    /// matched against leaves its own dithered opacity mask switched off, so as-is parity says off. And
+    /// measured here it costs more than it buys: still-camera stability goes from 0.390% to 0.483%
+    /// consecutive-frame RMSE and detail from 45.9 to 44.5, because the dither is noise until a temporal
+    /// filter resolves it and ours does not fully resolve it even with the camera stopped. It buys a
+    /// slightly better yard whole-frame figure (12.76% to 12.48%) and that is not worth a quarter more
+    /// shimmer on the exact geometry the shimmer was complained about.
+    /// </para>
+    /// <para>
+    /// It is implemented rather than removed: the value used to be one here and the Vulkan backend
+    /// silently ignored it, which is the failure mode the settings sweep exists to catch. It now does
+    /// what it says, and says off.
+    /// </para>
     public static readonly BoolCVar HashedAlpha = Presets.Define(
         CVar.Bool(
             "r_alpha_hash",
@@ -1896,8 +1910,8 @@ public static class RenderCVars
             "Dither cut-out edges and let the temporal resolve average them, instead of a hard alpha test."),
         vanilla: "0",
         enhanced: "0",
-        high: "1",
-        ultra: "1");
+        high: "0",
+        ultra: "0");
 
     /// <summary>How many samples each fog ray takes, or 0 for no volumetric fog.</summary>
     /// <remarks>The single biggest cost in the pass, and the quality dial.</remarks>

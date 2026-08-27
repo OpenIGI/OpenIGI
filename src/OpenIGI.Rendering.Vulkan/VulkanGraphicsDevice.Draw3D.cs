@@ -439,13 +439,13 @@ public sealed partial class VulkanGraphicsDevice
             data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
             data[19] = _detailFade.Mode;
             data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z; data[23] = 0f;
-            data[24] = 0f; data[25] = 0f; data[26] = 0f; data[27] = 0f;
+            data[24] = 0f; data[25] = 0f; data[26] = 0f; data[27] = _alphaHashSeed;
         }
         else
         {
             data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
             data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32; data[23] = 0f;
-            data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = 0f;
+            data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = _alphaHashSeed;
         }
 
         data[28] = _material.Roughness;

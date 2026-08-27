@@ -574,7 +574,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         // Lighting features whose setters record and return.
         "r_ssr", "r_ssr_intensity", "r_ssr_max_roughness", "r_floor_gloss", "r_material_detail",
-        "r_alpha_hash",
 
         // Volumetric fog: the setter keeps the camera and nothing else.
         "r_fog_density", "r_fog_height", "r_fog_anisotropy", "r_fog_quality", "r_fog_distance",

@@ -56,7 +56,13 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetAlphaHash(float seed) => ThrowIfDisposed();
+    public void SetAlphaHash(float seed)
+    {
+        ThrowIfDisposed();
+        _alphaHashSeed = seed;
+    }
+
+    private float _alphaHashSeed;
 
     /// <inheritdoc/>
     public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail) => ThrowIfDisposed();
