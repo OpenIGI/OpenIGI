@@ -83,6 +83,12 @@ public sealed partial class VulkanGraphicsDevice
     private ScenePass _currentScenePass = ScenePass.None;
     private SceneTarget? _sceneTarget;
 
+    // The exposure the last resolve settled on. The temporal passes run BEFORE the resolve that computes
+    // this frame's, so a pass that needs to judge contrast at display levels -- the spatial anti-aliaser
+    // does, its edge test being a threshold -- reads the previous frame's. Exposure eases over about a
+    // second, so a frame's worth of lag is far below what the threshold can notice.
+    private float _lastAdaptedExposure = 1f;
+
     /// <inheritdoc/>
     public ScenePass CurrentPass => _capturing ? _currentScenePass : ScenePass.None;
 
@@ -358,6 +364,28 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.UpscaleHistoryMetadataImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // The spatial anti-aliaser, before the history update it feeds. It finds where each edge really
+        // lies between pixel centres, so a wire thinner than a pixel is sampled from where it is rather
+        // than being missed or drawn whole depending on which side of the centre it fell.
+        OcclusionBarrier(
+            cmd, target.SpatialAaImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.SpatialAntiAliasing.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LitView,
+            target.HistoryRejectionView,
+            target.SpatialAaView,
+            _captureWidth,
+            _captureHeight,
+            _lastAdaptedExposure,
+            _historyDecimated);
+
+        OcclusionBarrier(
+            cmd, target.SpatialAaImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
         _deferred.UpdateHistory.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -369,6 +397,8 @@ public sealed partial class VulkanGraphicsDevice
             target.UpscaleHistoryMetadataView,
             target.HistoryRejectionView,
             _historyDecimated,
+            target.SpatialAaView,
+            hasSpatialAa: true,
             _captureWidth,
             _captureHeight,
             Deferred.SceneTarget.HistoryScale,
@@ -760,6 +790,7 @@ public sealed partial class VulkanGraphicsDevice
         {
             RecordExposureMetering();
             adaptedExposure = _deferred.AutoExposure.Adapt(_frameLoop.CurrentFrame, 1f / 60f);
+            _lastAdaptedExposure = adaptedExposure;
         }
 
         EnsurePresentPass();

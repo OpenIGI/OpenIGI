@@ -42,6 +42,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly Tsr.DilateVelocityPass _dilateVelocity;
     private readonly Tsr.DecimateHistoryPass _decimateHistory;
     private readonly Tsr.UpdateHistoryPass _updateHistory;
+    private readonly Tsr.SpatialAntiAliasingPass _spatialAntiAliasing;
     private readonly Tsr.ResolveHistoryPass _resolveHistory;
     private readonly Sky.SkyAtmosphere _sky;
     private bool _disposed;
@@ -88,6 +89,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
         _decimateHistory = new Tsr.DecimateHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _updateHistory = new Tsr.UpdateHistoryPass(vk, device, allocator, compiler, framesInFlight);
+        _spatialAntiAliasing = new Tsr.SpatialAntiAliasingPass(vk, device, allocator, compiler, framesInFlight);
         _resolveHistory = new Tsr.ResolveHistoryPass(vk, device, allocator, compiler, framesInFlight);
         _sky = new Sky.SkyAtmosphere(vk, device, allocator, commands, compiler, framesInFlight);
         _autoExposure = new AutoExposurePass(vk, device, allocator, commands, compiler, framesInFlight);
@@ -200,6 +202,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that accumulates the frame into the super-sampled history.</summary>
     public Tsr.UpdateHistoryPass UpdateHistory => _updateHistory;
 
+    /// <summary>Gets the pass that locates each edge between pixel centres for the history update.</summary>
+    public Tsr.SpatialAntiAliasingPass SpatialAntiAliasing => _spatialAntiAliasing;
+
     /// <summary>Gets the pass that filters the history back down to the frame's own size.</summary>
     public Tsr.ResolveHistoryPass ResolveHistory => _resolveHistory;
 
@@ -284,6 +289,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _bloom.Dispose();
         _motionBlur.Dispose();
         _sunShadowDenoise?.Dispose();
+        _spatialAntiAliasing.Dispose();
         _dilateVelocity.Dispose();
         _decimateHistory.Dispose();
         _updateHistory.Dispose();
