@@ -589,7 +589,11 @@ public sealed class TerrainRenderer : IDisposable
         TextureHandle[] handles = new TextureHandle[atlas.Tiles.Count];
         for (int i = 0; i < handles.Length; i++)
         {
-            TextureImage tile = atlas.Tiles[i];
+            // The ground tiles ship with a single level and this backend generates none, so without this
+            // the terrain -- which covers more of the screen than anything else -- was sampled at full
+            // resolution however far away it was. That is what makes distant ground sparkle as the camera
+            // turns, and it is the same gap the world textures had.
+            TextureImage tile = atlas.Tiles[i].WithMipChain();
             try
             {
                 handles[i] = _device.CreateTexture(

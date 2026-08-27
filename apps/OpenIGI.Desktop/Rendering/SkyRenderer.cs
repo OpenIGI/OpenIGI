@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -542,7 +542,9 @@ public sealed class SkyRenderer : IDisposable
                 return TextureHandle.None;
             }
 
-            TextureImage image = TexFile.Load(fileSystem.ReadAllBytes(path));
+            // Mipped for the same reason the world and the ground are: a cloud layer seen edge-on at the
+            // horizon is minified hard, and with one level it sparkles along the whole skyline.
+            TextureImage image = TexFile.Load(fileSystem.ReadAllBytes(path)).WithMipChain();
             return _device.CreateTexture(
                 new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
                 image.Pixels);
