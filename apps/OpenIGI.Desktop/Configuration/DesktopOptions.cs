@@ -86,6 +86,7 @@ public readonly record struct DesktopOptions(
         (double X, double Y, double Z)? cameraEnd = null;
         float? cameraYawEnd = null;
         float? cameraPitchEnd = null;
+        int? flightFrames = null;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
@@ -280,6 +281,17 @@ public readonly record struct DesktopOptions(
             {
                 cameraPitchEnd = ParseNumber(Next(args, ref i, "pitchend"), "pitchend", args);
             }
+            else if (arg.Equals("flightframes", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "flightframes");
+                if (!int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int ff)
+                    || ff <= 0)
+                {
+                    throw new ArgumentException($"-flightframes expects a positive frame count, got '{value}'.", nameof(args));
+                }
+
+                flightFrames = ff;
+            }
             else if (arg.Equals("fov", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "fov");
@@ -460,6 +472,7 @@ public readonly record struct DesktopOptions(
             CameraEnd = cameraEnd,
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
+            FlightFrames = flightFrames,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             VanillaMenu = vanillaMenu,
@@ -536,6 +549,18 @@ public readonly record struct DesktopOptions(
 
     /// <summary>Gets the pitch in radians the flight ends on, or <see langword="null"/> to hold the opening pitch. Set by <c>-pitchend</c>.</summary>
     public float? CameraPitchEnd { get; init; }
+
+    /// <summary>
+    /// Gets how many frames the flight itself takes, or <see langword="null"/> to spread it over the whole
+    /// capture. Set by <c>-flightframes</c>.
+    /// </summary>
+    /// <remarks>
+    /// The frames after it hold the end pose, which is what makes a flight able to come to a stop. That
+    /// matters for ghosting: a temporal filter drags a trail behind moving content, and a trail is only
+    /// measurable once the motion has stopped and the picture is expected to have settled. Comparing a
+    /// held frame against the same pose reached standing still measures exactly the smear and nothing else.
+    /// </remarks>
+    public int? FlightFrames { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether a scripted free-camera flight is asked for — an end pose the opening
@@ -641,6 +666,8 @@ public readonly record struct DesktopOptions(
                            to judge the temporal filters (GI, TAA) in motion. Pair with -frames.
           -yawend <rad>    Yaw the flight ends on. Defaults to the opening yaw (-yaw).
           -pitchend <rad>  Pitch the flight ends on. Defaults to the opening pitch (-pitch).
+          -flightframes N  Finish the flight in N frames and hold the end pose for the rest of the
+                           capture. Defaults to spreading the flight over every frame.
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
           -vanilla         The whole remaster track off: the retail menu system and the original's

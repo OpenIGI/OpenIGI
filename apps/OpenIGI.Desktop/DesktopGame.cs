@@ -2613,9 +2613,12 @@ internal sealed partial class DesktopGame : IDisposable
                         flightStarted = true;
                     }
 
+                    // -flightframes shortens the move without shortening the capture, so the frames past it
+                    // hold the end pose and the flight comes to a stop. The clamp is what holds it.
                     int span = Math.Max(
                         1,
-                        (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames) - 1);
+                        (_options.FlightFrames
+                            ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
                     float t = Math.Clamp((float)flightFrame / span, 0f, 1f);
 
                     Vector3d endPos = _options.CameraEnd is { } e
