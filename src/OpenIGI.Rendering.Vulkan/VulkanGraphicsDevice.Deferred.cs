@@ -891,7 +891,7 @@ public sealed partial class VulkanGraphicsDevice
                 LitReadBarrier(cmd, bloomTarget.LitImage, PipelineStageFlags.ComputeShaderBit);
             }
 
-            _deferred.Bloom.Record(cmd, _frameLoop.CurrentFrame, sceneColour, post.BloomIntensity);
+            _deferred.Bloom.Record(cmd, _frameLoop.CurrentFrame, sceneColour, post.BloomIntensity, post.BloomThreshold);
             bloomRan = true;
         }
 

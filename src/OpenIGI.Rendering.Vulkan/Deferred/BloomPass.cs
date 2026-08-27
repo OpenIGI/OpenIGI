@@ -145,8 +145,12 @@ internal sealed unsafe class BloomPass : IDisposable
     /// <param name="cmd">The command buffer to record into.</param>
     /// <param name="frame">The frame-in-flight index.</param>
     /// <param name="litView">The lit scene the pyramid is built from.</param>
+    /// <param name="threshold">
+    /// The luminance a pixel must pass before it spills, or zero to spill everything. Zero is what the
+    /// reference asks for and what ultra carries; see <see cref="Shaders.BloomShaderSource"/>.
+    /// </param>
     /// <param name="intensity">The reference's bloom intensity.</param>
-    public void Record(CommandBuffer cmd, int frame, ImageView litView, float intensity)
+    public void Record(CommandBuffer cmd, int frame, ImageView litView, float intensity, float threshold)
     {
         Frame state = _frames[frame];
         if (state.Result is null)
@@ -164,7 +168,9 @@ internal sealed unsafe class BloomPass : IDisposable
                 Barrier(cmd, state.Chain[level - 1].Handle, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit);
             }
 
-            ReadOnlySpan<float> data = [w, h, 1f / w, 1f / h, 0f, 0f, 0f, 0f];
+            // Only the top level sees the threshold: every level below it is a blur of the level above,
+            // which has already been cut.
+            ReadOnlySpan<float> data = [w, h, 1f / w, 1f / h, level == 0 ? threshold : 0f, 0f, 0f, 0f];
             _downsample.Record(
                 cmd,
                 (frame * Levels) + level,

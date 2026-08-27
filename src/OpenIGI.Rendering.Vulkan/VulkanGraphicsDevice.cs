@@ -601,7 +601,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private static readonly string[] UnimplementedOnVulkan =
     [
         // The grade, and the post-process effects the reference leaves switched off.
-        "r_bloom_threshold", "r_grain", "r_chromatic", "r_sharpen",
+        "r_grain", "r_chromatic", "r_sharpen",
         "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
         "r_camera_taps", "r_lut",
 

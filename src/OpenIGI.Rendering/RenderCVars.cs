@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Rendering;
@@ -1467,19 +1467,40 @@ public static class RenderCVars
         high: "0.35",
         ultra: "0.2");
 
-    /// <summary>The luminance above which a pixel starts to bloom.</summary>
+    /// <summary>The luminance above which a pixel starts to bloom, or negative to bloom everything.</summary>
+    /// <remarks>
+    /// <para>
+    /// Ultra is negative because the reference render this preset is matched against leaves its own bloom
+    /// threshold at minus one, which in that engine means do not threshold at all: every pixel spills in
+    /// proportion to its brightness rather than only those above a cut. That is also what makes its bloom
+    /// read as lens scatter instead of as a glow that switches on -- a hard cut shows as a contour where a
+    /// surface crosses it.
+    /// </para>
+    /// <para>
+    /// Zero is that "do not threshold" case here rather than the reference's own minus one, because a
+    /// console value beginning with a minus cannot be typed: the argument parser reads it as the next
+    /// option, so `+r_bloom_threshold -1` exits rather than setting anything. A value nobody can type is
+    /// not a control. Zero is unambiguous because a threshold of zero and no threshold at all differ --
+    /// the first still scales dim pixels down towards nothing, the second passes them through.
+    ///
+    /// The lower bound had to open to admit it: the range was 0.1 to 8, which cannot express the case at
+    /// all, so ultra carried 2.47 -- a number the backend ignored, because the bloom chain was written to
+    /// the reference's unthresholded behaviour directly. The value now says what the picture actually
+    /// does, and the cheaper presets keep a real threshold that now reaches it.
+    /// </para>
+    /// </remarks>
     public static readonly NumericCVar<float> BloomThreshold = Presets.Define(
         CVar.Float(
             "r_bloom_threshold",
             1f,
-            0.1f,
+            0f,
             8f,
             CVarOptions.Archive,
-            "The brightness a pixel has to pass before it spills."),
+            "The brightness a pixel has to pass before it spills; 0 spills everything."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
-        ultra: "2.47");
+        ultra: "0");
 
     /// <summary>How far colour is pushed away from mid-grey.</summary>
     /// <remarks>
