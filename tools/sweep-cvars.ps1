@@ -93,9 +93,9 @@ $cases = @(
     @{ Name = 'r_fog_anisotropy';    A = '0';     B = '0.9'   }
     @{ Name = 'r_fog_quality';       A = '16';    B = '128'   }
     @{ Name = 'r_fog_distance';      A = '200';   B = '1200'  }
-    # Swept between two RESOLUTIONS rather than off-vs-on, because off-vs-on passes trivially and hides
-    # the actual defect: the value is honoured as a boolean and ignored as a size.
-    @{ Name = 'r_shadows';           A = '1024';  B = '4096'  }
+    # Swept between two RESOLUTIONS rather than off-vs-on, because off-vs-on passes trivially: what is
+    # worth knowing about a shadow map is whether its SIZE reaches the picture.
+    @{ Name = 'r_shadows';           A = '1024';  B = '4096'  ; Expected = 'the traced sun supersedes the cascade everywhere at ultra, so its resolution moves 0.01% here -- but it moves 3.7% with r_rt 0, and r_rt is a live toggle, so the map must already be at full size when the trace is switched off' }
     @{ Name = 'r_sun_angle';         A = '0';     B = '4'     }
     @{ Name = 'r_ao_intensity';      A = '0';     B = '3'     }
     @{ Name = 'r_gi_bounce';         A = '0';     B = '2'     }

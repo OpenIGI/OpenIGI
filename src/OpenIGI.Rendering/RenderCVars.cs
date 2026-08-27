@@ -823,10 +823,19 @@ public static class RenderCVars
         enhanced: "1024",
         high: "2048",
 
-        // 4096 at ultra. The window mullions cast a fine grid of shadow across the floor, and at 2048 -- with
-        // the cascade's texels spread over a room's worth of world -- each bar's shadow fell across only a few
-        // texels and read as a soft blur. Doubled, the grid comes in crisp, the clean sunlit pattern the
-        // reference draws rather than a smear.
+        // 4096 at ultra, and the reason is NOT the one this comment used to give. It said the window
+        // mullions read as a soft blur at 2048 and came in crisp doubled, which was measured on the
+        // cascaded path and is still true there: with the traced sun off, 1024 against 4096 moves 3.7% of
+        // the frame and 4.5% of the office's sunlit floor patch.
+        //
+        // With the traced sun ON -- which is what ultra runs -- the same comparison moves 0.01% of either
+        // view. The traced shadow supersedes the cascade everywhere it reaches, so its resolution buys
+        // nothing in the picture ultra actually renders, and a reader looking only at the frame would
+        // conclude the setting was inert and the memory wasted.
+        //
+        // It is neither, because r_rt is bound to a key and meant to be toggled in place. The cascade has
+        // to be sitting at full resolution the moment the trace is switched off, and a map resized on that
+        // keystroke would cost a stall and a frame of wrong shadows exactly when the eye is on them.
         ultra: "4096");
 
     /// <summary>How many cascades the shadow distance is split across.</summary>
