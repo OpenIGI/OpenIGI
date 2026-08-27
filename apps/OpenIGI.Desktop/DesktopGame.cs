@@ -2627,13 +2627,15 @@ internal sealed partial class DesktopGame : IDisposable
                     float endYaw = _options.CameraYawEnd ?? flightStartYaw;
                     float endPitch = _options.CameraPitchEnd ?? flightStartPitch;
 
+                    (float shakeYaw, float shakePitch) = HandheldShake(flightFrame, _options.CameraShake);
+
                     _camera.MoveTo(
                         new Vector3d(
                             flightStartPos.X + ((endPos.X - flightStartPos.X) * t),
                             flightStartPos.Y + ((endPos.Y - flightStartPos.Y) * t),
                             flightStartPos.Z + ((endPos.Z - flightStartPos.Z) * t)),
-                        flightStartYaw + ((endYaw - flightStartYaw) * t),
-                        flightStartPitch + ((endPitch - flightStartPitch) * t));
+                        flightStartYaw + ((endYaw - flightStartYaw) * t) + shakeYaw,
+                        flightStartPitch + ((endPitch - flightStartPitch) * t) + shakePitch);
                 }
 
                 // How far this frame sits between the last two simulation ticks. Compute it before
@@ -4905,6 +4907,45 @@ internal sealed partial class DesktopGame : IDisposable
     // vertical one follows from the window's aspect, rather than the other way round.
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
         2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
+
+    // The angular offset a hand holding a camera would add on a given frame, in radians.
+    //
+    // Modelled on a hand rather than on noise, because the two are not interchangeable for what this
+    // tests. A hand drifts: slow wandering of about a degree with a faster, much smaller tremor riding on
+    // it. Per-frame white noise would instead point somewhere new every frame, which no camera has ever
+    // done and which a temporal filter would rightly treat as unreprojectable and discard -- so it would
+    // measure the filter's give-up path rather than its reprojection.
+    //
+    // Summed sines at frequencies with no common multiple, so the pattern does not repeat over any
+    // capture worth taking, driven off the FRAME INDEX rather than the clock so -lockstep keeps a run
+    // repeatable. Weights sum to one per axis, which is what makes the amplitude mean what it says, and
+    // the two axes carry different frequencies and phases so the motion wanders instead of tracking a
+    // diagonal.
+    private static (float Yaw, float Pitch) HandheldShake(int frame, float degrees)
+    {
+        if (degrees <= 0f)
+        {
+            return (0f, 0f);
+        }
+
+        // Hand tremor is quoted in Hz, so the frequencies below are meaningless without a rate to read
+        // them against. The capture path steps at a fixed sixty under -lockstep.
+        const float FramesPerSecond = 60f;
+        float t = frame / FramesPerSecond;
+        float amplitude = degrees * (MathF.PI / 180f);
+
+        float yaw =
+            (0.60f * MathF.Sin((2f * MathF.PI * 0.37f * t) + 0.0f))
+            + (0.28f * MathF.Sin((2f * MathF.PI * 0.91f * t) + 1.7f))
+            + (0.12f * MathF.Sin((2f * MathF.PI * 7.30f * t) + 4.2f));
+
+        float pitch =
+            (0.55f * MathF.Sin((2f * MathF.PI * 0.29f * t) + 2.4f))
+            + (0.30f * MathF.Sin((2f * MathF.PI * 1.13f * t) + 5.1f))
+            + (0.15f * MathF.Sin((2f * MathF.PI * 6.10f * t) + 0.9f));
+
+        return (amplitude * yaw, amplitude * pitch);
+    }
 
     // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
     // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.

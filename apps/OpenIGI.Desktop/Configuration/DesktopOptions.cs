@@ -1,4 +1,4 @@
-﻿using OpenIGI.Game.Ai;
+using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 using OpenIGI.Rendering;
 
@@ -87,6 +87,7 @@ public readonly record struct DesktopOptions(
         float? cameraYawEnd = null;
         float? cameraPitchEnd = null;
         int? flightFrames = null;
+        float cameraShake = 0f;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
@@ -281,6 +282,14 @@ public readonly record struct DesktopOptions(
             {
                 cameraPitchEnd = ParseNumber(Next(args, ref i, "pitchend"), "pitchend", args);
             }
+            else if (arg.Equals("camshake", StringComparison.OrdinalIgnoreCase))
+            {
+                cameraShake = ParseNumber(Next(args, ref i, "camshake"), "camshake", args);
+                if (cameraShake < 0f)
+                {
+                    throw new ArgumentException($"-camshake expects a non-negative amplitude in degrees, got '{cameraShake}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("flightframes", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "flightframes");
@@ -442,7 +451,7 @@ public readonly record struct DesktopOptions(
 
         // A flight is a free-camera move: the walking player never takes an authored path, so naming an
         // end pose is by itself a request to fly, the same way -size is a request for a window.
-        if (cameraEnd is not null || cameraYawEnd is not null || cameraPitchEnd is not null)
+        if (cameraEnd is not null || cameraYawEnd is not null || cameraPitchEnd is not null || cameraShake > 0f)
         {
             startFlying = true;
         }
@@ -473,6 +482,7 @@ public readonly record struct DesktopOptions(
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
             FlightFrames = flightFrames,
+            CameraShake = cameraShake,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             VanillaMenu = vanillaMenu,
@@ -563,12 +573,27 @@ public readonly record struct DesktopOptions(
     public int? FlightFrames { get; init; }
 
     /// <summary>
+    /// Gets the amplitude in degrees of a per-frame camera shake laid over whatever else the camera is
+    /// doing, or zero for none. Set by <c>-camshake</c>.
+    /// </summary>
+    /// <remarks>
+    /// A smooth flight is not what a temporal filter actually has to survive. A player's view is never
+    /// still and never moves evenly: it jitters by a pixel or two at a time and changes direction
+    /// constantly, which is the case that breaks reprojection — a smooth pan gives every pixel the same
+    /// velocity for many frames, so a history that reprojects badly still reprojects consistently. This
+    /// lays a deterministic pseudo-random angular offset over the pose, so a run stays reproducible under
+    /// <c>-lockstep</c> while the motion is no longer something the filter can settle into.
+    /// </remarks>
+    public float CameraShake { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether a scripted free-camera flight is asked for — an end pose the opening
     /// camera is flown to over the frame budget. When set, <c>-screenshot</c> writes one numbered frame per
     /// rendered frame rather than a single still, so the in-motion behaviour of the temporal filters is
     /// visible in the sequence.
     /// </summary>
-    public bool HasFlight => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null;
+    public bool HasFlight
+        => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null || CameraShake > 0f;
 
     /// <summary>
     /// Gets the difficulty override from <c>-difficulty</c>, or <see langword="null"/> to use the active
@@ -668,6 +693,10 @@ public readonly record struct DesktopOptions(
           -pitchend <rad>  Pitch the flight ends on. Defaults to the opening pitch (-pitch).
           -flightframes N  Finish the flight in N frames and hold the end pose for the rest of the
                            capture. Defaults to spreading the flight over every frame.
+          -camshake <deg>  Lay a handheld-camera shake of this peak amplitude over the pose, drifting
+                           the way a hand does rather than jittering randomly. Implies a flight, so it
+                           can be used on its own to shake a fixed viewpoint. Try 0.15 for a steady
+                           hold, 0.5 for a walk, 1.5 for a run.
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
           -vanilla         The whole remaster track off: the retail menu system and the original's
