@@ -26,6 +26,15 @@ namespace OpenIGI.Desktop;
 /// </remarks>
 public sealed class WorldRenderer : IDisposable
 {
+    /// <summary>The alpha a cut-out surface has to reach to be drawn, matching what the shaders test.</summary>
+    /// <remarks>
+    /// Kept beside the texture load because it is what the mip chain's coverage is preserved AGAINST: the
+    /// scale chosen per level is the one that keeps the same fraction of texels above this number, so a
+    /// value here that disagrees with the shaders would preserve the wrong quantity and thin the fence
+    /// anyway. Change both together.
+    /// </remarks>
+    private const float AlphaTestCutoff = 0.5f;
+
     private const string LogCategory = "World";
 
     private readonly IGraphicsDevice _device;
@@ -1317,6 +1326,19 @@ public sealed class WorldRenderer : IDisposable
             try
             {
                 TextureImage image = TexFile.Load(bytes.Span);
+
+                // The wire of a fence, the slats of a grille, the leaves of a canopy: everything drawn as
+                // a cut-out quad loses its coverage as the chain averages down, so it thins with distance
+                // and flickers as the level crosses over. Restored before the chain is uploaded, against
+                // the same cutoff the shaders test. Textures that are opaque, or that are entirely holes,
+                // are left alone -- there is no coverage to preserve and scaling would corrupt a channel
+                // nothing reads.
+                // Most of this game's textures carry a single level, and this backend generates none --
+                // so without this the whole world was sampled at full resolution however far away it was,
+                // which sparkles on every surface and makes thin things crawl.
+                image = image.WithMipChain();
+                image.PreserveAlphaCoverage(AlphaTestCutoff);
+
                 handle = _device.CreateTexture(
                     new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
                     image.Pixels);

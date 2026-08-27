@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 
 namespace OpenIGI.Formats.Textures;
 
@@ -22,6 +22,39 @@ public sealed class TextureImage
         _pixels = pixels;
         _levelOffsets = levelOffsets;
     }
+
+    /// <summary>
+    /// Returns this texture with a complete mip chain, building one if it shipped without.
+    /// </summary>
+    /// <returns>This instance when a chain already exists, otherwise a new image carrying one.</returns>
+    /// <remarks>
+    /// Most of this game's textures carry a single level, and a backend that generates none then samples
+    /// full resolution at every distance -- which sparkles, and makes every fence and railing crawl. See
+    /// <see cref="MipChainBuilder"/> for why anisotropy cannot stand in for the missing levels.
+    /// </remarks>
+    public TextureImage WithMipChain()
+    {
+        if (MipLevels > 1 || Width <= 0 || Height <= 0)
+        {
+            return this;
+        }
+
+        (Bgra32[] pixels, int[] offsets) = MipChainBuilder.Build(_pixels, Width, Height);
+        return new TextureImage(Width, Height, offsets.Length, pixels, offsets);
+    }
+
+    /// <summary>
+    /// Rescales the mip chain's alpha so an alpha-tested surface keeps the same amount of itself at
+    /// every distance.
+    /// </summary>
+    /// <param name="cutoff">The alpha the shader tests against, as a 0..1 fraction.</param>
+    /// <returns><see langword="true"/> when this texture was alpha tested and its levels were rescaled.</returns>
+    /// <remarks>
+    /// In place, on the decoded chain, before it is handed to a device. See <see cref="AlphaCoverage"/>
+    /// for why a threshold test cannot be preserved by any choice of filter and needs a per-level scale.
+    /// </remarks>
+    public bool PreserveAlphaCoverage(float cutoff)
+        => AlphaCoverage.Preserve(_pixels, Width, Height, MipLevels, cutoff);
 
     /// <summary>Gets the width of mip level zero in pixels.</summary>
     public int Width { get; }
