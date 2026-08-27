@@ -364,6 +364,30 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.UpscaleHistoryMetadataImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // Thin geometry, before anything reads the rejection. A hardware rasteriser draws a triangle
+        // only where it covers a pixel's centre, so a wire narrower than a pixel blinks in and out with
+        // the jitter -- which is the distant fence crawling, and then fading. This finds those one-pixel
+        // runs and lets the history carry them instead of rejecting them as disocclusions.
+        OcclusionBarrier(
+            cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.ThinGeometry.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.DepthView,
+            target.HistoryRejectionView,
+            target.ThinRelaxedRejectionView,
+            _captureWidth,
+            _captureHeight,
+            _unprojection,
+            _historyDecimated,
+            RenderCVars.ThinGeometry.Value);
+
+        OcclusionBarrier(
+            cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
         // The spatial anti-aliaser, before the history update it feeds. It finds where each edge really
         // lies between pixel centres, so a wire thinner than a pixel is sampled from where it is rather
         // than being missed or drawn whole depending on which side of the centre it fell.
@@ -375,7 +399,7 @@ public sealed partial class VulkanGraphicsDevice
             cmd,
             _frameLoop.CurrentFrame,
             target.LitView,
-            target.HistoryRejectionView,
+            target.ThinRelaxedRejectionView,
             target.SpatialAaView,
             _captureWidth,
             _captureHeight,
@@ -395,7 +419,7 @@ public sealed partial class VulkanGraphicsDevice
             historyMetadataView,
             target.UpscaleHistoryColourView,
             target.UpscaleHistoryMetadataView,
-            target.HistoryRejectionView,
+            target.ThinRelaxedRejectionView,
             _historyDecimated,
             target.SpatialAaView,
             hasSpatialAa: true,

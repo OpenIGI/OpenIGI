@@ -319,6 +319,42 @@ public static class RenderCVars
         high: "1",
         ultra: "1");
 
+    /// <summary>How strongly the temporal pass holds on to geometry only one pixel wide.</summary>
+    /// <remarks>
+    /// <para>
+    /// A hardware rasteriser draws a triangle only where it covers a pixel's centre, so a fence wire
+    /// narrower than a pixel is drawn or skipped depending on where the frame's jitter fell. That is what
+    /// makes a distant fence crawl, and what makes it fade out entirely as the wire narrows — a wire
+    /// covering a third of a pixel should be a third as bright, and instead it is absent two frames in
+    /// three. This lets the temporal pass keep what earlier frames saw on those pixels rather than
+    /// rejecting it, so the wire is averaged rather than gambled on.
+    /// </para>
+    /// <para>
+    /// <b>The reference has this switched off, deliberately, and we switch it on for an equally
+    /// deliberate reason.</b> It rasterises every mesh through a software visibility-buffer rasteriser, which resolves
+    /// sub-pixel coverage properly, so it has no thin-geometry problem to detect. We have no such rasteriser.
+    /// This is therefore a considered deviation rather than an oversight, and the thing it deviates from
+    /// is a setting whose justification we do not share.
+    /// </para>
+    /// <para>
+    /// Not one, at any preset. A thin thing that is genuinely moving still has to be able to reject its
+    /// own history, or it drags a smear behind it — and a wire is the shape that shows a smear most.
+    /// Zero restores the untreated behaviour.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> ThinGeometry = Presets.Define(
+        CVar.Float(
+            "r_thin_geometry",
+            0.75f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How strongly the temporal pass holds on to sub-pixel geometry such as fence wire."),
+        vanilla: "0",
+        enhanced: "0.75",
+        high: "0.75",
+        ultra: "0.75");
+
     /// <summary>How wide the sun's disc is, in degrees, which is what gives a shadow its penumbra.</summary>
     /// <remarks>
     /// <para>
