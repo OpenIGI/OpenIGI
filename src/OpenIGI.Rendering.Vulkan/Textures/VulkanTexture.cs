@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -66,6 +66,8 @@ internal sealed unsafe class VulkanTexture : IDisposable
         Width = description.Width;
         Height = description.Height;
         MipLevels = Math.Max(1, description.MipLevels);
+        CutoutFraction = MeasureCutoutFraction(pixels, Width, Height);
+        HasCutoutAlpha = CutoutFraction > CutoutTexelFraction;
 
         ImageCreateInfo imageInfo = new()
         {
@@ -113,6 +115,29 @@ internal sealed unsafe class VulkanTexture : IDisposable
 
     /// <summary>Gets the number of mip levels.</summary>
     public int MipLevels { get; }
+
+    /// <summary>
+    /// Gets whether the alpha test would punch holes in this texture — whether a meaningful share of its
+    /// texels fail the shaders' <c>alpha &lt; 0.5</c> cut.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured from the texels rather than inferred from the file's name. The material library's only
+    /// rule for this is a name match on <c>*_argb8888</c>, and a wire fence whose texture is not named
+    /// that way was being handed to the ray-traced world as a solid occluder — where it cast the shadow
+    /// of a wall across the yard, because a ray query has no per-texel test and every triangle it holds
+    /// blocks the sun completely.
+    /// </para>
+    /// <para>
+    /// The test is deliberately the same one the shadow and G-buffer fragments apply, so the two paths
+    /// cannot disagree about what a surface is: anything the rasteriser would cut holes in is something
+    /// the trace must not treat as solid.
+    /// </para>
+    /// </remarks>
+    public bool HasCutoutAlpha { get; }
+
+    /// <summary>Gets the share of top-level texels that fail the shaders' alpha cut.</summary>
+    public float CutoutFraction { get; }
 
     /// <summary>Replaces the pixels of one mip level through a staging buffer.</summary>
     /// <param name="device">The device the staging buffer is created on.</param>
@@ -380,5 +405,29 @@ internal sealed unsafe class VulkanTexture : IDisposable
         Sampler sampler;
         VkCheck.Ok(_vk.CreateSampler(_device, &createInfo, null, &sampler), "vkCreateSampler");
         return sampler;
+    }
+
+    // What share of the top level fails the shaders' alpha cut. One percent is enough to mean the texture
+    // is masked at all -- a wire fence is mostly hole, a railing mostly not, and neither is a solid pane.
+    private const float CutoutTexelFraction = 0.01f;
+
+    private static float MeasureCutoutFraction(ReadOnlySpan<Bgra32> pixels, int width, int height)
+    {
+        int count = width * height;
+        if (count <= 0 || count > pixels.Length)
+        {
+            return 0f;
+        }
+
+        int cut = 0;
+        for (int i = 0; i < count; i++)
+        {
+            if (pixels[i].A < 128)
+            {
+                cut++;
+            }
+        }
+
+        return cut / (float)count;
     }
 }

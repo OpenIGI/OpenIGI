@@ -275,12 +275,26 @@ public static class RenderCVars
 
     /// <summary>How much of the surface cache's bounced radiance a traced gather ray keeps.</summary>
     /// <remarks>
+    /// <para>
     /// One is the physical answer: the cache holds real outgoing radiance and a ray that hits a card
-    /// should keep all of it. The reference render this project matches bounces far less than that —
-    /// its surface cache reports no coverage over most of this level's imported geometry, so its rays
-    /// hit surfaces that have no cached lighting to return and its interiors go near-black beyond the
-    /// direct sun. This scales OUR cache's answer down toward that look without touching the sky, which
-    /// the reference does resolve. Applies to the screen gather and the radiance cache alike.
+    /// should keep all of it. This scales OUR cache's answer down without touching the sky, which the
+    /// reference resolves separately. Applies to the screen gather and the radiance cache alike.
+    /// </para>
+    /// <para>
+    /// <b>It used to be 0.15, and that was matched against a reference that has since changed.</b> The
+    /// stored comparison shot showed the office floor at 0.2 out of 255 — black — because the
+    /// reference's surface cache had no coverage over this level's imported geometry, so its rays hit
+    /// surfaces with nothing cached and came back with nothing. 0.15 existed to reproduce that darkness.
+    /// Re-captured from the live project, that room now renders its floor at 94.9 and its wall at 79.0,
+    /// so the artifact is gone and the value was emulating a deficiency that no longer exists.
+    /// </para>
+    /// <para>
+    /// 0.35 is where the office lands against the current reference, found by sweep: whole-frame error
+    /// 0.2465 at 0.15, 0.2204 at 0.35, 0.2246 at 0.5, 0.2509 at 0.8. The floor goes 21 to 40 and the wall
+    /// 30 to 60 against the reference's 94.9 and 79.0 — closer, not matched, because a single scalar
+    /// still cannot follow a spatially varying quantity: at 0.35 the ceiling already overshoots. The
+    /// exterior is untouched by the change, measured at the yard: 0.16599 to 0.16657.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> GiBounce = Presets.Define(
         CVar.Float(
@@ -297,7 +311,7 @@ public static class RenderCVars
         // Matched against the reference office shot: 0.15 lands the walls and ceiling on its values with
         // the window, the sun pools and the exterior already aligned. Raise toward one for the physical
         // answer — the room fills with real multi-bounce — at the cost of the reference's darker mood.
-        ultra: "0.15");
+        ultra: "0.35");
 
     /// <summary>Whether tracing uses the hardware ray query rather than the software distance field.</summary>
     /// <remarks>

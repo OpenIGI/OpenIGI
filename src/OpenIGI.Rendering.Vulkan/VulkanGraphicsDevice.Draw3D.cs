@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Textures;
@@ -418,7 +418,7 @@ public sealed partial class VulkanGraphicsDevice
         // the same rotation as the normal's, and the model-view's own translation rotated into world and
         // offset by where the camera is. Absolute rather than camera-relative because a placement recorded
         // now has to still be right in a frame whose camera has moved.
-        ObserveForRayTracing(mesh, modelView, normalMatrix);
+        ObserveForRayTracing(mesh, modelView, normalMatrix, diffuse);
 
         float* data = stackalloc float[32];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
@@ -567,7 +567,12 @@ public sealed partial class VulkanGraphicsDevice
     /// <param name="mesh">The mesh being drawn.</param>
     /// <param name="modelView">Its object-to-view transform.</param>
     /// <param name="normalMatrix">Its object-to-world rotation, already composed for the normal.</param>
-    private void ObserveForRayTracing(VulkanMesh mesh, in Matrix4f modelView, in Matrix3f normalMatrix)
+    /// <param name="diffuse">Its colour texture, whose alpha decides whether it is a solid occluder.</param>
+    private void ObserveForRayTracing(
+        VulkanMesh mesh,
+        in Matrix4f modelView,
+        in Matrix3f normalMatrix,
+        TextureHandle diffuse)
     {
         if (_worldScene is null)
         {
@@ -601,6 +606,25 @@ public sealed partial class VulkanGraphicsDevice
         // them out of the trace, which is the honest reading of it until an any-hit shader can sample the
         // alpha at the hit.
         if (!_material.CastsOcclusion)
+        {
+            return;
+        }
+
+        // And the same exclusion decided from the TEXELS as well as from the material library. The
+        // library's only rule for a cut-out is a name match on *_argb8888, which is a property of a file
+        // name rather than of the surface: a masked texture that is not named that way is handed to the
+        // trace as a solid occluder, and a ray query has no per-texel test -- every triangle it holds
+        // blocks the sun completely, so such a surface would cast the shadow of a wall.
+        //
+        // Measured with the shaders' own alpha cut, so the two paths cannot disagree about what a surface
+        // is: anything the rasteriser would punch holes in is something the trace must not call solid.
+        //
+        // Honest about its reach: this was written while chasing a fence that appeared to cast a wall's
+        // shadow, and it did NOT fix it -- that level's chain-link is modelled geometry with an opaque
+        // texture, so it was never mis-classified and the trace was casting it correctly all along. It
+        // catches 171 draws a frame here and changes no pixel of either compare shot. It is kept because
+        // the filename rule is the fragile half of a correctness decision, not because it fixed that.
+        if (_textures.TryGetValue(diffuse.Id, out VulkanTexture? diffuseTexture) && diffuseTexture.HasCutoutAlpha)
         {
             return;
         }
