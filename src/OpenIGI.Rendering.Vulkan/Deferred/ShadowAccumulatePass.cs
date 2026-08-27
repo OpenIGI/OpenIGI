@@ -24,8 +24,8 @@ internal sealed class ShadowAccumulatePass : IDisposable
     /// </remarks>
     public const float DepthTolerance = 0.02f;
 
-    // Two 4x4 matrices and five 4-vectors.
-    private const int ParamSize = 208;
+    // Two 4x4 matrices and six 4-vectors.
+    private const int ParamSize = 224;
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -77,6 +77,10 @@ internal sealed class ShadowAccumulatePass : IDisposable
     /// <param name="previousUnprojection">The previous frame's projection scales and planes.</param>
     /// <param name="frames">How many frames the running mean spans.</param>
     /// <param name="hasHistory">Whether the previous slot holds an accumulation at this size.</param>
+    /// <param name="jitterX">This frame's horizontal sub-pixel projection offset, in history-space pixels.</param>
+    /// <param name="jitterY">This frame's vertical sub-pixel projection offset, in history-space pixels.</param>
+    /// <param name="previousJitterX">The previous frame's, which is where its answers were stored.</param>
+    /// <param name="previousJitterY">The previous frame's, which is where its answers were stored.</param>
     public void Record(
         CommandBuffer cmd,
         int frame,
@@ -92,7 +96,11 @@ internal sealed class ShadowAccumulatePass : IDisposable
         DepthUnprojection unprojection,
         DepthUnprojection previousUnprojection,
         float frames,
-        bool hasHistory)
+        bool hasHistory,
+        float jitterX,
+        float jitterY,
+        float previousJitterX,
+        float previousJitterY)
     {
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
 
@@ -128,6 +136,11 @@ internal sealed class ShadowAccumulatePass : IDisposable
         data[49] = hasHistory ? 1f : 0f;
         data[50] = DepthTolerance;
         data[51] = 0f;
+
+        data[52] = jitterX;
+        data[53] = jitterY;
+        data[54] = previousJitterX;
+        data[55] = previousJitterY;
 
         ReadOnlySpan<ComputeResource> resources =
         [

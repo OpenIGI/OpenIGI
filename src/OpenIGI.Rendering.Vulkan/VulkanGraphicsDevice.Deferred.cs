@@ -33,6 +33,12 @@ public sealed partial class VulkanGraphicsDevice
     private Matrix3f _previousViewToWorld = Matrix3f.Identity;
     private Vector3f _previousCameraPosition;
     private DepthUnprojection _previousUnprojection = new(1f, 1f, 0.1f, 1000f);
+
+    // The previous frame's sub-pixel projection offset, in the same history-space pixels the temporal
+    // passes use. Anything reprojecting onto a buffer the previous frame wrote needs it: that frame
+    // stored its answers at ITS jitter, not at this one's.
+    private float _previousJitterX;
+    private float _previousJitterY;
     private bool _hasPreviousFrame;
     private IrradianceVolumeSettings _volumeSettings = IrradianceVolumeSettings.Off;
     private bool _hasProbeField;
@@ -250,6 +256,8 @@ public sealed partial class VulkanGraphicsDevice
             _previousViewToWorld = _viewToWorld;
             _previousCameraPosition = _cameraPosition;
             _previousUnprojection = _unprojection;
+            _previousJitterX = _taaSettings.JitterX;
+            _previousJitterY = _taaSettings.JitterY * VerticalJitterSign;
             _hasPreviousFrame = true;
         }
 
@@ -1324,7 +1332,11 @@ public sealed partial class VulkanGraphicsDevice
                 _unprojection,
                 _previousUnprojection,
                 shadowFrames,
-                hasShadowHistory);
+                hasShadowHistory,
+                _taaSettings.JitterX,
+                _taaSettings.JitterY * VerticalJitterSign,
+                _previousJitterX,
+                _previousJitterY);
 
             OcclusionBarrier(
                 cmd, target.ShadowHistoryImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
