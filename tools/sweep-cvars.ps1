@@ -93,6 +93,9 @@ $cases = @(
     @{ Name = 'r_fog_anisotropy';    A = '0';     B = '0.9'   }
     @{ Name = 'r_fog_quality';       A = '16';    B = '128'   }
     @{ Name = 'r_fog_distance';      A = '200';   B = '1200'  }
+    # Swept between two RESOLUTIONS rather than off-vs-on, because off-vs-on passes trivially and hides
+    # the actual defect: the value is honoured as a boolean and ignored as a size.
+    @{ Name = 'r_shadows';           A = '1024';  B = '4096'  }
     @{ Name = 'r_sun_angle';         A = '0';     B = '4'     }
     @{ Name = 'r_ao_intensity';      A = '0';     B = '3'     }
     @{ Name = 'r_gi_bounce';         A = '0';     B = '2'     }
