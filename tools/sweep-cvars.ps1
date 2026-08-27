@@ -88,7 +88,9 @@ $cases = @(
     @{ Name = 'r_alpha_hash';        A = '0';     B = '1'     }
     @{ Name = 'r_fog_density';       A = '0';     B = '0.5'   }
     @{ Name = 'r_fog_height';        A = '24';    B = '400'   }
-    @{ Name = 'r_fog_anisotropy';    A = '-0.5';  B = '0.9'   }
+    # Swept from zero rather than from its negative end: a +cvar value cannot begin with a minus, because
+    # the argument parser reads it as the next option and the run exits 2.
+    @{ Name = 'r_fog_anisotropy';    A = '0';     B = '0.9'   }
     @{ Name = 'r_fog_quality';       A = '16';    B = '128'   }
     @{ Name = 'r_fog_distance';      A = '200';   B = '1200'  }
     @{ Name = 'r_sun_angle';         A = '0';     B = '4'     }
