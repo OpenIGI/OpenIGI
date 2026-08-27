@@ -98,7 +98,7 @@ $cases = @(
     @{ Name = 'r_gi_bounce';         A = '0';     B = '2'     }
     @{ Name = 'r_light_scale';       A = '0.5';   B = '1.4'   }
     @{ Name = 'r_exposure';          A = '0.6';   B = '2.5'   }
-    @{ Name = 'r_white_point';       A = '1';     B = '4'     }
+    @{ Name = 'r_white_point';       A = '1';     B = '4'     ; Expected = 'a white point is a Reinhard parameter; the film curve ultra runs is shaped by its own slope/toe/shoulder and has no scalar for this to be' }
 )
 
 if ($Only.Count -gt 0) {

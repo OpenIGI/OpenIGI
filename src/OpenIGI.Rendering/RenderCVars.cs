@@ -213,6 +213,14 @@ public static class RenderCVars
     /// this world is LDR textures multiplied by LDR lightmaps, so almost nothing exceeds one, and the
     /// old fixed value of 4 spent the curve's whole range compressing a span that was not there. One
     /// disables the roll-off completely.
+    /// <para>
+    /// <b>It is a Reinhard parameter, and only the Reinhard operator has one.</b> A white point is the
+    /// single number that curve is shaped by; the film curve the higher presets run is shaped by its own
+    /// slope, toe, shoulder and black/white levels instead, and has no scalar for this to be. So at any
+    /// preset above <c>r_tonemap 1</c> this setting is inert — not ignored by the backend, which would be
+    /// a bug, but meaningless to the curve in use. It was found by the cvar sweep reporting it as
+    /// reaching nothing with nothing saying why, which is exactly what that sweep is for.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> WhitePoint = Presets.Define(
         CVar.Float(
