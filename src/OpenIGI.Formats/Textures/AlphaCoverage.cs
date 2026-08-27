@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 
 namespace OpenIGI.Formats.Textures;
 
@@ -39,6 +39,16 @@ public static class AlphaCoverage
     // A wire that has faded to a tenth of its alpha needs a scale of ten to come back. Past that the
     // level has essentially no coverage left to recover and scaling only amplifies filtering noise.
     private const float MaxScale = 16f;
+
+    // What counts as "a hole" and "solid" when deciding whether a texture is a stencil or a transparency.
+    // Deliberately generous at both ends: a converted texture's holes are rarely exactly zero.
+    private const byte CutoutLowAlpha = 8;
+    private const byte CutoutHighAlpha = 248;
+
+    // How much of a texture may sit between those before it is treated as a real transparency rather than
+    // a cut-out. A stencil has partial alpha only along the edge of its shapes, which for even a fine
+    // chain-link is a small share of the whole.
+    private const float MaxPartialFractionForCutout = 0.25f;
 
     /// <summary>
     /// Rescales each mip level's alpha so the fraction of texels passing <paramref name="cutoff"/>
@@ -101,6 +111,89 @@ public static class AlphaCoverage
         }
 
         return rescaled;
+    }
+
+    /// <summary>
+    /// Widens a cut-out texture's alpha so its partly-covered edge texels survive the shader's test.
+    /// </summary>
+    /// <param name="pixels">The whole mip chain, modified in place.</param>
+    /// <param name="cutoff">The alpha the shader tests against, as a 0..1 fraction.</param>
+    /// <returns><see langword="true"/> when the texture was a cut-out and was widened.</returns>
+    /// <remarks>
+    /// <para>
+    /// The reference clips its masked surfaces at essentially zero — every texel carrying any alpha at
+    /// all is drawn. Ours clips at a half, which throws away the partly-covered texels along the edge of
+    /// every wire, slat and leaf. The difference is visible: the reference's barbed wire is perceptibly
+    /// thicker than ours against the same sky, and its chain-link holds together at distances where ours
+    /// has thinned to a haze.
+    /// </para>
+    /// <para>
+    /// <b>Why this is not simply a lower cutoff.</b> Lowering it for everything is catastrophic, and was
+    /// measured to be: the game's window glass carries partial alpha as a genuine transparency, so a low
+    /// cutoff turns a pane opaque and the office window falls from 156 to 38 out of 255. The reference
+    /// does not have that problem because its own glass alpha is binary. So the two cases have to be told
+    /// apart, and the texture itself is what tells them apart: a cut-out's alpha is nearly all zero or
+    /// nearly all full, with only edge texels in between, while glass lives in the middle band. Only the
+    /// first kind is widened, and it is widened at load rather than in the shader — which needs no
+    /// per-draw state, no seam change, and cannot affect a surface that was not classified.
+    /// </para>
+    /// </remarks>
+    public static bool WidenCutout(Span<Bgra32> pixels, float cutoff)
+    {
+        if (pixels.Length == 0)
+        {
+            return false;
+        }
+
+        byte threshold = (byte)Math.Clamp((int)MathF.Round(cutoff * 255f), 1, 255);
+
+        int transparent = 0;
+        int opaque = 0;
+        int partial = 0;
+        foreach (Bgra32 pixel in pixels)
+        {
+            if (pixel.A <= CutoutLowAlpha)
+            {
+                transparent++;
+            }
+            else if (pixel.A >= CutoutHighAlpha)
+            {
+                opaque++;
+            }
+            else
+            {
+                partial++;
+            }
+        }
+
+        // Nothing is cut out of it, so there is no edge to widen.
+        if (transparent == 0)
+        {
+            return false;
+        }
+
+        // Glass, smoke, a decal fading out: the alpha is being used as a continuous transparency rather
+        // than as a stencil, and widening it would turn a see-through surface solid.
+        if (partial > (pixels.Length * MaxPartialFractionForCutout))
+        {
+            return false;
+        }
+
+        // Everything the reference would have drawn is drawn. A texel carrying any meaningful alpha is
+        // lifted to the cutoff so the shader keeps it; one carrying none is left alone so the holes stay
+        // holes. The colour channels are untouched -- this decides coverage, not shade.
+        bool widened = false;
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            Bgra32 pixel = pixels[i];
+            if (pixel.A > CutoutLowAlpha && pixel.A < threshold)
+            {
+                pixels[i] = new Bgra32(pixel.B, pixel.G, pixel.R, threshold);
+                widened = true;
+            }
+        }
+
+        return widened;
     }
 
     private static int CountPassing(ReadOnlySpan<Bgra32> data, byte threshold)

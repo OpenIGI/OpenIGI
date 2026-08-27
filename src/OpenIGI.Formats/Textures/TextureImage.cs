@@ -56,6 +56,18 @@ public sealed class TextureImage
     public bool PreserveAlphaCoverage(float cutoff)
         => AlphaCoverage.Preserve(_pixels, Width, Height, MipLevels, cutoff);
 
+    /// <summary>
+    /// Widens this texture's alpha so its partly-covered edge texels survive the shader's test, if it is
+    /// a cut-out rather than a real transparency.
+    /// </summary>
+    /// <param name="cutoff">The alpha the shader tests against, as a 0..1 fraction.</param>
+    /// <returns><see langword="true"/> when this texture was a cut-out and was widened.</returns>
+    /// <remarks>
+    /// Must run BEFORE the chain is built, so that the widened alpha is what gets filtered down: widening
+    /// afterwards would lift each level independently and undo the coverage the filter was preserving.
+    /// </remarks>
+    public bool WidenCutoutAlpha(float cutoff) => AlphaCoverage.WidenCutout(_pixels, cutoff);
+
     /// <summary>Gets the width of mip level zero in pixels.</summary>
     public int Width { get; }
 

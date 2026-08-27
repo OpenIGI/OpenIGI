@@ -1336,6 +1336,12 @@ public sealed class WorldRenderer : IDisposable
                 // Most of this game's textures carry a single level, and this backend generates none --
                 // so without this the whole world was sampled at full resolution however far away it was,
                 // which sparkles on every surface and makes thin things crawl.
+                // A cut-out's partly-covered edge texels are drawn by the reference and discarded by us,
+                // which is why its barbed wire is visibly thicker than ours against the same sky. Widened
+                // first, so the chain below filters the alpha we actually intend to keep. Real
+                // transparencies -- window glass above all -- are classified out and left alone.
+                image.WidenCutoutAlpha(AlphaTestCutoff);
+
                 image = image.WithMipChain();
                 image.PreserveAlphaCoverage(AlphaTestCutoff);
 
