@@ -3332,11 +3332,14 @@ internal sealed partial class DesktopGame : IDisposable
                     // The scheduler cleared the back buffer; the target it did not know about needs it too.
                     _device.Clear(_scheduler.ClearColour);
 
-                    // The live sun, lifted by r_sun_scale so a sunlit surface reads as sunlit rather than
-                    // as flat daylight -- the bakes carry the sun at full radiosity intensity, the dynamic
-                    // model adds it live at magnitude one, and only this makes up the difference. The baked
-                    // model ignores it (it never adds a live sun), so the scale is a no-op below ultra.
+                    // The live sun, calibrated against the independently-normalised sky by r_sun_scale.
+                    // The baked model ignores it (it never adds a live sun), so the scale is a no-op there.
                     Vector3f scaledSun = light.Colour * RenderCVars.SunScale.Value;
+
+                    // The atmospheric sky keeps its own source illuminance. Sharing scaledSun here made
+                    // r_sun_scale dim the sky SH together with the direct term, so their ratio could never
+                    // be corrected. Ultra's atmosphere remains at its already-measured source intensity.
+                    Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value;
 
                     // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
                     // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
@@ -3359,7 +3362,11 @@ internal sealed partial class DesktopGame : IDisposable
                         // How brightly the sky lights the world, for a backend that models the sky as a
                         // real light source rather than folding it into the flat ambient. Same dial that
                         // scaled the flat stand-in, now driving the thing it stood in for.
-                        RenderCVars.SkyLight.Value));
+                        RenderCVars.SkyLight.Value,
+
+                        // The source that builds both the visible atmosphere and its diffuse SH. Separate
+                        // from scaledSun so direct-light calibration does not move the sky with it.
+                        atmosphereSun));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic

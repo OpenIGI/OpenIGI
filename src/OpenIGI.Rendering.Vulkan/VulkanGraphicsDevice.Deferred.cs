@@ -282,13 +282,14 @@ public sealed partial class VulkanGraphicsDevice
     {
         Vector3f worldSun = WorldSunDirection();
 
-        // The sun's colour and brightness as the level authored it. The reference's own sun is a fixed
-        // ten-lux white-ish disc; this follows the game's, so a mission's own time of day still drives
-        // the sky it produces.
+        // The atmosphere's own source sun. This is deliberately independent of the direct-light sun:
+        // scaling a surface response must not also scale the visible sky and the SH projected from it.
+        // Older callers omit it and retain the previous shared-source behaviour.
+        Vector3f source = _lighting.AtmosphereSunColour ?? _lighting.SunColour;
         Vector3f illuminance = new(
-            _lighting.SunColour.X * _lighting.Scale,
-            _lighting.SunColour.Y * _lighting.Scale,
-            _lighting.SunColour.Z * _lighting.Scale);
+            source.X * _lighting.Scale,
+            source.Y * _lighting.Scale,
+            source.Z * _lighting.Scale);
 
         _deferred.Sky.Record(
             _frameCommandBuffer,

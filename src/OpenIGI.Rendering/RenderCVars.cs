@@ -658,6 +658,29 @@ public static class RenderCVars
         high: "3",
         ultra: "3");
 
+    /// <summary>Scales the sun that generates the atmospheric sky, independently of direct light.</summary>
+    /// <remarks>
+    /// The atmosphere produces both the visible sky and the diffuse SH that lights surfaces. It used to
+    /// read <see cref="SunScale"/>, which meant calibrating direct sunlight silently scaled the sky by the
+    /// same amount and could never change their balance. Keeping the old preset values here preserves the
+    /// measured sky while <see cref="SunScale"/> is corrected independently.
+    /// </remarks>
+    public static readonly NumericCVar<float> AtmosphereSunScale = Presets.Define(
+        CVar.Float(
+            "r_atmosphere_sun_scale",
+            1f,
+            0f,
+            16f,
+            CVarOptions.Archive,
+            "Sun source intensity used to generate the atmospheric sky and its diffuse irradiance."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+
+        // Preserve the atmosphere and sky SH that ultra was already rendering when r_sun_scale was 7.
+        // This is a transport input, not the direct surface-response calibration in r_sun_scale.
+        ultra: "7");
+
     /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
     /// <remarks>
     /// On by default, but only ever engaged while <see cref="ScreenGather"/> is up: each gather ray first
@@ -1403,14 +1426,11 @@ public static class RenderCVars
         CVarOptions.None,
         "Scales the dynamic model's flat ambient fill; 0 removes it and lets the GI carry the indirect. Only the dynamic model reads it.");
 
-    /// <summary>Scales the real-time sun so a sunlit surface reads as sunlit rather than as flat daylight.</summary>
+    /// <summary>Calibrates the real-time sun against the sky fill.</summary>
     /// <remarks>
-    /// The artists' lightmaps carry the sun at its full radiosity intensity (18 in every mission), so the
-    /// baked model has bright, high-contrast sunlight for free. The dynamic model adds the sun live from
-    /// its colour alone -- magnitude about one -- which is barely stronger than the ambient sky fill, so a
-    /// sunlit wall reads the same as a shaded one and the whole scene looks overcast rather than sunny.
-    /// This lifts the live sun back to where the contrast reads as direct sunlight. Only the dynamic model
-    /// touches it: the baked model lights from the lightmaps and never adds a live sun at all.
+    /// Only the dynamic model reads this; the baked model lights from its lightmaps and never adds a live
+    /// sun. The atmospheric source has its own independently normalised control so changing this value
+    /// does not move the sky with it.
     /// </remarks>
     public static readonly NumericCVar<float> SunScale = Presets.Define(
         CVar.Float(
@@ -1419,19 +1439,18 @@ public static class RenderCVars
             0.25f,
             16f,
             CVarOptions.Archive,
-            "Scales the real-time sun so sunlit surfaces read as sunlit. Only the dynamic lighting model reads it."),
+            "Calibrates the real-time sun against the sky fill. Only the dynamic lighting model reads it."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
 
-        // 7 at ultra. The old 2 left the sun barely brighter than the indirect fill, so its shafts washed
-        // into an evenly-lit floor -- nothing like the reference, whose bright window pattern reads clearly
-        // against a darker floor. A real daylight sun is far more intense than the room's bounce; scaled up
-        // to that, the direct light dominates the surfaces it lands on and its shafts read as shafts, while
-        // the sky fill (dialled DOWN to match, see r_sky_light) no longer floods the shadow between them.
-        // Auto-exposure adapts to the brighter key, so the frame does not simply blow -- measured on the
-        // office (shafts crisp, walls held) and the outdoor spawn (bright, not clipped).
-        ultra: "7");
+        // Fixed-exposure linear samples separate the two terms without exposure hiding their balance:
+        // ours was sun = 1.714 * sky while the reference is sun = 0.369 * sky. The surface-cache SH uses
+        // the same packed diffuse constants as the reference and restores pi at its irradiance seam, so
+        // the sky is normalised; the correction belongs to the stale sun calibration instead:
+        // 7 * (0.369 / 1.714) = 1.507. Rounded to two decimals, this moves the lit/shadow ratio from 2.714
+        // to 1.369 while leaving the shadow's sky term in place.
+        ultra: "1.51");
 
     /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
     /// <remarks>
