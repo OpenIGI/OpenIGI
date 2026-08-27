@@ -180,8 +180,17 @@ internal sealed class RayTracedShadowPass : IDisposable
             float offset = 0.02 + (0.0005 * viewPos.z);
 
             // One ray, aimed somewhere on the sun's disc rather than at its centre. The reference traces
-            // one sample per pixel here too and runs no denoiser over the result: it leaves the averaging
-            // to the temporal pass, which is why the jitter has to move every frame.
+            // one sample per pixel here too, which is why the jitter has to move every frame -- a single
+            // ray cannot resolve a penumbra on its own, and what resolves it is the temporal pass
+            // averaging a different ray every frame.
+            //
+            // KNOWN DEVIATION: the reference ALSO runs a spatial denoiser over this mask before its
+            // temporal pass sees it -- r.Shadow.Denoiser is 2, and a directional light whose source angle
+            // is above zero asks for one -- and we do not. Ours leaves all of the averaging to the
+            // temporal pass. Measured as acceptable on this scene rather than assumed: still-camera
+            // stability IMPROVES against the hard-edged trace this replaced, 0.83% to 0.49%
+            // consecutive-frame RMSE, and the penumbra resolves smooth rather than speckled. It is a
+            // deviation all the same, and a scene with more shadow detail may want the denoiser ported.
             vec2 rand = vec2(
                 InterleavedGradientNoise(vec2(px), p.uJitter.x),
                 InterleavedGradientNoise(vec2(px) + 97.0, p.uJitter.x));
