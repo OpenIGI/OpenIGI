@@ -18,10 +18,15 @@ namespace OpenIGI.Rendering;
 /// at all.
 /// </para>
 /// <para>
-/// <b>The centre is snapped to the texel grid.</b> Even with a fixed radius, a centre that moves
-/// smoothly slides the whole map by fractions of a texel and the staircase along every shadow edge
-/// swims. Quantising the centre in light space means the map moves in whole texels, so the staircase
-/// stays put relative to the world.
+/// <b>The centre is snapped to a texel grid fixed in the WORLD.</b> Even with a fixed radius, a centre
+/// that moves smoothly slides the whole map by fractions of a texel and the staircase along every
+/// shadow edge swims. Quantising in light space means the map moves in whole texels, so the staircase
+/// stays put relative to the world — but only if the grid it lands on is anchored to the world.
+/// Everything else here is camera-relative, and quantising a camera-relative centre snaps to a grid
+/// that travels with the player: the box then holds the same position in front of them frame after
+/// frame while the world slides beneath it, which is the crawl the snapping exists to remove rather
+/// than a cure for it. The camera's own position is therefore carried into light space and added in
+/// before the floor.
 /// </para>
 /// </remarks>
 public static class ShadowCascades
@@ -124,6 +129,24 @@ public static class ShadowCascades
         return Matrix3f.FromRows(right, up, forward);
     }
 
+    /// <summary>Quantises one axis of the cascade centre onto a world-anchored texel grid.</summary>
+    /// <param name="cameraAxis">Where the camera sits on this light axis, in world light space.</param>
+    /// <param name="centreAxis">The cascade centre on the same axis, relative to the camera.</param>
+    /// <param name="texel">How much world space one shadow texel covers.</param>
+    /// <returns>The centre, still camera-relative, moved to the nearest grid line below it.</returns>
+    /// <remarks>
+    /// The addition and the floor happen in double precision because the sum is a world coordinate and
+    /// this game's run to tens of thousands of metres; only the difference, which is smaller than the
+    /// cascade, is narrowed. Doing the floor in single precision would quantise to the grid of
+    /// representable floats near 40000 rather than to the texel grid, which at the near cascade's texel
+    /// size is a coarser grid than the one being asked for.
+    /// </remarks>
+    private static float Snap(double cameraAxis, float centreAxis, float texel)
+    {
+        double world = cameraAxis + centreAxis;
+        return (float)((Math.Floor(world / texel) * texel) - cameraAxis);
+    }
+
     private static ShadowCascade FitSlice(
         in Camera3D camera,
         Matrix3f lightRotation,
@@ -169,11 +192,25 @@ public static class ShadowCascades
         radius = MathF.Ceiling(radius * 16f) / 16f;
 
         float texel = 2f * radius / MathF.Max(1, resolution);
+
+        // The snap has to be anchored in the WORLD, and this is the whole of why. Everything above is
+        // camera-relative, so a centre computed from the frustum barely changes as the player walks --
+        // the frustum is bolted to them. Quantising THAT lands on the same grid position every frame
+        // while the world slides underneath, which is not a snap at all: the texel grid is rigidly
+        // attached to the camera and drags across the ground continuously, so every shadow edge crawls
+        // exactly as the snapping was meant to stop it doing.
+        //
+        // So the camera's own position is carried into light space in double precision, added in, the
+        // sum quantised there, and taken back out. The matrix stays camera-relative and single precision
+        // -- the result of the subtraction is within one texel of where it started -- while the grid it
+        // lands on is fixed in the world. Depth is not quantised: it is the axis the light looks along,
+        // and moving it would only slide the near plane.
+        Vector3d lightCamera = lightRotation.Transposed().Transform(camera.Position);
         Vector3f lightCentre = lightRotation.Transposed().Transform(centre);
 
         lightCentre = new Vector3f(
-            MathF.Floor(lightCentre.X / texel) * texel,
-            MathF.Floor(lightCentre.Y / texel) * texel,
+            Snap(lightCamera.X, lightCentre.X, texel),
+            Snap(lightCamera.Y, lightCentre.Y, texel),
             lightCentre.Z);
 
         Matrix4f projection = Matrix4f.CreateOrthographic(

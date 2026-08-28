@@ -11,7 +11,19 @@ namespace OpenIGI.Rendering;
 /// range evenly, which wastes almost all the near cascade's resolution on ground the player can see in
 /// detail; one is logarithmic, which is right for the near cascade and leaves the far one starved.
 /// </param>
-/// <param name="DepthBias">Constant depth offset applied when testing, in light-space depth units.</param>
+/// <param name="DepthBias">
+/// Depth offset applied when testing, <b>in texels of the cascade being sampled</b>, measured along the
+/// light. A shadow map's error is one of its texels projected onto the receiver, so that is the unit the
+/// bias belongs in — and the unit that makes one number right for every cascade, since a far cascade's
+/// texel covers more ground and wants proportionally more.
+/// <para>
+/// It was a constant fraction of the cascade's depth range, which <see cref="ShadowCascades.CasterReach"/>
+/// makes about 250 metres deep whatever the cascade — so 0.0015 of it was some 0.4 metres of bias along
+/// the sun, and at a low sun that slid every shadow half a metre across the ground. That is peter-panning,
+/// and it was enough to read as the ray-traced and rasterised shadows disagreeing about where a shadow
+/// falls, because the ray traces from the surface itself and needs no bias at all.
+/// </para>
+/// </param>
 /// <param name="ContactReach">
 /// How far, in metres, a screen-space ray is marched towards the sun to catch contact a shadow map
 /// cannot resolve. Zero disables it.
@@ -24,17 +36,19 @@ namespace OpenIGI.Rendering;
 /// The shadow filter's radius in texels. Above 1.5 a wider kernel is used.
 /// </param>
 /// <param name="NormalBias">
-/// How far a sample is pushed along its surface normal before being tested, in metres. This is what
-/// removes the striping a constant bias alone cannot: the error a shadow map makes grows with the
-/// angle between the surface and the light, and moving along the normal scales with exactly that.
+/// How far the sample is pushed along the surface's own normal before testing, <b>in texels of the
+/// cascade being sampled</b>. The error a shadow map makes grows with the angle between the surface and
+/// the light, and moving along the normal scales with exactly that, which removes the striping a depth
+/// bias alone cannot. In texels for the same reason as <paramref name="DepthBias"/>: a constant in metres
+/// is ten texels of the near cascade and a fraction of one in the far.
 /// </param>
 public readonly record struct ShadowSettings(
     int CascadeCount = 3,
     int Resolution = 2048,
     float Distance = 220f,
     float SplitBlend = 0.75f,
-    float DepthBias = 0.0015f,
-    float NormalBias = 0.06f,
+    float DepthBias = 2f,
+    float NormalBias = 1.5f,
     float ContactReach = 0.35f,
     float ContactThickness = 0.5f,
     float FilterRadius = 1f)
