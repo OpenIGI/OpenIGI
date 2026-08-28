@@ -217,8 +217,13 @@ public sealed class WorldRenderer : IDisposable
                 out bool hasRotorDraw);
 
             Matrix4f baseModelView = camera.CreateModelView(drawPosition, drawOrientation);
-            if (!hasRotorDraw
-                && !FrustumCulling.SphereVisible(projection * baseModelView, geometry.Bounds))
+            BoundingSphere cullBounds = hasRotorDraw
+                ? RotorCullBounds(geometry.Bounds)
+                : geometry.Bounds;
+            Matrix4f cullModelView = hasRotorDraw
+                ? camera.CreateModelView(drawPosition)
+                : baseModelView;
+            if (!FrustumCulling.SphereVisible(projection * cullModelView, cullBounds))
             {
                 continue;
             }
@@ -357,6 +362,16 @@ public sealed class WorldRenderer : IDisposable
         _geometry[placement.Instance.Name] = built;
         return built;
     }
+
+    /// <summary>Returns a rotor's bound across every phase and aerodynamic-tilt sample.</summary>
+    /// <remarks>
+    /// Rotor blur rotates the mesh around its local origin, so its usual off-origin bound centre moves
+    /// over a circle. Centering the cull sphere at that origin and extending it by the centre's radius
+    /// encloses every orientation without selecting a particular blade sample. That retains the full
+    /// retail blur when visible and lets ordinary frustum culling reject a helicopter behind the camera.
+    /// </remarks>
+    private static BoundingSphere RotorCullBounds(in BoundingSphere bounds) =>
+        new(Vector3f.Zero, bounds.Centre.Length + bounds.Radius);
 
 
     /// <summary>

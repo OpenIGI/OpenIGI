@@ -1,3 +1,4 @@
+using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Resources;
@@ -14,6 +15,43 @@ namespace OpenIGI.Game.Tests;
 /// <summary>Checks objective/LevelFlow extraction against all fourteen retail mission scripts.</summary>
 public sealed class MissionObjectiveRuntimeTests
 {
+    [Fact]
+    public void AreaActivationUsesTheLoadedUpperZBound()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AreaActivate"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
+                QvmExpression.Text("Dimensions"), QvmExpression.Text("Real32x3"),
+                QvmExpression.Text("Criteria"), QvmExpression.Text("String32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(900),
+                QvmExpression.Text("AreaActivate"),
+                QvmExpression.Text("Activation volume"),
+                QvmExpression.Real(100f), QvmExpression.Real(200f), QvmExpression.Real(300f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(40f), QvmExpression.Real(60f), QvmExpression.Real(80f),
+                QvmExpression.Text("PLAYER"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+        runtime.TickLevelState(new Vector3d(100.0, 200.0, 340.0));
+        Assert.Equal(1, ReadActive(loop));
+
+        runtime.TickLevelState(new Vector3d(100.0, 200.0, 340.1));
+        Assert.Equal(0, ReadActive(loop));
+
+        static int ReadActive(GameLoop loop)
+        {
+            Assert.True(loop.Variables.TryRead("AreaActivate_900.nActive", out QvmValue active));
+            return active.ToInt32();
+        }
+    }
+
     [Fact]
     public void TransientStatusMessageUsesTheMissionMessageSlotsWithoutWritingTheComputerLog()
     {

@@ -880,10 +880,36 @@ public sealed class SoldierRenderer : IDisposable
             // Its own mesh, so it can hold its own pose (see Member) -- animated, so each tick's
             // re-skin replaces the vertices in place and the pose replaced becomes the previous-pose
             // stream the motion vectors and the between-tick blending read.
+            BonePose initialPose = view.UnrotatedPose();
+            Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
+            group.Geometry.Vertices.CopyTo(initialSkin, 0);
+            bool initialSkinReady = false;
+            if (group.Model is { } skinModel)
+            {
+                try
+                {
+                    MefSkinner.Skin(
+                        skinModel,
+                        initialPose,
+                        (float)(1.0 / WorldScene.UnitsPerMetre),
+                        initialSkin);
+                    initialSkinReady = true;
+                }
+                catch (ArgumentException)
+                {
+                    // Keep the raw mesh if a malformed model cannot be skinned. Its collision path falls
+                    // back to the authoritative pose until two valid animated uploads establish a pair.
+                    initialSkinReady = false;
+                }
+            }
+
             MeshHandle own;
             try
             {
-                own = _device.CreateAnimatedMesh(group.Geometry.Vertices, group.Geometry.Indices);
+                // Both GPU streams begin with this same skin. A smoothed player shot can therefore use
+                // a matching CPU pose pair even on the very first rendered frame; seeding them with raw
+                // geometry would make the displayed blend untraceable until a second animation tick.
+                own = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
             }
             catch (InvalidOperationException)
             {
@@ -901,7 +927,14 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d placement = cutsceneActor
                 ? soldier.Position / WorldScene.UnitsPerMetre
                 : Stand(soldier, group, terrain, cast);
-            group.Soldiers.Add(new Member(view, placement, own) { IsCutsceneActor = cutsceneActor });
+            group.Soldiers.Add(new Member(view, placement, own)
+            {
+                IsCutsceneActor = cutsceneActor,
+                DrawnPose = initialPose,
+                SkinScratch = initialSkin,
+                SkinnedPose = initialSkinReady ? initialPose : null,
+                PreviousSkinnedPose = initialSkinReady ? initialPose : null,
+            });
             if (group.Model is { NativeMarkerBound: > 0f } model
                 && float.IsFinite(model.NativeMarkerBound))
             {
@@ -3290,6 +3323,22 @@ public sealed class SoldierRenderer : IDisposable
                     continue;
                 }
 
+                // UpdateAnimatedMesh moves the old current stream into the previous stream before it
+                // writes this pose. Keep the matching collision-pose pair so a player ray can trace the
+                // very same r_smooth blend the GPU presents, rather than a newer animation frame.
+                if (member.SkinnedPose is null)
+                {
+                    // A malformed model began with raw geometry. The first successful upload gives us a
+                    // current pose but not a trustworthy previous one; wait for the next upload before
+                    // claiming a blend pair that would disagree with the device.
+                    member.SkinnedPose = drawn;
+                    member.PreviousSkinnedPose = null;
+                }
+                else
+                {
+                    member.PreviousSkinnedPose = member.SkinnedPose;
+                    member.SkinnedPose = drawn;
+                }
                 member.PoseFlippedSinceFrame = true;
             }
         }
@@ -4742,6 +4791,11 @@ public sealed class SoldierRenderer : IDisposable
 
         HumanHealth? struck = null;
         SoldierView? struckView = null;
+        Vector3d ray = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double reach = Math.Sqrt((ray.X * ray.X) + (ray.Y * ray.Y) + (ray.Z * ray.Z));
+        Vector3d direction = reach > 0.0
+            ? new Vector3d(ray.X / reach, ray.Y / reach, ray.Z / reach)
+            : default;
 
         foreach (Group group in _groups)
         {
@@ -4767,26 +4821,78 @@ public sealed class SoldierRenderer : IDisposable
                     continue;
                 }
 
-                // The facing is the soldier's own declared orientation, whose +Y is forward -- the same
-                // column 0x462E50 takes the shot direction out of.
-                Matrix3f m = soldier.Orientation;
+                // The player fires against the body the crosshair was drawn over. With r_smooth that is
+                // the last presentation transform, not the newer simulation state the next tick has just
+                // published. AI fire stays on its own fixed-tick path below: this is only the player-shot
+                // delegate supplied by Shooter().
+                bool presented = _frameSmooth && member.HasFrameState;
+                Vector3d feet;
+                Matrix3f m;
+                if (presented)
+                {
+                    Vector3d root = member.DrawnWhere * WorldScene.UnitsPerMetre;
+                    feet = new Vector3d(root.X, root.Y, root.Z - soldier.RootSample.Z);
+                    m = member.DrawnOrientation;
+                }
+                else
+                {
+                    // r_smooth off is the vanilla simulation transform verbatim. The feet the round is
+                    // cast at must be the SAME feet the body is drawn on — grounded onto the floor — and
+                    // the bones sit a root height above them, exactly as the draw lifts the pelvis.
+                    double snappedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+                    feet = new Vector3d(soldier.Position.X, soldier.Position.Y, snappedZ);
+                    m = soldier.Orientation;
+                }
                 Vector3f facing = new(m.M12, m.M22, m.M32);
-
-                // The feet the round is cast at must be the SAME feet the body is drawn on — grounded onto
-                // the floor — and the bones sit a root height above them, exactly as the draw lifts the
-                // pelvis. Passing the raw declared feet with the pelvis-rooted pose put the hit skeleton a
-                // metre (and any un-snapped drop) below the visible guard, so aimed shots missed the zones.
-                double snappedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
-                Vector3d feet = new(soldier.Position.X, soldier.Position.Y, snappedZ);
+                BonePose pose = presented
+                    ? PoseAtPresentationOrientation(soldier, m)
+                    : soldier.Pose();
 
                 // The faithful path: trace the round at the soldier's skinned collision mesh and score it by
-                // the bone the round actually went through (BoneDynCubeObj_TraceLinesHandler). Only if the
-                // model ships no collision mesh does it fall back to the cylinder-and-nearest-bone stand-in.
-                bool met = group.CollisionMesh is { } collision
-                    ? HumanHitTest.TryCastMesh(
-                        origin, end, feet, facing, collision, soldier.Pose(), soldier.RootSample.Z, out HumanHit candidate)
-                    : HumanHitTest.TryCast(
-                        origin, end, feet, facing, soldier.Pose(), out candidate, soldier.RootSample.Z);
+                // the bone the round actually went through (BoneDynCubeObj_TraceLinesHandler). Skinning every
+                // collision vertex for every guard is far costlier than the ray itself, so reject bodies the
+                // segment cannot reach with the same generous body sphere TryPick uses. Starting inside the
+                // sphere still reaches the mesh, which preserves point-blank hits even when the round ends
+                // before it leaves the broad-phase sphere. Only if the model ships no collision mesh does it
+                // fall back to the cylinder-and-nearest-bone stand-in.
+                bool met;
+                HumanHit candidate;
+                if (group.CollisionMesh is { } collision)
+                {
+                    Vector3d centre = new(feet.X, feet.Y, feet.Z + PickChestUnits);
+                    double offsetX = origin.X - centre.X;
+                    double offsetY = origin.Y - centre.Y;
+                    double offsetZ = origin.Z - centre.Z;
+                    bool startsInside = (offsetX * offsetX) + (offsetY * offsetY) + (offsetZ * offsetZ)
+                        <= PickCullRadiusUnits * PickCullRadiusUnits;
+                    if (reach <= 0.0 || (!startsInside
+                        && !RaySphere(origin, direction, centre, PickCullRadiusUnits, reach, out _)))
+                    {
+                        continue;
+                    }
+
+                    met = presented
+                        && member.SkinnedPose is { } currentPose
+                        && member.PreviousSkinnedPose is { } previousPose
+                        ? HumanHitTest.TryCastMeshBlended(
+                            origin,
+                            end,
+                            member.DrawnWhere * WorldScene.UnitsPerMetre,
+                            facing,
+                            collision,
+                            currentPose,
+                            previousPose,
+                            member.DrawnOrientation,
+                            member.PoseBlend,
+                            out candidate)
+                        : HumanHitTest.TryCastMesh(
+                            origin, end, feet, facing, collision, pose, soldier.RootSample.Z, out candidate);
+                }
+                else
+                {
+                    met = HumanHitTest.TryCast(
+                        origin, end, feet, facing, pose, out candidate, soldier.RootSample.Z);
+                }
 
                 if (!met)
                 {
@@ -4856,6 +4962,32 @@ public sealed class SoldierRenderer : IDisposable
             + $"friendly={(friendlyFire ? 1 : 0)} accum={struck.Damage:0.000} max={struck.MaximumHealth:0.000} dead={(struck.IsDead ? 1 : 0)}");
 
         return true;
+    }
+
+    /// <summary>Evaluates a soldier's current animation at the heading actually displayed for this frame.</summary>
+    /// <remarks>
+    /// A <see cref="SoldierView"/> caches a faced pose, whereas drawing applies the r_smooth orientation
+    /// after the identical unrotated animation. Re-evaluating only the cached pose here gives the hit mesh
+    /// the same animated limbs and presented heading without changing the authoritative AI transform.
+    /// </remarks>
+    private static BonePose PoseAtPresentationOrientation(SoldierView soldier, in Matrix3f orientation)
+    {
+        Matrix3f simulationOrientation = soldier.Orientation;
+        if (simulationOrientation == orientation)
+        {
+            return soldier.Pose();
+        }
+
+        Vector3d simulationPosition = soldier.Position;
+        try
+        {
+            soldier.PlaceAt(simulationPosition, orientation);
+            return soldier.Pose();
+        }
+        finally
+        {
+            soldier.PlaceAt(simulationPosition, simulationOrientation);
+        }
     }
 
     /// <summary>Puts a soldier into the general death state — <c>0x45C440</c>, joined up.</summary>
@@ -5504,6 +5636,16 @@ public sealed class SoldierRenderer : IDisposable
         /// have put his hand.
         /// </remarks>
         public BonePose? DrawnPose { get; set; }
+
+        /// <summary>The pose in the animated mesh's current GPU vertex stream.</summary>
+        /// <remarks>
+        /// This is separate from <see cref="DrawnPose"/> because a stopped pose may not upload again;
+        /// player collision needs the exact pair that is still resident on the device.
+        /// </remarks>
+        public BonePose? SkinnedPose { get; set; }
+
+        /// <summary>The pose in the animated mesh's previous GPU vertex stream.</summary>
+        public BonePose? PreviousSkinnedPose { get; set; }
 
         /// <summary>Tracks whether this pose still needs an animated-buffer upload.</summary>
         public PoseUploadLatch PoseUploads { get; } = new();

@@ -177,6 +177,76 @@ public sealed class MissionFourFriendlyActivationTests
     }
 
     [RequiresGameDataFact]
+    public void MissionFourFriendlyPatrolsAdvanceOnTheLiveLocationZeroDeathGate()
+    {
+        // Retail Location 0, level 4 carries the patrol transition in two QVMs. objects.qvm's
+        // EditVariable_752 advances on 406–408 first, then 417–419; 500.qvm's next IDLE dispatch
+        // selects paths 711 and 725 respectively. This deliberately does not tick the 45s/66s Bell
+        // containers: the test isolates the post-activation death gate that used to leave the squad
+        // standing still long after its opposing guards had died.
+        (GameLoop loop, LevelTask root, MissionObjectiveRuntime objectives, CutsceneRuntime _) = LoadLevel();
+        AiPatrolPathRegistry paths = AiPatrolPathRegistry.Build(root);
+        AiScriptHost host = new(loop.Natives, NullLogger.Instance);
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "missions", "location0", "level4", "graphs", "graph1.dat")));
+        QvmProgram friendlyScript = QvmProgram.Read(File.ReadAllBytes(MissionAiPath(500)));
+        QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(Path.Combine(
+            GameData.RequireRoot(), "common", "ai", "guard.qvm")));
+        Vector3d anywhere = default;
+        objectives.SetSoldierOccupants(
+        [
+            new HumanOccupant(406, 1, anywhere, IsDead: true),
+            new HumanOccupant(407, 1, anywhere, IsDead: true),
+            new HumanOccupant(408, 1, anywhere, IsDead: true),
+        ]);
+        objectives.TickLevelState();
+
+        Assert.True(loop.Variables.TryRead("EditVariable_752.nValue", out QvmValue afterFirstGuardLine));
+        Assert.Equal(1, afterFirstGuardLine.ToInt32());
+
+        // The next friendly state tick reads the live level variable, rather than a disconnected local
+        // test value, and dispatches retail 500.qvm's first post-guard patrol. A new brain is the
+        // public simulation seam here: during its first tick AI creation and its no-event IDLE dispatch
+        // run in the same state update.
+        AiSoldier firstAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 1);
+        Vector3d far = new(
+            firstAdvanceFriendly.Position.X,
+            firstAdvanceFriendly.Position.Y + (500 * 4096.0),
+            firstAdvanceFriendly.Position.Z);
+        firstAdvanceFriendly.Tick(1, far, rootMotionThisTick: 0.0, enemyAlive: false);
+        AiProducedAction firstAdvance = Assert.Single(
+            firstAdvanceFriendly.LastActions,
+            action => action.Name == "AIAction_Patrol");
+        Assert.Equal(711, firstAdvance.Argument(0));
+
+        objectives.SetSoldierOccupants(
+        [
+            new HumanOccupant(406, 1, anywhere, IsDead: true),
+            new HumanOccupant(407, 1, anywhere, IsDead: true),
+            new HumanOccupant(408, 1, anywhere, IsDead: true),
+            new HumanOccupant(417, 1, anywhere, IsDead: true),
+            new HumanOccupant(418, 1, anywhere, IsDead: true),
+            new HumanOccupant(419, 1, anywhere, IsDead: true),
+        ]);
+        objectives.TickLevelState();
+
+        Assert.True(loop.Variables.TryRead("EditVariable_752.nValue", out QvmValue afterSecondGuardLine));
+        Assert.Equal(2, afterSecondGuardLine.ToInt32());
+
+        // 500.qvm maps stage two to patrol 725. The authored path's first movement is the run toward
+        // node 113, so this is the exact rescue-building advance instead of merely checking a counter.
+        AiSoldier secondAdvanceFriendly = NewFriendly(graph, paths, host, friendlyScript, guard, seed: 2);
+        secondAdvanceFriendly.Tick(2, far, rootMotionThisTick: 0.0, enemyAlive: false);
+        AiProducedAction secondAdvance = Assert.Single(
+            secondAdvanceFriendly.LastActions,
+            action => action.Name == "AIAction_Patrol");
+        Assert.Equal(725, secondAdvance.Argument(0));
+        AiPatrolPath path725 = Assert.IsType<AiPatrolPath>(paths.Find(725));
+        Assert.Contains(path725.Commands, command =>
+            command.Kind == AiPatrolCommandKind.RunTo && command.Operand == 113);
+    }
+
+    [RequiresGameDataFact]
     public void MissionFourExtractAreaAndOutroCutsceneExportRetailNames()
     {
         (GameLoop loop, LevelTask root, MissionObjectiveRuntime objectives, CutsceneRuntime _) = LoadLevel();
@@ -247,4 +317,18 @@ public sealed class MissionFourFriendlyActivationTests
 
     private static string MissionAiPath(int id) => Path.Combine(
         GameData.RequireRoot(), "missions", "location0", "level4", "ai", $"{id}.qvm");
+
+    private static AiSoldier NewFriendly(
+        GraphFile graph,
+        AiPatrolPathRegistry paths,
+        AiScriptHost host,
+        QvmProgram script,
+        QvmProgram guard,
+        int seed)
+    {
+        AiSoldier friendly = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: seed);
+        friendly.SetPatrolPaths(paths);
+        friendly.SetScript(host, script, guard);
+        return friendly;
+    }
 }

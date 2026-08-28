@@ -612,7 +612,7 @@ public sealed class MissionObjectiveRuntime
             // publishes their component-wise min/max as the query bounds.
             Vector3f half = dimensions * 0.5f;
             double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
-            double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MaxValue;
+            double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
             for (int corner = 0; corner < 8; corner++)
             {
                 Vector3f local = new(
