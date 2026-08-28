@@ -46,8 +46,8 @@ internal sealed class RayTracedShadowPass : IDisposable
     // world is a few thousand units across means only the horizon is given the benefit of the doubt.
     private const float RayLength = 4000f;
 
-    // One 4x4 rotation and five 4-vectors.
-    private const int ParamSize = 64 + (5 * 16);
+    // One 4x4 rotation and six 4-vectors.
+    private const int ParamSize = 64 + (6 * 16);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -55,6 +55,7 @@ internal sealed class RayTracedShadowPass : IDisposable
         ComputeBindingKind.SampledImage,          // the world normal, to offset off the surface
         ComputeBindingKind.AccelerationStructure, // the world to trace against
         ComputeBindingKind.StorageImage,          // how much sun reaches each pixel
+        ComputeBindingKind.SampledImage,          // the cut-out masks, one layer per cut-out texture
     ];
 
     private readonly VulkanComputePass _pass;
@@ -67,13 +68,25 @@ internal sealed class RayTracedShadowPass : IDisposable
         #version 460
         #extension GL_EXT_ray_query : require
 
+        // How a hit reaches the geometry it landed on. There is no descriptor for a triangle the ray
+        // chose, so the vertices, the indices and the material records are read straight from their
+        // device addresses -- which is what buffer_reference is, and what the 64-bit integer type is
+        // needed for.
+        #extension GL_EXT_buffer_reference2 : require
+        #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
         layout(local_size_x = 8, local_size_y = 8) in;
 
         layout(set = 0, binding = 0) uniform sampler2D uDepth;
         layout(set = 0, binding = 1) uniform sampler2D uNormal;
         layout(set = 0, binding = 2) uniform accelerationStructureEXT uScene;
         layout(set = 0, binding = 3, rg16f) uniform writeonly image2D uShadow;  // visibility, occluder distance
-        layout(set = 0, binding = 4) uniform Params
+        layout(set = 0, binding = 4) uniform sampler2DArray uMasks;             // cut-out shapes, one layer each
+
+        // The pass places its parameters after every resource, so this index moves whenever a binding is
+        // added above it. It was 4 while there were four resources and is 5 now; getting it wrong does not
+        // fail to compile, it silently overlaps a resource and the pass reads rubbish.
+        layout(set = 0, binding = 5) uniform Params
         {
             mat4 uViewToWorld;   // view rotation, camera relative
             vec4 uUnproject;     // xScale, yScale, near, far
@@ -81,6 +94,7 @@ internal sealed class RayTracedShadowPass : IDisposable
             vec4 uSunAndCamera;  // xyz world direction towards the sun, w how far to look
             vec4 uCamera;        // xyz camera position, w the sine of the sun's half-angle
             vec4 uJitter;        // frame index, unused
+            uvec4 uRecords;      // device address of the material records, low word then high
         } p;
 
         // The reference's sun is a disc a little over half a degree wide, not a point, and that is the
@@ -127,6 +141,89 @@ internal sealed class RayTracedShadowPass : IDisposable
         {
             pos += frame * (vec2(47.0, 17.0) * 0.695);
             return fract(52.9829189 * fract(dot(pos, vec2(0.06711056, 0.00583715))));
+        }
+
+        // Everything the ray needs about a triangle it has not chosen yet, read by address. Declared as
+        // plain word and float arrays rather than as the structures they describe: the alignment a
+        // reference block demands is then four bytes, which every one of these buffers already satisfies,
+        // and no layout rule has to agree with a C# struct.
+        layout(buffer_reference, buffer_reference_align = 4, std430) readonly buffer Words { uint v[]; };
+        layout(buffer_reference, buffer_reference_align = 4, std430) readonly buffer Floats { float v[]; };
+
+        // Vertex3D is 48 bytes, and its diffuse UV is the seventh and eighth floats.
+        const uint kVertexFloats = 12u;
+        const uint kUvFloat = 6u;
+
+        // Eight words: the vertex address, the index address, the first index, and the mask layer.
+        const uint kRecordWords = 8u;
+
+        // Matches VulkanOpacityMasks.Resolution.
+        const float kMaskResolution = 256.0;
+
+        // One 16-bit index, out of a buffer read as 32-bit words so that no 16-bit storage feature is
+        // needed. The buffer's own base is word aligned; only the element is not.
+        uint IndexAt(Words indices, uint at)
+        {
+            uint word = indices.v[at >> 1u];
+            return ((at & 1u) == 0u) ? (word & 0xffffu) : (word >> 16u);
+        }
+
+        // Whether the triangle the ray is standing on is actually there at the point it met it.
+        //
+        // This is the whole reason cut-out surfaces can be traced at all. Traversal only asks about
+        // geometry the structure was built as non-opaque, so a solid triangle never reaches here and pays
+        // nothing; a wire fence's quad does, and the answer is whether the texel the ray passed through
+        // was one of the wires or one of the holes. The reference does the same thing through its
+        // any-hit shader with the material's real texture. Ours reads a mask reduced from that texture at
+        // load, which is a resolution the shadow cannot see the difference from and a great deal less
+        // machinery -- see VulkanOpacityMasks.
+        bool CandidateIsSolid(rayQueryEXT query)
+        {
+            // A structure with no records is one built before this existed, or one whose records ran out.
+            // Taking the hit is the conservative answer: the surface occludes as it did before.
+            if ((p.uRecords.x | p.uRecords.y) == 0u)
+            {
+                return true;
+            }
+
+            // The instance carries where its structure's records start; the geometry index says which of
+            // them this run is. A mesh is not a material, so both halves are needed.
+            uint record = uint(rayQueryGetIntersectionInstanceCustomIndexEXT(query, false))
+                + uint(rayQueryGetIntersectionGeometryIndexEXT(query, false));
+
+            Words records = Words(packUint2x32(uvec2(p.uRecords.x, p.uRecords.y)));
+            uint at = record * kRecordWords;
+
+            int layer = int(records.v[at + 5u]);
+            if (layer < 0)
+            {
+                return true;
+            }
+
+            Floats vertices = Floats(packUint2x32(uvec2(records.v[at + 0u], records.v[at + 1u])));
+            Words indices = Words(packUint2x32(uvec2(records.v[at + 2u], records.v[at + 3u])));
+
+            // The primitive index counts from the geometry's own first index, which is what the build was
+            // given as its primitive offset -- so the first index is added back here.
+            uint first = records.v[at + 4u]
+                + (uint(rayQueryGetIntersectionPrimitiveIndexEXT(query, false)) * 3u);
+
+            uint i0 = IndexAt(indices, first + 0u);
+            uint i1 = IndexAt(indices, first + 1u);
+            uint i2 = IndexAt(indices, first + 2u);
+
+            vec2 uv0 = vec2(vertices.v[(i0 * kVertexFloats) + kUvFloat], vertices.v[(i0 * kVertexFloats) + kUvFloat + 1u]);
+            vec2 uv1 = vec2(vertices.v[(i1 * kVertexFloats) + kUvFloat], vertices.v[(i1 * kVertexFloats) + kUvFloat + 1u]);
+            vec2 uv2 = vec2(vertices.v[(i2 * kVertexFloats) + kUvFloat], vertices.v[(i2 * kVertexFloats) + kUvFloat + 1u]);
+
+            vec2 bary = rayQueryGetIntersectionBarycentricsEXT(query, false);
+            vec2 uv = (uv0 * (1.0 - bary.x - bary.y)) + (uv1 * bary.x) + (uv2 * bary.y);
+
+            // Wrapped rather than clamped, because these textures tile -- a fence's UV runs well past one
+            // along its length. A cut-out texture sampled with clamping in the raster path would disagree
+            // at its edge, which no surface in this level does.
+            ivec2 texel = ivec2(fract(uv) * kMaskResolution);
+            return texelFetch(uMasks, ivec3(texel, layer), 0).r > 0.5;
         }
 
         // The view-space position a depth sample came from. Reverse-Z, so the stored depth is mapped back
@@ -205,9 +302,12 @@ internal sealed class RayTracedShadowPass : IDisposable
                 query,
                 uScene,
 
-                // Nothing here has an any-hit shader and nothing needs the nearest hit: the first thing in
-                // the way is enough to know the point is in shadow.
-                gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+                // Nothing needs the nearest hit -- the first thing in the way is enough to know the point
+                // is in shadow -- but the ray is NOT forced opaque. Forcing it would take every cut-out
+                // triangle at face value, which is the fence casting the shadow of a board; without it,
+                // traversal asks about those triangles and the loop below answers from the alpha. Solid
+                // geometry is still committed by traversal itself and never reaches the loop.
+                gl_RayFlagsTerminateOnFirstHitEXT,
                 0xFF,
                 worldPos + (normal * offset),
                 0.01,
@@ -216,6 +316,11 @@ internal sealed class RayTracedShadowPass : IDisposable
 
             while (rayQueryProceedEXT(query))
             {
+                if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT
+                    && CandidateIsSolid(query))
+                {
+                    rayQueryConfirmIntersectionEXT(query);
+                }
             }
 
             bool hit = rayQueryGetIntersectionTypeEXT(query, true) != gl_RayQueryCommittedIntersectionNoneEXT;
@@ -268,6 +373,11 @@ internal sealed class RayTracedShadowPass : IDisposable
     /// <param name="unprojection">The projection's scales and planes.</param>
     /// <param name="sunAngleDegrees">How wide the sun's disc is, which is what gives a shadow its penumbra.</param>
     /// <param name="frameIndex">A number that changes every frame, so the one ray lands somewhere new.</param>
+    /// <param name="maskView">The cut-out mask array a candidate hit tests its alpha against.</param>
+    /// <param name="recordAddress">
+    /// Where the material records live, or zero when the world scene has none — in which case every hit is
+    /// taken at face value, which is what the pass did before it could test one.
+    /// </param>
     public void Record(
         CommandBuffer cmd,
         int frame,
@@ -275,6 +385,8 @@ internal sealed class RayTracedShadowPass : IDisposable
         ImageView normalView,
         AccelerationStructureKHR scene,
         ImageView shadowView,
+        ImageView maskView,
+        ulong recordAddress,
         int width,
         int height,
         Matrix3f viewToWorld,
@@ -319,12 +431,21 @@ internal sealed class RayTracedShadowPass : IDisposable
         data[34] = 0f;
         data[35] = 0f;
 
+        // The record buffer's address, as the two words the shader reassembles it from. Written as raw
+        // bits through a float span because that is what the parameter block is: the block is declared
+        // uvec4 on the other side, so the bits are what matter and not the type they travelled in.
+        data[36] = BitConverter.UInt32BitsToSingle((uint)recordAddress);
+        data[37] = BitConverter.UInt32BitsToSingle((uint)(recordAddress >> 32));
+        data[38] = 0f;
+        data[39] = 0f;
+
         ReadOnlySpan<ComputeResource> resources =
         [
             new ComputeResource(depthView),
             new ComputeResource(normalView),
             ComputeResource.Scene(scene),
             new ComputeResource(shadowView),
+            new ComputeResource(maskView),
         ];
 
         _pass.Record(cmd, frame, resources, data, (uint)((width + 7) / 8), (uint)((height + 7) / 8));

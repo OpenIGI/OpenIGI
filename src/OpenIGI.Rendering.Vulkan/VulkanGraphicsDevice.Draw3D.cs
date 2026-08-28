@@ -26,6 +26,65 @@ public sealed partial class VulkanGraphicsDevice
     // The terrain's level-of-detail fade: scale, offset, slope, and which kind of terrain page this is.
     // All zero for everything that is not terrain, which is how the vertex stage tells them apart.
     private (float Scale, float Offset, float Slope, float Mode) _detailFade;
+
+    // Animated meshes drawn into this frame's G-buffer, and each occurrence's transform this frame and
+    // last. The velocity compute derives motion from the camera alone, so anything moving under its own
+    // power must stamp its true screen delta afterwards — see ObjectVelocityPass. The view-space
+    // translation rides along for the mispair guard below: the composed clip transform has no column
+    // that means metres.
+    private readonly record struct ObjectVelocityState(Matrix4f Transform, Vector3f ViewTranslation);
+
+    private readonly List<Deferred.ObjectVelocityDraw> _objectVelocityDraws = [];
+    private readonly Dictionary<long, ObjectVelocityState> _objectVelocityPrevious = [];
+    private readonly Dictionary<long, ObjectVelocityState> _objectVelocityCurrent = [];
+    private readonly Dictionary<uint, int> _objectVelocityOccurrence = [];
+
+    /// <summary>Records one animated G-buffer draw for the object-velocity stamp.</summary>
+    /// <remarks>
+    /// The key is the mesh plus which occurrence of it this is within the frame, so a mesh drawn several
+    /// times pairs each draw with its own transform from the previous frame — as long as the draw order
+    /// is stable, which a renderer iterating its own lists gives for free.
+    /// </remarks>
+    private void RecordObjectVelocity(uint meshId, VulkanMesh resource, int indexOffset, int indexCount, in Matrix4f modelView)
+    {
+        Matrix4f now = _projection * modelView;
+        Vector3f translation = new(modelView.M14, modelView.M24, modelView.M34);
+        _objectVelocityOccurrence.TryGetValue(meshId, out int occurrence);
+        _objectVelocityOccurrence[meshId] = occurrence + 1;
+
+        long key = ((long)meshId << 16) | (uint)(occurrence & 0xFFFF);
+        Matrix4f previous = now;
+        if (_objectVelocityPrevious.TryGetValue(key, out ObjectVelocityState prev))
+        {
+            // A plausibility guard on the pairing. The key is draw order, and draw order can shift when
+            // culling admits or drops an occurrence — pairing this draw with some OTHER occurrence's old
+            // transform would stamp a huge false velocity and the temporal filter would smear a ghost
+            // from it. Nothing this pass serves moves metres in a frame, so a jump that large is a
+            // mispair, and the honest fallback is "no motion of its own this frame".
+            Vector3f jump = translation - prev.ViewTranslation;
+            if (jump.LengthSquared <= 4f)
+            {
+                previous = prev.Transform;
+            }
+        }
+
+        _objectVelocityCurrent[key] = new ObjectVelocityState(now, translation);
+        _objectVelocityDraws.Add(new Deferred.ObjectVelocityDraw(resource, indexOffset, indexCount, now, previous));
+    }
+
+    /// <summary>Rolls the object-velocity bookkeeping over to the next frame.</summary>
+    private void RollObjectVelocityFrame()
+    {
+        _objectVelocityPrevious.Clear();
+        foreach (KeyValuePair<long, ObjectVelocityState> entry in _objectVelocityCurrent)
+        {
+            _objectVelocityPrevious[entry.Key] = entry.Value;
+        }
+
+        _objectVelocityCurrent.Clear();
+        _objectVelocityOccurrence.Clear();
+        _objectVelocityDraws.Clear();
+    }
     private DepthState _depthState = DepthState.Disabled;
     private CullMode _cullMode = CullMode.None;
 
@@ -198,6 +257,14 @@ public sealed partial class VulkanGraphicsDevice
         // so what the structure is built from is the run rather than the whole mesh. The transform it
         // wants is object to absolute world, which ObserveForRayTracing composes.
         ObserveForRayTracing(resource, modelView, diffuse, indexOffset, indexCount);
+
+        // An animated mesh in the G-buffer is a thing that moves under its own power — a soldier, a
+        // door — and the camera-derived velocity is wrong for it. Remembered here, stamped after the
+        // velocity compute.
+        if (resource.Animated && _capturing && _deferredStage == DeferredStage.Geometry)
+        {
+            RecordObjectVelocity(mesh.Id, resource, indexOffset, indexCount, modelView);
+        }
 
         _instance.Vk.CmdDrawIndexed(_frameCommandBuffer, (uint)indexCount, 1, (uint)indexOffset, 0, 0);
     }
@@ -476,10 +543,10 @@ public sealed partial class VulkanGraphicsDevice
         BindMeshBuffers(mesh);
         BindMeshTextures(pipeline.PipelineLayout, diffuse, lightmap);
 
-        // The forward and direct pipelines take only the combined model-view-projection; their shader
-        // applies the OpenGL-to-Vulkan clip correction.
+        // The forward and direct pipelines take the combined model-view-projection plus the lit
+        // view-model block; their shader applies the OpenGL-to-Vulkan clip correction.
         Matrix4f mvp = _projection * modelView;
-        float* data = stackalloc float[17];
+        float* data = stackalloc float[32];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
 
         // What this draw leaves in the lit target's alpha. A translucent draw keeps its own alpha,
@@ -488,12 +555,30 @@ public sealed partial class VulkanGraphicsDevice
         // of the eye.
         data[16] = blend != BlendMode.Opaque ? -1f : (_firstPersonGeometry ? 0f : 1f);
 
+        // The lit view-model path, for the first-person rig only: its lighting is designed in display
+        // terms (the retail look), so it is divided by the exposure the resolve will apply — written
+        // raw, the eye adaptation of a dim interior multiplied the arms into pure white.
+        bool litViewModel = _firstPersonGeometry && blend == BlendMode.Opaque;
+        float exposure = MathF.Max(RenderCVars.Exposure.Value * _lastAdaptedExposure, 1e-3f);
+        data[17] = litViewModel ? 1f / exposure : 1f;
+        data[18] = litViewModel ? 1f : 0f;
+        data[19] = _lighting.AmbientColour.Length;
+
+        // The model-to-view rotation, row by row, each w carrying one channel of the key colour — the
+        // level's own sun tint, so a weapon picks up the mood of the mission it is in.
+        data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
+        data[23] = _lighting.SunColour.X;
+        data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
+        data[27] = _lighting.SunColour.Y;
+        data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
+        data[31] = _lighting.SunColour.Z;
+
         vk.CmdPushConstants(
             cmd,
             pipeline.PipelineLayout,
             ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
             0,
-            sizeof(float) * 17,
+            sizeof(float) * 32,
             data);
     }
 

@@ -446,7 +446,19 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     public void SetViewport(in Viewport viewport)
     {
         ThrowIfDisposed();
-        _viewport = viewport;
+
+        // While a scene capture is open the viewport is in RENDER coordinates — the app scales its own
+        // sub-viewports (the map inset) by the render scale — and it must not overwrite the window
+        // viewport the present pass and the UI draw with.
+        if (_capturing)
+        {
+            _sceneViewport = viewport;
+        }
+        else
+        {
+            _viewport = viewport;
+        }
+
         if (_presentPassActive || DeferredPassActive)
         {
             ApplyViewportAndScissor(_frameCommandBuffer, viewport);

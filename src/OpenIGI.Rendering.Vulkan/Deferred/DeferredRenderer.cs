@@ -38,6 +38,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
+    private readonly ObjectVelocityPass _objectVelocity;
     private readonly BloomPass _bloom;
     private readonly MotionBlurPass _motionBlur;
     private readonly Tsr.DilateVelocityPass _dilateVelocity;
@@ -88,6 +89,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
+        _objectVelocity = new ObjectVelocityPass(vk, device, compiler, DeferredRenderPass.DepthFormat);
         _bloom = new BloomPass(vk, device, allocator, commands, compiler, framesInFlight);
         _motionBlur = new MotionBlurPass(vk, device, allocator, compiler, framesInFlight);
         _dilateVelocity = new Tsr.DilateVelocityPass(vk, device, allocator, compiler, framesInFlight);
@@ -197,6 +199,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
 
+    /// <summary>Gets the raster pass that stamps each animated mesh's own motion over the velocity.</summary>
+    public ObjectVelocityPass ObjectVelocity => _objectVelocity;
+
     /// <summary>Gets the bloom pyramid, the lens scatter the reference composites before its tone map.</summary>
     public BloomPass Bloom => _bloom;
 
@@ -256,11 +261,13 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="frameIndex">The frame-in-flight index.</param>
     /// <param name="width">The render width in pixels.</param>
     /// <param name="height">The render height in pixels.</param>
+    /// <param name="outputWidth">The presented width, or 0 for the render width.</param>
+    /// <param name="outputHeight">The presented height, or 0 for the render height.</param>
     /// <returns>The ready scene target.</returns>
-    public SceneTarget Target(int frameIndex, int width, int height)
+    public SceneTarget Target(int frameIndex, int width, int height, int outputWidth = 0, int outputHeight = 0)
     {
         SceneTarget target = _targets[frameIndex];
-        target.Ensure(width, height);
+        target.Ensure(width, height, outputWidth, outputHeight);
         return target;
     }
 
@@ -308,6 +315,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _sky.Dispose();
         _autoExposure.Dispose();
         _velocity.Dispose();
+        _objectVelocity.Dispose();
         _bloom.Dispose();
         _motionBlur.Dispose();
         _sunShadowDenoise?.Dispose();

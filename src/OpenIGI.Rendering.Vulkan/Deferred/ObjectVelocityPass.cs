@@ -1,0 +1,508 @@
+using OpenIGI.Core.Numerics;
+using OpenIGI.Rendering.Vulkan.Interop;
+using OpenIGI.Rendering.Vulkan.Meshes;
+using OpenIGI.Rendering.Vulkan.Shaders;
+using Silk.NET.Core.Native;
+using Silk.NET.Vulkan;
+
+namespace OpenIGI.Rendering.Vulkan.Deferred;
+
+/// <summary>One animated draw whose screen motion must be stamped into the velocity image.</summary>
+/// <param name="Mesh">The mesh that was drawn.</param>
+/// <param name="IndexOffset">The first index of the drawn range.</param>
+/// <param name="IndexCount">How many indices the range drew.</param>
+/// <param name="Current">This frame's model-view-projection, exactly as the G-buffer drew it.</param>
+/// <param name="Previous">The previous frame's, for the same mesh occurrence.</param>
+internal readonly record struct ObjectVelocityDraw(
+    VulkanMesh Mesh,
+    int IndexOffset,
+    int IndexCount,
+    Matrix4f Current,
+    Matrix4f Previous);
+
+/// <summary>
+/// A raster pass that overwrites the computed velocity with each MOVING object's own screen motion.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The velocity compute derives motion from depth and the two cameras, which is exact for everything
+/// that stands still — and silently wrong for everything that does not. A running soldier reprojects as
+/// though he were part of the wall behind him, so the temporal accumulation blends his history from
+/// where he was not: the reported "enemies are blurry when they move". This pass redraws each animated
+/// mesh over the velocity image with this frame's and the previous frame's transforms, writing the true
+/// screen delta wherever the mesh actually won the depth test.
+/// </para>
+/// <para>
+/// The motion is RIGID per draw — the previous transform moves the current pose's vertices, so limb
+/// swing within the pose is not captured, only the body's own translation and turn. That is the bulk of
+/// the smear: the animated vertex buffers are rewritten in place each pose, so the previous pose's
+/// vertices no longer exist to be read. Capturing them is the refinement, not the requirement.
+/// </para>
+/// <para>
+/// The pass rasterises with the exact transform the G-buffer draw used (jitter and all) so the depths
+/// match, tests GREATER-OR-EQUAL with a whisker of bias toward the eye, and writes no depth. Occluded
+/// parts of the mesh fail the test and leave the background's motion alone.
+/// </para>
+/// </remarks>
+internal sealed unsafe class ObjectVelocityPass : IDisposable
+{
+    private readonly Vk _vk;
+    private readonly Device _device;
+    private readonly VulkanShaderModule _vertex;
+    private readonly VulkanShaderModule _fragment;
+    private readonly RenderPass _renderPass;
+    private readonly PipelineLayout _layout;
+    private readonly Pipeline _pipeline;
+    private readonly Dictionary<(ulong Velocity, ulong Depth), Framebuffer> _framebuffers = [];
+    private bool _disposed;
+
+    private const string VertexSource =
+        """
+        #version 450
+
+        layout(location = 0) in vec3 aPosition;
+
+        layout(push_constant) uniform Push
+        {
+            mat4 uCurrent;    // this frame's model-view-projection, exactly as the G-buffer drew it
+            mat4 uPrevious;   // the previous frame's, same mesh occurrence
+        } push;
+
+        layout(location = 0) out vec4 vCurrentClip;
+        layout(location = 1) out vec4 vPreviousClip;
+
+        void main()
+        {
+            vec4 clip = push.uCurrent * vec4(aPosition, 1.0);
+            vCurrentClip = clip;
+            vPreviousClip = push.uPrevious * vec4(aPosition, 1.0);
+
+            // The same OpenGL-to-Vulkan correction the G-buffer vertex stage applies, in the same order,
+            // so the rasterised depth is bit-comparable with what that pass stored.
+            clip.y = -clip.y;
+            clip.z = (clip.w - clip.z) * 0.5;
+            gl_Position = clip;
+        }
+        """;
+
+    private const string FragmentSource =
+        """
+        #version 450
+
+        layout(push_constant) uniform Push
+        {
+            mat4 uCurrent;
+            mat4 uPrevious;
+        } push;
+
+        layout(location = 0) in vec4 vCurrentClip;
+        layout(location = 1) in vec4 vPreviousClip;
+
+        layout(location = 0) out vec2 outVelocity;
+
+        // Engine clip space to the image-space uv the velocity consumers use: the engine's Y is up and
+        // the image's is down, hence the negation — the same convention the compute pass writes.
+        vec2 ImageUv(vec4 clip)
+        {
+            vec2 ndc = clip.xy / clip.w;
+            return vec2((ndc.x * 0.5) + 0.5, (-ndc.y * 0.5) + 0.5);
+        }
+
+        void main()
+        {
+            // Behind the previous camera: it had no screen position to have moved from.
+            if (vPreviousClip.w < 1e-3)
+            {
+                outVelocity = vec2(0.0);
+                return;
+            }
+
+            outVelocity = ImageUv(vCurrentClip) - ImageUv(vPreviousClip);
+        }
+        """;
+
+    /// <summary>Initialises a new instance of the <see cref="ObjectVelocityPass"/> class.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pass lives on.</param>
+    /// <param name="compiler">The shader compiler.</param>
+    /// <param name="depthFormat">The scene depth attachment's format.</param>
+    public ObjectVelocityPass(Vk vk, VulkanDevice device, ShaderCompiler compiler, Format depthFormat)
+    {
+        ArgumentNullException.ThrowIfNull(vk);
+        ArgumentNullException.ThrowIfNull(device);
+        ArgumentNullException.ThrowIfNull(compiler);
+        _vk = vk;
+        _device = device.Device;
+
+        _vertex = new VulkanShaderModule(
+            vk, _device, compiler.Compile(VertexSource, ShaderStage.Vertex, "objectvelocity.vert"), ShaderStage.Vertex);
+        _fragment = new VulkanShaderModule(
+            vk, _device, compiler.Compile(FragmentSource, ShaderStage.Fragment, "objectvelocity.frag"), ShaderStage.Fragment);
+
+        _renderPass = CreateRenderPass(depthFormat);
+        _layout = CreatePipelineLayout();
+        _pipeline = CreatePipeline();
+    }
+
+    /// <summary>Records the pass: one draw per recorded animated mesh, over the velocity image.</summary>
+    /// <param name="cmd">The command buffer to record into.</param>
+    /// <param name="velocityView">The velocity image view, as a colour attachment.</param>
+    /// <param name="velocityHandle">The velocity view's raw handle, keying the framebuffer cache.</param>
+    /// <param name="depthView">The scene depth view, tested read-only.</param>
+    /// <param name="depthHandle">The depth view's raw handle, keying the framebuffer cache.</param>
+    /// <param name="width">The render width.</param>
+    /// <param name="height">The render height.</param>
+    /// <param name="draws">The animated draws recorded this frame.</param>
+    public void Record(
+        CommandBuffer cmd,
+        ImageView velocityView,
+        ulong velocityHandle,
+        ImageView depthView,
+        ulong depthHandle,
+        uint width,
+        uint height,
+        IReadOnlyList<ObjectVelocityDraw> draws)
+    {
+        Framebuffer framebuffer = GetFramebuffer(velocityView, velocityHandle, depthView, depthHandle, width, height);
+
+        RenderPassBeginInfo begin = new()
+        {
+            SType = StructureType.RenderPassBeginInfo,
+            RenderPass = _renderPass,
+            Framebuffer = framebuffer,
+            RenderArea = new Rect2D(new Offset2D(0, 0), new Extent2D(width, height)),
+            ClearValueCount = 0,
+        };
+
+        _vk.CmdBeginRenderPass(cmd, &begin, SubpassContents.Inline);
+        _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _pipeline);
+
+        Silk.NET.Vulkan.Viewport viewport = new(0f, 0f, width, height, 0f, 1f);
+        Rect2D scissor = new(new Offset2D(0, 0), new Extent2D(width, height));
+        _vk.CmdSetViewport(cmd, 0, 1, &viewport);
+        _vk.CmdSetScissor(cmd, 0, 1, &scissor);
+
+        Span<float> push = stackalloc float[32];
+        foreach (ObjectVelocityDraw draw in draws)
+        {
+            draw.Current.CopyColumnMajorTo(push[..16]);
+            draw.Previous.CopyColumnMajorTo(push[16..]);
+            fixed (float* data = push)
+            {
+                _vk.CmdPushConstants(
+                    cmd, _layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, 128, data);
+            }
+
+            Buffer vertexBuffer = draw.Mesh.VertexBuffer;
+            ulong vertexOffset = 0;
+            _vk.CmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &vertexOffset);
+            _vk.CmdBindIndexBuffer(cmd, draw.Mesh.IndexBuffer, 0, IndexType.Uint16);
+            _vk.CmdDrawIndexed(cmd, (uint)draw.IndexCount, 1, (uint)draw.IndexOffset, 0, 0);
+        }
+
+        _vk.CmdEndRenderPass(cmd);
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        foreach (Framebuffer framebuffer in _framebuffers.Values)
+        {
+            _vk.DestroyFramebuffer(_device, framebuffer, null);
+        }
+
+        _framebuffers.Clear();
+        _vk.DestroyPipeline(_device, _pipeline, null);
+        _vk.DestroyPipelineLayout(_device, _layout, null);
+        _vk.DestroyRenderPass(_device, _renderPass, null);
+        _fragment.Dispose();
+        _vertex.Dispose();
+    }
+
+    /// <summary>Drops every cached framebuffer, for a resize that recreated the views they point at.</summary>
+    public void InvalidateFramebuffers()
+    {
+        foreach (Framebuffer framebuffer in _framebuffers.Values)
+        {
+            _vk.DestroyFramebuffer(_device, framebuffer, null);
+        }
+
+        _framebuffers.Clear();
+    }
+
+    private Framebuffer GetFramebuffer(
+        ImageView velocityView, ulong velocityHandle, ImageView depthView, ulong depthHandle, uint width, uint height)
+    {
+        (ulong, ulong) key = (velocityHandle, depthHandle);
+        if (_framebuffers.TryGetValue(key, out Framebuffer existing))
+        {
+            return existing;
+        }
+
+        ImageView* attachments = stackalloc ImageView[2] { velocityView, depthView };
+        FramebufferCreateInfo createInfo = new()
+        {
+            SType = StructureType.FramebufferCreateInfo,
+            RenderPass = _renderPass,
+            AttachmentCount = 2,
+            PAttachments = attachments,
+            Width = width,
+            Height = height,
+            Layers = 1,
+        };
+
+        Framebuffer framebuffer;
+        VkCheck.Ok(_vk.CreateFramebuffer(_device, &createInfo, null, &framebuffer), "vkCreateFramebuffer (object velocity)");
+        _framebuffers[key] = framebuffer;
+        return framebuffer;
+    }
+
+    private RenderPass CreateRenderPass(Format depthFormat)
+    {
+        AttachmentDescription* attachments = stackalloc AttachmentDescription[2];
+
+        // The velocity image lives its whole life in General — written by compute before this pass and
+        // read by compute after it — so the pass loads and stores it there rather than transitioning.
+        attachments[0] = new AttachmentDescription
+        {
+            Format = Format.R16G16Sfloat,
+            Samples = SampleCountFlags.Count1Bit,
+            LoadOp = AttachmentLoadOp.Load,
+            StoreOp = AttachmentStoreOp.Store,
+            StencilLoadOp = AttachmentLoadOp.DontCare,
+            StencilStoreOp = AttachmentStoreOp.DontCare,
+            InitialLayout = ImageLayout.General,
+            FinalLayout = ImageLayout.General,
+        };
+
+        // The depth is read-only here: tested, never written, and handed back in the sampled layout the
+        // compute passes around this one expect.
+        attachments[1] = new AttachmentDescription
+        {
+            Format = depthFormat,
+            Samples = SampleCountFlags.Count1Bit,
+            LoadOp = AttachmentLoadOp.Load,
+            StoreOp = AttachmentStoreOp.Store,
+            StencilLoadOp = AttachmentLoadOp.DontCare,
+            StencilStoreOp = AttachmentStoreOp.DontCare,
+            InitialLayout = ImageLayout.ShaderReadOnlyOptimal,
+            FinalLayout = ImageLayout.ShaderReadOnlyOptimal,
+        };
+
+        AttachmentReference colour = new(0, ImageLayout.General);
+        AttachmentReference depth = new(1, ImageLayout.DepthStencilReadOnlyOptimal);
+
+        SubpassDescription subpass = new()
+        {
+            PipelineBindPoint = PipelineBindPoint.Graphics,
+            ColorAttachmentCount = 1,
+            PColorAttachments = &colour,
+            PDepthStencilAttachment = &depth,
+        };
+
+        SubpassDependency* dependencies = stackalloc SubpassDependency[2];
+
+        // The compute velocity write, and every earlier read of the depth, before this pass's use.
+        dependencies[0] = new SubpassDependency
+        {
+            SrcSubpass = Vk.SubpassExternal,
+            DstSubpass = 0,
+            SrcStageMask = PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.LateFragmentTestsBit,
+            SrcAccessMask = AccessFlags.ShaderWriteBit | AccessFlags.DepthStencilAttachmentWriteBit,
+            DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit
+                | PipelineStageFlags.EarlyFragmentTestsBit
+                | PipelineStageFlags.LateFragmentTestsBit,
+            DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentReadBit,
+        };
+
+        // This pass's colour write before the dilation's compute read.
+        dependencies[1] = new SubpassDependency
+        {
+            SrcSubpass = 0,
+            DstSubpass = Vk.SubpassExternal,
+            SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit,
+            SrcAccessMask = AccessFlags.ColorAttachmentWriteBit,
+            DstStageMask = PipelineStageFlags.ComputeShaderBit,
+            DstAccessMask = AccessFlags.ShaderReadBit,
+        };
+
+        RenderPassCreateInfo createInfo = new()
+        {
+            SType = StructureType.RenderPassCreateInfo,
+            AttachmentCount = 2,
+            PAttachments = attachments,
+            SubpassCount = 1,
+            PSubpasses = &subpass,
+            DependencyCount = 2,
+            PDependencies = dependencies,
+        };
+
+        RenderPass renderPass;
+        VkCheck.Ok(_vk.CreateRenderPass(_device, &createInfo, null, &renderPass), "vkCreateRenderPass (object velocity)");
+        return renderPass;
+    }
+
+    private PipelineLayout CreatePipelineLayout()
+    {
+        PushConstantRange push = new()
+        {
+            StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
+            Offset = 0,
+            Size = 128,
+        };
+
+        PipelineLayoutCreateInfo createInfo = new()
+        {
+            SType = StructureType.PipelineLayoutCreateInfo,
+            PushConstantRangeCount = 1,
+            PPushConstantRanges = &push,
+        };
+
+        PipelineLayout layout;
+        VkCheck.Ok(_vk.CreatePipelineLayout(_device, &createInfo, null, &layout), "vkCreatePipelineLayout (object velocity)");
+        return layout;
+    }
+
+    private Pipeline CreatePipeline()
+    {
+        nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
+        try
+        {
+            PipelineShaderStageCreateInfo* stages = stackalloc PipelineShaderStageCreateInfo[2];
+            stages[0] = new PipelineShaderStageCreateInfo
+            {
+                SType = StructureType.PipelineShaderStageCreateInfo,
+                Stage = ShaderStageFlags.VertexBit,
+                Module = _vertex.Handle,
+                PName = (byte*)entryPoint,
+            };
+            stages[1] = new PipelineShaderStageCreateInfo
+            {
+                SType = StructureType.PipelineShaderStageCreateInfo,
+                Stage = ShaderStageFlags.FragmentBit,
+                Module = _fragment.Handle,
+                PName = (byte*)entryPoint,
+            };
+
+            // Only the position is read; the rest of the Vertex3D stride is stepped over.
+            VertexInputBindingDescription vertexBinding = new()
+            {
+                Binding = 0,
+                Stride = (uint)Rendering.Vertex3D.Size,
+                InputRate = VertexInputRate.Vertex,
+            };
+            VertexInputAttributeDescription attribute = new()
+            {
+                Location = 0,
+                Binding = 0,
+                Format = Format.R32G32B32Sfloat,
+                Offset = 0,
+            };
+
+            PipelineVertexInputStateCreateInfo vertexInput = new()
+            {
+                SType = StructureType.PipelineVertexInputStateCreateInfo,
+                VertexBindingDescriptionCount = 1,
+                PVertexBindingDescriptions = &vertexBinding,
+                VertexAttributeDescriptionCount = 1,
+                PVertexAttributeDescriptions = &attribute,
+            };
+
+            PipelineInputAssemblyStateCreateInfo inputAssembly = new()
+            {
+                SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+                Topology = PrimitiveTopology.TriangleList,
+            };
+
+            PipelineViewportStateCreateInfo viewport = new()
+            {
+                SType = StructureType.PipelineViewportStateCreateInfo,
+                ViewportCount = 1,
+                ScissorCount = 1,
+            };
+
+            // No culling: the G-buffer's cull state varies per draw, and a face the depth test rejects
+            // costs nothing, while a face wrongly culled here leaves a hole in the object's motion.
+            // The bias nudges each fragment a whisker toward the eye (reverse-Z: greater is nearer), so
+            // the GREATER-OR-EQUAL test cannot lose its own surface to a rounding difference.
+            PipelineRasterizationStateCreateInfo rasterization = new()
+            {
+                SType = StructureType.PipelineRasterizationStateCreateInfo,
+                PolygonMode = PolygonMode.Fill,
+                CullMode = CullModeFlags.None,
+                FrontFace = FrontFace.CounterClockwise,
+                LineWidth = 1.0f,
+                DepthBiasEnable = true,
+                DepthBiasConstantFactor = 4f,
+            };
+
+            PipelineMultisampleStateCreateInfo multisample = new()
+            {
+                SType = StructureType.PipelineMultisampleStateCreateInfo,
+                RasterizationSamples = SampleCountFlags.Count1Bit,
+            };
+
+            PipelineDepthStencilStateCreateInfo depthStencil = new()
+            {
+                SType = StructureType.PipelineDepthStencilStateCreateInfo,
+                DepthTestEnable = true,
+                DepthWriteEnable = false,
+                DepthCompareOp = CompareOp.GreaterOrEqual,
+            };
+
+            PipelineColorBlendAttachmentState blendAttachment = new()
+            {
+                BlendEnable = false,
+                ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit,
+            };
+            PipelineColorBlendStateCreateInfo colorBlend = new()
+            {
+                SType = StructureType.PipelineColorBlendStateCreateInfo,
+                AttachmentCount = 1,
+                PAttachments = &blendAttachment,
+            };
+
+            DynamicState* dynamicStates = stackalloc DynamicState[2] { DynamicState.Viewport, DynamicState.Scissor };
+            PipelineDynamicStateCreateInfo dynamic = new()
+            {
+                SType = StructureType.PipelineDynamicStateCreateInfo,
+                DynamicStateCount = 2,
+                PDynamicStates = dynamicStates,
+            };
+
+            GraphicsPipelineCreateInfo createInfo = new()
+            {
+                SType = StructureType.GraphicsPipelineCreateInfo,
+                StageCount = 2,
+                PStages = stages,
+                PVertexInputState = &vertexInput,
+                PInputAssemblyState = &inputAssembly,
+                PViewportState = &viewport,
+                PRasterizationState = &rasterization,
+                PMultisampleState = &multisample,
+                PDepthStencilState = &depthStencil,
+                PColorBlendState = &colorBlend,
+                PDynamicState = &dynamic,
+                Layout = _layout,
+                RenderPass = _renderPass,
+                Subpass = 0,
+            };
+
+            Pipeline pipeline;
+            VkCheck.Ok(
+                _vk.CreateGraphicsPipelines(_device, default, 1, &createInfo, null, &pipeline),
+                "vkCreateGraphicsPipelines (object velocity)");
+            return pipeline;
+        }
+        finally
+        {
+            SilkMarshal.Free(entryPoint);
+        }
+    }
+}

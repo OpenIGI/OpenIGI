@@ -3548,8 +3548,12 @@ internal sealed partial class DesktopGame : IDisposable
 
                 if (giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
                 {
-                    int wantWidth = (_window.Width + giStep - 1) / giStep;
-                    int wantHeight = (_window.Height + giStep - 1) / giStep;
+                    // The gather reads the G-buffer, which under a render scale is smaller than the
+                    // window — probes are laid over the pixels that exist, not the ones the window has.
+                    int giSourceWidth = sceneTarget.Width;
+                    int giSourceHeight = sceneTarget.Height;
+                    int wantWidth = (giSourceWidth + giStep - 1) / giStep;
+                    int wantHeight = (giSourceHeight + giStep - 1) / giStep;
 
                     if (giIndirectWidth != wantWidth || giIndirectHeight != wantHeight)
                     {
@@ -3603,8 +3607,8 @@ internal sealed partial class DesktopGame : IDisposable
                         DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
                         eye.Orientation.Transposed(),
                         giCameraToCache,
-                        _window.Width,
-                        _window.Height,
+                        giSourceWidth,
+                        giSourceHeight,
                         giStep,
                         giAccum[write],
                         giPosition[write],
@@ -3645,8 +3649,8 @@ internal sealed partial class DesktopGame : IDisposable
                     // upsample the sparse atlas once and accumulate it per pixel, reprojecting against each
                     // surface's own world position, so the indirect is pinned to the world instead of sliding
                     // with the coarse sparse-probe reprojection. The deferred fill reads the full-res result.
-                    int resolveW = _window.Width;
-                    int resolveH = _window.Height;
+                    int resolveW = giSourceWidth;
+                    int resolveH = giSourceHeight;
                     if (giResolveWidth != resolveW || giResolveHeight != resolveH)
                     {
                         for (int i = 0; i < 2; i++)

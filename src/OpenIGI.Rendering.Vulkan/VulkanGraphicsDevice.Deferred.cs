@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Deferred;
@@ -86,6 +86,11 @@ public sealed partial class VulkanGraphicsDevice
     private bool _temporalResolved;
     private int _captureWidth;
     private int _captureHeight;
+    private int _presentWidth;
+    private int _presentHeight;
+    private int _lastCaptureWidth;
+    private int _lastCaptureHeight;
+    private Viewport _sceneViewport;
     private ScenePass _currentScenePass = ScenePass.None;
     private SceneTarget? _sceneTarget;
 
@@ -124,7 +129,27 @@ public sealed partial class VulkanGraphicsDevice
         EnsureFrame();
         _captureWidth = Math.Max(1, description.Width);
         _captureHeight = Math.Max(1, description.Height);
-        _sceneTarget = _deferred.Target(_frameLoop.CurrentFrame, _captureWidth, _captureHeight);
+        _presentWidth = Math.Max(1, description.PresentWidth);
+        _presentHeight = Math.Max(1, description.PresentHeight);
+
+        // A resize recreates the views the object-velocity framebuffers point at; a stale framebuffer
+        // over a destroyed view must never be found by a later lookup that got a recycled handle value.
+        if (_captureWidth != _lastCaptureWidth || _captureHeight != _lastCaptureHeight)
+        {
+            _deferred.ObjectVelocity.InvalidateFramebuffers();
+            _lastCaptureWidth = _captureWidth;
+            _lastCaptureHeight = _captureHeight;
+        }
+
+        _sceneTarget = _deferred.Target(
+            _frameLoop.CurrentFrame, _captureWidth, _captureHeight, _presentWidth, _presentHeight);
+
+        // The scene's own passes draw at the render size, whatever the window's viewport says: the app's
+        // viewport tracks the WINDOW, and under a render scale the two differ — rasterising a
+        // window-sized viewport onto a smaller target is a zoomed-in crop, which is exactly what
+        // r_scale used to produce here. Viewports the app sets DURING the capture (the map inset) are
+        // already in render coordinates and land on top of this default.
+        _sceneViewport = new Viewport(0, 0, _captureWidth, _captureHeight);
 
         // The gather holds its scene-texture handles for the life of the level, so what they point
         // at is refreshed here rather than the handles themselves changing.
@@ -191,7 +216,7 @@ public sealed partial class VulkanGraphicsDevice
 
         if (_deferredPassActive)
         {
-            ApplyViewportAndScissor(_frameCommandBuffer, _viewport);
+            ApplyViewportAndScissor(_frameCommandBuffer, _sceneViewport);
         }
     }
 
@@ -267,6 +292,7 @@ public sealed partial class VulkanGraphicsDevice
             _previousJitterX = _taaSettings.JitterX;
             _previousJitterY = _taaSettings.JitterY * VerticalJitterSign;
             _hasPreviousFrame = true;
+            RollObjectVelocityFrame();
         }
 
         _capturing = false;
@@ -531,7 +557,9 @@ public sealed partial class VulkanGraphicsDevice
             target.UpscaleOutputView,
             _captureWidth,
             _captureHeight,
-            Deferred.SceneTarget.HistoryScale);
+            Deferred.SceneTarget.HistoryScale,
+            _presentWidth,
+            _presentHeight);
 
         // The tone-map resolve samples the output next.
         OcclusionBarrier(
@@ -630,25 +658,53 @@ public sealed partial class VulkanGraphicsDevice
         // the sample returns the stored depth rather than memory the store had not reached.
         DepthReadBarrier(cmd, target.DepthImage);
 
+        // This slot's occlusion was last read a frame ago — by that frame's lighting, and by its own
+        // occlusion pass as history.
         OcclusionBarrier(cmd, ao, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
-            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.ComputeShaderBit);
+
+        // The temporal history: the OTHER slot's occlusion and depth, written exactly one captured frame
+        // ago. Usable only while the two slots are the same shape.
+        Deferred.SceneTarget previous = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+        bool previousUsable = _hasPreviousFrame
+            && previous.Extent.Width == target.Extent.Width
+            && previous.Extent.Height == target.Extent.Height
+            && previous.AoView.Handle != 0
+            && previous.DepthView.Handle != 0;
+
+        if (previousUsable)
+        {
+            OcclusionBarrier(cmd, previous.AoImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        }
 
         _deferred.Ssao.Record(
             cmd,
             _frameLoop.CurrentFrame,
             target.DepthView,
             target.AoView,
+            previousUsable ? previous.AoView : target.AoView,
+            previousUsable ? previous.DepthView : target.DepthView,
+            (int)target.AoWidth,
+            (int)target.AoHeight,
             _captureWidth,
             _captureHeight,
-            _unprojection.XScale,
-            _unprojection.YScale,
-            _unprojection.Near,
-            _unprojection.Far,
+            _unprojection,
             _aoSettings.Radius,
-            _aoSettings.Intensity);
+            _aoSettings.Intensity,
+            _viewToWorld,
+            _previousViewToWorld,
+            new Vector3f(
+                _cameraPosition.X - _previousCameraPosition.X,
+                _cameraPosition.Y - _previousCameraPosition.Y,
+                _cameraPosition.Z - _previousCameraPosition.Z),
+            (int)(_frameCounter % 1021UL),
+            previousUsable);
 
         OcclusionBarrier(cmd, ao, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
-            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
+            PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit);
     }
 
     /// <summary>Works out this frame's screen motion from the stored depth and the two frames' cameras.</summary>
@@ -700,6 +756,26 @@ public sealed partial class VulkanGraphicsDevice
         OcclusionBarrier(
             cmd, velocity, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
+
+        // Everything that moves under its own power stamps its true motion over the camera-derived
+        // field, before the dilation spreads it. Without this a running soldier reprojects as though he
+        // were the wall behind him, and the temporal accumulation smears him along his own path.
+        if (_objectVelocityDraws.Count > 0)
+        {
+            _deferred.ObjectVelocity.Record(
+                cmd,
+                target.VelocityView,
+                target.VelocityView.Handle,
+                target.DepthView,
+                target.DepthView.Handle,
+                (uint)_captureWidth,
+                (uint)_captureHeight,
+                _objectVelocityDraws);
+
+            // The pass binds its own pipeline and buffers with raw commands, so nothing the draw path
+            // cached about bindings is still true.
+            InvalidateBoundState();
+        }
 
         // Straight on into the dilation, which is the form of the motion everything temporal actually
         // reads: a silhouette has to reproject with its own surface's motion rather than the
@@ -856,8 +932,19 @@ public sealed partial class VulkanGraphicsDevice
         // picture. The reference orders it the same way: motion blur, then bloom, then the tone map --
         // which is why a bright moving highlight blooms along its own smear rather than from where it
         // no longer is.
+        // Everything from the temporal resolve on works at the PRESENTED size: under a render scale the
+        // resolve has already reconstructed to it, and the raw-lit fallback simply runs 1:1.
+        int postWidth = _temporalResolved ? _presentWidth : _captureWidth;
+        int postHeight = _temporalResolved ? _presentHeight : _captureHeight;
+
+        // The motion-blur image is presented-size; without the temporal resolve a scaled frame would
+        // fill only a corner of it and the resolve would read the rest as garbage. TAA off plus a render
+        // scale is not a sensible configuration, and it simply skips the shutter.
+        bool postSizedChainUsable = _temporalResolved
+            || (_presentWidth == _captureWidth && _presentHeight == _captureHeight);
+
         bool motionBlurred = false;
-        if (post.MotionBlur > 0.001f && sceneIsShaded && _sceneTarget is { } motionTarget)
+        if (post.MotionBlur > 0.001f && sceneIsShaded && postSizedChainUsable && _sceneTarget is { } motionTarget)
         {
             using StageScope motionTiming = Measure(RenderStage.CameraEffects);
             LitReadBarrier(cmd, motionTarget.LitImage, PipelineStageFlags.ComputeShaderBit);
@@ -866,8 +953,8 @@ public sealed partial class VulkanGraphicsDevice
                 _frameLoop.CurrentFrame,
                 motionTarget,
                 sceneColour,
-                _captureWidth,
-                _captureHeight,
+                postWidth,
+                postHeight,
                 post.MotionBlur,
                 MotionBlurPass.MaxPercentOfScreenWidth,
                 post.FrameDeltaSeconds,
@@ -884,7 +971,7 @@ public sealed partial class VulkanGraphicsDevice
         if (post.WantsBloom && _sceneTarget is { } bloomTarget && sceneIsShaded)
         {
             using StageScope bloomTiming = Measure(RenderStage.Bloom);
-            _deferred.Bloom.Resize(_captureWidth, _captureHeight);
+            _deferred.Bloom.Resize(postWidth, postHeight);
             bloomTarget.WriteBloom(_deferred.Bloom.ResultView(_frameLoop.CurrentFrame));
 
             if (!motionBlurred)
@@ -1083,17 +1170,24 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <summary>Composes a cascade's camera-relative-world to light-clip matrix.</summary>
-    private static Matrix4f ComposeCascade(in ShadowCascade cascade)
-    {
-        // The light view is the world-to-light rotation, camera-relative so it carries no translation.
-        Matrix3f r = cascade.LightRotation.Transposed();
-        Matrix4f lightView = new(
-            r.M11, r.M12, r.M13, 0f,
-            r.M21, r.M22, r.M23, 0f,
-            r.M31, r.M32, r.M33, 0f,
-            0f, 0f, 0f, 1f);
-        return cascade.Projection * lightView;
-    }
+    /// <remarks>
+    /// <b>The rotation goes in untransposed, and the two engine conventions are why that looks wrong.</b>
+    /// <see cref="Matrix3f.Transform(Vector3f)"/> is a row-vector multiply, so dotting a cascade's light axes with a
+    /// position is spelled <c>LightRotation.Transposed().Transform(p)</c> — which is how
+    /// <see cref="ShadowCascade.ToLightClip"/> reads. A <see cref="Matrix4f"/> is a column-vector multiply
+    /// whose rows ARE the axes, so the same rotation is spelled <c>CreateRigid(LightRotation, ...)</c>,
+    /// with no transpose. This composed the Matrix3f spelling into a Matrix4f and so applied the INVERSE
+    /// light rotation: the shadow map was rasterised through <see cref="Camera3D.CreateModelView(Vector3d, Matrix3f)"/>, which
+    /// gets this right, and the lighting then looked it up through a frame rotated the other way. Shadows
+    /// landed somewhere other than their casters, by an amount that grew with a point's distance from the
+    /// camera and therefore slid across the world as the camera moved. The OpenGL backend never had it —
+    /// it composes exactly the expression below — and the ray-traced path does not use this matrix at all,
+    /// which is why the default preset hid it.
+    /// </remarks>
+    private static Matrix4f ComposeCascade(in ShadowCascade cascade) =>
+
+        // Camera-relative, so the light view carries no translation.
+        cascade.Projection * Matrix4f.CreateRigid(cascade.LightRotation, default);
 
     /// <inheritdoc/>
     public unsafe bool BeginShadowCascade(int cascade)
@@ -1236,7 +1330,7 @@ public sealed partial class VulkanGraphicsDevice
 
         _instance.Vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
         _deferredPassActive = true;
-        ApplyViewportAndScissor(_frameCommandBuffer, _viewport);
+        ApplyViewportAndScissor(_frameCommandBuffer, _sceneViewport);
     }
 
     /// <summary>
@@ -1293,6 +1387,12 @@ public sealed partial class VulkanGraphicsDevice
             target.NormalView,
             topLevel.Handle,
             target.SunShadowRawView,
+
+            // The cut-out shapes, and where to find the record that names one. Without a mask array there
+            // is nothing for a candidate to test against, so the pass is handed the white texture and a
+            // zero address and takes every hit as it stands -- which is the behaviour it had before.
+            _opacityMasks?.View ?? _textures[_whiteTexture.Id].View,
+            _opacityMasks is null ? 0UL : scene.RecordAddress,
             _captureWidth,
             _captureHeight,
             _viewToWorld,
@@ -1532,10 +1632,21 @@ public sealed partial class VulkanGraphicsDevice
         (ImageView giView, Sampler giSampler, ImageLayout giLayout) = ResolveScreenGi();
         Deferred.ShadowMap shadowMap = _deferred.ShadowMap;
         Sky.SkyAtmosphere sky = _deferred.Sky;
-        _sceneTarget!.WriteGi(
+
+        // The freshest occlusion this frame can read is the OTHER slot's, written one captured frame ago;
+        // this slot's own is a frame older still. Only while the two slots are the same shape.
+        Deferred.SceneTarget previousForAo = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+        ImageView freshestAo = previousForAo.Extent.Width == _sceneTarget!.Extent.Width
+            && previousForAo.Extent.Height == _sceneTarget.Extent.Height
+            && previousForAo.AoView.Handle != 0
+                ? previousForAo.AoView
+                : _sceneTarget.AoView;
+
+        _sceneTarget.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize, giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
-            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler));
+            new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
+            freshestAo);
     }
 
     /// <summary>Resolves the screen-GI atlas to a view, sampler and layout, or the white texture when unset.</summary>

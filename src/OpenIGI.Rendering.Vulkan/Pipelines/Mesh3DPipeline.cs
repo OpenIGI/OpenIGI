@@ -146,7 +146,7 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         {
             StageFlags = ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit,
             Offset = 0,
-            Size = sizeof(float) * 17,
+            Size = sizeof(float) * 32,
         };
 
         PipelineLayoutCreateInfo createInfo = new()
