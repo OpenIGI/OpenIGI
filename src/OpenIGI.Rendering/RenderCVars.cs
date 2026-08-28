@@ -641,7 +641,12 @@ public static class RenderCVars
         vanilla: "12",
         enhanced: "12",
         high: "12",
-        ultra: "12");
+
+        // Twenty-four at ultra: the world-space relight is the one GPU cost a render scale cannot touch,
+        // and a doubled spread halves it. A converged still is identical (the 6-to-12 doubling measured
+        // 0.7% mean difference); the price is newly-revealed geometry filling its bounce over
+        // twenty-four frames instead of twelve, a fraction of a second.
+        ultra: "24");
 
     /// <summary>The hour of day the interactive sun starts a level at, 0 to 24. Noon is the authored sun.</summary>
     /// <remarks>
