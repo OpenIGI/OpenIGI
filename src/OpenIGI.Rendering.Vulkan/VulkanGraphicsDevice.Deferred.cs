@@ -1549,6 +1549,16 @@ public sealed partial class VulkanGraphicsDevice
         // The light covers the whole G-buffer regardless of the geometry viewport.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_sceneTarget.Extent.Width, (int)_sceneTarget.Extent.Height));
         vk.CmdDraw(cmd, 3, 1, 0, 0);
+
+        // The screen-GI atlas is consumed here and then forgotten, which is the same contract the OpenGL
+        // path states: a frame that gathers nothing lights from nothing. Holding it instead meant that the
+        // moment the gather stopped running -- r_screen_gi 0, a card probe, a frame that captured nothing --
+        // the lighting went on sampling the LAST atlas that was written, a screen-space image of the
+        // indirect frozen at that frame's camera and dragged across the world by every later one. That is
+        // what "turning the screen GI off makes the picture ghost" was.
+        _screenIndirect = default;
+        _screenIndirectStrength = 0f;
+        _screenIndirectFullResolution = false;
     }
 
     /// <summary>Fills this frame's GI uniform with the probe-field parameters and points the set at it.</summary>
