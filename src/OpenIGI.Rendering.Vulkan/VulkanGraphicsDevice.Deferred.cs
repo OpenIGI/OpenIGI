@@ -82,6 +82,7 @@ public sealed partial class VulkanGraphicsDevice
     // Whether this frame actually traced the sun's shadow. Until the world has been seen there is nothing
     // to trace against, and the lighting keeps reading the cascades.
     private bool _sunShadowTraced;
+    private bool _sunShadowTracedLastFrame;
     private TemporalAaSettings _taaSettings;
     private bool _temporalResolved;
     private int _captureWidth;
@@ -175,6 +176,7 @@ public sealed partial class VulkanGraphicsDevice
 
         _capturing = true;
         _deferredStage = DeferredStage.None;
+        _sunShadowTracedLastFrame = _sunShadowTraced;
         _sunShadowTraced = false;
         return true;
     }
@@ -1204,6 +1206,22 @@ public sealed partial class VulkanGraphicsDevice
             return false;
         }
 
+        // Nothing reads this map on a frame whose sun is traced -- the deferred lighting is its only
+        // consumer and it takes the traced mask instead -- so rasterising every cascade into it was work
+        // the frame threw away. Skipped, that is half a millisecond of a thirteen millisecond frame.
+        //
+        // The map itself stays allocated at full size, because r_rt and r_rt_shadows are live keys and a
+        // map that had to be reallocated on the keystroke would stall on it. And the guard is deliberately
+        // the same predicate DispatchSunShadow uses, read this frame, so the two agree WITHIN the frame:
+        // the moment either cvar goes off, or the traced world stops being ready, this returns true again
+        // and the cascades are drawn for the very frame that needs them. Requiring last frame to have
+        // traced as well costs one warm-up frame when the traced world first comes up, and buys never
+        // being caught between the two.
+        if (_sunShadowTracedLastFrame && WillTraceSunShadow())
+        {
+            return false;
+        }
+
         EnsureFrame();
         FlushComputeBeforePass();
 
@@ -1350,6 +1368,19 @@ public sealed partial class VulkanGraphicsDevice
         using StageScope shadow = Measure(RenderStage.Shadows);
         DispatchSunShadow();
     }
+
+    /// <summary>Whether this frame's sun shadow comes from the ray query rather than the cascaded map.</summary>
+    /// <remarks>
+    /// The conditions <see cref="DispatchSunShadow"/> returns on, asked ahead of it: the cascades are
+    /// rasterised earlier in the frame than the trace is dispatched, so the question has to be answerable
+    /// before the answer is produced. Kept beside it so the two cannot drift apart.
+    /// </remarks>
+    private bool WillTraceSunShadow()
+        => _deferred.SunShadow is not null
+            && _shadowSettings.Enabled
+            && _shadowSettings.TracedSun
+            && _worldScene is { IsReady: true } scene
+            && scene.TopLevel is not null;
 
     /// <summary>Traces the sun's shadow against the scene, for the shading pass to read this same frame.</summary>
     private unsafe void DispatchSunShadow()
