@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 
@@ -171,6 +171,14 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
 
         _vk.CmdResetQueryPool(commandBuffer, _pool, (uint)(slot * SlotCapacity), (uint)SlotCapacity);
     }
+
+    /// <summary>Gets the stage currently being timed on <paramref name="slot"/>, or null if none is.</summary>
+    /// <remarks>
+    /// So a range that has to be interrupted -- the geometry pass closing early because something wants to
+    /// dispatch compute over its results -- can be put back afterwards instead of leaving everything that
+    /// follows it untimed.
+    /// </remarks>
+    public RenderStage? OpenStage(int slot) => _slotOpen[slot] ? _slotOpenStage[slot] : null;
 
     /// <summary>Starts timing a stage.</summary>
     /// <param name="stage">The stage about to run.</param>

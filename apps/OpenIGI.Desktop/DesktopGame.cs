@@ -3557,6 +3557,17 @@ internal sealed partial class DesktopGame : IDisposable
 
                 if (giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
                 {
+                    // Timed, at last. This gather is the most expensive thing in a real-time-GI frame and
+                    // NOTHING measured it: the bracket the surface-cache relight runs under closes long
+                    // before this, and the backend's own geometry range -- ranges cannot nest -- took over
+                    // the one the game opens around the world draws. So the overlay and the benchmark both
+                    // reported a frame four milliseconds shorter than the one being drawn, and the
+                    // difference read as a CPU cost that was never there. GlobalIllumination is the stage
+                    // its own documentation already says this belongs to; same-stage ranges in a frame sum,
+                    // so it joins the relight rather than displacing it.
+                    _device.EndStageTiming();
+                    _device.BeginStageTiming(RenderStage.GlobalIllumination);
+
                     // The gather reads the G-buffer, which under a render scale is smaller than the
                     // window — probes are laid over the pixels that exist, not the ones the window has.
                     int giSourceWidth = sceneTarget.Width;
@@ -3716,6 +3727,8 @@ internal sealed partial class DesktopGame : IDisposable
                     giPrevCameraToCache = giCameraToCache;
                     giHasHistory = true;
                     giFrame++;
+
+                    _device.EndStageTiming();
                 }
                 else
                 {

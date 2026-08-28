@@ -237,6 +237,10 @@ public sealed partial class VulkanGraphicsDevice
         }
     }
 
+    /// <summary>The stage this frame is currently timing, or null when none is open.</summary>
+    internal RenderStage? OpenStageTiming
+        => _frameOpen ? _stageProfiler?.OpenStage(_frameLoop.CurrentFrame) : null;
+
     /// <inheritdoc/>
     public void EndStageTiming()
     {

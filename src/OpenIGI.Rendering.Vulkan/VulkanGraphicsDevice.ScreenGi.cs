@@ -1,4 +1,4 @@
-using OpenIGI.Rendering.Vulkan.Interop;
+﻿using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan;
@@ -160,14 +160,28 @@ public sealed partial class VulkanGraphicsDevice
         _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
         _deferredPassActive = false;
 
-        // The G-buffer pass has ended; close the Geometry range the BeginPass opened before the compute in
-        // the gap (the sun-shadow trace) is timed as its own stage.
+        // The G-buffer pass has ended; close the range that was open -- the backend's own Geometry one, or
+        // whatever the game bracketed around the dispatch that brought us here -- before the compute in the
+        // gap (the sun-shadow trace) is timed as its own stage. Ranges cannot nest, so it has to give way.
+        //
+        // REMEMBER IT AND PUT IT BACK. Closing it and walking away is what left the screen-probe gather
+        // timed by NOTHING: this runs on the gather's FIRST dispatch, so every dispatch after it was
+        // recorded with no range open at all. The overlay and the benchmark both reported a frame about
+        // four milliseconds shorter than the one being drawn, and the difference read as a CPU cost that
+        // was never there.
+        RenderStage? interrupted = OpenStageTiming;
         EndStageTiming();
 
         // Everything the backend itself wants done over a finished G-buffer, so the gather that follows
         // sees the same world the shading will.
         RecordBetweenPasses();
         _deferredStage = DeferredStage.Gap;
+
+        if (interrupted is { } stage)
+        {
+            BeginStageTiming(stage);
+        }
+
         return true;
     }
 
