@@ -143,7 +143,14 @@ internal sealed class ShadowDenoisePass : IDisposable
             // accumulation is a quarter of the way to its ceiling.
             float accumulated = texelFetch(uHistory, px, 0).z * p.uSun.y;
             float converged = smoothstep(0.25, 0.9, clamp(accumulated, 0.0, 1.0));
-            pixelRadius = mix(pixelRadius, min(pixelRadius, 2.0), converged);
+            // The converged cap is PROPORTIONAL, not flat. A flat cap sharpens every penumbra to the
+            // same width and so throws away the one thing a distance-derived penumbra is for: the
+            // reference's shadows are crisper than ours at the median (2 px against 3) and yet carry four
+            // times as many edges wider than eight pixels (1.48% against 0.36%) -- contact hardening, hard
+            // where the occluder is close and genuinely soft where it is far. Keeping a share of the
+            // radius preserves that range while still letting a narrow penumbra collapse to the couple of
+            // pixels the temporal mean has already resolved on its own.
+            pixelRadius = mix(pixelRadius, max(2.0, 0.35 * pixelRadius), converged);
 
             // Below half a pixel there is nothing to reconstruct: the shadow really is that sharp here,
             // and spreading it would soften a contact edge that should stay hard.
