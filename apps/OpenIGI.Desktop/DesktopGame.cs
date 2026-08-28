@@ -2883,6 +2883,14 @@ internal sealed partial class DesktopGame : IDisposable
                     float eyePitch = MathF.Asin(Math.Clamp(eyeForward.Z, -1f, 1f));
                     float eyeYaw = MathF.Atan2(eyeForward.X, eyeForward.Y);
 
+                    // The sun rides along, because the pose alone does not reproduce a viewpoint any more.
+                    // The day/night keys sweep the sun's elevation AND its bearing, so a scene reached by
+                    // holding one of them cannot be captured from -campos/-yaw/-pitch: the harness would
+                    // render the authored noon sun and light a different room. With this the whole line
+                    // pastes onto a capture command and the frame comes back as it was seen. One frame
+                    // stale while the sun is being scrubbed, which does not matter for standing still.
+                    Vector3f loggedSun = _effectiveSun?.Direction ?? Vector3f.UnitZ;
+
                     // Warning rather than Information, which reads wrong and is not: the shell's logger
                     // is built at Warning, so every Information call in the app is discarded and this
                     // flag produced no output at all -- the flag existed and did nothing. It is opt-in
@@ -2891,7 +2899,8 @@ internal sealed partial class DesktopGame : IDisposable
                     _logger.Warning(
                         "Camera",
                         $"eye {(_playerMode ? "player" : "free")} -campos {eye.Position.X:0.###},{eye.Position.Y:0.###},"
-                            + $"{eye.Position.Z:0.###} -yaw {eyeYaw:0.#####} -pitch {eyePitch:0.#####}");
+                            + $"{eye.Position.Z:0.###} -yaw {eyeYaw:0.#####} -pitch {eyePitch:0.#####}"
+                            + $" -sundir {loggedSun.X:0.######},{loggedSun.Y:0.######},{loggedSun.Z:0.######}");
                 }
 
                 // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
