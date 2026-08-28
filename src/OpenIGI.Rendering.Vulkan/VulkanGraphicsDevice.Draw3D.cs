@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Meshes;
 using OpenIGI.Rendering.Vulkan.Textures;
@@ -194,6 +194,11 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        // Tell the traceable world this run is here, with the range it covered: a mesh is not a material,
+        // so what the structure is built from is the run rather than the whole mesh. The transform it
+        // wants is object to absolute world, which ObserveForRayTracing composes.
+        ObserveForRayTracing(resource, modelView, diffuse, indexOffset, indexCount);
+
         _instance.Vk.CmdDrawIndexed(_frameCommandBuffer, (uint)indexCount, 1, (uint)indexOffset, 0, 0);
     }
 
@@ -237,6 +242,7 @@ public sealed partial class VulkanGraphicsDevice
                 continue;
             }
 
+            ObserveForRayTracing(resource, modelView, diffuse, range.IndexOffset, range.IndexCount);
             vk.CmdDrawIndexed(_frameCommandBuffer, (uint)range.IndexCount, 1, (uint)range.IndexOffset, 0, 0);
         }
     }
@@ -414,12 +420,6 @@ public sealed partial class VulkanGraphicsDevice
             modelView.M31, modelView.M32, modelView.M33);
         Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
 
-        // Tell the traceable world this mesh is here. The transform it wants is object to absolute world:
-        // the same rotation as the normal's, and the model-view's own translation rotated into world and
-        // offset by where the camera is. Absolute rather than camera-relative because a placement recorded
-        // now has to still be right in a frame whose camera has moved.
-        ObserveForRayTracing(mesh, modelView, normalMatrix, diffuse);
-
         float* data = stackalloc float[32];
         mvp.CopyColumnMajorTo(new Span<float>(data, 16));
 
@@ -566,15 +566,25 @@ public sealed partial class VulkanGraphicsDevice
     /// <summary>Records a geometry-pass draw into the traceable copy of the world.</summary>
     /// <param name="mesh">The mesh being drawn.</param>
     /// <param name="modelView">Its object-to-view transform.</param>
-    /// <param name="normalMatrix">Its object-to-world rotation, already composed for the normal.</param>
-    /// <param name="diffuse">Its colour texture, whose alpha decides whether it is a solid occluder.</param>
+    /// <param name="diffuse">Its colour texture, whose alpha decides how the run occludes.</param>
+    /// <param name="indexOffset">Where in the index buffer this draw started.</param>
+    /// <param name="indexCount">How many indices it covered.</param>
     private void ObserveForRayTracing(
         VulkanMesh mesh,
         in Matrix4f modelView,
-        in Matrix3f normalMatrix,
-        TextureHandle diffuse)
+        TextureHandle diffuse,
+        int indexOffset,
+        int indexCount)
     {
         if (_worldScene is null)
+        {
+            return;
+        }
+
+        // Only what the G-buffer pass draws. The same mesh goes through the shadow cascades and the card
+        // atlas with a camera that is not the frame's, and the transform composed below is only the world
+        // transform for the one that is.
+        if (!_capturing || _deferredStage != DeferredStage.Geometry)
         {
             return;
         }
@@ -596,38 +606,42 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
-        // The cut-out surfaces stay out of the traceable world too. Glass, wire fences and foliage carry
-        // an alpha channel the raster shadow path tests per texel -- the sun reaches the floor through a
-        // clear pane and between the wires. The trace has no such per-texel test: every triangle it holds
-        // is a solid occluder. So a glass pane built into the structure blocks the sun ray from every
-        // floor point that sees the sky through a window, and the traced mask comes back shadowed over the
-        // whole sunlit pattern the cascade correctly leaves lit. The same flag that keeps these surfaces
-        // out of the ambient occlusion -- a depth buffer cannot describe a thin cut-out either -- keeps
-        // them out of the trace, which is the honest reading of it until an any-hit shader can sample the
-        // alpha at the hit.
-        if (!_material.CastsOcclusion)
+        // What this run is made of, and it is the TEXTURE that decides -- not the material library. A
+        // cut-out texture is traced as geometry the ray shader tests the alpha of, so the sun reaches the
+        // floor between the wires; anything else is traced as solid.
+        //
+        // The rule the two shadow systems have to share is this: whatever the rasteriser would cast, the
+        // trace casts, and whatever it would punch through, the trace punches through. The rasterised
+        // shadow map tests `alpha < 0.5` against this same texture, so measuring the same texture the same
+        // way is what makes the two agree.
+        //
+        // It used to defer to the material library's castsOcclusion flag instead, and that is what made
+        // them disagree. The flag is set from a FILENAME -- everything ending _argb8888 -- which marks the
+        // textures the packs store with an alpha channel, not the textures that have holes in them.
+        // Measured on mission one, 27 of them carry an alpha channel with no cut-out in it at all:
+        // window bars, railings, signs, some 1.9 million triangles' worth. Every one of them was dropped
+        // from the traceable world while the shadow map went on casting them, which is exactly why the
+        // office window's glazing bars had shadows on F6 and none on the trace. The flag existed to stand
+        // in for a per-texel test the trace did not have; it has one now, so it no longer gates this. It
+        // still gates the ambient occlusion, where the reason it was written -- a depth buffer cannot say
+        // where a thin surface ends -- is as true as ever.
+        uint textureId = TextureKey(diffuse);
+        bool cutout = _textures.TryGetValue(textureId, out VulkanTexture? diffuseTexture)
+            && diffuseTexture.HasCutoutAlpha;
+
+        int maskLayer = -1;
+        if (cutout && (_opacityMasks is null || !_opacityMasks.TryGetLayer(textureId, out maskLayer)))
         {
+            // A cut-out surface with no mask to test against would be traced as a solid board, which is
+            // the artefact this whole path exists to remove. Keep it out rather than get it wrong.
             return;
         }
 
-        // And the same exclusion decided from the TEXELS as well as from the material library. The
-        // library's only rule for a cut-out is a name match on *_argb8888, which is a property of a file
-        // name rather than of the surface: a masked texture that is not named that way is handed to the
-        // trace as a solid occluder, and a ray query has no per-texel test -- every triangle it holds
-        // blocks the sun completely, so such a surface would cast the shadow of a wall.
-        //
-        // Measured with the shaders' own alpha cut, so the two paths cannot disagree about what a surface
-        // is: anything the rasteriser would punch holes in is something the trace must not call solid.
-        //
-        // Honest about its reach: this was written while chasing a fence that appeared to cast a wall's
-        // shadow, and it did NOT fix it -- that level's chain-link is modelled geometry with an opaque
-        // texture, so it was never mis-classified and the trace was casting it correctly all along. It
-        // catches 171 draws a frame here and changes no pixel of either compare shot. It is kept because
-        // the filename rule is the fragile half of a correctness decision, not because it fixed that.
-        if (_textures.TryGetValue(diffuse.Id, out VulkanTexture? diffuseTexture) && diffuseTexture.HasCutoutAlpha)
-        {
-            return;
-        }
+        Matrix3f modelViewRotation = new(
+            modelView.M11, modelView.M12, modelView.M13,
+            modelView.M21, modelView.M22, modelView.M23,
+            modelView.M31, modelView.M32, modelView.M33);
+        Matrix3f normalMatrix = _viewToWorld * modelViewRotation;
 
         Matrix3f m = _viewToWorld;
         float tx = (m.M11 * modelView.M14) + (m.M12 * modelView.M24) + (m.M13 * modelView.M34);
@@ -640,6 +654,10 @@ public sealed partial class VulkanGraphicsDevice
             normalMatrix.M31, normalMatrix.M32, normalMatrix.M33, tz + _cameraPosition.Z,
             0f, 0f, 0f, 1f);
 
-        _worldScene.Observe(meshId, mesh, world);
+        _worldScene.Observe(
+            meshId,
+            mesh,
+            world,
+            new RayTracing.RayTracedSurface(indexOffset, indexCount, !cutout, maskLayer));
     }
 }

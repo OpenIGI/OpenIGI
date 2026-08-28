@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
@@ -52,6 +52,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     // The traceable copy of the world, accumulated from what the geometry pass is asked to draw. Null on
     // an adapter that cannot trace, which is the one question every pass that wants a ray asks first.
     private readonly RayTracing.VulkanWorldScene? _worldScene;
+    private readonly RayTracing.VulkanOpacityMasks? _opacityMasks;
 
     // Something legal for a tracing shader to bind before the world's own structure exists.
     private readonly RayTracing.VulkanPlaceholderScene? _placeholderScene;
@@ -207,6 +208,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             if (Environment.GetEnvironmentVariable("OPENIGI_VK_RT_SCENE") != "0")
             {
                 _worldScene = new RayTracing.VulkanWorldScene(_instance.Vk, _rayTracing, _device, _allocator);
+
+                // Built alongside it, and before any texture is created, because a cut-out texture can
+                // only be reduced to its mask while its pixels are still in hand.
+                _opacityMasks = new RayTracing.VulkanOpacityMasks(
+                    _instance.Vk, _device, _allocator, _commands);
             }
 
             // Built whenever the adapter can trace, world scene or not: a shader that names a structure
@@ -527,6 +533,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _captureStaging?.Dispose();
         _submission.Dispose();
         _worldScene?.Dispose();
+        _opacityMasks?.Dispose();
         _rayTracing?.Dispose();
         _bindless?.Dispose();
         _occlusion.Dispose();

@@ -39,6 +39,15 @@ public sealed partial class VulkanGraphicsDevice
             _instance.Vk, _device, _allocator, _commands, description, pixels, _maxAnisotropy, TextureMipLodBias());
         uint id = _nextTextureId++;
         _textures[id] = texture;
+
+        // The one moment the pixels are in hand. A traced ray needs the cut-out shape of anything it can
+        // hit, and there is nowhere later to get it from without keeping every texture's alpha on the
+        // host, so a cut-out texture is reduced to its mask here and nowhere else.
+        if (texture.HasCutoutAlpha)
+        {
+            _opacityMasks?.Register(id, pixels, description.Width, description.Height);
+        }
+
         return new TextureHandle(id);
     }
 

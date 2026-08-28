@@ -35,6 +35,14 @@ internal sealed class VulkanWorldScene : IDisposable
     // megabyte of instance descriptors.
     private const int MaxInstances = 16384;
 
+    // One per geometry of every structure ever built, including the runs left behind by a rebuild. A
+    // level settles at a few hundred; this is the ceiling a runaway rebuild loop would hit rather than a
+    // size anything is expected to reach.
+    private const int MaxRecords = 16384;
+
+    // Two device addresses, a first index and a mask layer.
+    private const int RecordSize = 32;
+
     private readonly Vk _vk;
     private readonly VulkanRayTracingApi _api;
     private readonly VulkanDevice _device;
@@ -71,6 +79,23 @@ internal sealed class VulkanWorldScene : IDisposable
     // How many frames a streamed mesh's size must hold still before it is built over.
     private const int SettleFrames = 30;
 
+    // Which material ranges of each mesh have been drawn, in the order they were first seen -- which is
+    // the order they become geometries in, and therefore the geometry index a hit reports. Accumulated
+    // like the placements are: a mesh's ranges are discovered over the first frames it is visible for,
+    // and the set only grows.
+    private readonly Dictionary<uint, List<RayTracedSurface>> _surfaces = [];
+
+    // Meshes whose range set has grown since their structure was built, and so need building again.
+    private readonly HashSet<uint> _stale = [];
+
+    // The material records, one per geometry of every built structure, in the layout the ray shader
+    // reads them through a device address. Append-only: a structure rebuilt over a larger range set is
+    // given a fresh run of records rather than overwriting the run a frame in flight may still be
+    // reading, which is the whole of the synchronisation this needs.
+    private readonly VulkanBuffer _records;
+    private int _recordCount;
+    private bool _recordOverflow;
+
     private int _newThisFrame;
     private bool _instancesChanged;
     private bool _disposed;
@@ -93,6 +118,18 @@ internal sealed class VulkanWorldScene : IDisposable
         _allocator = allocator;
         _scene = new VulkanRayTracingScene(vk, api, device, allocator, MaxInstances);
         _forgottenPlacement = placement => _forgotten.Contains(placement.MeshId);
+
+        // Host visible and written directly. The records are tiny, they change only when a structure is
+        // built, and the alternative -- staging into device-local memory -- would need a transfer
+        // recorded and fenced for what amounts to thirty-two bytes.
+        _records = new VulkanBuffer(
+            vk,
+            device,
+            allocator,
+            (ulong)(MaxRecords * RecordSize),
+            BufferUsageFlags.ShaderDeviceAddressBit | BufferUsageFlags.StorageBufferBit,
+            MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
+            persistentlyMapped: true);
     }
 
     /// <summary>Gets the scene structure, or <see langword="null"/> before anything has been built.</summary>
@@ -107,15 +144,20 @@ internal sealed class VulkanWorldScene : IDisposable
     /// <summary>Gets how many meshes the scene holds structures for.</summary>
     public int GeometryCount => _geometries.Count;
 
+    /// <summary>Gets the device address of the material records a ray shader looks a hit up in.</summary>
+    public ulong RecordAddress => _records.DeviceAddress;
+
     /// <summary>Records a mesh being drawn somewhere, adding it to the traceable world if it is new.</summary>
     /// <param name="meshId">The mesh's identifier.</param>
     /// <param name="mesh">The mesh itself.</param>
     /// <param name="worldTransform">Where it is being drawn, in absolute world space.</param>
+    /// <param name="surface">Which run of the mesh's indices this draw covered, and what it is made of.</param>
     /// <remarks>
-    /// Called for every geometry-pass draw, so it must be cheap when the placement is one already known —
-    /// which after the first seconds of a level is every one of them. A hash lookup is the whole cost.
+    /// Called for every geometry-pass draw, so it must be cheap when both the placement and the range are
+    /// ones already known — which after the first seconds of a level is every one of them. A hash lookup
+    /// and a walk of the handful of ranges a mesh has is the whole cost.
     /// </remarks>
-    public void Observe(uint meshId, VulkanMesh mesh, in Matrix4f worldTransform)
+    public void Observe(uint meshId, VulkanMesh mesh, in Matrix4f worldTransform, in RayTracedSurface surface)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
@@ -144,6 +186,11 @@ internal sealed class VulkanWorldScene : IDisposable
             return;
         }
 
+        // Which runs of this mesh have been drawn, and what each is made of. The terrain is the one
+        // exception: it is streamed, single-material, and drawn as hundreds of ranges of one buffer, so
+        // it stays a single geometry over the whole of itself rather than becoming hundreds of them.
+        List<RayTracedSurface> surfaces = SurfacesFor(meshId, mesh, surface, out bool grew);
+
         // A settled terrain mesh that has since grown is rebuilt over its new, larger extent. Its
         // structure was taken when it first settled; the triangles the world streamed in afterwards are
         // not in it, so a ray passes straight through terrain that is plainly there on screen. Now that
@@ -151,14 +198,18 @@ internal sealed class VulkanWorldScene : IDisposable
         // the old one once the frames still tracing against it have finished, and let the placements
         // repoint themselves to the new address on the next scene build. Held to the same per-frame
         // budget as a new mesh, and never done while the old structure is still moving under compaction.
-        if (mesh.Storage
-            && _geometries.TryGetValue(meshId, out Geometry built)
-            && built.IndexCount != mesh.DrawableIndexCount
+        //
+        // A mesh whose material ranges have grown -- a part of it drawn for the first time this frame --
+        // is rebuilt for the same reason and on the same terms: the structure it has covers fewer runs
+        // than the mesh turns out to have.
+        if (_geometries.TryGetValue(meshId, out Geometry built)
+            && (grew || (mesh.Storage && built.IndexCount != mesh.DrawableIndexCount))
             && !_scene.IsCompacting(built.Structure)
             && _newThisFrame < MaxNewGeometriesPerFrame)
         {
-            _geometries[meshId] = new Geometry(BuildStructure(mesh), mesh.DrawableIndexCount);
+            _geometries[meshId] = BuildGeometry(mesh, surfaces);
             _scene.RetireStructure(built.Structure);
+            _stale.Remove(meshId);
             _newThisFrame++;
         }
 
@@ -183,14 +234,18 @@ internal sealed class VulkanWorldScene : IDisposable
                 return;
             }
 
-            geometry = new Geometry(BuildStructure(mesh), mesh.DrawableIndexCount);
+            geometry = BuildGeometry(mesh, surfaces);
             _geometries[meshId] = geometry;
+            _stale.Remove(meshId);
             _newThisFrame++;
         }
 
         _instances.Add(VulkanRayTracingInstance.Create(
             worldTransform,
-            customIndex: meshId & 0x00FFFFFFu,
+
+            // Not the mesh: the first of this structure's material records. A hit adds the geometry index
+            // traversal reports to it and lands on the record for the run it actually struck.
+            customIndex: (uint)geometry.RecordBase & 0x00FFFFFFu,
             VulkanRayTracingInstance.VisibleToAll,
             hitGroupOffset: 0,
 
@@ -202,6 +257,65 @@ internal sealed class VulkanWorldScene : IDisposable
         _instanceMeshIds.Add(meshId);
 
         _instancesChanged = true;
+    }
+
+    /// <summary>Adds a drawn range to what is known about a mesh, and says whether it was new.</summary>
+    /// <param name="meshId">The mesh's identifier.</param>
+    /// <param name="mesh">The mesh itself.</param>
+    /// <param name="surface">The range this draw covered.</param>
+    /// <param name="grew">Receives whether the range set gained an entry, so a built structure is stale.</param>
+    /// <returns>Every range known for the mesh, in the order they become geometries in.</returns>
+    private List<RayTracedSurface> SurfacesFor(
+        uint meshId, VulkanMesh mesh, in RayTracedSurface surface, out bool grew)
+    {
+        if (!_surfaces.TryGetValue(meshId, out List<RayTracedSurface>? surfaces))
+        {
+            surfaces = [];
+            _surfaces[meshId] = surfaces;
+        }
+
+        // The terrain is one geometry over the whole of itself whatever ranges it was drawn as. It is
+        // opaque and single-material, so nothing is lost, and it is drawn as hundreds of small ranges of
+        // one shared buffer -- as geometries those would cost more to build and traverse than the whole.
+        RayTracedSurface entry = mesh.Storage
+            ? new RayTracedSurface(0, mesh.DrawableIndexCount, Opaque: true, MaskLayer: -1)
+            : surface;
+
+        if (entry.IndexCount < 3 || entry.IndexOffset < 0 || entry.IndexOffset + entry.IndexCount > mesh.IndexCapacity)
+        {
+            grew = false;
+            return surfaces;
+        }
+
+        // A linear walk, because a mesh has a handful of ranges and this runs once per draw: a set would
+        // cost a hash of the whole record to save comparing four fields a few times.
+        for (int i = 0; i < surfaces.Count; i++)
+        {
+            if (surfaces[i] == entry)
+            {
+                grew = false;
+                return surfaces;
+            }
+        }
+
+        // A terrain mesh that has grown replaces its single entry rather than gaining a second one that
+        // overlaps it; every other mesh accumulates.
+        if (mesh.Storage && surfaces.Count > 0)
+        {
+            surfaces[0] = entry;
+        }
+        else
+        {
+            surfaces.Add(entry);
+        }
+
+        grew = _geometries.ContainsKey(meshId);
+        if (grew)
+        {
+            _stale.Add(meshId);
+        }
+
+        return surfaces;
     }
 
     /// <summary>Whether a streamed mesh has stopped growing for long enough to be worth building over.</summary>
@@ -295,8 +409,13 @@ internal sealed class VulkanWorldScene : IDisposable
                 continue;
             }
 
+            // The records move with the structure: a rebuild appends a fresh run rather than overwriting
+            // the one a frame in flight may still be reading, so a placement that keeps the old custom
+            // index would look its material up in records describing the structure it no longer names.
             VulkanRayTracingInstance instance = _instances[i];
             instance.AccelerationStructureReference = current;
+            instance.InstanceCustomIndexAndMask =
+                ((uint)geometry.RecordBase & 0x00FFFFFFu) | (instance.InstanceCustomIndexAndMask & 0xFF000000u);
             _instances[i] = instance;
             _instancesChanged = true;
         }
@@ -364,6 +483,8 @@ internal sealed class VulkanWorldScene : IDisposable
         _forgotten.Add(meshId);
         _streaming.Remove(meshId);
         _settled.Remove(meshId);
+        _surfaces.Remove(meshId);
+        _stale.Remove(meshId);
         _instancesChanged = true;
     }
 
@@ -376,6 +497,10 @@ internal sealed class VulkanWorldScene : IDisposable
         }
 
         _geometries.Clear();
+        _surfaces.Clear();
+        _stale.Clear();
+        _recordCount = 0;
+        _recordOverflow = false;
         _placed.Clear();
         _instances.Clear();
         _instanceMeshIds.Clear();
@@ -399,26 +524,96 @@ internal sealed class VulkanWorldScene : IDisposable
         }
 
         _geometries.Clear();
+        _records.Dispose();
         _scene.Dispose();
     }
 
-    private VulkanBottomLevelStructure BuildStructure(VulkanMesh mesh)
+    /// <summary>Builds a structure over a mesh's material ranges, and the records a hit reads.</summary>
+    /// <param name="mesh">The mesh to build over.</param>
+    /// <param name="surfaces">Its ranges, in the order they become geometries in.</param>
+    /// <returns>The structure, the run of records it was given, and the extent it covered.</returns>
+    /// <remarks>
+    /// The records are appended rather than written over the run the previous structure used. A frame in
+    /// flight may still be tracing that structure and reading those records, and the cost of never
+    /// touching them again is a few bytes per rebuild against having to fence a host write behind the
+    /// frames that might read it.
+    /// </remarks>
+    private Geometry BuildGeometry(VulkanMesh mesh, List<RayTracedSurface> surfaces)
     {
-        uint indexCount = (uint)mesh.DrawableIndexCount;
-        VulkanTriangleGeometry triangles = new(
-            mesh.VertexBufferAddress,
-            VertexStride: (uint)Vertex3D.Size,
-            VertexCount: (uint)mesh.VertexCapacity,
-            mesh.IndexBufferAddress,
-            PrimitiveCount: indexCount / 3);
+        VulkanTriangleGeometry[] triangles = new VulkanTriangleGeometry[surfaces.Count];
+        for (int i = 0; i < surfaces.Count; i++)
+        {
+            RayTracedSurface s = surfaces[i];
+            triangles[i] = new VulkanTriangleGeometry(
+                mesh.VertexBufferAddress,
+                VertexStride: (uint)Vertex3D.Size,
+                VertexCount: (uint)mesh.VertexCapacity,
+                mesh.IndexBufferAddress,
+                PrimitiveCount: (uint)(s.IndexCount / 3),
+                FirstIndex: (uint)s.IndexOffset,
+                Opaque: s.Opaque);
+        }
 
-        return _scene.AddGeometry([triangles]);
+        int recordBase = WriteRecords(mesh, surfaces);
+        return new Geometry(_scene.AddGeometry(triangles), mesh.DrawableIndexCount, recordBase);
+    }
+
+    /// <summary>Appends one material record per range and returns where the run starts.</summary>
+    /// <param name="mesh">The mesh the ranges belong to.</param>
+    /// <param name="surfaces">The ranges, in geometry order.</param>
+    /// <returns>The index of the first record, which is what the instance carries as its custom index.</returns>
+    private int WriteRecords(VulkanMesh mesh, List<RayTracedSurface> surfaces)
+    {
+        if (_recordCount + surfaces.Count > MaxRecords)
+        {
+            // Out of records. The structure is still built and still occludes; what it loses is the
+            // per-texel test, so a cut-out run reverts to casting the shadow of its whole triangle. Said
+            // once, because silently doing that would look like the alpha test not working.
+            if (!_recordOverflow)
+            {
+                _recordOverflow = true;
+                Console.WriteLine(
+                    $"[raytracing] material records exhausted at {MaxRecords}; cut-out surfaces admitted "
+                    + "after this point cast as solid.");
+            }
+
+            return 0;
+        }
+
+        int start = _recordCount;
+        Span<uint> record = stackalloc uint[RecordSize / sizeof(uint)];
+
+        for (int i = 0; i < surfaces.Count; i++)
+        {
+            RayTracedSurface s = surfaces[i];
+            ulong vertexAddress = mesh.VertexBufferAddress;
+            ulong indexAddress = mesh.IndexBufferAddress;
+
+            record[0] = (uint)vertexAddress;
+            record[1] = (uint)(vertexAddress >> 32);
+            record[2] = (uint)indexAddress;
+            record[3] = (uint)(indexAddress >> 32);
+            record[4] = (uint)s.IndexOffset;
+            record[5] = unchecked((uint)s.MaskLayer);
+            record[6] = 0;
+            record[7] = 0;
+
+            _records.WriteAt((ulong)((start + i) * RecordSize), (ReadOnlySpan<uint>)record);
+        }
+
+        _recordCount = start + surfaces.Count;
+        return start;
     }
 
     /// <summary>One mesh's traceable form, and how much of it was built.</summary>
     /// <param name="Structure">The structure over its triangles.</param>
     /// <param name="IndexCount">How many indices it covered when it was built.</param>
-    private readonly record struct Geometry(VulkanBottomLevelStructure Structure, int IndexCount);
+    /// <param name="RecordBase">
+    /// Where this structure's run of material records starts. An instance carries it as its custom index,
+    /// so a hit reaches its own record by adding the geometry index traversal reports.
+    /// </param>
+    private readonly record struct Geometry(
+        VulkanBottomLevelStructure Structure, int IndexCount, int RecordBase);
 
     /// <summary>A streamed mesh's size, and the frame it last changed on.</summary>
     /// <param name="IndexCount">How many indices it claimed then.</param>
