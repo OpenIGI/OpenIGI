@@ -1448,16 +1448,38 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.SunShadowImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // The other slot's accumulation, which is last frame's -- the same one the temporal pass below
+        // will reproject onto. The denoise only reads how many frames it holds, to decide how much of the
+        // penumbra it still has to reconstruct spatially, so a slot that does not match this frame's size
+        // simply reads this frame's own cleared history and the reconstruction runs at full width.
+        Deferred.SceneTarget previousForDenoise = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+        ImageView denoiseHistory = previousForDenoise.Extent.Width == target.Extent.Width
+            && previousForDenoise.Extent.Height == target.Extent.Height
+            && previousForDenoise.ShadowHistoryView.Handle != 0
+                ? previousForDenoise.ShadowHistoryView
+                : target.ShadowHistoryView;
+
+        // That history was written by an earlier frame's accumulate, so it has to be made visible to this
+        // read the same way the accumulate below makes it visible to its own.
+        if (!ReferenceEquals(previousForDenoise, target))
+        {
+            OcclusionBarrier(
+                cmd, previousForDenoise.ShadowHistoryImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        }
+
         _deferred.SunShadowDenoise?.Record(
             cmd,
             _frameLoop.CurrentFrame,
             target.SunShadowRawView,
             target.DepthView,
+            denoiseHistory,
             target.SunShadowView,
             _captureWidth,
             _captureHeight,
             _unprojection,
-            RenderCVars.SunAngle.Value);
+            RenderCVars.SunAngle.Value,
+            RenderCVars.ShadowAccumulate.Value);
 
         // And the temporal half of the same denoiser. Eight spatial samples of a binary signal still
         // leave a mask that differs every frame, and leaving that to the filter downstream cannot work:

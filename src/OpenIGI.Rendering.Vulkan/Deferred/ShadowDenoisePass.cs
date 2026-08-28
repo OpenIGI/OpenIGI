@@ -45,6 +45,10 @@ internal sealed class ShadowDenoisePass : IDisposable
     [
         ComputeBindingKind.SampledStorageImage,  // the traced mask: visibility and occluder distance
         ComputeBindingKind.SampledImage,         // the scene depth, to keep the filter on one surface
+        // SampledStorageImage, not SampledImage: the accumulation history is a storage image and lives in
+        // General, so a descriptor that promised ShaderReadOnlyOptimal is a layout mismatch the validation
+        // layers reject. The temporal ambient occlusion hit the same wall.
+        ComputeBindingKind.SampledStorageImage,  // last frame's accumulation, for how converged it is
         ComputeBindingKind.StorageImage,         // the reconstructed visibility the lighting reads
     ];
 
@@ -57,15 +61,16 @@ internal sealed class ShadowDenoisePass : IDisposable
 
         layout(local_size_x = 8, local_size_y = 8) in;
 
-        layout(set = 0, binding = 0) uniform sampler2D uRaw;    // visibility, occluder distance
-        layout(set = 0, binding = 1) uniform sampler2D uDepth;  // reverse-Z
-        layout(set = 0, binding = 2, r8) uniform writeonly image2D uShadow;
+        layout(set = 0, binding = 0) uniform sampler2D uRaw;      // visibility, occluder distance
+        layout(set = 0, binding = 1) uniform sampler2D uDepth;    // reverse-Z
+        layout(set = 0, binding = 2) uniform sampler2D uHistory;  // .z is frames accumulated so far
+        layout(set = 0, binding = 3, r8) uniform writeonly image2D uShadow;
 
-        layout(set = 0, binding = 3) uniform Params
+        layout(set = 0, binding = 4) uniform Params
         {
             vec4 uSize;       // width, height, 1/width, 1/height
             vec4 uUnproject;  // xScale, yScale, near, far
-            vec4 uSun;        // tangent of the sun's half-angle, unused
+            vec4 uSun;        // tangent of the sun's half-angle, one over the accumulation ceiling
         } p;
 
         // The first eight offsets of the reference's Stackowiak set, in pixels. The order is not
@@ -118,6 +123,27 @@ internal sealed class ShadowDenoisePass : IDisposable
             // stays a property of the geometry rather than of where the camera happens to stand.
             float viewZ = max(ViewDepth(centreDepth), 1e-4);
             float pixelRadius = worldRadius * p.uUnproject.x * (0.5 * p.uSize.x) / viewZ;
+
+            // How much of that spread this pixel still needs. The temporal pass behind this one averages
+            // a DIFFERENTLY JITTERED ray every frame, and the fraction of those rays an occluder blocks
+            // IS the penumbra -- so once its history is deep, the mean it holds already resolves the soft
+            // edge at its true width, and spreading the frame spatially on top of that widens a penumbra
+            // that was already right. Measured against the reference at the office window: spreading
+            // unconditionally, the converged shadow ramps over 4.0 pixels where the reference takes 3.0;
+            // not spreading at all, 3.0 against 3.0, quartiles included.
+            //
+            // It cannot simply be dropped, though. The spread is what makes ONE ray's binary answer
+            // usable, which is all the frames after a disocclusion or a camera cut have to live on, and
+            // it is worth about five percent of the mask's frame-to-frame stability under a shaken
+            // camera. So it holds the full occluder-derived radius while the history is shallow and eases
+            // down to a two-pixel cap as the history converges -- the spatial and the temporal halves of
+            // one denoiser sharing the work rather than each doing it in full. Two pixels still averages
+            // away the residual variance of a sixteen-frame mean of binary samples and is far too narrow
+            // to shape the penumbra. The easing is deliberately late: nothing narrows at all until the
+            // accumulation is a quarter of the way to its ceiling.
+            float accumulated = texelFetch(uHistory, px, 0).z * p.uSun.y;
+            float converged = smoothstep(0.25, 0.9, clamp(accumulated, 0.0, 1.0));
+            pixelRadius = mix(pixelRadius, min(pixelRadius, 2.0), converged);
 
             // Below half a pixel there is nothing to reconstruct: the shadow really is that sharp here,
             // and spreading it would soften a contact edge that should stay hard.
@@ -198,21 +224,25 @@ internal sealed class ShadowDenoisePass : IDisposable
     /// <param name="frame">The frame-in-flight index.</param>
     /// <param name="rawView">The traced mask: visibility and occluder distance.</param>
     /// <param name="depthView">The scene depth, to keep the filter on one surface.</param>
+    /// <param name="historyView">Last frame's accumulation; only its frame count is read.</param>
     /// <param name="shadowView">The reconstructed visibility the lighting reads.</param>
     /// <param name="width">The render width.</param>
     /// <param name="height">The render height.</param>
     /// <param name="unprojection">The projection's scales and planes.</param>
     /// <param name="sunAngleDegrees">The sun's angular diameter, which is what sets a penumbra's width.</param>
+    /// <param name="accumulationCeiling">How many frames the temporal pass averages at most.</param>
     public void Record(
         CommandBuffer cmd,
         int frame,
         ImageView rawView,
         ImageView depthView,
+        ImageView historyView,
         ImageView shadowView,
         int width,
         int height,
         DepthUnprojection unprojection,
-        float sunAngleDegrees)
+        float sunAngleDegrees,
+        float accumulationCeiling)
     {
         Span<float> data = stackalloc float[ParamSize / sizeof(float)];
 
@@ -230,7 +260,10 @@ internal sealed class ShadowDenoisePass : IDisposable
         // host: sourceRadius / sqrt(1 - sourceRadius^2) is the tangent of the half-angle whose sine is
         // sourceRadius, and that tangent times the distance to the occluder is the penumbra's radius.
         data[8] = MathF.Tan(0.5f * float.DegreesToRadians(Math.Max(sunAngleDegrees, 0f)));
-        data[9] = 0f;
+
+        // One over the ceiling the temporal pass counts to, so the shader reads a stored frame count as a
+        // fraction of converged without needing to know what the ceiling is.
+        data[9] = 1f / MathF.Max(accumulationCeiling, 1f);
         data[10] = 0f;
         data[11] = 0f;
 
@@ -238,6 +271,7 @@ internal sealed class ShadowDenoisePass : IDisposable
         [
             new ComputeResource(rawView),
             new ComputeResource(depthView),
+            new ComputeResource(historyView),
             new ComputeResource(shadowView),
         ];
 
