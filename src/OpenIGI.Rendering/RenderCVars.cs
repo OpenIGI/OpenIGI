@@ -281,19 +281,28 @@ public static class RenderCVars
     /// reference resolves separately. Applies to the screen gather and the radiance cache alike.
     /// </para>
     /// <para>
-    /// <b>It used to be 0.15, and that was matched against a reference that has since changed.</b> The
-    /// stored comparison shot showed the office floor at 0.2 out of 255 — black — because the
-    /// reference's surface cache had no coverage over this level's imported geometry, so its rays hit
-    /// surfaces with nothing cached and came back with nothing. 0.15 existed to reproduce that darkness.
-    /// Re-captured from the live project, that room now renders its floor at 94.9 and its wall at 79.0,
-    /// so the artifact is gone and the value was emulating a deficiency that no longer exists.
+    /// <b>It was 0.15, then 0.35, and both were matched against a reference artifact.</b> The stored
+    /// comparison shot showed the office floor at 0.2 out of 255 — black — because the reference's
+    /// surface cache had no coverage over this level's imported geometry, so its rays hit surfaces with
+    /// nothing cached and came back with nothing. 0.15 existed to reproduce that darkness; 0.35 was half
+    /// a step back from it once the reference was recaptured, arrived at by a whole-frame sweep that
+    /// could not see what the deficit was doing to the exposure.
     /// </para>
     /// <para>
-    /// 0.35 is where the office lands against the current reference, found by sweep: whole-frame error
-    /// 0.2465 at 0.15, 0.2204 at 0.35, 0.2246 at 0.5, 0.2509 at 0.8. The floor goes 21 to 40 and the wall
-    /// 30 to 60 against the reference's 94.9 and 79.0 — closer, not matched, because a single scalar
-    /// still cannot follow a spatially varying quantity: at 0.35 the ceiling already overshoots. The
-    /// exterior is untouched by the change, measured at the yard: 0.16599 to 0.16657.
+    /// <b>It is back at the physical one, and the measurement that put it there is the fill, not the
+    /// frame.</b> Sampled over 1056 office-floor points at fixed exposure with no tone map, the tenth
+    /// percentile is the sky-and-bounce fill and the ninetieth is the same surface with the sun on it.
+    /// Against the reference's HDR scene colour at the same pose and the same points: fill 0.00437
+    /// against 0.01007 at 0.35 — the bounce was carrying under half the light it should — and 0.01208
+    /// against 0.01007 at one, while the sunlit end lands at 0.09053 against 0.09003. Twenty per cent
+    /// generous on the fill and within one per cent on the sun is the closest a single scalar gets, and
+    /// it is on the right side: the deficit was what pinned the auto-exposure against its ceiling.
+    /// </para>
+    /// <para>
+    /// What it costs is the office ceiling, which overshoots the reference. That region is a strip light
+    /// this port lights as an emissive fixture and the reference renders unlit, so most of the gap is a
+    /// material the two engines disagree about rather than bounce this value is delivering; the room's
+    /// floor, wall, window and sun pool all move toward the reference, and the exterior improves.
     /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> GiBounce = Presets.Define(
@@ -308,26 +317,68 @@ public static class RenderCVars
         enhanced: "1",
         high: "1",
 
-        // Matched against the reference office shot: 0.15 lands the walls and ceiling on its values with
-        // the window, the sun pools and the exterior already aligned. Raise toward one for the physical
-        // answer — the room fills with real multi-bounce — at the cost of the reference's darker mood.
-        ultra: "0.35");
+        // The physical one at ultra, which is the tier that traces the bounce at all. Anything below it
+        // is this renderer throwing away light it has already computed, and the fill it was throwing
+        // away is what dropped the scene under the metering band.
+        ultra: "1");
 
     /// <summary>Whether tracing uses the hardware ray query rather than the software distance field.</summary>
     /// <remarks>
+    /// <para>
     /// The switch between the two GI modes, live: on, every trace that can reach the acceleration
     /// structure does — the screen gather, the radiance cache, the surface-cache relight and the sun's
     /// shadow — and off, the same shaders march the signed distance field and the sun falls back to the
     /// cascaded map. It only means anything on a backend that can trace at all; elsewhere the software
-    /// path is the only path and the flag is ignored. Bound to a key by default so the two can be
-    /// compared in place.
+    /// path is the only path and the flag is ignored. Bound to F6 by default so the two can be compared
+    /// in place.
+    /// </para>
+    /// <para>
+    /// <b>Deliberately NOT archived, and that is a fix rather than an oversight.</b> Every preset names
+    /// it 1 — there is no tier that wants the software path, only a comparison that does — so the only
+    /// way it is ever 0 is that somebody pressed the key. While it was archived, pressing that key wrote
+    /// itself into <c>settings.cfg</c>: the next launch came up on the software path, the preset read as
+    /// Custom because a managed value no longer matched, and the picture was quietly worse in a way
+    /// nothing on screen explained. A key for flipping between two implementations must not be able to
+    /// change what the game starts as. It is still named by the presets, so the settings screen still
+    /// reports Custom while it is flipped and still puts it back when a preset is chosen.
+    /// </para>
     /// </remarks>
     public static readonly BoolCVar HardwareRayTracing = Presets.Define(
         CVar.Bool(
             "r_rt",
             true,
-            CVarOptions.Archive,
+            CVarOptions.None,
             "Trace with the hardware ray query (1) or the software distance field (0). Toggle live to compare."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the sun's shadow is traced, on a backend already tracing.</summary>
+    /// <remarks>
+    /// The second half of the live switch. <see cref="HardwareRayTracing"/> moves every trace in the
+    /// frame between the hardware ray query and the software distance field at once; this one moves the
+    /// sun's shadow alone, so the ray-traced shadow can be compared against the cascaded map while the
+    /// indirect light, the reflections and the surface-cache relight all stay exactly as they were. That
+    /// is the comparison worth being able to make in place: the two shadow systems draw the same
+    /// geometry from the same sun and should agree about where a shadow falls, and only about how it
+    /// looks at its edge.
+    /// <para>
+    /// It does nothing where <see cref="HardwareRayTracing"/> is off, which already leaves the sun to
+    /// the cascades, and nothing on a backend that cannot trace at all.
+    /// </para>
+    /// <para>
+    /// Not archived, for the same reason as <see cref="HardwareRayTracing"/>: this exists to be flipped
+    /// while looking at something, and a key that is flipped while looking at something must not decide
+    /// what the game starts as tomorrow.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar TracedSunShadows = Presets.Define(
+        CVar.Bool(
+            "r_rt_shadows",
+            true,
+            CVarOptions.None,
+            "Trace the sun's shadow rather than reading the cascaded map. Needs r_rt; toggle live to compare."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
@@ -485,14 +536,14 @@ public static class RenderCVars
         // where the raw screen estimate was not, both added with it. Its full-resolution temporal resolve
         // now clamps each reprojected history into the current frame's own neighbourhood mean and spread --
         // the reference's anti-shimmer -- so a stale or noisy history can no longer slide across a wall as
-        // the low-frequency shimmer that once shelved it. And the deferred fill floors the gather to the
-        // BRIGHTER of it and the far field: the radiance cache runs at this same tier, so a surface the
-        // gather has not yet resolved -- a freshly disoccluded pixel -- falls to the cache's stable answer
-        // rather than to black, which is the dropout the screen estimate had with no world-space field
-        // behind it. One, because the gather now returns physically-normalised irradiance -- the
-        // pi-over-N estimator with the sky integrated ray by ray -- and the deferred fill takes it
-        // through the Lambert response. Anything other than one is an artistic bias on real light
-        // transport, not a calibration.
+        // the low-frequency shimmer that once shelved it. And the gather REPLACES the flat ambient, the
+        // far probe field and the additive sky term rather than being floored against them -- flooring
+        // against an unoccluded ambient is what washes an interior flat -- which is also why the bounce
+        // it carries has to be whole: with r_gi_bounce below one there is nothing behind the gather to
+        // make up the difference, and the fill it drops comes straight off the frame. One, because the
+        // gather returns physically-normalised irradiance -- the pi-over-N estimator with the sky
+        // integrated ray by ray -- and the deferred fill takes it through the Lambert response. Anything
+        // other than one is an artistic bias on real light transport, not a calibration.
         ultra: "1");
 
     /// <summary>Whether the world-space radiance cache updates and feeds the deferred fill's indirect.</summary>
@@ -1444,13 +1495,20 @@ public static class RenderCVars
         enhanced: "1",
         high: "1",
 
-        // Fixed-exposure linear samples separate the two terms without exposure hiding their balance:
-        // ours was sun = 1.714 * sky while the reference is sun = 0.369 * sky. The surface-cache SH uses
-        // the same packed diffuse constants as the reference and restores pi at its irradiance seam, so
-        // the sky is normalised; the correction belongs to the stale sun calibration instead:
-        // 7 * (0.369 / 1.714) = 1.507. Rounded to two decimals, this moves the lit/shadow ratio from 2.714
-        // to 1.369 while leaving the shadow's sky term in place.
-        ultra: "1.51");
+        // Restored to 7. The 1.51 before it came from a fixed-exposure sample that read our sun as
+        // 1.714 times our sky against the reference's 0.369 and divided the sun by the difference; the
+        // sample points were a wall and its shade, not a sunlit floor and its shadow, and they put the
+        // reference's sun BELOW its own fill, which no sunlit exterior does. Measured again over 1056
+        // office-floor points against the reference's HDR scene colour at the same pose, the ninetieth
+        // percentile -- the same surface with the sun on it -- is 0.09053 here against 0.09003 there,
+        // and the sun's own share of it 0.0785 against 0.0800. The sun was never the term that was
+        // wrong; the bounce under it was, and r_gi_bounce carries that correction.
+        //
+        // Dividing it by 4.6 took the whole scene down with it, which is what made this visible: the
+        // frame's average luminance fell under AutoExposurePass's metering floor, the adapted exposure
+        // pinned against its ceiling of ten and could open no further, and every shadow slid into the
+        // tone curve's toe. That is the "shadows read as a solid slab" report.
+        ultra: "7");
 
     /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
     /// <remarks>

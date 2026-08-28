@@ -456,12 +456,15 @@ internal sealed partial class DesktopGame : IDisposable
 
         WarnAboutSettingsTheBackendIgnores();
 
-        // The default hotkey for comparing the two GI modes in place: F6 flips r_rt between the
-        // hardware ray query and the software distance-field trace. Only when the key is free, so a
-        // binding the player saved is never stolen.
-        if (!console.System.Binds.ContainsKey("f6"))
+        // The keys the game binds for itself, each only where the player has not bound it to something
+        // else, so a binding they saved is never stolen. What they are and the rule about what may be in
+        // the table is in DefaultBinds.
+        foreach ((string key, string statement) in Configuration.DefaultBinds.All)
         {
-            console.System.SetBind("f6", "toggle r_rt");
+            if (!console.System.Binds.ContainsKey(key))
+            {
+                console.System.SetBind(key, statement);
+            }
         }
 
         // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
@@ -3023,8 +3026,10 @@ internal sealed partial class DesktopGame : IDisposable
                         FilterRadius = RenderCVars.ShadowSoftness.Value,
 
                         // The live software/hardware switch: off, a tracing backend leaves the sun to the
-                        // cascaded map like everyone else.
-                        TracedSun = RenderCVars.HardwareRayTracing.Value,
+                        // cascaded map like everyone else. r_rt_shadows moves the sun's shadow on its own,
+                        // leaving every other trace in the frame alone, which is what makes the two shadow
+                        // systems comparable in place.
+                        TracedSun = RenderCVars.HardwareRayTracing.Value && RenderCVars.TracedSunShadows.Value,
                     }
                     : ShadowSettings.Off;
 
@@ -4552,6 +4557,12 @@ internal sealed partial class DesktopGame : IDisposable
                     List<string> perf =
                     [
                         I($"{preset}  {_window.Width}x{_window.Height}  vsync {(_device.VSyncEnabled ? "on" : "off")}  indoor {(cameraIndoors ? "yes" : "no")}"),
+
+                        // Which of the two shadow systems is actually drawing, spelled out with the keys
+                        // that move it. Reading a shadow against the reference means knowing which one
+                        // produced it, and the answer is two cvars deep -- r_rt_shadows does nothing
+                        // while r_rt is off, and neither means anything with shadows turned off.
+                        I($"shadow   {ShadowModeLabel()}"),
                         I($"fps {frame.FramesPerSecond:0.0}  frame {frame.AverageMilliseconds:0.00} ms  1% {frame.OnePercentLowFramesPerSecond:0.0}"),
                         "gpu ms   avg    p95   peak  budget",
                     ];
@@ -4978,6 +4989,47 @@ internal sealed partial class DesktopGame : IDisposable
 
     // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
     // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.
+    /// <summary>Names the shadow system actually drawing this frame, for the performance overlay.</summary>
+    /// <returns>The mode, and the keys that move it.</returns>
+    /// <remarks>
+    /// Reads the same three conditions the renderer does, in the same order, rather than reporting a
+    /// cvar: r_rt_shadows means nothing while r_rt is off, r_rt means nothing on a backend that cannot
+    /// trace, and neither means anything with shadows turned off. Reporting the cvar rather than the
+    /// consequence is how someone ends up comparing two shadows they believe came from different systems.
+    /// </remarks>
+    private string ShadowModeLabel()
+    {
+        bool enabled = RenderCVars.Shadows.Value > 0
+            && RenderCVars.OffscreenScene.Value
+            && RenderCVars.Deferred.Value;
+
+        if (!enabled)
+        {
+            return "off (r_shadows 0)";
+        }
+
+        if (!_device.Capabilities.SupportsRayQuery)
+        {
+            return FormattableString.Invariant(
+                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value} (no ray tracing on this backend)");
+        }
+
+        if (!RenderCVars.HardwareRayTracing.Value)
+        {
+            return FormattableString.Invariant(
+                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F6 traces everything]");
+        }
+
+        if (!RenderCVars.TracedSunShadows.Value)
+        {
+            return FormattableString.Invariant(
+                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F7 traces the sun; rest of the frame is traced]");
+        }
+
+        return FormattableString.Invariant(
+            $"ray query, sun disc {RenderCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
+    }
+
     private bool IsCameraInsideBuilding(Vector3d position)
     {
         foreach (RainRenderer.BuildingVolume volume in _rainBuildingVolumes)
