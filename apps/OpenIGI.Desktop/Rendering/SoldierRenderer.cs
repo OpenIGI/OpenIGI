@@ -1954,11 +1954,10 @@ public sealed class SoldierRenderer : IDisposable
                 continue;
             }
 
-            // AI-fired rounds come from a soldier (except); treat them as hostile-to-everyone
-            // so friendlies can react to nearby hostile gunfire. Player rounds pass no shooter
-            // and fall through to the player-team gate inside HearGunshot.
-            bool fromAiSoldier = except is not null;
-            if (brain.HearGunshot(origin, range, fromPlayer: !fromAiSoldier))
+            // A player-team NPC's round is player-origin for the listener's team gate. An opposing
+            // NPC's round remains AI-origin, so a friendly can react to nearby hostile gunfire.
+            bool fromPlayerTeam = except is null || except.Soldier.Team == _playerTeam;
+            if (brain.HearGunshot(origin, range, fromPlayer: fromPlayerTeam))
             {
                 heard++;
             }
