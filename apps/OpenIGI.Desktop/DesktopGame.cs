@@ -4814,7 +4814,12 @@ internal sealed partial class DesktopGame : IDisposable
             {
                 long allocated = GC.GetTotalAllocatedBytes() - _benchmarkAllocStart;
                 int measured = Math.Max(1, frame.SampleCount);
-                _logger.Information(
+
+                // Warning, not Information: the shell builds its logger at Warning, so an Information call
+                // here is discarded and the benchmark's allocation report -- the one number that says
+                // whether a stutter is the collector rather than the GPU -- was written to nothing. The
+                // camera log had the same hole for the same reason.
+                _logger.Warning(
                     "Benchmark",
                     FormattableString.Invariant(
                         $"Managed alloc over {measured} measured frames: {allocated / (1024.0 * 1024.0):0.0} MB, {allocated / (double)measured / 1024.0:0.0} KB/frame; gc {GC.CollectionCount(0) - _benchmarkGcStart.Item1}/{GC.CollectionCount(1) - _benchmarkGcStart.Item2}/{GC.CollectionCount(2) - _benchmarkGcStart.Item3}."));
