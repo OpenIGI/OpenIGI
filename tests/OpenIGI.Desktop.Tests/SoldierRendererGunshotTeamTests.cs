@@ -26,8 +26,59 @@ public sealed class SoldierRendererGunshotTeamTests
     [RequiresGameDataFact]
     public void NotifyGunshotSuppressesAPlayerTeamNpcsShotForFriendlyListenersButDeliversItToHostiles()
     {
+        using Scenario scenario = CreateScenario();
+        (SoldierView Shooter, AiSoldier ShooterBrain) shooter = scenario.PlayerTeamSoldier;
+        (SoldierView Listener, AiSoldier FriendlyBrain) friendly = scenario.OtherPlayerTeamSoldier;
+        (SoldierView Listener, AiSoldier HostileBrain) hostile = scenario.HostileSoldier;
+
+        PlaceInHearingRange(shooter.ShooterBrain, friendly.FriendlyBrain, hostile.HostileBrain);
+        scenario.Renderer.NotifyGunshot(Vector3d.Zero, 10 * Metre, except: shooter.Shooter);
+
+        Assert.Equal(0, shooter.ShooterBrain.Events.PendingCount(AiEvent.Gunshot));
+        Assert.Equal(0, friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot));
+        Assert.True(hostile.HostileBrain.Events.PendingCount(AiEvent.Gunshot) > 0);
+    }
+
+    [RequiresGameDataFact]
+    public void NotifyGunshotDeliversAHostileNpcsShotToFriendlyListenersButExcludesTheShooter()
+    {
+        using Scenario scenario = CreateScenario();
+        (SoldierView Shooter, AiSoldier ShooterBrain) shooter = scenario.HostileSoldier;
+        (SoldierView Listener, AiSoldier FriendlyBrain) friendly = scenario.PlayerTeamSoldier;
+
+        PlaceInHearingRange(shooter.ShooterBrain, friendly.FriendlyBrain);
+        scenario.Renderer.NotifyGunshot(Vector3d.Zero, 10 * Metre, except: shooter.Shooter);
+
+        Assert.Equal(0, shooter.ShooterBrain.Events.PendingCount(AiEvent.Gunshot));
+        Assert.True(friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot) > 0);
+    }
+
+    [RequiresGameDataFact]
+    public void NotifyGunshotWithoutAShooterStillUsesThePlayerTeamGate()
+    {
+        using Scenario scenario = CreateScenario();
+        (SoldierView Listener, AiSoldier FriendlyBrain) friendly = scenario.PlayerTeamSoldier;
+        (SoldierView Listener, AiSoldier HostileBrain) hostile = scenario.HostileSoldier;
+
+        PlaceInHearingRange(friendly.FriendlyBrain, hostile.HostileBrain);
+        scenario.Renderer.NotifyGunshot(Vector3d.Zero, 10 * Metre);
+
+        Assert.Equal(0, friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot));
+        Assert.True(hostile.HostileBrain.Events.PendingCount(AiEvent.Gunshot) > 0);
+    }
+
+    private static void PlaceInHearingRange(params AiSoldier[] soldiers)
+    {
+        for (int index = 0; index < soldiers.Length; index++)
+        {
+            soldiers[index].SeparateTo(new Vector3d(index * 5 * Metre, 0, 0));
+        }
+    }
+
+    private static Scenario CreateScenario()
+    {
         (LoadedMission mission, LevelTask root, ResourceRegistry resources) = LoadMissionFour();
-        using SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
+        SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
         Assert.True(renderer.Load(mission, root) > 0);
         Assert.True(renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
 
@@ -41,17 +92,7 @@ public sealed class SoldierRendererGunshotTeamTests
         (SoldierView Listener, AiSoldier HostileBrain) hostile = Assert.Single(
             brains.Where(pair => pair.Value.PlayerIsEnemy).Take(1)
                 .Select(pair => (pair.Key, pair.Value)));
-
-        Vector3d origin = new(0, 0, 0);
-        shooter.ShooterBrain.SeparateTo(origin);
-        friendly.FriendlyBrain.SeparateTo(new Vector3d(5 * Metre, 0, 0));
-        hostile.HostileBrain.SeparateTo(new Vector3d(-5 * Metre, 0, 0));
-
-        renderer.NotifyGunshot(origin, 10 * Metre, except: shooter.Shooter);
-
-        Assert.Equal(0, shooter.ShooterBrain.Events.PendingCount(AiEvent.Gunshot));
-        Assert.Equal(0, friendly.FriendlyBrain.Events.PendingCount(AiEvent.Gunshot));
-        Assert.True(hostile.HostileBrain.Events.PendingCount(AiEvent.Gunshot) > 0);
+        return new Scenario(renderer, shooter, friendly, hostile);
     }
 
     private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) =>
@@ -80,5 +121,22 @@ public sealed class SoldierRendererGunshotTeamTests
             resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(4);
         return (mission, root, resources);
+    }
+
+    private sealed class Scenario(
+        SoldierRenderer renderer,
+        (SoldierView Shooter, AiSoldier ShooterBrain) playerTeamSoldier,
+        (SoldierView Listener, AiSoldier FriendlyBrain) otherPlayerTeamSoldier,
+        (SoldierView Listener, AiSoldier HostileBrain) hostileSoldier) : IDisposable
+    {
+        public SoldierRenderer Renderer { get; } = renderer;
+
+        public (SoldierView Shooter, AiSoldier ShooterBrain) PlayerTeamSoldier { get; } = playerTeamSoldier;
+
+        public (SoldierView Listener, AiSoldier FriendlyBrain) OtherPlayerTeamSoldier { get; } = otherPlayerTeamSoldier;
+
+        public (SoldierView Listener, AiSoldier HostileBrain) HostileSoldier { get; } = hostileSoldier;
+
+        public void Dispose() => Renderer.Dispose();
     }
 }
