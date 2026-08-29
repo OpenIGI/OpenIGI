@@ -1720,10 +1720,34 @@ public sealed partial class VulkanGraphicsDevice
         _sceneTarget.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize,
             lamps.Handle, (ulong)DeferredRenderer.LampUniformSize,
+            TracedWorld(),
             giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
             new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
             freshestAo);
+    }
+
+    /// <summary>The world the lamps shadow against, or nothing when there is none to trace.</summary>
+    /// <remarks>
+    /// The level's own structure once it is built, and the placeholder before that -- a single degenerate
+    /// triangle a billion units away, which every ray misses. Binding the placeholder rather than nothing
+    /// is what lets the shading pass keep one code path: the descriptor is always valid, and during the
+    /// two seconds of a level load the lamps simply cast no shadows instead of the pass having to be
+    /// compiled twice over.
+    /// </remarks>
+    private AccelerationStructureKHR TracedWorld()
+    {
+        if (!_device.Capabilities.RayQuery)
+        {
+            return default;
+        }
+
+        if (_worldScene is { IsReady: true } scene && scene.TopLevel is { } topLevel)
+        {
+            return topLevel.Handle;
+        }
+
+        return _placeholderScene?.TopLevel?.Handle ?? default;
     }
 
     /// <summary>Writes this frame's local lights into the lighting pass's own block.</summary>
@@ -1746,6 +1770,17 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         u[0] = _localLightCount;
+
+        // Whether those lamps shadow. Off on an adapter that cannot trace, because the shader compiled
+        // for it has no trace in it at all and would ignore this anyway; off when the world has not been
+        // built yet, so a level's first frames light unshadowed rather than shadowed by nothing.
+        u[1] = _localLightCount > 0
+            && RenderCVars.LocalLightShadows.Value != 0
+            && _device.Capabilities.RayQuery
+            && _worldScene is { IsReady: true } traced
+            && traced.TopLevel is not null
+                ? 1f
+                : 0f;
 
         // Where each array starts, in floats: the control vector, then a vec4 per light per array.
         int position = 4;

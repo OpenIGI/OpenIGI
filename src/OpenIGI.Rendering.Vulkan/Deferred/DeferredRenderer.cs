@@ -148,7 +148,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             vk,
             device,
             compiler,
-            DeferredShaderSource.LightingFragment(),
+            DeferredShaderSource.LightingFragment(_rayQuery),
             "deferred-lighting.frag",
             _lightingLayout,
             sizeof(float) * 12,
@@ -375,7 +375,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
         // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
         // traced sun-shadow mask.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[18];
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[19];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -458,10 +458,24 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             StageFlags = ShaderStageFlags.FragmentBit,
         };
 
+        // And the traced world, so those lamps can be shadowed the way the sun is. Only where the
+        // adapter can trace: the layout has to match a shader that cannot even name an acceleration
+        // structure without ray query, so the binding is absent rather than unused.
+        if (_rayQuery)
+        {
+            bindings[18] = new DescriptorSetLayoutBinding
+            {
+                Binding = 18,
+                DescriptorType = DescriptorType.AccelerationStructureKhr,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
+
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 18,
+            BindingCount = _rayQuery ? 19u : 18u,
             PBindings = bindings,
         };
 
@@ -501,7 +515,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     {
         // Each frame's target uses four input attachments plus one sampler; a resize frees and
         // reallocates, so the pool allows freeing and is sized with headroom.
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[5];
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
         // Two uniform buffers per lighting set now -- the GI block and the lamps -- so twice the count.
@@ -510,12 +524,19 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // The two resolve sets — the raw lit and the temporally-resolved — each carry one sampler.
         sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 4) };
 
+        // The traced world each lighting set shadows its lamps against, where the adapter can trace.
+        sizes[4] = new DescriptorPoolSize
+        {
+            Type = DescriptorType.AccelerationStructureKhr,
+            DescriptorCount = (uint)(framesInFlight * 2),
+        };
+
         DescriptorPoolCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
             MaxSets = (uint)(framesInFlight * 3 * 2),
-            PoolSizeCount = 4,
+            PoolSizeCount = _rayQuery ? 5u : 4u,
             PPoolSizes = sizes,
         };
 

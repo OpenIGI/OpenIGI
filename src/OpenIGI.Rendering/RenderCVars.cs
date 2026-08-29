@@ -744,6 +744,42 @@ public static class RenderCVars
         high: "0",
         ultra: "6");
 
+    /// <summary>Whether the level's lamps cast shadows, traced against the world like the sun.</summary>
+    /// <remarks>
+    /// <para>
+    /// A punctual light with no shadow term passes through whatever stands between it and the surface.
+    /// So a corridor fitting lights the room on the other side of the partition, a floodlight lights the
+    /// inside of the building it is bolted to, and the more reach a lamp is given the further that
+    /// wrongness spreads -- which is what makes <see cref="LocalLightRange"/> a knob with a ceiling
+    /// rather than a number to turn up. This removes that ceiling.
+    /// </para>
+    /// <para>
+    /// One ray per lamp per pixel, and only for the lamps that survive the reach and facing culls, so
+    /// indoors it is a handful and outdoors usually none. Traced inside the shading pass rather than in
+    /// a pass of its own, which is what keeps it to that: there is no screen-sized buffer to allocate,
+    /// no ordering to agree with a second pass, and nothing is spent on a pixel no lamp reaches.
+    /// </para>
+    /// <para>
+    /// Needs an adapter that can trace, and does nothing without one -- the shading pass compiled for
+    /// such a device has no trace in it at all. Unlike the sun's shadow this one is OPAQUE: a wire fence
+    /// in front of a lamp casts a solid shadow rather than a patterned one.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> LocalLightShadows = Presets.Define(
+        CVar.Int(
+            "r_local_light_shadows",
+            1,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Trace the level's lamps against the world so they cannot light through walls."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // Ultra, which is the only preset that lights from lamps at all.
+        ultra: "1");
+
     /// <summary>How far a detected lamp reaches, against the reach its own size and colour imply.</summary>
     /// <remarks>
     /// <para>
