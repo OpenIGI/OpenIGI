@@ -31,6 +31,8 @@ public sealed class SoldierRendererHitscanTests
 
     private static readonly FieldInfo GroupsField = typeof(SoldierRenderer)
         .GetField("_groups", BindingFlags.Instance | BindingFlags.NonPublic)!;
+    private static readonly FieldInfo RagdollRigsField = typeof(SoldierRenderer)
+        .GetField("_ragdollRigs", BindingFlags.Instance | BindingFlags.NonPublic)!;
     private static readonly MethodInfo RaySphereMethod = typeof(SoldierRenderer)
         .GetMethod("RaySphere", BindingFlags.Static | BindingFlags.NonPublic)!;
     private static readonly MethodInfo SnapToGroundMethod = typeof(SoldierRenderer)
@@ -57,6 +59,35 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(scenario.Renderer.TryShoot(ray.Origin, ray.End, damageFactor: 0.5f, WeaponCategory.Gun, out HumanHit hit));
         Assert.True(hit.Distance > 0.0);
         Assert.InRange(hit.Zone, 0, HumanHitZoneTable.Soldier.Count - 1);
+    }
+
+    [RequiresGameDataFact]
+    public void MissionLoadPrimesSoldierCollisionMeshesBeforeTheFirstShot()
+    {
+        // Collision chunks used to be decoded by TryShoot's first candidate. That made the first
+        // scoped round pay an avoidable synchronous allocation/parse on the render thread. Loading the
+        // mission is the stable cache boundary, so every drawable group must already have attempted its
+        // one-time read before a shot can be offered.
+        using Scenario scenario = CreateScenario();
+        int groups = 0;
+        int prepared = 0;
+        foreach (object group in Assert.IsAssignableFrom<IEnumerable>(GroupsField.GetValue(scenario.Renderer)))
+        {
+            groups++;
+            bool wasPrepared = Assert.IsType<bool>(group.GetType()
+                .GetProperty("CollisionMeshPrepared", BindingFlags.Instance | BindingFlags.Public)!
+                .GetValue(group));
+            prepared += wasPrepared ? 1 : 0;
+        }
+
+        Assert.True(groups > 0, "Mission four must load at least one soldier group.");
+        Assert.Equal(groups, prepared);
+
+        if (GameplayCVars.Ragdoll.Value)
+        {
+            int rigs = Assert.IsAssignableFrom<IDictionary>(RagdollRigsField.GetValue(scenario.Renderer)).Count;
+            Assert.True(rigs > 0, "Ragdoll rigs must be prepared before the first lethal shot.");
+        }
     }
 
     [RequiresGameDataFact]

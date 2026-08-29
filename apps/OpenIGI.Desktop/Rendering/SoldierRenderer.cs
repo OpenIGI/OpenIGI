@@ -947,7 +947,54 @@ public sealed class SoldierRenderer : IDisposable
         _logger.Information(
             LogCategory,
             $"{Count} soldier(s) over {_groups.Count} distinct (model, skeleton, animation) triple(s).");
+
+        // The first player round must not pay for parsing every candidate's collision mesh, and the
+        // first lethal round must not pay for measuring the animation corpus and preparing a ragdoll
+        // rig. Both operations are immutable mission data; doing them here moves their cost to the
+        // already-visible mission hand-over instead of turning a Dragunov hit into a 2–5 FPS hitch.
+        WarmHitTestCaches();
         return Count;
+    }
+
+    /// <summary>Primes immutable hit-test and corpse-rig data before the first round can arrive.</summary>
+    /// <remarks>
+    /// Collision geometry and ragdoll rigs are shared by every member of a group. They used to be
+    /// created by the first shot/death that touched a group, which made a normal first kill look like a
+    /// render stall. A malformed optional collision chunk still falls back to the cylinder path; it must
+    /// not make mission loading fail.
+    /// </remarks>
+    private void WarmHitTestCaches()
+    {
+        int collisionMeshes = 0;
+        int ragdollRigs = 0;
+        foreach (Group group in _groups)
+        {
+            try
+            {
+                if (group.CollisionMesh is not null)
+                {
+                    collisionMeshes++;
+                }
+            }
+            catch (PackFormatException ex)
+            {
+                _logger.Warning(LogCategory, $"A soldier collision mesh was not usable: {ex.Message}");
+            }
+
+            if (!GameplayCVars.Ragdoll.Value || group.Model is null || group.Soldiers.Count == 0)
+            {
+                continue;
+            }
+
+            if (RagdollRigFor(group.Soldiers[0].View.Bones.Set, group.Model) is not null)
+            {
+                ragdollRigs++;
+            }
+        }
+
+        _logger.Information(
+            LogCategory,
+            $"Prepared {collisionMeshes} soldier collision mesh(es) and {ragdollRigs} corpse rig(s) before play.");
     }
 
     /// <summary>How high above a soldier's feet its broad-phase sphere is centred, in world units.</summary>
@@ -3876,6 +3923,22 @@ public sealed class SoldierRenderer : IDisposable
             return false;
         }
 
+        // The player's body is also a hit-test candidate for incoming AI rounds. Prime the same immutable
+        // data as the mission soldiers so the first hostile hit cannot trigger a synchronous parse/build.
+        try
+        {
+            _ = group.CollisionMesh;
+        }
+        catch (PackFormatException ex)
+        {
+            _logger.Warning(LogCategory, $"The player collision mesh was not usable: {ex.Message}");
+        }
+
+        if (GameplayCVars.Ragdoll.Value && group.Model is not null)
+        {
+            _ = RagdollRigFor(set, group.Model);
+        }
+
         MeshHandle own;
         try
         {
@@ -5506,6 +5569,8 @@ public sealed class SoldierRenderer : IDisposable
         _binocularVisibilityTick = int.MinValue;
         _cast = null;
         _sight = null;
+        _ragdollRigs.Clear();
+        _ragdollWorld = null;
         ReleasePlayerBody();
         Count = 0;
     }
@@ -5581,6 +5646,9 @@ public sealed class SoldierRenderer : IDisposable
                 return _collisionMesh;
             }
         }
+
+        /// <summary>Whether the one-time collision-chunk read has already happened.</summary>
+        public bool CollisionMeshPrepared => _collisionMeshRead;
     }
 
     /// <summary>
