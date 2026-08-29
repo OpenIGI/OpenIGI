@@ -1774,6 +1774,11 @@ public sealed partial class VulkanGraphicsDevice
         // Whether those lamps shadow. Off on an adapter that cannot trace, because the shader compiled
         // for it has no trace in it at all and would ignore this anyway; off when the world has not been
         // built yet, so a level's first frames light unshadowed rather than shadowed by nothing.
+        // Which frame this is, so the shadow samples move: successive frames test different points on
+        // each fixture and the temporal resolve averages them into a smooth penumbra. Wrapped short --
+        // the dither only needs the pattern to differ from the last frame's, not to never repeat.
+        u[2] = _frameCounter % 64UL;
+
         u[1] = _localLightCount > 0
             && RenderCVars.LocalLightShadows.Value != 0
             && _device.Capabilities.RayQuery
@@ -1805,6 +1810,11 @@ public sealed partial class VulkanGraphicsDevice
             u[direction + at] = light.ViewDirection.X;
             u[direction + at + 1] = light.ViewDirection.Y;
             u[direction + at + 2] = light.ViewDirection.Z;
+
+            // How big the fixture is, which is what gives its shadow a penumbra. Rides beside the facing
+            // because both describe the SOURCE rather than its falloff, and the fourth component there
+            // was spare.
+            u[direction + at + 3] = light.SourceRadius;
         }
 
         lamps.Write<float>(new ReadOnlySpan<float>(u, floats));

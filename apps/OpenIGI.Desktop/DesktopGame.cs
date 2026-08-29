@@ -3849,7 +3849,13 @@ internal sealed partial class DesktopGame : IDisposable
                             fixture.Radius * localLightRange,
                             fixture.Colour,
                             intensity,
-                            facing);
+                            facing,
+
+                            // The fixture's own size, which is what gives its shadow a penumbra. Floored
+                            // rather than taken raw: a fixture the extractor measured as a few
+                            // centimetres across would cast an edge as hard as a point light's, and no
+                            // real fitting is that small.
+                            MathF.Max(fixture.Extent, 0.05f));
                     }
 
                     // Both backends, through the seam: a windowless interior needs its lamps whichever
