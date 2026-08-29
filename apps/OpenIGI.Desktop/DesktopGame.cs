@@ -183,6 +183,11 @@ internal sealed partial class DesktopGame : IDisposable
     // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
+
+    // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
+    // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
+    private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
+    private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
     private int _cardBounceFrame;
 
     // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
@@ -3404,7 +3409,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
                     // model would multiply the dome by an ambient term and the horizon would go dark. It
                     // is not lit; it IS light.
-                    _device.SetMaterialOverride(new SurfaceMaterial(Emissive: 1f));
+                    _device.SetMaterialOverride(SurfaceMaterial.Sky);
                 }
                 else
                 {
@@ -3791,11 +3796,18 @@ internal sealed partial class DesktopGame : IDisposable
                     && _lightFixtures.Count > 0)
                 {
                     Matrix3f worldToView = eye.Orientation.Transposed();
-                    int localCount = Math.Min(_lightFixtures.Count, DeferredLocalLight.Maximum);
+
+                    // WHICH lamps, before how they light. A level carries well over a hundred fixtures and
+                    // the shader's arrays hold thirty-two, so the set has to be chosen every frame rather
+                    // than taken off the top of a list -- the first thirty-two are the level's brightest,
+                    // which is a fact about the whole level and says nothing about where the player is
+                    // standing. Nearest to the camera, measured against each fixture's own reach so that a
+                    // long tube is not passed over for a desk lamp a metre closer.
+                    int localCount = SelectNearestLamps(eye.Position);
 
                     for (int i = 0; i < localCount; i++)
                     {
-                        LightFixture fixture = _lightFixtures[i];
+                        LightFixture fixture = _lightFixtures[_localLightOrder[i]];
                         Vector3f cameraRelative = new(
                             (float)(fixture.Position.X - eye.Position.X),
                             (float)(fixture.Position.Y - eye.Position.Y),
@@ -3808,19 +3820,25 @@ internal sealed partial class DesktopGame : IDisposable
                         // like real fixtures; the scale cvar then sets the overall level.
                         float intensity = MathF.Min(fixture.Intensity, 1.5f) * localLightScale;
 
+                        // The way the fixture faces, rotated into the same space its position is in. A
+                        // rotation and not a transform: this is a direction, so the camera's translation
+                        // must not touch it. Zero stays zero, which the shader reads as a point light.
+                        Vector3f facing = fixture.IsDirectional
+                            ? worldToView.Transform(fixture.Direction)
+                            : default;
+
                         _localLightScratch[i] = new DeferredLocalLight(
                             worldToView.Transform(cameraRelative),
                             fixture.Radius,
                             fixture.Colour,
-                            intensity);
+                            intensity,
+                            facing);
                     }
 
-                    // Local deferred lights are an OpenGL-backend extra outside the graphics seam; the
-                    // Vulkan backend reports no scene capture, so this path is not reached on it.
-                    if (_device is GLGraphicsDevice localLightDevice)
-                    {
-                        localLightDevice.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
-                    }
+                    // Both backends, through the seam: a windowless interior needs its lamps whichever
+                    // renderer is drawing it, and the ultra preset -- the one that discards the shipped
+                    // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
+                    _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
                 }
 
                 if (mapScene is not null)
@@ -5017,6 +5035,68 @@ internal sealed partial class DesktopGame : IDisposable
     // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
     // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
     // vertical one follows from the window's aspect, rather than the other way round.
+    /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
+    /// <param name="eye">Where the camera stands, in world metres.</param>
+    /// <returns>How many entries of <c>_localLightOrder</c> are valid.</returns>
+    /// <remarks>
+    /// <para>
+    /// A level's lamps outnumber the shader's array several times over, so this is a choice and not a
+    /// truncation. Each fixture is ranked by how far OUTSIDE its own reach the camera stands: a lamp the
+    /// camera is inside ranks negative and always makes the cut, and beyond that a long fluorescent
+    /// batten twenty metres off beats a desk lamp fifteen metres off, which is the right way round
+    /// because reach is what decides whether a lamp can light anything the player can see.
+    /// </para>
+    /// <para>
+    /// The camera's own position rather than the frustum: a lamp behind the player still lights the wall
+    /// in front of them, and culling to what is on screen would switch that light off as they turned.
+    /// </para>
+    /// <para>
+    /// A running insertion into an array of thirty-two rather than a sort of the whole list. The list is
+    /// a few hundred long and this runs every frame; an insertion sort over a fixed, tiny destination is
+    /// linear in the input and allocates nothing, where sorting the input is neither.
+    /// </para>
+    /// </remarks>
+    private int SelectNearestLamps(Vector3d eye)
+    {
+        int kept = 0;
+
+        for (int i = 0; i < _lightFixtures.Count; i++)
+        {
+            LightFixture fixture = _lightFixtures[i];
+
+            double dx = fixture.Position.X - eye.X;
+            double dy = fixture.Position.Y - eye.Y;
+            double dz = fixture.Position.Z - eye.Z;
+            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - fixture.Radius;
+
+            // Nothing to insert: this fixture is further out than every one already held, and the array
+            // is full. The common case by far once the level is more than thirty-two lamps deep.
+            if (kept == _localLightOrder.Length && rank >= _localLightRank[kept - 1])
+            {
+                continue;
+            }
+
+            int at = Math.Min(kept, _localLightOrder.Length - 1);
+
+            while (at > 0 && _localLightRank[at - 1] > rank)
+            {
+                _localLightRank[at] = _localLightRank[at - 1];
+                _localLightOrder[at] = _localLightOrder[at - 1];
+                at--;
+            }
+
+            _localLightRank[at] = rank;
+            _localLightOrder[at] = i;
+
+            if (kept < _localLightOrder.Length)
+            {
+                kept++;
+            }
+        }
+
+        return kept;
+    }
+
     private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
         2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
 

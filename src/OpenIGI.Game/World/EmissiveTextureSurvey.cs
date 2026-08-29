@@ -2,6 +2,7 @@ using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Formats.Ilff;
 using OpenIGI.Formats.World;
+using OpenIGI.Rendering;
 
 namespace OpenIGI.Game.World;
 
@@ -149,7 +150,7 @@ public static class EmissiveTextureSurvey
                     continue;
                 }
 
-                float luminance = MeanLuminance(lightmap.Images[subset.LightmapPage]);
+                float luminance = MeanLuminance(lightmap.Images[subset.LightmapPage], geometry, subset);
 
                 if (luminance < 0f)
                 {
@@ -213,25 +214,40 @@ public static class EmissiveTextureSurvey
         }
     }
 
-    /// <summary>Averages a lightmap page's luminance.</summary>
+    /// <summary>Averages the luminance of the part of a lightmap page one sub-mesh actually covers.</summary>
     /// <remarks>
     /// <para>
-    /// The whole page rather than the sub-mesh's own corner of it, and that is a deliberate first cut:
-    /// a page is an atlas of <em>one model's</em> surfaces, so it is already local to the object, and
-    /// walking each sub-mesh's lightmap UV bounds would sharpen the answer at the cost of needing the
-    /// vertex data as well. The consistency test below carries most of the discrimination anyway.
+    /// <b>The sub-mesh's own corner of the page, not the whole page.</b> The page is an atlas of one
+    /// MODEL's surfaces, and that is not local enough: a ceiling model carries its slab, its beams and
+    /// the one small tube bolted to it in a single <c>.olm</c>, so averaging the page divides the tube's
+    /// near-white by the whole dark ceiling around it and the brightest thing in the room scores like
+    /// concrete. That failure is why the reference exporter needed a hand-written list of lamp textures to
+    /// catch what the survey missed. Measuring only the texels this sub-mesh's own lightmap UVs reach
+    /// takes the dilution away, and the list with it.
+    /// </para>
+    /// <para>
+    /// The bounds are a rectangle rather than the exact footprint. A lightmap atlas is packed so that a
+    /// sub-mesh's chart occupies a contiguous block, and the padding around one is either black — which
+    /// is skipped below — or a bled copy of the chart's own edge, which is the same light. So the
+    /// rectangle costs nothing in practice and saves rasterising every triangle into the page.
     /// </para>
     /// <para>
     /// Fully black texels are skipped. An atlas is padded, and counting its empty margin would drag
     /// every page towards zero in proportion to how wastefully it was packed.
     /// </para>
     /// </remarks>
-    private static float MeanLuminance(in ObjectLightmapImage image)
+    private static float MeanLuminance(in ObjectLightmapImage image, MeshGeometry geometry, in MeshSubset subset)
     {
         ReadOnlySpan<byte> pixels = image.Pixels.Span;
-        int count = Math.Min(image.Width * image.Height, pixels.Length / 4);
+        int width = image.Width;
+        int height = image.Height;
 
-        if (count == 0)
+        if (width <= 0 || height <= 0 || (long)width * height > pixels.Length / 4)
+        {
+            return -1f;
+        }
+
+        if (!Bounds(geometry, subset, width, height, out int minX, out int minY, out int maxX, out int maxY))
         {
             return -1f;
         }
@@ -239,24 +255,88 @@ public static class EmissiveTextureSurvey
         double sum = 0.0;
         int lit = 0;
 
-        for (int i = 0; i < count; i++)
+        for (int y = minY; y <= maxY; y++)
         {
-            int at = i * 4;
+            int row = y * width;
 
-            // The pages are BGRA.
-            float luminance =
-                ((0.0722f * pixels[at]) + (0.7152f * pixels[at + 1]) + (0.2126f * pixels[at + 2])) / 255f;
+            for (int x = minX; x <= maxX; x++)
+            {
+                int at = (row + x) * 4;
 
-            if (luminance <= 0.004f)
+                // The pages are BGRA.
+                float luminance =
+                    ((0.0722f * pixels[at]) + (0.7152f * pixels[at + 1]) + (0.2126f * pixels[at + 2])) / 255f;
+
+                if (luminance <= 0.004f)
+                {
+                    continue;
+                }
+
+                sum += luminance;
+                lit++;
+            }
+        }
+
+        return lit > 0 ? (float)(sum / lit) : -1f;
+    }
+
+    /// <summary>The texel rectangle a sub-mesh's lightmap UVs cover, clamped into the page.</summary>
+    /// <remarks>
+    /// UVs come out of a pack file and are not guaranteed to sit inside the unit square -- a chart can
+    /// be authored slightly over its edge, and a malformed record can be anywhere at all. Clamping is
+    /// what keeps a bad one costing the accuracy of one measurement rather than reading past the page.
+    /// </remarks>
+    private static bool Bounds(
+        MeshGeometry geometry,
+        in MeshSubset subset,
+        int width,
+        int height,
+        out int minX,
+        out int minY,
+        out int maxX,
+        out int maxY)
+    {
+        minX = minY = maxX = maxY = 0;
+
+        Vertex3D[] vertices = geometry.Vertices;
+        ushort[] indices = geometry.Indices;
+
+        int start = Math.Max(subset.IndexOffset, 0);
+        int end = Math.Min(subset.IndexOffset + subset.IndexCount, indices.Length);
+
+        float lowU = float.MaxValue;
+        float lowV = float.MaxValue;
+        float highU = float.MinValue;
+        float highV = float.MinValue;
+
+        for (int at = start; at < end; at++)
+        {
+            int index = indices[at];
+
+            if (index >= vertices.Length)
             {
                 continue;
             }
 
-            sum += luminance;
-            lit++;
+            Vertex3D vertex = vertices[index];
+
+            lowU = MathF.Min(lowU, vertex.LightmapU);
+            highU = MathF.Max(highU, vertex.LightmapU);
+            lowV = MathF.Min(lowV, vertex.LightmapV);
+            highV = MathF.Max(highV, vertex.LightmapV);
         }
 
-        return lit > 0 ? (float)(sum / lit) : -1f;
+        if (lowU > highU)
+        {
+            return false;
+        }
+
+        minX = Math.Clamp((int)MathF.Floor(lowU * width), 0, width - 1);
+        maxX = Math.Clamp((int)MathF.Ceiling(highU * width), minX, width - 1);
+        minY = Math.Clamp((int)MathF.Floor(lowV * height), 0, height - 1);
+        maxY = Math.Clamp((int)MathF.Ceiling(highV * height), minY, height - 1);
+
+        return true;
     }
 
     private static string BareName(string name)

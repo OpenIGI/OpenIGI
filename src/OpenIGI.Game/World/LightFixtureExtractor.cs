@@ -441,6 +441,13 @@ public static class LightFixtureExtractor
         double extent = 0.0;
         List<(string Texture, double Area, int Count)> byTexture = [];
 
+        // The cluster's facing, accumulated as the SUM of the raw face cross products. Each one has the
+        // triangle's own area for its length, so the sum is area-weighted without weighting anything by
+        // hand, and its length against the sum of the individual lengths is exactly how coherently the
+        // faces agree -- which is the test for whether this fixture faces anywhere at all.
+        Vector3d facing = default;
+        double facingArea = 0.0;
+
         foreach (int index in cluster)
         {
             Triangle triangle = triangles[index];
@@ -450,6 +457,14 @@ public static class LightFixtureExtractor
             extent = Math.Max(extent, DistanceSquared(position, triangle.C));
 
             Accumulate(byTexture, triangle.Texture, triangle.Area);
+
+            // From the WINDING, not from the authored vertex normals. This game's normals face inward on
+            // interior shells and, smoothed across a box, tilt away from each face -- the exporter had to
+            // rebuild them per face for the same reason before the reference would light a flat roof.
+            Vector3d cross = Vector3d.Cross(triangle.B - triangle.A, triangle.C - triangle.A);
+
+            facing += cross;
+            facingArea += cross.Length;
         }
 
         extent = Math.Sqrt(extent);
@@ -464,13 +479,57 @@ public static class LightFixtureExtractor
             tint,
             (float)area,
             (float)extent,
-            cluster.Count);
+            cluster.Count,
+            Facing(facing, facingArea));
 
         // The radius wants the fixture's brightness, and Luminance is the fixture's own definition of
         // it -- computed here rather than inline so the two can never disagree.
         float reach = (float)extent * radiusScale * MathF.Sqrt(MathF.Max(fixture.Luminance, 0f));
 
         return fixture with { Radius = MathF.Max(reach, MinimumRadius) };
+    }
+
+    /// <summary>Turns a cluster's summed face normals into the direction it throws its light.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Zero unless the faces agree.</b> The sum of the cross products is area-weighted by
+    /// construction, so its length against the summed lengths says how much of the fixture's surface
+    /// points one way: a flat tube's underside is near one, and a lamp modelled as a CLOSED BOX is near
+    /// nought, because its top cancels its bottom exactly. That second case is not a failure to fix, it
+    /// is the geometry saying this fixture has no single face — and the honest answer is no direction,
+    /// which the renderer lights as a point rather than as a spot aimed at a guess.
+    /// </para>
+    /// <para>
+    /// Turned downward where it points up, because a fixture is mounted on something. The winding this
+    /// is derived from is not consistently outward in this game's models — the ceiling lamp and the
+    /// ceiling it hangs from can disagree — so the sign carries no information and the mounting does:
+    /// a lamp lights the room, never the slab it is bolted to. For a fixture whose normal is near
+    /// horizontal, a wall bracket, the flip barely moves it, which is the right amount of opinion to
+    /// have about a case this evidence cannot settle.
+    /// </para>
+    /// </remarks>
+    private static Vector3f Facing(Vector3d summed, double totalArea)
+    {
+        // Coherent enough to be one face. Two thirds admits a shallow curved reflector and a tube with
+        // its short end caps; it rejects anything that is as much one way as another.
+        const double MinimumCoherence = 0.66;
+
+        double length = summed.Length;
+
+        if (totalArea <= 0.0 || length <= 0.0 || (length / totalArea) < MinimumCoherence)
+        {
+            return default;
+        }
+
+        Vector3d unit = summed * (1.0 / length);
+
+        // Z is up in this game's world. A fixture facing up is facing its own mounting.
+        if (unit.Z > 0.0)
+        {
+            unit = new Vector3d(-unit.X, -unit.Y, -unit.Z);
+        }
+
+        return new Vector3f((float)unit.X, (float)unit.Y, (float)unit.Z);
     }
 
     /// <summary>Picks the texture that contributed most of a cluster's area.</summary>

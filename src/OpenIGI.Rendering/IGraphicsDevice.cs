@@ -568,6 +568,27 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false);
 
+    /// <summary>Sets the level's real-time local lights for the next deferred lighting pass.</summary>
+    /// <param name="lights">
+    /// The lights, in VIEW space; a set longer than <see cref="DeferredLocalLight.Maximum"/> is
+    /// truncated. View space because the level sits tens of kilometres from the world origin, where a
+    /// float has metres of resolution left: the camera-relative subtract has to happen in double
+    /// precision on the game's side, and by the time it arrives here it has already happened.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Held rather than acted on, like <see cref="SetScreenIndirect"/>: this records what the next
+    /// lighting pass folds in, and the pass clears it after, so a frame that sets none lights from none.
+    /// Called each frame while the G-buffer is live, before the geometry pass closes.
+    /// </para>
+    /// <para>
+    /// These are the lamps a level implies and never declares — see the game layer's lamp detection.
+    /// They are what lights a windowless interior: there is no daylight to gather in a sealed room, so
+    /// no amount of exposure or bounce can find light that has no source, and this is the source.
+    /// </para>
+    /// </remarks>
+    void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights);
+
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
     /// <param name="destination">Receives the texels, row-major and top row first.</param>

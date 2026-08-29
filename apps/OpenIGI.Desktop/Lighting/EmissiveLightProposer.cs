@@ -1,180 +1,102 @@
 using OpenIGI.Core.Diagnostics;
-using OpenIGI.Core.Graphics;
-using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
-using OpenIGI.Formats.Textures;
 using OpenIGI.Game.World;
 
 namespace OpenIGI.Desktop;
 
 /// <summary>
-/// Works out which lights a level has, given that it declares none: it ranks a level's textures by how
-/// much they behave like light sources and turns the winning ones into placed fixtures.
+/// Works out which lights a level has, given that it declares none, and which of its surfaces are the
+/// lamps those lights come out of.
 /// </summary>
 /// <remarks>
-/// The survey and the extractor both already existed and neither was ever called; what this decides is
-/// only where to cut the ranking, and the cut is deliberately generous -- a fixture that should not be
-/// there shows up as a glow in the wrong place, which is reviewable, whereas a missing one is invisible
-/// and indistinguishable from the stage not working. A per-mission fixtures file, once written, is the
-/// truth: the survey ran once to propose the list and a human has had the chance to correct it since.
+/// <para>
+/// Three steps, each narrowing the one before. <see cref="EmissiveTextureSurvey"/> reads the artists'
+/// own bakes and ranks every texture by how consistently it is painted like a source;
+/// <see cref="LampDetector"/> checks that ranking against the SHAPE of the geometry that draws it, so a
+/// small flat thing above head height is a lamp and a bright sign is not; and
+/// <see cref="LightFixtureExtractor"/> turns every place a confirmed emitter is drawn into a placed
+/// light with a position, a reach and a facing.
+/// </para>
+/// <para>
+/// Both halves of the conclusion are used and both are written down. The fixtures become real lights in
+/// the deferred pass and real emitters in the surface cache's bounce; the emitter strengths go to the
+/// material library so that the lamp geometry ITSELF glows. Doing only the first is what made a room
+/// look lit by nothing — light on the floor with a grey panel above it.
+/// </para>
+/// <para>
+/// A per-mission fixtures file, once written, is the truth: the survey ran once to propose the list and
+/// a human has had the chance to correct it since. Reading it also keeps the lightmap decode and the
+/// whole-level geometry walk off the load path entirely.
+/// </para>
 /// </remarks>
 internal static class EmissiveLightProposer
 {
-    // How light-like a texture must score before it is treated as a source. The score is the share of a
-    // texture's uses that are baked bright, weighted by how bright and discounted for textures used only
-    // once or twice -- so half means bright across most of its uses and genuinely bright, not merely
-    // pale. Level 1's known emitter scores far above this; the cut keeps out light-coloured walls that
-    // happen to stand in the sun.
-    private const float EmitterScore = 0.5f;
+    /// <summary>What a level's own geometry says it is lit by.</summary>
+    /// <param name="Fixtures">The placed lights, which may be empty.</param>
+    /// <param name="Emitters">Which textures glow, and how strongly, as a multiple of their albedo.</param>
+    public readonly record struct Proposal(
+        IReadOnlyList<LightFixture> Fixtures,
+        IReadOnlyDictionary<string, float> Emitters)
+    {
+        /// <summary>Gets the proposal for a level that has nothing of the kind.</summary>
+        public static Proposal None { get; } = new([], new Dictionary<string, float>());
+    }
 
-    /// <summary>Proposes the placed light fixtures for a level, from an authored file or a fresh survey.</summary>
+    /// <summary>Proposes a level's lamps, from an authored file or a fresh survey.</summary>
     /// <param name="scene">The built world scene whose placements and textures are surveyed.</param>
     /// <param name="resources">The resource registry the emitter textures are decoded through.</param>
     /// <param name="missionId">The mission the fixtures belong to, which names the per-mission file.</param>
     /// <param name="logger">The log the proposal is reported to.</param>
-    /// <returns>The fixtures to place, which may be empty.</returns>
-    public static IReadOnlyList<LightFixture> Propose(
+    /// <returns>The lamps to place and the surfaces they come out of.</returns>
+    public static Proposal Propose(
         WorldScene scene, ResourceRegistry resources, int missionId, IIgiLogger logger)
     {
-        // Beside the other authored data, one file per mission. When it exists it is the truth: the
-        // survey ran once to propose the list and a human has had the chance to correct it since, exactly
-        // the way authored material detail wins over the detail derived from a texture. Reading it also
-        // keeps the survey's lightmap decode off the load path entirely.
+        // Beside the other authored data, one file per mission. When it exists and its version matches
+        // it is the truth: the survey ran once to propose the list and a human has had the chance to
+        // correct it since, exactly the way authored material detail wins over the detail derived from a
+        // texture.
         string fixturesPath = Path.Combine(
             AppContext.BaseDirectory, "Assets", "fixtures", $"mission-{missionId}.json");
 
-        if (LightFixtureStore.TryLoad(fixturesPath, out IReadOnlyList<LightFixture> saved, logger))
+        if (LightFixtureStore.TryLoad(
+                fixturesPath,
+                out IReadOnlyList<LightFixture> saved,
+                out IReadOnlyDictionary<string, float> savedEmitters,
+                logger))
         {
-            return saved;
+            return new Proposal(saved, savedEmitters);
         }
 
         try
         {
-            IReadOnlyList<EmissiveTextureSurvey.Finding> findings =
-                EmissiveTextureSurvey.Survey(scene, resources, logger);
+            LampDetector.Result detected = LampDetector.Detect(
+                scene, resources, EmissiveTextureSurvey.Survey(scene, resources, logger), logger);
 
-            List<string> emitters = [];
-
-            foreach (EmissiveTextureSurvey.Finding finding in findings)
+            if (detected.Strengths.Count == 0)
             {
-                if (finding.Score >= EmitterScore)
-                {
-                    emitters.Add(finding.Texture);
-                }
+                logger.Information("Emissive", "Nothing in this level looks enough like a light source.");
+                LightFixtureStore.Save(fixturesPath, [], detected.Strengths, logger);
+                return Proposal.None;
             }
 
-            if (emitters.Count == 0)
-            {
-                logger.Information("Emissive", "No texture in this level looks enough like a light source.");
-                LightFixtureStore.Save(fixturesPath, [], logger);
-                return [];
-            }
-
-            // Named rather than counted. This is inferred from art that was never meant to be read this
-            // way, so the list is the first thing to check when a level lights wrongly.
-            logger.Information("Emissive", $"Emitter textures: {string.Join(", ", emitters)}.");
-
-            IReadOnlyList<LightFixture> proposed = LightFixtureExtractor.ProposeFromScene(
-                scene, emitters, EmitterColour(resources), logger: logger);
+            // Lights only where the geometry is SHAPED like a lamp -- the emitters the bake alone brought
+            // forward still glow, and that is all they do. A vending machine's lit panel and a white sign
+            // at the end of a corridor read bright for the same reason a tube does, because the artist
+            // painted them so; making them glow is right and hanging a light fixture off them is not.
+            // This is the split the reference exporter arrived at, and it is why the two sets are separate.
+            IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
+                scene, detected.Confirmed, LampDetector.Tint(resources), logger: logger);
 
             // Written so the proposal can be reviewed and corrected, and so the next load reads it back
-            // rather than surveying again.
-            LightFixtureStore.Save(fixturesPath, proposed, logger);
+            // rather than surveying and walking the whole level again.
+            LightFixtureStore.Save(fixturesPath, fixtures, detected.Strengths, logger);
 
-            return proposed;
+            return new Proposal(fixtures, detected.Strengths);
         }
         catch (Exception error) when (error is IOException or InvalidDataException)
         {
             logger.Warning("Emissive", $"The lights could not be proposed: {error.Message}");
-            return [];
+            return Proposal.None;
         }
-    }
-
-    // Resolves an emitter texture to its mean colour, linear and normalised so its brightest channel is
-    // about one, for the light a fixture drawing it is given. Best effort, and cached per name.
-    //
-    // A texture that resolves as a standalone asset and decodes without a palette gives its own colour.
-    // Most emitter textures do neither: they live inside a level's MTP pack, named the way a material
-    // references them rather than as a file, and are paletted -- decoding those wants the pack and its
-    // palette, which is not wired here yet. Those fall back to white, a tint a reviewer can correct in
-    // the fixtures file, whereas the placement the fixture comes with cannot be guessed later. So a miss
-    // here costs the tint, never the fixture, and never the load: the whole probe is guarded, because the
-    // resource layer treats a bare texture name as an illegal path and throws rather than returning
-    // false.
-    private static Func<string, Vector3f> EmitterColour(ResourceRegistry resources)
-    {
-        Dictionary<string, Vector3f> cache = new(StringComparer.OrdinalIgnoreCase);
-
-        return name =>
-        {
-            if (cache.TryGetValue(name, out Vector3f cached))
-            {
-                return cached;
-            }
-
-            Vector3f colour = new(1f, 1f, 1f);
-
-            foreach (string candidate in new[] { name, name + ".tex", name + ".spr" })
-            {
-                try
-                {
-                    if (!resources.TryLoad(candidate, out ReadOnlyMemory<byte> data)
-                        || data.Length < 4
-                        || !TexFile.IsTexture(data.Span))
-                    {
-                        continue;
-                    }
-
-                    colour = MeanColour(TexFile.Load(data.Span));
-                    break;
-                }
-                catch (Exception)
-                {
-                    // Illegal-path names, paletted or malformed payloads -- a tint is never worth taking
-                    // the load down for. It stays white; the fixtures file lets a reviewer correct it.
-                }
-            }
-
-            cache[name] = colour;
-            return colour;
-        };
-    }
-
-    // Averages a decoded texture and normalises it so its brightest channel is about one.
-    private static Vector3f MeanColour(TextureImage image)
-    {
-        ReadOnlySpan<Bgra32> pixels = image.Pixels;
-        (int width, int height) = image.GetLevelSize(0);
-        int count = Math.Min(width * height, pixels.Length);
-
-        if (count <= 0)
-        {
-            return new Vector3f(1f, 1f, 1f);
-        }
-
-        double r = 0.0;
-        double g = 0.0;
-        double b = 0.0;
-
-        for (int i = 0; i < count; i++)
-        {
-            Bgra32 pixel = pixels[i];
-            r += pixel.R;
-            g += pixel.G;
-            b += pixel.B;
-        }
-
-        float mr = (float)(r / count);
-        float mg = (float)(g / count);
-        float mb = (float)(b / count);
-
-        // Normalised on the brightest channel, so the fixture's colour is a hue and the intensity is left
-        // to the area and the scale the renderer applies. A texture that averaged to black -- a fully
-        // transparent or empty page -- stays white rather than becoming a division by nothing.
-        float peak = MathF.Max(mr, MathF.Max(mg, mb));
-
-        return peak > 1e-3f
-            ? new Vector3f(mr / peak, mg / peak, mb / peak)
-            : new Vector3f(1f, 1f, 1f);
     }
 }

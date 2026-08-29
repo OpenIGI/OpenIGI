@@ -710,15 +710,26 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Hour of day the interactive sun starts a level at, 0-24. 12 is the authored noon sun.");
 
-    /// <summary>How strongly the level's inferred lamp fixtures light the scene as real point lights.</summary>
+    /// <summary>How strongly the level's detected lamp fixtures light the scene as real lights.</summary>
     /// <remarks>
+    /// <para>
     /// The screen gather only carries light that already exists in the frame -- daylight through a window,
     /// a sunlit wall -- so a windowless interior it cannot help: there is no source to gather. This turns
-    /// the lamp fixtures the emissive survey proposes (see the game layer's light-fixture proposer) into
-    /// direct punctual lights, which is the honest way to light such a room -- a real source with a real
-    /// falloff, not exposure lifting a black frame into grey. Scales the whole set; the fixtures' relative
-    /// intensities are the survey's, and this is the one number tuned by eye. Off below ultra, where the
-    /// bakes still carry the interiors.
+    /// the fixtures the lamp detection proposes into direct lights, which is the honest way to light such
+    /// a room -- a real source with a real falloff, not exposure lifting a black frame into grey.
+    /// </para>
+    /// <para>
+    /// Each is punctual with a windowed inverse square, and DIRECTIONAL where the fixture's own geometry
+    /// says which way it faces: the light falls off as the cosine of the angle off that axis, so a ceiling
+    /// tube lights the floor and leaves the slab it is bolted to dark, which is what a real fitting does
+    /// and what an omnidirectional point emphatically does not. Scales the whole set; the fixtures'
+    /// relative intensities are the detection's, and this is the one number tuned by eye.
+    /// </para>
+    /// <para>
+    /// Off below ultra, where the shipped bakes still carry the interiors and adding a second set of
+    /// lights on top of light that is already painted in would count the same lamp twice. Ultra discards
+    /// the bakes, which is exactly why it needs this.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> LocalLightScale = Presets.Define(
         CVar.Float(
@@ -727,7 +738,7 @@ public static class RenderCVars
             0f,
             64f,
             CVarOptions.Archive,
-            "Strength of the level's inferred lamp fixtures as real point lights. 0 is off."),
+            "Strength of the level's detected lamp fixtures as real lights. 0 is off."),
         vanilla: "0",
         enhanced: "0",
         high: "0",
@@ -1987,14 +1998,23 @@ public static class RenderCVars
         high: "0.3",
         ultra: "0");
 
-    /// <summary>Whether the inferred lamp fixtures light the surface cache, so interiors lit by their own lamps.</summary>
+    /// <summary>Whether the level's lamps are detected at all: as emission, as lights and in the bounce.</summary>
     /// <remarks>
-    /// The level declares no point lights; a survey reads them from emissive geometry -- the ceiling tubes
-    /// and the like -- and feeds them into the surface cache so a lamplit room bounces. Off by default: the
-    /// survey is not yet reliable (a bright sign or a screen can read as a lamp), and while it is wrong a
-    /// sealed windowless room lit by an inferred lamp cannot be told from one that ought to be dark. With it
-    /// off such a room reads dark, which is the honest state until the survey is dialled in. On lights
-    /// interiors from their fixtures.
+    /// <para>
+    /// The level declares no point lights. Its lamps are worked out from what the artists baked around
+    /// each texture and from the SHAPE of the geometry that draws it -- small, above head height, flat,
+    /// facing down and painted near-white is a light fixture and very little else -- and the conclusion
+    /// then does three things at once: the fixture geometry is made emissive so a lamp looks like the
+    /// thing doing the lighting, a punctual light is placed at every one so a windowless room has a
+    /// source, and the same fixtures feed the surface cache so that room bounces. All three or none:
+    /// a lamp that lights a floor without glowing reads as a room lit by nothing, and a lamp that glows
+    /// without lighting reads as a decal.
+    /// </para>
+    /// <para>
+    /// Off is the honest reading of a level with no lamps at all -- a sealed interior goes dark, which is
+    /// what it would be. Turn it off to see what the level looks like on daylight alone, or when a
+    /// detection has gone wrong in a level whose fixtures file has not been corrected yet.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<int> GlobalIlluminationLamps = Presets.Define(
         CVar.Int(
@@ -2003,7 +2023,35 @@ public static class RenderCVars
             0,
             1,
             CVarOptions.Archive,
-            "Light the surface cache from the level's inferred lamp fixtures, so lamplit rooms bounce."),
+            "Detect the level's lamps: emissive fixtures, real lights at each, and their bounce."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How brightly the detected lamp geometry itself glows, against what the detector proposed.</summary>
+    /// <remarks>
+    /// <para>
+    /// This is the FIXTURE, not the light it casts -- <see cref="LocalLightScale"/> is that. A lamp has to
+    /// be brighter in the frame than any surface it lights or it does not read as the source: at its own
+    /// albedo a fluorescent panel is a pale grey rectangle with a mysterious pool of light beneath it, and
+    /// what makes it a lamp is being written above what a lit surface can reach, where the bloom finds it.
+    /// </para>
+    /// <para>
+    /// One means the strength the detection proposed, which is a lamp at six times its albedo and a
+    /// merely-bright surface -- an advert panel, a lit sign -- proportionally less. The two knobs are
+    /// separate because they answer different complaints: a room that is too bright wants the light turned
+    /// down, and a fixture that looks like a sticker wants this turned up.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> LampEmissiveScale = Presets.Define(
+        CVar.Float(
+            "r_lamp_emissive",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How brightly detected lamp geometry glows, against the detected strength. 0 stops it glowing."),
         vanilla: "1",
         enhanced: "1",
         high: "1",

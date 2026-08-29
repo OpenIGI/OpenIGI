@@ -1051,16 +1051,30 @@ internal sealed partial class DesktopGame
 
             if (_cardLighting is not null)
             {
-                // The lamp fixtures the level's emissive geometry implies -- the ceiling tubes read as
-                // area emitters and fed into the surface cache so they bounce. Off by default: the fixture
-                // survey is not yet trustworthy enough to ship (a bright sign reads as a lamp), and a room
-                // lit by inferred lamps cannot be told from one that should be dark. Until the survey is
-                // dialled in, a sealed windowless room reads dark, which is the honest state. Turn on to
-                // light interiors from their own fixtures.
-                _cardLighting.SetLocalLights(
-                    RenderCVars.GlobalIlluminationLamps.Value != 0
-                        ? EmissiveLightProposer.Propose(_scene, _resources, id, _logger)
-                        : System.Array.Empty<LightFixture>());
+                // The lamps this level implies but never declares, worked out once here and used in three
+                // places: as real punctual lights in the deferred pass, as area emitters the surface cache
+                // bounces off, and as EMISSION on the fixture geometry itself so a lamp looks like the
+                // thing doing the lighting rather than like a grey panel with light under it. All three
+                // matter -- a room lit from a fixture that does not glow reads as lit by nothing.
+                EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
+                    ? EmissiveLightProposer.Propose(_scene, _resources, id, _logger)
+                    : EmissiveLightProposer.Proposal.None;
+
+                _lightFixtures = lamps.Fixtures;
+
+                // The geometry glows. Onto the material library the world renderer already reads per
+                // sub-mesh, so nothing about the draw path changes -- and losing to anything the level's
+                // materials.json names, which is how a detection that fires on a road sign is corrected.
+                // Scaled on the way in rather than in the shader: the strength is a property of the
+                // material, so it belongs where the material is decided and costs nothing per pixel.
+                float emissiveScale = RenderCVars.LampEmissiveScale.Value;
+
+                _materials.SetDetectedEmitters(
+                    emissiveScale == 1f
+                        ? lamps.Emitters
+                        : lamps.Emitters.ToDictionary(e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase));
+
+                _cardLighting.SetLocalLights(lamps.Fixtures);
 
                 // Built once, from the same capture and placements the lighting was. A ray that stops
                 // somewhere knows only that it stopped; this is what lets it read the surface it hit.

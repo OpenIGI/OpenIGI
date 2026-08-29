@@ -225,6 +225,26 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     {
     }
 
+    /// <summary>Gets the local lights the last frame submitted, in the order they were given.</summary>
+    /// <remarks>
+    /// Recorded rather than dropped: a lamp reaching the device at all is the thing that was silently
+    /// missing before -- the fixtures were proposed, written to a file and handed to the surface cache,
+    /// and the field the deferred pass read from was never assigned, so no punctual light was ever
+    /// submitted by anything.
+    /// </remarks>
+    public List<DeferredLocalLight> LocalLights { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
+    {
+        LocalLights.Clear();
+
+        foreach (DeferredLocalLight light in lights)
+        {
+            LocalLights.Add(light);
+        }
+    }
+
     /// <summary>The volume textures allocated, as name, dimensions and format.</summary>
     /// <remarks>Not to be confused with <see cref="Volumes"/>, which is the probe field.</remarks>
     public List<(string Name, int Width, int Height, int Depth, VolumeFormat Format)> VolumeTextures { get; } = [];

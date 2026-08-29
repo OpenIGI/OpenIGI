@@ -1,6 +1,6 @@
 using OpenIGI.Core.Numerics;
 
-namespace OpenIGI.Rendering.OpenGL;
+namespace OpenIGI.Rendering;
 
 /// <summary>
 /// One real-time local light handed to the deferred lighting for a single frame — a lamp fixture a
@@ -23,11 +23,26 @@ namespace OpenIGI.Rendering.OpenGL;
 /// <param name="Radius">How far the light reaches before its windowed falloff takes it to zero, in metres.</param>
 /// <param name="Colour">The light's linear colour, its brightest channel around one.</param>
 /// <param name="Intensity">The light's relative strength, already scaled by whatever global knob the caller applies.</param>
+/// <param name="ViewDirection">
+/// The way the fixture faces, in view space, or zero for a light that shines every way.
+/// <para>
+/// A lamp is a housing with an opening: it throws light out of the opening and nothing out of the
+/// slab it is bolted to. Lit as a bare point instead, every ceiling fixture in the game puts a bright
+/// disc on the ceiling ABOVE it — light on the one surface that is physically behind the emitter —
+/// and there is nowhere in a room to stand where that is not visible.
+/// </para>
+/// <para>
+/// Zero is a real answer and not a failure. A fixture whose geometry does not agree on a facing —
+/// a lamp modelled as a closed box, whose faces cancel — is better lit as a point than as a spot
+/// aimed at a guess, and the shader reads a zero vector as exactly that.
+/// </para>
+/// </param>
 public readonly record struct DeferredLocalLight(
     Vector3f ViewPosition,
     float Radius,
     Vector3f Colour,
-    float Intensity)
+    float Intensity,
+    Vector3f ViewDirection = default)
 {
     /// <summary>The most local lights a single frame can carry, matching the lighting shader's array size.</summary>
     public const int Maximum = 32;

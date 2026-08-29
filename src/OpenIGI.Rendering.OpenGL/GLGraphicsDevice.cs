@@ -150,8 +150,10 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     private int _lightingLocalLightCount = -1;
     private int _lightingLocalLightPositionRadius = -1;
     private int _lightingLocalLightColourIntensity = -1;
+    private int _lightingLocalLightDirection = -1;
     private readonly float[] _localLightPositionRadius = new float[DeferredLocalLight.Maximum * 4];
     private readonly float[] _localLightColourIntensity = new float[DeferredLocalLight.Maximum * 4];
+    private readonly float[] _localLightDirection = new float[DeferredLocalLight.Maximum * 4];
     private int _localLightCount;
 
     private DebugView _debugView;
@@ -3185,6 +3187,8 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
                 _lightingLocalLightPositionRadius, _localLightPositionRadius.AsSpan(0, _localLightCount * 4));
             _lightingProgram.SetVector4Array(
                 _lightingLocalLightColourIntensity, _localLightColourIntensity.AsSpan(0, _localLightCount * 4));
+            _lightingProgram.SetVector4Array(
+                _lightingLocalLightDirection, _localLightDirection.AsSpan(0, _localLightCount * 4));
         }
 
         _fullScreen!.Draw();
@@ -3240,6 +3244,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             _localLightColourIntensity[at + 1] = light.Colour.Y;
             _localLightColourIntensity[at + 2] = light.Colour.Z;
             _localLightColourIntensity[at + 3] = light.Intensity;
+
+            _localLightDirection[at + 0] = light.ViewDirection.X;
+            _localLightDirection[at + 1] = light.ViewDirection.Y;
+            _localLightDirection[at + 2] = light.ViewDirection.Z;
+            _localLightDirection[at + 3] = 0f;
         }
 
         _localLightCount = count;
@@ -4284,6 +4293,7 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
         _lightingLocalLightCount = _lightingProgram.LocationOf("uLocalLightCount");
         _lightingLocalLightPositionRadius = _lightingProgram.LocationOf("uLocalLightPositionRadius");
         _lightingLocalLightColourIntensity = _lightingProgram.LocationOf("uLocalLightColourIntensity");
+        _lightingLocalLightDirection = _lightingProgram.LocationOf("uLocalLightDirection");
         _lightingCascadeCount = _lightingProgram.LocationOf("uCascadeCount");
         _lightingCascadeSplits = _lightingProgram.LocationOf("uCascadeSplits");
         _lightingCascadeMatrix = _lightingProgram.LocationOf("uCascadeMatrix");

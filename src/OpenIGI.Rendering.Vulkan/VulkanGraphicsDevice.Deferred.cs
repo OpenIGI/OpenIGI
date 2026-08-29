@@ -51,6 +51,11 @@ public sealed partial class VulkanGraphicsDevice
     // The screen-probe gather's near-field atlas, fed each frame it is traced.
     private TextureHandle _screenIndirect;
     private float _screenIndirectStrength;
+
+    // The level's lamps for the frame being recorded. Held rather than acted on, and uploaded whole when
+    // the lighting pass writes its uniforms; see SetLocalLights.
+    private readonly DeferredLocalLight[] _localLights = new DeferredLocalLight[DeferredLocalLight.Maximum];
+    private int _localLightCount;
     private bool _screenIndirectFullResolution;
 
     // The sun's cascaded shadow map: the composed world-to-cascade-clip matrices, the view depths the
@@ -1612,6 +1617,11 @@ public sealed partial class VulkanGraphicsDevice
         _screenIndirect = default;
         _screenIndirectStrength = 0f;
         _screenIndirectFullResolution = false;
+
+        // And the lamps, on the same contract and for the same reason: a frame that submits none must
+        // light from none, or a level whose lamps were switched off goes on being lit by the last set
+        // that was uploaded -- at view-space positions belonging to a camera that has since moved.
+        _localLightCount = 0;
     }
 
     /// <summary>Fills this frame's GI uniform with the probe-field parameters and points the set at it.</summary>
@@ -1705,11 +1715,76 @@ public sealed partial class VulkanGraphicsDevice
                 ? previousForAo.AoView
                 : _sceneTarget.AoView;
 
+        Memory.VulkanBuffer lamps = WriteLampUniform(frame);
+
         _sceneTarget.WriteGi(
-            probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize, giView, giSampler, giLayout,
+            probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize,
+            lamps.Handle, (ulong)DeferredRenderer.LampUniformSize,
+            giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
             new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
             freshestAo);
+    }
+
+    /// <summary>Writes this frame's local lights into the lighting pass's own block.</summary>
+    /// <remarks>
+    /// Uploaded whole every frame, count included, so a frame that set none lights from none — the same
+    /// contract the OpenGL backend's array uniforms have, and the reason neither backend needs a way to
+    /// say "clear the lamps". The layout mirrors the shader's block exactly: a control vector, then three
+    /// parallel arrays rather than an array of structs, because a <c>vec4</c> array is the one layout
+    /// whose std140 padding is the same on every implementation.
+    /// </remarks>
+    private unsafe Memory.VulkanBuffer WriteLampUniform(int frame)
+    {
+        Memory.VulkanBuffer lamps = _deferred.LampUniform(frame);
+        int floats = DeferredRenderer.LampUniformSize / sizeof(float);
+        float* u = stackalloc float[floats];
+
+        for (int i = 0; i < floats; i++)
+        {
+            u[i] = 0f;
+        }
+
+        u[0] = _localLightCount;
+
+        // Where each array starts, in floats: the control vector, then a vec4 per light per array.
+        int position = 4;
+        int colour = position + (DeferredLocalLight.Maximum * 4);
+        int direction = colour + (DeferredLocalLight.Maximum * 4);
+
+        for (int i = 0; i < _localLightCount; i++)
+        {
+            DeferredLocalLight light = _localLights[i];
+            int at = i * 4;
+
+            u[position + at] = light.ViewPosition.X;
+            u[position + at + 1] = light.ViewPosition.Y;
+            u[position + at + 2] = light.ViewPosition.Z;
+            u[position + at + 3] = light.Radius;
+
+            u[colour + at] = light.Colour.X;
+            u[colour + at + 1] = light.Colour.Y;
+            u[colour + at + 2] = light.Colour.Z;
+            u[colour + at + 3] = light.Intensity;
+
+            u[direction + at] = light.ViewDirection.X;
+            u[direction + at + 1] = light.ViewDirection.Y;
+            u[direction + at + 2] = light.ViewDirection.Z;
+        }
+
+        lamps.Write<float>(new ReadOnlySpan<float>(u, floats));
+        return lamps;
+    }
+
+    /// <inheritdoc/>
+    public void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights)
+    {
+        _localLightCount = Math.Min(lights.Length, DeferredLocalLight.Maximum);
+
+        for (int i = 0; i < _localLightCount; i++)
+        {
+            _localLights[i] = lights[i];
+        }
     }
 
     /// <summary>Resolves the screen-GI atlas to a view, sampler and layout, or the white texture when unset.</summary>

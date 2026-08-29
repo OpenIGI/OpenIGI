@@ -29,6 +29,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly SceneTarget[] _targets;
     private readonly ProbeVolumes _probes;
     private readonly VulkanBuffer[] _giUniforms;
+    private readonly VulkanBuffer[] _lampUniforms;
     private readonly ShadowMap _shadowMap;
     private readonly ShadowPipeline _shadowPipeline;
     private readonly bool _rayQuery;
@@ -54,6 +55,15 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
     public const int GiUniformSize = 464;
+
+    /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
+    /// <remarks>
+    /// One <c>vec4</c> of counts and control, then three per light: position and reach, colour and
+    /// strength, and the direction it faces. Sized for <see cref="DeferredLocalLight.Maximum"/>, which is
+    /// what the shader's arrays are declared at — well inside the sixteen kilobytes every Vulkan
+    /// implementation guarantees a uniform buffer, so no device has to be asked.
+    /// </remarks>
+    public const int LampUniformSize = 16 + (DeferredLocalLight.Maximum * 48);
 
     /// <summary>Initialises a new instance of the <see cref="DeferredRenderer"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -114,10 +124,15 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             ? new ShadowAccumulatePass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
+        _lampUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
             _giUniforms[i] = new VulkanBuffer(
                 vk, device, allocator, GiUniformSize,
+                BufferUsageFlags.UniformBufferBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
+            _lampUniforms[i] = new VulkanBuffer(
+                vk, device, allocator, LampUniformSize,
                 BufferUsageFlags.UniformBufferBit,
                 MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
         }
@@ -186,6 +201,11 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="frame">The frame-in-flight index.</param>
     /// <returns>The buffer.</returns>
     public VulkanBuffer GiUniform(int frame) => _giUniforms[frame];
+
+    /// <summary>Gets the local-light uniform buffer for a frame in flight.</summary>
+    /// <param name="frame">The frame-in-flight index.</param>
+    /// <returns>The buffer the lamps for that frame are written into.</returns>
+    public VulkanBuffer LampUniform(int frame) => _lampUniforms[frame];
 
     /// <summary>Gets the sun's cascaded shadow map.</summary>
     public ShadowMap ShadowMap => _shadowMap;
@@ -306,6 +326,11 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             target.Dispose();
         }
 
+        foreach (VulkanBuffer lamp in _lampUniforms)
+        {
+            lamp.Dispose();
+        }
+
         foreach (VulkanBuffer uniform in _giUniforms)
         {
             uniform.Dispose();
@@ -350,7 +375,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
         // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
         // traced sun-shadow mask.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[17];
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[18];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -424,10 +449,19 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             StageFlags = ShaderStageFlags.FragmentBit,
         };
 
+        // The level's lamps: the lights it implies and never declares.
+        bindings[17] = new DescriptorSetLayoutBinding
+        {
+            Binding = 17,
+            DescriptorType = DescriptorType.UniformBuffer,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 17,
+            BindingCount = 18,
             PBindings = bindings,
         };
 
@@ -470,7 +504,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[4];
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
-        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 2) };
+        // Two uniform buffers per lighting set now -- the GI block and the lamps -- so twice the count.
+        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 4) };
 
         // The two resolve sets — the raw lit and the temporally-resolved — each carry one sampler.
         sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 4) };

@@ -59,6 +59,7 @@ internal static class RetailLevelOneGround
     }
 
     private static LoadedMission? _mission;
+    private static ResourceRegistry? _resources;
     private static WorldScene? _scene;
     private static LevelTask? _levelRoot;
 
@@ -71,6 +72,20 @@ internal static class RetailLevelOneGround
     }
 
     /// <summary>Level 1's built scene, for tests that need its placements.</summary>
+    /// <summary>The resource registry the level was loaded through.</summary>
+    /// <remarks>
+    /// The level's own one, not a fresh registry over the game directory. A pack's textures are not files
+    /// on disk — they live inside the pack's <c>.res</c> archive and are registered under
+    /// <c>LOCAL:textures/&lt;name&gt;.tex</c> as the mission loads — so a test that builds its own
+    /// registry can read a lightmap and cannot read a diffuse, and anything measuring texture colour
+    /// silently gets nothing.
+    /// </remarks>
+    public static ResourceRegistry Resources()
+    {
+        _ = Find();
+        return _resources!;
+    }
+
     public static WorldScene Scene()
     {
         Find();
@@ -122,6 +137,7 @@ internal static class RetailLevelOneGround
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
         ResourceRegistry resources = new(fileSystem);
+        _resources = resources;
         GameLoop loop = new(new ManualTimeSource());
 
         MissionRegistry registry = new();

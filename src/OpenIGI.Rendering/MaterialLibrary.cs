@@ -33,6 +33,7 @@ public sealed class MaterialLibrary
     private readonly Dictionary<string, SurfaceMaterial> _byName = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<(string Suffix, SurfaceMaterial Material)> _bySuffix = [];
     private readonly Dictionary<string, SurfaceMaterial> _resolved = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, float> _detectedEmitters = new(StringComparer.OrdinalIgnoreCase);
     private readonly SurfaceMaterial _default;
 
     private MaterialLibrary(SurfaceMaterial defaultMaterial) => _default = defaultMaterial;
@@ -61,9 +62,13 @@ public sealed class MaterialLibrary
     {
         IIgiLogger log = logger ?? NullLogger.Instance;
 
+        // Its OWN library rather than the shared empty one, even with nothing to put in it: the level
+        // that follows will hand its detected emitters to whatever Load returned, and writing those onto
+        // a singleton every other renderer holds a reference to would carry one mission's lamps into the
+        // next -- and into the menu.
         if (!File.Exists(path))
         {
-            return Empty;
+            return new MaterialLibrary(SurfaceMaterial.Default);
         }
 
         try
@@ -108,8 +113,45 @@ public sealed class MaterialLibrary
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             log.Warning(LogCategory, $"Could not read {path}: {ex.Message}. Every surface takes the default.");
-            return Empty;
+            return new MaterialLibrary(SurfaceMaterial.Default);
         }
+    }
+
+    /// <summary>Tells the library which textures a level's own geometry says are light sources.</summary>
+    /// <param name="strengths">
+    /// The emissive strength each named texture should take, as a multiple of its albedo. A strength at
+    /// or below zero removes the texture from the set rather than making it black.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>Detected rather than authored, and it loses to authored.</b> Which textures are lamps is a
+    /// conclusion drawn from a level's lightmaps and the shape of the geometry that draws them (see the
+    /// game layer's lamp detection), so it is a proposal in exactly the way <c>materials.json</c> is
+    /// not. A texture named in the file keeps what the file says, including the file saying it does not
+    /// glow — that is how a detection that fires on a bright road sign is corrected, and correcting it
+    /// must not need a code change.
+    /// </para>
+    /// <para>
+    /// Per level, so the resolve cache is dropped: the previous mission's emitters are not this one's,
+    /// and a texture number is reused between levels for entirely different art.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="strengths"/> is <see langword="null"/>.</exception>
+    public void SetDetectedEmitters(IReadOnlyDictionary<string, float> strengths)
+    {
+        ArgumentNullException.ThrowIfNull(strengths);
+
+        _detectedEmitters.Clear();
+
+        foreach ((string texture, float strength) in strengths)
+        {
+            if (!string.IsNullOrEmpty(texture) && strength > 0f)
+            {
+                _detectedEmitters[texture] = MathF.Min(strength, SurfaceMaterial.MaximumEmissive);
+            }
+        }
+
+        _resolved.Clear();
     }
 
     /// <summary>Gets the material a texture is made of.</summary>
@@ -139,12 +181,28 @@ public sealed class MaterialLibrary
     private SurfaceMaterial Resolve(string textureName)
     {
         // An explicit name beats a suffix rule: the suffix says what a whole family is usually made
-        // of, and the name is someone having looked at this one.
+        // of, and the name is someone having looked at this one. It beats a detected emitter for the
+        // same reason and more strongly -- the detection is an inference over art that was never meant
+        // to be read this way, and the file is where it gets corrected.
         if (_byName.TryGetValue(textureName, out SurfaceMaterial named))
         {
             return named;
         }
 
+        if (_detectedEmitters.TryGetValue(textureName, out float detected))
+        {
+            // Onto the material the texture would otherwise have taken, so a detected emitter that also
+            // matches a suffix rule keeps that rule's roughness and its occlusion answer. Only the
+            // emission is being added.
+            return Beneath(textureName) with { Emissive = detected };
+        }
+
+        return Beneath(textureName);
+    }
+
+    /// <summary>The material a texture takes from the suffix rules alone, or the default.</summary>
+    private SurfaceMaterial Beneath(string textureName)
+    {
         foreach ((string suffix, SurfaceMaterial material) in _bySuffix)
         {
             if (textureName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))

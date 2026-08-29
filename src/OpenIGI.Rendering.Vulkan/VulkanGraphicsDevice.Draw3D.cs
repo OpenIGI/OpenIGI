@@ -686,7 +686,12 @@ public sealed partial class VulkanGraphicsDevice
         // came back shadowed for every sun-facing pixel in the frame, indoors and out, which reads as a
         // level with no sunlight at all rather than as a bug in the sky. The reference keeps its sky out
         // of the ray-tracing scene for the same reason.
-        if (_material.Emissive > 0.5f)
+        //
+        // "Emits AND is not an occluder", not merely "emits": a lamp emits too, and a lamp is ordinary
+        // solid geometry that has to stay in here -- it hangs off a ceiling and shadows the sun exactly
+        // as the ceiling does, and a fixture the rays fly straight through is a hole in the level for
+        // every traced shadow and every gather ray. The sky is the one surface that is both.
+        if (_material.Emissive > 0f && !_material.CastsOcclusion)
         {
             return;
         }
