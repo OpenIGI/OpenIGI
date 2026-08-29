@@ -4844,9 +4844,6 @@ public sealed class SoldierRenderer : IDisposable
                     m = soldier.Orientation;
                 }
                 Vector3f facing = new(m.M12, m.M22, m.M32);
-                BonePose pose = presented
-                    ? PoseAtPresentationOrientation(soldier, m)
-                    : soldier.Pose();
 
                 // The faithful path: trace the round at the soldier's skinned collision mesh and score it by
                 // the bone the round actually went through (BoneDynCubeObj_TraceLinesHandler). Skinning every
@@ -4871,10 +4868,14 @@ public sealed class SoldierRenderer : IDisposable
                         continue;
                     }
 
-                    met = presented
+                    if (presented
                         && member.SkinnedPose is { } currentPose
-                        && member.PreviousSkinnedPose is { } previousPose
-                        ? HumanHitTest.TryCastMeshBlended(
+                        && member.PreviousSkinnedPose is { } previousPose)
+                    {
+                        // The renderer already owns both poses used by the motion-blended draw. Reuse
+                        // them directly; do not re-evaluate the animation for a candidate that has
+                        // already survived the broad phase.
+                        met = HumanHitTest.TryCastMeshBlended(
                             origin,
                             end,
                             member.DrawnWhere * WorldScene.UnitsPerMetre,
@@ -4884,12 +4885,27 @@ public sealed class SoldierRenderer : IDisposable
                             previousPose,
                             member.DrawnOrientation,
                             member.PoseBlend,
-                            out candidate)
-                        : HumanHitTest.TryCastMesh(
+                            out candidate);
+                    }
+                    else
+                    {
+                        // Pose evaluation (especially a presented-orientation re-evaluation) skins the
+                        // complete rig. Keep it behind the ray/sphere rejection so off-ray soldiers do
+                        // not pay that cost on every scoped shot.
+                        BonePose pose = presented
+                            ? PoseAtPresentationOrientation(soldier, m)
+                            : soldier.Pose();
+                        met = HumanHitTest.TryCastMesh(
                             origin, end, feet, facing, collision, pose, soldier.RootSample.Z, out candidate);
+                    }
                 }
                 else
                 {
+                    // The cylinder fallback still needs a pose for bone-zone refinement, but only after
+                    // there is no collision mesh broad phase to skip.
+                    BonePose pose = presented
+                        ? PoseAtPresentationOrientation(soldier, m)
+                        : soldier.Pose();
                     met = HumanHitTest.TryCast(
                         origin, end, feet, facing, pose, out candidate, soldier.RootSample.Z);
                 }
