@@ -213,7 +213,7 @@ public static class LightFixtureExtractor
 
         return ProposeFromScene(
             scene,
-            lamps.Textures ?? (IReadOnlySet<string>)new HashSet<string>(),
+            lamps.Textures?.Keys ?? (IEnumerable<string>)Array.Empty<string>(),
             colour,
             clusterDistance,
             radiusScale,
@@ -522,7 +522,14 @@ public static class LightFixtureExtractor
 
         // The rectangle the fixture actually is, fitted in the plane it faces. Everything about how a
         // lamp lights a room follows from this rather than from its centre -- see LightFixture.Tangent.
-        (Vector3f tangent, float halfWidth, float halfHeight) = FitRectangle(triangles, cluster, position, direction);
+        (Vector3f tangent, float halfWidth, float halfHeight, float front) =
+            FitRectangle(triangles, cluster, position, direction);
+
+        // NOT moved onto the emitting face, though the cluster's centre does sit inside a housing. That
+        // was tried against the traced shadows and measured to change nothing, and Position is
+        // documented as the centroid of the cluster's triangles -- a fact about the geometry that other
+        // things rely on. Whatever is wrong with those rays, it is not this.
+        _ = front;
 
         LightFixture fixture = new(
             texture,
@@ -562,12 +569,12 @@ public static class LightFixtureExtractor
     /// Zero when the cluster does not face anywhere, and the fixture is then lit as a sphere.
     /// </para>
     /// </remarks>
-    private static (Vector3f Tangent, float HalfWidth, float HalfHeight) FitRectangle(
+    private static (Vector3f Tangent, float HalfWidth, float HalfHeight, float Front) FitRectangle(
         List<Triangle> triangles, List<int> cluster, in Vector3d position, in Vector3f direction)
     {
         if ((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z) < 0.25f)
         {
-            return (default, 0f, 0f);
+            return (default, 0f, 0f, 0f);
         }
 
         Vector3d normal = new(direction.X, direction.Y, direction.Z);
@@ -584,7 +591,7 @@ public static class LightFixtureExtractor
 
         if (length < 1e-9)
         {
-            return (default, 0f, 0f);
+            return (default, 0f, 0f, 0f);
         }
 
         axisU *= 1.0 / length;
@@ -615,7 +622,7 @@ public static class LightFixtureExtractor
 
         if (samples == 0)
         {
-            return (default, 0f, 0f);
+            return (default, 0f, 0f, 0f);
         }
 
         // The dominant eigenvector of that two-by-two, as an angle. Half the arctangent of the
@@ -645,13 +652,32 @@ public static class LightFixtureExtractor
             }
         }
 
+        // How far the geometry reaches along the way it FACES, which is where its emitting face is. The
+        // cluster's centre sits inside the housing -- a batten is a box with a diffuser on the underside,
+        // and its centroid is up in the metalwork. A light placed there is behind its own diffuser: every
+        // shadow ray from the room hits the fitting before it arrives, so the lamp shadows itself and
+        // lights nothing. Moving the source out onto the face fixes both that and the lighting, which
+        // was also being emitted from inside the box.
+        double front = 0.0;
+
+        foreach (int index in cluster)
+        {
+            Triangle triangle = triangles[index];
+
+            foreach (Vector3d vertex in new[] { triangle.A, triangle.B, triangle.C })
+            {
+                front = Math.Max(front, Vector3d.Dot(vertex - position, normal));
+            }
+        }
+
         // A fitting drawn as a single quad has no thickness across one axis, and a rectangle with a zero
         // side has no solid angle and emits nothing. A centimetre is below anything the eye resolves at
         // the distance a lamp is seen from and is enough for the integral to be finite.
         return (
             new Vector3f((float)longAxis.X, (float)longAxis.Y, (float)longAxis.Z),
             (float)Math.Max(halfShort, 0.01),
-            (float)Math.Max(halfLong, 0.01));
+            (float)Math.Max(halfLong, 0.01),
+            (float)Math.Max(front, 0.0));
     }
 
     /// <summary>Turns a cluster's summed face normals into the direction it throws its light.</summary>

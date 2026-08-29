@@ -777,8 +777,13 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
 
-        // Ultra, which is the only preset that lights from lamps at all.
-        ultra: "1");
+        // OFF, including at ultra, and that is a retreat rather than a choice. The trace is measurably
+        // wrong: on mission 1's office, rays from an open floor to the battens two metres above it
+        // report hits along the whole path -- half the loss inside the first quarter of it, which a
+        // half-metre normal bias does not clear, so it is neither self-shadowing at the origin nor the
+        // fitting occluding itself at the far end. Until that is understood, a lamp that lights through
+        // a wall is a smaller error than a room its own ceiling lights cannot reach.
+        ultra: "0");
 
     /// <summary>How many of the lamps reaching a pixel may cast a shadow on it.</summary>
     /// <remarks>
@@ -792,8 +797,9 @@ public static class RenderCVars
     /// <para>
     /// Spent on the lamps that actually light the pixel, in the order the frame submits them — which is
     /// sorted by how near each lamp is against its own reach, so the budget goes to the ones that matter
-    /// most here. The lamps past it are lit UNSHADOWED rather than dropped: they are the distant, weak
-    /// contributors by construction, and losing a shadow is a smaller error than losing the light.
+    /// most here. The lamps past it are DROPPED, not lit unshadowed: a lamp with no shadow does not
+    /// merely miss a shadow, it shines through the wall it is mounted on, and a room lit by the fittings
+    /// of the room next door is a worse picture than a room slightly under-lit.
     /// </para>
     /// <para>
     /// Two costs about 0.8 ms at 1440p and is nearly indistinguishable from tracing every lamp — measured

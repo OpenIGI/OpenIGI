@@ -3866,7 +3866,15 @@ internal sealed partial class DesktopGame : IDisposable
                         // one thing rather than as a panel and a pool of light going at their own rates.
                         int lampIndex = _localLightOrder[i];
                         float output = _lampSwitchboard?.LevelOf(lampIndex) ?? 1f;
-                        float intensity = MathF.Min(fixture.Intensity, 1.5f) * localLightScale * output;
+
+                        // The RADIANCE of the fitting's surface, which is the same number that makes its
+                        // geometry glow. Not the area-weighted intensity that used to be here: that is a
+                        // power, which was the right quantity against a falloff of one over distance
+                        // squared and is the wrong one against a real solid angle -- the fixture's size
+                        // is already inside the integral, so multiplying by its area again counts it
+                        // twice. The clamp that went with it is gone too: a bigger fitting SHOULD give
+                        // more light, and now does, by subtending more sky rather than by being scaled.
+                        float intensity = fixture.Radiance * localLightScale * output;
 
                         // A cooling filament is a colder black body and therefore a redder one, which is
                         // the last thing anybody sees of a light going out. White whenever the lamp is

@@ -84,6 +84,21 @@ namespace OpenIGI.Game.World;
 /// </param>
 /// <param name="HalfWidth">Half the fixture's size across <paramref name="Tangent"/>, in metres.</param>
 /// <param name="HalfHeight">Half the fixture's size along <paramref name="Tangent"/>, in metres.</param>
+/// <param name="Radiance">
+/// How brightly the fixture's own surface burns — the SAME number that makes its geometry glow.
+/// <para>
+/// A lamp's surface radiance is one fact about it, and it answers both questions: how bright the
+/// fitting looks, and how much light it puts into the room. Carrying two unrelated numbers for those is
+/// why they disagreed, and it is why a ceiling of blazing battens lit nothing underneath them.
+/// </para>
+/// <para>
+/// It replaces <see cref="Intensity"/> for lighting, and that is a units change as much as a tidying.
+/// Intensity is area times luminance — a POWER, which was right against a falloff of one over distance
+/// squared and is wrong against a real solid angle: the shape's own size is already in the integral, so
+/// multiplying by the area again counts it twice. Radiance is what an area light wants, and a bigger
+/// fitting still gives more light, through subtending more sky.
+/// </para>
+/// </param>
 public readonly record struct LightFixture(
     string Texture,
     Vector3d Position,
@@ -95,7 +110,8 @@ public readonly record struct LightFixture(
     Vector3f Direction = default,
     Vector3f Tangent = default,
     float HalfWidth = 0f,
-    float HalfHeight = 0f)
+    float HalfHeight = 0f,
+    float Radiance = 0f)
 {
     /// <summary>Gets a value indicating whether this fixture has a rectangle to be lit as.</summary>
     /// <remarks>

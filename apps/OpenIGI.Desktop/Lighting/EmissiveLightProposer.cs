@@ -40,6 +40,34 @@ internal static class EmissiveLightProposer
         public static Proposal None { get; } = new([], LampDetector.Lamps.None);
     }
 
+    /// <summary>Stamps each fixture with the radiance of the sub-meshes that make it up.</summary>
+    /// <remarks>
+    /// Matched by the texture the cluster is dominated by, which is the one thing a cluster and a
+    /// sub-mesh have in common. The radiance is the same number the geometry glows at, which is the
+    /// point: a fitting's surface brightness answers both how bright it looks and how much light it
+    /// gives, and carrying two unrelated numbers for those is why a ceiling of blazing battens lit
+    /// nothing underneath them.
+    /// </remarks>
+    private static LightFixture[] WithRadiance(
+        IReadOnlyList<LightFixture> fixtures, LampDetector.Lamps lamps)
+    {
+        LightFixture[] stamped = new LightFixture[fixtures.Count];
+
+        for (int i = 0; i < fixtures.Count; i++)
+        {
+            float radiance = lamps.RadianceOf(fixtures[i].Texture);
+
+            // A fixture whose texture nothing claims keeps a plain fitting's radiance rather than
+            // nought: it was proposed as a lamp, and a lamp that emits nothing is not one.
+            stamped[i] = fixtures[i] with
+            {
+                Radiance = radiance > 0f ? radiance : LampDetector.LampRadiance,
+            };
+        }
+
+        return stamped;
+    }
+
     /// <summary>Proposes a level's lamps, from an authored file or a fresh survey.</summary>
     /// <param name="scene">The built world scene whose placements and textures are surveyed.</param>
     /// <param name="resources">The resource registry the emitter textures are decoded through.</param>
@@ -81,6 +109,12 @@ internal static class EmissiveLightProposer
             // into a flat shadeless panel.
             IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
                 scene, lamps, LampDetector.Tint(resources), logger: logger);
+
+            // How brightly each fixture's surface burns, which is the one number that answers both how
+            // bright it looks and how much light it gives. Taken from the sub-mesh the fixture is made
+            // of, by the texture it draws with: the detector already worked it out to make the geometry
+            // glow, and the light has to agree with the glow or a blazing fitting lights nothing.
+            fixtures = WithRadiance(fixtures, lamps);
 
             // Written so the proposal can be reviewed and corrected, and so the next load reads it back
             // rather than walking the whole level again.

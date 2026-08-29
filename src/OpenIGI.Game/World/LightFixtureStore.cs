@@ -37,13 +37,15 @@ public static partial class LightFixtureStore
     /// leave it alone for a change that would not, and every edit anyone has made is kept.
     /// </para>
     /// <para>
-    /// 5: a fixture is a RECTANGLE — it carries the long axis it lies along and its two half-sizes, so
-    /// it can be lit as the area it is rather than as a point. 4 gave each lamp sub-mesh its own
+    /// 6: a fixture carries the radiance of its own surface, which is what lights the room — the same
+    /// number that makes it glow, rather than a power derived from its area. 5: a fixture is a
+    /// RECTANGLE — it carries the long axis it lies along and its two half-sizes, so it can be lit as
+    /// the area it is rather than as a point. 4 gave each lamp sub-mesh its own
     /// strength, 3 moved emission from the texture to the sub-mesh, 2 added the direction a fixture
     /// faces, and version 1 was a bare array — which is what an absent version reads as.
     /// </para>
     /// </remarks>
-    public const int Version = 5;
+    public const int Version = 6;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>
@@ -88,7 +90,9 @@ public static partial class LightFixtureStore
                     new Document
                     {
                         Version = Version,
-                        Textures = lamps.Textures is null ? [] : [.. lamps.Textures],
+                        Textures = lamps.Textures is null
+                            ? []
+                            : new Dictionary<string, float>(lamps.Textures, StringComparer.OrdinalIgnoreCase),
                         SubMeshes = lamps.SubMeshes is null
                             ? []
                             : new Dictionary<string, float>(lamps.SubMeshes, StringComparer.OrdinalIgnoreCase),
@@ -158,7 +162,7 @@ public static partial class LightFixtureStore
 
             fixtures = read;
             lamps = new LampDetector.Lamps(
-                new HashSet<string>(document.Textures ?? [], StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, float>(document.Textures ?? [], StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, float>(document.SubMeshes ?? [], StringComparer.OrdinalIgnoreCase));
 
             log.Information(
@@ -180,7 +184,7 @@ public static partial class LightFixtureStore
     {
         public int Version { get; init; }
 
-        public string[]? Textures { get; init; }
+        public Dictionary<string, float>? Textures { get; init; }
 
         public Dictionary<string, float>? SubMeshes { get; init; }
 
@@ -228,6 +232,8 @@ public static partial class LightFixtureStore
 
         public float HalfHeight { get; init; }
 
+        public float Radiance { get; init; }
+
         public static Record From(LightFixture fixture) => new()
         {
             Texture = fixture.Texture,
@@ -249,6 +255,7 @@ public static partial class LightFixtureStore
             TangentZ = fixture.Tangent.Z,
             HalfWidth = fixture.HalfWidth,
             HalfHeight = fixture.HalfHeight,
+            Radiance = fixture.Radiance,
         };
 
         public LightFixture ToFixture() => new(
@@ -262,7 +269,8 @@ public static partial class LightFixtureStore
             new Vector3f(DirectionX, DirectionY, DirectionZ),
             new Vector3f(TangentX, TangentY, TangentZ),
             HalfWidth,
-            HalfHeight);
+            HalfHeight,
+            Radiance);
     }
 
     [JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
