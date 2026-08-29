@@ -32,8 +32,14 @@ namespace OpenIGI.Game.World;
 /// ranking on the share is what separates a lamp from a wall that happens to face south.
 /// </para>
 /// <para>
-/// The output is a starting list for <c>materials.json</c>, not a verdict: it says which textures are
-/// worth looking at, and someone still has to look.
+/// <b>What it is NOT.</b> This ranks textures by how they were LIT, and being brightly lit is not the
+/// same as being a light — level 1's highest-scoring texture of all, baked pure white across every one
+/// of its thirty uses, skins the office cabinets. It is also blind in the other direction: four of that
+/// level's real ceiling fittings score exactly nought, because those rooms were lit without painting
+/// the fitting bright. So this does not decide which textures are lamps and is not consulted on it;
+/// <see cref="LampDetector"/> reads the geometry instead, and records why. What this is good for is a
+/// starting list for <c>materials.json</c> and for the reference exporter's emissive materials — it says
+/// which textures are worth looking at, and someone still has to look.
 /// </para>
 /// </remarks>
 public static class EmissiveTextureSurvey

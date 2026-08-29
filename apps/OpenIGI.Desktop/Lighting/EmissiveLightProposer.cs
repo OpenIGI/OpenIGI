@@ -10,12 +10,10 @@ namespace OpenIGI.Desktop;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Three steps, each narrowing the one before. <see cref="EmissiveTextureSurvey"/> reads the artists'
-/// own bakes and ranks every texture by how consistently it is painted like a source;
-/// <see cref="LampDetector"/> checks that ranking against the SHAPE of the geometry that draws it, so a
-/// small flat thing above head height is a lamp and a bright sign is not; and
-/// <see cref="LightFixtureExtractor"/> turns every place a confirmed emitter is drawn into a placed
-/// light with a position, a reach and a facing.
+/// Two steps. <see cref="LampDetector"/> works out which of the level's textures are light fixtures,
+/// from the shape and placement of the geometry that draws them; <see cref="LightFixtureExtractor"/>
+/// then turns every place one of those is drawn into a placed light with a position, a reach and a
+/// facing.
 /// </para>
 /// <para>
 /// Both halves of the conclusion are used and both are written down. The fixtures become real lights in
@@ -24,9 +22,9 @@ namespace OpenIGI.Desktop;
 /// look lit by nothing — light on the floor with a grey panel above it.
 /// </para>
 /// <para>
-/// A per-mission fixtures file, once written, is the truth: the survey ran once to propose the list and
-/// a human has had the chance to correct it since. Reading it also keeps the lightmap decode and the
-/// whole-level geometry walk off the load path entirely.
+/// A per-mission fixtures file, once written, is the truth: the detection ran once to propose the list
+/// and a human has had the chance to correct it since. Reading it also keeps the whole-level geometry
+/// walk and every texture decode off the load path entirely.
 /// </para>
 /// </remarks>
 internal static class EmissiveLightProposer
@@ -52,9 +50,9 @@ internal static class EmissiveLightProposer
         WorldScene scene, ResourceRegistry resources, int missionId, IIgiLogger logger)
     {
         // Beside the other authored data, one file per mission. When it exists and its version matches
-        // it is the truth: the survey ran once to propose the list and a human has had the chance to
-        // correct it since, exactly the way authored material detail wins over the detail derived from a
-        // texture.
+        // it is the truth: the detection ran once to propose the list and a human has had the chance to
+        // correct it since, exactly the way authored material detail wins over the detail derived from
+        // a texture.
         string fixturesPath = Path.Combine(
             AppContext.BaseDirectory, "Assets", "fixtures", $"mission-{missionId}.json");
 
@@ -69,29 +67,28 @@ internal static class EmissiveLightProposer
 
         try
         {
-            LampDetector.Result detected = LampDetector.Detect(
-                scene, resources, EmissiveTextureSurvey.Survey(scene, resources, logger), logger);
+            IReadOnlyDictionary<string, float> lamps = LampDetector.Detect(scene, resources, logger);
 
-            if (detected.Strengths.Count == 0)
+            if (lamps.Count == 0)
             {
-                logger.Information("Emissive", "Nothing in this level looks enough like a light source.");
-                LightFixtureStore.Save(fixturesPath, [], detected.Strengths, logger);
+                LightFixtureStore.Save(fixturesPath, [], lamps, logger);
                 return Proposal.None;
             }
 
-            // Lights only where the geometry is SHAPED like a lamp -- the emitters the bake alone brought
-            // forward still glow, and that is all they do. A vending machine's lit panel and a white sign
-            // at the end of a corridor read bright for the same reason a tube does, because the artist
-            // painted them so; making them glow is right and hanging a light fixture off them is not.
-            // This is the split the reference exporter arrived at, and it is why the two sets are separate.
+            // One set of textures for both halves: the geometry that glows IS the geometry the lights
+            // come out of. They were briefly two -- everything the artists baked bright glowed, and only
+            // the fixture-shaped ones cast light, which is what the reference exporter does -- and the extra
+            // set was all false positives. Emission means something stronger here than it does there: an
+            // emissive surface is UNLIT, so a bake-bright office cabinet did not glow gently, it turned
+            // into a flat shadeless panel.
             IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
-                scene, detected.Confirmed, LampDetector.Tint(resources), logger: logger);
+                scene, lamps.Keys, LampDetector.Tint(resources), logger: logger);
 
             // Written so the proposal can be reviewed and corrected, and so the next load reads it back
-            // rather than surveying and walking the whole level again.
-            LightFixtureStore.Save(fixturesPath, fixtures, detected.Strengths, logger);
+            // rather than walking the whole level again.
+            LightFixtureStore.Save(fixturesPath, fixtures, lamps, logger);
 
-            return new Proposal(fixtures, detected.Strengths);
+            return new Proposal(fixtures, lamps);
         }
         catch (Exception error) when (error is IOException or InvalidDataException)
         {

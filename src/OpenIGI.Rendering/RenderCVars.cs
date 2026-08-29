@@ -744,6 +744,42 @@ public static class RenderCVars
         high: "0",
         ultra: "6");
 
+    /// <summary>How far a detected lamp reaches, against the reach its own size and colour imply.</summary>
+    /// <remarks>
+    /// <para>
+    /// The extractor derives a reach from the fixture's size and brightness, and that derivation is
+    /// conservative: it comes from cutting an inverse square at a fixed threshold, so it stops where the
+    /// light becomes arithmetically negligible rather than where it stops being visible. On a dark
+    /// interior wall the difference is the whole tail of the falloff, and the symptom is a corridor whose
+    /// far end is black until the player walks into each lamp's reach in turn — the light appearing to
+    /// switch on rather than to fall off.
+    /// </para>
+    /// <para>
+    /// Two doubles every fixture's reach. The near field barely moves — the windowed inverse square is
+    /// still an inverse square, and a wider window only lifts what was being cut off at the edge — so
+    /// this extends the pool of light rather than brightening the middle of it.
+    /// </para>
+    /// <para>
+    /// It is a knob rather than a bigger constant because there IS an upper bound, and it is not about
+    /// taste: these lights cast no shadows. Nothing stops a lamp reaching through the wall it is mounted
+    /// on, so a reach much past the room the fixture stands in lights the rooms either side of it too,
+    /// and a level lit that way glows from the inside out. Raise it for a big hall; lower it if light is
+    /// appearing where a wall should have stopped it.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> LocalLightRange = Presets.Define(
+        CVar.Float(
+            "r_local_light_range",
+            2f,
+            0.25f,
+            8f,
+            CVarOptions.Archive,
+            "How far a detected lamp reaches, against its derived reach. Higher lights further, and leaks."),
+        vanilla: "2",
+        enhanced: "2",
+        high: "2",
+        ultra: "2");
+
     /// <summary>How bright the sky is as a source of indirect light, where 1 is the level's own ambient.</summary>
     /// <remarks>
     /// The GI reads the sky as the colour a ray that escapes the geometry returns -- the skylight that

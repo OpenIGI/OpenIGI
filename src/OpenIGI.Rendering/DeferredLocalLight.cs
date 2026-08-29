@@ -45,5 +45,20 @@ public readonly record struct DeferredLocalLight(
     Vector3f ViewDirection = default)
 {
     /// <summary>The most local lights a single frame can carry, matching the lighting shader's array size.</summary>
-    public const int Maximum = 32;
+    /// <remarks>
+    /// <para>
+    /// Sixty-four rather than thirty-two, because a level has more lamps than this and the ones that do
+    /// not fit are SWITCHED OFF: with a smaller budget the far end of a corridor stayed dark and lit
+    /// itself a few at a time as the player walked towards it, which reads as the lighting failing rather
+    /// than as a budget being spent. Doubling it is most of the fix, and it is nearly free — the shader
+    /// culls a light against its own reach before doing any work for it, so a lamp the pixel is nowhere
+    /// near costs one distance test.
+    /// </para>
+    /// <para>
+    /// Not larger than that, and the OpenGL backend is the limit: these are default-block array uniforms
+    /// there, three <c>vec4</c> arrays deep, and sixty-four of them is 768 components of a budget the
+    /// specification only guarantees 1024 of. The Vulkan side is a uniform block with room to spare.
+    /// </para>
+    /// </remarks>
+    public const int Maximum = 64;
 }

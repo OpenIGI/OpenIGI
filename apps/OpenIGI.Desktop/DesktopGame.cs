@@ -3790,6 +3790,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // model and only when the scale asks for them; a windowless interior the gather cannot
                 // reach is exactly what these light. The shader also guards on the model and the count.
                 float localLightScale = RenderCVars.LocalLightScale.Value;
+                float localLightRange = RenderCVars.LocalLightRange.Value;
                 if (captured
                     && localLightScale > 0f
                     && RenderCVars.Lighting.Value != LightingModel.Baked
@@ -3803,7 +3804,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // which is a fact about the whole level and says nothing about where the player is
                     // standing. Nearest to the camera, measured against each fixture's own reach so that a
                     // long tube is not passed over for a desk lamp a metre closer.
-                    int localCount = SelectNearestLamps(eye.Position);
+                    int localCount = SelectNearestLamps(eye.Position, localLightRange);
 
                     for (int i = 0; i < localCount; i++)
                     {
@@ -3829,7 +3830,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                         _localLightScratch[i] = new DeferredLocalLight(
                             worldToView.Transform(cameraRelative),
-                            fixture.Radius,
+                            fixture.Radius * localLightRange,
                             fixture.Colour,
                             intensity,
                             facing);
@@ -5037,6 +5038,7 @@ internal sealed partial class DesktopGame : IDisposable
     // vertical one follows from the window's aspect, rather than the other way round.
     /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
     /// <param name="eye">Where the camera stands, in world metres.</param>
+    /// <param name="range">The reach multiplier the shader will apply, so both judge the same light.</param>
     /// <returns>How many entries of <c>_localLightOrder</c> are valid.</returns>
     /// <remarks>
     /// <para>
@@ -5056,7 +5058,7 @@ internal sealed partial class DesktopGame : IDisposable
     /// linear in the input and allocates nothing, where sorting the input is neither.
     /// </para>
     /// </remarks>
-    private int SelectNearestLamps(Vector3d eye)
+    private int SelectNearestLamps(Vector3d eye, float range)
     {
         int kept = 0;
 
@@ -5067,7 +5069,7 @@ internal sealed partial class DesktopGame : IDisposable
             double dx = fixture.Position.X - eye.X;
             double dy = fixture.Position.Y - eye.Y;
             double dz = fixture.Position.Z - eye.Z;
-            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - fixture.Radius;
+            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - (fixture.Radius * range);
 
             // Nothing to insert: this fixture is further out than every one already held, and the array
             // is full. The common case by far once the level is more than thirty-two lamps deep.

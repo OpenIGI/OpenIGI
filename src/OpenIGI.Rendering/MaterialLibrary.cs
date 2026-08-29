@@ -154,6 +154,21 @@ public sealed class MaterialLibrary
         _resolved.Clear();
     }
 
+    /// <summary>Whether a texture's emission was DETECTED rather than authored.</summary>
+    /// <param name="textureName">The texture's name, as the pack records it.</param>
+    /// <returns><see langword="true"/> when the emission is the lamp detection's conclusion.</returns>
+    /// <remarks>
+    /// So that a caller can second-guess a detected emitter and never an authored one. Which textures
+    /// are lamps is inferred per TEXTURE, and a lamp texture is not used only on lamps -- the page that
+    /// skins a ceiling tube skins the ceiling panel it hangs from -- so a draw is entitled to refuse the
+    /// emission on geometry that is plainly not a fixture. A <c>materials.json</c> entry saying a surface
+    /// glows is somebody having looked at it, and nothing downstream may overrule that.
+    /// </remarks>
+    public bool IsDetectedEmitter(string? textureName) =>
+        !string.IsNullOrEmpty(textureName)
+        && !_byName.ContainsKey(textureName)
+        && _detectedEmitters.ContainsKey(textureName);
+
     /// <summary>Gets the material a texture is made of.</summary>
     /// <param name="textureName">The texture's name, as the pack records it.</param>
     /// <returns>Its material, or the default when nothing matches.</returns>

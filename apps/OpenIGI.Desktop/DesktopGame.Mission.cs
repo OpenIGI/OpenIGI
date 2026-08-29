@@ -1037,6 +1037,36 @@ internal sealed partial class DesktopGame
         // Now that the sun is known. The pages hold unlit albedo by design, so this is the only thing
         // that puts light into the cache -- and it runs once, because this game's sun is a fixed
         // direction per mission, which is the bargain the whole surface cache is built on.
+        // The lamps this level implies but never declares, worked out once and used in three places: as
+        // EMISSION on the fixture geometry itself, so a lamp looks like the thing doing the lighting; as
+        // real lights in the deferred pass, so a windowless room has a source at all; and as emitters the
+        // surface cache bounces off, where there is one. All three matter together -- a room lit from a
+        // fixture that does not glow reads as lit by nothing, and a fixture that glows without lighting
+        // reads as a decal.
+        //
+        // Above the surface cache and not inside it. The cache is an ultra-only structure and none of
+        // this depends on it: the glow is a material and the lights are punctual, so binding the whole
+        // conclusion to whether the cards were captured would have switched a level's lamps off for
+        // anyone running ultra with r_surface_cache 0.
+        EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
+            ? EmissiveLightProposer.Propose(_scene, _resources, id, _logger)
+            : EmissiveLightProposer.Proposal.None;
+
+        _lightFixtures = lamps.Fixtures;
+
+        // The geometry glows. Onto the material library the world renderer already reads per sub-mesh, so
+        // nothing about the draw path changes -- and losing to anything the level's materials.json names,
+        // which is how a detection that fires on a road sign is corrected. Scaled on the way in rather
+        // than in the shader: the strength is a property of the material, so it belongs where the
+        // material is decided and costs nothing per pixel.
+        float emissiveScale = RenderCVars.LampEmissiveScale.Value;
+
+        _materials.SetDetectedEmitters(
+            emissiveScale == 1f
+                ? lamps.Emitters
+                : lamps.Emitters.ToDictionary(
+                    e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase));
+
         if (_capturedCards is { } surfaces && _cardInstances is { } placedCards)
         {
             _cardLighting?.Dispose();
@@ -1051,29 +1081,8 @@ internal sealed partial class DesktopGame
 
             if (_cardLighting is not null)
             {
-                // The lamps this level implies but never declares, worked out once here and used in three
-                // places: as real punctual lights in the deferred pass, as area emitters the surface cache
-                // bounces off, and as EMISSION on the fixture geometry itself so a lamp looks like the
-                // thing doing the lighting rather than like a grey panel with light under it. All three
-                // matter -- a room lit from a fixture that does not glow reads as lit by nothing.
-                EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
-                    ? EmissiveLightProposer.Propose(_scene, _resources, id, _logger)
-                    : EmissiveLightProposer.Proposal.None;
-
-                _lightFixtures = lamps.Fixtures;
-
-                // The geometry glows. Onto the material library the world renderer already reads per
-                // sub-mesh, so nothing about the draw path changes -- and losing to anything the level's
-                // materials.json names, which is how a detection that fires on a road sign is corrected.
-                // Scaled on the way in rather than in the shader: the strength is a property of the
-                // material, so it belongs where the material is decided and costs nothing per pixel.
-                float emissiveScale = RenderCVars.LampEmissiveScale.Value;
-
-                _materials.SetDetectedEmitters(
-                    emissiveScale == 1f
-                        ? lamps.Emitters
-                        : lamps.Emitters.ToDictionary(e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase));
-
+                // And into the bounce: the fixtures are area emitters as far as the cache is concerned,
+                // so a lamplit room lights its own walls off each other.
                 _cardLighting.SetLocalLights(lamps.Fixtures);
 
                 // Built once, from the same capture and placements the lighting was. A ray that stops

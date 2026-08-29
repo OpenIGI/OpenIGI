@@ -36,12 +36,13 @@ public sealed class EmissiveSurveyRunTests
         // sub-mesh's own corner of its lightmap page rather than the whole page, so the emitters no
         // longer have to beat each other to be found -- a corridor of identical tubes now scores every
         // one of them highly, which is the point, and comparing the top two would call that a failure.
-        // What has to hold is that the emitters are a small, sharply separated minority: on level 1,
-        // eleven textures out of 217 reach the gate and everything past the fifteenth scores nothing at
-        // all, because an ordinary wall is bright in a few places and pale in the rest.
-        int atGate = findings.Count(f => f.Score >= LampDetector.MinimumScore);
+        // What has to hold is that the surfaces the artists lit like sources are a small, sharply
+        // separated minority: on level 1, eleven textures out of 217 score above a quarter and
+        // everything past the fifteenth scores nothing at all, because an ordinary wall is bright in a
+        // few places and pale in the rest.
+        int lit = findings.Count(f => f.Score >= 0.25f);
 
-        Assert.InRange(atGate, 1, findings.Count / 8);
+        Assert.InRange(lit, 1, findings.Count / 8);
         Assert.True(
             findings[^1].Score <= 0.001f,
             $"the weakest of {findings.Count} findings still scores {findings[^1].Score:F3}");
@@ -51,11 +52,11 @@ public sealed class EmissiveSurveyRunTests
     /// Level 1's ceiling lamps are found by their shape, including the one the exporter had to name by hand.
     /// </summary>
     /// <remarks>
-    /// <c>373_01_1</c> is the small bright tube whose lightmap used to average away inside a whole
-    /// ceiling model's atlas; the reference exporter carries a hand-written list with that one texture in it
-    /// for exactly that reason. Measuring the sub-mesh's own region of the page instead, and confirming
-    /// against the shape of the geometry, finds it with no list -- and finding it is the thing that says
-    /// the detection reaches a real fixture rather than only the obvious panels.
+    /// <c>373_01_1</c> is the small bright tube the reference exporter carries a hand-written list for,
+    /// because the lightmap survey loses it -- and it still does: it scores exactly nought here, since
+    /// the artists lit that room without painting the fitting bright. Reading the geometry instead finds
+    /// it with no list, and finding it is what says the detection reaches a real fixture rather than
+    /// only the obvious panels.
     /// </remarks>
     [RequiresGameDataFact]
     public void LevelOnesCeilingLampsAreFoundByTheirShape()
@@ -63,21 +64,21 @@ public sealed class EmissiveSurveyRunTests
         WorldScene scene = RetailLevelOneGround.Scene();
         ResourceRegistry resources = RetailLevelOneGround.Resources();
 
-        LampDetector.Result detected = LampDetector.Detect(
-            scene, resources, EmissiveTextureSurvey.Survey(scene, resources));
+        IReadOnlyDictionary<string, float> lamps = LampDetector.Detect(scene, resources);
 
-        Assert.Contains("373_01_1", detected.Confirmed);
+        Assert.Contains("373_01_1", lamps.Keys);
+        Assert.Equal(LampDetector.LampStrength, lamps["373_01_1"]);
 
-        // A confirmed lamp glows at the lamp strength; a merely-bright surface does not. 236_01_1 tops
-        // the bake's ranking and is NOT a fixture -- it is bright because it is lit -- so the two
-        // conclusions have to disagree about it, which is the whole reason the shape test exists.
-        Assert.Equal(LampDetector.LampStrength, detected.Strengths["373_01_1"]);
-        Assert.DoesNotContain("236_01_1", detected.Confirmed);
+        // And 236_01_1 is NOT one, though it tops the lightmap ranking with a pure-white bake across all
+        // thirty of its uses. It skins office cabinets: it is bright because it is LIT. That is the whole
+        // reason the bake cannot decide this on its own -- taking its word for it made a cabinet side
+        // into a flat glowing panel, because an emissive surface in this renderer is an unlit one.
+        Assert.DoesNotContain("236_01_1", lamps.Keys);
 
-        // And every confirmed lamp becomes a placed light that faces somewhere sensible: down, or at
-        // worst sideways. A fixture pointing UP is one lighting the slab it is bolted to.
+        // Every lamp becomes a placed light facing somewhere sensible: down, or at worst sideways. A
+        // fixture pointing UP is one lighting the slab it is bolted to.
         IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
-            scene, detected.Confirmed, LampDetector.Tint(resources));
+            scene, lamps.Keys, LampDetector.Tint(resources));
 
         Assert.NotEmpty(fixtures);
         Assert.All(fixtures, fixture => Assert.True(

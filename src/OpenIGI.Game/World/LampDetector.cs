@@ -21,13 +21,28 @@ namespace OpenIGI.Game.World;
 /// corridor.
 /// </para>
 /// <para>
-/// <b>What this adds is the object.</b> A ceiling lamp is a specific shape in a specific place: small,
-/// above head height, flat, facing down, and painted in near-neutral white rather than in a brand's
-/// colours. None of those alone means anything — plenty of small flat things hang from ceilings — but
-/// together they describe a light fixture and very little else, and they are checked against geometry
-/// rather than against a bake, so they are independent evidence. This is the test the reference exporter
-/// arrived at over a run of comparisons against the reference, ported here so that the port and the
-/// reference agree about what a lamp is.
+/// <b>What this asks about instead is the object.</b> A ceiling lamp is a specific shape in a specific
+/// place: small, above head height, flat, facing down, and painted in near-neutral white rather than in
+/// a brand's colours. None of those alone means anything — plenty of small flat things hang from
+/// ceilings — but together they describe a light fixture and very little else. This is the test the
+/// reference exporter arrived at over a run of comparisons against the reference, ported here so that the
+/// port and the reference agree about what a lamp is.
+/// </para>
+/// <para>
+/// <b>The bake is not used as a second source, and that was measured rather than assumed.</b> Letting a
+/// high survey score make a texture emissive on its own is what the exporter does, and here it is
+/// wrong twice over. It says yes to surfaces that are bright because they are LIT — level 1's
+/// highest-scoring texture of all, baked pure white across thirty uses, is a panel that skins office
+/// cabinets, and it glowed. And emission means something stronger in this renderer than in the reference:
+/// an emissive surface is UNLIT, it stops receiving light entirely, so a half-confident emitter does
+/// not glow faintly, it turns into a flat shadeless slab.
+/// </para>
+/// <para>
+/// Using the bake the other way round — as a veto over the shape test — fails on the same level for
+/// the opposite reason: four of the fixtures this test confirms, <c>373_01_1</c> among them, score
+/// exactly nought in the survey, because the artists lit those rooms without painting the fittings
+/// bright. The two signals genuinely disagree about real lamps, and the geometric one is the one that
+/// is right, so it decides alone.
 /// </para>
 /// <para>
 /// <b>Confirm once, then trust the texture.</b> A lamp texture is used dozens of times in a level and
@@ -79,19 +94,7 @@ public static class LampDetector
     /// </remarks>
     public const float MaximumSaturation = 0.35f;
 
-    /// <summary>The survey score below which a texture is not considered at all.</summary>
-    /// <remarks>
-    /// Deliberately lower than the score the fixtures were once proposed at. The shape test below is the
-    /// strict half of the pair now, so the lightmap half can afford to be generous: its job is to bring
-    /// candidates forward, and a real fixture lost here is invisible, whereas a wrong one is a glow in
-    /// the wrong place that a reviewer can see and delete.
-    /// </remarks>
-    public const float MinimumScore = 0.25f;
-
-    /// <summary>The survey score at and above which an emitter glows at full strength.</summary>
-    public const float FullScore = 0.75f;
-
-    /// <summary>How brightly a shape-confirmed lamp emits, as a multiple of its albedo.</summary>
+    /// <summary>How brightly a confirmed lamp emits, as a multiple of its albedo.</summary>
     /// <remarks>
     /// Six, the figure the reference comparison settled on for a white tube: bright enough that the fixture
     /// reads as the source in the frame and the bloom finds it, and short of the point where its texels
@@ -99,98 +102,30 @@ public static class LampDetector
     /// </remarks>
     public const float LampStrength = 6f;
 
-    /// <summary>The weakest a merely-bright emitter glows, as a multiple of its albedo.</summary>
-    public const float MinimumStrength = 1f;
-
     private const string LogCategory = "Emissive";
 
-    /// <summary>What the detector concluded about one level.</summary>
-    /// <param name="Strengths">
-    /// Every texture judged to emit, and how strongly, as a multiple of its albedo. Handed to the
-    /// material library so the geometry itself glows, and to the fixture extractor so that the places it
-    /// is drawn become lights.
-    /// </param>
-    /// <param name="Confirmed">
-    /// The subset of <paramref name="Strengths"/> confirmed by the shape test rather than by the bake
-    /// alone — the ones that are lamps rather than merely bright. Reported for review.
-    /// </param>
-    public readonly record struct Result(
-        IReadOnlyDictionary<string, float> Strengths,
-        IReadOnlyCollection<string> Confirmed);
-
-    /// <summary>Works out which of a level's textures emit, and how strongly.</summary>
+    /// <summary>Works out which of a level's textures are lamps, and how brightly each glows.</summary>
     /// <param name="scene">The built world, walked for the shape of everything it draws.</param>
     /// <param name="resources">Where the diffuse textures are decoded from.</param>
-    /// <param name="findings">The lightmap survey's ranking, strongest first.</param>
     /// <param name="logger">Where the conclusion is reported, named rather than counted.</param>
-    /// <returns>The emitters and their strengths; empty when the level has none.</returns>
+    /// <returns>The lamp textures and their emissive strengths; empty when the level has none.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static Result Detect(
-        WorldScene scene,
-        ResourceRegistry resources,
-        IReadOnlyList<EmissiveTextureSurvey.Finding> findings,
-        IIgiLogger? logger = null)
+    public static IReadOnlyDictionary<string, float> Detect(
+        WorldScene scene, ResourceRegistry resources, IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(resources);
-        ArgumentNullException.ThrowIfNull(findings);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<string, TextureLook> looks = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, float> strengths = new(StringComparer.OrdinalIgnoreCase);
 
-        // The bake's half of the answer: everything the artists lit like a source, at a strength that
-        // falls away with how sure the survey is and with how far the texture's own colour is from white.
-        foreach (EmissiveTextureSurvey.Finding finding in findings)
+        foreach (string texture in Confirm(scene, resources, looks, log))
         {
-            if (finding.Score >= MinimumScore)
-            {
-                strengths[finding.Texture] =
-                    Strength(finding.Score, Look(finding.Texture, resources, looks).Saturation);
-            }
-        }
-
-        // The geometry's half: which of those, or of anything else the level draws, is SHAPED like a
-        // lamp. One instance is enough, for the reason the type's remarks give.
-        HashSet<string> confirmed = Confirm(scene, resources, looks, log);
-
-        foreach (string texture in confirmed)
-        {
-            // A confirmed lamp emits at the lamp strength however the bake read it: the shape test is the
-            // stronger evidence of the two, and a tube whose bake averaged low is still a tube.
             strengths[texture] = LampStrength;
         }
 
-        if (strengths.Count > 0)
-        {
-            // Named rather than counted. This is inferred from art that was never meant to be read this
-            // way, so the list is the first thing to check when a level lights wrongly.
-            log.Information(
-                LogCategory,
-                "Emitters: " + string.Join(
-                    ", ",
-                    strengths.OrderByDescending(e => e.Value).Select(
-                        e => $"{e.Key} x{e.Value:0.#}{(confirmed.Contains(e.Key) ? " (lamp)" : string.Empty)}")));
-        }
-
-        return new Result(strengths, confirmed);
-    }
-
-    /// <summary>How brightly a texture the bake called a source should glow.</summary>
-    /// <remarks>
-    /// Two terms. The survey score ramps the strength from the floor to full over the band between the
-    /// gate and <see cref="FullScore"/>, so a marginal emitter glows faintly rather than arriving at the
-    /// same brightness as a certain one. Whiteness then scales the whole thing down: a saturated texture
-    /// that reads bright in the bake is an advert or a sign lit BY something, and a fraction of a lamp's
-    /// strength is what makes it read as a lit panel instead of as a light.
-    /// </remarks>
-    private static float Strength(float score, float saturation)
-    {
-        float whiteness = Math.Clamp(1f - (2f * saturation), 0f, 1f);
-        float weight = 0.12f + (0.88f * whiteness);
-        float t = Math.Clamp((score - MinimumScore) / (FullScore - MinimumScore), 0f, 1f);
-
-        return (MinimumStrength + (t * (LampStrength - MinimumStrength))) * weight;
+        return strengths;
     }
 
     /// <summary>Walks the level for sub-meshes shaped like a ceiling lamp, and names their textures.</summary>
@@ -249,10 +184,13 @@ public static class LampDetector
             }
         }
 
-        if (confirmed.Count > 0)
-        {
-            log.Information(LogCategory, $"Lamp fixtures confirmed by shape: {string.Join(", ", confirmed)}.");
-        }
+        // Named rather than counted. This is inferred from art that was never meant to be read this
+        // way, so the list is the first thing to check when a level lights wrongly.
+        log.Information(
+            LogCategory,
+            confirmed.Count > 0
+                ? $"Lamp textures, by the shape of the geometry drawing them: {string.Join(", ", confirmed)}."
+                : "Nothing in this level is shaped like a light fixture.");
 
         return confirmed;
     }
