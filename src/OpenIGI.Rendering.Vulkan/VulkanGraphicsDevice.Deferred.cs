@@ -1779,6 +1779,11 @@ public sealed partial class VulkanGraphicsDevice
         // the dither only needs the pattern to differ from the last frame's, not to never repeat.
         u[2] = _frameCounter % 64UL;
 
+        // How many of the lamps reaching a pixel may cast a shadow there. See r_local_light_shadow_lights
+        // for why the work per pixel has to be bounded by a constant rather than by the level's lamp
+        // count.
+        u[3] = Math.Max(RenderCVars.LocalLightShadowLights.Value, 0);
+
         u[1] = _localLightCount > 0
             && RenderCVars.LocalLightShadows.Value != 0
             && _device.Capabilities.RayQuery
@@ -1787,8 +1792,12 @@ public sealed partial class VulkanGraphicsDevice
                 ? 1f
                 : 0f;
 
-        // Where each array starts, in floats: the control vector, then a vec4 per light per array.
-        int position = 4;
+        // The largest source a shadow ray may sample, whatever the fixture measures. See
+        // r_local_light_source for why a cap belongs here rather than on the fixture itself.
+        u[4] = MathF.Max(RenderCVars.LocalLightSource.Value, 0.02f);
+
+        // Where each array starts, in floats: the two control vectors, then a vec4 per light per array.
+        int position = 8;
         int colour = position + (DeferredLocalLight.Maximum * 4);
         int direction = colour + (DeferredLocalLight.Maximum * 4);
 

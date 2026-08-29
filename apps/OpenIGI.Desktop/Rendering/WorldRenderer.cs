@@ -37,7 +37,12 @@ public sealed class WorldRenderer : IDisposable
 
     private const string LogCategory = "World";
 
+    /// <summary>How far a lamp placement may stand from the light it houses, in metres.</summary>
+    /// <remarks>See where it is used; the extractor's clustering is what sets the scale.</remarks>
+    private const double LampBindingRadius = 4.0;
+
     private readonly IGraphicsDevice _device;
+    private LampSwitchboard? _switchboard;
     private readonly ResourceRegistry _resources;
     private readonly IIgiLogger _logger;
     private MaterialLibrary _materials = MaterialLibrary.Empty;
@@ -370,9 +375,16 @@ public sealed class WorldRenderer : IDisposable
 
             SubsetDraw[] subsets = model.Subsets ?? ResolveSubsets(scene, model, entry.Displayed!);
 
+            // How much of its rated output the lamp this placement IS is currently giving out. One for
+            // everything that is not a lamp, and for every lamp nobody has touched, so the common case
+            // is a comparison against a constant.
+            float glow = model.LampFixture >= 0 && Switchboard is { } board
+                ? board.LevelOf(model.LampFixture)
+                : 1f;
+
             foreach (SubsetDraw subset in subsets)
             {
-                _device.SetMaterialOverride(subset.Material);
+                _device.SetMaterialOverride(subset.IsLamp && glow < 1f ? Dimmed(subset.Material, glow) : subset.Material);
                 int sampleCount = entry.HasRotor ? entry.Rotor.SampleCount : 1;
                 for (int sample = 0; sample < sampleCount; sample++)
                 {
@@ -635,6 +647,29 @@ public sealed class WorldRenderer : IDisposable
         return mesh.IsValid ? new ResolvedModel(geometry, mesh) : null;
     }
 
+    /// <summary>The same surface with its lamp turned down, or turned off altogether.</summary>
+    /// <remarks>
+    /// <para>
+    /// Emission is not a brightness on this path — it is a SHADING MODEL. A surface with any emission at
+    /// all is written to the G-buffer as unlit and comes out of the lighting pass as its own albedo
+    /// times that number, so scaling it towards zero does not fade a panel back into the room: it fades
+    /// it to black, and a switched-off lamp in a lit corridor ends up a hole in the wall.
+    /// </para>
+    /// <para>
+    /// So the last part of the fade is a handover rather than a ramp. Below the threshold the emission
+    /// is dropped outright and the panel becomes an ordinary lit surface, which is what a dead fitting
+    /// is. The threshold is low — a quarter of albedo, dimmer than the same panel would be lit in any
+    /// room worth lighting — so the step it costs is smaller than the step of leaving it out, and it
+    /// lands two hundred milliseconds into a fade nobody is looking at the panel during.
+    /// </para>
+    /// </remarks>
+    private static SurfaceMaterial Dimmed(SurfaceMaterial material, float glow)
+    {
+        float emissive = material.Emissive * glow;
+
+        return material with { Emissive = emissive < 0.25f ? 0f : emissive };
+    }
+
     /// <summary>Resolves a model's per-subset textures, materials and lightmap pages, once.</summary>
     private SubsetDraw[] ResolveSubsets(WorldScene scene, ResolvedModel model, WorldPlacement displayed)
     {
@@ -651,6 +686,7 @@ public sealed class WorldRenderer : IDisposable
 
         SubsetDraw[] subsets = new SubsetDraw[drawable];
         int cursor = 0;
+        bool anyLamp = false;
         foreach (MeshSubset subset in model.Geometry.Subsets)
         {
             if (subset.IndexCount == 0)
@@ -660,6 +696,7 @@ public sealed class WorldRenderer : IDisposable
 
             TextureHandle diffuse = TextureHandle.None;
             SurfaceMaterial material = _materials.Default;
+            bool lamp = false;
 
             if (subset.HasMaterial
                 && displayed.Pack.TryGetTextureName(displayed.Instance, subset.MaterialSlot, out string texture))
@@ -686,6 +723,12 @@ public sealed class WorldRenderer : IDisposable
                     && Lamps.TryGetStrength(displayed.Instance.Name, subset.MaterialSlot, out float glow))
                 {
                     material = material with { Emissive = glow };
+
+                    // ...and this, and only this, is what a wall switch may turn down. An authored
+                    // emissive above -- a screen, a sign, the sky dome -- is somebody having decided that
+                    // surface gives off light, and it is not a lamp anybody can switch off.
+                    lamp = true;
+                    anyLamp = true;
                 }
             }
 
@@ -701,8 +744,24 @@ public sealed class WorldRenderer : IDisposable
                 subset.TriangleCount,
                 diffuse,
                 material,
-                lightmap);
+                lightmap,
+                lamp);
         }
+
+        // Which of the level's lights this placement is the housing of, so that switching that light off
+        // stops this geometry glowing. Resolved here rather than in the switchboard because here is where
+        // the placement is already known to draw a lamp at all -- that is a fact about the model's
+        // sub-meshes, and asking every placement in the level how near a fixture it stands would ask it
+        // of five hundred crates as well.
+        //
+        // A generous radius: a fixture is the merged centroid of a whole cluster of emitting triangles,
+        // and a long batten's centroid can sit a couple of metres from the origin of the placement that
+        // draws part of it. Wrong only where two unrelated lamps stand within a few metres of each other
+        // and were still not merged, which is a lamp switching its neighbour off -- visible, harmless,
+        // and rarer than the alternative of a switch that does nothing.
+        model.LampFixture = anyLamp && Switchboard is { } board
+            ? board.NearestFixture(displayed.Position, LampBindingRadius)
+            : -1;
 
         model.Subsets = subsets;
         return subsets;
@@ -730,6 +789,10 @@ public sealed class WorldRenderer : IDisposable
 
         public SubsetDraw[]? Subsets { get; set; }
 
+        /// <summary>The light this placement is the fixture of, or -1 when it is not one.</summary>
+        /// <remarks>Resolved with the subsets, and melted with them whenever the switchboard changes.</remarks>
+        public int LampFixture { get; set; } = -1;
+
         /// <summary>Gets or sets the placement's occlusion query, created on first geometry-pass use.</summary>
         public OcclusionQueryHandle Query { get; set; }
 
@@ -746,13 +809,18 @@ public sealed class WorldRenderer : IDisposable
     }
 
     /// <summary>One drawable subset: its index range and the states it binds.</summary>
+    /// <param name="IsLamp">
+    /// Whether this sub-mesh glows because the lamp detection called it a fixture, as opposed to because
+    /// a material file said the surface emits. Only the first kind answers to a light switch.
+    /// </param>
     private readonly record struct SubsetDraw(
         int IndexOffset,
         int IndexCount,
         int TriangleCount,
         TextureHandle Diffuse,
         SurfaceMaterial Material,
-        TextureHandle Lightmap);
+        TextureHandle Lightmap,
+        bool IsLamp = false);
 
     private WorldPlacement DisplayedPlacement(WorldPlacement placement)
     {
@@ -1193,6 +1261,31 @@ public sealed class WorldRenderer : IDisposable
     /// </remarks>
     public LampDetector.Lamps Lamps { get; set; } = LampDetector.Lamps.None;
 
+    /// <summary>Gets or sets which of the level's lamps are currently lit, or <see langword="null"/> for all of them.</summary>
+    /// <remarks>
+    /// Set per level beside <see cref="Lamps"/>, which decides where a lamp is; this decides whether it
+    /// is on. Null is the level as it ships — every fixture at full output, and not one comparison per
+    /// draw spent asking.
+    /// </remarks>
+    public LampSwitchboard? Switchboard
+    {
+        get => _switchboard;
+        set
+        {
+            if (ReferenceEquals(_switchboard, value))
+            {
+                return;
+            }
+
+            _switchboard = value;
+
+            // Each placement's binding to the light it houses is resolved with its subsets, so a new
+            // board has to melt them for the same reason a reloaded material library does. They
+            // re-resolve on the next draw at the cost of a dictionary lookup each.
+            MeltResolvedSubsets();
+        }
+    }
+
     /// <summary>Gets or sets what each of the level's textures is made of.</summary>
     /// <remarks>
     /// Settable rather than constructor-injected because it is data the shell loads once and may
@@ -1208,20 +1301,26 @@ public sealed class WorldRenderer : IDisposable
 
             // The resolved subsets bake each surface's material in, so a reloaded library has to melt
             // them; they re-resolve from the caches on the next draw at dictionary-lookup cost.
-            foreach (ResolvedModel? model in _resolved.Values)
-            {
-                if (model is not null)
-                {
-                    model.Subsets = null;
-                }
-            }
+            MeltResolvedSubsets();
+        }
+    }
 
-            foreach (ResolvedModel? model in _resolvedDestroyed.Values)
+    /// <summary>Drops every placement's resolved per-subset state, so the next draw resolves it again.</summary>
+    private void MeltResolvedSubsets()
+    {
+        foreach (ResolvedModel? model in _resolved.Values)
+        {
+            if (model is not null)
             {
-                if (model is not null)
-                {
-                    model.Subsets = null;
-                }
+                model.Subsets = null;
+            }
+        }
+
+        foreach (ResolvedModel? model in _resolvedDestroyed.Values)
+        {
+            if (model is not null)
+            {
+                model.Subsets = null;
             }
         }
     }

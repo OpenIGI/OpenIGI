@@ -58,12 +58,12 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
     /// <remarks>
-    /// One <c>vec4</c> of counts and control, then three per light: position and reach, colour and
+    /// Two <c>vec4</c>s of counts and control, then three per light: position and reach, colour and
     /// strength, and the direction it faces. Sized for <see cref="DeferredLocalLight.Maximum"/>, which is
     /// what the shader's arrays are declared at — well inside the sixteen kilobytes every Vulkan
     /// implementation guarantees a uniform buffer, so no device has to be asked.
     /// </remarks>
-    public const int LampUniformSize = 16 + (DeferredLocalLight.Maximum * 48);
+    public const int LampUniformSize = 32 + (DeferredLocalLight.Maximum * 48);
 
     /// <summary>Initialises a new instance of the <see cref="DeferredRenderer"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>

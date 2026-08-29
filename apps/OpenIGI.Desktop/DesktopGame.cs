@@ -189,6 +189,19 @@ internal sealed partial class DesktopGame : IDisposable
     // works out. One file for the whole game; see Assets/lamps.json.
     private LampManifest _lampManifest = LampManifest.Empty;
 
+    // Which of those lamps are actually lit at this moment, and how far through switching on or out they
+    // are. Built with the fixtures, and read by all three of the things a lamp is -- the punctual light
+    // below, the emission the world renderer puts on the fixture's own geometry, and the emitters the
+    // surface cache bounces off -- so none of them can disagree about a lamp being off. Null until a
+    // mission loads fixtures; see LampSwitchboard.
+    private LampSwitchboard? _lampSwitchboard;
+
+    // When the surface cache's emitter buffer last matched the switchboard. The bounce is a GPU upload
+    // rather than a uniform, so it follows a flickering lamp a few frames behind rather than every frame;
+    // the cache's own accumulation is slower than that anyway.
+    private int _lampBounceRevision = -1;
+    private int _lampMilliseconds;
+
     // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
