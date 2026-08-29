@@ -119,6 +119,7 @@ internal sealed partial class DesktopGame
         // so carrying one mission's emitters into the backdrop of the next lights whatever happens to
         // share a number.
         _materials.SetDetectedEmitters(new Dictionary<string, float>());
+        _lamps = LampDetector.Lamps.None;
 
         // Likewise the distance fields: the clipmaps that are up were traced against the level that has
         // just been replaced, and tracing new ones is work a backdrop does not need.

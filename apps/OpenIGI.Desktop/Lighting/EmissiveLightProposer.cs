@@ -31,13 +31,13 @@ internal static class EmissiveLightProposer
 {
     /// <summary>What a level's own geometry says it is lit by.</summary>
     /// <param name="Fixtures">The placed lights, which may be empty.</param>
-    /// <param name="Emitters">Which textures glow, and how strongly, as a multiple of their albedo.</param>
+    /// <param name="Lamps">The geometry those lights come out of, which glows.</param>
     public readonly record struct Proposal(
         IReadOnlyList<LightFixture> Fixtures,
-        IReadOnlyDictionary<string, float> Emitters)
+        LampDetector.Lamps Lamps)
     {
         /// <summary>Gets the proposal for a level that has nothing of the kind.</summary>
-        public static Proposal None { get; } = new([], new Dictionary<string, float>());
+        public static Proposal None { get; } = new([], LampDetector.Lamps.None);
     }
 
     /// <summary>Proposes a level's lamps, from an authored file or a fresh survey.</summary>
@@ -57,19 +57,16 @@ internal static class EmissiveLightProposer
             AppContext.BaseDirectory, "Assets", "fixtures", $"mission-{missionId}.json");
 
         if (LightFixtureStore.TryLoad(
-                fixturesPath,
-                out IReadOnlyList<LightFixture> saved,
-                out IReadOnlyDictionary<string, float> savedEmitters,
-                logger))
+                fixturesPath, out IReadOnlyList<LightFixture> saved, out LampDetector.Lamps stored, logger))
         {
-            return new Proposal(saved, savedEmitters);
+            return new Proposal(saved, stored);
         }
 
         try
         {
-            IReadOnlyDictionary<string, float> lamps = LampDetector.Detect(scene, resources, logger);
+            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, logger);
 
-            if (lamps.Count == 0)
+            if (lamps.Textures.Count == 0)
             {
                 LightFixtureStore.Save(fixturesPath, [], lamps, logger);
                 return Proposal.None;
@@ -82,7 +79,7 @@ internal static class EmissiveLightProposer
             // emissive surface is UNLIT, so a bake-bright office cabinet did not glow gently, it turned
             // into a flat shadeless panel.
             IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
-                scene, lamps.Keys, LampDetector.Tint(resources), logger: logger);
+                scene, lamps, LampDetector.Tint(resources), logger: logger);
 
             // Written so the proposal can be reviewed and corrected, and so the next load reads it back
             // rather than walking the whole level again.

@@ -670,21 +670,17 @@ public sealed class WorldRenderer : IDisposable
                 // rather than inheriting the previous draw's, exactly as the inline loop did.
                 material = _materials.For(texture);
 
-                // ...but a DETECTED emitter only glows where the geometry is the size of a lamp. Which
-                // textures emit is decided per texture, because that is the only thing the lightmap
-                // evidence is about, and a lamp texture is not used only on lamps: the same page that
-                // skins a ceiling tube skins the whole ceiling panel it hangs from. Confirming the
-                // texture and then glowing it everywhere put a blown-out wedge across an entire garage
-                // soffit -- the largest surface in the frame reading as the brightest thing in it.
-                //
-                // The size is the only part of the detector's fixture test a draw can re-apply cheaply
-                // and correctly: height and facing depend on where the placement stands, and this is
-                // cached per MODEL across every placement of it, but a sub-mesh's own extent does not
-                // change with where it is put or which way it is turned.
+                // ...but a DETECTED emitter only glows on the sub-mesh the detector actually judged to
+                // be a fixture. A texture is shared -- the page that skins a ceiling tube also skins the
+                // panel it hangs from and, in level 1, the side of an office cabinet -- so taking the
+                // texture as the answer glowed a whole garage soffit and put a flat white slab down that
+                // cabinet. Size alone does not save it either: the cabinet's panel is smaller than a
+                // fluorescent batten. Only the model and material slot the shape test passed will do.
                 //
                 // Detected emission only. An authored emitter is somebody having looked at the surface,
-                // and a rule of thumb does not get to overrule that however large the surface is.
-                if (_materials.IsDetectedEmitter(texture) && !IsLampSized(model.Geometry, subset))
+                // and a rule of thumb does not get to overrule that.
+                if (_materials.IsDetectedEmitter(texture)
+                    && !Lamps.Contains(displayed.Instance.Name, subset.MaterialSlot))
                 {
                     material = material with { Emissive = 0f };
                 }
@@ -707,52 +703,6 @@ public sealed class WorldRenderer : IDisposable
 
         model.Subsets = subsets;
         return subsets;
-    }
-
-    /// <summary>Whether a sub-mesh is small enough to be a light fixture rather than a surface.</summary>
-    /// <remarks>
-    /// The largest side of its bounding box against the widest a fixture is. Model space, which is
-    /// metres and is what a rotation leaves alone, so this is a property of the mesh and is measured once
-    /// per model however many times the level places it.
-    /// </remarks>
-    private static bool IsLampSized(MeshGeometry geometry, in MeshSubset subset)
-    {
-        Vertex3D[] vertices = geometry.Vertices;
-        ushort[] indices = geometry.Indices;
-
-        int start = Math.Max(subset.IndexOffset, 0);
-        int end = Math.Min(subset.IndexOffset + subset.IndexCount, indices.Length);
-
-        float lowX = float.MaxValue, lowY = float.MaxValue, lowZ = float.MaxValue;
-        float highX = float.MinValue, highY = float.MinValue, highZ = float.MinValue;
-
-        for (int at = start; at < end; at++)
-        {
-            int index = indices[at];
-
-            if (index >= vertices.Length)
-            {
-                continue;
-            }
-
-            Vector3f position = vertices[index].Position;
-
-            lowX = MathF.Min(lowX, position.X);
-            highX = MathF.Max(highX, position.X);
-            lowY = MathF.Min(lowY, position.Y);
-            highY = MathF.Max(highY, position.Y);
-            lowZ = MathF.Min(lowZ, position.Z);
-            highZ = MathF.Max(highZ, position.Z);
-        }
-
-        if (lowX > highX)
-        {
-            return false;
-        }
-
-        float largest = MathF.Max(highX - lowX, MathF.Max(highY - lowY, highZ - lowZ));
-
-        return largest <= (float)LampDetector.MaximumWidth;
     }
 
     /// <summary>One placement's camera-independent state for the current frame.</summary>
@@ -1230,6 +1180,15 @@ public sealed class WorldRenderer : IDisposable
         int slash = name.LastIndexOfAny(['/', '\\']);
         return slash >= 0 ? name[(slash + 1)..] : name;
     }
+
+    /// <summary>Gets or sets which of the level's sub-meshes are light fixtures.</summary>
+    /// <remarks>
+    /// Set per level beside <see cref="Materials"/>, and for the same reason: it is the shell's
+    /// conclusion about the level, not something a renderer can work out from a draw. It decides where a
+    /// DETECTED emitter is allowed to glow -- see the resolve, and <see cref="LampDetector"/> for why the
+    /// texture alone cannot answer that. Empty is the honest default: nothing detected glows.
+    /// </remarks>
+    public LampDetector.Lamps Lamps { get; set; } = LampDetector.Lamps.None;
 
     /// <summary>Gets or sets what each of the level's textures is made of.</summary>
     /// <remarks>

@@ -64,21 +64,28 @@ public sealed class EmissiveSurveyRunTests
         WorldScene scene = RetailLevelOneGround.Scene();
         ResourceRegistry resources = RetailLevelOneGround.Resources();
 
-        IReadOnlyDictionary<string, float> lamps = LampDetector.Detect(scene, resources);
+        LampDetector.Lamps lamps = LampDetector.Detect(scene, resources);
 
-        Assert.Contains("373_01_1", lamps.Keys);
-        Assert.Equal(LampDetector.LampStrength, lamps["373_01_1"]);
+        Assert.Contains("373_01_1", lamps.Textures.Keys);
+
+        // Every lamp is normalised to the same emitted radiance rather than to the same multiple, so
+        // that how dark the artist drew a housing stops deciding how brightly it burns. What has to hold
+        // is the product, not the multiplier.
+        Assert.Equal(
+            LampDetector.LampRadiance,
+            lamps.Textures["373_01_1"] * LampDetector.Brightness("373_01_1", resources),
+            2);
 
         // And 236_01_1 is NOT one, though it tops the lightmap ranking with a pure-white bake across all
         // thirty of its uses. It skins office cabinets: it is bright because it is LIT. That is the whole
         // reason the bake cannot decide this on its own -- taking its word for it made a cabinet side
         // into a flat glowing panel, because an emissive surface in this renderer is an unlit one.
-        Assert.DoesNotContain("236_01_1", lamps.Keys);
+        Assert.DoesNotContain("236_01_1", lamps.Textures.Keys);
 
         // Every lamp becomes a placed light facing somewhere sensible: down, or at worst sideways. A
         // fixture pointing UP is one lighting the slab it is bolted to.
         IReadOnlyList<LightFixture> fixtures = LightFixtureExtractor.ProposeFromScene(
-            scene, lamps.Keys, LampDetector.Tint(resources));
+            scene, lamps, LampDetector.Tint(resources));
 
         Assert.NotEmpty(fixtures);
         Assert.All(fixtures, fixture => Assert.True(

@@ -37,27 +37,27 @@ public static partial class LightFixtureStore
     /// leave it alone for a change that would not, and every edit anyone has made is kept.
     /// </para>
     /// <para>
-    /// 2: fixtures carry the direction they face, and the emitters behind them are found by the shape of
-    /// the geometry as well as by the bake. Version 1 was a bare array, which is what an absent version
-    /// reads as.
+    /// 3: emission belongs to the sub-mesh that passed the shape test rather than to its texture, so the
+    /// file records which model and material slot each lamp is. 2 added the direction a fixture faces;
+    /// version 1 was a bare array, which is what an absent version reads as.
     /// </para>
     /// </remarks>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>
     /// <param name="fixtures">The fixtures to write.</param>
-    /// <param name="emitters">
-    /// Which textures glow and how strongly, as a multiple of albedo. Stored beside the fixtures because
-    /// the two are one conclusion: the lamps a level has, and the geometry that IS those lamps. A file
-    /// that held only the lights would light a room from panels that stayed grey.
+    /// <param name="lamps">
+    /// Which textures glow, how strongly, and which sub-meshes they glow on. Stored beside the fixtures
+    /// because the two are one conclusion: the lamps a level has, and the geometry that IS those lamps. A
+    /// file that held only the lights would light a room from panels that stayed grey.
     /// </param>
     /// <param name="logger">Where to report the result.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public static void Save(
         string path,
         IReadOnlyList<LightFixture> fixtures,
-        IReadOnlyDictionary<string, float>? emitters = null,
+        LampDetector.Lamps lamps = default,
         IIgiLogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
@@ -87,9 +87,10 @@ public static partial class LightFixtureStore
                     new Document
                     {
                         Version = Version,
-                        Emitters = emitters is null
+                        Emitters = lamps.Textures is null
                             ? []
-                            : new Dictionary<string, float>(emitters, StringComparer.OrdinalIgnoreCase),
+                            : new Dictionary<string, float>(lamps.Textures, StringComparer.OrdinalIgnoreCase),
+                        SubMeshes = lamps.SubMeshes is null ? [] : [.. lamps.SubMeshes],
                         Fixtures = records,
                     },
                     LightFixtureJsonContext.Default.Document));
@@ -104,21 +105,21 @@ public static partial class LightFixtureStore
     /// <summary>Reads a mission's fixtures back, if the file is present and well formed.</summary>
     /// <param name="path">Where to read from.</param>
     /// <param name="fixtures">The fixtures read, or empty when the file is absent or unreadable.</param>
-    /// <param name="emitters">The emitter strengths read, or empty on the same terms.</param>
+    /// <param name="lamps">The lamps read, or none on the same terms.</param>
     /// <param name="logger">Where to report the result.</param>
     /// <returns><see langword="true"/> when a file was read; <see langword="false"/> when none exists.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
     public static bool TryLoad(
         string path,
         out IReadOnlyList<LightFixture> fixtures,
-        out IReadOnlyDictionary<string, float> emitters,
+        out LampDetector.Lamps lamps,
         IIgiLogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         fixtures = [];
-        emitters = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        lamps = LampDetector.Lamps.None;
 
         if (!File.Exists(path))
         {
@@ -155,12 +156,13 @@ public static partial class LightFixtureStore
             }
 
             fixtures = read;
-            emitters = new Dictionary<string, float>(
-                document.Emitters ?? [], StringComparer.OrdinalIgnoreCase);
+            lamps = new LampDetector.Lamps(
+                new Dictionary<string, float>(document.Emitters ?? [], StringComparer.OrdinalIgnoreCase),
+                new HashSet<string>(document.SubMeshes ?? [], StringComparer.OrdinalIgnoreCase));
 
             log.Information(
                 LogCategory,
-                $"Read {read.Length} light fixture(s) and {emitters.Count} emitter(s) from {path}.");
+                $"Read {read.Length} light fixture(s) and {lamps.SubMeshes.Count} lamp sub-mesh(es) from {path}.");
             return true;
         }
         catch (Exception error) when (error is IOException or JsonException or NotSupportedException)
@@ -178,6 +180,8 @@ public static partial class LightFixtureStore
         public int Version { get; init; }
 
         public Dictionary<string, float>? Emitters { get; init; }
+
+        public string[]? SubMeshes { get; init; }
 
         public Record[]? Fixtures { get; init; }
     }

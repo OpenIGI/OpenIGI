@@ -236,7 +236,12 @@ internal sealed partial class DesktopGame
         {
             scene = WorldScene.Build(loaded, levelRoot, _magic, _logger);
             _scene = scene;
-            world = new WorldRenderer(_device, _resources, _logger) { Materials = _materials, DetailMaps = _detailMaps };
+            world = new WorldRenderer(_device, _resources, _logger)
+            {
+                Materials = _materials,
+                DetailMaps = _detailMaps,
+                Lamps = _lamps,
+            };
             _world = world;
             solids = ObjectCollisionIndex.Build(scene.Placements);
             _worldSolids = solids;
@@ -1063,9 +1068,19 @@ internal sealed partial class DesktopGame
 
         _materials.SetDetectedEmitters(
             emissiveScale == 1f
-                ? lamps.Emitters
-                : lamps.Emitters.ToDictionary(
+                ? lamps.Lamps.Textures
+                : lamps.Lamps.Textures.ToDictionary(
                     e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase));
+
+        // And WHERE it glows. The library answers per texture, which is all the material system can
+        // key on; this is the list that says which sub-mesh of which model that texture is a lamp on,
+        // and without it a shared page glows on the furniture it also skins.
+        _lamps = lamps.Lamps;
+
+        if (_world is not null)
+        {
+            _world.Lamps = _lamps;
+        }
 
         if (_capturedCards is { } surfaces && _cardInstances is { } placedCards)
         {

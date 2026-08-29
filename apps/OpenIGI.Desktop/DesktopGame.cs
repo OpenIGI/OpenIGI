@@ -180,6 +180,11 @@ internal sealed partial class DesktopGame : IDisposable
     // mission loads one; see EmissiveLightProposer.
     private IReadOnlyList<LightFixture> _lightFixtures = [];
 
+    // Which sub-meshes of this level are lamps, so a shared texture glows on the fixture and not on the
+    // furniture that happens to be skinned with the same page. Held here because the world renderer is
+    // rebuilt per mission and this outlives the rebuild.
+    private LampDetector.Lamps _lamps = LampDetector.Lamps.None;
+
     // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];

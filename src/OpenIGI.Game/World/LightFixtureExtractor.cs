@@ -186,6 +186,35 @@ public static class LightFixtureExtractor
         return fixtures;
     }
 
+    /// <summary>Proposes a light for every cluster of a level's detected lamp sub-meshes.</summary>
+    /// <param name="scene">The loaded level.</param>
+    /// <param name="lamps">The lamps the detector found: which textures, and which sub-meshes.</param>
+    /// <param name="colour">Supplies an emitter texture's colour, or <see langword="null"/> for white.</param>
+    /// <param name="clusterDistance">The joining distance in metres; see <see cref="DefaultClusterDistance"/>.</param>
+    /// <param name="radiusScale">The reach multiplier; see <see cref="DefaultRadiusScale"/>.</param>
+    /// <param name="logger">Where to report how many fixtures were proposed.</param>
+    /// <returns>The proposed fixtures, strongest first.</returns>
+    /// <remarks>
+    /// The sub-mesh list is what keeps a light out of the furniture. A texture is shared — the page that
+    /// skins a ceiling tube also skins the panel it hangs from and, in level 1, an office cabinet — so
+    /// gathering every triangle that merely DRAWS an emitter texture proposes fixtures inside things that
+    /// are not fixtures. Only the sub-meshes the shape test passed contribute.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="scene"/> is <see langword="null"/>.</exception>
+    public static IReadOnlyList<LightFixture> ProposeFromScene(
+        WorldScene scene,
+        LampDetector.Lamps lamps,
+        Func<string, Vector3f>? colour = null,
+        float clusterDistance = DefaultClusterDistance,
+        float radiusScale = DefaultRadiusScale,
+        IIgiLogger? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+
+        return ProposeFromScene(
+            scene, lamps.Textures?.Keys ?? [], colour, clusterDistance, radiusScale, logger, lamps);
+    }
+
     /// <summary>Proposes a light for every cluster of emitter triangles in a loaded level.</summary>
     /// <param name="scene">The loaded level.</param>
     /// <param name="emitterTextures">The texture names confirmed to be light sources.</param>
@@ -193,6 +222,11 @@ public static class LightFixtureExtractor
     /// <param name="clusterDistance">The joining distance in metres; see <see cref="DefaultClusterDistance"/>.</param>
     /// <param name="radiusScale">The reach multiplier; see <see cref="DefaultRadiusScale"/>.</param>
     /// <param name="logger">Where to report how many fixtures were proposed.</param>
+    /// <param name="lamps">
+    /// Which sub-meshes are fixtures, when the caller knows. Default means it does not, and every
+    /// triangle drawing one of <paramref name="emitterTextures"/> counts — which is what a test that
+    /// hands this a texture name and nothing else expects.
+    /// </param>
     /// <returns>The proposed fixtures, strongest first.</returns>
     /// <remarks>
     /// A convenience layer over
@@ -208,7 +242,8 @@ public static class LightFixtureExtractor
         Func<string, Vector3f>? colour = null,
         float clusterDistance = DefaultClusterDistance,
         float radiusScale = DefaultRadiusScale,
-        IIgiLogger? logger = null)
+        IIgiLogger? logger = null,
+        LampDetector.Lamps lamps = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(emitterTextures);
@@ -237,11 +272,16 @@ public static class LightFixtureExtractor
 
             WorldPlacement drawn = placement;
 
+            IReadOnlySet<string>? subMeshes = lamps.SubMeshes;
+
             meshes.Add(new PlacedMesh(
                 geometry,
                 placement.Position,
                 placement.Orientation,
-                slot => drawn.Pack.TryGetTextureName(drawn.Instance, slot, out string name) ? name : null));
+                slot => (subMeshes is null || lamps.Contains(drawn.Instance.Name, slot))
+                    && drawn.Pack.TryGetTextureName(drawn.Instance, slot, out string name)
+                        ? name
+                        : null));
         }
 
         IReadOnlyList<LightFixture> fixtures =

@@ -45,11 +45,18 @@ namespace OpenIGI.Game.World;
 /// is right, so it decides alone.
 /// </para>
 /// <para>
-/// <b>Confirm once, then trust the texture.</b> A lamp texture is used dozens of times in a level and
-/// only some of those instances are modelled cleanly enough to pass the shape test — one is a tidy
-/// quad, the next is welded into a whole ceiling assembly whose bounds are the room. So a single
-/// instance passing CONFIRMS the texture, and every place the level draws that texture is then a lamp.
-/// The alternative, testing each instance on its own, lights one tube in a corridor of six.
+/// <b>Confirm once, then trust the SUB-MESH — not the texture.</b> A texture is shared: the page that
+/// skins a ceiling fitting also skins the panel it is bolted to and, in level 1, the side of an office
+/// cabinet. Confirming the texture and glowing it everywhere is what put a blown-out wedge across a
+/// garage soffit and a flat white slab down that cabinet, and a size cap on the drawing geometry does
+/// not save it — the cabinet's panel is smaller than a fluorescent batten. So what is remembered is
+/// which MODEL AND MATERIAL SLOT passed, and only those draw as lamps.
+/// </para>
+/// <para>
+/// Model and slot rather than the individual placement, because that is the level the answer lives at:
+/// a model is a lamp model wherever the level puts it, and a corridor of six identical tubes is six
+/// placements of one model. Testing each PLACEMENT would light one tube in six, since only the tidily
+/// modelled instances pass the shape test; testing each texture lights the furniture.
 /// </para>
 /// <para>
 /// The output is still a proposal. Everything here is inferred from art that was never authored to be
@@ -78,6 +85,22 @@ public static class LampDetector
     /// <summary>The thickest a lamp fixture is, in metres.</summary>
     public const double MaximumThickness = 1.0;
 
+    /// <summary>The largest a fixture may be in ANY direction to count as a compact fitting, in metres.</summary>
+    /// <remarks>
+    /// The size that separates a wall lamp from a wall PANEL. A bracket fitting is a little box; the
+    /// things a bare size test would otherwise admit are flat sheets — a cabinet's side, a door, a sign
+    /// — which are small in two directions and not in the third. Six tenths of a metre is comfortably
+    /// larger than any fitting in the game and smaller than any panel that was mistaken for one.
+    /// </remarks>
+    public const double MaximumCompactSize = 0.6;
+
+    /// <summary>The smallest a compact fitting may be in its THINNEST direction, in metres.</summary>
+    /// <remarks>
+    /// A fitting is a solid little object. This is what stops a decal, a sticker or a paper-thin quad
+    /// from qualifying as one by being small in all three directions at once.
+    /// </remarks>
+    public const double MinimumCompactSize = 0.03;
+
     /// <summary>How bright a lamp's own diffuse texture reads, 0 to 1.</summary>
     /// <remarks>
     /// The DIFFUSE, not the lightmap: a lamp is painted pale because it is a lamp, and this is the one
@@ -94,49 +117,106 @@ public static class LampDetector
     /// </remarks>
     public const float MaximumSaturation = 0.35f;
 
-    /// <summary>How brightly a confirmed lamp emits, as a multiple of its albedo.</summary>
+    /// <summary>How much light a lamp should appear to give off, whatever colour it is painted.</summary>
     /// <remarks>
-    /// Six, the figure the reference comparison settled on for a white tube: bright enough that the fixture
-    /// reads as the source in the frame and the bloom finds it, and short of the point where its texels
-    /// clip to a flat white block and it stops looking like a lamp at all.
+    /// <para>
+    /// <b>A radiance to reach, not a multiple to apply.</b> Emission is albedo times a strength, so one
+    /// strength for every fixture makes a lamp as bright as its own texture happens to be: a
+    /// near-white tube came out at six and clipped to a flat white block, while the grey fitting in the
+    /// next room came out at two and read as a pale panel. They are the same kind of light, and how
+    /// dark the artist drew the housing is not a fact about how brightly it burns.
+    /// </para>
+    /// <para>
+    /// So each texture's strength is this divided by how bright the texture is, and every fixture in the
+    /// level arrives at about the same brightness. Three, which is what a typical fitting reached under
+    /// the old flat six — so the ones that already looked right are unchanged, and it is the outliers at
+    /// either end that move.
+    /// </para>
+    /// <para>
+    /// Uniform in the MEAN only. Within one fixture the bright glass still outshines its dark housing,
+    /// because this scales the texture rather than replacing it.
+    /// </para>
     /// </remarks>
-    public const float LampStrength = 6f;
+    public const float LampRadiance = 3f;
+
+    /// <summary>The most a lamp's own texture may be multiplied by.</summary>
+    /// <remarks>
+    /// A texture only just past <see cref="MinimumBrightness"/> would otherwise ask for a strength high
+    /// enough to turn every speck of noise in its dark half into a light. This is the point past which a
+    /// fixture is simply drawn too dark to be normalised into a lamp.
+    /// </remarks>
+    public const float MaximumStrength = 8f;
 
     private const string LogCategory = "Emissive";
 
-    /// <summary>Works out which of a level's textures are lamps, and how brightly each glows.</summary>
+    /// <summary>Which sub-meshes of a level are light fixtures.</summary>
+    /// <param name="Textures">
+    /// The textures those fixtures draw with, and how brightly each glows as a multiple of its albedo.
+    /// The set the light extractor gathers triangles for.
+    /// </param>
+    /// <param name="SubMeshes">
+    /// The model and material slot of every sub-mesh that passed the shape test. A draw is a lamp only
+    /// if it is in here — see the type's remarks for why the texture alone is not enough.
+    /// </param>
+    public readonly record struct Lamps(
+        IReadOnlyDictionary<string, float> Textures,
+        IReadOnlySet<string> SubMeshes)
+    {
+        /// <summary>Gets the answer for a level that has no lamps.</summary>
+        public static Lamps None { get; } = new(
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        /// <summary>The key a model's material slot is remembered by.</summary>
+        /// <param name="instance">The drawing instance's name, as the pack records it.</param>
+        /// <param name="slot">The sub-mesh's material slot.</param>
+        /// <returns>The key, matching what <see cref="SubMeshes"/> holds.</returns>
+        public static string Key(string instance, int slot) => instance + "#" + slot;
+
+        /// <summary>Whether one sub-mesh of one model is a light fixture.</summary>
+        /// <param name="instance">The drawing instance's name.</param>
+        /// <param name="slot">The sub-mesh's material slot.</param>
+        /// <returns><see langword="true"/> when this sub-mesh should draw as a lamp.</returns>
+        public bool Contains(string? instance, int slot) =>
+            !string.IsNullOrEmpty(instance) && SubMeshes.Contains(Key(instance, slot));
+    }
+
+    /// <summary>Works out which of a level's sub-meshes are lamps.</summary>
     /// <param name="scene">The built world, walked for the shape of everything it draws.</param>
     /// <param name="resources">Where the diffuse textures are decoded from.</param>
     /// <param name="logger">Where the conclusion is reported, named rather than counted.</param>
-    /// <returns>The lamp textures and their emissive strengths; empty when the level has none.</returns>
+    /// <returns>The lamps; <see cref="Lamps.None"/> when the level has none.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static IReadOnlyDictionary<string, float> Detect(
-        WorldScene scene, ResourceRegistry resources, IIgiLogger? logger = null)
+    public static Lamps Detect(WorldScene scene, ResourceRegistry resources, IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(resources);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<string, TextureLook> looks = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, float> strengths = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, float> textures = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> subMeshes = new(StringComparer.OrdinalIgnoreCase);
 
-        foreach (string texture in Confirm(scene, resources, looks, log))
-        {
-            strengths[texture] = LampStrength;
-        }
+        Confirm(scene, resources, looks, textures, subMeshes, log);
 
-        return strengths;
+        return new Lamps(textures, subMeshes);
     }
 
-    /// <summary>Walks the level for sub-meshes shaped like a ceiling lamp, and names their textures.</summary>
-    private static HashSet<string> Confirm(
+    /// <summary>The multiple of its own albedo that brings a texture to <see cref="LampRadiance"/>.</summary>
+    private static float Strength(float brightness) =>
+        Math.Clamp(LampRadiance / MathF.Max(brightness, 0.01f), 1f, MaximumStrength);
+
+    /// <summary>Walks the level for sub-meshes shaped like a ceiling lamp, and records them.</summary>
+    private static void Confirm(
         WorldScene scene,
         ResourceRegistry resources,
         Dictionary<string, TextureLook> looks,
+        Dictionary<string, float> textures,
+        HashSet<string> subMeshes,
         IIgiLogger log)
     {
-        HashSet<string> confirmed = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<MefModel, MeshGeometry?> built = [];
+        HashSet<string> tested = new(StringComparer.OrdinalIgnoreCase);
         double ground = scene.GroundHeight;
 
         foreach (WorldPlacement placement in scene.Placements)
@@ -161,8 +241,16 @@ public static class LampDetector
                 if (subset.IndexCount < 3
                     || !subset.HasMaterial
                     || !placement.Pack.TryGetTextureName(placement.Instance, subset.MaterialSlot, out string texture)
-                    || texture.Length == 0
-                    || confirmed.Contains(texture))
+                    || texture.Length == 0)
+                {
+                    continue;
+                }
+
+                // Once per model and slot, however many times the level places it: the shape being asked
+                // about is the model's, and every placement of a lamp model draws the same lamp.
+                string key = Lamps.Key(placement.Instance.Name, subset.MaterialSlot);
+
+                if (!tested.Add(key))
                 {
                     continue;
                 }
@@ -179,7 +267,8 @@ public static class LampDetector
 
                 if (IsFixtureShaped(geometry, subset, placement, ground))
                 {
-                    confirmed.Add(texture);
+                    subMeshes.Add(key);
+                    textures[texture] = Strength(look.Brightness);
                 }
             }
         }
@@ -188,19 +277,23 @@ public static class LampDetector
         // way, so the list is the first thing to check when a level lights wrongly.
         log.Information(
             LogCategory,
-            confirmed.Count > 0
-                ? $"Lamp textures, by the shape of the geometry drawing them: {string.Join(", ", confirmed)}."
+            textures.Count > 0
+                ? $"Lamps: {subMeshes.Count} sub-mesh(es) drawing "
+                    + string.Join(", ", textures.Select(t => $"{t.Key} x{t.Value:0.#}"))
                 : "Nothing in this level is shaped like a light fixture.");
-
-        return confirmed;
     }
 
     /// <summary>Whether one sub-mesh, where it stands, is shaped and placed like a ceiling lamp.</summary>
     /// <remarks>
-    /// Small, above head height, flat, and facing along the vertical. The normal comes from the winding
-    /// rather than from the authored vertex normals, which face inward on this game's interior shells;
-    /// summing the raw cross products weights each face by its own area, and a fixture whose faces cancel
-    /// — a closed box — fails the vertical test rather than passing it by accident.
+    /// Small and above head height, and then EITHER facing along the vertical — a ceiling fitting
+    /// presenting its lit face to the room below — or compact in every direction, which is what a wall
+    /// bracket looks like when its faces sum sideways and the vertical test cannot see it.
+    /// <para>
+    /// The normal comes from the winding rather than from the authored vertex normals, which face inward
+    /// on this game's interior shells; summing the raw cross products weights each face by its own area,
+    /// and a fixture whose faces cancel — a closed box — falls through to the compact test rather than
+    /// passing the vertical one by accident.
+    /// </para>
     /// </remarks>
     private static bool IsFixtureShaped(
         MeshGeometry geometry, in MeshSubset subset, in WorldPlacement placement, double ground)
@@ -262,11 +355,33 @@ public static class LampDetector
             return false;
         }
 
-        // Facing along the vertical: a fixture presents its lit face to the room below, and this is what
-        // rejects the wall panels and the ceiling slabs that pass every test above.
+        // Two ways to be a fixture, because there are two kinds of them and one test cannot see both.
+        //
+        // A CEILING fixture presents its lit face to the room below, so its faces sum along the
+        // vertical. That is the test that rejects the wall panels and ceiling slabs which pass
+        // everything above, and it is the one that finds the battens and the recessed panels.
         double length = facing.Length;
 
-        return length > 0.0 && Math.Abs(facing.Z / length) > 0.5;
+        if (length > 0.0 && Math.Abs(facing.Z / length) > 0.5)
+        {
+            return true;
+        }
+
+        // A WALL fixture does not: a bracket lamp faces sideways into the room, so its faces sum
+        // horizontally and the vertical test throws it away. Requiring the vertical alone silently lost
+        // every wall-mounted fitting in the game, which is most of what lights a corridor -- one lamp
+        // glowing and the identical one beside it dark.
+        //
+        // What stands in for the facing there is being COMPACT: small in every direction at once, and
+        // not merely thin. A light fitting is a little box on a wall; the things that would otherwise
+        // sneak past a bare size test are flat SHEETS -- a cabinet's side, a door panel, a sign -- which
+        // are small in two dimensions and not in the third. Measuring the largest side rather than the
+        // footprint is what separates them, and the smallest-side floor keeps a decal or a paper-thin
+        // quad from qualifying as a solid little object.
+        double smallest = Math.Min(high.X - low.X, Math.Min(high.Y - low.Y, high.Z - low.Z));
+        double largest = Math.Max(high.X - low.X, Math.Max(high.Y - low.Y, high.Z - low.Z));
+
+        return largest < MaximumCompactSize && smallest > MinimumCompactSize;
     }
 
     /// <summary>Takes a model-space position into world space, as the renderer draws it.</summary>
@@ -371,6 +486,25 @@ public static class LampDetector
             (float)(brightness / pixels.Length),
             coloured > 0 ? (float)(saturation / coloured) : 0f,
             tint);
+    }
+
+    /// <summary>How bright a texture's own diffuse reads, 0 to 1.</summary>
+    /// <param name="texture">The texture's name, as the pack records it.</param>
+    /// <param name="resources">Where the diffuse textures are decoded from.</param>
+    /// <returns>The mean of each texel's largest channel; nought for anything that will not decode.</returns>
+    /// <remarks>
+    /// Exposed because it is the divisor behind every lamp's strength — the thing that makes a dark
+    /// fitting and a white one arrive at the same <see cref="LampRadiance"/> — so a test can check the
+    /// product rather than having to know the multiplier.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    public static float Brightness(string texture, ResourceRegistry resources)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(texture);
+        ArgumentNullException.ThrowIfNull(resources);
+
+        return Look(texture, resources, new Dictionary<string, TextureLook>(StringComparer.OrdinalIgnoreCase))
+            .Brightness;
     }
 
     /// <summary>Gets the colour a fixture drawing the given texture should light with.</summary>
