@@ -648,6 +648,52 @@ public static class RenderCVars
         // twenty-four frames instead of twelve, a fraction of a second.
         ultra: "24");
 
+    /// <summary>How many frames the surface-cache relight's temporal accumulation converges over.</summary>
+    /// <remarks>
+    /// <para>
+    /// The cap on the relight's accumulation weight: the blend's alpha bottoms out at one over this, so a
+    /// tile keeps adapting to a moving sun rather than freezing, while integrating far more hemisphere
+    /// directions than the sixteen a single trace covers.
+    /// </para>
+    /// <para>
+    /// This is the knob for the slow travelling ripple over interior surfaces -- the "heat haze", visible
+    /// with the camera standing perfectly still. Each time the relight's cursor reaches a tile it blends a
+    /// freshly traced estimate in at this alpha, and that estimate does not agree with the stored one: a
+    /// tile gathers from its neighbours' FINAL lighting, and under <see cref="GiAmortize"/> each neighbour
+    /// was last updated at a different point in the cursor's sweep, so every tile integrates a slightly
+    /// different snapshot of the room. The disagreement is systematic rather than random -- raising the
+    /// bounce gather's ray count from sixteen to thirty-six moved the shimmer 1.5%, while halving the
+    /// amortisation (twice the retrace rate) doubled it -- so the only lever that reaches it is how much of
+    /// one retrace is admitted. Thirty-two measured a 2.1x reduction against the old eight.
+    /// </para>
+    /// <para>
+    /// The cost is adaptation latency. With <see cref="GiAmortize"/> at 24 a tile is retraced every
+    /// twenty-four frames, so the accumulation's time constant runs about 3.5 seconds at eight and about
+    /// thirteen at thirty-two. That is only the multi-bounce term settling behind a sun the day/night keys
+    /// are actively scrubbing; the direct sun, its shadows and the screen gather's own trace are immediate.
+    /// Lower it if a scrubbed sun matters more than a still interior.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> GiTemporalFrames = Presets.Define(
+        CVar.Int(
+            "r_gi_temporal_frames",
+            8,
+            1,
+            64,
+            CVarOptions.Archive,
+            "Frames the surface-cache relight converges over; higher is steadier, adapts slower."),
+
+        // Eight for the presets whose relight is snappier and whose shimmer is correspondingly smaller:
+        // they run r_gi_amortize at 12, half of ultra's, so a tile's retraces are twice as close together
+        // and the accumulation reaches the same place in half the wall-clock time.
+        vanilla: "8",
+        enhanced: "8",
+        high: "8",
+
+        // Thirty-two at ultra, where the screen probe gather is on and the shimmer it carries is the whole
+        // of what the eye sees on a flat interior wall.
+        ultra: "32");
+
     /// <summary>The hour of day the interactive sun starts a level at, 0 to 24. Noon is the authored sun.</summary>
     /// <remarks>
     /// The day/night cycle sweeps the level's one authored sun across the sky by a time of day the player
@@ -754,6 +800,50 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1",
         high: "1",
+        ultra: "1");
+
+    /// <summary>How many frames apart the screen probe gather re-traces. One is every frame.</summary>
+    /// <remarks>
+    /// <para>
+    /// The gather is the single most expensive pass in a real-time-GI frame -- it traces sixteen rays from
+    /// each probe of a grid covering the screen, and at 1440p that is nearly a million rays. This runs it
+    /// every N frames instead of every one, carrying the atlas forward in between.
+    /// </para>
+    /// <para>
+    /// What makes that sound is that a probe's value is a running average over <see cref="ScreenGather"/>'s
+    /// own accumulation -- dozens of frames -- so a probe is already a slow-moving estimate and re-tracing
+    /// it twice as often does not make it twice as right. What genuinely has to happen every frame is the
+    /// FULL-RESOLUTION RESOLVE, which reprojects the result against each pixel's own world position: that
+    /// is what pins the indirect to the world while the camera moves, and it keeps running at frame rate
+    /// here. So the indirect still tracks the view every frame; only the rate at which new light is traced
+    /// into it drops. The cost is how quickly newly revealed geometry fills in -- a frame or two longer.
+    /// </para>
+    /// <para>
+    /// Reducing the RAY COUNT instead was measured and is a worse trade: it makes every probe's estimate
+    /// noisier, which the spatial filter then spreads, where this leaves each estimate exactly as good and
+    /// only arrives less often.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> ScreenGatherCadence = Presets.Define(
+        CVar.Int(
+            "r_screen_gi_cadence",
+            1,
+            1,
+            4,
+            CVarOptions.Archive,
+            "Frames between screen probe gather re-traces. 1 is every frame; higher is cheaper, fills in slower."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+
+        // ONE at ultra, though this is the frame's largest pass and two measured a 1.5ms saving. The
+        // probe grid is anchored to the SCREEN, so an atlas carried over from the previous frame is
+        // misaligned with the depth buffer the resolve upsamples it against, and the resolve accumulates
+        // that misalignment into its per-pixel history every frame. Measured against the same three
+        // still-camera scenes the corner fix was validated on, it moved the whole image by a mean of
+        // 1.7/255 with visible structure across every surface -- a systematic bias, not noise, and past
+        // this project's own 2/255 acceptance. Offered as a knob for anyone who wants the frame rate more
+        // than the accuracy; not taken by default, because the gather exists for that accuracy.
         ultra: "1");
 
     /// <summary>How far the screen probe gather's spatial denoise blur reaches, in probes. Zero is off.</summary>

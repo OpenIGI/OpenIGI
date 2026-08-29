@@ -719,6 +719,19 @@ internal sealed partial class DesktopGame : IDisposable
         Matrix3f giPrevWorldToView = Matrix3f.Identity;
         Vector3f giPrevCameraToCache = default;
 
+        // The full-resolution resolve runs EVERY frame even where the gather is amortised, so it keeps its
+        // own ping-pong cursor and its own previous camera. Sharing the gather's was the trap: on a frame
+        // the gather skipped, the resolve would have reprojected against a camera two frames old and read
+        // back the slot it was about to write.
+        int giResolveFrame = 0;
+        Matrix3f giResolvePrevWorldToView = Matrix3f.Identity;
+        Vector3f giResolvePrevCameraToCache = default;
+
+        // Which accumulation slot the last gather wrote, and the atlas the resolve should read. On a frame
+        // the gather skips, both simply stand.
+        int giLastWrite = 0;
+        int giCadenceCursor = 0;
+
         // The full-resolution temporal resolve's atlases: the sparse probe atlas upsampled and accumulated
         // per pixel so the indirect is pinned to the world rather than sliding with the sparse reprojection.
         // Ping-ponged like the probe atlases, sized to the full render, and read directly by the deferred fill.
@@ -3163,6 +3176,11 @@ internal sealed partial class DesktopGame : IDisposable
                         // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
                         litCards.BounceFrameSpread = RenderCVars.GiAmortize.Value;
 
+                        // How many frames a tile's estimate accumulates over, the pair to the spread above:
+                        // the two together set how much of one retrace is admitted and how often, which is
+                        // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
+                        litCards.TemporalFrames = RenderCVars.GiTemporalFrames.Value;
+
                         // The direct relight: the whole cache at once for a deterministic dump, otherwise a
                         // slice a frame. The sun is fixed, so the only thing the direct term has to track is
                         // the clipmap scrolling new coverage under a card as the camera moves -- and doing
@@ -3617,58 +3635,83 @@ internal sealed partial class DesktopGame : IDisposable
                         (float)(eye.Position.Y - liveGiCards.Origin.Y),
                         (float)(eye.Position.Z - liveGiCards.Origin.Z));
 
+                    // The gather's cadence: it re-traces every Nth frame and the atlas stands in between.
+                    // See r_screen_gi_cadence for why that is sound and why it beats cutting the ray count.
+                    int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
+                    int giCadence = Math.Max(RenderCVars.ScreenGatherCadence.Value, 1);
+                    bool giTraceThisFrame = !giHasHistory || (giCadenceCursor % giCadence) == 0;
+                    giCadenceCursor++;
+
                     int write = giFrame & 1;
                     int read = 1 - write;
 
-                    liveGiCards.GatherScreenTemporal(
-                        liveGiField,
-                        _device.SceneDepth,
-                        _device.SceneNormal,
-                        DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
-                        eye.Orientation.Transposed(),
-                        giCameraToCache,
-                        giSourceWidth,
-                        giSourceHeight,
-                        giStep,
-                        giAccum[write],
-                        giPosition[write],
-                        giAccum[read],
-                        giPosition[read],
-                        giPrevWorldToView,
-                        giPrevCameraToCache,
-                        giFrame,
-                        giMaxAccum,
-                        giHasHistory,
-
-                        // The screen trace tier (L5b): the previous frame's lit scene, read at on-screen hits
-                        // before the ray falls through to the surface cache. device.SceneColour holds last
-                        // frame's linear scene here -- this runs before the current frame is lit.
-                        _device.SceneColour,
-                        RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
-                        giTraceDistance,
-                        giTraceThickness,
-
-                        // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
-                        // the surface cache lights its cards with, so the indirect that replaces the ambient
-                        // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
-                        SkyFillColour());
-
-                    // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
-                    // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
-                    int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
-                    TextureHandle giRead = giAccum[write];
-
-                    if (giFilterRadius > 0)
+                    if (giTraceThisFrame)
                     {
-                        liveGiCards.FilterScreen(
-                            giAccum[write], giPosition[write], giFiltered, giIndirectWidth, giIndirectHeight, giFilterRadius);
-                        giRead = giFiltered;
+                        liveGiCards.GatherScreenTemporal(
+                            liveGiField,
+                            _device.SceneDepth,
+                            _device.SceneNormal,
+                            DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                            eye.Orientation.Transposed(),
+                            giCameraToCache,
+                            giSourceWidth,
+                            giSourceHeight,
+                            giStep,
+                            giAccum[write],
+                            giPosition[write],
+                            giAccum[read],
+                            giPosition[read],
+                            giPrevWorldToView,
+                            giPrevCameraToCache,
+                            giFrame,
+                            giMaxAccum,
+                            giHasHistory,
+
+                            // The screen trace tier (L5b): the previous frame's lit scene, read at on-screen hits
+                            // before the ray falls through to the surface cache. device.SceneColour holds last
+                            // frame's linear scene here -- this runs before the current frame is lit.
+                            _device.SceneColour,
+                            RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
+                            giTraceDistance,
+                            giTraceThickness,
+
+                            // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
+                            // the surface cache lights its cards with, so the indirect that replaces the ambient
+                            // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
+                            SkyFillColour());
+
+                        // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
+                        // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
+                        if (giFilterRadius > 0)
+                        {
+                            liveGiCards.FilterScreen(
+                                giAccum[write],
+                                giPosition[write],
+                                _device.SceneNormal,
+                                giFiltered,
+                                giIndirectWidth,
+                                giIndirectHeight,
+                                giFilterRadius);
+                        }
+
+                        // What this frame becomes to the NEXT GATHER: only a frame that actually traced moves
+                        // the gather's history and its camera on.
+                        giLastWrite = write;
+                        giPrevWorldToView = eye.Orientation;
+                        giPrevCameraToCache = giCameraToCache;
+                        giHasHistory = true;
+                        giFrame++;
                     }
+
+                    TextureHandle giRead = giFilterRadius > 0 ? giFiltered : giAccum[giLastWrite];
 
                     // The full-resolution temporal resolve (the reference's ScreenProbeTemporalReprojectionCS):
                     // upsample the sparse atlas once and accumulate it per pixel, reprojecting against each
                     // surface's own world position, so the indirect is pinned to the world instead of sliding
                     // with the coarse sparse-probe reprojection. The deferred fill reads the full-res result.
+                    int resolveWrite = giResolveFrame & 1;
+                    int resolveRead = 1 - resolveWrite;
+
                     int resolveW = giSourceWidth;
                     int resolveH = giSourceHeight;
                     if (giResolveWidth != resolveW || giResolveHeight != resolveH)
@@ -3703,12 +3746,12 @@ internal sealed partial class DesktopGame : IDisposable
                         DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
                         eye.Orientation.Transposed(),
                         giCameraToCache,
-                        giPrevWorldToView,
-                        giPrevCameraToCache,
-                        giResolve[write],
-                        giResolvePosition[write],
-                        giResolve[read],
-                        giResolvePosition[read],
+                        giResolvePrevWorldToView,
+                        giResolvePrevCameraToCache,
+                        giResolve[resolveWrite],
+                        giResolvePosition[resolveWrite],
+                        giResolve[resolveRead],
+                        giResolvePosition[resolveRead],
                         resolveW,
                         resolveH,
                         giResolveHasHistory,
@@ -3717,16 +3760,14 @@ internal sealed partial class DesktopGame : IDisposable
 
                     // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
                     // it is read straight rather than upsampled from the sparse atlas a second time.
-                    _device.SetScreenIndirect(giResolve[write], giStrength, fullResolution: true);
+                    _device.SetScreenIndirect(giResolve[resolveWrite], giStrength, fullResolution: true);
 
-                    // What this frame becomes to the next: its camera, so the next reprojection can find where
-                    // each surface sat, and the flag that says there is now a frame to reproject onto. The
-                    // world-to-view rotation is the orientation itself -- the inverse of the view-to-world the
-                    // gather traced with.
-                    giPrevWorldToView = eye.Orientation;
-                    giPrevCameraToCache = giCameraToCache;
-                    giHasHistory = true;
-                    giFrame++;
+                    // The resolve's own carry-forward, every frame: this camera is what the next frame's
+                    // per-pixel reprojection measures its motion against. The gather's equivalent is set
+                    // above, inside the branch, because only a frame that traced may move it.
+                    giResolvePrevWorldToView = eye.Orientation;
+                    giResolvePrevCameraToCache = giCameraToCache;
+                    giResolveFrame++;
 
                     _device.EndStageTiming();
                 }
