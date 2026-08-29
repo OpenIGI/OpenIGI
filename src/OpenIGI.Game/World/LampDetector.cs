@@ -66,13 +66,24 @@ namespace OpenIGI.Game.World;
 /// </remarks>
 public static class LampDetector
 {
-    /// <summary>How far above the level's ground a fixture must sit to be a ceiling lamp, in metres.</summary>
+    /// <summary>How far above the level's ground a fixture must sit to be a lamp, in metres.</summary>
     /// <remarks>
-    /// Above head height, so that floor clutter — a pale crate, a white barrel — cannot qualify however
-    /// bright it is painted. Measured from the level's own ground rather than from zero, because this
-    /// game's world sits tens of kilometres from the origin.
+    /// <para>
+    /// To keep out floor clutter — a pale crate, a white barrel — which no other test here excludes.
+    /// Measured from the level's own ground rather than from zero, because this game's world sits tens
+    /// of kilometres from the origin.
+    /// </para>
+    /// <para>
+    /// <b>Low, and deliberately so, because the reference it is measured against is poor.</b>
+    /// <c>GroundHeight</c> is the MEDIAN height of the level's placements — a fact about the whole
+    /// level, which says nothing about the floor of the room a fixture is in. At head height it threw
+    /// away a 2.4 m office ceiling strip, normal straight down and 11 cm thick, for sitting 1.72 m above
+    /// that median. Measured on level 1: 1.8 m admits 21 sub-meshes and 1.2 m admits 23 — the two it
+    /// gains are real ceiling fittings — while dropping to nought admits 44, and those twenty-one are
+    /// the crates and barrels this exists for. So the floor sits where the curve is flat.
+    /// </para>
     /// </remarks>
-    public const double MinimumHeight = 1.8;
+    public const double MinimumHeight = 1.2;
 
     /// <summary>The widest a lamp fixture is, in metres.</summary>
     /// <remarks>
