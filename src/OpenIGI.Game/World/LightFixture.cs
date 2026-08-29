@@ -71,6 +71,19 @@ namespace OpenIGI.Game.World;
 /// is better lit as a point than as a spot pointing at a guess.
 /// </para>
 /// </param>
+/// <param name="Tangent">
+/// The fixture's long axis, perpendicular to <paramref name="Direction"/>, or zero when it does not
+/// face anywhere and so has no plane to lie in.
+/// <para>
+/// This and the two half-sizes are what make the fixture a RECTANGLE rather than a point with a cone
+/// bolted on. A fluorescent batten is a metre and a half long and a hand wide, and almost nothing about
+/// how it lights a room follows from its centre: the falloff across a wall beside it, the shape of the
+/// shadow it throws, and how the light wraps past the terminator are all properties of its extent. A
+/// point source gets every one of them wrong, and no amount of tuning a cone recovers them.
+/// </para>
+/// </param>
+/// <param name="HalfWidth">Half the fixture's size across <paramref name="Tangent"/>, in metres.</param>
+/// <param name="HalfHeight">Half the fixture's size along <paramref name="Tangent"/>, in metres.</param>
 public readonly record struct LightFixture(
     string Texture,
     Vector3d Position,
@@ -79,8 +92,23 @@ public readonly record struct LightFixture(
     float Area,
     float Extent,
     int TriangleCount,
-    Vector3f Direction = default)
+    Vector3f Direction = default,
+    Vector3f Tangent = default,
+    float HalfWidth = 0f,
+    float HalfHeight = 0f)
 {
+    /// <summary>Gets a value indicating whether this fixture has a rectangle to be lit as.</summary>
+    /// <remarks>
+    /// It needs a plane and two sizes. A cluster whose faces cancel — a lamp modelled as a closed box —
+    /// has neither, and is lit as a sphere of its own extent instead: the same integral with the
+    /// rectangle collapsed to a point, which is what a source with no orientation actually is.
+    /// </remarks>
+    public bool IsRectangular =>
+        IsDirectional
+        && (Tangent.X * Tangent.X) + (Tangent.Y * Tangent.Y) + (Tangent.Z * Tangent.Z) > 0.25f
+        && HalfWidth > 0.001f
+        && HalfHeight > 0.001f;
+
     /// <summary>Gets a value indicating whether this fixture throws its light one way.</summary>
     /// <remarks>
     /// A direction of no length is the extractor saying it could not tell, which is a normal outcome;

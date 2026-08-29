@@ -115,6 +115,16 @@ internal sealed partial class DesktopGame
         _cardInstances = null;
         _lightFixtures = [];
 
+        // And with the fixtures, the switches on them: they index that list and nothing else, so one left
+        // behind would switch the next level's lamps by number.
+        _lampSwitchboard = null;
+        _lampBounceRevision = -1;
+
+        if (_world is not null)
+        {
+            _world.Switchboard = null;
+        }
+
         // And the emission that went with them: a model name means different art in different levels, so
         // carrying one mission's lamps into the backdrop of the next glows whatever shares a name.
         _lamps = LampDetector.Lamps.None;

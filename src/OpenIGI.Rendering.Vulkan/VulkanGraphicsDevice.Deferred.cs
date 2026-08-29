@@ -1799,7 +1799,8 @@ public sealed partial class VulkanGraphicsDevice
         // Where each array starts, in floats: the two control vectors, then a vec4 per light per array.
         int position = 8;
         int colour = position + (DeferredLocalLight.Maximum * 4);
-        int direction = colour + (DeferredLocalLight.Maximum * 4);
+        int normal = colour + (DeferredLocalLight.Maximum * 4);
+        int tangent = normal + (DeferredLocalLight.Maximum * 4);
 
         for (int i = 0; i < _localLightCount; i++)
         {
@@ -1816,14 +1817,19 @@ public sealed partial class VulkanGraphicsDevice
             u[colour + at + 2] = light.Colour.Z;
             u[colour + at + 3] = light.Intensity;
 
-            u[direction + at] = light.ViewDirection.X;
-            u[direction + at + 1] = light.ViewDirection.Y;
-            u[direction + at + 2] = light.ViewDirection.Z;
+            // The emitting rectangle: its normal and long axis, each carrying one of its half-sizes.
+            // Everything the lighting does with a lamp comes out of this -- the falloff is the shape's
+            // own solid angle, the direction light arrives from is the shape's centre of illumination,
+            // and the shadow ray samples the shape itself.
+            u[normal + at] = light.ViewDirection.X;
+            u[normal + at + 1] = light.ViewDirection.Y;
+            u[normal + at + 2] = light.ViewDirection.Z;
+            u[normal + at + 3] = light.HalfWidth;
 
-            // How big the fixture is, which is what gives its shadow a penumbra. Rides beside the facing
-            // because both describe the SOURCE rather than its falloff, and the fourth component there
-            // was spare.
-            u[direction + at + 3] = light.SourceRadius;
+            u[tangent + at] = light.ViewTangent.X;
+            u[tangent + at + 1] = light.ViewTangent.Y;
+            u[tangent + at + 2] = light.ViewTangent.Z;
+            u[tangent + at + 3] = light.HalfHeight;
         }
 
         lamps.Write<float>(new ReadOnlySpan<float>(u, floats));

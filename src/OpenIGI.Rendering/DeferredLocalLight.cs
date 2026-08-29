@@ -37,27 +37,21 @@ namespace OpenIGI.Rendering;
 /// aimed at a guess, and the shader reads a zero vector as exactly that.
 /// </para>
 /// </param>
-/// <param name="SourceRadius">
-/// How big the fixture itself is, in metres — not how far it reaches, which is <paramref name="Radius"/>.
-/// <para>
-/// This is what makes a shadow a shadow rather than a stencil. Traced as a point, a lamp gives one
-/// binary answer per pixel: a hard edge, aliased along it, and identical whether the thing casting it is
-/// touching the wall or a room away. A real fitting is tens of centimetres across, so its shadow has a
-/// penumbra that widens with the gap between occluder and receiver — sharp under a crate, soft on the
-/// wall behind it. Only the source's size can say how wide.
-/// </para>
-/// <para>
-/// The fixture's own extent, so it costs nothing to know: the extractor already measures how far the
-/// emitting geometry reaches from its centroid, because it needs that for the light's reach.
-/// </para>
+/// <param name="ViewTangent">
+/// The fixture's long axis in view space, across <paramref name="ViewDirection"/>. Zero, with the
+/// direction, for a source that has no plane and is lit as a sphere.
 /// </param>
+/// <param name="HalfWidth">Half the emitting rectangle's size across the tangent, in metres.</param>
+/// <param name="HalfHeight">Half the emitting rectangle's size along the tangent, in metres.</param>
 public readonly record struct DeferredLocalLight(
     Vector3f ViewPosition,
     float Radius,
     Vector3f Colour,
     float Intensity,
     Vector3f ViewDirection = default,
-    float SourceRadius = 0f)
+    Vector3f ViewTangent = default,
+    float HalfWidth = 0f,
+    float HalfHeight = 0f)
 {
     /// <summary>The most local lights a single frame can carry, matching the lighting shader's array size.</summary>
     /// <remarks>

@@ -478,6 +478,10 @@ internal sealed partial class DesktopGame : IDisposable
         // it draws, and the implementation already answers with nothing when no world is loaded.
         console.View.AttachWorld(this);
 
+        // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
+        // the command already there.
+        RegisterLampCommands(console.System);
+
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
 
@@ -1910,6 +1914,13 @@ internal sealed partial class DesktopGame : IDisposable
                 _dayNightMilliseconds = dayNightNow;
                 _dayNight.Update(_window.Input.Keyboard, dayNightElapsed);
             }
+
+            // The level's lamps, on every pass and on real elapsed time, for exactly the reasons the sweep
+            // above is: a fitting takes a couple of hundred milliseconds to go out and about a second to
+            // come back, and a fade advanced once per rendered frame would be a different fade on every
+            // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
+            // steady lamps and returns.
+            UpdateLamps(_loop.TimeSource.Milliseconds);
 
             // G shows the sun gizmo, but only while flying: it takes the cursor to drag its rings, which the
             // walking player needs for looking. Leaving the free camera puts it away.
@@ -3848,7 +3859,24 @@ internal sealed partial class DesktopGame : IDisposable
                         // (area ~0.5) sixteen to one and blow the room out around it -- but a bigger lamp
                         // is not sixteen times brighter, only larger. The clamp flattens that to something
                         // like real fixtures; the scale cvar then sets the overall level.
-                        float intensity = MathF.Min(fixture.Intensity, 1.5f) * localLightScale;
+                        //
+                        // Then by how much of that the lamp is actually giving out, which is one for
+                        // everything nobody has switched. The emission on the fixture's own geometry is
+                        // scaled by the same number in the world renderer, so a lamp fading out fades as
+                        // one thing rather than as a panel and a pool of light going at their own rates.
+                        int lampIndex = _localLightOrder[i];
+                        float output = _lampSwitchboard?.LevelOf(lampIndex) ?? 1f;
+                        float intensity = MathF.Min(fixture.Intensity, 1.5f) * localLightScale * output;
+
+                        // A cooling filament is a colder black body and therefore a redder one, which is
+                        // the last thing anybody sees of a light going out. White whenever the lamp is
+                        // not on its way out.
+                        Vector3f colour = fixture.Colour;
+
+                        if (_lampSwitchboard?.TintOf(lampIndex) is { } tint && tint != Vector3f.One)
+                        {
+                            colour = new Vector3f(colour.X * tint.X, colour.Y * tint.Y, colour.Z * tint.Z);
+                        }
 
                         // The way the fixture faces, rotated into the same space its position is in. A
                         // rotation and not a transform: this is a direction, so the camera's translation
@@ -3857,18 +3885,26 @@ internal sealed partial class DesktopGame : IDisposable
                             ? worldToView.Transform(fixture.Direction)
                             : default;
 
+                        // The fixture's long axis, rotated the same way and for the same reason. The
+                        // rectangle these two describe is what the lighting integrates over -- see
+                        // LightFixture.Tangent for why a lamp's centre is not enough to light from.
+                        Vector3f tangent = fixture.IsRectangular
+                            ? worldToView.Transform(fixture.Tangent)
+                            : default;
+
                         _localLightScratch[i] = new DeferredLocalLight(
                             worldToView.Transform(cameraRelative),
                             fixture.Radius * localLightRange,
-                            fixture.Colour,
+                            colour,
                             intensity,
                             facing,
+                            tangent,
 
-                            // The fixture's own size, which is what gives its shadow a penumbra. Floored
-                            // rather than taken raw: a fixture the extractor measured as a few
-                            // centimetres across would cast an edge as hard as a point light's, and no
-                            // real fitting is that small.
-                            MathF.Max(fixture.Extent, 0.05f));
+                            // A fixture whose geometry never agreed on a plane has no rectangle, and is
+                            // lit as a sphere of its own extent -- which is what the half width carries
+                            // there, the half height going unread.
+                            fixture.IsRectangular ? fixture.HalfWidth : MathF.Max(fixture.Extent, 0.05f),
+                            fixture.HalfHeight);
                     }
 
                     // Both backends, through the seam: a windowless interior needs its lamps whichever
@@ -4637,6 +4673,14 @@ internal sealed partial class DesktopGame : IDisposable
                         lines.Add(detect);
                     }
 
+                    // Which of the level's lamps the crosshair is on, if any -- so the switch keys can be
+                    // aimed rather than guessed at, and so a press that appeared to do nothing can be told
+                    // apart from a press that landed on a lamp whose light is off screen.
+                    if (DescribeAimedLamp() is { } aimedLamp)
+                    {
+                        lines.Add(aimedLamp);
+                    }
+
                     _device.Set2DProjection(_window.Width, _window.Height);
                     batch.Begin();
                     debugPanelHeight = debugOverlay.Draw(batch, lines, _window.Width, _window.Height);
@@ -5100,6 +5144,14 @@ internal sealed partial class DesktopGame : IDisposable
         for (int i = 0; i < _lightFixtures.Count; i++)
         {
             LightFixture fixture = _lightFixtures[i];
+
+            // A lamp that has finished going out is not a dim light, it is not a light: passed over here
+            // rather than submitted at zero, because the shader's array is a budget and a dark fixture
+            // holding a slot switches a real one at the end of the corridor off instead.
+            if (_lampSwitchboard is { } board && board.LevelOf(i) <= 0f)
+            {
+                continue;
+            }
 
             double dx = fixture.Position.X - eye.X;
             double dy = fixture.Position.Y - eye.Y;

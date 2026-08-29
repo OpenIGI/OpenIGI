@@ -132,6 +132,16 @@ public sealed class LampSwitchboard
     public LampMode ModeOf(int index) =>
         (uint)index < (uint)_lamps.Length ? _lamps[index].Mode : LampMode.On;
 
+    /// <summary>Returns whether a lamp has a fault in it, whether or not it is switched on.</summary>
+    /// <param name="index">The fixture's index.</param>
+    /// <returns><see langword="true"/> when the lamp flickers, or would if it were switched on.</returns>
+    /// <remarks>
+    /// A dying tube in a fitting nobody has switched on is still a dying tube; breaking a lamp that is
+    /// off arms the fault rather than lighting it, and this is how anything asking can tell.
+    /// </remarks>
+    public bool IsFaulty(int index) =>
+        (uint)index < (uint)_lamps.Length && (_lamps[index].Mode == LampMode.Broken || _lamps[index].WasBroken);
+
     /// <summary>Returns how much of its rated output a lamp is giving out, from nought to one.</summary>
     /// <param name="index">The fixture's index.</param>
     /// <returns>The fraction, or one for an index that names no lamp.</returns>
@@ -528,7 +538,11 @@ public sealed class LampSwitchboard
 
         // Rolled per switch-on rather than per lamp: the same fitting does not strike identically every
         // time, and a lamp that always flashes at exactly 90 ms is a canned animation.
-        lamp.Strikes = NextFloat(ref lamp.Rng) < 0.6f;
+        //
+        // Only from dark, because a strike is an arc being established and a lamp that is already half
+        // lit has one. Without that condition a lamp brought back up from nine tenths flashes on its way
+        // to full, which is not something any fitting does.
+        lamp.Strikes = lamp.From < 0.15f && NextFloat(ref lamp.Rng) < 0.6f;
         lamp.StrikeAt = 0.05f + (NextFloat(ref lamp.Rng) * 0.08f);
     }
 

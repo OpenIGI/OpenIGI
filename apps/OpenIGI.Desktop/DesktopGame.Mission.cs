@@ -1059,6 +1059,12 @@ internal sealed partial class DesktopGame
 
         _lightFixtures = lamps.Fixtures;
 
+        // One switchboard per set of fixtures, seeded by the mission so two levels' broken tubes do not
+        // stutter in step. Everything that reads a lamp's output reads it from here, and everything that
+        // holds one is handed the same instance rather than a copy of its state.
+        _lampSwitchboard = new LampSwitchboard(lamps.Fixtures, id);
+        _lampBounceRevision = _lampSwitchboard.Revision;
+
         // Which sub-meshes glow and how brightly. Per sub-mesh rather than per texture, because one
         // texture is not one brightness -- a floodlight and the lamp over a door draw with the same page
         // -- and because a lamp's page also skins the furniture beside it. r_lamp_emissive scales the
@@ -1077,6 +1083,7 @@ internal sealed partial class DesktopGame
         if (_world is not null)
         {
             _world.Lamps = _lamps;
+            _world.Switchboard = _lampSwitchboard;
         }
 
         if (_capturedCards is { } surfaces && _cardInstances is { } placedCards)

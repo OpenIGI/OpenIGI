@@ -658,16 +658,22 @@ public sealed class WorldRenderer : IDisposable
     /// <para>
     /// So the last part of the fade is a handover rather than a ramp. Below the threshold the emission
     /// is dropped outright and the panel becomes an ordinary lit surface, which is what a dead fitting
-    /// is. The threshold is low — a quarter of albedo, dimmer than the same panel would be lit in any
-    /// room worth lighting — so the step it costs is smaller than the step of leaving it out, and it
+    /// is. The threshold is low — under a third of albedo, dimmer than the same panel would be lit in
+    /// any room worth lighting — so the step it costs is smaller than the step of leaving it out, and it
     /// lands two hundred milliseconds into a fade nobody is looking at the panel during.
+    /// </para>
+    /// <para>
+    /// It also has to clear <see cref="SurfaceMaterial.ExcludedFromOcclusion"/>, which is a quarter and
+    /// is not a brightness at all: the G-buffer has no flags channel, so that one value in the emissive
+    /// slot means "leave this surface out of the ambient occlusion". A lamp allowed to fade through it
+    /// would spend a frame claiming to be that instead.
     /// </para>
     /// </remarks>
     private static SurfaceMaterial Dimmed(SurfaceMaterial material, float glow)
     {
         float emissive = material.Emissive * glow;
 
-        return material with { Emissive = emissive < 0.25f ? 0f : emissive };
+        return material with { Emissive = emissive < 0.3f ? 0f : emissive };
     }
 
     /// <summary>Resolves a model's per-subset textures, materials and lightmap pages, once.</summary>
@@ -809,10 +815,11 @@ public sealed class WorldRenderer : IDisposable
     }
 
     /// <summary>One drawable subset: its index range and the states it binds.</summary>
-    /// <param name="IsLamp">
-    /// Whether this sub-mesh glows because the lamp detection called it a fixture, as opposed to because
-    /// a material file said the surface emits. Only the first kind answers to a light switch.
-    /// </param>
+    /// <remarks>
+    /// <c>IsLamp</c> says the sub-mesh glows because the lamp detection called it a fixture, as opposed
+    /// to because a material file said the surface emits. Only the first kind answers to a light switch:
+    /// an authored emissive is a screen or a sign or the sky, and nobody is switching those off.
+    /// </remarks>
     private readonly record struct SubsetDraw(
         int IndexOffset,
         int IndexCount,

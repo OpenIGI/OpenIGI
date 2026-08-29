@@ -518,6 +518,12 @@ public static class LightFixtureExtractor
         string texture = Dominant(byTexture);
         Vector3f tint = Normalise(colour is null ? new Vector3f(1f, 1f, 1f) : colour(texture));
 
+        Vector3f direction = Facing(facing, facingArea);
+
+        // The rectangle the fixture actually is, fitted in the plane it faces. Everything about how a
+        // lamp lights a room follows from this rather than from its centre -- see LightFixture.Tangent.
+        (Vector3f tangent, float halfWidth, float halfHeight) = FitRectangle(triangles, cluster, position, direction);
+
         LightFixture fixture = new(
             texture,
             position,
@@ -526,13 +532,126 @@ public static class LightFixtureExtractor
             (float)area,
             (float)extent,
             cluster.Count,
-            Facing(facing, facingArea));
+            direction,
+            tangent,
+            halfWidth,
+            halfHeight);
 
         // The radius wants the fixture's brightness, and Luminance is the fixture's own definition of
         // it -- computed here rather than inline so the two can never disagree.
         float reach = (float)extent * radiusScale * MathF.Sqrt(MathF.Max(fixture.Luminance, 0f));
 
         return fixture with { Radius = MathF.Max(reach, MinimumRadius) };
+    }
+
+    /// <summary>Fits the rectangle a cluster's geometry occupies, in the plane the cluster faces.</summary>
+    /// <remarks>
+    /// <para>
+    /// An ORIENTED rectangle, not an axis-aligned one, and that is the point: a fluorescent batten runs
+    /// whichever way the room does, and a box fitted to the world's axes would be the length of the
+    /// batten's diagonal in both directions. The long axis is found by principal component analysis of
+    /// the cluster's vertices projected into the plane — the direction of greatest spread — which for
+    /// anything longer than it is wide is the direction it is long in.
+    /// </para>
+    /// <para>
+    /// Half-sizes are the furthest vertex along each axis rather than a standard deviation, because what
+    /// is wanted is the emitter's actual edge: the rectangle has to cover the geometry that glows, since
+    /// it is the shape a shadow ray will sample and the shape whose solid angle becomes the falloff.
+    /// </para>
+    /// <para>
+    /// Zero when the cluster does not face anywhere, and the fixture is then lit as a sphere.
+    /// </para>
+    /// </remarks>
+    private static (Vector3f Tangent, float HalfWidth, float HalfHeight) FitRectangle(
+        List<Triangle> triangles, List<int> cluster, in Vector3d position, in Vector3f direction)
+    {
+        if ((direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z) < 0.25f)
+        {
+            return (default, 0f, 0f);
+        }
+
+        Vector3d normal = new(direction.X, direction.Y, direction.Z);
+
+        // Any two axes across the plane will do to measure in; the fit below rotates them onto the
+        // geometry afterwards. Picking the world axis the normal leans on least is what keeps the cross
+        // product from collapsing.
+        Vector3d seed = Math.Abs(normal.Z) < 0.9
+            ? new Vector3d(0.0, 0.0, 1.0)
+            : new Vector3d(1.0, 0.0, 0.0);
+
+        Vector3d axisU = Vector3d.Cross(seed, normal);
+        double length = axisU.Length;
+
+        if (length < 1e-9)
+        {
+            return (default, 0f, 0f);
+        }
+
+        axisU *= 1.0 / length;
+        Vector3d axisV = Vector3d.Cross(normal, axisU);
+
+        // The covariance of the projected vertices about the cluster's own centre.
+        double uu = 0.0;
+        double uv = 0.0;
+        double vv = 0.0;
+        int samples = 0;
+
+        foreach (int index in cluster)
+        {
+            Triangle triangle = triangles[index];
+
+            foreach (Vector3d vertex in new[] { triangle.A, triangle.B, triangle.C })
+            {
+                Vector3d offset = vertex - position;
+                double u = Vector3d.Dot(offset, axisU);
+                double v = Vector3d.Dot(offset, axisV);
+
+                uu += u * u;
+                uv += u * v;
+                vv += v * v;
+                samples++;
+            }
+        }
+
+        if (samples == 0)
+        {
+            return (default, 0f, 0f);
+        }
+
+        // The dominant eigenvector of that two-by-two, as an angle. Half the arctangent of the
+        // off-diagonal against the difference of the diagonals is the closed form, and it is the whole
+        // of the principal component analysis for two dimensions.
+        double angle = 0.5 * Math.Atan2(2.0 * uv, uu - vv);
+        double cos = Math.Cos(angle);
+        double sin = Math.Sin(angle);
+
+        Vector3d longAxis = (axisU * cos) + (axisV * sin);
+        Vector3d shortAxis = (axisU * -sin) + (axisV * cos);
+
+        // How far the geometry reaches along each, which is where the rectangle's edges are.
+        double halfLong = 0.0;
+        double halfShort = 0.0;
+
+        foreach (int index in cluster)
+        {
+            Triangle triangle = triangles[index];
+
+            foreach (Vector3d vertex in new[] { triangle.A, triangle.B, triangle.C })
+            {
+                Vector3d offset = vertex - position;
+
+                halfLong = Math.Max(halfLong, Math.Abs(Vector3d.Dot(offset, longAxis)));
+                halfShort = Math.Max(halfShort, Math.Abs(Vector3d.Dot(offset, shortAxis)));
+            }
+        }
+
+        // A fitting drawn as a single quad has no thickness across one axis, and a rectangle with a zero
+        // side has no solid angle and emits nothing. A centimetre is below anything the eye resolves at
+        // the distance a lamp is seen from and is enough for the integral to be finite.
+        return (
+            new Vector3f((float)longAxis.X, (float)longAxis.Y, (float)longAxis.Z),
+            (float)Math.Max(halfShort, 0.01),
+            (float)Math.Max(halfLong, 0.01));
     }
 
     /// <summary>Turns a cluster's summed face normals into the direction it throws its light.</summary>

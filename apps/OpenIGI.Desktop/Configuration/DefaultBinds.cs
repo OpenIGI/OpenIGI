@@ -28,6 +28,12 @@ public static class DefaultBinds
         // Moves the sun's shadow alone and leaves the rest of the frame tracing, so the ray-traced and
         // rasterised shadows can be flipped between without changing anything else in the picture.
         ("f7", "toggle r_rt_shadows"),
+
+        // The wall switch for whichever of the level's lamps the crosshair is on, and the fault. Neither
+        // writes a setting -- they act on the level that is loaded and nothing survives it -- so the rule
+        // this table exists for has nothing to check on them.
+        ("l", "lamp_switch"),
+        ("k", "lamp_break"),
     ];
 
     /// <summary>The variable a statement toggles, or <see langword="null"/> when it toggles nothing.</summary>
