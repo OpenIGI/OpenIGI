@@ -212,7 +212,13 @@ public static class LightFixtureExtractor
         ArgumentNullException.ThrowIfNull(scene);
 
         return ProposeFromScene(
-            scene, lamps.Textures?.Keys ?? [], colour, clusterDistance, radiusScale, logger, lamps);
+            scene,
+            lamps.Textures ?? (IReadOnlySet<string>)new HashSet<string>(),
+            colour,
+            clusterDistance,
+            radiusScale,
+            logger,
+            lamps);
     }
 
     /// <summary>Proposes a light for every cluster of emitter triangles in a loaded level.</summary>
@@ -272,13 +278,13 @@ public static class LightFixtureExtractor
 
             WorldPlacement drawn = placement;
 
-            IReadOnlySet<string>? subMeshes = lamps.SubMeshes;
+            bool known = lamps.SubMeshes is not null;
 
             meshes.Add(new PlacedMesh(
                 geometry,
                 placement.Position,
                 placement.Orientation,
-                slot => (subMeshes is null || lamps.Contains(drawn.Instance.Name, slot))
+                slot => (!known || lamps.Contains(drawn.Instance.Name, slot))
                     && drawn.Pack.TryGetTextureName(drawn.Instance, slot, out string name)
                         ? name
                         : null));

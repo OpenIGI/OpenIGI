@@ -43,11 +43,12 @@ internal static class EmissiveLightProposer
     /// <summary>Proposes a level's lamps, from an authored file or a fresh survey.</summary>
     /// <param name="scene">The built world scene whose placements and textures are surveyed.</param>
     /// <param name="resources">The resource registry the emitter textures are decoded through.</param>
+    /// <param name="manifest">The lamps a person named by hand, which win over anything inferred.</param>
     /// <param name="missionId">The mission the fixtures belong to, which names the per-mission file.</param>
     /// <param name="logger">The log the proposal is reported to.</param>
     /// <returns>The lamps to place and the surfaces they come out of.</returns>
     public static Proposal Propose(
-        WorldScene scene, ResourceRegistry resources, int missionId, IIgiLogger logger)
+        WorldScene scene, ResourceRegistry resources, LampManifest manifest, int missionId, IIgiLogger logger)
     {
         // Beside the other authored data, one file per mission. When it exists and its version matches
         // it is the truth: the detection ran once to propose the list and a human has had the chance to
@@ -64,9 +65,9 @@ internal static class EmissiveLightProposer
 
         try
         {
-            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, logger);
+            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, manifest.For(missionId), logger);
 
-            if (lamps.Textures.Count == 0)
+            if (lamps.Count == 0)
             {
                 LightFixtureStore.Save(fixturesPath, [], lamps, logger);
                 return Proposal.None;

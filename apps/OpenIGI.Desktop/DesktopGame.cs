@@ -185,6 +185,10 @@ internal sealed partial class DesktopGame : IDisposable
     // rebuilt per mission and this outlives the rebuild.
     private LampDetector.Lamps _lamps = LampDetector.Lamps.None;
 
+    // What a person has said outright about which models are lamps, which beats anything the detector
+    // works out. One file for the whole game; see Assets/lamps.json.
+    private LampManifest _lampManifest = LampManifest.Empty;
+
     // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
     // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
     private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
@@ -772,6 +776,13 @@ internal sealed partial class DesktopGame : IDisposable
 
         _materials = MaterialLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
+            _logger);
+
+        // The lamps somebody has named by hand, for every mission at once. Read here rather than per
+        // level because it is one small file and the levels share it, and because a level that names
+        // none still has to know that.
+        _lampManifest = LampManifest.Load(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "lamps.json"),
             _logger);
 
         // The derived surface detail this game never shipped -- normals, roughness, metal. Built by

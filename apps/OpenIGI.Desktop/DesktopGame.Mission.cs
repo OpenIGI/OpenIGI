@@ -1054,28 +1054,25 @@ internal sealed partial class DesktopGame
         // conclusion to whether the cards were captured would have switched a level's lamps off for
         // anyone running ultra with r_surface_cache 0.
         EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
-            ? EmissiveLightProposer.Propose(_scene, _resources, id, _logger)
+            ? EmissiveLightProposer.Propose(_scene, _resources, _lampManifest, id, _logger)
             : EmissiveLightProposer.Proposal.None;
 
         _lightFixtures = lamps.Fixtures;
 
-        // The geometry glows. Onto the material library the world renderer already reads per sub-mesh, so
-        // nothing about the draw path changes -- and losing to anything the level's materials.json names,
-        // which is how a detection that fires on a road sign is corrected. Scaled on the way in rather
-        // than in the shader: the strength is a property of the material, so it belongs where the
-        // material is decided and costs nothing per pixel.
+        // Which sub-meshes glow and how brightly. Per sub-mesh rather than per texture, because one
+        // texture is not one brightness -- a floodlight and the lamp over a door draw with the same page
+        // -- and because a lamp's page also skins the furniture beside it. r_lamp_emissive scales the
+        // whole set on the way in rather than in the shader: it is a property of the material, so it
+        // belongs where the material is decided and costs nothing per pixel.
         float emissiveScale = RenderCVars.LampEmissiveScale.Value;
 
-        _materials.SetDetectedEmitters(
-            emissiveScale == 1f
-                ? lamps.Lamps.Textures
-                : lamps.Lamps.Textures.ToDictionary(
-                    e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase));
-
-        // And WHERE it glows. The library answers per texture, which is all the material system can
-        // key on; this is the list that says which sub-mesh of which model that texture is a lamp on,
-        // and without it a shared page glows on the furniture it also skins.
-        _lamps = lamps.Lamps;
+        _lamps = emissiveScale == 1f
+            ? lamps.Lamps
+            : lamps.Lamps with
+            {
+                SubMeshes = lamps.Lamps.SubMeshes.ToDictionary(
+                    e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase),
+            };
 
         if (_world is not null)
         {

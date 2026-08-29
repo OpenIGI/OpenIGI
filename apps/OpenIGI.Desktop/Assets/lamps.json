@@ -1,0 +1,40 @@
+{
+  "$comment": [
+    "The lights a level has, named by hand.",
+    "",
+    "I.G.I. declares no lights at all: every lamp is geometry with a texture, and the light it appears",
+    "to cast was painted into a lightmap. LampDetector infers the rest from the shape of the geometry,",
+    "and it is an inference -- it misses fittings and it occasionally lights furniture. This file is",
+    "where somebody who has LOOKED at the level says what is actually a lamp, and it wins.",
+    "",
+    "Additive, not exclusive. Naming a model here makes it a lamp; it does not stop the detector",
+    "finding others. Use \"lamp\": false to say a model the detector picked is NOT one.",
+    "",
+    "  model     the instance name, as the F12 target readout prints it (OBJECT <model> ...).",
+    "  textures  which of that model's sub-meshes emit, by the texture they draw with. A model is not",
+    "            all lamp: a vending machine is a cabinet with one lit panel, and a monitor is a desk",
+    "            with a screen on it. Omit to let the brightest sub-mesh of the model be chosen.",
+    "  radiance  how much light it appears to give off. 3 is an ordinary fitting; a floodlight is more,",
+    "            and a lit advert or a screen is much less -- those are lit panels, not light sources.",
+    "            The strength each texture is multiplied by is this over how bright the texture is, so",
+    "            two fittings painted differently still arrive at the same brightness.",
+    "  note      what it is, for whoever reads this next."
+  ],
+
+  "missions": {
+    "1": [
+      { "model": "236_01_1", "textures": ["236_01_1"], "radiance": 3.0, "note": "LIGHTS_ROUND - wall lamp" },
+      { "model": "210_01_1", "textures": ["316_04_1"], "radiance": 3.0, "note": "LARGE_LIGHTS - ceiling lamp" },
+      { "model": "226_01_1", "textures": ["208_02_1", "206_04_1"], "radiance": 3.0, "note": "ceiling lamp" },
+      { "model": "207_01_1", "textures": ["316_04_1"], "radiance": 3.0, "note": "LIGHTS_FLAT - wall lamp" },
+      { "model": "410_02_1", "textures": ["316_01_1"], "radiance": 3.0, "note": "garage ceiling strip" },
+      { "model": "324_01_1", "textures": ["324_01_1"], "radiance": 3.0, "note": "LIGHT - outdoor lamp over doors" },
+
+      { "model": "318_01_1", "textures": ["316_04_1"], "radiance": 4.0, "note": "FLOODLIGHT - outdoor" },
+      { "model": "335_01_1", "textures": ["316_04_1", "316_03_1"], "radiance": 5.0, "note": "FLOODLIGHT - projector" },
+
+      { "model": "214_01_1", "textures": ["214_01_1"], "radiance": 1.0, "note": "SODA_MACHINE - lit advert panel, not a lamp" },
+      { "model": "252_01_1", "textures": ["252_01_1"], "radiance": 0.9, "note": "COMPUTER_MONITOR - screen, not a lamp" }
+    ]
+  }
+}

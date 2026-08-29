@@ -115,10 +115,8 @@ internal sealed partial class DesktopGame
         _cardInstances = null;
         _lightFixtures = [];
 
-        // And the emission that went with them. A texture number means different art in different levels,
-        // so carrying one mission's emitters into the backdrop of the next lights whatever happens to
-        // share a number.
-        _materials.SetDetectedEmitters(new Dictionary<string, float>());
+        // And the emission that went with them: a model name means different art in different levels, so
+        // carrying one mission's lamps into the backdrop of the next glows whatever shares a name.
         _lamps = LampDetector.Lamps.None;
 
         // Likewise the distance fields: the clipmaps that are up were traced against the level that has

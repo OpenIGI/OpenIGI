@@ -161,22 +161,29 @@ public static class LampDetector
     private const string LogCategory = "Emissive";
 
     /// <summary>Which sub-meshes of a level are light fixtures.</summary>
-    /// <param name="Textures">
-    /// The textures those fixtures draw with, and how brightly each glows as a multiple of its albedo.
-    /// The set the light extractor gathers triangles for.
-    /// </param>
+    /// <param name="Textures">The textures those fixtures draw with. What the light extractor gathers for.</param>
     /// <param name="SubMeshes">
-    /// The model and material slot of every sub-mesh that passed the shape test. A draw is a lamp only
-    /// if it is in here — see the type's remarks for why the texture alone is not enough.
+    /// Every sub-mesh that is a lamp — keyed by model and material slot — and the multiple of its own
+    /// albedo it emits at. A draw is a lamp only if it is in here; see the type's remarks for why the
+    /// texture alone is not enough.
+    /// <para>
+    /// The strength lives HERE and not on the texture because one texture is not one brightness. A
+    /// level's floodlight, its ceiling fitting and the lamp over its door all draw with the same page,
+    /// and a floodlight is not a reading lamp. Keying the strength by sub-mesh is what lets an authored
+    /// list say so.
+    /// </para>
     /// </param>
     public readonly record struct Lamps(
-        IReadOnlyDictionary<string, float> Textures,
-        IReadOnlySet<string> SubMeshes)
+        IReadOnlySet<string> Textures,
+        IReadOnlyDictionary<string, float> SubMeshes)
     {
         /// <summary>Gets the answer for a level that has no lamps.</summary>
         public static Lamps None { get; } = new(
-            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase),
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase));
+
+        /// <summary>Gets how many sub-meshes are lamps.</summary>
+        public int Count => SubMeshes?.Count ?? 0;
 
         /// <summary>The key a model's material slot is remembered by.</summary>
         /// <param name="instance">The drawing instance's name, as the pack records it.</param>
@@ -189,46 +196,83 @@ public static class LampDetector
         /// <param name="slot">The sub-mesh's material slot.</param>
         /// <returns><see langword="true"/> when this sub-mesh should draw as a lamp.</returns>
         public bool Contains(string? instance, int slot) =>
-            !string.IsNullOrEmpty(instance) && SubMeshes.Contains(Key(instance, slot));
+            SubMeshes is not null
+            && !string.IsNullOrEmpty(instance)
+            && SubMeshes.ContainsKey(Key(instance, slot));
+
+        /// <summary>How brightly one sub-mesh emits, as a multiple of its own albedo.</summary>
+        /// <param name="instance">The drawing instance's name.</param>
+        /// <param name="slot">The sub-mesh's material slot.</param>
+        /// <param name="strength">Receives the multiple when this sub-mesh is a lamp.</param>
+        /// <returns><see langword="true"/> when this sub-mesh is a lamp.</returns>
+        public bool TryGetStrength(string? instance, int slot, out float strength)
+        {
+            strength = 0f;
+
+            return SubMeshes is not null
+                && !string.IsNullOrEmpty(instance)
+                && SubMeshes.TryGetValue(Key(instance, slot), out strength);
+        }
     }
 
     /// <summary>Works out which of a level's sub-meshes are lamps.</summary>
     /// <param name="scene">The built world, walked for the shape of everything it draws.</param>
     /// <param name="resources">Where the diffuse textures are decoded from.</param>
+    /// <param name="named">
+    /// What a person has named by hand for this mission, which wins over anything inferred here. Empty
+    /// leaves the whole answer to the shape test.
+    /// </param>
     /// <param name="logger">Where the conclusion is reported, named rather than counted.</param>
     /// <returns>The lamps; <see cref="Lamps.None"/> when the level has none.</returns>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public static Lamps Detect(WorldScene scene, ResourceRegistry resources, IIgiLogger? logger = null)
+    public static Lamps Detect(
+        WorldScene scene,
+        ResourceRegistry resources,
+        IReadOnlyList<LampManifest.Entry>? named = null,
+        IIgiLogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(resources);
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<string, TextureLook> looks = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, float> textures = new(StringComparer.OrdinalIgnoreCase);
-        HashSet<string> subMeshes = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> textures = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, float> subMeshes = new(StringComparer.OrdinalIgnoreCase);
 
-        Confirm(scene, resources, looks, textures, subMeshes, log);
+        Confirm(scene, resources, looks, textures, subMeshes, named ?? [], log);
 
         return new Lamps(textures, subMeshes);
     }
 
-    /// <summary>The multiple of its own albedo that brings a texture to <see cref="LampRadiance"/>.</summary>
-    private static float Strength(float brightness) =>
-        Math.Clamp(LampRadiance / MathF.Max(brightness, 0.01f), 1f, MaximumStrength);
+    /// <summary>The multiple of its own albedo that brings a texture to a wanted radiance.</summary>
+    private static float Strength(float brightness, float radiance) =>
+        Math.Clamp(radiance / MathF.Max(brightness, 0.01f), 0.0625f, MaximumStrength);
 
     /// <summary>Walks the level for sub-meshes shaped like a ceiling lamp, and records them.</summary>
     private static void Confirm(
         WorldScene scene,
         ResourceRegistry resources,
         Dictionary<string, TextureLook> looks,
-        Dictionary<string, float> textures,
-        HashSet<string> subMeshes,
+        HashSet<string> textures,
+        Dictionary<string, float> subMeshes,
+        IReadOnlyList<LampManifest.Entry> named,
         IIgiLogger log)
     {
         Dictionary<MefModel, MeshGeometry?> built = [];
         HashSet<string> tested = new(StringComparer.OrdinalIgnoreCase);
         double ground = scene.GroundHeight;
+
+        // What a person said about each model, if anything. Looked up per sub-mesh below rather than
+        // applied afterwards, because an entry that names no texture wants the BRIGHTEST sub-mesh of its
+        // model, and that is only known while the model's sub-meshes are in front of us.
+        Dictionary<string, LampManifest.Entry> byModel = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, (string Key, string Texture, float Brightness)> brightestOf =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (LampManifest.Entry entry in named)
+        {
+            byModel[entry.Model] = entry;
+        }
 
         foreach (WorldPlacement placement in scene.Placements)
         {
@@ -266,11 +310,45 @@ public static class LampDetector
                     continue;
                 }
 
+                TextureLook look = Look(texture, resources, looks);
+
+                // A person's word first, and it does not have to argue with the shape test: the whole
+                // point of the list is that somebody LOOKED. A vending machine's lit panel is saturated
+                // and a monitor's screen is dark, so both fail the tests below, and both are named.
+                if (byModel.TryGetValue(placement.Instance.Name, out LampManifest.Entry entry))
+                {
+                    if (!entry.IsLamp)
+                    {
+                        // Struck out by hand. Nothing this class can work out overrules that.
+                        continue;
+                    }
+
+                    if (entry.Textures.Count == 0)
+                    {
+                        // No texture named, so the brightest sub-mesh of the model is the emitter -- which
+                        // is what a fitting looks like, its glass being the brightest thing on it. Held
+                        // and settled after the walk, because "brightest" is not known until all of the
+                        // model's sub-meshes have been seen.
+                        if (!brightestOf.TryGetValue(entry.Model, out var best) || look.Brightness > best.Brightness)
+                        {
+                            brightestOf[entry.Model] = (key, texture, look.Brightness);
+                        }
+
+                        continue;
+                    }
+
+                    if (entry.Textures.Contains(texture, StringComparer.OrdinalIgnoreCase))
+                    {
+                        subMeshes[key] = Strength(look.Brightness, entry.Radiance);
+                        textures.Add(texture);
+                    }
+
+                    continue;
+                }
+
                 // The cheap half of the test first: a texture that is dark or coloured is not a lamp
                 // whatever shape it is in, and deciding that costs one cached texture decode rather than a
                 // walk over every triangle of every instance in the level.
-                TextureLook look = Look(texture, resources, looks);
-
                 if (look.Brightness <= MinimumBrightness || look.Saturation >= MaximumSaturation)
                 {
                     continue;
@@ -278,20 +356,28 @@ public static class LampDetector
 
                 if (IsFixtureShaped(geometry, subset, placement, ground))
                 {
-                    subMeshes.Add(key);
-                    textures[texture] = Strength(look.Brightness);
+                    subMeshes[key] = Strength(look.Brightness, LampRadiance);
+                    textures.Add(texture);
                 }
             }
         }
 
-        // Named rather than counted. This is inferred from art that was never meant to be read this
-        // way, so the list is the first thing to check when a level lights wrongly.
+        // The named models that left the emitting sub-mesh to be chosen, now that every sub-mesh of each
+        // has been seen and the brightest is known.
+        foreach ((string model, (string key, string texture, float brightness)) in brightestOf)
+        {
+            subMeshes[key] = Strength(brightness, byModel[model].Radiance);
+            textures.Add(texture);
+        }
+
+        // Named rather than counted. Part of this is inferred from art that was never meant to be read
+        // this way, so the list is the first thing to check when a level lights wrongly.
         log.Information(
             LogCategory,
-            textures.Count > 0
-                ? $"Lamps: {subMeshes.Count} sub-mesh(es) drawing "
-                    + string.Join(", ", textures.Select(t => $"{t.Key} x{t.Value:0.#}"))
-                : "Nothing in this level is shaped like a light fixture.");
+            subMeshes.Count > 0
+                ? $"Lamps: {subMeshes.Count} sub-mesh(es) drawing {string.Join(", ", textures)}"
+                    + (named.Count > 0 ? $" ({named.Count} named by hand)." : ".")
+                : "Nothing in this level is a light fixture.");
     }
 
     /// <summary>Whether one sub-mesh, where it stands, is shaped and placed like a ceiling lamp.</summary>
@@ -516,6 +602,20 @@ public static class LampDetector
 
         return Look(texture, resources, new Dictionary<string, TextureLook>(StringComparer.OrdinalIgnoreCase))
             .Brightness;
+    }
+
+    /// <summary>How saturated a texture's own diffuse reads, 0 (grey) to 1.</summary>
+    /// <param name="texture">The texture's name, as the pack records it.</param>
+    /// <param name="resources">Where the diffuse textures are decoded from.</param>
+    /// <returns>The mean of <c>(max - min) / max</c> over the texels that are not nearly black.</returns>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    public static float Saturation(string texture, ResourceRegistry resources)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(texture);
+        ArgumentNullException.ThrowIfNull(resources);
+
+        return Look(texture, resources, new Dictionary<string, TextureLook>(StringComparer.OrdinalIgnoreCase))
+            .Saturation;
     }
 
     /// <summary>Gets the colour a fixture drawing the given texture should light with.</summary>

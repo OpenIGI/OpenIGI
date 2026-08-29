@@ -37,12 +37,13 @@ public static partial class LightFixtureStore
     /// leave it alone for a change that would not, and every edit anyone has made is kept.
     /// </para>
     /// <para>
-    /// 3: emission belongs to the sub-mesh that passed the shape test rather than to its texture, so the
-    /// file records which model and material slot each lamp is. 2 added the direction a fixture faces;
-    /// version 1 was a bare array, which is what an absent version reads as.
+    /// 4: each lamp sub-mesh carries its own emissive strength, so one texture can be a floodlight on
+    /// one model and a reading lamp on another. 3 moved emission from the texture to the sub-mesh, 2
+    /// added the direction a fixture faces, and version 1 was a bare array — which is what an absent
+    /// version reads as.
     /// </para>
     /// </remarks>
-    public const int Version = 3;
+    public const int Version = 4;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>
@@ -87,10 +88,10 @@ public static partial class LightFixtureStore
                     new Document
                     {
                         Version = Version,
-                        Emitters = lamps.Textures is null
+                        Textures = lamps.Textures is null ? [] : [.. lamps.Textures],
+                        SubMeshes = lamps.SubMeshes is null
                             ? []
-                            : new Dictionary<string, float>(lamps.Textures, StringComparer.OrdinalIgnoreCase),
-                        SubMeshes = lamps.SubMeshes is null ? [] : [.. lamps.SubMeshes],
+                            : new Dictionary<string, float>(lamps.SubMeshes, StringComparer.OrdinalIgnoreCase),
                         Fixtures = records,
                     },
                     LightFixtureJsonContext.Default.Document));
@@ -157,12 +158,12 @@ public static partial class LightFixtureStore
 
             fixtures = read;
             lamps = new LampDetector.Lamps(
-                new Dictionary<string, float>(document.Emitters ?? [], StringComparer.OrdinalIgnoreCase),
-                new HashSet<string>(document.SubMeshes ?? [], StringComparer.OrdinalIgnoreCase));
+                new HashSet<string>(document.Textures ?? [], StringComparer.OrdinalIgnoreCase),
+                new Dictionary<string, float>(document.SubMeshes ?? [], StringComparer.OrdinalIgnoreCase));
 
             log.Information(
                 LogCategory,
-                $"Read {read.Length} light fixture(s) and {lamps.SubMeshes.Count} lamp sub-mesh(es) from {path}.");
+                $"Read {read.Length} light fixture(s) and {lamps.Count} lamp sub-mesh(es) from {path}.");
             return true;
         }
         catch (Exception error) when (error is IOException or JsonException or NotSupportedException)
@@ -179,9 +180,9 @@ public static partial class LightFixtureStore
     {
         public int Version { get; init; }
 
-        public Dictionary<string, float>? Emitters { get; init; }
+        public string[]? Textures { get; init; }
 
-        public string[]? SubMeshes { get; init; }
+        public Dictionary<string, float>? SubMeshes { get; init; }
 
         public Record[]? Fixtures { get; init; }
     }

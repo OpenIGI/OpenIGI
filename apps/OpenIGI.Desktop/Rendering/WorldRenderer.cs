@@ -670,19 +670,22 @@ public sealed class WorldRenderer : IDisposable
                 // rather than inheriting the previous draw's, exactly as the inline loop did.
                 material = _materials.For(texture);
 
-                // ...but a DETECTED emitter only glows on the sub-mesh the detector actually judged to
-                // be a fixture. A texture is shared -- the page that skins a ceiling tube also skins the
-                // panel it hangs from and, in level 1, the side of an office cabinet -- so taking the
-                // texture as the answer glowed a whole garage soffit and put a flat white slab down that
-                // cabinet. Size alone does not save it either: the cabinet's panel is smaller than a
-                // fluorescent batten. Only the model and material slot the shape test passed will do.
+                // ...and whether this particular sub-mesh is a lamp, which is not a property of the
+                // texture. A texture is shared -- the page that skins a ceiling tube also skins the panel
+                // it hangs from and, in level 1, the side of an office cabinet -- so making a texture
+                // emissive glowed a whole garage soffit and put a flat white slab down that cabinet.
+                // Size alone does not save it either: the cabinet's panel is smaller than a fluorescent
+                // batten. Only the model and material slot the detector or the manifest named will do.
                 //
-                // Detected emission only. An authored emitter is somebody having looked at the surface,
-                // and a rule of thumb does not get to overrule that.
-                if (_materials.IsDetectedEmitter(texture)
-                    && !Lamps.Contains(displayed.Instance.Name, subset.MaterialSlot))
+                // The strength comes from there too, because one texture is not one brightness: a
+                // floodlight and the lamp over a door draw with the same page and are not the same light.
+                //
+                // Never over an authored material. A materials.json entry saying a surface glows is
+                // somebody having looked at it, and nothing worked out here overrules that.
+                if (material.Emissive <= 0f
+                    && Lamps.TryGetStrength(displayed.Instance.Name, subset.MaterialSlot, out float glow))
                 {
-                    material = material with { Emissive = 0f };
+                    material = material with { Emissive = glow };
                 }
             }
 
