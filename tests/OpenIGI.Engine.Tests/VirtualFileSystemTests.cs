@@ -165,6 +165,18 @@ public sealed class VirtualFileSystemTests : IDisposable
     }
 
     [Fact]
+    public void EnumeratesRetailFilesWithoutDependingOnHostCaseSensitivity()
+    {
+        Write("missions/level1/GRAPHS/GRAPH9.DAT", "graph");
+
+        VirtualFileSystem vfs = CreateFileSystem();
+
+        Assert.Equal(
+            ["LOCAL:missions/level1/GRAPHS/GRAPH9.DAT"],
+            vfs.EnumerateFiles("LOCAL:missions/level1/GRAPHS", "graph*.dat"));
+    }
+
+    [Fact]
     public void ConfinesDevicePathsToTheDeviceRoot()
     {
         var device = new LocalFileDevice(_root);
