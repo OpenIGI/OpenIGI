@@ -193,6 +193,23 @@ internal sealed class DayNightCycle
         Vector3f warmth = Lerp(Vector3f.One, new Vector3f(1f, 0.55f, 0.30f), lowSun);
         Vector3f colour = authored.Colour * warmth * daylight;
 
+        // The moon: the arc's anti-solar point, so it stands highest at midnight and rises as the sun
+        // sets. It takes the one directional slot only once the sun is fully faded -- the handover
+        // passes through a brief true dark just below the horizon rather than the two fighting over the
+        // light -- and it carries a hundredth of a sun, cool rather than the authored warm: enough for
+        // the adapted eye to read shape and for the moon to throw a shadow, never enough to read as
+        // day. Because it flows through the same direction and colour as the sun, the atmosphere, its
+        // irradiance harmonics, the cascades, the traced shadow and the surface-cache relight all see
+        // the same moon for free -- including the sky rendering as a faint glow about it, which is what
+        // a moonlit sky is. It also means the sun-shadow pipeline runs at night again; that is the
+        // price of a moon that casts.
+        float moonrise = Smoothstep(0.10f, 0.30f, -direction.Z);
+        if (moonrise > 0f)
+        {
+            direction = -direction;
+            colour = new Vector3f(0.009f, 0.010f, 0.013f) * moonrise;
+        }
+
         // The sky fill crosses from a faint blue night to the authored daytime ambient, so a night scene
         // reads as moonlit rather than lit by a sun that is no longer there.
         Vector3f nightAmbient = new(0.03f, 0.045f, 0.08f);
