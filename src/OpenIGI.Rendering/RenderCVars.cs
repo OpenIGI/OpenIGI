@@ -786,41 +786,6 @@ public static class RenderCVars
         // two minutes rather than a day.
         ultra: "1");
 
-    /// <summary>How many of the lamps reaching a pixel may cast a shadow on it.</summary>
-    /// <remarks>
-    /// <para>
-    /// The thing that bounds the traced shadows. A level submits up to sixty-four lamps, and OUTDOORS --
-    /// where their reaches overlap and no wall separates them -- most of those pass the range cull on
-    /// most pixels. Shadowing all of them is a hundred and twenty-eight rays per pixel, which measured
-    /// 207 ms of a 156 ms frame at 1440p. Work per pixel has to be bounded by a constant, not by how
-    /// many lamps a level happens to have.
-    /// </para>
-    /// <para>
-    /// Spent on the lamps that actually light the pixel, in the order the frame submits them — which is
-    /// sorted by how near each lamp is against its own reach, so the budget goes to the ones that matter
-    /// most here. The lamps past it are lit UNSHADOWED rather than dropped: they are the distant, weak
-    /// contributors by construction, and losing a shadow is a smaller error than losing the light.
-    /// </para>
-    /// <para>
-    /// Two costs about 0.8 ms at 1440p and is nearly indistinguishable from tracing every lamp — measured
-    /// against it on mission 1's interior, a maximum difference of 28 levels over 12,000 pixels, none of
-    /// it on the shadow the eye is looking at. Raise it in a level whose rooms carry many lamps of
-    /// similar strength; nought leaves the lamps unshadowed without turning the trace off.
-    /// </para>
-    /// </remarks>
-    public static readonly NumericCVar<int> LocalLightShadowLights = Presets.Define(
-        CVar.Int(
-            "r_local_light_shadow_lights",
-            2,
-            0,
-            8,
-            CVarOptions.Archive,
-            "How many lamps may cast a traced shadow on any one pixel. Bounds the cost; 0 is unshadowed."),
-        vanilla: "2",
-        enhanced: "2",
-        high: "2",
-        ultra: "2");
-
     /// <summary>The largest a fixture may be treated as when its shadow ray samples it, in metres.</summary>
     /// <remarks>
     /// <para>

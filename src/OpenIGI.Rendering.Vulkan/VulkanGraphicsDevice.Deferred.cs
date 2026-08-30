@@ -251,6 +251,13 @@ public sealed partial class VulkanGraphicsDevice
                 RecordBetweenPasses();
             }
 
+            // The lamps, separately from everything else that traces, and HERE rather than in
+            // RecordBetweenPasses. That runs when the geometry pass closes, and at ultra the screen-probe
+            // gather closes it early to read the G-buffer -- which is before the game has submitted this
+            // frame's lamps, so the trace saw a count of nought and quietly did nothing. This spot is
+            // after the lamps are known and still outside the render pass, which is what a dispatch needs.
+            DispatchLampShadow();
+
             BeginShadingPass();
             RecordLighting();
             _deferredStage = DeferredStage.Lighting;
@@ -1374,6 +1381,62 @@ public sealed partial class VulkanGraphicsDevice
         DispatchSunShadow();
     }
 
+    /// <summary>Traces how much of each pixel's chosen lamp reaches it, for the shading to read.</summary>
+    /// <remarks>
+    /// One ray per pixel at half resolution, whatever the level's lamp count -- see LampShadowPass for
+    /// why that is the shape rather than a ray per lamp inside the shading.
+    /// </remarks>
+    private unsafe void DispatchLampShadow()
+    {
+        if (_sceneTarget is null || _deferred.LampShadow is null)
+        {
+            return;
+        }
+
+        if (_localLightCount <= 0 || RenderCVars.LocalLightShadows.Value == 0)
+        {
+            return;
+        }
+
+        if (_worldScene is not { IsReady: true } scene || scene.TopLevel is not { } topLevel)
+        {
+            return;
+        }
+
+        Deferred.SceneTarget target = _sceneTarget;
+        CommandBuffer cmd = _frameCommandBuffer;
+
+        // The shading pass sampled this on the previous frame; separate that read from the write about
+        // to happen.
+        OcclusionBarrier(
+            cmd, target.LampVisibilityImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        int floats = DeferredRenderer.LampUniformSize / sizeof(float);
+        float* packed = stackalloc float[floats];
+        PackLamps(new Span<float>(packed, floats));
+
+        _deferred.LampShadow.Record(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.DepthView,
+            target.NormalView,
+            topLevel.Handle,
+            target.LampVisibilityView,
+            target.LampVisibilityWidth,
+            target.LampVisibilityHeight,
+            _viewToWorld,
+            _cameraPosition,
+            _unprojection,
+            (int)(_frameCounter % 64UL),
+            new ReadOnlySpan<float>(packed, floats));
+
+        // And back, so the shading can sample what was just written.
+        OcclusionBarrier(
+            cmd, target.LampVisibilityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
+    }
+
     /// <summary>Whether this frame's sun shadow comes from the ray query rather than the cascaded map.</summary>
     /// <remarks>
     /// The conditions <see cref="DispatchSunShadow"/> returns on, asked ahead of it: the cascades are
@@ -1720,7 +1783,7 @@ public sealed partial class VulkanGraphicsDevice
         _sceneTarget.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize,
             lamps.Handle, (ulong)DeferredRenderer.LampUniformSize,
-            TracedWorld(),
+            _device.Capabilities.RayQuery ? _sceneTarget.LampVisibilityView : default,
             giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
             new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
@@ -1764,10 +1827,20 @@ public sealed partial class VulkanGraphicsDevice
         int floats = DeferredRenderer.LampUniformSize / sizeof(float);
         float* u = stackalloc float[floats];
 
-        for (int i = 0; i < floats; i++)
-        {
-            u[i] = 0f;
-        }
+        PackLamps(new Span<float>(u, floats));
+        lamps.Write<float>(new ReadOnlySpan<float>(u, floats));
+        return lamps;
+    }
+
+    /// <summary>Packs this frame's lamps into the layout both the trace and the shading read.</summary>
+    /// <remarks>
+    /// One routine for both, because they have to agree about which lamp is which: the trace picks a
+    /// lamp by index and the shading applies the answer to the same index, and a layout that drifted
+    /// between them would shadow one lamp with another's occlusion.
+    /// </remarks>
+    private void PackLamps(Span<float> u)
+    {
+        u.Clear();
 
         u[0] = _localLightCount;
 
@@ -1779,10 +1852,9 @@ public sealed partial class VulkanGraphicsDevice
         // the dither only needs the pattern to differ from the last frame's, not to never repeat.
         u[2] = _frameCounter % 64UL;
 
-        // How many of the lamps reaching a pixel may cast a shadow there. See r_local_light_shadow_lights
-        // for why the work per pixel has to be bounded by a constant rather than by the level's lamp
-        // count.
-        u[3] = Math.Max(RenderCVars.LocalLightShadowLights.Value, 0);
+        // u[3] is spare. It carried a per-pixel budget on how many lamps could be shadowed, which the
+        // reservoir replaces outright: one ray covers every lamp, so there is no longer a number of them
+        // to choose.
 
         u[1] = _localLightCount > 0
             && RenderCVars.LocalLightShadows.Value != 0
@@ -1826,8 +1898,6 @@ public sealed partial class VulkanGraphicsDevice
             u[direction + at + 3] = light.SourceRadius;
         }
 
-        lamps.Write<float>(new ReadOnlySpan<float>(u, floats));
-        return lamps;
     }
 
     /// <inheritdoc/>

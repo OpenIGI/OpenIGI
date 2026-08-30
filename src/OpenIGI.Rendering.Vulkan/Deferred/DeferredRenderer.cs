@@ -36,6 +36,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly RayTracedShadowPass? _sunShadow;
     private readonly ShadowDenoisePass? _sunShadowDenoise;
     private readonly ShadowAccumulatePass? _sunShadowAccumulate;
+    private readonly LampShadowPass? _lampShadow;
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
@@ -122,6 +123,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             : null;
         _sunShadowAccumulate = _rayQuery
             ? new ShadowAccumulatePass(vk, device, allocator, compiler, framesInFlight)
+            : null;
+        _lampShadow = _rayQuery
+            ? new LampShadowPass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         _lampUniforms = new VulkanBuffer[framesInFlight];
@@ -270,6 +274,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>Gets the pass that averages the traced sun shadow over time, if the adapter can trace.</summary>
     public ShadowAccumulatePass? SunShadowAccumulate => _sunShadowAccumulate;
+
+    /// <summary>Gets the pass that traces one lamp shadow ray per pixel, if the adapter can trace.</summary>
+    public LampShadowPass? LampShadow => _lampShadow;
 
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
@@ -458,15 +465,15 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             StageFlags = ShaderStageFlags.FragmentBit,
         };
 
-        // And the traced world, so those lamps can be shadowed the way the sun is. Only where the
-        // adapter can trace: the layout has to match a shader that cannot even name an acceleration
-        // structure without ray query, so the binding is absent rather than unused.
+        // And how much of each pixel's lamp reaches it, traced once per pixel by its own pass rather
+        // than once per lamp inside the shading. Only where the adapter can trace: without ray query
+        // there is no pass to write it and the shading has no term to read.
         if (_rayQuery)
         {
             bindings[18] = new DescriptorSetLayoutBinding
             {
                 Binding = 18,
-                DescriptorType = DescriptorType.AccelerationStructureKhr,
+                DescriptorType = DescriptorType.CombinedImageSampler,
                 DescriptorCount = 1,
                 StageFlags = ShaderStageFlags.FragmentBit,
             };
@@ -524,10 +531,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // The two resolve sets — the raw lit and the temporally-resolved — each carry one sampler.
         sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 4) };
 
-        // The traced world each lighting set shadows its lamps against, where the adapter can trace.
+        // The lamp visibility each lighting set reads, where the adapter can trace one.
         sizes[4] = new DescriptorPoolSize
         {
-            Type = DescriptorType.AccelerationStructureKhr,
+            Type = DescriptorType.CombinedImageSampler,
             DescriptorCount = (uint)(framesInFlight * 2),
         };
 
