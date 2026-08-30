@@ -4739,6 +4739,15 @@ internal sealed partial class DesktopGame : IDisposable
                         // while r_rt is off, and neither means anything with shadows turned off.
                         I($"shadow   {ShadowModeLabel()}"),
                         I($"fps {frame.FramesPerSecond:0.0}  frame {frame.AverageMilliseconds:0.00} ms  1% {frame.OnePercentLowFramesPerSecond:0.0}"),
+
+                        // The whole GPU frame measured end to end, against the sum of the stages listed
+                        // below it. Everything else on this overlay is built from those stages, so a pass
+                        // recorded outside every one of them shows up nowhere -- and a millisecond of lamp
+                        // shadow did exactly that for a whole session while this panel read as though the
+                        // lamps were free. "lost" is that difference: a few hundredths is the timestamps'
+                        // own overhead, anything more is real work with nobody's name on it.
+                        MeasuredFrameLine(_device, gpu),
+
                         "gpu ms   avg    p95   peak  budget",
                     ];
                     foreach (RenderStageTiming timing in timings)
@@ -4986,6 +4995,7 @@ internal sealed partial class DesktopGame : IDisposable
                 frame.SampleCount,
                 gpu.Milliseconds,
                 gpu.P95Milliseconds,
+                _device.GpuMeasuredTiming().Milliseconds,
                 gpuStages.ToArray());
 
             string? benchmarkDirectory = Path.GetDirectoryName(Path.GetFullPath(benchmarkPath));
@@ -5248,6 +5258,26 @@ internal sealed partial class DesktopGame : IDisposable
     /// trace, and neither means anything with shadows turned off. Reporting the cvar rather than the
     /// consequence is how someone ends up comparing two shadows they believe came from different systems.
     /// </remarks>
+    /// <summary>The overlay's line comparing the measured GPU frame against the sum of its stages.</summary>
+    /// <remarks>
+    /// Reports "not measured" rather than a zero on a backend with no frame bracket, because a zero
+    /// difference and an absent measurement mean opposite things and the whole point of the line is that
+    /// it can be believed.
+    /// </remarks>
+    private static string MeasuredFrameLine(IGraphicsDevice device, GpuFrameTiming summed)
+    {
+        GpuFrameTiming measured = device.GpuMeasuredTiming();
+
+        if (measured.Milliseconds <= 0.0)
+        {
+            return FormattableString.Invariant(
+                $"gpu      {summed.Milliseconds:0.00} ms summed   (frame not measured)");
+        }
+
+        return FormattableString.Invariant(
+            $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
+    }
+
     private string ShadowModeLabel()
     {
         bool enabled = RenderCVars.Shadows.Value > 0

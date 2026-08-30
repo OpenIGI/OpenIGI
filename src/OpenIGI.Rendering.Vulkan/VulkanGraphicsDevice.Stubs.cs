@@ -283,4 +283,7 @@ public sealed partial class VulkanGraphicsDevice
 
     /// <inheritdoc/>
     public GpuFrameTiming GpuTiming() => _stageProfiler?.TotalTiming() ?? default;
+
+    /// <inheritdoc/>
+    public GpuFrameTiming GpuMeasuredTiming() => _stageProfiler?.MeasuredTiming() ?? default;
 }

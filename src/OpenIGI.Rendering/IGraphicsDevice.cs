@@ -853,6 +853,22 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets the rolling distribution of total timed GPU work per completed frame.</summary>
     GpuFrameTiming GpuTiming();
 
+    /// <summary>Gets the whole GPU frame measured end to end, rather than summed from its stages.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="GpuTiming"/> adds up the stages, so it can only report work somebody remembered to
+    /// bracket. A pass recorded outside every stage scope contributes to nothing and costs real time, and
+    /// the totals stay quietly wrong -- which is how a millisecond of lamp-shadow tracing read as free
+    /// here for an entire session. This is a single timestamp pair around the frame's whole command
+    /// buffer, so the difference between the two is precisely the work no stage claims.
+    /// </para>
+    /// <para>
+    /// Zero on a backend that does not measure it, which is how a caller should tell "no untimed work"
+    /// (a small difference) from "not measured" (zero).
+    /// </para>
+    /// </remarks>
+    GpuFrameTiming GpuMeasuredTiming() => default;
+
     /// <summary>Creates one asynchronous occlusion query.</summary>
     OcclusionQueryHandle CreateOcclusionQuery();
 

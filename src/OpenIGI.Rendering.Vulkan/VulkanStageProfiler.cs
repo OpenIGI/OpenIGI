@@ -40,6 +40,12 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
     // (roughly twenty stages, a few of them more than once), so this is comfortable headroom.
     private const int SlotCapacity = 128;
 
+    // The first two queries of every slot's block are the frame bracket -- the whole GPU frame, start to
+    // finish -- so the stage ranges begin after them.
+    private const int FrameStartQuery = 0;
+    private const int FrameEndQuery = 1;
+    private const int FirstStageQuery = 2;
+
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly double _periodMilliseconds;
@@ -55,6 +61,14 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
     private readonly Queue<double> _totalSamples = new(RollingSamples);
     private double _totalSampleSum;
     private double _totalPeak;
+
+    // The whole frame, measured rather than added up. See MeasuredTiming for why the difference between
+    // this and the sum of the stages is the number that matters.
+    private readonly Queue<double> _measuredSamples = new(RollingSamples);
+    private double _measuredSampleSum;
+    private double _measuredPeak;
+    private double _frameMeasured;
+    private readonly bool[] _slotFramed;
 
     // A frame's per-stage sums, reused as each slot's results are read back.
     private readonly double[] _frameStage = new double[StageCount];
@@ -95,6 +109,7 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
         _slotOpen = new bool[framesInFlight];
         _slotOpenStage = new RenderStage[framesInFlight];
         _slotOpenStart = new uint[framesInFlight];
+        _slotFramed = new bool[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
             _slotRanges[i] = [];
@@ -166,10 +181,43 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
         }
 
         _slotRanges[slot].Clear();
-        _slotNext[slot] = 0;
+        _slotNext[slot] = FirstStageQuery;
         _slotOpen[slot] = false;
+        _slotFramed[slot] = false;
 
         _vk.CmdResetQueryPool(commandBuffer, _pool, (uint)(slot * SlotCapacity), (uint)SlotCapacity);
+
+        // The frame's opening timestamp, written straight after the reset so everything this frame asks
+        // the GPU to do falls inside the bracket -- including whatever no stage happens to bracket.
+        _vk.CmdWriteTimestamp(
+            commandBuffer,
+            PipelineStageFlags.TopOfPipeBit,
+            _pool,
+            (uint)((slot * SlotCapacity) + FrameStartQuery));
+        _slotFramed[slot] = true;
+    }
+
+    /// <summary>Closes the frame's own bracket, immediately before the command buffer is ended.</summary>
+    /// <param name="commandBuffer">The frame's command buffer, still open.</param>
+    /// <param name="slot">The in-flight slot this frame owns.</param>
+    /// <remarks>
+    /// The pair to the timestamp <see cref="BeginFrame"/> writes. Without it the only figure for a frame
+    /// is the sum of its stages, which can only ever report the work somebody remembered to bracket --
+    /// so a pass added outside every scope costs real milliseconds and reads as nothing at all. That has
+    /// happened here at least once.
+    /// </remarks>
+    public void EndFrame(CommandBuffer commandBuffer, int slot)
+    {
+        if (_disposed || !_enabled || !_slotFramed[slot])
+        {
+            return;
+        }
+
+        _vk.CmdWriteTimestamp(
+            commandBuffer,
+            PipelineStageFlags.BottomOfPipeBit,
+            _pool,
+            (uint)((slot * SlotCapacity) + FrameEndQuery));
     }
 
     /// <summary>Gets the stage currently being timed on <paramref name="slot"/>, or null if none is.</summary>
@@ -246,6 +294,28 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
         return _report;
     }
 
+    /// <summary>Gets the whole GPU frame as measured end to end, not as a sum of what was bracketed.</summary>
+    /// <remarks>
+    /// The one figure that can see work nobody timed. Everything else this class reports is built out of
+    /// the stage ranges, so a pass recorded outside every range contributes to none of them and the
+    /// totals stay quietly wrong -- which is exactly how a millisecond of lamp-shadow tracing read as
+    /// free for a whole session. Subtract <see cref="TotalTiming"/> from this and the remainder is work
+    /// the GPU did that no stage claims.
+    /// </remarks>
+    public GpuFrameTiming MeasuredTiming()
+    {
+        if (_measuredSamples.Count == 0)
+        {
+            return default;
+        }
+
+        return new(
+            _measuredSampleSum / _measuredSamples.Count,
+            PerformanceStatistics.Percentile(_measuredSamples.ToArray(), 0.95),
+            _measuredPeak,
+            _measuredSamples.Count);
+    }
+
     /// <summary>Gets the distribution of the per-frame sum, rather than a sum of stage percentiles.</summary>
     public GpuFrameTiming TotalTiming()
     {
@@ -304,6 +374,16 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
         }
 
         Array.Clear(_frameStage);
+
+        // The frame's own bracket, before the stages. A slot that never closed its bracket -- the very
+        // first frame on a slot, or timing switched on mid-frame -- reports nothing rather than a
+        // difference against an unwritten query.
+        _frameMeasured = 0.0;
+        if (_slotFramed[slot] && count > FrameEndQuery && _readback[FrameEndQuery] > _readback[FrameStartQuery])
+        {
+            _frameMeasured = (_readback[FrameEndQuery] - _readback[FrameStartQuery]) * _periodMilliseconds;
+        }
+
         bool anyRan = false;
         foreach (Range range in _slotRanges[slot])
         {
@@ -373,6 +453,18 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
             _totalSamples.Enqueue(gpuTotal);
             _totalSampleSum += gpuTotal;
             _totalPeak = Math.Max(_totalPeak, gpuTotal);
+
+            if (_frameMeasured > 0.0)
+            {
+                if (_measuredSamples.Count == RollingSamples)
+                {
+                    _measuredSampleSum -= _measuredSamples.Dequeue();
+                }
+
+                _measuredSamples.Enqueue(_frameMeasured);
+                _measuredSampleSum += _frameMeasured;
+                _measuredPeak = Math.Max(_measuredPeak, _frameMeasured);
+            }
         }
 
         _ = anyRan;
@@ -395,6 +487,10 @@ internal sealed unsafe class VulkanStageProfiler : IDisposable
         _totalSamples.Clear();
         _totalSampleSum = 0.0;
         _totalPeak = 0.0;
+        _measuredSamples.Clear();
+        _measuredSampleSum = 0.0;
+        _measuredPeak = 0.0;
+        _frameMeasured = 0.0;
         _readFrames = 0;
 
         for (int i = 0; i < _slots; i++)

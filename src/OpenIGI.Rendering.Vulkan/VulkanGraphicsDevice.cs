@@ -430,6 +430,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             RecordBackbufferCapture();
         }
 
+        // The closing half of the frame's own GPU bracket, after every pass has recorded and before the
+        // buffer is ended. What it measures against the sum of the stages is the work no stage claims.
+        _stageProfiler?.EndFrame(_frameCommandBuffer, _frameLoop.CurrentFrame);
+
         bool presented = _frameLoop.EndFrame(_frameImageIndex);
         _frameOpen = false;
         if (presented)
