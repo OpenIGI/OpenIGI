@@ -1707,7 +1707,7 @@ internal sealed partial class DesktopGame
         }
     }
 
-    /// <summary>Applies one retail-style contact shock and reports it to nearby AI.</summary>
+    /// <summary>Applies one native electric-fence shock after the player's 45-tick guard permits it.</summary>
     private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence)
     {
         if (_playerHealth.IsDead)
@@ -1734,20 +1734,12 @@ internal sealed partial class DesktopGame
         }
 
         _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
-        if (_loop.Clock.TickCount >= _playerHitQuietUntil)
+        if (!shock.IsLethal)
         {
-            _playerHitQuietUntil = _loop.Clock.TickCount + HumanVariantSound.HitCooldownTicks(_soundRandom);
-            PlayHitSound(HumanVariantSound.PlayerHitPrefix, HumanVariantSound.PlayerHitVariants, null);
+            // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.
+            _sounds?.PlayDefinition("elfence_spark1", priority: 250);
         }
 
-        Action<Vector3d, Vector3d, double>? notifyGroundImpact = _soldiers is { } soldiers
-            ? soldiers.NotifyGroundImpact
-            : null;
-        ElectricFenceContact.NotifyAiOnShock(
-            shock,
-            notifyGroundImpact,
-            fence.Anchor,
-            player.Body.Position);
         _logger.Information(
             "Player",
             $"Electric fence shock dealt {dealt:F3} ({_playerHealth.RemainingFraction:P0} left).");

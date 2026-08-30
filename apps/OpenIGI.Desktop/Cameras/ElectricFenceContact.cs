@@ -1,5 +1,3 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 
 namespace OpenIGI.Desktop;
@@ -7,63 +5,67 @@ namespace OpenIGI.Desktop;
 /// <summary>The result of the port's current electric-fence contact rule.</summary>
 internal readonly record struct ElectricFenceShock(float Damage, bool IsLethal);
 
-/// <summary>Small, testable pieces of player electric-fence contact handling.</summary>
+/// <summary>Retail electric-fence contact handling for the player.</summary>
 /// <remarks>
 /// <para>
-/// <see cref="DamageFactor"/> and <see cref="Zone"/> deliberately preserve the existing port
-/// behavior. They are not a claim that the retail fence uses this damage factor or hit zone: that
-/// requires the mandated IGI1 <c>IGI.EXE</c> Ghidra+r2 validation, which is unavailable to this
-/// implementation environment.
+/// The powered fence callback at <c>0x43FF70</c> dispatches to the HumanPlayer handler at
+/// <c>0x412F80</c>. That handler selects zone 13, adds the HumanPlayer QVM argument-8 dose directly
+/// (retail <c>0.5</c>; the player zone's multiplier is one), and writes a 45-tick guard. The player
+/// update decrements that guard once per tick through <c>0x4113C0</c>.
 /// </para>
 /// <para>
-/// Keeping the rule here makes its health, transition and notification behavior regressible without
+/// The handler does not pass through generic hit damage or difficulty scaling, and it does not post a
+/// soldier ground-impact event. Keeping the rule here makes that behavior regressible without
 /// broadening the desktop game's private mission bootstrap into a test API.
 /// </para>
 /// </remarks>
 internal static class ElectricFenceContact
 {
-    /// <summary>The currently ported fence-contact damage factor, pending retail validation.</summary>
-    internal const float DamageFactor = 0.1f;
+    /// <summary>HumanPlayer QVM argument 8, used by the native fence-contact handler.</summary>
+    internal const float DamageFactor = 0.5f;
 
-    /// <summary>The currently ported fence-contact hit zone, pending retail validation.</summary>
+    /// <summary>The native fence-contact bookkeeping zone.</summary>
     internal const int Zone = HumanDamage.FrontZone;
 
+    /// <summary>Native fence-contact lockout written by <c>0x412F80</c>.</summary>
+    internal const int CooldownTicks = 45;
+
     /// <summary>
-    /// Records an observed contact and returns it only when the player has newly entered that contact.
+    /// Advances the native per-player shock guard and returns the observed fence when it may deal damage.
     /// </summary>
-    internal static T? Advance<T>(ref T? activeContact, T? observedContact)
+    internal static T? Advance<T>(ref int cooldownTicks, T? observedContact)
         where T : class
     {
-        if (ReferenceEquals(activeContact, observedContact))
+        if (cooldownTicks > 0)
+        {
+            cooldownTicks--;
+        }
+
+        return TryShock(ref cooldownTicks, observedContact);
+    }
+
+    /// <summary>Returns a fence only when the native per-player shock guard has expired.</summary>
+    /// <remarks>
+    /// This is used by an explicit fence interaction, which happens outside the ordinary movement
+    /// contact update and therefore must not decrement the once-per-tick guard itself.
+    /// </remarks>
+    internal static T? TryShock<T>(ref int cooldownTicks, T? observedContact)
+        where T : class
+    {
+        if (observedContact is null || cooldownTicks > 0)
         {
             return null;
         }
 
-        activeContact = observedContact;
+        cooldownTicks = CooldownTicks;
         return observedContact;
     }
 
-    /// <summary>Applies the current ported shock through the ordinary player health path.</summary>
+    /// <summary>Applies the native direct health dose, bypassing generic hit and difficulty scaling.</summary>
     internal static ElectricFenceShock Shock(HumanHealth health)
     {
         ArgumentNullException.ThrowIfNull(health);
-        float damage = health.Apply(Zone, DamageFactor);
+        float damage = health.ApplyDirect(Zone, DamageFactor);
         return new ElectricFenceShock(damage, health.IsDead);
-    }
-
-    /// <summary>Posts a damaging shock as a normal ground-impact event for nearby AI.</summary>
-    internal static void NotifyAiOnShock(
-        ElectricFenceShock shock,
-        Action<Vector3d, Vector3d, double>? notifyGroundImpact,
-        Vector3d fenceAnchor,
-        Vector3d playerPosition)
-    {
-        if (shock.Damage > 0f)
-        {
-            notifyGroundImpact?.Invoke(
-                fenceAnchor,
-                playerPosition,
-                AiSoldier.GroundImpactRadiusInUnits);
-        }
     }
 }

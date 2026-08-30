@@ -1,20 +1,16 @@
-using OpenIGI.Core.Numerics;
-using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
 
-/// <summary>Regression coverage for the port's current, not-yet-retail-validated fence-contact rule.</summary>
+/// <summary>Regression coverage for the retail-validated player electric-fence rule.</summary>
 public sealed class ElectricFenceContactTests
 {
     [Theory]
-    [InlineData(0, 0.75f)]
-    [InlineData(1, 1.00f)]
-    [InlineData(2, 1.25f)]
-    public void ShockUsesThePlayerHealthPathForItsCurrentZoneAndDifficulty(
-        int difficulty,
-        float expectedDifficultyScale)
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ShockUsesTheNativeDirectZone13DoseWithoutDifficultyScaling(int difficulty)
     {
         HumanHitZone[] zones = ZonesWithDistinctFrontMultiplier();
         HumanHealth health = new(zones, maximumHealth: 3f)
@@ -23,13 +19,11 @@ public sealed class ElectricFenceContactTests
         };
 
         ElectricFenceShock shock = ElectricFenceContact.Shock(health);
-        float expectedDamage = zones[HumanDamage.FrontZone].Multiplier
-            * ElectricFenceContact.DamageFactor
-            * expectedDifficultyScale;
 
         Assert.Equal(HumanDamage.FrontZone, ElectricFenceContact.Zone);
-        Assert.Equal(expectedDamage, shock.Damage, precision: 6);
-        Assert.Equal(expectedDamage, health.Damage, precision: 6);
+        Assert.Equal(0.5f, ElectricFenceContact.DamageFactor);
+        Assert.Equal(ElectricFenceContact.DamageFactor, shock.Damage, precision: 6);
+        Assert.Equal(ElectricFenceContact.DamageFactor, health.Damage, precision: 6);
         Assert.Equal(1, health.Hits);
         Assert.False(shock.IsLethal);
     }
@@ -38,7 +32,7 @@ public sealed class ElectricFenceContactTests
     public void ShockReportsLethalityAtTheHumanHealthThreshold()
     {
         HumanHitZone[] zones = ZonesWithDistinctFrontMultiplier();
-        float damage = zones[HumanDamage.FrontZone].Multiplier * ElectricFenceContact.DamageFactor;
+        float damage = ElectricFenceContact.DamageFactor;
         HumanHealth health = new(zones, maximumHealth: damage);
 
         ElectricFenceShock shock = ElectricFenceContact.Shock(health);
@@ -49,41 +43,36 @@ public sealed class ElectricFenceContactTests
     }
 
     [Fact]
-    public void ContactTransitionReportsOnlyEntryAndAllowsReentry()
+    public void SustainedContactShocksAgainEveryFortyFiveTicks()
     {
-        object firstFence = new();
-        object secondFence = new();
-        object? active = null;
+        object fence = new();
+        int cooldown = 0;
 
-        Assert.Same(firstFence, ElectricFenceContact.Advance(ref active, firstFence));
-        Assert.Null(ElectricFenceContact.Advance(ref active, firstFence));
-        Assert.Same(secondFence, ElectricFenceContact.Advance(ref active, secondFence));
-        Assert.Null(ElectricFenceContact.Advance<object>(ref active, null));
-        Assert.Same(firstFence, ElectricFenceContact.Advance(ref active, firstFence));
+        Assert.Same(fence, ElectricFenceContact.Advance(ref cooldown, fence));
+        Assert.Equal(ElectricFenceContact.CooldownTicks, cooldown);
+
+        for (int tick = 1; tick < ElectricFenceContact.CooldownTicks; tick++)
+        {
+            Assert.Null(ElectricFenceContact.Advance(ref cooldown, fence));
+            Assert.Equal(ElectricFenceContact.CooldownTicks - tick, cooldown);
+        }
+
+        Assert.Same(fence, ElectricFenceContact.Advance(ref cooldown, fence));
+        Assert.Equal(ElectricFenceContact.CooldownTicks, cooldown);
     }
 
     [Fact]
-    public void DamagingShockNotifiesAiWithTheFenceAnchorAndGroundImpactRadius()
+    public void CooldownPersistsAfterLeavingTheFence()
     {
-        Vector3d anchor = new(100, 200, 300);
-        Vector3d player = new(-10, -20, -30);
-        (Vector3d Impact, Vector3d Player, double Radius)? notification = null;
+        object firstFence = new();
+        object secondFence = new();
+        int cooldown = 0;
 
-        ElectricFenceContact.NotifyAiOnShock(
-            new ElectricFenceShock(0.1f, IsLethal: false),
-            (impact, source, radius) => notification = (impact, source, radius),
-            anchor,
-            player);
-
-        Assert.Equal((anchor, player, AiSoldier.GroundImpactRadiusInUnits), notification);
-
-        notification = null;
-        ElectricFenceContact.NotifyAiOnShock(
-            new ElectricFenceShock(0f, IsLethal: false),
-            (impact, source, radius) => notification = (impact, source, radius),
-            anchor,
-            player);
-        Assert.Null(notification);
+        Assert.Same(firstFence, ElectricFenceContact.Advance(ref cooldown, firstFence));
+        Assert.Null(ElectricFenceContact.Advance<object>(ref cooldown, null));
+        Assert.Equal(ElectricFenceContact.CooldownTicks - 1, cooldown);
+        Assert.Null(ElectricFenceContact.TryShock(ref cooldown, secondFence));
+        Assert.Equal(ElectricFenceContact.CooldownTicks - 1, cooldown);
     }
 
     private static HumanHitZone[] ZonesWithDistinctFrontMultiplier()

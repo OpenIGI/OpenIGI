@@ -85,7 +85,7 @@ public sealed class PlayerCamera
     private int _interactionTick;
     private bool _interactionUseArmed;
     private Vector3d _fenceExitPosition;
-    private WorldInteraction? _electricFenceContact;
+    private int _electricFenceCooldown;
     private float _interactionFacing;
     private Vector3d _wireDirection;
     private double _wireSpeed;
@@ -702,7 +702,7 @@ public sealed class PlayerCamera
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
 
-    /// <summary>Raised once when the player touches a powered electric fence.</summary>
+    /// <summary>Raised when a powered electric fence contact passes the retail 45-tick guard.</summary>
     public event Action<WorldInteraction>? ElectrifiedFenceTouched;
 
     /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
@@ -999,7 +999,7 @@ public sealed class PlayerCamera
         WorldInteraction? electricFence = _interactions?.FindElectrifiedFenceContact(
             previousPosition,
             _body.Position);
-        if (ElectricFenceContact.Advance(ref _electricFenceContact, electricFence) is { } touchedFence)
+        if (ElectricFenceContact.Advance(ref _electricFenceCooldown, electricFence) is { } touchedFence)
         {
             ElectrifiedFenceTouched?.Invoke(touchedFence);
         }
@@ -1126,8 +1126,10 @@ public sealed class PlayerCamera
                 }
                 if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
                 {
-                    _electricFenceContact = interaction;
-                    ElectrifiedFenceTouched?.Invoke(interaction);
+                    if (ElectricFenceContact.TryShock(ref _electricFenceCooldown, interaction) is { } touchedFence)
+                    {
+                        ElectrifiedFenceTouched?.Invoke(touchedFence);
+                    }
                 }
                 break;
         }
