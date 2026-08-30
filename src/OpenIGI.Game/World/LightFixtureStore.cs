@@ -37,15 +37,13 @@ public static partial class LightFixtureStore
     /// leave it alone for a change that would not, and every edit anyone has made is kept.
     /// </para>
     /// <para>
-    /// 6: a fixture carries the radiance of its own surface, which is what lights the room — the same
-    /// number that makes it glow, rather than a power derived from its area. 5: a fixture is a
-    /// RECTANGLE — it carries the long axis it lies along and its two half-sizes, so it can be lit as
-    /// the area it is rather than as a point. 4 gave each lamp sub-mesh its own
-    /// strength, 3 moved emission from the texture to the sub-mesh, 2 added the direction a fixture
-    /// faces, and version 1 was a bare array — which is what an absent version reads as.
+    /// 4: each lamp sub-mesh carries its own emissive strength, so one texture can be a floodlight on
+    /// one model and a reading lamp on another. 3 moved emission from the texture to the sub-mesh, 2
+    /// added the direction a fixture faces, and version 1 was a bare array — which is what an absent
+    /// version reads as.
     /// </para>
     /// </remarks>
-    public const int Version = 6;
+    public const int Version = 4;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>
@@ -90,9 +88,7 @@ public static partial class LightFixtureStore
                     new Document
                     {
                         Version = Version,
-                        Textures = lamps.Textures is null
-                            ? []
-                            : new Dictionary<string, float>(lamps.Textures, StringComparer.OrdinalIgnoreCase),
+                        Textures = lamps.Textures is null ? [] : [.. lamps.Textures],
                         SubMeshes = lamps.SubMeshes is null
                             ? []
                             : new Dictionary<string, float>(lamps.SubMeshes, StringComparer.OrdinalIgnoreCase),
@@ -162,7 +158,7 @@ public static partial class LightFixtureStore
 
             fixtures = read;
             lamps = new LampDetector.Lamps(
-                new Dictionary<string, float>(document.Textures ?? [], StringComparer.OrdinalIgnoreCase),
+                new HashSet<string>(document.Textures ?? [], StringComparer.OrdinalIgnoreCase),
                 new Dictionary<string, float>(document.SubMeshes ?? [], StringComparer.OrdinalIgnoreCase));
 
             log.Information(
@@ -184,7 +180,7 @@ public static partial class LightFixtureStore
     {
         public int Version { get; init; }
 
-        public Dictionary<string, float>? Textures { get; init; }
+        public string[]? Textures { get; init; }
 
         public Dictionary<string, float>? SubMeshes { get; init; }
 
@@ -222,18 +218,6 @@ public static partial class LightFixtureStore
 
         public float DirectionZ { get; init; }
 
-        public float TangentX { get; init; }
-
-        public float TangentY { get; init; }
-
-        public float TangentZ { get; init; }
-
-        public float HalfWidth { get; init; }
-
-        public float HalfHeight { get; init; }
-
-        public float Radiance { get; init; }
-
         public static Record From(LightFixture fixture) => new()
         {
             Texture = fixture.Texture,
@@ -250,12 +234,6 @@ public static partial class LightFixtureStore
             DirectionX = fixture.Direction.X,
             DirectionY = fixture.Direction.Y,
             DirectionZ = fixture.Direction.Z,
-            TangentX = fixture.Tangent.X,
-            TangentY = fixture.Tangent.Y,
-            TangentZ = fixture.Tangent.Z,
-            HalfWidth = fixture.HalfWidth,
-            HalfHeight = fixture.HalfHeight,
-            Radiance = fixture.Radiance,
         };
 
         public LightFixture ToFixture() => new(
@@ -266,11 +244,7 @@ public static partial class LightFixtureStore
             Area,
             Extent,
             TriangleCount,
-            new Vector3f(DirectionX, DirectionY, DirectionZ),
-            new Vector3f(TangentX, TangentY, TangentZ),
-            HalfWidth,
-            HalfHeight,
-            Radiance);
+            new Vector3f(DirectionX, DirectionY, DirectionZ));
     }
 
     [JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.Never)]

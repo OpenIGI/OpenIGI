@@ -3867,14 +3867,12 @@ internal sealed partial class DesktopGame : IDisposable
                         int lampIndex = _localLightOrder[i];
                         float output = _lampSwitchboard?.LevelOf(lampIndex) ?? 1f;
 
-                        // The RADIANCE of the fitting's surface, which is the same number that makes its
-                        // geometry glow. Not the area-weighted intensity that used to be here: that is a
-                        // power, which was the right quantity against a falloff of one over distance
-                        // squared and is the wrong one against a real solid angle -- the fixture's size
-                        // is already inside the integral, so multiplying by its area again counts it
-                        // twice. The clamp that went with it is gone too: a bigger fitting SHOULD give
-                        // more light, and now does, by subtending more sky rather than by being scaled.
-                        float intensity = fixture.Radiance * localLightScale * output;
+                        // Clamp the fixture's relative intensity before scaling. Intensity is area x
+                        // luminance, so a long fluorescent tube (area ~9) would outpower a desk lamp
+                        // (area ~0.5) sixteen to one and blow the room out around it -- but a bigger lamp
+                        // is not sixteen times brighter, only larger. The clamp flattens that to something
+                        // like real fixtures; the scale cvar then sets the overall level.
+                        float intensity = MathF.Min(fixture.Intensity, 1.5f) * localLightScale * output;
 
                         // A cooling filament is a colder black body and therefore a redder one, which is
                         // the last thing anybody sees of a light going out. White whenever the lamp is
@@ -3893,26 +3891,18 @@ internal sealed partial class DesktopGame : IDisposable
                             ? worldToView.Transform(fixture.Direction)
                             : default;
 
-                        // The fixture's long axis, rotated the same way and for the same reason. The
-                        // rectangle these two describe is what the lighting integrates over -- see
-                        // LightFixture.Tangent for why a lamp's centre is not enough to light from.
-                        Vector3f tangent = fixture.IsRectangular
-                            ? worldToView.Transform(fixture.Tangent)
-                            : default;
-
                         _localLightScratch[i] = new DeferredLocalLight(
                             worldToView.Transform(cameraRelative),
                             fixture.Radius * localLightRange,
                             colour,
                             intensity,
                             facing,
-                            tangent,
 
-                            // A fixture whose geometry never agreed on a plane has no rectangle, and is
-                            // lit as a sphere of its own extent -- which is what the half width carries
-                            // there, the half height going unread.
-                            fixture.IsRectangular ? fixture.HalfWidth : MathF.Max(fixture.Extent, 0.05f),
-                            fixture.HalfHeight);
+                            // The fixture's own size, which is what gives its shadow a penumbra. Floored
+                            // rather than taken raw: a fixture the extractor measured as a few
+                            // centimetres across would cast an edge as hard as a point light's, and no
+                            // real fitting is that small.
+                            MathF.Max(fixture.Extent, 0.05f));
                     }
 
                     // Both backends, through the seam: a windowless interior needs its lamps whichever

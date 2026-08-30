@@ -161,11 +161,7 @@ public static class LampDetector
     private const string LogCategory = "Emissive";
 
     /// <summary>Which sub-meshes of a level are light fixtures.</summary>
-    /// <param name="Textures">
-    /// The textures those fixtures draw with, and the radiance each burns at. What the light extractor
-    /// gathers triangles for, and what the placed lights take their brightness from — one number for how
-    /// bright a fitting looks and how much light it gives, because those are one fact about it.
-    /// </param>
+    /// <param name="Textures">The textures those fixtures draw with. What the light extractor gathers for.</param>
     /// <param name="SubMeshes">
     /// Every sub-mesh that is a lamp — keyed by model and material slot — and the multiple of its own
     /// albedo it emits at. A draw is a lamp only if it is in here; see the type's remarks for why the
@@ -178,22 +174,13 @@ public static class LampDetector
     /// </para>
     /// </param>
     public readonly record struct Lamps(
-        IReadOnlyDictionary<string, float> Textures,
+        IReadOnlySet<string> Textures,
         IReadOnlyDictionary<string, float> SubMeshes)
     {
         /// <summary>Gets the answer for a level that has no lamps.</summary>
         public static Lamps None { get; } = new(
-            new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase));
-
-        /// <summary>How brightly a texture's own surface burns, or nought when it is not a lamp.</summary>
-        /// <param name="texture">The texture's name.</param>
-        /// <returns>Its radiance.</returns>
-        public float RadianceOf(string? texture) =>
-            Textures is not null && !string.IsNullOrEmpty(texture)
-            && Textures.TryGetValue(texture, out float radiance)
-                ? radiance
-                : 0f;
 
         /// <summary>Gets how many sub-meshes are lamps.</summary>
         public int Count => SubMeshes?.Count ?? 0;
@@ -249,7 +236,7 @@ public static class LampDetector
 
         IIgiLogger log = logger ?? NullLogger.Instance;
         Dictionary<string, TextureLook> looks = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, float> textures = new(StringComparer.OrdinalIgnoreCase);
+        HashSet<string> textures = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, float> subMeshes = new(StringComparer.OrdinalIgnoreCase);
 
         Confirm(scene, resources, looks, textures, subMeshes, named ?? [], log);
@@ -266,7 +253,7 @@ public static class LampDetector
         WorldScene scene,
         ResourceRegistry resources,
         Dictionary<string, TextureLook> looks,
-        Dictionary<string, float> textures,
+        HashSet<string> textures,
         Dictionary<string, float> subMeshes,
         IReadOnlyList<LampManifest.Entry> named,
         IIgiLogger log)
@@ -353,7 +340,7 @@ public static class LampDetector
                     if (entry.Textures.Contains(texture, StringComparer.OrdinalIgnoreCase))
                     {
                         subMeshes[key] = Strength(look.Brightness, entry.Radiance);
-                        textures[texture] = MathF.Max(textures.GetValueOrDefault(texture), entry.Radiance);
+                        textures.Add(texture);
                     }
 
                     continue;
@@ -370,7 +357,7 @@ public static class LampDetector
                 if (IsFixtureShaped(geometry, subset, placement, ground))
                 {
                     subMeshes[key] = Strength(look.Brightness, LampRadiance);
-                    textures[texture] = MathF.Max(textures.GetValueOrDefault(texture), LampRadiance);
+                    textures.Add(texture);
                 }
             }
         }
@@ -380,7 +367,7 @@ public static class LampDetector
         foreach ((string model, (string key, string texture, float brightness)) in brightestOf)
         {
             subMeshes[key] = Strength(brightness, byModel[model].Radiance);
-            textures[texture] = MathF.Max(textures.GetValueOrDefault(texture), byModel[model].Radiance);
+            textures.Add(texture);
         }
 
         // Named rather than counted. Part of this is inferred from art that was never meant to be read
@@ -388,7 +375,7 @@ public static class LampDetector
         log.Information(
             LogCategory,
             subMeshes.Count > 0
-                ? $"Lamps: {subMeshes.Count} sub-mesh(es) drawing {string.Join(", ", textures.Keys)}"
+                ? $"Lamps: {subMeshes.Count} sub-mesh(es) drawing {string.Join(", ", textures)}"
                     + (named.Count > 0 ? $" ({named.Count} named by hand)." : ".")
                 : "Nothing in this level is a light fixture.");
     }
