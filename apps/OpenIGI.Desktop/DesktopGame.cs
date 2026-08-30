@@ -3097,6 +3097,12 @@ internal sealed partial class DesktopGame : IDisposable
                         // leaving every other trace in the frame alone, which is what makes the two shadow
                         // systems comparable in place.
                         TracedSun = RenderCVars.HardwareRayTracing.Value && RenderCVars.TracedSunShadows.Value,
+
+                        // The day/night cycle fades the colour to exactly nought a tenth below the
+                        // horizon; from there every sun-shadow mask is multiplied by zero, and the whole
+                        // pipeline -- trace, denoise, cascades -- can stand down. Colour, not
+                        // IsBelowHorizon: through twilight a dim sun still lights and still shadows.
+                        SunLit = light.Colour.X > 0f || light.Colour.Y > 0f || light.Colour.Z > 0f,
                     }
                     : ShadowSettings.Off;
 
@@ -3408,8 +3414,17 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
                 // beginning a capture first would leave the shell holding two render targets at once.
+                //
+                // And not filled at all on a frame where nothing can read it: with the traced sun the
+                // ray mask is the ONLY sun shadow the lighting samples, and with the sun faded to
+                // nothing the sun term is nought before the shadow is asked -- either way the cascades
+                // are written and never read, raster spent on a map nobody looks at. The maps and their
+                // matrices stay allocated and uploaded, so the first frame that needs them again (the
+                // r_rt_shadows toggle, or a sunrise scrub) refits and refills BEFORE that frame's
+                // lighting reads -- no stall and no frame of wrong shadows.
+                bool cascadesRead = shadowSettings.SunLit && !_device.SunShadowTraced;
                 BeginStage();
-                if (cascadeCount > 0 && _shadowPass is not null)
+                if (cascadeCount > 0 && _shadowPass is not null && cascadesRead)
                 {
                     _shadowPass.Render(cascadeStorage, cascadeCount, eye, _scene, _world, shadowCasters);
                 }

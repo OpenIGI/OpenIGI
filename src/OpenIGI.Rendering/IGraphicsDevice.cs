@@ -869,6 +869,16 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     GpuFrameTiming GpuMeasuredTiming() => default;
 
+    /// <summary>Gets whether this frame's sun shadow will come from a ray trace rather than the cascades.</summary>
+    /// <remarks>
+    /// When it will, the cascaded shadow map is written and never read -- the deferred lighting samples
+    /// the traced mask as the only sun shadow -- so the app can skip rasterising the cascades entirely
+    /// and the picture cannot change. False by default, and false whenever the trace cannot actually run
+    /// this frame (no ray support, no acceleration structure yet), in which case the cascades are the
+    /// sun's only shadow and must keep rendering.
+    /// </remarks>
+    bool SunShadowTraced => false;
+
     /// <summary>Creates one asynchronous occlusion query.</summary>
     OcclusionQueryHandle CreateOcclusionQuery();
 

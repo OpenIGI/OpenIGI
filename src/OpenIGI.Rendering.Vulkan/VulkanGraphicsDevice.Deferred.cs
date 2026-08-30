@@ -1557,8 +1557,12 @@ public sealed partial class VulkanGraphicsDevice
         => _deferred.SunShadow is not null
             && _shadowSettings.Enabled
             && _shadowSettings.TracedSun
+            && _shadowSettings.SunLit
             && _worldScene is { IsReady: true } scene
             && scene.TopLevel is not null;
+
+    /// <inheritdoc/>
+    public bool SunShadowTraced => WillTraceSunShadow();
 
     /// <summary>Traces the sun's shadow against the scene, for the shading pass to read this same frame.</summary>
     private unsafe void DispatchSunShadow()
@@ -1568,9 +1572,10 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
-        // The app's word governs: shadows off means no sun shadow of any kind, and the software mode
-        // leaves the sun to the cascades — the trace never runs, and the lighting's flag stays off.
-        if (!_shadowSettings.Enabled || !_shadowSettings.TracedSun)
+        // The app's word governs: shadows off means no sun shadow of any kind, the software mode
+        // leaves the sun to the cascades, and a sun faded to nothing shadows nothing — the trace never
+        // runs, and the lighting's flag stays off.
+        if (!_shadowSettings.Enabled || !_shadowSettings.TracedSun || !_shadowSettings.SunLit)
         {
             return;
         }

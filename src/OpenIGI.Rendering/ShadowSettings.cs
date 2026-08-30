@@ -67,6 +67,19 @@ public readonly record struct ShadowSettings(
     /// </remarks>
     public bool TracedSun { get; init; } = true;
 
+    /// <summary>
+    /// Gets a value indicating whether the sun is contributing any light at all this frame.
+    /// </summary>
+    /// <remarks>
+    /// The day/night cycle fades the sun's colour to exactly zero once it sits a tenth below the
+    /// horizon, and from then on every piece of sun-shadow work -- the cascade raster, the ray trace,
+    /// its accumulation and its denoise -- produces a mask that is multiplied by nought. The app clears
+    /// this at that point so the whole pipeline can stand down; through twilight, where a dim sun still
+    /// lights, it stays set and everything runs. Defaults to lit so a caller that never thinks about
+    /// the cycle keeps today's behaviour.
+    /// </remarks>
+    public bool SunLit { get; init; } = true;
+
     /// <summary>Gets settings with shadows switched off.</summary>
     public static ShadowSettings Off { get; } = new(CascadeCount: 0);
 
