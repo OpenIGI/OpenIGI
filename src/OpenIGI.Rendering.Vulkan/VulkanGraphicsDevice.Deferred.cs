@@ -256,7 +256,16 @@ public sealed partial class VulkanGraphicsDevice
             // gather closes it early to read the G-buffer -- which is before the game has submitted this
             // frame's lamps, so the trace saw a count of nought and quietly did nothing. This spot is
             // after the lamps are known and still outside the render pass, which is what a dispatch needs.
-            DispatchLampShadow();
+            //
+            // Timed as part of the shadows, which is not decoration. Moving the dispatch here took it out
+            // of the scope it used to sit in, and nothing else covers this point in the frame -- so the
+            // trace, both filters and every barrier between them were costing a millisecond of wall clock
+            // that no stage timer counted, and the overlay read as though the lamps were free. A pass
+            // nobody can see the cost of is a pass nobody will ever optimise.
+            using (StageScope lamps = Measure(RenderStage.Shadows))
+            {
+                DispatchLampShadow();
+            }
 
             BeginShadingPass();
             RecordLighting();
@@ -1406,11 +1415,11 @@ public sealed partial class VulkanGraphicsDevice
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        // The shading pass sampled this on the previous frame; separate that read from the write about
-        // to happen.
+        // The denoiser read this on the previous frame; separate that read from the write about to
+        // happen.
         OcclusionBarrier(
             cmd, target.LampVisibilityImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
-            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
         int floats = DeferredRenderer.LampUniformSize / sizeof(float);
         float* packed = stackalloc float[floats];
@@ -1431,9 +1440,110 @@ public sealed partial class VulkanGraphicsDevice
             (int)(_frameCounter % 64UL),
             new ReadOnlySpan<float>(packed, floats));
 
-        // And back, so the shading can sample what was just written.
+        DenoiseLampShadow(target, cmd);
+    }
+
+    /// <summary>Cleans up the lamp trace, so what the shading reads is a shadow rather than grain.</summary>
+    /// <remarks>
+    /// The reference's two halves in the reference's order: accumulate onto a reprojected history whose
+    /// value is first clamped to what this frame's neighbourhood says, then filter what is left where
+    /// the signal's own variance says there is still noise in it. See LampDenoisePass for why that order
+    /// is what makes a lamp being switched answer immediately rather than resolving over a second.
+    /// </remarks>
+    private void DenoiseLampShadow(Deferred.SceneTarget target, CommandBuffer cmd)
+    {
+        if (_deferred.LampDenoise is not { } denoise)
+        {
+            return;
+        }
+
+        // The other slot's accumulation, which is the previous frame's. A slot of a different shape --
+        // the frame after a resize -- holds an image of the wrong size, so this frame starts afresh
+        // rather than reprojecting onto nonsense.
+        Deferred.SceneTarget previous = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
+        bool hasHistory = !ReferenceEquals(previous, target)
+            && previous.Extent.Width == target.Extent.Width
+            && previous.Extent.Height == target.Extent.Height
+            && previous.LampDenoisedView.Handle != 0;
+        ImageView history = hasHistory ? previous.LampDenoisedView : target.LampDenoisedView;
+
+        // The trace's write, before the accumulation reads it.
         OcclusionBarrier(
             cmd, target.LampVisibilityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        if (hasHistory)
+        {
+            OcclusionBarrier(
+                cmd, previous.LampDenoisedImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        }
+
+        OcclusionBarrier(
+            cmd, target.LampDenoisedImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        // Half a pixel of full-resolution jitter is a quarter of one here, and the buffers this pass
+        // works in are half the frame -- so the offset has to be halved with them or the depth it looks
+        // up belongs to the wrong sample and a still camera shimmers.
+        float jitterX = _taaSettings.JitterX * 0.5f;
+        float jitterY = _taaSettings.JitterY * VerticalJitterSign * 0.5f;
+
+        // Both halves still run with this off -- the accumulation carries the frame count and the filter
+        // carries the depth the shading's upsample reads, and neither is optional. What stops is the
+        // filtering itself, so the raw trace can be measured against its own denoised self in one build.
+        bool filtering = RenderCVars.LampDenoise.Value != 0;
+
+        denoise.RecordTemporal(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LampVisibilityView,
+            target.DepthView,
+            history,
+            target.LampDenoisedView,
+            target.LampVisibilityWidth,
+            target.LampVisibilityHeight,
+            _viewToWorld,
+            _previousViewToWorld,
+            new Vector3f(
+                _cameraPosition.X - _previousCameraPosition.X,
+                _cameraPosition.Y - _previousCameraPosition.Y,
+                _cameraPosition.Z - _previousCameraPosition.Z),
+            _unprojection,
+            _previousUnprojection,
+            hasHistory,
+            jitterX,
+            jitterY,
+            _previousJitterX * 0.5f,
+            _previousJitterY * 0.5f,
+            filtering);
+
+        OcclusionBarrier(
+            cmd, target.LampDenoisedImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.LampFilteredImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        denoise.RecordSpatial(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LampDenoisedView,
+            target.DepthView,
+            target.NormalView,
+            target.LampFilteredView,
+            target.LampVisibilityWidth,
+            target.LampVisibilityHeight,
+            _viewToWorld,
+            _unprojection,
+            jitterX,
+            jitterY,
+            (int)(_frameCounter % 64UL),
+            filtering);
+
+        // And into the shading, which is the only thing that reads it.
+        OcclusionBarrier(
+            cmd, target.LampFilteredImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.FragmentShaderBit);
     }
 
@@ -1783,7 +1893,7 @@ public sealed partial class VulkanGraphicsDevice
         _sceneTarget.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize,
             lamps.Handle, (ulong)DeferredRenderer.LampUniformSize,
-            _device.Capabilities.RayQuery ? _sceneTarget.LampVisibilityView : default,
+            _device.Capabilities.RayQuery ? _sceneTarget.LampFilteredView : default,
             giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
             new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),

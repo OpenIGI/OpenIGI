@@ -36,7 +36,7 @@ New-Item -ItemType Directory -Force -Path $Out | Out-Null
 # say which patch of floor is supposed to be lit. Standing under the lamp and looking down, the centre
 # of the frame is the one place in the room with a guaranteed clear line to the source: whatever else
 # is wrong, that patch has to be lit.
-$camera = @('-campos', '5990.80,-13655.59,42583.4', '-yaw', '0', '-pitch', '-1.5708')
+$camera = @('-campos', '5992.36,-13657.91,42583.4', '-yaw', '-2.3545', '-pitch', '-0.1361')
 
 # Keep the full set aside, then leave exactly one fixture in place. The emitters and sub-meshes stay,
 # so the fittings still glow -- it is the LIGHTS being reduced to one, not the lamps being removed.
@@ -61,7 +61,7 @@ $common = @(
     '+gfx_preset', $Preset,
     '+r_time_of_day', '22',
     '+r_autoexposure', '0',
-    '+r_exposure', '1'
+    '+r_exposure', '5'
 ) + $camera
 
 foreach ($case in @(

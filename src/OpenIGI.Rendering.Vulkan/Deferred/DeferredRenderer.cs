@@ -37,6 +37,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly ShadowDenoisePass? _sunShadowDenoise;
     private readonly ShadowAccumulatePass? _sunShadowAccumulate;
     private readonly LampShadowPass? _lampShadow;
+    private readonly LampDenoisePass? _lampDenoise;
     private readonly SsaoPass _ssao;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
@@ -126,6 +127,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             : null;
         _lampShadow = _rayQuery
             ? new LampShadowPass(vk, device, allocator, compiler, framesInFlight)
+            : null;
+        _lampDenoise = _rayQuery
+            ? new LampDenoisePass(vk, device, allocator, compiler, framesInFlight)
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         _lampUniforms = new VulkanBuffer[framesInFlight];
@@ -278,6 +282,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>Gets the pass that traces one lamp shadow ray per pixel, if the adapter can trace.</summary>
     public LampShadowPass? LampShadow => _lampShadow;
 
+    /// <summary>Gets the pass that cleans up that trace, if the adapter can trace.</summary>
+    public LampDenoisePass? LampDenoise => _lampDenoise;
+
     /// <summary>Gets the atmosphere: the sky's colour, the sun's transmittance and the sky's own light.</summary>
     public Sky.SkyAtmosphere Sky => _sky;
 
@@ -352,6 +359,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _motionBlur.Dispose();
         _sunShadowDenoise?.Dispose();
         _sunShadowAccumulate?.Dispose();
+        _lampShadow?.Dispose();
+        _lampDenoise?.Dispose();
         _spatialAntiAliasing.Dispose();
         _thinGeometry.Dispose();
         _rejectShading.Dispose();

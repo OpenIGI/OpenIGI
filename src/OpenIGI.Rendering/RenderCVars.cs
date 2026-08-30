@@ -786,6 +786,34 @@ public static class RenderCVars
         // two minutes rather than a day.
         ultra: "1");
 
+    /// <summary>Whether the lamp shadow is denoised before the shading reads it.</summary>
+    /// <remarks>
+    /// <para>
+    /// On, which is the only setting anybody should play with: one traced ray per pixel is a coin toss,
+    /// and drawing it straight is grain rather than a shadow. This exists so the denoiser can be
+    /// measured against its own absence in a single build — the pass still runs and still carries the
+    /// depth the shading's upsample needs, it simply stops filtering — which is the only honest way to
+    /// say what it is worth.
+    /// </para>
+    /// <para>
+    /// Not archived. A debug lever that persisted itself into settings.cfg would be a shipped
+    /// regression waiting for somebody to trip over, and this renderer has already been bitten once by
+    /// exactly that.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> LampDenoise = Presets.Define(
+        CVar.Int(
+            "r_lamp_denoise",
+            1,
+            0,
+            1,
+            CVarOptions.None,
+            "Filter the traced lamp shadow before shading with it. Off is for measurement only."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
     /// <summary>The largest a fixture may be treated as when its shadow ray samples it, in metres.</summary>
     /// <remarks>
     /// <para>
