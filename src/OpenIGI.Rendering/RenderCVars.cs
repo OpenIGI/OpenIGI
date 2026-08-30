@@ -620,6 +620,45 @@ public static class RenderCVars
         enhanced: "3",
         high: "3",
         ultra: "3");
+    /// <summary>How far from the camera the surface cache keeps refreshing itself, in metres.</summary>
+    /// <remarks>
+    /// <para>
+    /// The cache covers the whole level, and every frame the relight and the bounce advanced a cursor
+    /// through it — so a fixed share of every frame went on cards kilometres away, in parts of a map the
+    /// player will never stand in. These levels are enormous and a player sees a corner of one; on
+    /// mission 1 that was over two milliseconds a frame spent almost entirely outside the room.
+    /// </para>
+    /// <para>
+    /// It was not merely unseen work, it was work that could not produce an answer. The relight traces
+    /// its shadows against the distance-field clipmaps, which follow the camera and reach a few hundred
+    /// metres; past that there is no field, so a far card re-derived exactly the value it already held.
+    /// </para>
+    /// <para>
+    /// Beyond this radius a card keeps the lighting the load-time seed gave it — the seed still covers
+    /// the whole level, so nothing goes dark. What a far card stops doing is tracking change: a lamp
+    /// switched across the map will not relight the wall beside it until the player comes within this
+    /// distance. Nought restores the old behaviour of refreshing the entire level every cursor round.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> GiCacheRadius = Presets.Define(
+        CVar.Float(
+            "r_gi_cache_radius",
+            60f,
+            0f,
+            4000f,
+            CVarOptions.None,
+            "How far from the camera the surface cache keeps refreshing. 0 refreshes the whole level."),
+
+        // Sixty metres, chosen off the measured curve rather than picked. Against a full-level refresh at
+        // 1440p on mission 1 it saves a millisecond of the relight and the bounce for an RMSE of 0.39/255
+        // -- five times inside this project's 2/255 bar, and a worst single pixel of 29. Forty-five saves
+        // half as much again but puts a worst pixel at 71, which is a difference somebody can point at.
+        // A hundred and twenty is free and saves nothing: at that reach almost the whole cache is inside.
+        vanilla: "60",
+        enhanced: "60",
+        high: "60",
+        ultra: "60");
+
 
     /// <summary>How many frames the surface-cache relight spreads its tiles across.</summary>
     /// <remarks>

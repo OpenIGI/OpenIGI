@@ -3226,6 +3226,18 @@ internal sealed partial class DesktopGame : IDisposable
                         // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
                         litCards.TemporalFrames = RenderCVars.GiTemporalFrames.Value;
 
+                        // Where the steady-state refresh is centred and how far it reaches. The cache spans
+                        // the whole level and the cursor used to walk all of it every round, so a fixed
+                        // share of every frame went on cards in parts of a map the player is nowhere near --
+                        // and past the distance field's own reach, where the relight cannot even arrive at a
+                        // different answer. Relative to the cache's origin, as everything in its space is,
+                        // and differenced in double precision before the cast: the level sits kilometres out.
+                        litCards.ActiveCentre = new Vector3f(
+                            (float)(eye.Position.X - litCards.Origin.X),
+                            (float)(eye.Position.Y - litCards.Origin.Y),
+                            (float)(eye.Position.Z - litCards.Origin.Z));
+                        litCards.ActiveRadius = RenderCVars.GiCacheRadius.Value;
+
                         // The direct relight: the whole cache at once for a deterministic dump, otherwise a
                         // slice a frame. The sun is fixed, so the only thing the direct term has to track is
                         // the clipmap scrolling new coverage under a card as the camera moves -- and doing
