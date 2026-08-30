@@ -777,11 +777,14 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
 
-        // OFF, including at ultra, until the trace is right. It is measurably wrong: on mission 1's
-        // office, with the exposure pinned so the measurement means something, the floor under four
-        // battens with clear line of sight to them comes out black. The lighting without it is the
-        // lighting this preset shipped with; the trace is opt-in until it earns its place back.
-        ultra: "0");
+        // Ultra, which is the only preset that lights from lamps at all.
+        //
+        // This was switched off once on a conclusion that turned out to be measured wrongly -- a crop of
+        // floor that the desk legitimately shadowed, read through an eye adaptation that moved with the
+        // picture. Standing under a lamp with the exposure pinned, the floor beneath it is lit, smooth
+        // and clean. tools/lamp-probe.ps1 is that measurement, kept so the next doubt can be settled in
+        // two minutes rather than a day.
+        ultra: "1");
 
     /// <summary>How many of the lamps reaching a pixel may cast a shadow on it.</summary>
     /// <remarks>
