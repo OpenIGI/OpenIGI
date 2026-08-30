@@ -167,13 +167,14 @@ public sealed class VirtualFileSystemTests : IDisposable
     [Fact]
     public void EnumeratesRetailFilesWithoutDependingOnHostCaseSensitivity()
     {
-        Write("missions/level1/GRAPHS/GRAPH9.DAT", "graph");
+        Write("MISSIONS/LEVEL1/GRAPHS/GRAPH9.DAT", "graph");
 
         VirtualFileSystem vfs = CreateFileSystem();
 
-        Assert.Equal(
-            ["LOCAL:missions/level1/GRAPHS/GRAPH9.DAT"],
-            vfs.EnumerateFiles("LOCAL:missions/level1/GRAPHS", "graph*.dat"));
+        IReadOnlyList<string> files = vfs.EnumerateFiles("LOCAL:missions/level1/graphs", "graph*.dat");
+
+        Assert.Single(files);
+        Assert.Equal("GRAPH9.DAT", Path.GetFileName(files[0]), ignoreCase: true);
     }
 
     [Fact]
