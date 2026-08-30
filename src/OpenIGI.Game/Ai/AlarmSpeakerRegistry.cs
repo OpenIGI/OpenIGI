@@ -127,7 +127,7 @@ public sealed class AlarmSpeakerRegistry
         }
 
         return !string.IsNullOrWhiteSpace(speaker.AlarmExpression)
-            && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false);
+            && _expressions.EvaluateCondition(speaker.AlarmExpression, emptyValue: false, speaker.Task);
     }
 
     /// <summary>Gets whether the placed destructible task has already been shot out.</summary>

@@ -41,6 +41,7 @@ public sealed class MissionObjectiveRuntime
     private readonly Dictionary<int, HumanOccupant> _soldierOccupants = [];
     private readonly string _completeExpression = string.Empty;
     private readonly string _failedExpression = string.Empty;
+    private readonly DeclaredTask? _levelFlowTask;
     private readonly bool _hasLevelFlow;
     private readonly bool _interfaceTimerEnabled;
     private readonly float _maximumLevelPlayTimeSeconds;
@@ -105,6 +106,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "EditVariable", StringComparison.Ordinal))
             {
                 EditVariable edit = new(
+                    declared,
                     Int(declared, "Initial value", 0),
                     String(declared, "Add"),
                     String(declared, "Sub"));
@@ -114,6 +116,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "LevelFlow", StringComparison.Ordinal))
             {
                 _hasLevelFlow = true;
+                _levelFlowTask = declared;
                 _completeExpression = String(declared, "Complete");
                 _failedExpression = String(declared, "Failed");
                 _interfaceTimerEnabled = Bool(declared, "Interface timer enabled");
@@ -122,6 +125,7 @@ public sealed class MissionObjectiveRuntime
             else if (string.Equals(task.Type.Name, "StatusMessage", StringComparison.Ordinal))
             {
                 StatusMessage message = new(
+                    declared,
                     String(declared, "Send"),
                     String(declared, "Text"),
                     Bool(declared, "Is send once"),
@@ -198,7 +202,13 @@ public sealed class MissionObjectiveRuntime
             throw new ArgumentOutOfRangeException(nameof(durationSeconds));
         }
 
-        StatusMessage message = new(string.Empty, string.Empty, sendOnce: true, cutscene: false, durationSeconds)
+        StatusMessage message = new(
+            owner: null,
+            string.Empty,
+            string.Empty,
+            sendOnce: true,
+            cutscene: false,
+            durationSeconds)
         {
             IsSent = true,
             SentTick = _tick,
@@ -375,11 +385,11 @@ public sealed class MissionObjectiveRuntime
         {
             if (!string.IsNullOrEmpty(edit.AddExpression))
             {
-                edit.Value += _expressions.EvaluateInt32(edit.AddExpression);
+                edit.Value += _expressions.EvaluateInt32(edit.AddExpression, owner: edit.Task);
             }
             if (!string.IsNullOrEmpty(edit.SubExpression))
             {
-                edit.Value -= _expressions.EvaluateInt32(edit.SubExpression);
+                edit.Value -= _expressions.EvaluateInt32(edit.SubExpression, owner: edit.Task);
             }
         }
     }
@@ -414,7 +424,8 @@ public sealed class MissionObjectiveRuntime
         Definition? active = null;
         foreach (Definition definition in _definitions)
         {
-            if (_expressions.EvaluateCondition(definition.ValidExpression, emptyValue: true))
+            if (_expressions.EvaluateCondition(
+                    definition.ValidExpression, emptyValue: true, definition.Task))
             {
                 active = definition;
             }
@@ -430,8 +441,10 @@ public sealed class MissionObjectiveRuntime
                     continue;
                 }
 
-                bool complete = _expressions.EvaluateCondition(slot.CompleteExpression, emptyValue: false);
-                bool failed = _expressions.EvaluateCondition(slot.FailedExpression, emptyValue: false);
+                bool complete = _expressions.EvaluateCondition(
+                    slot.CompleteExpression, emptyValue: false, active.Task);
+                bool failed = _expressions.EvaluateCondition(
+                    slot.FailedExpression, emptyValue: false, active.Task);
                 MissionObjectiveState state = failed ? MissionObjectiveState.Failed
                     : complete ? MissionObjectiveState.Complete
                     : MissionObjectiveState.Incomplete;
@@ -453,7 +466,8 @@ public sealed class MissionObjectiveRuntime
         {
             if ((!message.SendOnce || !message.IsSent)
                 && _tick > message.SentTick + 210
-                && _expressions.EvaluateCondition(message.SendExpression, emptyValue: false))
+                && _expressions.EvaluateCondition(
+                    message.SendExpression, emptyValue: false, message.Task))
             {
                 message.IsSent = true;
                 message.SentTick = _tick;
@@ -499,8 +513,10 @@ public sealed class MissionObjectiveRuntime
             }
         }
 
-        bool failedLevel = _expressions.EvaluateCondition(_failedExpression, emptyValue: false);
-        bool completeLevel = _expressions.EvaluateCondition(_completeExpression, emptyValue: false);
+        bool failedLevel = _expressions.EvaluateCondition(
+            _failedExpression, emptyValue: false, _levelFlowTask);
+        bool completeLevel = _expressions.EvaluateCondition(
+            _completeExpression, emptyValue: false, _levelFlowTask);
         IsFailed = failedLevel;
         IsComplete = completeLevel && !failedLevel;
         _tick++;
@@ -519,7 +535,7 @@ public sealed class MissionObjectiveRuntime
                 String(task, $"Objective {number} Failed Expression")));
         }
 
-        return new Definition(String(task, "Objectives Valid"), slots);
+        return new Definition(task, String(task, "Objectives Valid"), slots);
     }
 
     private static string String(DeclaredTask task, string name) =>
@@ -626,11 +642,19 @@ public sealed class MissionObjectiveRuntime
         return default;
     }
 
-    private sealed record Definition(string ValidExpression, IReadOnlyList<Slot> Slots);
+    private sealed record Definition(
+        DeclaredTask Task,
+        string ValidExpression,
+        IReadOnlyList<Slot> Slots);
     private sealed record Slot(string TextResource, int LinkTaskId, string CompleteExpression, string FailedExpression);
 
-    private sealed class EditVariable(int initialValue, string addExpression, string subExpression)
+    private sealed class EditVariable(
+        DeclaredTask task,
+        int initialValue,
+        string addExpression,
+        string subExpression)
     {
+        public DeclaredTask Task { get; } = task;
         public int Value { get; set; } = initialValue;
         public string AddExpression { get; } = addExpression;
         public string SubExpression { get; } = subExpression;
@@ -721,12 +745,14 @@ public sealed class MissionObjectiveRuntime
     }
 
     private sealed class StatusMessage(
+        DeclaredTask? owner,
         string sendExpression,
         string textResource,
         bool sendOnce,
         bool cutscene,
         float duration)
     {
+        public DeclaredTask? Task { get; } = owner;
         public string SendExpression { get; } = sendExpression;
         public string TextResource { get; } = textResource;
         public bool SendOnce { get; } = sendOnce;

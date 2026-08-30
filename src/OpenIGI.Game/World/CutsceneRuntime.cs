@@ -224,7 +224,8 @@ public sealed class CutsceneRuntime
 
             bool run = string.IsNullOrWhiteSpace(state.Task.Run)
                 ? state.Task.InitialRun
-                : _expressions.EvaluateCondition(state.Task.Run, emptyValue: state.Task.InitialRun);
+                : _expressions.EvaluateCondition(
+                    state.Task.Run, emptyValue: state.Task.InitialRun, state.Task);
             state.Task.IsRun = run;
             if (run)
             {
@@ -328,14 +329,14 @@ public sealed class CutsceneRuntime
 
         foreach (TimerState timer in _timers)
         {
-            if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false))
+            if (_expressions.EvaluateCondition(timer.Reset, emptyValue: false, timer.Task))
             {
                 timer.Tick = 0;
             }
 
             timer.IsRun = string.IsNullOrWhiteSpace(timer.Run)
                 ? timer.InitialRun
-                : _expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun);
+                : _expressions.EvaluateCondition(timer.Run, emptyValue: timer.InitialRun, timer.Task);
             if (timer.IsRun)
             {
                 timer.Tick++;
@@ -346,7 +347,8 @@ public sealed class CutsceneRuntime
         {
             bool run = string.IsNullOrWhiteSpace(animation.Run)
                 ? animation.InitialRun
-                : _expressions.EvaluateCondition(animation.Run, emptyValue: animation.InitialRun);
+                : _expressions.EvaluateCondition(
+                    animation.Run, emptyValue: animation.InitialRun, animation.Task);
             if (!run || !ConditionalContainerGate.IsTaskActive(animation.Task))
             {
                 continue;
@@ -381,7 +383,7 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false))
+            if (_expressions.EvaluateCondition(scene.Reset, emptyValue: false, scene))
             {
                 scene.Ticks = 0;
                 scene.IsFinished = false;
@@ -389,7 +391,7 @@ public sealed class CutsceneRuntime
 
             scene.IsRun = string.IsNullOrWhiteSpace(scene.Run)
                 ? scene.InitialRun && !scene.IsFinished
-                : _expressions.EvaluateCondition(scene.Run, emptyValue: false);
+                : _expressions.EvaluateCondition(scene.Run, emptyValue: false, scene);
 
             if (!wasRun && scene.IsRun)
             {
@@ -414,7 +416,7 @@ public sealed class CutsceneRuntime
 
                 int delta = string.IsNullOrWhiteSpace(scene.TimeDelta)
                     ? 1
-                    : (int)(_expressions.EvaluateSingle(scene.TimeDelta) * Frequency);
+                    : (int)(_expressions.EvaluateSingle(scene.TimeDelta, owner: scene) * Frequency);
                 // Expressions returning a float are evaluated through the script union. Most retail
                 // scenes leave TimeDelta empty; the minimum retains forward progress for malformed data.
                 scene.Ticks = Math.Max(0, scene.Ticks + delta);
@@ -429,7 +431,7 @@ public sealed class CutsceneRuntime
         foreach (SoundState sound in _sounds)
         {
             bool run = ConditionalContainerGate.IsTaskActive(sound.Task)
-                && _expressions.EvaluateCondition(sound.Condition, emptyValue: false);
+                && _expressions.EvaluateCondition(sound.Condition, emptyValue: false, sound.Task);
             if (run != sound.IsRun)
             {
                 sound.IsRun = run;
@@ -476,7 +478,8 @@ public sealed class CutsceneRuntime
 
             bool run = string.IsNullOrWhiteSpace(animation.Run)
                 ? animation.InitialRun
-                : _expressions.EvaluateCondition(animation.Run, emptyValue: animation.InitialRun);
+                : _expressions.EvaluateCondition(
+                    animation.Run, emptyValue: animation.InitialRun, animation.Task);
             if (!run)
             {
                 continue;
@@ -1178,7 +1181,7 @@ public sealed class CutsceneRuntime
                 continue;
             }
 
-            _expressions.Execute(started ? container.RunAtStart : container.RunAtStop);
+            _expressions.Execute(started ? container.RunAtStart : container.RunAtStop, container);
         }
     }
 
@@ -1228,7 +1231,7 @@ public sealed class CutsceneRuntime
         _sceneExpressionOwner = scene;
         try
         {
-            _expressions.Execute(expression);
+            _expressions.Execute(expression, scene);
         }
         finally
         {
