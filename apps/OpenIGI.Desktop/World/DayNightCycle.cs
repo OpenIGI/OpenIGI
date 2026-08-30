@@ -50,6 +50,15 @@ internal sealed class DayNightCycle
     /// <summary>Gets the sun direction the last <see cref="Apply"/> produced, for the gizmo to point at.</summary>
     public Vector3f Direction => _lastDirection;
 
+    /// <summary>Gets how risen the moon is: nought while the sun stands, one at full night.</summary>
+    /// <remarks>
+    /// So the shell can treat the moon differently from the sun where the two must not be interchangeable
+    /// -- the atmosphere above all, which scatters whatever illuminance it is handed and would render a
+    /// moonlit sky as a dim but unmistakably blue day. Stays nought when <see cref="Apply"/> is bypassed
+    /// (a pinned <c>-sundir</c> reference sun), which never hangs a moon.
+    /// </remarks>
+    public float Moonrise { get; private set; }
+
     /// <summary>Turns the sun's arc about one world axis, for the gizmo to drive as the numpad keys do.</summary>
     /// <param name="axis">0 for X, 1 for Y, 2 for Z.</param>
     /// <param name="radians">The angle to add.</param>
@@ -196,18 +205,20 @@ internal sealed class DayNightCycle
         // The moon: the arc's anti-solar point, so it stands highest at midnight and rises as the sun
         // sets. It takes the one directional slot only once the sun is fully faded -- the handover
         // passes through a brief true dark just below the horizon rather than the two fighting over the
-        // light -- and it carries a hundredth of a sun, cool rather than the authored warm: enough for
-        // the adapted eye to read shape and for the moon to throw a shadow, never enough to read as
-        // day. Because it flows through the same direction and colour as the sun, the atmosphere, its
-        // irradiance harmonics, the cascades, the traced shadow and the surface-cache relight all see
-        // the same moon for free -- including the sky rendering as a faint glow about it, which is what
-        // a moonlit sky is. It also means the sun-shadow pipeline runs at night again; that is the
-        // price of a moon that casts.
+        // light -- and it carries three-thousandths of a sun, cool rather than the authored warm:
+        // enough for the adapted eye to read shape and for the moon to throw a shadow, never enough to
+        // read as day. Because it flows through the same direction and colour as the sun, the cascades,
+        // the traced shadow and the surface-cache relight all see the same moon for free. The
+        // ATMOSPHERE must not (see Moonrise): handed the moon at face value it scatters a dim but
+        // unmistakably blue daytime sky, where a night sky reads near black -- the shell knocks its
+        // feed down separately. The sun-shadow pipeline also runs at night again; that is the price of
+        // a moon that casts.
         float moonrise = Smoothstep(0.10f, 0.30f, -direction.Z);
+        Moonrise = moonrise;
         if (moonrise > 0f)
         {
             direction = -direction;
-            colour = new Vector3f(0.009f, 0.010f, 0.013f) * moonrise;
+            colour = new Vector3f(0.003f, 0.0033f, 0.0043f) * moonrise;
         }
 
         // The sky fill crosses from a faint blue night to the authored daytime ambient, so a night scene

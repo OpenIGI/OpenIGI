@@ -3443,7 +3443,14 @@ internal sealed partial class DesktopGame : IDisposable
                     // The atmospheric sky keeps its own source illuminance. Sharing scaledSun here made
                     // r_sun_scale dim the sky SH together with the direct term, so their ratio could never
                     // be corrected. Ultra's atmosphere remains at its already-measured source intensity.
-                    Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value;
+                    //
+                    // Under the moon the feed is knocked down hard rather than handed over at face
+                    // value: the atmosphere scatters whatever illuminance it is given, and the moon's
+                    // few thousandths of a sun still rendered as a dim but unmistakably blue daytime
+                    // sky where a night sky reads near black. The surfaces keep the full moonlight; the
+                    // sky keeps only a trace of it.
+                    Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value
+                        * (_dayNight.Moonrise > 0f ? 0.02f : 1f);
 
                     // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
                     // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
