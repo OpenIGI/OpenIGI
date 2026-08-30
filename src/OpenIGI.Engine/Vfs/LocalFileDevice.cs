@@ -106,9 +106,57 @@ public sealed class LocalFileDevice : IFileDevice
         string relative = ResourcePath.Normalize(path).TrimStart(ResourcePath.DirectorySeparator);
         string combined = Path.GetFullPath(Path.Combine(RootDirectory, relative));
 
-        return combined.StartsWith(RootDirectory, StringComparison.OrdinalIgnoreCase)
-            ? combined
-            : RootDirectory;
+        if (!combined.StartsWith(RootDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            return RootDirectory;
+        }
+
+        if (File.Exists(combined) || Directory.Exists(combined))
+        {
+            return combined;
+        }
+
+        // A retail install may preserve uppercase directory names (MISSIONS/LEVEL1/GRAPHS). Resolve
+        // each segment against the actual directory entries so lookups remain case-insensitive on a
+        // case-sensitive host filesystem, matching the original Windows behavior.
+        string rootRelative = Path.GetRelativePath(RootDirectory, combined);
+        string current = RootDirectory;
+        foreach (string segment in rootRelative.Split(
+                     Path.DirectorySeparatorChar,
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+
+            string exact = Path.Combine(current, segment);
+            if (File.Exists(exact) || Directory.Exists(exact))
+            {
+                current = exact;
+                continue;
+            }
+
+            if (Directory.Exists(current))
+            {
+                string? match = Directory
+                    .EnumerateFileSystemEntries(current)
+                    .FirstOrDefault(entry => string.Equals(
+                        Path.GetFileName(entry),
+                        segment,
+                        StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    current = match;
+                    continue;
+                }
+            }
+
+            // Preserve the normal missing-path behavior for the unresolved suffix.
+            current = exact;
+        }
+
+        return current;
     }
 
     /// <inheritdoc/>
