@@ -1,3 +1,4 @@
+using System.IO.Enumeration;
 using OpenIGI.Core;
 
 namespace OpenIGI.Engine.Vfs;
@@ -62,8 +63,17 @@ public sealed class LocalFileDevice : IFileDevice
             return [];
         }
 
+        // Retail installations use mixed/uppercase names (for example GRAPH*.DAT), while the
+        // original Windows filesystem lookup is case-insensitive. Directory.EnumerateFiles applies
+        // the platform's pattern matching rules, which are case-sensitive on macOS/Linux even when
+        // the underlying volume is not. Match the filename explicitly so VFS enumeration has the
+        // same behavior on every supported host.
         return Directory
-            .EnumerateFiles(directory, searchPattern)
+            .EnumerateFiles(directory)
+            .Where(file => FileSystemName.MatchesSimpleExpression(
+                searchPattern,
+                Path.GetFileName(file),
+                ignoreCase: true))
             .Select(file => ResourcePath.Normalize(Path.GetRelativePath(RootDirectory, file)));
     }
 
