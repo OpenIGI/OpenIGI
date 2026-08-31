@@ -212,6 +212,21 @@ internal sealed partial class DesktopGame : IDisposable
     private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
     private int _cardBounceFrame;
 
+    // Stand-down state for the surface-cache retrace. The world-space relight and the amortised bounce
+    // re-derive the answer the cache already holds whenever nothing has moved -- and "moved" for a
+    // VIEW-INDEPENDENT cache means the distance field scrolled new coverage in (a real walk of metres) or
+    // the sun was scrubbed, NOT the camera turning or drifting a few centimetres. Once the cache has settled
+    // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
+    // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
+    private int _giStaticFrames;
+    private bool _giSunValid;
+    private Vector3f _lastGiSunDirection;
+    private Vector3f _lastGiSunColour;
+
+    // How long after the last change the retrace keeps running before it idles -- twice the bounce's own
+    // temporal window, so the multi-bounce fill has fully converged first.
+    private const int GiSettleFrames = 64;
+
     // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
     // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
     // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
@@ -3236,9 +3251,10 @@ internal sealed partial class DesktopGame : IDisposable
                     _device.BeginStageTiming(RenderStage.GlobalIllumination);
 
                     // Scrolls the clipmaps to follow the camera, rebuilding whichever level it walked out
-                    // of. The relight below no longer keys off how many rebuilt: it runs a slice every
-                    // frame regardless, which is what took the stall out of moving.
-                    liveField.Update(eye.Position);
+                    // of. How many rebuilt is the retrace's "did the cache's coverage actually change"
+                    // signal: nought means the camera only turned or drifted within a cell, and a
+                    // view-independent cache needs no retrace for that -- which is what lets it idle at rest.
+                    int giRebuilt = liveField.Update(eye.Position);
 
                     // Once, after the first build, and only when asked. A wrong distance field produces a
                     // picture that is merely subtly wrong several stages later, so the only way to know it
@@ -3274,6 +3290,30 @@ internal sealed partial class DesktopGame : IDisposable
                         // produced nothing, and cost a long detour to tell apart from one.
                         && _cardBounceFrame >= 8;
 
+                    // Whether the surface cache's inputs actually changed this frame: a level scrolled new
+                    // coverage in, the sun was scrubbed, or a dump was asked for. Turning or nudging the
+                    // camera changes nothing a view-independent cache holds, so it does not count -- which is
+                    // what lets the retrace idle while the player stands roughly still. The sun is fixed
+                    // unless [ or ] is held, so a plain per-frame compare catches a scrub and nothing else.
+                    bool giSunMoved = !_giSunValid
+                        || MathF.Abs(light.Direction.X - _lastGiSunDirection.X) > 1e-4f
+                        || MathF.Abs(light.Direction.Y - _lastGiSunDirection.Y) > 1e-4f
+                        || MathF.Abs(light.Direction.Z - _lastGiSunDirection.Z) > 1e-4f
+                        || MathF.Abs(light.Colour.X - _lastGiSunColour.X) > 1e-4f
+                        || MathF.Abs(light.Colour.Y - _lastGiSunColour.Y) > 1e-4f
+                        || MathF.Abs(light.Colour.Z - _lastGiSunColour.Z) > 1e-4f;
+                    _lastGiSunDirection = light.Direction;
+                    _lastGiSunColour = light.Colour;
+                    _giSunValid = true;
+
+                    // Reset the settle counter on any real change; otherwise let it climb. The retrace runs
+                    // while something is moving and for a settling window after, then idles -- the cache
+                    // keeps its converged atlas with none of the ray tracing, so a still scene stops paying
+                    // the periodic covering-slice spike that halved its frame rate.
+                    bool giChanged = wantDump || giRebuilt > 0 || giSunMoved;
+                    _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, GiSettleFrames + 1);
+                    bool retraceGi = _giStaticFrames <= GiSettleFrames;
+
                     if (_cardLighting is { } litCards)
                     {
                         // How many frames the relight and the bounce spread their tiles across, from the cvar
@@ -3304,17 +3344,23 @@ internal sealed partial class DesktopGame : IDisposable
                         // read as the game lurching every few steps. Sliced, the new shadows arrive over a
                         // handful of frames with no spike, and the bounce keeps its long-running history
                         // instead of being re-seeded from scratch on every scroll.
-                        litCards.Light(
-                            light is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
+                        // Skipped once the cache has settled and nothing is scrolling or scrubbing: the sun
+                        // is fixed and no new coverage is arriving, so the slice would re-trace the direct
+                        // term it already holds. That idle is the whole fix for the at-rest spike.
+                        if (retraceGi)
+                        {
+                            litCards.Light(
+                                light is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
 
-                            // The SAME effective sun the deferred lighting shades with -- colour times both
-                            // scales -- or the bounce is lit by a different key than the screen and the two
-                            // disagree wherever indirect light dominates.
-                            light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
-                            SkyFillColour(),
-                            liveField,
-                            RenderCVars.SurfaceCacheProbe.Value,
-                            amortize: !wantDump);
+                                // The SAME effective sun the deferred lighting shades with -- colour times
+                                // both scales -- or the bounce is lit by a different key than the screen and
+                                // the two disagree wherever indirect light dominates.
+                                light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+                                SkyFillColour(),
+                                liveField,
+                                RenderCVars.SurfaceCacheProbe.Value,
+                                amortize: !wantDump);
+                        }
                     }
 
                     // The bounce accumulates EVERY frame -- the reference's amortised radiosity. Each frame
@@ -3326,7 +3372,12 @@ internal sealed partial class DesktopGame : IDisposable
                     // what fill a room the sun never reaches. The feedback is clamped below one in the
                     // shader, so it converges rather than running away, and the 1/(1+frames) blend gives the
                     // ramp for free. Only when no diagnostic probe owns the direct atlas.
-                    if (_cardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0)
+                    // Same stand-down as the relight: once settled with nothing scrolling or scrubbing, the
+                    // scene has reached its multi-bounce equilibrium and folding another bounce in re-derives
+                    // the same final -- so the bounce, the frame's single most expensive pass, idles too. The
+                    // frame counter holds where it was, so the accumulation resumes rather than restarts when
+                    // motion or a scrub brings the retrace back.
+                    if (_cardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
                     {
                         bounceCards.Bounce(
                             liveField,

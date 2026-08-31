@@ -60,6 +60,15 @@ internal sealed class SkyAtmosphere : IDisposable
     private bool _staticTablesBuilt;
     private bool _disposed;
 
+    // The last inputs the sky-view march and its irradiance reduction were run for. Both depend only on the
+    // sun and the view height, which are fixed for a mission unless the day/night cycle is scrubbed -- so
+    // the march is skipped while they hold still and the LUTs keep their last content. See Record.
+    private bool _dynamicBuilt;
+    private Vector3f _lastSunDirection;
+    private Vector3f _lastSunIlluminance;
+    private float _lastViewHeightKm;
+    private float _lastSkyLight;
+
     /// <summary>Initialises a new instance of the <see cref="SkyAtmosphere"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the tables live on.</param>
@@ -156,6 +165,11 @@ internal sealed class SkyAtmosphere : IDisposable
     /// </remarks>
     public static float ViewHeightKm(float altitudeMetres) => 6360.0f + Math.Max(0.0005f, altitudeMetres * 0.001f);
 
+    // Two directions/colours the sky march can treat as the same input. Tighter than any change the eye
+    // could read in the resulting sky, so the skip never holds a stale LUT through a visible change.
+    private static bool NearlyEqual(Vector3f a, Vector3f b)
+        => MathF.Abs(a.X - b.X) <= 1e-5f && MathF.Abs(a.Y - b.Y) <= 1e-5f && MathF.Abs(a.Z - b.Z) <= 1e-5f;
+
     /// <summary>Records the whole update: the constant tables if they are not built, then this frame's.</summary>
     /// <param name="cmd">The command buffer to record into.</param>
     /// <param name="frame">The frame-in-flight index.</param>
@@ -177,33 +191,55 @@ internal sealed class SkyAtmosphere : IDisposable
             _staticTablesBuilt = true;
         }
 
-        Span<float> p = stackalloc float[ParamSize / sizeof(float)];
-        WriteParameters(p, SkyViewWidth, SkyViewHeight, sunDirection, sunIlluminance, viewHeightKm, skyLightIntensity);
+        // The whole atmospheric march for a sky that has not changed since last frame is waste: IGI's sun
+        // is fixed for the mission and the view height barely moves on foot, so both the sky-view LUT and
+        // its irradiance reduction hold their answer. Rerun them only when an input actually moves -- a
+        // day/night scrub, or more than a metre of altitude -- and let the LUTs keep their content
+        // otherwise. The readback below still runs every frame so each frame-in-flight slot the game reads
+        // stays populated with that (unchanged) answer.
+        bool skyChanged = !_dynamicBuilt
+            || !NearlyEqual(sunDirection, _lastSunDirection)
+            || !NearlyEqual(sunIlluminance, _lastSunIlluminance)
+            || MathF.Abs(viewHeightKm - _lastViewHeightKm) > 1e-3f
+            || MathF.Abs(skyLightIntensity - _lastSkyLight) > 1e-4f;
 
-        _skyViewPass.Record(
-            cmd,
-            frame,
-            [
-                new ComputeResource(_transmittance.View),
-                new ComputeResource(_multiScatter.View),
-                new ComputeResource(_skyView.View),
-            ],
-            p,
-            (SkyViewWidth + 7) / 8,
-            (SkyViewHeight + 7) / 8);
+        if (skyChanged)
+        {
+            Span<float> p = stackalloc float[ParamSize / sizeof(float)];
+            WriteParameters(p, SkyViewWidth, SkyViewHeight, sunDirection, sunIlluminance, viewHeightKm, skyLightIntensity);
 
-        Barrier(cmd, _skyView.Handle);
+            _skyViewPass.Record(
+                cmd,
+                frame,
+                [
+                    new ComputeResource(_transmittance.View),
+                    new ComputeResource(_multiScatter.View),
+                    new ComputeResource(_skyView.View),
+                ],
+                p,
+                (SkyViewWidth + 7) / 8,
+                (SkyViewHeight + 7) / 8);
 
-        // One work group of sixty-four, one direction each: the whole sky reduced to eight vectors.
-        _irradiancePass.Record(
-            cmd,
-            frame,
-            [new ComputeResource(_skyView.View), new ComputeResource(_irradiance.View)],
-            p,
-            1,
-            1);
+            Barrier(cmd, _skyView.Handle);
 
-        Barrier(cmd, _irradiance.Handle);
+            // One work group of sixty-four, one direction each: the whole sky reduced to eight vectors.
+            _irradiancePass.Record(
+                cmd,
+                frame,
+                [new ComputeResource(_skyView.View), new ComputeResource(_irradiance.View)],
+                p,
+                1,
+                1);
+
+            Barrier(cmd, _irradiance.Handle);
+
+            _lastSunDirection = sunDirection;
+            _lastSunIlluminance = sunIlluminance;
+            _lastViewHeightKm = viewHeightKm;
+            _lastSkyLight = skyLightIntensity;
+            _dynamicBuilt = true;
+        }
+
         RecordReadback(cmd, frame);
     }
 

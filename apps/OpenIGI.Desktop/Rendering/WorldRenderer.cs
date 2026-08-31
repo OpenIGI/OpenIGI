@@ -1473,9 +1473,17 @@ public sealed class WorldRenderer : IDisposable
                 // which is why its barbed wire is visibly thicker than ours against the same sky. Widened
                 // first, so the chain below filters the alpha we actually intend to keep. Real
                 // transparencies -- window glass above all -- are classified out and left alone.
+                // Classified from level zero before the alpha is touched. A cut-out needs its chain rebuilt
+                // even when it shipped with one: a chain imported by the original tool carries the black of
+                // the transparent gaps in every level, so the wire goes dark at distance -- the far fences
+                // that read pure black under a render scale. Rebuilding from level zero runs the alpha-
+                // weighted filter that keeps the wire's colour; an opaque surface keeps whatever chain it
+                // has and only generates one if it shipped without.
+                bool cutout = AlphaCoverage.IsCutout(image.GetLevel(0));
+
                 image.WidenCutoutAlpha(AlphaTestCutoff);
 
-                image = image.WithMipChain();
+                image = cutout ? image.RebuildMipChain() : image.WithMipChain();
                 image.PreserveAlphaCoverage(AlphaTestCutoff);
 
                 handle = _device.CreateTexture(

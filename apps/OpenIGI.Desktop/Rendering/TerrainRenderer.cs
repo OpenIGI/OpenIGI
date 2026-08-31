@@ -58,6 +58,27 @@ public sealed class TerrainRenderer : IDisposable
     /// <remarks>About a fifth of a degree: below what a hand on a mouse holds, above sensor noise.</remarks>
     private const float OcclusionSettleOrientation = 0.003f;
 
+    /// <summary>How many frames the cumulative-movement window spans.</summary>
+    /// <remarks>
+    /// The per-frame <see cref="OcclusionSettlePosition"/> is what a single frame's step is judged by, and
+    /// it is fooled by a HIGH FRAME RATE and by a SLOW CINEMATIC PAN: sustained travel whose every step is
+    /// under the per-frame threshold reads as "still" frame after frame, so occlusion re-engages while the
+    /// camera is in fact moving, and terrain emerging from behind a hill is culled on the stale "occluded"
+    /// verdict it earned while hidden -- the black flash on a mission switch and during fast flight. Judging
+    /// the camera against where it was a whole window ago catches that travel however it is paced, because
+    /// occlusion depends on camera POSITION (a hill either hides a point or it does not), never on where the
+    /// camera looks -- so a windowed position test is both sufficient and exact.
+    /// </remarks>
+    private const int OcclusionWindowFrames = 12;
+
+    /// <summary>Cumulative metres over the window above which the camera counts as moving.</summary>
+    private const double OcclusionWindowDistance = 0.1;
+
+    // A ring of the last OcclusionWindowFrames camera positions, oldest at _positionWindowNext once filled.
+    private readonly Vector3d[] _positionWindow = new Vector3d[OcclusionWindowFrames];
+    private int _positionWindowNext;
+    private bool _positionWindowFilled;
+
     /// <summary>How many uploaded chunks to keep before dropping the ones no recent frame used.</summary>
     /// <remarks>The original bounds the same cache and aborts with "Out of terrain renderchunks".</remarks>
     public const int CacheCapacity = 4096;
@@ -496,7 +517,10 @@ public sealed class TerrainRenderer : IDisposable
     /// </remarks>
     private bool OcclusionVerdictsUsable(in Camera3D camera)
     {
-        if (ViewMoved(camera))
+        // WindowMoved is evaluated unconditionally -- it maintains the position ring -- so it must run even
+        // when ViewMoved has already decided the camera moved.
+        bool windowMoved = WindowMoved(camera.Position);
+        if (ViewMoved(camera) || windowMoved)
         {
             _occlusionSettle = OcclusionSettleFrames;
         }
@@ -506,6 +530,28 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         return _occlusionSettle == 0;
+    }
+
+    /// <summary>Whether the camera has travelled more than the window allows over the last several frames.</summary>
+    /// <param name="position">This frame's camera position, in metres.</param>
+    /// <returns><see langword="true"/> when cumulative movement over the window counts as moving.</returns>
+    /// <remarks>Catches sustained travel whose per-frame step slips under <see cref="OcclusionSettlePosition"/>.</remarks>
+    private bool WindowMoved(Vector3d position)
+    {
+        // The entry about to be overwritten is the oldest -- OcclusionWindowFrames ago -- once the ring has
+        // filled. Before then there is no window to compare against and the per-frame test carries the load.
+        bool moved = _positionWindowFilled
+            && (position - _positionWindow[_positionWindowNext]).Length > OcclusionWindowDistance;
+
+        _positionWindow[_positionWindowNext] = position;
+        _positionWindowNext++;
+        if (_positionWindowNext >= _positionWindow.Length)
+        {
+            _positionWindowNext = 0;
+            _positionWindowFilled = true;
+        }
+
+        return moved;
     }
 
     private bool ViewMoved(in Camera3D camera)
