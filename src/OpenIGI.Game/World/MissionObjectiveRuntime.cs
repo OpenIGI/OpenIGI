@@ -330,7 +330,8 @@ public sealed class MissionObjectiveRuntime
             foreach (HumanOccupant occupant in _soldierOccupants.Values)
             {
                 GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
-                if (!occupant.IsDead
+                if (soldier is not null
+                    && !occupant.IsDead
                     && ConditionalContainerGate.IsTaskActive(soldier)
                     && area.AcceptsSoldier(occupant.Team)
                     && area.Contains(occupant.Position))

@@ -51,22 +51,27 @@ public sealed class MissionObjectiveRuntimeTests
 
         HumanSoldierTask dormant = NewSoldier(dormantGate, 902);
         HumanSoldierTask active = NewSoldier(loop.Tasks.Root, 903);
-        HumanSoldierTask dead = NewSoldier(loop.Tasks.Root, 904);
+        HumanSoldierTask deleted = NewSoldier(loop.Tasks.Root, 904);
+        HumanSoldierTask dead = NewSoldier(loop.Tasks.Root, 905);
 
         new ConditionalContainerGate(loop.Variables).Prepare(loop.Tasks.Root);
         MissionObjectiveRuntime runtime = new(loop.Tasks.Root, loop.Variables);
+        loop.Tasks.Delete(deleted);
         Vector3d inside = new(0.0, 0.0, 0.0);
         runtime.SetSoldierOccupants(
         [
             new HumanOccupant(dormant.Id, 1, inside, IsDead: false),
             new HumanOccupant(active.Id, 1, inside, IsDead: false),
+            new HumanOccupant(904, 1, inside, IsDead: false),
             new HumanOccupant(dead.Id, 1, inside, IsDead: true),
+            new HumanOccupant(999, 1, inside, IsDead: false),
         ]);
 
         runtime.TickLevelState();
 
         Assert.Equal(1, ReadActive(loop));
         Assert.False(ReadDead(loop, dormant.Id));
+        Assert.False(ReadDead(loop, 904));
         Assert.True(ReadDead(loop, dead.Id));
 
         Assert.True(loop.Variables.TryWrite("ConditionalContainer_901.isRun", QvmValue.FromInt32(1)));
