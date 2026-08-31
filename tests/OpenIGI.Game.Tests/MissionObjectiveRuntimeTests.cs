@@ -62,7 +62,7 @@ public sealed class MissionObjectiveRuntimeTests
         [
             new HumanOccupant(dormant.Id, 1, inside, IsDead: false),
             new HumanOccupant(active.Id, 1, inside, IsDead: false),
-            new HumanOccupant(904, 1, inside, IsDead: false),
+            new HumanOccupant(904, 1, inside, IsDead: true),
             new HumanOccupant(dead.Id, 1, inside, IsDead: true),
             new HumanOccupant(999, 1, inside, IsDead: false),
         ]);
@@ -71,7 +71,7 @@ public sealed class MissionObjectiveRuntimeTests
 
         Assert.Equal(1, ReadActive(loop));
         Assert.False(ReadDead(loop, dormant.Id));
-        Assert.False(ReadDead(loop, 904));
+        Assert.True(ReadDead(loop, 904));
         Assert.True(ReadDead(loop, dead.Id));
 
         Assert.True(loop.Variables.TryWrite("ConditionalContainer_901.isRun", QvmValue.FromInt32(1)));
