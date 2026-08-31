@@ -94,6 +94,18 @@ public sealed class SoldierDeathBindingsTests
             ? v
             : default;
 
+        // The friendlies begin in a closed authored subtree. Reproduce the registration transition before
+        // presenting friendly 400 at the plateau: the runtime retains an inactive occupant for isDead,
+        // but AreaActivate only sees it once every conditional ancestor is live.
+        for (GameTask? task = root.Tree.FromId(400); task is not null; task = task.Parent)
+        {
+            if (task is ConditionalContainerTask container)
+            {
+                Assert.True(loop.Variables.TryWrite($"{container.Name}.isRun", QvmValue.FromInt32(1)));
+            }
+        }
+        Assert.True(ConditionalContainerGate.IsTaskActive(root.Tree.FromId(400)));
+
         // Friendly 400 stands on the internal plateau; the squad is alive, so EditVariable_753 stays 0.
         objectives.SetSoldierOccupants([new HumanOccupant(400, 0, plateau, IsDead: false)]);
         for (int tick = 0; tick < 600; tick++)

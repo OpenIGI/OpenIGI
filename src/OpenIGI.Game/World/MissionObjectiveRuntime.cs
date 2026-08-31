@@ -315,7 +315,8 @@ public sealed class MissionObjectiveRuntime
     /// matching occupants. The volume's criteria names whose occupants count: a team (CRITERIA_HUMAN0
     /// counts team 0 — the player and the friendly squad — while CRITERIA_HUMAN1 counts team 1, the
     /// guards) or the player object itself. Dead humans are not occupants, exactly as the detection scan
-    /// unregisters a corpse.
+    /// unregisters a corpse. The renderer reports every brain to preserve <c>isDead</c> bindings, so this
+    /// query also excludes soldier tasks outside the live task world, just as the collision-body pass does.
     /// </remarks>
     public void TickLevelState(Vector3d? playerPosition = null, int playerTeam = 0)
     {
@@ -328,7 +329,11 @@ public sealed class MissionObjectiveRuntime
             }
             foreach (HumanOccupant occupant in _soldierOccupants.Values)
             {
-                if (!occupant.IsDead && area.AcceptsSoldier(occupant.Team) && area.Contains(occupant.Position))
+                GameTask? soldier = _levelRoot.Tree.FromId(occupant.TaskId);
+                if (!occupant.IsDead
+                    && ConditionalContainerGate.IsTaskActive(soldier)
+                    && area.AcceptsSoldier(occupant.Team)
+                    && area.Contains(occupant.Position))
                 {
                     count++;
                 }
@@ -355,8 +360,10 @@ public sealed class MissionObjectiveRuntime
     /// <remarks>
     /// The mission runtime is built from the level's task tree before the soldiers exist, so the script
     /// variables it binds (<c>isDead</c>) and the <c>AreaActivate</c> volume counts both read from this
-    /// snapshot. The host calls this on the same tick it feeds the player position, so area occupancy and
-    /// death gates never lag a full frame behind the simulation.
+    /// snapshot. Every reported occupant remains available to the death bindings, while AreaActivate
+    /// independently projects the task through <see cref="ConditionalContainerGate.IsTaskActive"/> before
+    /// counting it. The host calls this on the same tick it feeds the player position, so area occupancy
+    /// and death gates never lag a full frame behind the simulation.
     /// </remarks>
     public void SetSoldierOccupants(IEnumerable<HumanOccupant> occupants)
     {
