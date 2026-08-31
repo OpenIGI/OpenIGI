@@ -39,6 +39,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly LampShadowPass? _lampShadow;
     private readonly LampDenoisePass? _lampDenoise;
     private readonly SsaoPass _ssao;
+    private readonly ReflectionPass _reflection;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
     private readonly ObjectVelocityPass _objectVelocity;
@@ -100,6 +101,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
+        _reflection = new ReflectionPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _objectVelocity = new ObjectVelocityPass(vk, device, compiler, DeferredRenderPass.DepthFormat);
         _bloom = new BloomPass(vk, device, allocator, commands, compiler, framesInFlight);
@@ -223,6 +225,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>Gets the ambient-occlusion compute pass.</summary>
     public SsaoPass Ssao => _ssao;
+
+    /// <summary>Gets the screen-space reflection pass.</summary>
+    public ReflectionPass Reflection => _reflection;
 
     /// <summary>Gets the pass that works out where each pixel's surface was on the previous frame.</summary>
     public VelocityPass Velocity => _velocity;
@@ -370,6 +375,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _updateHistory.Dispose();
         _resolveHistory.Dispose();
         _ssao.Dispose();
+        _reflection.Dispose();
         _shadowPipeline.Dispose();
         _shadowMap.Dispose();
         _probes.Dispose();
@@ -391,7 +397,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
         // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
         // traced sun-shadow mask.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[19];
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[21];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -477,9 +483,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // And how much of each pixel's lamp reaches it, traced once per pixel by its own pass rather
         // than once per lamp inside the shading. Only where the adapter can trace: without ray query
         // there is no pass to write it and the shading has no term to read.
+        uint next = 18;
         if (_rayQuery)
         {
-            bindings[18] = new DescriptorSetLayoutBinding
+            bindings[next++] = new DescriptorSetLayoutBinding
             {
                 Binding = 18,
                 DescriptorType = DescriptorType.CombinedImageSampler,
@@ -488,10 +495,36 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             };
         }
 
+        // 19 the scene depth as a sampled texture, for the lamps' screen-space occlusion march. Always
+        // present -- the march is what shadows lamps where there is no ray query -- so it sits after the
+        // trace-only binding rather than being numbered around it, and the count follows whichever were
+        // added.
+        bindings[next++] = new DescriptorSetLayoutBinding
+        {
+            Binding = 19,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
+        // 20 the world the lamps trace against, for the off-screen half of their shadow. Only where the
+        // adapter can trace; the ray is still fired only when the RT switch is on, which is a runtime
+        // choice the shader makes, so the binding exists whenever the trace COULD run.
+        if (_rayQuery)
+        {
+            bindings[next++] = new DescriptorSetLayoutBinding
+            {
+                Binding = 20,
+                DescriptorType = DescriptorType.AccelerationStructureKhr,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
+
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = _rayQuery ? 19u : 18u,
+            BindingCount = next,
             PBindings = bindings,
         };
 
@@ -531,7 +564,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     {
         // Each frame's target uses four input attachments plus one sampler; a resize frees and
         // reallocates, so the pool allows freeing and is sized with headroom.
-        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[5];
+        DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[6];
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
         // Two uniform buffers per lighting set now -- the GI block and the lamps -- so twice the count.
@@ -547,12 +580,19 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             DescriptorCount = (uint)(framesInFlight * 2),
         };
 
+        // The world each lighting set traces its lamp shadow rays against, where the adapter can trace.
+        sizes[5] = new DescriptorPoolSize
+        {
+            Type = DescriptorType.AccelerationStructureKhr,
+            DescriptorCount = (uint)(framesInFlight * 2),
+        };
+
         DescriptorPoolCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
             MaxSets = (uint)(framesInFlight * 3 * 2),
-            PoolSizeCount = _rayQuery ? 5u : 4u,
+            PoolSizeCount = _rayQuery ? 6u : 4u,
             PPoolSizes = sizes,
         };
 

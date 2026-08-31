@@ -74,4 +74,13 @@ public enum DebugView
     /// puddle that is not there look nothing alike — which, once they are shaded, they very much do.
     /// </summary>
     Wetness = 13,
+
+    /// <summary>
+    /// The lamps' light alone, with the sun, the sky, the bounce and every surface's own colour taken
+    /// out — only what the level's local lights put on each surface, AFTER their shadowing. The view that
+    /// settles whether a lamp is lighting through a wall: if a surface the wall should hide is lit here,
+    /// the occlusion missed it; if it is black, the light on it in the finished picture came from
+    /// somewhere else.
+    /// </summary>
+    LampLight = 14,
 }

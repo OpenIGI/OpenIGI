@@ -91,23 +91,45 @@ public sealed partial class VulkanGraphicsDevice
     /// <summary>How far to bias every mipped sampler's level-of-detail choice, negative for sharper.</summary>
     /// <remarks>
     /// <para>
-    /// The reference's automatic view mip bias, and it exists for a specific reason: a temporal filter
-    /// sees a different sub-pixel offset each frame and averages them, so it recovers detail that the
-    /// level-of-detail rule assumes has been lost. The rule therefore picks a level coarser than the
-    /// picture can actually resolve, and the world comes out softer than it should.
+    /// The reference's automatic view mip bias, and it exists for two reasons this renderer needs BOTH of.
     /// </para>
     /// <para>
-    /// The reference's own formula is
-    /// <c>clamp(max(-max(-log2(resolutionFraction), 0) + offset, min), -4, 4)</c> with an offset of −0.3
-    /// and a floor of −2. At full resolution, which is what this renders at, that reduces to −0.3.
+    /// <b>The resolution term (<c>log2(scale)</c>).</b> A scene rendered below full resolution has larger
+    /// screen-space texture derivatives, so the hardware picks a mip that much coarser. For a cut-out —
+    /// chain-link, foliage, railings — that coarser level averages the wire's 0-or-255 alpha down below
+    /// the alpha test, and the thin geometry is discarded outright: the fence turns to whatever is behind
+    /// it. Biasing the level back by <c>log2(scale)</c> samples where full resolution would, which keeps
+    /// the cut-out alive. This is the resolution half of the reference's formula and — unlike the temporal
+    /// half — it must apply whether or not a temporal filter runs, because the discard happens regardless.
     /// </para>
     /// <para>
-    /// Only where a temporal filter actually runs. Applying it without one does not recover anything; it
-    /// just samples above the sampling rate and aliases, which is the artefact mipmaps exist to remove.
+    /// <b>The temporal term (−0.3).</b> A temporal filter sees a different sub-pixel offset each frame and
+    /// averages them, recovering detail the level-of-detail rule assumes lost, so it can afford one level
+    /// sharper. Applied only where such a filter runs; without one it would sample above the rate and
+    /// alias, which is the artefact mipmaps exist to remove.
+    /// </para>
+    /// <para>
+    /// The reference's whole formula is
+    /// <c>clamp(max(-max(-log2(resolutionFraction), 0) + offset, min), -4, 4)</c>, offset −0.3, floor −2.
+    /// </para>
+    /// <para>
+    /// Read once, at texture creation, and baked into the sampler — which the descriptor sets then hold
+    /// for the life of the level, so it cannot be re-derived per frame without re-writing every one of
+    /// them. A level therefore loads correct for whatever <c>r_scale</c> is set at the time (which is the
+    /// shipping case: the preset carries the scale, so the world loads with the right bias). Changing
+    /// <c>r_scale</c> live does not re-bias textures already resident — reload the level, or bake the scale
+    /// into the preset, for the cut-outs to sample correctly at the new resolution.
     /// </para>
     /// </remarks>
-    private static float TextureMipLodBias() =>
-        RenderCVars.TemporalFeedback.Value < 1f ? -0.3f : 0f;
+    private static float TextureMipLodBias()
+    {
+        // Clamped to 1 at the top so supersampling (scale > 1) never biases coarser -- it already samples
+        // below its own mip rate, which is the whole point of it.
+        float scale = Math.Clamp(RenderCVars.RenderScale.Value, 0.25f, 1f);
+        float resolution = MathF.Log2(scale);
+        float temporal = RenderCVars.TemporalFeedback.Value < 1f ? -0.3f : 0f;
+        return Math.Clamp(MathF.Max(resolution + temporal, -2f), -4f, 4f);
+    }
 
     // ---- Deferred effects fed into the lighting (no-op until compute lands) ------------------------
 
@@ -115,7 +137,17 @@ public sealed partial class VulkanGraphicsDevice
     // former feeds the near-field GI atlas into the lighting, the latter captures the camera position.
 
     /// <inheritdoc/>
-    public void SetReflections(in ReflectionSettings settings) => ThrowIfDisposed();
+    /// <remarks>
+    /// The screen-space reflection pass reads these each frame: the marching steps, how strongly the
+    /// reflection is mixed, the roughness past which a surface stops reflecting sharply, and the depth
+    /// buffer's assumed thickness. The pass itself is in <see cref="VulkanGraphicsDevice"/>'s deferred
+    /// half.
+    /// </remarks>
+    public void SetReflections(in ReflectionSettings settings)
+    {
+        ThrowIfDisposed();
+        _reflectionSettings = settings;
+    }
 
     /// <inheritdoc/>
     public void SetColourLookup(ColourLookupTable? table) => ThrowIfDisposed();

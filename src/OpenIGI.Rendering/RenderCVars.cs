@@ -237,13 +237,24 @@ public static class RenderCVars
     /// is the cheapest way to buy back frame time. Above one it is supersampling proper. The temporal
     /// upscaler added in stage R5 is what makes values below one look acceptable.
     /// </remarks>
-    public static readonly NumericCVar<float> RenderScale = CVar.Float(
-        "r_scale",
-        1.0f,
-        0.5f,
-        2.0f,
-        CVarOptions.Archive,
-        "Render resolution as a fraction of the window: below 1 is faster, above 1 is supersampled.");
+    public static readonly NumericCVar<float> RenderScale = Presets.Define(
+        CVar.Float(
+            "r_scale",
+            1.0f,
+            0.5f,
+            2.0f,
+            CVarOptions.Archive,
+            "Render resolution as a fraction of the window: below 1 is faster, above 1 is supersampled."),
+        vanilla: null,
+        enhanced: "1",
+        high: "1",
+
+        // Ultra renders at two-thirds internal resolution and lets temporal upscaler reconstruct to the window — which is
+        // how the reference ships its GI. The GI gather, temporal upscaler and the lighting all scale with pixel count, so this is the
+        // single lever that buys back most of a traced-GI frame for little visible cost. The cut-out mip
+        // bias (VulkanGraphicsDevice's TextureMipLodBias) is derived from this, so a level loaded on Ultra
+        // samples chain-link and foliage at the sharpness full resolution would, rather than discarding it.
+        ultra: "0.67");
 
     /// <summary>Whether the scene is rendered offscreen instead of straight to the back buffer.</summary>
     /// <remarks>
@@ -452,6 +463,44 @@ public static class RenderCVars
             true,
             CVarOptions.None,
             "Trace the sun's shadow rather than reading the cascaded map. Needs r_rt; toggle live to compare."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the lamps' shadow is traced against the world, on a backend already tracing.</summary>
+    /// <remarks>
+    /// The lights' own switch, beside the sun's. It traces a ray per lamp against the world so a lamp
+    /// cannot light through a wall the camera cannot see -- the off-screen occluder the screen-space
+    /// march can never find. Off, the lamps keep the screen-space march alone, which still stops the
+    /// walls the view contains; so this is the difference between a lamp shadowed everywhere and one
+    /// shadowed only where its wall is on screen. Needs <see cref="HardwareRayTracing"/> and does
+    /// nothing without it; toggle live to weigh its cost against the leak it closes.
+    /// </remarks>
+    public static readonly BoolCVar TracedLampShadows = Presets.Define(
+        CVar.Bool(
+            "r_rt_lights",
+            true,
+            CVarOptions.None,
+            "Trace the lamps' shadow so they cannot light through off-screen walls. Needs r_rt; toggle live."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether reflections are traced against the world, on a backend already tracing.</summary>
+    /// <remarks>
+    /// The reflections' own switch. With it on, a reflected ray that the screen cannot answer is traced
+    /// against the world and its hit shaded, so a puddle or a pane shows what stands off-screen or behind
+    /// something nearer -- which screen-space reflection can never reach. Off, reflections keep the
+    /// screen-space march alone. Needs <see cref="HardwareRayTracing"/>; toggle live to compare.
+    /// </remarks>
+    public static readonly BoolCVar TracedReflections = Presets.Define(
+        CVar.Bool(
+            "r_rt_reflections",
+            true,
+            CVarOptions.None,
+            "Trace reflections against the world for what the screen cannot show. Needs r_rt; toggle live."),
         vanilla: "1",
         enhanced: "1",
         high: "1",
@@ -990,15 +1039,21 @@ public static class RenderCVars
     public static readonly NumericCVar<float> LocalLightRange = Presets.Define(
         CVar.Float(
             "r_local_light_range",
-            4f,
+            3f,
             0.25f,
             8f,
             CVarOptions.Archive,
             "How far a detected lamp reaches, against its derived reach. Higher lights further, and leaks."),
-        vanilla: "4",
-        enhanced: "4",
-        high: "4",
-        ultra: "4");
+        vanilla: "3",
+        enhanced: "3",
+        high: "3",
+
+        // Brought down a notch from four now that the lamps are actually shadowed. Four was set to push
+        // the light pool past a wall it could not be stopped at, back when these lights cast no shadow of
+        // any kind and a corridor's far end went black between fittings; with the walls now stopping the
+        // light where they should, the reach no longer has to overshoot to fill a room, and a shorter
+        // one leaves less to leak on the paths a shadow ray cannot reach.
+        ultra: "3");
 
     /// <summary>How bright the sky is as a source of indirect light, where 1 is the level's own ambient.</summary>
     /// <remarks>
@@ -1164,6 +1219,12 @@ public static class RenderCVars
     /// <remarks>
     /// Resolved down before anything samples the target, because the effects that follow read depth
     /// and a multisampled depth buffer is not something a shader can read usefully.
+    /// <para>
+    /// It applies ONLY on the original's forward path (<c>r_hdr 0</c>): the deferred/HDR path records into
+    /// a single-sample G-buffer and is anti-aliased by temporal upscaler instead, so MSAA there would be pure cost for no
+    /// effect. Every preset from enhanced up is deferred, so they set it to off — a value above one on
+    /// those presets did nothing but read as if it were working.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<int> MultiSampling = Presets.Define(
         CVar.Int(
@@ -1172,11 +1233,11 @@ public static class RenderCVars
             0,
             8,
             CVarOptions.Archive,
-            "Multisample count for the scene: 0 or 1 is off. Only applies when r_hdr is on."),
+            "Samples per pixel on the forward (r_hdr 0) path; off on the deferred path, where temporal upscaler is the AA."),
         vanilla: "0",
-        enhanced: "2",
-        high: "4",
-        ultra: "8");
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How far the terrain keeps subdividing before it settles for a coarser mesh.</summary>
     /// <remarks>

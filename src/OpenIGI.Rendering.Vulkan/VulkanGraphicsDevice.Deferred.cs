@@ -74,6 +74,7 @@ public sealed partial class VulkanGraphicsDevice
     // Ambient occlusion, gathered by a compute pass after the deferred pass and applied a frame later.
     private AmbientOcclusionSettings _aoSettings = AmbientOcclusionSettings.Off;
     private WetnessSettings _wetness = WetnessSettings.Dry;
+    private ReflectionSettings _reflectionSettings = ReflectionSettings.Off;
     private readonly WetShelter[] _wetShelters = new WetShelter[WetShelter.Capacity];
     private int _wetShelterCount;
 
@@ -353,6 +354,13 @@ public sealed partial class VulkanGraphicsDevice
             // contents), so a read-before-write barrier separates that from the compute write below.
             DispatchOcclusion();
             DispatchVelocity();
+
+            // The reflections, after the frame is lit and before the temporal pass -- so the pass reads
+            // the finished scene as the reflection's source, and so the temporal resolve then denoises
+            // and stabilises what the single-ray march finds. Composited into the lit scene in place, so
+            // everything downstream reads it with the reflections already in.
+            DispatchReflections();
+
             DispatchTemporalResolve();
 
             // Everything temporal measures against this, so it moves on exactly once per captured frame.
@@ -423,6 +431,11 @@ public sealed partial class VulkanGraphicsDevice
     /// x cases), over a 4.4% spread between best and worst.
     /// </remarks>
     private const float VerticalJitterSign = -1f;
+
+    // How far, in metres, a reflected ray is marched through the depth buffer. Far enough to catch the
+    // buildings and figures a wet street shows standing over it, short enough that the fixed number of
+    // steps stays dense enough to land on them.
+    private const float ReflectionReachMetres = 120f;
 
     private unsafe void DispatchTemporalResolve()
     {
@@ -664,6 +677,115 @@ public sealed partial class VulkanGraphicsDevice
         };
         _instance.Vk.CmdPipelineBarrier(
             cmd, PipelineStageFlags.ColorAttachmentOutputBit, destinationStage, 0, 0, null, 0, null, 1, &barrier);
+    }
+
+    /// <summary>Moves the lit scene between the read layout the passes sample it in and the general layout
+    /// the reflection composite writes it in.</summary>
+    private unsafe void LitLayoutBarrier(
+        CommandBuffer cmd, Image lit, ImageLayout oldLayout, ImageLayout newLayout,
+        AccessFlags srcAccess, AccessFlags dstAccess, PipelineStageFlags srcStage, PipelineStageFlags dstStage)
+    {
+        ImageMemoryBarrier barrier = new()
+        {
+            SType = StructureType.ImageMemoryBarrier,
+            OldLayout = oldLayout,
+            NewLayout = newLayout,
+            SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
+            Image = lit,
+            SubresourceRange = new ImageSubresourceRange
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                BaseMipLevel = 0,
+                LevelCount = 1,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+            SrcAccessMask = srcAccess,
+            DstAccessMask = dstAccess,
+        };
+        _instance.Vk.CmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, null, 0, null, 1, &barrier);
+    }
+
+    /// <summary>Reflects the scene into the wet ground and the glossy surfaces, and adds it to the lit
+    /// colour before the temporal pass reads it.</summary>
+    /// <remarks>
+    /// Runs on every adapter -- the march is screen space, no ray query in it -- and only when the
+    /// reflection setting asks for marching steps. The two dispatches are separated by the barriers a
+    /// read-then-write of the lit image needs: the march samples the lit scene, the composite writes it,
+    /// and between them the image moves from the read layout to the general layout a storage write wants
+    /// and back again for the temporal resolve.
+    /// </remarks>
+    private unsafe void DispatchReflections()
+    {
+        // Not while a debug view is up: it composites into the lit image, and a view that isolates one
+        // term of the lighting must not have the reflections of the whole scene added back over it.
+        if (_sceneTarget is null || !_reflectionSettings.Marches || _debugView is not DebugView.None)
+        {
+            return;
+        }
+
+        Deferred.SceneTarget target = _sceneTarget;
+        CommandBuffer cmd = _frameCommandBuffer;
+        int width = (int)target.Extent.Width;
+        int height = (int)target.Extent.Height;
+
+        using StageScope reflections = Measure(RenderStage.Reflections);
+
+        // The shading pass's colour write, ordered before the march's sampled read of it.
+        LitReadBarrier(cmd, target.LitImage, PipelineStageFlags.ComputeShaderBit);
+
+        // The reflection image was read by the previous frame's composite; separate that from this
+        // frame's write.
+        OcclusionBarrier(
+            cmd, target.ReflectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.Reflection.RecordReflect(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.LitView,
+            target.DepthView,
+            target.NormalView,
+            target.MaterialView,
+            target.ReflectionView,
+            width,
+            height,
+            _viewToWorld,
+            _unprojection,
+            _reflectionSettings,
+            _wetness.Amount,
+            _wetness.PuddleCoverage,
+            _wetness.PuddleSizeMetres,
+            _cameraPosition.X,
+            _cameraPosition.Y,
+            (int)(_frameCounter % 64UL),
+            ReflectionReachMetres);
+
+        // The march's write, before the composite reads it; and the march's sampled read of the lit
+        // scene, before the composite writes it -- for which the lit image moves to the general layout.
+        OcclusionBarrier(
+            cmd, target.ReflectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        LitLayoutBarrier(
+            cmd, target.LitImage, ImageLayout.ShaderReadOnlyOptimal, ImageLayout.General,
+            AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+
+        _deferred.Reflection.RecordComposite(
+            cmd,
+            _frameLoop.CurrentFrame,
+            target.ReflectionView,
+            target.LitView,
+            width,
+            height);
+
+        // Back to the read layout the temporal pass samples the lit scene in.
+        LitLayoutBarrier(
+            cmd, target.LitImage, ImageLayout.General, ImageLayout.ShaderReadOnlyOptimal,
+            AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit,
+            PipelineStageFlags.ComputeShaderBit | PipelineStageFlags.FragmentShaderBit);
     }
 
     /// <summary>Meters the lit scene for the eye adaptation, before the present pass opens.</summary>
@@ -996,7 +1118,7 @@ public sealed partial class VulkanGraphicsDevice
         // The frame's last word on colour before any of the lens work: the temporal pass's stable output
         // when it ran, the raw lit image when it did not.
         ImageView sceneColour = _temporalResolved ? _sceneTarget.UpscaleOutputView : _sceneTarget.LitView;
-        bool sceneIsShaded = _debugView is DebugView.None or DebugView.Lighting;
+        bool sceneIsShaded = _debugView is DebugView.None or DebugView.Lighting or DebugView.LampLight;
 
         // The shutter, first, because everything after it is lens behaviour and a lens sees the smeared
         // picture. The reference orders it the same way: motion blur, then bloom, then the tone map --
@@ -1054,7 +1176,7 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         float adaptedExposure = 1f;
-        if (post.AutoExposure && _debugView is DebugView.None or DebugView.Lighting)
+        if (post.AutoExposure && _debugView is DebugView.None or DebugView.Lighting or DebugView.LampLight)
         {
             RecordExposureMetering();
             adaptedExposure = _deferred.AutoExposure.Adapt(_frameLoop.CurrentFrame, 1f / 60f);
@@ -1081,7 +1203,7 @@ public sealed partial class VulkanGraphicsDevice
         InvalidateBoundState();
 
         // A mask view is a code value rather than radiance, so it keeps neither the curve nor the lens.
-        bool maskView = _debugView is not DebugView.None and not DebugView.Lighting;
+        bool maskView = _debugView is not DebugView.None and not DebugView.Lighting and not DebugView.LampLight;
 
         float* parameters = stackalloc float[8]
         {
@@ -1987,7 +2109,8 @@ public sealed partial class VulkanGraphicsDevice
             giView, giSampler, giLayout,
             shadowMap.ArrayView, shadowMap.Sampler,
             new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
-            freshestAo);
+            freshestAo,
+            TracedWorld());
     }
 
     /// <summary>The world the lamps shadow against, or nothing when there is none to trace.</summary>
@@ -2052,12 +2175,23 @@ public sealed partial class VulkanGraphicsDevice
         // the dither only needs the pattern to differ from the last frame's, not to never repeat.
         u[2] = _frameCounter % 64UL;
 
-        // u[3] is spare. It carried a per-pixel budget on how many lamps could be shadowed, which the
-        // reservoir replaces outright: one ray covers every lamp, so there is no longer a number of them
-        // to choose.
+        // Whether the shading marches the depth buffer to occlude each lamp. On wherever lamp shadows
+        // are asked for AT ALL -- unlike the traced reservoir above, this needs no ray query, so it is
+        // what keeps a lamp from lighting through a wall on an adapter that cannot trace, and what
+        // shadows the SECOND lamp on a pixel the reservoir's one ray could not reach. It rides on the
+        // count being non-zero for the same reason the trace does: no lamps, nothing to occlude.
+        u[3] = _localLightCount > 0 && RenderCVars.LocalLightShadows.Value != 0 ? 1f : 0f;
 
+        // Whether the shading traces a ray per lamp against the world -- the off-screen half of the lamp
+        // shadow. Needs an adapter that can trace AND the RT switch to be on, so it is OPTIONAL on
+        // hardware that could trace but has been asked not to: r_rt off leaves the screen march above as
+        // the whole of the lamp shadow, exactly as on a card that cannot trace at all. Off, too, until the
+        // world is built, so a level's first frames trace against nothing rather than being shadowed by
+        // nothing.
         u[1] = _localLightCount > 0
             && RenderCVars.LocalLightShadows.Value != 0
+            && RenderCVars.HardwareRayTracing.Value
+            && RenderCVars.TracedLampShadows.Value
             && _device.Capabilities.RayQuery
             && _worldScene is { IsReady: true } traced
             && traced.TopLevel is not null
