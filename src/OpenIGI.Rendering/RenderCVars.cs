@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Rendering;
@@ -132,6 +132,79 @@ public static class RenderCVars
         2f,
         CVarOptions.Archive,
         "Weather particle speed multiplier: 0 stops falling, 1 is the tuned speed, 2 is twice as fast.");
+
+    /// <summary>Whether weather falls in levels the retail data never gave any.</summary>
+    /// <remarks>
+    /// Only three of the retail missions author a <c>RainEffect</c> task, so without this the weather
+    /// can only ever be looked at in those three -- which is not enough to tune it, and not enough to
+    /// find the places it goes wrong. Forcing it ignores the level's own answer and uses
+    /// <see cref="WeatherStyle"/> everywhere; the level's authored fall band is replaced by the
+    /// renderer's own defaults, since a level with no rain task has no band to read.
+    /// </remarks>
+    public static readonly BoolCVar WeatherForce = CVar.Bool(
+        "r_weather_force",
+        false,
+        CVarOptions.Archive,
+        "Make r_weather_kind fall in every level, not only the ones the retail data gives weather.");
+
+    /// <summary>Whether the remastered storm replaces the original's rain band.</summary>
+    /// <remarks>
+    /// <para>
+    /// Off under <c>vanilla</c>, because the original's rain is a fixed band of thin vertical streaks
+    /// and that is what vanilla means here. Everywhere above it the storm is a real particle system:
+    /// drops blown by a gusting wind, leaning the way they travel, sheltered by roofs and answered by
+    /// splashes on the ground.
+    /// </para>
+    /// <para>
+    /// The two never draw together. Rain that is drawn twice does not read as heavier rain, it reads
+    /// as rain with a second, wrong-looking layer behind it.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar Storm = Presets.Define(
+        CVar.Bool(
+            "r_storm",
+            true,
+            CVarOptions.Archive,
+            "Use the remastered particle storm instead of the original's rain band."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the storm wets the ground it falls on.</summary>
+    /// <remarks>
+    /// <para>
+    /// Separate from <see cref="Storm"/> because it is a different renderer doing different work: the
+    /// storm is particles in the forward pass, and this is every surface in the frame being shaded as
+    /// wet — darker, glossier, and holding standing water wherever the ground is level and low. That is
+    /// deferred work, so it needs the deferred path and it costs what a handful of extra instructions
+    /// per shaded pixel costs.
+    /// </para>
+    /// <para>
+    /// It is what the rain is <em>for</em>, visually. Drops falling past a bone-dry road read as an
+    /// effect laid over the level; the same drops over ground that darkens, pools and throws the sky
+    /// back up at the camera read as weather the level is in.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar Wetness = Presets.Define(
+        CVar.Bool(
+            "r_wetness",
+            true,
+            CVarOptions.Archive,
+            "Wet the ground while it rains: darker surfaces, standing water and rain ripples."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Multiplier on the storm's drop density, from a drizzle to a downpour.</summary>
+    public static readonly NumericCVar<float> StormIntensity = CVar.Float(
+        "r_storm_intensity",
+        1f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "How much of the storm's tuned drop rate falls: 0 is dry, 1 is the full rate.");
 
     /// <summary>Whether the presentation interpolates between simulation ticks.</summary>
     /// <remarks>
@@ -903,19 +976,29 @@ public static class RenderCVars
     /// and a level lit that way glows from the inside out. Raise it for a big hall; lower it if light is
     /// appearing where a wall should have stopped it.
     /// </para>
+    /// <para>
+    /// <b>Doubled to four, and the selection no longer scales with it.</b> Raising this used to do two
+    /// unrelated things at once: it widened the reach the shader culls and falls off against — which is
+    /// what anyone raising it wants — and it also scaled the term <c>SelectNearestLamps</c> ranks by,
+    /// <c>distance - radius * range</c>. The second is why raising it once made lamps go out EARLIER
+    /// than before: scaling the radius term scales how much a fixture's own size counts in the
+    /// comparison, so big distant battens crowded the small near fittings out of a budget only
+    /// sixty-four deep. The ranking now uses the unscaled radius, so this widens the light and nothing
+    /// else, and a lamp keeps its slot on where it is rather than on how big it is.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> LocalLightRange = Presets.Define(
         CVar.Float(
             "r_local_light_range",
-            2f,
+            4f,
             0.25f,
             8f,
             CVarOptions.Archive,
             "How far a detected lamp reaches, against its derived reach. Higher lights further, and leaks."),
-        vanilla: "2",
-        enhanced: "2",
-        high: "2",
-        ultra: "2");
+        vanilla: "4",
+        enhanced: "4",
+        high: "4",
+        ultra: "4");
 
     /// <summary>How bright the sky is as a source of indirect light, where 1 is the level's own ambient.</summary>
     /// <remarks>
@@ -2094,12 +2177,14 @@ public static class RenderCVars
         enhanced: "0",
         high: "1",
 
-        // On at ultra, and read there. The real-time screen gather no longer replaces this field -- it is
-        // FLOORED against it (see the deferred fill's max of the two), so this is the coarse, visibility-aware
-        // far field a surface the screen probes cannot resolve falls back to instead of black: a merlon or a
-        // wire thinner than the probe spacing, or a wall the screen never saw. High and below, with no
-        // surface cache to gather, light from this bake directly.
-        ultra: "1");
+        // TEMPORARILY off at ultra, so nothing about that preset is traced at load and every bit of its
+        // indirect comes from the real-time path -- the surface cache and the screen gather -- with
+        // nothing static underneath it. What that costs is the floor this field used to provide: it is a
+        // coarse, visibility-aware far field, and the deferred fill takes the max of the two, so a surface
+        // the screen probes cannot resolve (a merlon or a wire thinner than the probe spacing, a wall the
+        // screen never saw) now falls back to the flat ambient term rather than to a traced estimate.
+        // High and below, with no surface cache to gather, still light from this bake directly.
+        ultra: "0");
 
     /// <summary>How the level's static object lightmaps are sourced: shipped, augmented, or our bake alone.</summary>
     /// <remarks>
@@ -2129,11 +2214,16 @@ public static class RenderCVars
         enhanced: "0",
         high: "0",
 
-        // Ultra runs OUR lighting only -- it discards the shipped .olm entirely and shows the path-traced
-        // bake alone, so what the frame lights with is the level's own sun and sky computed rather than the
-        // artists' hand-painted maps. A room the bake cannot reach reads dark rather than borrowing their
-        // light; that is the honest state until the lamp fixtures are baked as emitters.
-        ultra: "2");
+        // TEMPORARILY off at ultra, and it was doing nothing there anyway. Ultra lights with r_lighting
+        // `dynamic`, which does not sample an object lightmap at all -- a frame drawn with the shipped
+        // pages and one drawn with every page forced black come out byte-identical on that preset. So the
+        // forty seconds this spent path-tracing every level at load, across every core, holding a few
+        // hundred megabytes of texel maps while it ran, produced pages nothing ever read.
+        //
+        // It was 2, which discarded the shipped pages and showed our bake alone, and it earns that back
+        // the moment ultra samples a lightmap again -- or on any preset set to `baked` or `hybrid` by
+        // hand, where 1 and 2 work exactly as they always did.
+        ultra: "0");
 
     /// <summary>How far apart the probes sit, in metres.</summary>
     public static readonly NumericCVar<float> GlobalIlluminationSpacing = Presets.Define(
@@ -2303,7 +2393,7 @@ public static class RenderCVars
         "r_debug_view",
         DebugView.None,
         CVarOptions.Developer,
-        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight.");
+        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight, wetness.");
 
     /// <summary>How much of the resolved pixel is this frame, or 1 for no accumulation.</summary>
     /// <remarks>

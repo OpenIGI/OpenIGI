@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -154,9 +154,12 @@ public sealed class RainRenderer : IDisposable
     }
 
     /// <summary>Applies the live weather settings without changing the level-authored particle band.</summary>
-    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier)
+    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier, bool force = false)
     {
-        _active = enabled && _authoredAvailable && kind == WeatherKind.Rain;
+        // Forcing skips only the level's own answer, not the player's: r_weather_enabled still turns it
+        // off, and asking for snow still means no rain. A forced level keeps this renderer's default
+        // band, because a level with no RainEffect task has no authored band to read.
+        _active = enabled && (_authoredAvailable || force) && kind == WeatherKind.Rain;
         _speedMultiplier = Math.Clamp(speedMultiplier, 0f, 2f);
     }
 

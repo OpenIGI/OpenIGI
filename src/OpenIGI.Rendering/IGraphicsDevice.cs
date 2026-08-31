@@ -424,6 +424,32 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Sets how wet the world is, which the lighting pass applies to every surface it shades.</summary>
+    /// <param name="wetness">The state of the ground, or <see cref="WetnessSettings.Dry"/> for none.</param>
+    /// <remarks>
+    /// <para>
+    /// Applied inside the deferred lighting pass, between unpacking the G-buffer and shading it: the
+    /// albedo is darkened, the roughness collapsed and the normal replaced by the water's, so the sun,
+    /// the lamps, the sky and the bounce all light the wet surface rather than the dry one underneath.
+    /// See <see cref="WetnessSettings"/> for why it cannot be done in the G-buffer instead.
+    /// </para>
+    /// <para>
+    /// A backend that has not implemented it does nothing, which is why this has a body: adding standing
+    /// water to one renderer should not stop the other one compiling, and a device that ignores it says
+    /// so through <see cref="GraphicsCapabilities.UnimplementedSettings"/> where the shell can report it.
+    /// </para>
+    /// </remarks>
+    /// <param name="shelters">
+    /// Boxes the rain does not reach into, camera-relative, at most <see cref="WetShelter.Capacity"/> of
+    /// them. Ground under one of these stays dry however hard it is raining outside — without them the
+    /// floor of every building in the level pools with water while the roof keeps the rain off it.
+    /// </param>
+    void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters)
+    {
+        _ = wetness;
+        _ = shelters;
+    }
+
     /// <summary>Sets what surfaces reflect and how far the frame is searched to find it.</summary>
     /// <param name="settings">The search, or <see cref="ReflectionSettings.Off"/> for none.</param>
     /// <remarks>
@@ -1086,6 +1112,24 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Stops rendering into the offscreen target.</summary>
     /// <exception cref="GraphicsDeviceException">No capture is in progress, or a pass is still open.</exception>
     void EndSceneCapture();
+
+    /// <summary>Drops everything a backend has accumulated about the level being left.</summary>
+    /// <remarks>
+    /// <para>
+    /// Some of what a backend builds is discovered from the frames it draws rather than handed to it:
+    /// the traceable copy of the world is assembled from geometry-pass draws over a level's first
+    /// seconds, and it has no other way of learning that the level has gone. Destroying the meshes tells
+    /// it that each one has gone, which is not the same thing -- the material records a structure's hits
+    /// are looked up in are append-only by design, so a session that entered six missions carried six
+    /// missions' worth of them and the seventh would have overflowed the buffer they live in.
+    /// </para>
+    /// <para>
+    /// Called when a mission is released, before its meshes and textures are destroyed. It is not a
+    /// device reset: nothing the front end is still drawing with is touched, and a backend with nothing
+    /// accumulated does nothing.
+    /// </para>
+    /// </remarks>
+    void ReleaseWorld();
 
     /// <summary>Brings the captured scene to the back buffer.</summary>
     /// <param name="post">What to do to it on the way.</param>

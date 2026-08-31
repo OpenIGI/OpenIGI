@@ -73,6 +73,9 @@ public sealed partial class VulkanGraphicsDevice
 
     // Ambient occlusion, gathered by a compute pass after the deferred pass and applied a frame later.
     private AmbientOcclusionSettings _aoSettings = AmbientOcclusionSettings.Off;
+    private WetnessSettings _wetness = WetnessSettings.Dry;
+    private readonly WetShelter[] _wetShelters = new WetShelter[WetShelter.Capacity];
+    private int _wetShelterCount;
 
     /// <summary>Gets a value indicating whether a shadow cascade is currently being rendered.</summary>
     internal bool InShadowPass => _inShadowPass;
@@ -273,6 +276,50 @@ public sealed partial class VulkanGraphicsDevice
         }
 
         _currentScenePass = ScenePass.None;
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Asked for here and carried out at the next frame boundary, in <see cref="ReleaseWorldIfAsked"/>.
+    /// A mission is released from the middle of a loop pass, and by then this frame's command buffer is
+    /// usually open and already carries the scene build and the traces that read it. Waiting for the
+    /// device to go idle does not make that safe: an open buffer has not been submitted, so there is
+    /// nothing to wait for, and the structures freed underneath it are read the moment it is. Measured
+    /// on the abandon-and-replay cycle, freeing them on the spot lost the device on five runs of eight,
+    /// against one for the same build that left the world alone.
+    /// </remarks>
+    public void ReleaseWorld()
+    {
+        ThrowIfDisposed();
+        _worldReleasePending = true;
+
+        // These name nothing the GPU reads, so they go now. Pairings made against the level that is
+        // leaving: mesh identifiers are never reused, so nothing would be mispaired -- but nothing would
+        // ever be matched again either, and both maps would carry every animated draw of every mission
+        // the session had entered.
+        _objectVelocityPrevious.Clear();
+        _objectVelocityCurrent.Clear();
+        _objectVelocityOccurrence.Clear();
+        _objectVelocityDraws.Clear();
+    }
+
+    /// <summary>Carries out a pending world release, on a frame boundary with nothing recording.</summary>
+    /// <remarks>
+    /// Called from <c>EnsureFrame</c> with no frame open, which is the only moment both conditions hold:
+    /// no command buffer is recording references to what is about to be freed, and everything already
+    /// submitted can be waited on. A level change has stopped for hundreds of milliseconds by this point,
+    /// so the wait costs nothing anybody can see.
+    /// </remarks>
+    private void ReleaseWorldIfAsked()
+    {
+        if (!_worldReleasePending)
+        {
+            return;
+        }
+
+        _worldReleasePending = false;
+        _device.WaitIdle();
+        _worldScene?.Reset();
     }
 
     /// <inheritdoc/>
@@ -1297,6 +1344,20 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Held rather than acted on here: it is two vectors in the lighting pass's own uniform, so the whole
+    /// of it arrives with the frame's GI parameters and costs no binding, no pass and no extra upload.
+    /// </remarks>
+    public void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters)
+    {
+        ThrowIfDisposed();
+        _wetness = wetness;
+
+        _wetShelterCount = Math.Min(shelters.Length, WetShelter.Capacity);
+        shelters[.._wetShelterCount].CopyTo(_wetShelters);
+    }
+
+    /// <inheritdoc/>
     /// <remarks>Only the camera position is taken — the fog march itself is not yet ported.</remarks>
     public void SetVolumetricFog(
         in VolumetricFogSettings fog,
@@ -1876,6 +1937,30 @@ public sealed partial class VulkanGraphicsDevice
         {
             Matrix4f cascade = i < _shadowCascadeCount ? _cascadeMatrices[i] : Matrix4f.Identity;
             cascade.CopyColumnMajorTo(new Span<float>(u + 52 + (i * 16), 16));
+        }
+
+        // uWetness0: how wet, how much of the ground stands under water, how hard the rain strikes it,
+        // and the clock the ripples run on.
+        u[116] = MathF.Max(_wetness.Amount, 0f);
+        u[117] = Math.Clamp(_wetness.PuddleCoverage, 0f, 1f);
+        u[118] = Math.Clamp(_wetness.RippleStrength, 0f, 1f);
+        u[119] = _wetness.Seconds;
+
+        // uWetness1: the two lattice spacings, in metres, and how much the wind textures the water.
+        u[120] = MathF.Max(_wetness.PuddleSizeMetres, 0.05f);
+        u[121] = MathF.Max(_wetness.RippleSizeMetres, 0.02f);
+        u[122] = Math.Clamp(_wetness.WindRippleStrength, 0f, 1f);
+        u[123] = _wetShelterCount;
+
+        // uShelter[]: a low corner and a high corner each, camera-relative. Written past the count so a
+        // frame that submits fewer than last time leaves stale boxes behind the count, where the shader
+        // never reads them.
+        for (int i = 0; i < _wetShelterCount; i++)
+        {
+            WetShelter shelter = _wetShelters[i];
+            int at = 124 + (i * 8);
+            u[at] = shelter.Minimum.X; u[at + 1] = shelter.Minimum.Y; u[at + 2] = shelter.Minimum.Z; u[at + 3] = 0f;
+            u[at + 4] = shelter.Maximum.X; u[at + 5] = shelter.Maximum.Y; u[at + 6] = shelter.Maximum.Z; u[at + 7] = 0f;
         }
 
         gi.Write<float>(new ReadOnlySpan<float>(u, DeferredRenderer.GiUniformSize / sizeof(float)));

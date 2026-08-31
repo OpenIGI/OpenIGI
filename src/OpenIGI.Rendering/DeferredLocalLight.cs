@@ -1,4 +1,4 @@
-using OpenIGI.Core.Numerics;
+﻿using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
 
@@ -70,10 +70,13 @@ public readonly record struct DeferredLocalLight(
     /// near costs one distance test.
     /// </para>
     /// <para>
-    /// Not larger than that, and the OpenGL backend is the limit: these are default-block array uniforms
-    /// there, three <c>vec4</c> arrays deep, and sixty-four of them is 768 components of a budget the
-    /// specification only guarantees 1024 of. The Vulkan side is a uniform block with room to spare.
+    /// <b>A hundred and sixty, which the OpenGL backend cannot hold.</b> Sixty-four was its ceiling —
+    /// default-block array uniforms, three <c>vec4</c> arrays deep, 768 components of a guaranteed 1024
+    /// — and holding the Vulkan path to it meant lamps still went out as the player crossed a compound
+    /// with more fittings than slots. That backend is on its way out and Vulkan carries these in a
+    /// uniform block with room to spare, so the ceiling now follows the backend that is staying. If
+    /// OpenGL is ever revived it needs its own, smaller, budget rather than this one lowered.
     /// </para>
     /// </remarks>
-    public const int Maximum = 64;
+    public const int Maximum = 160;
 }

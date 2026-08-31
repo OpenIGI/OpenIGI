@@ -52,6 +52,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     // The traceable copy of the world, accumulated from what the geometry pass is asked to draw. Null on
     // an adapter that cannot trace, which is the one question every pass that wants a ray asks first.
     private readonly RayTracing.VulkanWorldScene? _worldScene;
+
+    // Whether the level's accumulated traced world is to be dropped at the next frame boundary. See
+    // ReleaseWorld, which asks, and ReleaseWorldIfAsked, which is where it is safe to do.
+    private bool _worldReleasePending;
     private readonly RayTracing.VulkanOpacityMasks? _opacityMasks;
 
     // Something legal for a tracing shader to bind before the world's own structure exists.
@@ -641,6 +645,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         {
             return;
         }
+
+        // Here and nowhere else: no command buffer is recording, so nothing holds a reference to what a
+        // pending release is about to free, and everything that does hold one has been submitted and can
+        // be waited on.
+        ReleaseWorldIfAsked();
 
         while (!_frameLoop.BeginFrame(out _frameCommandBuffer, out _frameImageIndex))
         {

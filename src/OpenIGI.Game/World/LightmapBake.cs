@@ -84,14 +84,23 @@ public sealed class LightmapBake
 
                 try
                 {
+                    // The token goes INTO each phase, not merely between them. A phase is tens of seconds
+                    // of path tracing across every core; a bake cancelled at the top of one went on
+                    // tracing the level the player had just abandoned for the whole of it -- the new level
+                    // loading against a machine with nothing left to load it with, which is what leaving a
+                    // big mission felt like -- and held its texel maps, triangles and BVH the entire time.
+                    // Several of those overlapped at a few hundred megabytes each. Parallel.For takes the
+                    // token itself, so cancelling now stops within an iteration.
                     cancellation.Token.ThrowIfCancellationRequested();
-                    LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, hemisphereRays);
+                    LightmapBaker.BakeDirectAndSky(
+                        targets, cast, sunDirection, sunColour, skyColour, hemisphereRays, cancellation.Token);
 
                     cancellation.Token.ThrowIfCancellationRequested();
-                    LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, bounces, hemisphereRays);
+                    LightmapBaker.BakeBounces(
+                        targets, triangles, bvh, skyColour, bounces, hemisphereRays, cancellation.Token);
 
                     cancellation.Token.ThrowIfCancellationRequested();
-                    LightmapBaker.Denoise(targets);
+                    LightmapBaker.Denoise(targets, cancellationToken: cancellation.Token);
 
                     cancellation.Token.ThrowIfCancellationRequested();
                     BakedLightmaps baked = BakedLightmaps.Compose(scene, targets);

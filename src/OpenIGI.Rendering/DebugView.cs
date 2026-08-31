@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering;
+﻿namespace OpenIGI.Rendering;
 
 /// <summary>
 /// What the frame shows instead of the scene, for looking at a pass rather than at the picture.
@@ -67,4 +67,11 @@ public enum DebugView
     /// identical once multiplied into the shaded scene.
     /// </summary>
     SunShadow = 12,
+
+    /// <summary>
+    /// The standing water: where it lies, and what shape its surface is. Red is how much of the pixel is
+    /// under water and green and blue are the water's own normal, so a puddle that is not rippling and a
+    /// puddle that is not there look nothing alike — which, once they are shaded, they very much do.
+    /// </summary>
+    Wetness = 13,
 }

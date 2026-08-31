@@ -2272,6 +2272,13 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Nothing to do: this backend accumulates nothing about a level beyond the meshes and textures the
+    /// game hands it, and those are destroyed by their owners.
+    /// </remarks>
+    public void ReleaseWorld() => ThrowIfDisposed();
+
+    /// <inheritdoc/>
     public void EndSceneCapture()
     {
         ThrowIfDisposed();
@@ -4601,6 +4608,11 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
             SupportsFloatRenderTargets = true,
             SupportsCompute = Features.SupportsCompute,
             MaxSampleCount = Math.Clamp(samples, 1, 16),
+
+            // Standing water is applied inside the deferred lighting shader, and only the Vulkan one has
+            // it. Named rather than left silent: r_wetness would otherwise sit switched on in the
+            // settings file, show as on in the options, and change nothing at all here.
+            UnimplementedSettings = ["r_wetness"],
         };
     }
 

@@ -220,6 +220,59 @@ internal sealed class VulkanRayTracingScene : IDisposable
     /// </remarks>
     public Action? BeforeTopLevelBuild { get; set; }
 
+    /// <summary>Frees every structure and empties the scene, for a level change.</summary>
+    /// <remarks>
+    /// <para>
+    /// The whole of what the scene has built, dropped at once. Everything here would otherwise be freed
+    /// on the schedule the frames in flight dictate -- retired now, freed several submissions later --
+    /// and that schedule has no step that means "all of it". Its precondition is the one a level change
+    /// already satisfies: <b>the device must be idle</b>. Nothing is in flight, so nothing is still
+    /// tracing what this frees, and the deferral the retirement list exists to provide is unnecessary.
+    /// </para>
+    /// <para>
+    /// The top-level structure survives, emptied. It is what every trace binds, and a descriptor naming
+    /// nothing is not something a shader can be given -- so the scene keeps an empty one to build over
+    /// rather than a null.
+    /// </para>
+    /// </remarks>
+    public void Clear()
+    {
+        ThrowIfDisposed();
+
+        foreach ((_, IDisposable resource) in _retiring)
+        {
+            resource.Dispose();
+        }
+
+        _retiring.Clear();
+
+        foreach (VulkanBottomLevelStructure structure in _pendingRetire)
+        {
+            structure.Dispose();
+        }
+
+        _pendingRetire.Clear();
+
+        // The compactor names structures about to be freed, so it lets go of them before they are.
+        _compaction.Clear();
+
+        foreach (VulkanBottomLevelStructure structure in _geometries)
+        {
+            structure.Dispose();
+        }
+
+        _geometries.Clear();
+        _pendingBuilds.Clear();
+
+        // An instance list naming freed structures is the read the next trace would fault on. Emptied
+        // here rather than left for the caller: the scene is not traced while it holds nothing, because
+        // IsReady counts the instances.
+        _topLevel.SetInstances([]);
+    }
+
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
     /// <inheritdoc/>
     public void Dispose()
     {

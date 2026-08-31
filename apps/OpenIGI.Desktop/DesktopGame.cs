@@ -251,8 +251,12 @@ internal sealed partial class DesktopGame : IDisposable
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
     private RainRenderer? _rain;
+    private StormRenderer? _storm;
+    private readonly WetShelter[] _wetShelters = new WetShelter[WetShelter.Capacity];
+    private readonly double[] _wetShelterGap = new double[WetShelter.Capacity];
     private SnowRenderer? _snow;
     private IReadOnlyList<RainRenderer.BuildingVolume> _rainBuildingVolumes = [];
+    private Vector3d _stormEyeMetres;
     private ShadowCasterPass? _shadowPass;
 
     // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
@@ -308,6 +312,11 @@ internal sealed partial class DesktopGame : IDisposable
     private LevelTask? _activeLevelRoot;
     private bool _computerOpen;
     private bool _computerCamFired;
+
+    // -missioncycle's bookkeeping: which leg of the abandon/replay cadence has been acted on, and the
+    // mission to go back into once the level has been let go of.
+    private long _missionCycleLeg;
+    private int _missionCycleMission;
 
     /// <summary>How much longer than the original the remaster holds a status message, in seconds.</summary>
     private const float RemasteredMessageHoldSeconds = 3f;
@@ -521,6 +530,9 @@ internal sealed partial class DesktopGame : IDisposable
         RenderCVars.WeatherEnabled.Changed += (_, _) => ApplyWeatherSettings();
         RenderCVars.WeatherStyle.Changed += (_, _) => ApplyWeatherSettings();
         RenderCVars.WeatherSpeed.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.WeatherForce.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.Storm.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.StormIntensity.Changed += (_, _) => ApplyWeatherSettings();
 
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
@@ -1570,6 +1582,40 @@ internal sealed partial class DesktopGame : IDisposable
                 }
             }
 
+            // -missioncycle leaves the level and re-enters it on a fixed cadence, taking exactly the two
+            // paths the pause menu's Abandon and the campaign's Play take. It is here so it runs against
+            // a fully built frame rather than during start-up, and it is latched on the frame count so
+            // both legs happen once each rather than every frame past the mark.
+            if (_options.MissionCycleFrames > 0 && shell is not null)
+            {
+                long leg = _loop.Clock.FrameCount / _options.MissionCycleFrames;
+                if (leg != _missionCycleLeg)
+                {
+                    _missionCycleLeg = leg;
+                    if (_activeMission is { } cycling)
+                    {
+                        _logger.Information("Mission", $"-missioncycle: abandoning {cycling.Id}.");
+                        _missionCycleMission = cycling.Id;
+                        ReleasePlayedMission();
+                        shell.ClosePauseMenu();
+                        shell.OpenOn("campaign");
+                        menuMode = true;
+                        pauseMenu = false;
+                        showcasePending = true;
+                        ApplyMenuDepthOfField();
+                    }
+                    else if (_missionCycleMission > 0)
+                    {
+                        _logger.Information("Mission", $"-missioncycle: playing {_missionCycleMission} again.");
+                        shell.ClosePauseMenu();
+                        menuMode = false;
+                        pauseMenu = false;
+                        ApplyGameplayDepthOfField();
+                        StartMission(_missionCycleMission);
+                    }
+                }
+            }
+
             // Escape brings the shell up over the level as a pause menu. It goes AFTER the shell's own
             // update, so the frame that opens the menu is not also the frame the menu reads a back press
             // on -- and after it the shell has marked the frame captured, which is what stops the Escape
@@ -2088,6 +2134,12 @@ internal sealed partial class DesktopGame : IDisposable
 
             if (outcome == FrameOutcome.Tick)
             {
+                // The storm steps here rather than inside the player's own block, where the impact
+                // particles step: weather is ambient, and it has to keep falling in the free camera and
+                // while the player is down. Its spawn column follows the eye, so it is handed the
+                // position the last frame drew from -- one frame stale is nothing to a column forty
+                // metres across, and the tick has no camera of its own.
+                _storm?.Tick(_stormEyeMetres);
                 _cutscenes?.Tick();
                 if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
                 {
@@ -2225,6 +2277,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // The same impacts, seen: sparks and dust composed from the struck material.
                     // Ticked before spawning so a new burst draws its birth frame unmoved.
                     _impactParticles?.Tick();
+
                     SpawnBallisticImpactParticles();
 
                     // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
@@ -3366,6 +3419,25 @@ internal sealed partial class DesktopGame : IDisposable
                             RenderCVars.ReflectionIntensity.Value,
                             RenderCVars.ReflectionMaxRoughness.Value)
                         : ReflectionSettings.Off);
+
+                // How wet the ground is. Driven by the storm rather than by a number of its own: it is
+                // raining or it is not, and a road that stays dry through a downpour is the single thing
+                // that most gives away rain as an effect rather than as weather. Off the moment the storm
+                // is not drawing, so a level with no rain is not quietly shaded damp.
+                bool wetGround = RenderCVars.Wetness.Value
+                    && RenderCVars.OffscreenScene.Value
+                    && RenderCVars.Deferred.Value
+                    && _storm is { IsActive: true };
+                _device.SetWetness(
+                    wetGround
+                        ? WetnessSettings.Storm.AtIntensity(
+                            _storm!.Settings.Intensity,
+                            _loop.TimeSource.Milliseconds / 1000f)
+                        : WetnessSettings.Dry,
+                    wetGround
+                        ? _wetShelters.AsSpan(0, NearestShelters(eye.Position))
+                        : []);
+
                 // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
                 // stop as a second, smaller event -- which is the thing this exists to remove.
                 float probeFade = probeArrivedAt < 0
@@ -4007,7 +4079,60 @@ internal sealed partial class DesktopGame : IDisposable
                 // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
                 // While the camera is inside a building's shell the rain is suppressed, exactly as the
                 // reference editor does per frame — buildings keep the weather outside.
-                if (_rain is { IsWeatherEnabled: true } rain)
+                _stormEyeMetres = eye.Position;
+                if (_storm is { } liveStorm)
+                {
+                    // Assigned BEFORE the active test, never inside it. IsActive reads Indoors, so
+                    // setting it under `if (IsActive)` latches: the first frame the eye passes through a
+                    // building shell turns the storm off, and the assignment that would turn it back on
+                    // is inside the branch that no longer runs. That is what stuck the free camera on
+                    // the original's rain for the rest of the mission.
+                    liveStorm.Indoors = cameraIndoors;
+
+                    // Rain lands on the ground the player is standing on. The free camera has no feet,
+                    // so it keeps whatever the player last supplied rather than dropping the splashes.
+                    // This is only the fallback now: the trace below is what the storm actually lands on,
+                    // and the plane is what it falls back to where the trace has not reached yet.
+                    if (_player is { } stormPlayer)
+                    {
+                        liveStorm.GroundHeightMetres =
+                            stormPlayer.Body.Position.Z / WorldScene.UnitsPerMetre;
+
+                        // The grenade caster, which is the one trace in the game that already covers the
+                        // terrain AND the placed collision meshes -- the same two things rain lands on.
+                        liveStorm.Ground = stormPlayer.GrenadeWalls;
+                        liveStorm.UnitsPerMetre = WorldScene.UnitsPerMetre;
+                    }
+                }
+
+                if (_storm is { IsActive: true } storm)
+                {
+                    // Direction and colour from the one effective sun the deferred pass shades with, and
+                    // the fill from the SAME sky the global illumination is seeded with — not the level's
+                    // raw ambient triple, which is a chromaticity that says what colour the fill is and
+                    // nothing about how much of it there is. The storm multiplies its colours by this, so
+                    // handing over a unit-magnitude tint is what pinned every drop at white in a dark
+                    // level and then let the auto-exposure make it worse.
+                    DirectionalLightSettings stormSun = _effectiveSun ?? default;
+                    Vector3f stormSunLight =
+                        stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
+
+                    // What the reference multiplies by is the frame BEHIND the drop, and outdoors that
+                    // is overwhelmingly sky rather than the flat fill the interiors are lit by. The sky
+                    // fill alone left daylight rain almost invisible against a bright sky, which is the
+                    // one place rain is most obviously there. A fifth of the sun's own illuminance is a
+                    // rough stand-in for a daylit sky's radiance, and it goes to nothing at night with
+                    // the sun it is taken from.
+                    storm.Draw(
+                        eye,
+                        projection,
+                        smoothPresentation ? tickBlend : 1f,
+                        _effectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
+                        stormSunLight,
+                        SkyFillColour() + (stormSunLight * 0.2f),
+                        _loop.TimeSource.Milliseconds / 1000f);
+                }
+                else if (_rain is { IsWeatherEnabled: true } rain)
                 {
                     rain.Indoors = cameraIndoors;
                     rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
@@ -5141,11 +5266,36 @@ internal sealed partial class DesktopGame : IDisposable
         _rain?.ApplySettings(
             RenderCVars.WeatherEnabled.Value,
             RenderCVars.WeatherStyle.Value,
-            RenderCVars.WeatherSpeed.Value);
+            RenderCVars.WeatherSpeed.Value,
+            RenderCVars.WeatherForce.Value);
         _snow?.ApplySettings(
             RenderCVars.WeatherEnabled.Value,
             RenderCVars.WeatherStyle.Value,
-            RenderCVars.WeatherSpeed.Value);
+            RenderCVars.WeatherSpeed.Value,
+            RenderCVars.WeatherForce.Value);
+
+        if (_storm is { } storm)
+        {
+            // Resolved after the rain renderer, not before it, so this reads the answer the console just
+            // produced rather than the one from the last time the level was loaded. The level decides
+            // whether it rains at all (unless r_weather_force overrides it); r_storm only decides which
+            // renderer draws it.
+            bool rains = _rain?.IsWeatherEnabled ?? false;
+            storm.Enabled = rains && RenderCVars.Storm.Value;
+            storm.Configure(storm.Settings with
+            {
+                Intensity = RenderCVars.StormIntensity.Value,
+                FallSpeedScale = RenderCVars.WeatherSpeed.Value,
+            });
+
+            // Reported every time rather than only on a change: the case worth seeing is the one where
+            // nothing changed and the storm is still not drawing, and a log that only fires on a
+            // transition is silent for exactly that.
+            _logger.Information(
+                "Storm",
+                FormattableString.Invariant(
+                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={RenderCVars.Storm.Value} r_weather_enabled={RenderCVars.WeatherEnabled.Value} r_weather_kind={RenderCVars.WeatherStyle.Value} r_weather_force={RenderCVars.WeatherForce.Value} intensity={RenderCVars.StormIntensity.Value}"));
+        }
     }
 
     // The camera's projection, in one place: the terrain traversal needs the same field of view the
@@ -5157,9 +5307,101 @@ internal sealed partial class DesktopGame : IDisposable
     // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
     // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
     // vertical one follows from the window's aspect, rather than the other way round.
+    /// <summary>Fills <c>_wetShelters</c> with the building shells nearest the camera.</summary>
+    /// <param name="eye">Where the camera stands, in world metres.</param>
+    /// <returns>How many entries are valid.</returns>
+    /// <remarks>
+    /// <para>
+    /// The same shells the rain is culled against, rebased to the camera and handed to the lighting pass
+    /// so the ground under a roof stays dry. Without it every warehouse floor in the level pools with
+    /// water while its own roof keeps the rain off, which is the sort of wrong that is invisible from
+    /// outside and unmissable the moment the player walks in.
+    /// </para>
+    /// <para>
+    /// Nearest by the horizontal gap to the box rather than to its centre, because what matters is
+    /// whether the shell can be over ground the player can see, and a long hangar's centre can be far
+    /// away while its near wall is underfoot. The rebase is a double-precision subtract on this side:
+    /// the level sits tens of kilometres out and the shader only ever sees camera-relative metres.
+    /// </para>
+    /// </remarks>
+    private int NearestShelters(Vector3d eye)
+    {
+        const double Reach = 90.0;
+
+        int kept = 0;
+        double worst = 0.0;
+        int worstAt = 0;
+
+        for (int i = 0; i < _rainBuildingVolumes.Count; i++)
+        {
+            RainRenderer.BuildingVolume volume = _rainBuildingVolumes[i];
+
+            double dx = Math.Max(Math.Max(volume.Minimum.X - eye.X, 0.0), eye.X - volume.Maximum.X);
+            double dy = Math.Max(Math.Max(volume.Minimum.Y - eye.Y, 0.0), eye.Y - volume.Maximum.Y);
+            double gap = (dx * dx) + (dy * dy);
+            if (gap > Reach * Reach)
+            {
+                continue;
+            }
+
+            WetShelter shelter = new(
+                new Vector3f(
+                    (float)(volume.Minimum.X - eye.X),
+                    (float)(volume.Minimum.Y - eye.Y),
+                    (float)(volume.Minimum.Z - eye.Z)),
+                new Vector3f(
+                    (float)(volume.Maximum.X - eye.X),
+                    (float)(volume.Maximum.Y - eye.Y),
+                    (float)(volume.Maximum.Z - eye.Z)));
+
+            if (kept < _wetShelters.Length)
+            {
+                _wetShelters[kept] = shelter;
+                _wetShelterGap[kept] = gap;
+                kept++;
+                if (kept == _wetShelters.Length)
+                {
+                    worst = Rescan(out worstAt);
+                }
+
+                continue;
+            }
+
+            // Full: this one only earns a place by displacing the furthest held, and doing so means
+            // finding the next furthest. A rescan of sixteen is cheaper than keeping them sorted, and it
+            // only happens when a shell actually displaces one.
+            if (gap >= worst)
+            {
+                continue;
+            }
+
+            _wetShelters[worstAt] = shelter;
+            _wetShelterGap[worstAt] = gap;
+            worst = Rescan(out worstAt);
+        }
+
+        return kept;
+
+        double Rescan(out int at)
+        {
+            double furthest = -1.0;
+            at = 0;
+            for (int i = 0; i < _wetShelters.Length; i++)
+            {
+                if (_wetShelterGap[i] > furthest)
+                {
+                    furthest = _wetShelterGap[i];
+                    at = i;
+                }
+            }
+
+            return furthest;
+        }
+    }
+
     /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
     /// <param name="eye">Where the camera stands, in world metres.</param>
-    /// <param name="range">The reach multiplier the shader will apply, so both judge the same light.</param>
+    /// <param name="range">Unused by the ranking; see the remarks on why it must not scale it.</param>
     /// <returns>How many entries of <c>_localLightOrder</c> are valid.</returns>
     /// <remarks>
     /// <para>
@@ -5198,7 +5440,13 @@ internal sealed partial class DesktopGame : IDisposable
             double dx = fixture.Position.X - eye.X;
             double dy = fixture.Position.Y - eye.Y;
             double dz = fixture.Position.Z - eye.Z;
-            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - (fixture.Radius * range);
+            // The fixture's OWN size, not its size times the reach multiplier. Scaling this by the
+            // multiplier meant raising r_local_light_range -- which people raise to make lamps carry
+            // further -- also multiplied how much a fixture's size counted for a slot, so the big
+            // battens took the budget and the small near fittings went dark EARLIER than before. Reach
+            // decides how far a lamp lights; this decides which lamps are worth submitting, and the two
+            // should not move together.
+            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - fixture.Radius;
 
             // Nothing to insert: this fixture is further out than every one already held, and the array
             // is full. The common case by far once the level is more than thirty-two lamps deep.
@@ -5358,6 +5606,7 @@ internal sealed partial class DesktopGame : IDisposable
     {
         _sky?.Dispose();
         _rain?.Dispose();
+        _storm?.Dispose();
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();

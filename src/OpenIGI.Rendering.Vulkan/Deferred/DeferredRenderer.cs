@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
 using OpenIGI.Rendering.Vulkan.Pipelines;
@@ -56,7 +56,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
-    public const int GiUniformSize = 464;
+    public const int GiUniformSize = 1008;
 
     /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
     /// <remarks>

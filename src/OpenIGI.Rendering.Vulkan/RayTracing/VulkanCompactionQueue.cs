@@ -137,6 +137,21 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         RecordQueries(commandBuffer, queue);
     }
 
+    /// <summary>Forgets every structure queued or being measured, for a level change.</summary>
+    /// <remarks>
+    /// The structures themselves belong to the scene and are freed there. What this drops is the queue's
+    /// references to them and the half-finished round of queries over them -- so the next round starts
+    /// from an empty pool rather than reading sizes back for structures that no longer exist.
+    /// Only safe with the device idle, which is the one condition a level change already meets.
+    /// </remarks>
+    public void Clear()
+    {
+        _requested.Clear();
+        _active.Clear();
+        _queriesRecorded = false;
+        _queryCompletedAt = 0;
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

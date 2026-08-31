@@ -563,6 +563,12 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
         CurrentPass = ScenePass.None;
     }
 
+    /// <summary>Gets how many times the level's accumulated world has been released.</summary>
+    public int WorldReleaseCount { get; private set; }
+
+    /// <inheritdoc/>
+    public void ReleaseWorld() => WorldReleaseCount++;
+
     /// <inheritdoc/>
     public void EndSceneCapture()
     {

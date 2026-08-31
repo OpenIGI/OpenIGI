@@ -260,8 +260,15 @@ internal sealed partial class DesktopGame
         _snow?.Dispose();
         _snow = new SnowRenderer(_device, _logger);
         _snow.ReadParams(levelRoot);
-        ApplyWeatherSettings();
+        _storm?.Dispose();
+        _storm = new StormRenderer(_device, _logger);
         _rainBuildingVolumes = RainRenderer.BuildBuildingVolumes(scene.Placements);
+
+        // The storm falls where the level says rain falls -- it is the same weather, drawn better -- so
+        // it inherits the vanilla renderer's reading of the RainEffect task rather than parsing it a
+        // second time, and shelters under the same shells.
+        _storm.SetShelters(_rainBuildingVolumes);
+        ApplyWeatherSettings();
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
@@ -556,7 +563,15 @@ internal sealed partial class DesktopGame
                     if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
                     {
                         Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
-                        Vector3f lmSky = SkyFillColour();
+
+                        // The LEVEL's ambient, not SkyFillColour's. That reads the effective sun -- the
+                        // authored one after the day/night sweep and the daylight re-point have had it,
+                        // which moves every frame and belongs to the frame before this load. The two
+                        // inputs beside it come from the level's own Dirlight, so mixing the two gave a
+                        // disk-cache key that could not be reproduced: entering the same mission twice in
+                        // a session missed its own bake and traced the level again.
+                        Vector3f lmSky = (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f))
+                            * RenderCVars.SkyLight.Value;
                         _lightmapBakeMission = id;
                         _lightmapBakeSun = bakeSunDirection;
                         _lightmapBakeSunColour = lmSun;
@@ -1644,6 +1659,18 @@ internal sealed partial class DesktopGame
 
     private void ReleasePlayedMission()
     {
+        // First, because both are worker threads tracing the level that is going and they hold the whole
+        // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
+        // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one
+        // starting, so leaving a level left every core path-tracing a level nobody was in -- which is
+        // what the new level then had to load against -- and a session that entered a handful of missions
+        // carried a handful of those at once. The heap stood at one and a half gigabytes of lightmap
+        // texels alone by the sixth.
+        _probeBake?.Cancel();
+        _probeBake = null;
+        _lightmapBake?.Cancel();
+        _lightmapBake = null;
+
         _computerOpen = false;
         _computerFlight.Reset();
         _missionFailureTicks = 0;
@@ -1666,6 +1693,21 @@ internal sealed partial class DesktopGame
         StopCutsceneSounds();
         _activeMission = null;
 
+        // The level's own sun goes with the level. It is read on load only when it is not already set --
+        // which is how a promoted backdrop hands its own in -- so a sun left standing here was taken for
+        // one that had been handed in, and the next mission was lit and BAKED by the one before it. The
+        // backdrop the menu puts up next sets its own in AdoptPreview, so nothing that needs one is left
+        // without.
+        _sun = null;
+        _effectiveSun = null;
+
+        // Before a single mesh is destroyed. The backend has assembled its own copy of the level from
+        // the frames it drew -- the traceable world, and the material records a hit is looked up in --
+        // and destroying the meshes one by one tells it each has gone without telling it the level has.
+        // Left to accumulate, the records ran up to their ceiling over half a dozen mission entries and
+        // the traced world went on holding structures nothing would place again.
+        _device.ReleaseWorld();
+
         _sky?.Dispose();
         _terrain?.Dispose();
         _world?.Dispose();
@@ -1685,6 +1727,8 @@ internal sealed partial class DesktopGame
         _sky = null;
         _rain?.Dispose();
         _rain = null;
+        _storm?.Dispose();
+        _storm = null;
         _snow?.Dispose();
         _snow = null;
         _rainBuildingVolumes = [];

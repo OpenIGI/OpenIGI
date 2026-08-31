@@ -180,8 +180,18 @@ public static class LightmapBaker
 
             LightmapTarget target = targets[t];
 
+            // A whole target's page per iteration, and a big one is thousands of texels each casting a
+            // hemisphere of rays -- seconds of work that Parallel.For cannot interrupt between iterations
+            // because it is inside one. Cancelling the bake left every core on it for the better part of a
+            // minute, which is what leaving a level felt like. One field read per texel against a hundred
+            // and twenty-eight ray casts costs nothing measurable and stops it inside a texel instead.
             for (int i = 0; i < target.Texels.Length; i++)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 LightmapTexel texel = target.Texels[i];
 
                 if (texel.IsCovered)
@@ -845,6 +855,13 @@ public static class LightmapBaker
 
         for (int pass = 0; pass < Math.Max(passes, 1); pass++)
         {
+            // Before the snapshot, not after: it clones every page in the level, and a bake already asked
+            // to stop must not allocate a level's worth of radiance to throw away.
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             // The light the last pass left, so this pass reads a stable snapshot rather than racing itself.
             Vector3f[][] previous = new Vector3f[targets.Count][];
             for (int t = 0; t < targets.Count; t++)
@@ -861,8 +878,14 @@ public static class LightmapBaker
 
                 LightmapTarget target = targets[t];
 
+                // As in the direct pass: the iteration is a whole page, so the token is read per texel.
                 for (int i = 0; i < target.Texels.Length; i++)
                 {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
                     LightmapTexel texel = target.Texels[i];
                     if (!texel.IsCovered)
                     {
@@ -938,12 +961,14 @@ public static class LightmapBaker
     /// baked into the cached result and costs nothing at runtime.
     /// </para>
     /// </remarks>
+    /// <param name="cancellationToken">Stops the filter part-way, for a level left during its bake.</param>
     /// <exception cref="ArgumentNullException"><paramref name="targets"/> is null.</exception>
     public static void Denoise(
         IReadOnlyList<LightmapTarget> targets,
         int iterations = 4,
         float positionSigmaMetres = 0.35f,
-        float normalPower = 48f)
+        float normalPower = 48f,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(targets);
 
@@ -952,7 +977,14 @@ public static class LightmapBaker
             return;
         }
 
-        Parallel.ForEach(targets, target => DenoiseTarget(target, iterations, positionSigmaMetres, normalPower));
+        ParallelOptions options = new()
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
+        };
+
+        Parallel.ForEach(
+            targets, options, target => DenoiseTarget(target, iterations, positionSigmaMetres, normalPower));
     }
 
     // The B3-spline row an à-trous filter uses along each axis; the 2D kernel is its outer product.

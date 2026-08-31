@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
 
@@ -9,19 +9,29 @@ namespace OpenIGI.Rendering.Vulkan.Textures;
 /// pair, reused while both textures live.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The world shader samples two textures, so a draw binds a set that points at both. A model's records
 /// pair the same textures over and over, so the set for a pair is written once and cached, keyed by the
 /// two handle ids together. When either texture is destroyed, every set that named it is given back.
+/// </para>
+/// <para>
+/// <b>The pool grows.</b> How many sets a level needs is the number of distinct pairs it draws, and a
+/// lightmap is per placement rather than per material -- so the count scales with the number of objects
+/// in the level, not with the size of its texture set. One fixed pool is therefore a ceiling that a
+/// large enough level walks into, and walking into it is fatal: the allocation fails with
+/// <see cref="Result.ErrorOutOfPoolMemory"/> in the middle of drawing the world. Pools are chained
+/// instead, a new one opened whenever the last is full, so the only real limit is memory.
+/// </para>
 /// </remarks>
 internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
 {
-    private const uint MaxSets = 4096;
+    private const uint SetsPerPool = 4096;
 
     private readonly Vk _vk;
     private readonly Device _device;
     private readonly DescriptorSetLayout _layout;
-    private readonly DescriptorPool _pool;
-    private readonly Dictionary<(uint Diffuse, uint Lightmap), DescriptorSet> _sets = [];
+    private readonly List<DescriptorPool> _pools = [];
+    private readonly Dictionary<(uint Diffuse, uint Lightmap), Entry> _sets = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="MeshTextureDescriptorCache"/> class.</summary>
@@ -36,24 +46,7 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
         _device = device;
         _layout = layout;
 
-        DescriptorPoolSize poolSize = new()
-        {
-            Type = DescriptorType.CombinedImageSampler,
-            DescriptorCount = MaxSets * 2,
-        };
-
-        DescriptorPoolCreateInfo createInfo = new()
-        {
-            SType = StructureType.DescriptorPoolCreateInfo,
-            Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-            MaxSets = MaxSets,
-            PoolSizeCount = 1,
-            PPoolSizes = &poolSize,
-        };
-
-        DescriptorPool pool;
-        VkCheck.Ok(_vk.CreateDescriptorPool(_device, &createInfo, null, &pool), "vkCreateDescriptorPool");
-        _pool = pool;
+        AddPool();
     }
 
     /// <summary>Gets the descriptor set binding a diffuse and lightmap pair, writing it on first use.</summary>
@@ -69,22 +62,12 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
         ArgumentNullException.ThrowIfNull(lightmap);
 
         (uint, uint) key = (diffuseId, lightmapId);
-        if (_sets.TryGetValue(key, out DescriptorSet existing))
+        if (_sets.TryGetValue(key, out Entry existing))
         {
-            return existing;
+            return existing.Set;
         }
 
-        DescriptorSetLayout layout = _layout;
-        DescriptorSetAllocateInfo allocInfo = new()
-        {
-            SType = StructureType.DescriptorSetAllocateInfo,
-            DescriptorPool = _pool,
-            DescriptorSetCount = 1,
-            PSetLayouts = &layout,
-        };
-
-        DescriptorSet set;
-        VkCheck.Ok(_vk.AllocateDescriptorSets(_device, &allocInfo, &set), "vkAllocateDescriptorSets");
+        (DescriptorPool owner, DescriptorSet set) = Allocate();
 
         DescriptorImageInfo* images = stackalloc DescriptorImageInfo[2];
         images[0] = new DescriptorImageInfo
@@ -121,7 +104,7 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
         };
 
         _vk.UpdateDescriptorSets(_device, 2, writes, 0, null);
-        _sets[key] = set;
+        _sets[key] = new Entry(owner, set);
         return set;
     }
 
@@ -140,9 +123,13 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
 
         foreach ((uint Diffuse, uint Lightmap) key in stale)
         {
-            DescriptorSet set = _sets[key];
+            Entry entry = _sets[key];
             _sets.Remove(key);
-            _vk.FreeDescriptorSets(_device, _pool, 1, &set);
+
+            // Back to the pool it actually came from: freeing a set against a different pool is
+            // undefined behaviour, and the whole point of chaining pools is that they differ.
+            DescriptorSet set = entry.Set;
+            _vk.FreeDescriptorSets(_device, entry.Pool, 1, &set);
         }
     }
 
@@ -156,6 +143,73 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
 
         _disposed = true;
         _sets.Clear();
-        _vk.DestroyDescriptorPool(_device, _pool, null);
+        foreach (DescriptorPool pool in _pools)
+        {
+            _vk.DestroyDescriptorPool(_device, pool, null);
+        }
+
+        _pools.Clear();
     }
+
+    // Allocate from the newest pool, opening another when it is full. A full pool answers
+    // ErrorOutOfPoolMemory; one whose freed sets have left it too fragmented to satisfy the request
+    // answers ErrorFragmentedPool. Both mean the same thing here -- this pool is done, start another --
+    // and neither is a failure worth ending the frame over.
+    private (DescriptorPool Pool, DescriptorSet Set) Allocate()
+    {
+        DescriptorSetLayout layout = _layout;
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            DescriptorPool pool = _pools[^1];
+            DescriptorSetAllocateInfo allocInfo = new()
+            {
+                SType = StructureType.DescriptorSetAllocateInfo,
+                DescriptorPool = pool,
+                DescriptorSetCount = 1,
+                PSetLayouts = &layout,
+            };
+
+            DescriptorSet set;
+            Result result = _vk.AllocateDescriptorSets(_device, &allocInfo, &set);
+            if (result == Result.Success)
+            {
+                return (pool, set);
+            }
+
+            if (result is not (Result.ErrorOutOfPoolMemory or Result.ErrorFragmentedPool))
+            {
+                VkCheck.Ok(result, "vkAllocateDescriptorSets");
+            }
+
+            AddPool();
+        }
+
+        throw new GraphicsDeviceException(
+            "vkAllocateDescriptorSets failed: a freshly created descriptor pool could not satisfy one set.");
+    }
+
+    private void AddPool()
+    {
+        DescriptorPoolSize poolSize = new()
+        {
+            Type = DescriptorType.CombinedImageSampler,
+            DescriptorCount = SetsPerPool * 2,
+        };
+
+        DescriptorPoolCreateInfo createInfo = new()
+        {
+            SType = StructureType.DescriptorPoolCreateInfo,
+            Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
+            MaxSets = SetsPerPool,
+            PoolSizeCount = 1,
+            PPoolSizes = &poolSize,
+        };
+
+        DescriptorPool pool;
+        VkCheck.Ok(_vk.CreateDescriptorPool(_device, &createInfo, null, &pool), "vkCreateDescriptorPool");
+        _pools.Add(pool);
+    }
+
+    /// <summary>A cached set, with the pool it must be given back to.</summary>
+    private readonly record struct Entry(DescriptorPool Pool, DescriptorSet Set);
 }

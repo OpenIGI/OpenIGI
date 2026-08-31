@@ -562,16 +562,25 @@ public sealed partial class VulkanGraphicsDevice
         float exposure = MathF.Max(RenderCVars.Exposure.Value * _lastAdaptedExposure, 1e-3f);
         data[17] = litViewModel ? 1f / exposure : 1f;
         data[18] = litViewModel ? 1f : 0f;
-        data[19] = _lighting.AmbientColour.Length;
+
+        // The lamps standing around the player, added to the rig's key and fill. Without this the arms
+        // are lit by the SUN and nothing else: at noon that is right and at night it is a black key over
+        // a nearly black ambient, so the weapon stayed a silhouette while the player walked under a lit
+        // fitting with the wall behind them brightly lit by it. The rig is a studio rig by design and
+        // stays one — this only tells it how much light there is where it is standing.
+        Vector3f lamps = litViewModel ? LampLightAtEye() : default;
+        float lampFill = (lamps.X * 0.212639f) + (lamps.Y * 0.715169f) + (lamps.Z * 0.072192f);
+        data[19] = _lighting.AmbientColour.Length + lampFill;
 
         // The model-to-view rotation, row by row, each w carrying one channel of the key colour — the
-        // level's own sun tint, so a weapon picks up the mood of the mission it is in.
+        // level's own sun tint plus whatever the lamps are contributing, so a weapon picks up the mood
+        // of the mission it is in and the colour of the light it is standing under.
         data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
-        data[23] = _lighting.SunColour.X;
+        data[23] = _lighting.SunColour.X + lamps.X;
         data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
-        data[27] = _lighting.SunColour.Y;
+        data[27] = _lighting.SunColour.Y + lamps.Y;
         data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
-        data[31] = _lighting.SunColour.Z;
+        data[31] = _lighting.SunColour.Z + lamps.Z;
 
         vk.CmdPushConstants(
             cmd,
@@ -580,6 +589,57 @@ public sealed partial class VulkanGraphicsDevice
             0,
             sizeof(float) * 32,
             data);
+    }
+
+    /// <summary>How much light the level's lamps put on the first-person rig, in the same units as the sun.</summary>
+    /// <remarks>
+    /// <para>
+    /// The lamps already reach this side of the seam in VIEW space — that is how the deferred pass wants
+    /// them — and the rig sits at the eye, so the sample point is very nearly the view-space origin. A
+    /// hand's length in front of it, because the arms are, and because a fitting directly overhead
+    /// otherwise reads as being exactly at the sample point.
+    /// </para>
+    /// <para>
+    /// The falloff is the same windowed inverse square the lighting shader applies, deliberately: the
+    /// arms and the wall behind them should agree about how bright the room is, and two different
+    /// curves would have the weapon brighten as the wall dimmed. What it does NOT do is trace — the rig
+    /// is lit by a two-light studio setup that has never cast a shadow, and a shadow ray per lamp per
+    /// frame to shade two hands would cost more than the whole rest of the rig.
+    /// </para>
+    /// </remarks>
+    private Vector3f LampLightAtEye()
+    {
+        // View space runs +Z into the scene, so this is a little way ahead of the camera.
+        const float Ahead = 0.5f;
+
+        Vector3f total = default;
+        for (int i = 0; i < _localLightCount; i++)
+        {
+            DeferredLocalLight lamp = _localLights[i];
+            float dx = lamp.ViewPosition.X;
+            float dy = lamp.ViewPosition.Y;
+            float dz = lamp.ViewPosition.Z - Ahead;
+            float distanceSq = (dx * dx) + (dy * dy) + (dz * dz);
+            float reach = lamp.Radius;
+            if (reach <= 0f || distanceSq >= reach * reach)
+            {
+                continue;
+            }
+
+            float ratio = distanceSq / (reach * reach);
+            float window = Math.Clamp(1f - (ratio * ratio), 0f, 1f);
+            window *= window;
+
+            // The same soft core the shader uses, for the same reason: the position is a fixture's
+            // centroid rather than a point, so standing at one must not divide by nothing.
+            float attenuation = window / (distanceSq + 1f);
+            total = new Vector3f(
+                total.X + (lamp.Colour.X * lamp.Intensity * attenuation),
+                total.Y + (lamp.Colour.Y * lamp.Intensity * attenuation),
+                total.Z + (lamp.Colour.Z * lamp.Intensity * attenuation));
+        }
+
+        return total;
     }
 
     private unsafe void BindMeshBuffers(VulkanMesh mesh)

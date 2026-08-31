@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 using Xunit;
 
@@ -60,6 +60,7 @@ public sealed class GraphicsPresetRegistryTests
         string[] preferences =
         [
             "r_time_of_day", "r_weather_enabled", "r_weather_kind", "r_weather_speed",
+            "r_storm_intensity", "r_weather_force",
             "r_vsync", "r_scale", "r_material_pack",
         ];
 

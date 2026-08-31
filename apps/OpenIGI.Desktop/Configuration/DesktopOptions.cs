@@ -105,6 +105,7 @@ public readonly record struct DesktopOptions(
         string? shellTab = null;
         int entryCamMission = 0;
         int computerCamFrame = 0;
+        int missionCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
         bool bakeAll = false;
@@ -404,6 +405,20 @@ public readonly record struct DesktopOptions(
                     throw new ArgumentException($"-computercam expects a frame number, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("missioncycle", StringComparison.OrdinalIgnoreCase))
+            {
+                // Abandon to the campaign and play again, every n frames, for as long as the run lasts.
+                // Leaving a mission tears down every renderer the level owns and every structure the
+                // traced world accumulated, and doing that by hand is the one path a capture could not
+                // reach -- so the cost of it, and whether it survives being done repeatedly, could not
+                // be measured. A development flag, like -entrycam and -computercam.
+                string value = Next(args, ref i, "missioncycle");
+                if (!int.TryParse(value, out missionCycleFrames) || missionCycleFrames <= 0)
+                {
+                    throw new ArgumentException(
+                        $"-missioncycle expects a frame count, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
             {
                 // Just the renderer: the cinematic shell over the original's render path.
@@ -489,6 +504,7 @@ public readonly record struct DesktopOptions(
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
             ComputerCamFrame = computerCamFrame,
+            MissionCycleFrames = missionCycleFrames,
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
@@ -518,6 +534,18 @@ public readonly record struct DesktopOptions(
     /// <c>-screenshot</c> it writes the whole transition as a numbered sequence.
     /// </remarks>
     public int ComputerCamFrame { get; init; }
+
+    /// <summary>
+    /// Gets how many frames each leg of an abandon/replay cycle lasts, or <c>0</c> for never. Set by
+    /// <c>-missioncycle</c>.
+    /// </summary>
+    /// <remarks>
+    /// A development shortcut in the same family as <see cref="EntryCamMission"/>: leaving a mission is a
+    /// teardown of every renderer and every accelerator the level built, and entering one is all of it
+    /// again. Repeating the pair on a known cadence is what makes the cost of the transition, and
+    /// anything it fails to release, something a run can measure rather than something a player reports.
+    /// </remarks>
+    public int MissionCycleFrames { get; init; }
 
     /// <summary>
     /// Gets the cinematic shell's section to open on — <c>campaign</c>, <c>settings</c>, <c>profile</c> or
@@ -710,6 +738,9 @@ public readonly record struct DesktopOptions(
           -entrycam <n>    Boot the shell on mission <n>, wait for its backdrop, then press Play by
                            itself, so the menu-to-mission entry can be measured and captured from a
                            known frame rather than from whenever somebody clicked.
+          -missioncycle N  Abandon the mission to the campaign and play it again every N frames, so the
+                           cost of leaving a level -- and whether it releases what it built -- can be
+                           measured over many cycles instead of clicked through by hand.
           -computercam <n> Open the map computer by itself on frame <n> of a mission, so its camera
                            move and display boot can be captured from a known frame. Pair with
                            -frames and -screenshot for the whole transition as a sequence.
