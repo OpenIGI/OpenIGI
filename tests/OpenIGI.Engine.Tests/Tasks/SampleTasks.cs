@@ -177,3 +177,10 @@ internal sealed partial class EveryTypeTask : GameTask
     [ScriptParam(ScriptParamType.Int32)]
     public int Trailer;
 }
+
+/// <summary>Exercises source-generated binding for the authored Graph wire payload.</summary>
+internal sealed partial class GraphValueTask : GameTask
+{
+    [ScriptParam(ScriptParamType.Graph)]
+    public float[] Curve = [];
+}

@@ -224,6 +224,25 @@ public sealed class TaskScriptCommandsTests
     }
 
     [Fact]
+    public void GeneratedGraphParameterReceivesTheAuthoredFloatTriplet()
+    {
+        Fixture fixture = new();
+        fixture.Types.Register<GraphValueTask>("GraphValue");
+
+        fixture.Run(QvmExpression.Call(
+            "Task_New",
+            QvmExpression.Int(-1),
+            QvmExpression.Text("GraphValue"),
+            QvmExpression.Text("GraphPayload"),
+            QvmExpression.Int(168),
+            QvmExpression.Int(200),
+            QvmExpression.Int(403)));
+
+        GraphValueTask graph = Assert.IsType<GraphValueTask>(Assert.Single(fixture.Tree.Root.Children));
+        Assert.Equal([168f, 200f, 403f], graph.Curve);
+    }
+
+    [Fact]
     public void ADeclarationThatDisagreesWithTheClassIsFatal()
     {
         Fixture fixture = new();
