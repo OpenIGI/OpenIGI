@@ -22,6 +22,13 @@ namespace OpenIGI.Formats.Textures;
 /// linear and is averaged as it stands.
 /// </para>
 /// <para>
+/// <b>Colour is averaged weighted by alpha.</b> A cut-out stores black or junk RGB wherever its alpha is
+/// zero, because nothing samples the colour of a hole — so a flat average lets those black gaps darken the
+/// wire's colour a level at a time, and the wire ends up passing the alpha test (coverage is restored) yet
+/// drawn black. Weighting each texel's colour by its own alpha keeps a transparent texel out of the colour
+/// sum entirely. An opaque texture, every alpha equal, is unaffected.
+/// </para>
+/// <para>
 /// Coverage for alpha-tested surfaces is restored separately, by <see cref="AlphaCoverage"/>, once the
 /// chain exists — averaging is what costs the coverage, so it cannot be fixed while building.
 /// </para>
@@ -109,9 +116,41 @@ public static class MipChainBuilder
                 Bgra32 c = source[(y1 * sourceWidth) + x0];
                 Bgra32 d = source[(y1 * sourceWidth) + x1];
 
-                float blue = (SrgbToLinear[a.B] + SrgbToLinear[b.B] + SrgbToLinear[c.B] + SrgbToLinear[d.B]) * 0.25f;
-                float green = (SrgbToLinear[a.G] + SrgbToLinear[b.G] + SrgbToLinear[c.G] + SrgbToLinear[d.G]) * 0.25f;
-                float red = (SrgbToLinear[a.R] + SrgbToLinear[b.R] + SrgbToLinear[c.R] + SrgbToLinear[d.R]) * 0.25f;
+                // Colour is averaged WEIGHTED BY ALPHA, which matters for a cut-out. A chain-link texture
+                // is a bright wire on fully transparent gaps, and those gaps almost always carry black (or
+                // junk) RGB, because nothing was ever meant to sample the colour where the alpha is zero.
+                // Average the four colours flat and the wire mixes with three black gaps and darkens toward
+                // black a level at a time -- while the coverage restore keeps its alpha high, so the wire
+                // still passes the alpha test but is drawn black. Weighting each texel's colour by its own
+                // alpha keeps a transparent texel from contributing its colour at all, so the wire keeps
+                // the wire's colour down the whole chain. An opaque texture (every alpha equal) is averaged
+                // exactly as before; the change only bites where alpha varies, which is precisely the
+                // cut-outs that were going black.
+                float wa = a.A;
+                float wb = b.A;
+                float wc = c.A;
+                float wd = d.A;
+                float wsum = wa + wb + wc + wd;
+
+                float blue;
+                float green;
+                float red;
+                if (wsum > 0f)
+                {
+                    blue = ((SrgbToLinear[a.B] * wa) + (SrgbToLinear[b.B] * wb) + (SrgbToLinear[c.B] * wc) + (SrgbToLinear[d.B] * wd)) / wsum;
+                    green = ((SrgbToLinear[a.G] * wa) + (SrgbToLinear[b.G] * wb) + (SrgbToLinear[c.G] * wc) + (SrgbToLinear[d.G] * wd)) / wsum;
+                    red = ((SrgbToLinear[a.R] * wa) + (SrgbToLinear[b.R] * wb) + (SrgbToLinear[c.R] * wc) + (SrgbToLinear[d.R] * wd)) / wsum;
+                }
+                else
+                {
+                    // A wholly transparent quad draws nothing, so its colour is never sampled -- keep the
+                    // flat average so a genuinely opaque texture that merely happens to be black here, and
+                    // any surface that is not alpha tested at all, come out byte-for-byte as they used to.
+                    blue = (SrgbToLinear[a.B] + SrgbToLinear[b.B] + SrgbToLinear[c.B] + SrgbToLinear[d.B]) * 0.25f;
+                    green = (SrgbToLinear[a.G] + SrgbToLinear[b.G] + SrgbToLinear[c.G] + SrgbToLinear[d.G]) * 0.25f;
+                    red = (SrgbToLinear[a.R] + SrgbToLinear[b.R] + SrgbToLinear[c.R] + SrgbToLinear[d.R]) * 0.25f;
+                }
+
                 int alpha = (a.A + b.A + c.A + d.A + 2) / 4;
 
                 target[(y * targetWidth) + x] = new Bgra32(

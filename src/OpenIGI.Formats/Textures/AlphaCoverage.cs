@@ -40,6 +40,15 @@ public static class AlphaCoverage
     // level has essentially no coverage left to recover and scaling only amplifies filtering noise.
     private const float MaxScale = 16f;
 
+    // Where the coverage taper begins and ends, in texels of the level. Full coverage is held while a
+    // level is at least this large -- it still holds the pattern, and this is where the medium-distance
+    // "the fence must not thin too fast" fix lives. Below it, a level is too few texels to represent a
+    // fraction of coverage at all, so forcing it to keep the pattern's coverage renders the whole quad
+    // solid in the averaged wire colour -- a grey panel where an extreme-distance fence should be fading
+    // to nothing. Across the smallest levels the target is tapered to zero so it fades instead.
+    private const int CoverageFullTexels = 64; // 8x8 and larger: coverage preserved in full.
+    private const int CoverageGoneTexels = 1;  // 1x1: faded out entirely.
+
     // What counts as "a hole" and "solid" when deciding whether a texture is a stencil or a transparency.
     // Deliberately generous at both ends: a converted texture's holes are rarely exactly zero.
     private const byte CutoutLowAlpha = 8;
@@ -102,7 +111,14 @@ public static class AlphaCoverage
             Span<Bgra32> data = pixels.Slice(offset, count);
             offset += count;
 
-            float scale = FindScale(data, threshold, target);
+            // Full coverage while the level is large enough to hold the pattern; tapered toward zero across
+            // the smallest levels so an extreme-distance fence fades to nothing rather than being forced
+            // solid in its averaged wire colour (a grey panel). See CoverageFullTexels.
+            float fade = Math.Clamp(
+                (count - CoverageGoneTexels) / (float)(CoverageFullTexels - CoverageGoneTexels), 0f, 1f);
+            float levelTarget = target * fade;
+
+            float scale = FindScale(data, threshold, levelTarget);
             if (scale is > 1.0001f or < 0.9999f)
             {
                 ApplyScale(data, scale);
@@ -194,6 +210,43 @@ public static class AlphaCoverage
         }
 
         return widened;
+    }
+
+    /// <summary>
+    /// Whether a texture is an alpha-tested cut-out — holes plus solid, an edge between — rather than an
+    /// opaque surface or a continuous transparency.
+    /// </summary>
+    /// <param name="pixels">The texels to classify; level zero is enough.</param>
+    /// <returns><see langword="true"/> for a cut-out (fence, foliage, railing, grille).</returns>
+    /// <remarks>
+    /// The same test <see cref="WidenCutout"/> makes, exposed so a caller can decide whether a texture
+    /// needs its mip chain rebuilt with alpha-weighted colour — a cut-out that shipped with black-in-the-
+    /// gap mips goes dark at distance otherwise, and rebuilding from level zero is the only way to undo it.
+    /// </remarks>
+    public static bool IsCutout(ReadOnlySpan<Bgra32> pixels)
+    {
+        if (pixels.Length == 0)
+        {
+            return false;
+        }
+
+        int transparent = 0;
+        int partial = 0;
+        foreach (Bgra32 pixel in pixels)
+        {
+            if (pixel.A <= CutoutLowAlpha)
+            {
+                transparent++;
+            }
+            else if (pixel.A < CutoutHighAlpha)
+            {
+                partial++;
+            }
+        }
+
+        // Some texels have to be holes, and the in-between band has to be a small share of the whole -- a
+        // continuous transparency (glass, smoke) lives in that band and is not a cut-out.
+        return transparent > 0 && partial <= (pixels.Length * MaxPartialFractionForCutout);
     }
 
     private static int CountPassing(ReadOnlySpan<Bgra32> data, byte threshold)

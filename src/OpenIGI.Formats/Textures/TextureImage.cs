@@ -44,6 +44,29 @@ public sealed class TextureImage
     }
 
     /// <summary>
+    /// Returns this texture with a freshly built mip chain, discarding any it shipped with.
+    /// </summary>
+    /// <returns>A new image whose chain was rebuilt from level zero.</returns>
+    /// <remarks>
+    /// <see cref="WithMipChain"/> keeps a chain a texture already carries, which is right for an opaque
+    /// surface. A cut-out that shipped with a chain, though, carries the black of its transparent gaps in
+    /// every level of it — the wire's colour was averaged flat against the holes at import — so it goes
+    /// dark at distance no matter how well the alpha is preserved. Rebuilt from level zero, the alpha-
+    /// weighted filter in <see cref="MipChainBuilder"/> keeps the wire's own colour instead. Build reads
+    /// only level zero of the source, so a chain that is already present is simply replaced.
+    /// </remarks>
+    public TextureImage RebuildMipChain()
+    {
+        if (Width <= 0 || Height <= 0)
+        {
+            return this;
+        }
+
+        (Bgra32[] pixels, int[] offsets) = MipChainBuilder.Build(_pixels, Width, Height);
+        return new TextureImage(Width, Height, offsets.Length, pixels, offsets);
+    }
+
+    /// <summary>
     /// Rescales the mip chain's alpha so an alpha-tested surface keeps the same amount of itself at
     /// every distance.
     /// </summary>
