@@ -163,6 +163,67 @@ public sealed class TaskScriptCommandsTests
     }
 
     [Fact]
+    public void AIGraphGraphdataConsumesThreeValuesAndKeepsTuningAndChildrenAligned()
+    {
+        Fixture fixture = new();
+        fixture.Types.Register<LifecycleProbeTask>("Container");
+
+        fixture.Run(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AIGraph"),
+                QvmExpression.Text("Graph position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Update"), QvmExpression.Text("PushButton"),
+                QvmExpression.Text("Graphdata"), QvmExpression.Text("Graph"),
+                QvmExpression.Text("Node cover midoffset"), QvmExpression.Text("Real64"),
+                QvmExpression.Text("Node cover topoffset"), QvmExpression.Text("Real64"),
+                QvmExpression.Text("Max height difference between linked nodes"), QvmExpression.Text("Real64"),
+                QvmExpression.Text("Width of node links"), QvmExpression.Text("Real64"),
+                QvmExpression.Text("Link maximum distance to ground"), QvmExpression.Text("Real64"),
+                QvmExpression.Text("Use precise link method (SLOW!)"), QvmExpression.Text("bool8"),
+                QvmExpression.Text("Precise link method step value"), QvmExpression.Text("Real64")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(1),
+                QvmExpression.Text("AIGraph"),
+                QvmExpression.Text("The big one"),
+                QvmExpression.Real(112507580f),
+                QvmExpression.Real(-55808670f),
+                QvmExpression.Real(175286940f),
+                QvmExpression.Int(0),
+                // Retail Level 4 graph 1's Graph payload precedes its seven tuning values.
+                QvmExpression.Int(168),
+                QvmExpression.Int(200),
+                QvmExpression.Int(403),
+                QvmExpression.Real(0.7f),
+                QvmExpression.Real(2f),
+                QvmExpression.Real(3f),
+                QvmExpression.Real(0.4f),
+                QvmExpression.Real(0.4f),
+                QvmExpression.Int(0),
+                QvmExpression.Real(0.05f),
+                QvmExpression.Call(
+                    "Task_New",
+                    QvmExpression.Int(-1),
+                    QvmExpression.Text("Container"),
+                    QvmExpression.Text("AfterAIGraphPayload"))));
+
+        var graph = (DeclaredTask)Assert.Single(fixture.Tree.Root.Children);
+
+        Assert.Equal([168f, 200f, 403f], Assert.IsType<float[]>(graph.GetValue(2)));
+        Assert.Equal(0.7, Assert.IsType<double>(graph.GetValue(3)), precision: 5);
+        Assert.Equal(2.0, Assert.IsType<double>(graph.GetValue(4)));
+        Assert.Equal(3.0, Assert.IsType<double>(graph.GetValue(5)));
+        Assert.Equal(0.4, Assert.IsType<double>(graph.GetValue(6)), precision: 5);
+        Assert.Equal(0.4, Assert.IsType<double>(graph.GetValue(7)), precision: 5);
+        Assert.False(Assert.IsType<bool>(graph.GetValue(8)));
+        Assert.Equal(0.05, Assert.IsType<double>(graph.GetValue(9)), precision: 5);
+
+        GameTask child = Assert.Single(graph.Children);
+        Assert.Equal("AfterAIGraphPayload", child.Label);
+    }
+
+    [Fact]
     public void ADeclarationThatDisagreesWithTheClassIsFatal()
     {
         Fixture fixture = new();

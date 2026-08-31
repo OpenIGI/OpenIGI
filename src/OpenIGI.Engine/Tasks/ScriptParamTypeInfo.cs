@@ -30,7 +30,7 @@ public static class ScriptParamTypeInfo
         [ScriptParamType.LevelExpression] = ("LevelExpression", ScriptParamType.LevelExpression, 1),
         [ScriptParamType.QTaskNote] = ("QTaskNote", ScriptParamType.QTaskNote, 0),
         [ScriptParamType.Bool8] = ("bool8", ScriptParamType.Bool8, 1),
-        [ScriptParamType.Graph] = ("Graph", ScriptParamType.Graph, 0),
+        [ScriptParamType.Graph] = ("Graph", ScriptParamType.Graph, 3),
         [ScriptParamType.GraphEnvelope] = ("GraphEnvelope", ScriptParamType.GraphEnvelope, 11),
         [ScriptParamType.ScriptFile] = ("ScriptFile", ScriptParamType.String256, 1),
         [ScriptParamType.Bitfield] = ("Bitfield", ScriptParamType.Int32, 1),

@@ -167,7 +167,7 @@ internal sealed partial class EveryTypeTask : GameTask
     [ScriptParam(ScriptParamType.String16)]
     public string Model = string.Empty;
 
-    // Graph's parse callback is a no-op, so the binder consumes nothing and leaves this alone.
+    // Graph stores three positional values in script arguments.
     [ScriptParam(ScriptParamType.Graph)]
     public float[] Curve = [];
 
