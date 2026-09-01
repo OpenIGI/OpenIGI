@@ -349,6 +349,12 @@ public sealed partial class VulkanGraphicsDevice
             _instance.Vk.CmdEndRenderPass(_frameCommandBuffer);
             _deferredPassActive = false;
 
+            // The lamps have now been read by both the lighting subpass (their whole point) and the
+            // forward subpass that shades the first-person rig (LampLightAtEye). Cleared here rather than
+            // at the end of RecordLighting so the rig can read them: a frame that submits none still
+            // lights from none, because nothing re-adds them before the next SetLocalLights.
+            _localLightCount = 0;
+
             // The pass has stored the depth; gather this frame's occlusion from it now, for the next frame's
             // lighting to read. The lighting already sampled the occlusion image this frame (its previous
             // contents), so a read-before-write barrier separates that from the compute write below.
@@ -1979,10 +1985,12 @@ public sealed partial class VulkanGraphicsDevice
         _screenIndirectStrength = 0f;
         _screenIndirectFullResolution = false;
 
-        // And the lamps, on the same contract and for the same reason: a frame that submits none must
-        // light from none, or a level whose lamps were switched off goes on being lit by the last set
-        // that was uploaded -- at view-space positions belonging to a camera that has since moved.
-        _localLightCount = 0;
+        // The lamps are NOT cleared here, though the same contract applies to them -- a frame that
+        // submits none must light from none. The clear is deferred to EndSceneCapture instead, because
+        // the forward subpass that draws the first-person rig runs AFTER this one and reads the lamp set
+        // through LampLightAtEye: cleared here, the weapon saw zero lamps and fell to a night silhouette
+        // while the wall behind it was lit by the very fittings it could not see. EndSceneCapture clears
+        // them once the forward draws that need them are done, which keeps the no-carry-over guarantee.
     }
 
     /// <summary>Fills this frame's GI uniform with the probe-field parameters and points the set at it.</summary>

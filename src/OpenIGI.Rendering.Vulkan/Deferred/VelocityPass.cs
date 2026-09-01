@@ -106,6 +106,20 @@ internal sealed class VelocityPass : IDisposable
                 return;
             }
 
+            // The first-person rig lives in the foreground depth sliver (reverse-Z 0.9..1, nearer than
+            // any world surface can be) and is locked to the camera: it does not move on screen when the
+            // camera turns. This pass derives motion from depth reprojection, which knows nothing of that
+            // rigging -- it read the rig's near depth as world geometry a hand's length away and handed it
+            // an enormous velocity every time the view rotated. The motion blur then smeared that velocity
+            // across the whole weapon, and the temporal pass chased the same false motion into a ghosting
+            // weapon. Its true screen motion is very nearly zero, which is both what stills the blur and
+            // what lets the temporal pass hold the weapon steady.
+            if (depth >= 0.9)
+            {
+                imageStore(uVelocity, px, vec4(0.0));
+                return;
+            }
+
             vec3 viewPos = ViewPositionAt(uv, depth);
 
             // Camera-relative throughout: the world position is never formed, only the offset from this
