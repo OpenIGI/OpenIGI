@@ -539,15 +539,6 @@ public sealed partial class VulkanGraphicsDevice
                 cmd, target.GuideImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
                 PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
-            // The moiré history rides with the guide: the previous slot's is reprojected and read, this
-            // slot's is written. Same layout dance as the guide right above.
-            OcclusionBarrier(
-                cmd, previous.MoireImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
-                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
-            OcclusionBarrier(
-                cmd, target.MoireImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
-                PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
-
             _deferred.RejectShading.Record(
                 cmd,
                 _frameLoop.CurrentFrame,
@@ -558,17 +549,12 @@ public sealed partial class VulkanGraphicsDevice
                 target.ShadingRejectionView,
                 target.GuideView,
                 target.ThinRelaxedRejectionView,
-                previous.MoireView,
-                target.MoireView,
                 _captureWidth,
                 _captureHeight,
                 _lastAdaptedExposure,
                 1f / 16f,
                 _historyDecimated,
-                RenderCVars.ThinGeometry.Value,
-                // The flickering period in frames — the reference's flickering period at 60 Hz.
-                // Zero would disable the heuristic; the count fade-in derives from it.
-                2f);
+                RenderCVars.ThinGeometry.Value);
 
             OcclusionBarrier(
                 cmd, target.ShadingRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
