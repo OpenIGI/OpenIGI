@@ -605,12 +605,19 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.SpatialAaImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
-        // How far the view has rotated since last frame, in screen pixels. The Frobenius inner product of
-        // the two view rotations is 1 + 2cos(theta), so this recovers the swing angle without forming the
-        // relative rotation, then scales it to pixels by the projection's own vertical scale. It gates the
-        // history's dead-zone of the jittered-depth velocity on grazing terrain: near zero when the camera
-        // is held (where that velocity is all artifact and worth zeroing), and opening as soon as the view
-        // pans so a real turn reprojects the history in full and nothing lags.
+        // How far the camera has moved the picture since last frame, in screen pixels, from BOTH its
+        // rotation and its translation -- the gate that decides whether the history may dead-zone the
+        // jittered-depth velocity on grazing terrain. Near zero when the camera is held (that velocity is
+        // then all artifact and worth zeroing); it must open on ANY real camera motion, and translation is
+        // as real as rotation. Leaving translation out was the bug that smeared forward and backward
+        // motion: a dolly has no rotation, so the gate read it as held, dead-zoned the far terrain's small
+        // real velocity, and the picture ghosted along the direction of travel.
+        //
+        // Rotation: the Frobenius product of the two view rotations is 1 + 2cos(theta), which recovers the
+        // swing angle without forming the relative rotation; scaled to pixels by the projection's own
+        // vertical scale. Translation: the camera-to-camera move, taken as the pixel motion it gives a
+        // surface a few metres away (near enough to catch a walk, far enough that the metre or so of float
+        // slop a held camera carries at these world coordinates stays well under a pixel).
         Matrix3f cur = _viewToWorld;
         Matrix3f prv = _previousViewToWorld;
         float frob =
@@ -619,7 +626,16 @@ public sealed partial class VulkanGraphicsDevice
             (cur.M31 * prv.M31) + (cur.M32 * prv.M32) + (cur.M33 * prv.M33);
         float cosSwing = Math.Clamp((frob - 1f) * 0.5f, -1f, 1f);
         float swingRadians = MathF.Acos(cosSwing);
-        float cameraPixelSpeed = swingRadians * _unprojection.YScale * 0.5f * _captureHeight;
+        float pixelsPerRadian = _unprojection.YScale * 0.5f * _captureHeight;
+
+        float dx = _cameraPosition.X - _previousCameraPosition.X;
+        float dy = _cameraPosition.Y - _previousCameraPosition.Y;
+        float dz = _cameraPosition.Z - _previousCameraPosition.Z;
+        float translationMetres = MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        const float ReferenceDepthMetres = 5f;
+        float translationPixels = translationMetres / ReferenceDepthMetres * pixelsPerRadian;
+
+        float cameraPixelSpeed = (swingRadians * pixelsPerRadian) + translationPixels;
 
         _deferred.UpdateHistory.Record(
             cmd,
