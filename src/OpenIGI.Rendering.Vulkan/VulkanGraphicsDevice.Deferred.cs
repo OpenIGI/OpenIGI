@@ -27,6 +27,19 @@ public sealed partial class VulkanGraphicsDevice
     private Matrix3f _viewToWorld = Matrix3f.Identity;
     private DepthUnprojection _unprojection = new(1f, 1f, 0.1f, 1000f);
 
+    // The camera in full double precision, and the frame-to-frame delta formed from it. This world's
+    // coordinates run to tens of thousands of units, and every temporal pass reprojects the static world
+    // by the camera's motion between two frames -- a motion that is often a fraction of a unit. Forming
+    // that delta by subtracting two single-precision positions of that magnitude loses all but a few bits
+    // of it to catastrophic cancellation, and the leftover error is proportional to the translation, so it
+    // is invisible on a held or purely rotating camera and grows with strafing/walking speed into a
+    // smeared reprojection -- the reference composes the whole reprojection in double and casts to float
+    // only at the end for exactly this reason. So the delta is differenced in double from the double
+    // camera and only then narrowed to float, where a value this small carries full precision.
+    private Vector3d _cameraPositionPrecise;
+    private Vector3d _previousCameraPositionPrecise;
+    private Vector3f _cameraDelta;
+
     // The previous frame's camera, which is the whole of what a static world needs to be reprojected onto
     // it. Captured at the end of each captured frame rather than when the seam hands the camera over, so
     // a frame that renders nothing does not shift the reference the next one measures against.
@@ -358,6 +371,17 @@ public sealed partial class VulkanGraphicsDevice
             // The pass has stored the depth; gather this frame's occlusion from it now, for the next frame's
             // lighting to read. The lighting already sampled the occlusion image this frame (its previous
             // contents), so a read-before-write barrier separates that from the compute write below.
+            // The frame-to-frame camera motion, differenced in double from the double camera and narrowed
+            // to float only now -- see the field for why this cannot be a single-precision subtraction of
+            // two absolute positions. Formed once and read by every reprojecting pass below and by the
+            // temporal resolve's dead-zone gate.
+            _cameraDelta = _hasPreviousFrame
+                ? new Vector3f(
+                    (float)(_cameraPositionPrecise.X - _previousCameraPositionPrecise.X),
+                    (float)(_cameraPositionPrecise.Y - _previousCameraPositionPrecise.Y),
+                    (float)(_cameraPositionPrecise.Z - _previousCameraPositionPrecise.Z))
+                : default;
+
             DispatchOcclusion();
             DispatchVelocity();
 
@@ -372,6 +396,7 @@ public sealed partial class VulkanGraphicsDevice
             // Everything temporal measures against this, so it moves on exactly once per captured frame.
             _previousViewToWorld = _viewToWorld;
             _previousCameraPosition = _cameraPosition;
+            _previousCameraPositionPrecise = _cameraPositionPrecise;
             _previousUnprojection = _unprojection;
             _previousJitterX = _taaSettings.JitterX;
             _previousJitterY = _taaSettings.JitterY * VerticalJitterSign;
@@ -628,10 +653,8 @@ public sealed partial class VulkanGraphicsDevice
         float swingRadians = MathF.Acos(cosSwing);
         float pixelsPerRadian = _unprojection.YScale * 0.5f * _captureHeight;
 
-        float dx = _cameraPosition.X - _previousCameraPosition.X;
-        float dy = _cameraPosition.Y - _previousCameraPosition.Y;
-        float dz = _cameraPosition.Z - _previousCameraPosition.Z;
-        float translationMetres = MathF.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        float translationMetres = MathF.Sqrt(
+            (_cameraDelta.X * _cameraDelta.X) + (_cameraDelta.Y * _cameraDelta.Y) + (_cameraDelta.Z * _cameraDelta.Z));
         const float ReferenceDepthMetres = 5f;
         float translationPixels = translationMetres / ReferenceDepthMetres * pixelsPerRadian;
 
@@ -929,10 +952,7 @@ public sealed partial class VulkanGraphicsDevice
             _aoSettings.Intensity,
             _viewToWorld,
             _previousViewToWorld,
-            new Vector3f(
-                _cameraPosition.X - _previousCameraPosition.X,
-                _cameraPosition.Y - _previousCameraPosition.Y,
-                _cameraPosition.Z - _previousCameraPosition.Z),
+            _cameraDelta,
             (int)(_frameCounter % 1021UL),
             previousUsable);
 
@@ -980,10 +1000,7 @@ public sealed partial class VulkanGraphicsDevice
             _captureHeight,
             _viewToWorld,
             _previousViewToWorld,
-            new Vector3f(
-                _cameraPosition.X - _previousCameraPosition.X,
-                _cameraPosition.Y - _previousCameraPosition.Y,
-                _cameraPosition.Z - _previousCameraPosition.Z),
+            _cameraDelta,
             _unprojection,
             _previousUnprojection);
 
@@ -1063,10 +1080,7 @@ public sealed partial class VulkanGraphicsDevice
                 _captureHeight,
                 _viewToWorld,
                 _previousViewToWorld,
-                new Vector3f(
-                    _cameraPosition.X - _previousCameraPosition.X,
-                    _cameraPosition.Y - _previousCameraPosition.Y,
-                    _cameraPosition.Z - _previousCameraPosition.Z),
+                _cameraDelta,
                 _unprojection,
                 _previousUnprojection);
 
@@ -1498,12 +1512,13 @@ public sealed partial class VulkanGraphicsDevice
     public void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
-        Vector3f cameraPosition,
+        Vector3d cameraPosition,
         Matrix3f viewToWorld)
     {
         ThrowIfDisposed();
         _taaSettings = settings;
-        _cameraPosition = cameraPosition;
+        _cameraPositionPrecise = cameraPosition;
+        _cameraPosition = new Vector3f((float)cameraPosition.X, (float)cameraPosition.Y, (float)cameraPosition.Z);
         _viewToWorld = viewToWorld;
     }
 
@@ -1730,10 +1745,7 @@ public sealed partial class VulkanGraphicsDevice
             target.LampVisibilityHeight,
             _viewToWorld,
             _previousViewToWorld,
-            new Vector3f(
-                _cameraPosition.X - _previousCameraPosition.X,
-                _cameraPosition.Y - _previousCameraPosition.Y,
-                _cameraPosition.Z - _previousCameraPosition.Z),
+            _cameraDelta,
             _unprojection,
             _previousUnprojection,
             hasHistory,
@@ -1930,10 +1942,7 @@ public sealed partial class VulkanGraphicsDevice
                 _captureHeight,
                 _viewToWorld,
                 _previousViewToWorld,
-                new Vector3f(
-                    _cameraPosition.X - _previousCameraPosition.X,
-                    _cameraPosition.Y - _previousCameraPosition.Y,
-                    _cameraPosition.Z - _previousCameraPosition.Z),
+                _cameraDelta,
                 _unprojection,
                 _previousUnprojection,
                 shadowFrames,

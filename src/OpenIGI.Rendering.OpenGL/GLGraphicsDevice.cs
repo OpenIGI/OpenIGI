@@ -2085,14 +2085,14 @@ public sealed partial class GLGraphicsDevice : IGraphicsDevice
     public void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
-        Vector3f cameraPosition,
+        Vector3d cameraPosition,
         Matrix3f viewToWorld)
     {
         ThrowIfDisposed();
 
         _temporal = settings;
         _temporalProjection = projection;
-        _temporalCamera = cameraPosition;
+        _temporalCamera = new Vector3f((float)cameraPosition.X, (float)cameraPosition.Y, (float)cameraPosition.Z);
         _temporalViewToWorldValue = viewToWorld;
     }
 

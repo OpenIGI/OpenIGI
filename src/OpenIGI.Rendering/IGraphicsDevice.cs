@@ -1046,7 +1046,11 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     /// <param name="cameraPosition">
     /// The camera's world position in metres, used to work out how far it has travelled since the
-    /// previous frame.
+    /// previous frame. Supplied in double precision: this world's coordinates run to tens of thousands
+    /// of units, and the per-frame travel is often a fraction of one, so the backend must difference two
+    /// positions of that magnitude to recover it. Doing that in single precision loses the travel to
+    /// cancellation and smears the reprojection under translation; passing it double lets the backend
+    /// keep the subtraction exact and narrow only the small result to float.
     /// </param>
     /// <param name="viewToWorld">
     /// The rotation taking a view-space direction back into camera-relative world space.
@@ -1059,7 +1063,7 @@ public interface IGraphicsDevice : IDisposable
     void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
-        Vector3f cameraPosition,
+        Vector3d cameraPosition,
         Matrix3f viewToWorld);
 
     /// <summary>Sets the sun's shadow map for this frame.</summary>

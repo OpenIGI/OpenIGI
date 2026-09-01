@@ -3527,7 +3527,7 @@ internal sealed partial class DesktopGame : IDisposable
                         jitterY,
                         RenderCVars.TemporalSharpening.Value),
                     unjitteredProjection,
-                    new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
+                    eye.Position,
                     eye.Orientation.Transposed());
 
                 _device.SetVolumetricFog(

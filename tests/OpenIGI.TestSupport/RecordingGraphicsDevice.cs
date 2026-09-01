@@ -482,7 +482,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
-        Vector3f cameraPosition,
+        Vector3d cameraPosition,
         Matrix3f viewToWorld) => Temporal.Add(settings);
 
     /// <summary>The cascade indices that were rendered, in order.</summary>
