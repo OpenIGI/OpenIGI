@@ -660,7 +660,10 @@ public sealed partial class VulkanGraphicsDevice
             maxSamples: 16f,
             _taaSettings.JitterX,
             _taaSettings.JitterY * VerticalJitterSign,
-            cameraPixelSpeed);
+            cameraPixelSpeed,
+            target.DepthView,
+            _unprojection.Near,
+            _unprojection.Far);
 
         // The resolve reads the history the update just wrote, and writes the frame-sized image.
         OcclusionBarrier(
