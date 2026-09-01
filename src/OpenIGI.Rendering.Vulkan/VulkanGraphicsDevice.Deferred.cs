@@ -619,6 +619,22 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.SpatialAaImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // How far the view has rotated since last frame, in screen pixels. The Frobenius inner product of
+        // the two view rotations is 1 + 2cos(theta), so this recovers the swing angle without forming the
+        // relative rotation, then scales it to pixels by the projection's own vertical scale. It gates the
+        // history's dead-zone of the jittered-depth velocity on grazing terrain: near zero when the camera
+        // is held (where that velocity is all artifact and worth zeroing), and opening as soon as the view
+        // pans so a real turn reprojects the history in full and nothing lags.
+        Matrix3f cur = _viewToWorld;
+        Matrix3f prv = _previousViewToWorld;
+        float frob =
+            (cur.M11 * prv.M11) + (cur.M12 * prv.M12) + (cur.M13 * prv.M13) +
+            (cur.M21 * prv.M21) + (cur.M22 * prv.M22) + (cur.M23 * prv.M23) +
+            (cur.M31 * prv.M31) + (cur.M32 * prv.M32) + (cur.M33 * prv.M33);
+        float cosSwing = Math.Clamp((frob - 1f) * 0.5f, -1f, 1f);
+        float swingRadians = MathF.Acos(cosSwing);
+        float cameraPixelSpeed = swingRadians * _unprojection.YScale * 0.5f * _captureHeight;
+
         _deferred.UpdateHistory.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -641,7 +657,8 @@ public sealed partial class VulkanGraphicsDevice
             temporalOn: true,
             maxSamples: 16f,
             _taaSettings.JitterX,
-            _taaSettings.JitterY * VerticalJitterSign);
+            _taaSettings.JitterY * VerticalJitterSign,
+            cameraPixelSpeed);
 
         // The resolve reads the history the update just wrote, and writes the frame-sized image.
         OcclusionBarrier(
