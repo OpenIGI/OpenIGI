@@ -612,8 +612,8 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// <remarks>
     /// <para>
     /// Three groups. What is left of the post-process chain — the resolve now runs the lens scatter, the
-    /// shutter, the vignette, exposure and the curve, so what remains unread is the grade (contrast,
-    /// saturation, the colour lookup) and the effects the reference does not use here. The lighting
+    /// shutter, the vignette, the film grain, exposure and the curve, so what remains unread is the grade
+    /// (contrast, saturation, the colour lookup) and the effects the reference does not use here. The lighting
     /// features whose device setters record their arguments and return: reflections, the floor sheen, the
     /// detail maps, the alpha hash, the realtime probe volume. And the volumetric fog, which keeps only
     /// the camera it was handed.
@@ -628,7 +628,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private static readonly string[] UnimplementedOnVulkan =
     [
         // The grade, and the post-process effects the reference leaves switched off.
-        "r_grain", "r_chromatic", "r_sharpen",
+        "r_chromatic", "r_sharpen",
         "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
         "r_camera_taps", "r_lut",
 

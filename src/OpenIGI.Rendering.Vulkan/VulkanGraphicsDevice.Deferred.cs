@@ -124,6 +124,10 @@ public sealed partial class VulkanGraphicsDevice
     // second, so a frame's worth of lag is far below what the threshold can notice.
     private float _lastAdaptedExposure = 1f;
 
+    // Which frame the film grain is on. Not the frame-in-flight index, which only counts to the number of
+    // buffered frames and would repeat the same handful of patterns forever.
+    private int _grainFrame;
+
     /// <inheritdoc/>
     public ScenePass CurrentPass => _capturing ? _currentScenePass : ScenePass.None;
 
@@ -1305,7 +1309,11 @@ public sealed partial class VulkanGraphicsDevice
         // A mask view is a code value rather than radiance, so it keeps neither the curve nor the lens.
         bool maskView = _debugView is not DebugView.None and not DebugView.Lighting and not DebugView.LampLight;
 
-        float* parameters = stackalloc float[8]
+        // The grain's phase advances once per resolved frame, wrapped so the counter cannot drift into
+        // a magnitude where a float has no fractional bits left to give the shader.
+        _grainFrame = (_grainFrame + 1) & 1023;
+
+        float* parameters = stackalloc float[12]
         {
             post.Exposure * adaptedExposure,
             (int)post.ToneMap,
@@ -1319,8 +1327,16 @@ public sealed partial class VulkanGraphicsDevice
             _captureHeight / (float)Math.Max(1, _captureWidth),
             bloomRan ? 1f : 0f,
             0f,
+
+            // A mask view is a code value and gets no film on it, for the same reason it gets no curve.
+            // The phase is stepped by the golden ratio so successive frames land far apart in the hash
+            // rather than walking through it, which is what stops the grain crawling in one direction.
+            maskView ? 0f : Math.Clamp(post.Grain, 0f, 1f),
+            _grainFrame * 0.61803399f,
+            0f,
+            0f,
         };
-        vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 8, parameters);
+        vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 12, parameters);
 
         // The resolve fills the whole back buffer regardless of any scene sub-viewport that was set.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_presentTarget.Extent.Width, (int)_presentTarget.Extent.Height));
