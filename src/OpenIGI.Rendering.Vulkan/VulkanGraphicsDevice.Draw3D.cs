@@ -293,7 +293,16 @@ public sealed partial class VulkanGraphicsDevice
         // camera velocity. Without this stamp temporal upscaler accumulates the old weapon pose over the new one. Only
         // opaque, depth-writing view-model draws participate; the additive muzzle flame neither owns the
         // stored depth nor wants history.
-        bool animatedGeometry = resource.Animated && _deferredStage == DeferredStage.Geometry;
+        // Only a draw that WRITES depth may stamp: the stamp re-rasterises the mesh against the stored
+        // depth, and a mesh that never wrote it cannot own it. The sky's cloud layers are animated
+        // meshes drawn with depth disabled; stamped, their far-plane depth plus the stamp's bias toward
+        // the eye beat every surface beyond some twenty metres, and their near-zero drift was written
+        // over the true motion of everything above that depth contour -- the tank, the wire, the far
+        // hills. A strafe then reprojected none of it and the whole upper picture ghosted, along a line
+        // that followed the terrain, while the near ground below stayed sharp.
+        bool animatedGeometry = resource.Animated
+            && _deferredStage == DeferredStage.Geometry
+            && _depthState == DepthState.TestAndWrite;
         bool firstPersonForward = _firstPersonGeometry
             && _deferredStage == DeferredStage.Forward
             && blend == BlendMode.Opaque
