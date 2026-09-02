@@ -131,6 +131,61 @@ internal sealed unsafe class PhysicalDeviceSelector
             $"{(capabilities.DescriptorBuffer ? "available" : "unavailable")}. " +
             $"Synchronisation 2: {(capabilities.Synchronization2 ? "available" : "unavailable")}. " +
             $"Timeline semaphores: {(capabilities.TimelineSemaphore ? "available" : "unavailable")}.");
+
+        // Said once, near the top, because it reframes everything under it: on a portable adapter an
+        // absent capability is the translation layer's limit rather than the hardware's, and no amount of
+        // driver updating will add it.
+        if (capabilities.PortabilitySubset)
+        {
+            _logger.Information(
+                "Vulkan",
+                "Adapter implements the Vulkan portability subset (Vulkan translated to another API, "
+                + $"which on macOS is Metal through MoltenVK). Sampler mip LOD bias: "
+                + $"{(capabilities.SamplerMipLodBias ? "available" : "unavailable, textures sample unbiased")}.");
+        }
+
+        // Named individually only when one is missing, because on every adapter the port has run on so
+        // far the list is empty and a line saying so would be noise. When it is not empty it is the first
+        // thing worth knowing: these are the features device creation used to demand outright, so an
+        // adapter listing any of them here is one that could not have started the port at all before.
+        List<string> absent = [];
+        if (!capabilities.ShaderInt64)
+        {
+            absent.Add("64-bit integers in shaders");
+        }
+
+        if (!capabilities.FragmentStoresAndAtomics)
+        {
+            absent.Add("fragment-stage stores and atomics");
+        }
+
+        if (!capabilities.VertexPipelineStoresAndAtomics)
+        {
+            absent.Add("vertex-stage stores and atomics");
+        }
+
+        if (!capabilities.StorageImageWriteWithoutFormat)
+        {
+            absent.Add("format-less storage image writes");
+        }
+
+        if (!capabilities.IndependentBlend)
+        {
+            absent.Add("per-attachment blend state");
+        }
+
+        if (!capabilities.ArrayDynamicIndexing)
+        {
+            absent.Add("dynamically indexed descriptor arrays");
+        }
+
+        if (absent.Count > 0)
+        {
+            _logger.Warning(
+                "Vulkan",
+                $"Adapter does not offer: {string.Join(", ", absent)}. These are not enabled, and no pass "
+                + "depends on one today; a pass added later that does must check the capability first.");
+        }
     }
 
     private PhysicalDeviceSelection? Evaluate(PhysicalDevice device)

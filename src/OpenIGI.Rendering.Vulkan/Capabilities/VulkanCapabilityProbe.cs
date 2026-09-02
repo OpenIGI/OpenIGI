@@ -130,6 +130,17 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
+        // The one structure that is read to find out what is *missing* rather than what is available.
+        // Every field is something a conformant adapter simply has; a portable one answers for each.
+        PhysicalDevicePortabilitySubsetFeaturesKHR* portability = null;
+        if (available.Contains(VulkanExtensionNames.PortabilitySubset))
+        {
+            portability = chain.Add(new PhysicalDevicePortabilitySubsetFeaturesKHR
+            {
+                SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr,
+            });
+        }
+
         PhysicalDeviceFeatures2 features = new()
         {
             SType = StructureType.PhysicalDeviceFeatures2,
@@ -258,6 +269,22 @@ internal static unsafe class VulkanCapabilityProbe
             SamplerAnisotropy = features.Features.SamplerAnisotropy,
             RobustBufferAccess = features.Features.RobustBufferAccess,
             Robustness2 = robustness2Usable,
+            ShaderInt64 = features.Features.ShaderInt64,
+            FragmentStoresAndAtomics = features.Features.FragmentStoresAndAtomics,
+            VertexPipelineStoresAndAtomics = features.Features.VertexPipelineStoresAndAtomics,
+            StorageImageWriteWithoutFormat = features.Features.ShaderStorageImageWriteWithoutFormat,
+            IndependentBlend = features.Features.IndependentBlend,
+            ArrayDynamicIndexing = features.Features.ShaderSampledImageArrayDynamicIndexing
+                && features.Features.ShaderStorageBufferArrayDynamicIndexing
+                && features.Features.ShaderStorageImageArrayDynamicIndexing
+                && features.Features.ShaderUniformBufferArrayDynamicIndexing,
+            PortabilitySubset = portability is not null,
+            PortabilityFeatures = portability is not null ? *portability : default,
+
+            // Absent the extension the adapter is conformant and has it; with the extension it is
+            // whatever was answered. Read this way round so every caller can ask the same question
+            // without first asking whether the adapter is a portable one.
+            SamplerMipLodBias = portability is null || portability->SamplerMipLodBias,
             AccelerationStructureLimits = asLimits is not null ? *asLimits : default,
             RayTracingLimits = rtLimits is not null ? *rtLimits : default,
             DescriptorBufferLimits = dbLimits is not null ? *dbLimits : default,
@@ -407,6 +434,18 @@ internal static unsafe class VulkanCapabilityProbe
             DescriptorBindingUniformBufferUpdateAfterBind = capabilities.DescriptorIndexing,
         });
 
+        if (capabilities.PortabilitySubset)
+        {
+            // Handed straight back rather than filtered. Each field is a capability the adapter has
+            // already said whether it has, so echoing the answer enables everything it can do and asks
+            // for nothing it cannot -- and the structure has to be chained at all, because enabling the
+            // extension without it leaves every one of these off.
+            PhysicalDevicePortabilitySubsetFeaturesKHR portability = capabilities.PortabilityFeatures;
+            portability.SType = StructureType.PhysicalDevicePortabilitySubsetFeaturesKhr;
+            portability.PNext = null;
+            chain.Add(portability);
+        }
+
         if (capabilities.Storage16Bit)
         {
             chain.Add(new PhysicalDeviceVulkan11Features
@@ -417,23 +456,30 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
+        // Every field here is what the probe found, never what would be convenient. vkCreateDevice fails
+        // the whole call with VK_ERROR_FEATURE_NOT_PRESENT if a single requested feature is absent, so
+        // naming one unconditionally turns an adapter that is merely weaker into an adapter the port
+        // cannot start on at all -- which is what a Metal adapter behind MoltenVK looks like.
+        //
+        // None of these is load-bearing today, which is why asking for them where they are offered costs
+        // nothing and declining them where they are not costs nothing either. Every store and every
+        // atomic in the backend is in a compute shader, where neither stores-and-atomics feature applies;
+        // every storage image is declared with an explicit format qualifier; and both multiple-attachment
+        // pipelines give all four attachments the same blend state. They are asked for because a pass
+        // added later may want them, and because a capability the device reports is free to enable.
         return new PhysicalDeviceFeatures
         {
             SamplerAnisotropy = capabilities.SamplerAnisotropy,
             RobustBufferAccess = capabilities.RobustBufferAccess,
-
-            // The gather passes write storage images from compute and read counts the GPU itself wrote,
-            // and every shading pass indexes an array of textures. These are core features an adapter of
-            // this class always carries, but they are still asked for by name rather than assumed.
-            ShaderInt64 = true,
-            FragmentStoresAndAtomics = true,
-            VertexPipelineStoresAndAtomics = true,
-            ShaderStorageImageWriteWithoutFormat = true,
-            IndependentBlend = true,
-            ShaderSampledImageArrayDynamicIndexing = true,
-            ShaderStorageBufferArrayDynamicIndexing = true,
-            ShaderStorageImageArrayDynamicIndexing = true,
-            ShaderUniformBufferArrayDynamicIndexing = true,
+            ShaderInt64 = capabilities.ShaderInt64,
+            FragmentStoresAndAtomics = capabilities.FragmentStoresAndAtomics,
+            VertexPipelineStoresAndAtomics = capabilities.VertexPipelineStoresAndAtomics,
+            ShaderStorageImageWriteWithoutFormat = capabilities.StorageImageWriteWithoutFormat,
+            IndependentBlend = capabilities.IndependentBlend,
+            ShaderSampledImageArrayDynamicIndexing = capabilities.ArrayDynamicIndexing,
+            ShaderStorageBufferArrayDynamicIndexing = capabilities.ArrayDynamicIndexing,
+            ShaderStorageImageArrayDynamicIndexing = capabilities.ArrayDynamicIndexing,
+            ShaderUniformBufferArrayDynamicIndexing = capabilities.ArrayDynamicIndexing,
         };
     }
 
@@ -456,6 +502,11 @@ internal static unsafe class VulkanCapabilityProbe
                 enabled.Add(name);
             }
         }
+
+        // Not optional in the way everything below it is: an adapter that advertises the portability
+        // subset must have it enabled, so this is taken first and unconditionally rather than gated on
+        // wanting it.
+        Take(VulkanExtensionNames.PortabilitySubset);
 
         if (robustness2)
         {

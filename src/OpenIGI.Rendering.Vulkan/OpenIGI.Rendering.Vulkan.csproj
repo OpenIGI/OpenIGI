@@ -17,6 +17,7 @@
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />
     <PackageReference Include="Silk.NET.Shaderc" />
     <PackageReference Include="Silk.NET.SPIRV.Reflect" />
+    <PackageReference Include="Silk.NET.MoltenVK.Native" />
   </ItemGroup>
 
 </Project>

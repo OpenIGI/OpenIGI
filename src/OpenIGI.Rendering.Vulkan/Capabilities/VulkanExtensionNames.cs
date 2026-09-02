@@ -72,4 +72,23 @@ internal static class VulkanExtensionNames
 
     /// <summary>Reading an attachment written earlier in the same dynamic-rendering pass.</summary>
     public const string DynamicRenderingLocalRead = "VK_KHR_dynamic_rendering_local_read";
+
+    /// <summary>Instance-level: makes adapters that implement only a subset of Vulkan visible at all.</summary>
+    /// <remarks>
+    /// An instance extension rather than a device one, and the only one in this list. The Khronos loader
+    /// hides a non-conformant implementation from <c>vkEnumeratePhysicalDevices</c> unless the instance
+    /// both enables this and sets <c>VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR</c> — so on macOS,
+    /// where Vulkan is MoltenVK translating to Metal, an instance without it reports no adapters at all
+    /// rather than reporting one that is merely limited.
+    /// </remarks>
+    public const string PortabilityEnumeration = "VK_KHR_portability_enumeration";
+
+    /// <summary>Declares which corners of Vulkan a non-conformant adapter does not have.</summary>
+    /// <remarks>
+    /// The spec <em>requires</em> this to be enabled whenever the adapter advertises it: a device created
+    /// without it, on a device that offers it, is invalid usage. It carries no commands — it is a feature
+    /// structure listing what the implementation cannot do, each field a thing every conformant adapter
+    /// has and this one may not.
+    /// </remarks>
+    public const string PortabilitySubset = "VK_KHR_portability_subset";
 }

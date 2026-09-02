@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Rendering;
+using OpenIGI.Rendering.Vulkan.Capabilities;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
@@ -63,7 +64,16 @@ internal sealed unsafe class VulkanInstance : IDisposable
             extensions.Add(ExtDebugUtils.ExtensionName);
         }
 
-        Instance = CreateInstance(extensions, wantDebug);
+        // Asked for wherever the loader offers it, which in practice is macOS and nowhere else. It costs
+        // nothing on a conformant loader and is the difference between seeing an adapter and seeing none
+        // on a portable one, so it is taken on availability rather than on a platform check.
+        bool portability = InstanceExtensionAvailable(VulkanExtensionNames.PortabilityEnumeration);
+        if (portability && !extensions.Contains(VulkanExtensionNames.PortabilityEnumeration))
+        {
+            extensions.Add(VulkanExtensionNames.PortabilityEnumeration);
+        }
+
+        Instance = CreateInstance(extensions, wantDebug, portability);
 
         if (wantDebug && Vk.TryGetInstanceExtension(Instance, out ExtDebugUtils debugUtils))
         {
@@ -115,7 +125,7 @@ internal sealed unsafe class VulkanInstance : IDisposable
         Vk.Dispose();
     }
 
-    private Instance CreateInstance(List<string> extensions, bool withValidationLayer)
+    private Instance CreateInstance(List<string> extensions, bool withValidationLayer, bool withPortability)
     {
         uint apiVersion = Vk.Version12;
         uint supported;
@@ -147,6 +157,11 @@ internal sealed unsafe class VulkanInstance : IDisposable
             {
                 SType = StructureType.InstanceCreateInfo,
                 PApplicationInfo = &appInfo,
+
+                // The extension only makes the flag legal; the flag is what actually widens the search.
+                // Enabling one without the other still enumerates nothing, which is why they are carried
+                // together from the same decision rather than set in two places.
+                Flags = withPortability ? InstanceCreateFlags.EnumeratePortabilityBitKhr : 0,
                 EnabledExtensionCount = (uint)extensions.Count,
                 PpEnabledExtensionNames = (byte**)extensionNames,
                 EnabledLayerCount = withValidationLayer ? 1u : 0u,
@@ -167,6 +182,34 @@ internal sealed unsafe class VulkanInstance : IDisposable
                 SilkMarshal.Free(layerNames);
             }
         }
+    }
+
+    private bool InstanceExtensionAvailable(string name)
+    {
+        uint count = 0;
+        if (Vk.EnumerateInstanceExtensionProperties((byte*)null, &count, null) != Result.Success || count == 0)
+        {
+            return false;
+        }
+
+        ExtensionProperties[] properties = new ExtensionProperties[count];
+        fixed (ExtensionProperties* first = properties)
+        {
+            if (Vk.EnumerateInstanceExtensionProperties((byte*)null, &count, first) != Result.Success)
+            {
+                return false;
+            }
+
+            for (uint i = 0; i < count; i++)
+            {
+                if (VkString.Read(first[i].ExtensionName) == name)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private bool ValidationLayerAvailable()

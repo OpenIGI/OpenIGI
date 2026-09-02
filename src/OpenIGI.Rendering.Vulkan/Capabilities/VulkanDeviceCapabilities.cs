@@ -116,6 +116,53 @@ internal sealed class VulkanDeviceCapabilities
     /// <summary>Gets a value indicating whether the extended robustness guarantees are available.</summary>
     public bool Robustness2 { get; init; }
 
+    /// <summary>Gets a value indicating whether shaders may declare 64-bit integers.</summary>
+    public bool ShaderInt64 { get; init; }
+
+    /// <summary>Gets a value indicating whether a fragment shader may write buffers and storage images.</summary>
+    public bool FragmentStoresAndAtomics { get; init; }
+
+    /// <summary>Gets a value indicating whether a vertex shader may write buffers and storage images.</summary>
+    public bool VertexPipelineStoresAndAtomics { get; init; }
+
+    /// <summary>Gets a value indicating whether a storage image may be written without a format qualifier.</summary>
+    public bool StorageImageWriteWithoutFormat { get; init; }
+
+    /// <summary>Gets a value indicating whether colour attachments may each carry their own blend state.</summary>
+    public bool IndependentBlend { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether arrays of sampled images, storage images, and uniform and storage
+    /// buffers may be indexed by a value that varies at runtime but is uniform across the draw.
+    /// </summary>
+    /// <remarks>
+    /// Reported as one fact because the four Vulkan features behind it are asked for together and no pass
+    /// wants a subset: a shading pass that indexes its textures also indexes the buffer that describes
+    /// them. The stronger, per-invocation form is <see cref="DescriptorIndexing"/>.
+    /// </remarks>
+    public bool ArrayDynamicIndexing { get; init; }
+
+    /// <summary>Gets a value indicating whether this adapter implements only a subset of Vulkan.</summary>
+    /// <remarks>
+    /// True on macOS, where Vulkan is MoltenVK translating to Metal, and false on every conformant
+    /// desktop driver. It is not a quality judgement on its own — what the adapter actually lacks is in
+    /// <see cref="PortabilityFeatures"/> — but it does mean a capability cannot be assumed from the API
+    /// version alone.
+    /// </remarks>
+    public bool PortabilitySubset { get; init; }
+
+    /// <summary>Gets what a portable adapter answered about itself, valid when <see cref="PortabilitySubset"/> is set.</summary>
+    public PhysicalDevicePortabilitySubsetFeaturesKHR PortabilityFeatures { get; init; }
+
+    /// <summary>Gets a value indicating whether a sampler may bias which mip it selects.</summary>
+    /// <remarks>
+    /// Conformant Vulkan always allows it; a portable adapter need not, because Metal's sampler has no
+    /// LOD bias of its own. The texture path reads this and falls back to no bias rather than creating a
+    /// sampler the adapter would reject, which costs sharpness at a reduced render scale but is the only
+    /// alternative to not creating the texture at all.
+    /// </remarks>
+    public bool SamplerMipLodBias { get; init; }
+
     /// <summary>Gets the acceleration-structure limits, valid when <see cref="AccelerationStructure"/> is set.</summary>
     public PhysicalDeviceAccelerationStructurePropertiesKHR AccelerationStructureLimits { get; init; }
 

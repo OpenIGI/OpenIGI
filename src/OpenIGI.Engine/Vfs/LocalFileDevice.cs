@@ -6,9 +6,20 @@ namespace OpenIGI.Engine.Vfs;
 /// The <c>LOCAL</c> device: files on disk, below the installation root.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The original resolves <c>LOCAL:</c> paths against the process working directory, which is the game
 /// folder. The port takes the root explicitly so a host can point the engine at an installation
 /// anywhere, and so tests can run against a temporary directory.
+/// </para>
+/// <para>
+/// <b>Case.</b> The game's own data was authored on a case-insensitive filesystem and its resources name
+/// each other in whatever case the author typed, so <c>graph.res</c> and <c>GRAPH.RES</c> are the same
+/// file as far as every path inside the data is concerned. That holds for free on Windows and on a
+/// default macOS volume, and not at all on Linux or on a case-sensitive APFS volume, where an
+/// installation copied from a Windows machine would half-load. The exact path is therefore tried first
+/// and a case-folded walk of the directories is the fallback, so the common case costs one
+/// <c>File.Exists</c> and only a genuine miss pays for a directory listing.
+/// </para>
 /// </remarks>
 public sealed class LocalFileDevice : IFileDevice
 {
@@ -28,6 +39,13 @@ public sealed class LocalFileDevice : IFileDevice
         Name = name;
     }
 
+    // One entry per directory the fallback has had to look inside, mapping a lower-cased child name to
+    // the name the filesystem actually holds. Built lazily and never invalidated: it is consulted only
+    // after an exact-case lookup has already failed, and a file written while the game runs is written
+    // through the name the writer used, which is the name the exact lookup then finds.
+    private readonly Dictionary<string, Dictionary<string, string>> _foldedDirectories =
+        new(StringComparer.Ordinal);
+
     /// <summary>Gets the absolute directory device-relative paths resolve against.</summary>
     public string RootDirectory { get; }
 
@@ -35,13 +53,13 @@ public sealed class LocalFileDevice : IFileDevice
     public string Name { get; }
 
     /// <inheritdoc/>
-    public bool Exists(string path) => File.Exists(ToFullPath(path));
+    public bool Exists(string path) => ResolveFile(ToFullPath(path)) is not null;
 
     /// <inheritdoc/>
     public bool TryOpenRead(string path, out Stream? stream)
     {
-        string fullPath = ToFullPath(path);
-        if (!File.Exists(fullPath))
+        string? fullPath = ResolveFile(ToFullPath(path));
+        if (fullPath is null)
         {
             stream = null;
             return false;
@@ -56,8 +74,8 @@ public sealed class LocalFileDevice : IFileDevice
     {
         ArgumentNullException.ThrowIfNull(searchPattern);
 
-        string directory = ToFullPath(path);
-        if (!Directory.Exists(directory))
+        string? directory = ResolveDirectory(ToFullPath(path));
+        if (directory is null)
         {
             return [];
         }
@@ -70,8 +88,8 @@ public sealed class LocalFileDevice : IFileDevice
     /// <inheritdoc/>
     public IEnumerable<string> EnumerateDirectories(string path)
     {
-        string directory = ToFullPath(path);
-        if (!Directory.Exists(directory))
+        string? directory = ResolveDirectory(ToFullPath(path));
+        if (directory is null)
         {
             return [];
         }
@@ -103,4 +121,73 @@ public sealed class LocalFileDevice : IFileDevice
 
     /// <inheritdoc/>
     public override string ToString() => $"{Name}: -> {RootDirectory}";
+
+    private string? ResolveFile(string fullPath) =>
+        File.Exists(fullPath) ? fullPath : ResolveIgnoringCase(fullPath, File.Exists);
+
+    private string? ResolveDirectory(string fullPath) =>
+        Directory.Exists(fullPath) ? fullPath : ResolveIgnoringCase(fullPath, Directory.Exists);
+
+    /// <summary>Walks a path a segment at a time, matching each against what the directory really holds.</summary>
+    /// <remarks>
+    /// Segment by segment rather than by listing the whole tree, because only the directories actually
+    /// on the path are ever read, and because a case-folded name is only ambiguous within one directory.
+    /// Where two children of a directory differ only in case — legal on the filesystems this exists for,
+    /// impossible on the one the data was authored on — the first the filesystem reports wins, which is
+    /// arbitrary but stable.
+    /// </remarks>
+    private string? ResolveIgnoringCase(string fullPath, Func<string, bool> exists)
+    {
+        string relative = Path.GetRelativePath(RootDirectory, fullPath);
+        if (relative is "." or "")
+        {
+            return Directory.Exists(RootDirectory) ? RootDirectory : null;
+        }
+
+        string current = RootDirectory;
+        foreach (string segment in relative.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!TryFoldChild(current, segment, out string? actual))
+            {
+                return null;
+            }
+
+            current = Path.Combine(current, actual);
+        }
+
+        return exists(current) ? current : null;
+    }
+
+    private bool TryFoldChild(string directory, string name, out string actual)
+    {
+        Dictionary<string, string>? children;
+        lock (_foldedDirectories)
+        {
+            if (!_foldedDirectories.TryGetValue(directory, out children))
+            {
+                children = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (Directory.Exists(directory))
+                {
+                    foreach (string entry in Directory.EnumerateFileSystemEntries(directory))
+                    {
+                        string entryName = Path.GetFileName(entry);
+                        children.TryAdd(entryName, entryName);
+                    }
+                }
+
+                _foldedDirectories[directory] = children;
+            }
+        }
+
+        if (children.TryGetValue(name, out string? found))
+        {
+            actual = found;
+            return true;
+        }
+
+        actual = string.Empty;
+        return false;
+    }
 }

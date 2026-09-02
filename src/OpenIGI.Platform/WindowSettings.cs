@@ -13,7 +13,6 @@ namespace OpenIGI.Platform;
 /// The refresh rate in hertz to ask the monitor for, or zero for the highest it reports at the chosen
 /// resolution.
 /// </param>
-/// <param name="Backend">Which graphics API the window is created for. Defaults to OpenGL.</param>
 /// <remarks>
 /// <para>
 /// The original's boot is a 640×480 client area, centred, fullscreen unless <c>-window</c> was passed,
@@ -33,8 +32,7 @@ public readonly record struct WindowSettings(
     WindowMode Mode,
     bool CursorVisible,
     bool VSync,
-    int RefreshRate = 0,
-    GraphicsBackend Backend = GraphicsBackend.OpenGL)
+    int RefreshRate = 0)
 {
     /// <summary>Gets the settings the original boots with.</summary>
     public static WindowSettings Default =>

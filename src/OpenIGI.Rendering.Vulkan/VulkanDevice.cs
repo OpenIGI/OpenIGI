@@ -48,6 +48,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
         _vk.GetPhysicalDeviceMemoryProperties(selection.Device, out PhysicalDeviceMemoryProperties memory);
         MemoryProperties = memory;
         SamplerAnisotropy = Capabilities.SamplerAnisotropy;
+        SamplerMipLodBias = Capabilities.SamplerMipLodBias;
 
         Device = CreateDevice(selection);
 
@@ -139,6 +140,14 @@ internal sealed unsafe class VulkanDevice : IDisposable
 
     /// <summary>Gets a value indicating whether anisotropic sampling was enabled.</summary>
     public bool SamplerAnisotropy { get; }
+
+    /// <summary>Gets a value indicating whether a sampler may bias which mip level it selects.</summary>
+    /// <remarks>
+    /// True on every conformant adapter. False only on a portable one whose underlying API has no such
+    /// control, in which case a sampler asking for a bias would be rejected outright — so the texture
+    /// path reads this and asks for none.
+    /// </remarks>
+    public bool SamplerMipLodBias { get; }
 
     /// <summary>Waits until the device has finished every outstanding submission.</summary>
     /// <remarks>

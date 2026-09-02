@@ -14,14 +14,11 @@ namespace OpenIGI.Platform.Desktop;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The window is created and initialised eagerly so that a GL context exists before the caller builds
-/// a graphics device from <see cref="GLContext"/>. It does <em>not</em> run Silk's own render loop:
-/// the game loop owns the frame, exactly as the original's <c>WinMain</c> message loop does, and
-/// <see cref="PumpEvents"/> is the message pump.
-/// </para>
-/// <para>
-/// Presentation is <see cref="SwapBuffers"/>, which the composition root hands to the graphics device
-/// as its present callback.
+/// The window is created and initialised eagerly so that <see cref="VkSurface"/> exists before the
+/// caller builds a graphics device against it. It does <em>not</em> run Silk's own render loop: the game
+/// loop owns the frame, exactly as the original's <c>WinMain</c> message loop does, and
+/// <see cref="PumpEvents"/> is the message pump. Presentation belongs to the device's swapchain, so
+/// there is no present callback for the window to offer.
 /// </para>
 /// </remarks>
 public sealed class SilkGameWindow : IGameWindow
@@ -34,7 +31,6 @@ public sealed class SilkGameWindow : IGameWindow
     private readonly IWindow _window;
     private readonly IInputContext _input;
     private readonly Vector2D<int> _windowedSize;
-    private readonly bool _isVulkan;
     private WindowMode _mode;
     private bool _cursorVisible;
     private bool _cursorLocked;
@@ -93,92 +89,15 @@ public sealed class SilkGameWindow : IGameWindow
                 : WindowOptions.Default.VideoMode,
             VSync = settings.VSync,
 
-            // A windowed macOS OpenGL context reports a zero framebuffer until the window is visible;
-            // borderless remains hidden until Show(), while exclusive fullscreen must be visible for
-            // the monitor state to take.
+            // A window that has never been shown reports a zero framebuffer on macOS, and the swapchain
+            // is sized from it; borderless remains hidden until Show(), while exclusive fullscreen must
+            // be visible for the monitor state to take.
             IsVisible = settings.Mode == WindowMode.ExclusiveFullscreen,
             ShouldSwapAutomatically = false,
         };
 
         Display = display;
-        _isVulkan = settings.Backend == GraphicsBackend.Vulkan;
-
-        if (_isVulkan)
-        {
-            _window = CreateVulkanWindow(options, display);
-            _input = _window.CreateInput();
-            _cursorVisible = settings.CursorVisible;
-
-            if (_mode == WindowMode.ExclusiveFullscreen)
-            {
-                ApplyMode();
-                _window.DoEvents();
-            }
-            else if (_mode == WindowMode.Windowed)
-            {
-                ResizeClientArea(_windowedSize.X, _windowedSize.Y);
-            }
-
-            HookEvents();
-            ApplyCursorMode();
-            return;
-        }
-
-        // Desktop asks for the newest context it can get and falls back down the list. 4.6 brings
-        // compute shaders, shader storage buffers and image load/store, which is what lets the
-        // remaster track's fog, ambient occlusion and probe lighting run as compute rather than as
-        // fragment passes over a fullscreen quad. 3.3 is the floor and is what the web and mobile
-        // backends will target; the game runs on it, only with the cheaper implementations of those
-        // effects. Nothing below 3.3 is supported at all.
-        // Apple exposes OpenGL 4.1 as its ceiling. Asking GLFW for 4.6/4.3 first can fail before a
-        // native window exists, and Silk.NET 2.22 then attempts to position that null handle on macOS.
-        APIVersion[] wanted = OperatingSystem.IsMacOS()
-            ? [new APIVersion(4, 1), new APIVersion(3, 3)]
-            : [new APIVersion(4, 6), new APIVersion(4, 3), new APIVersion(3, 3)];
-
-        Exception? lastFailure = null;
-
-        foreach (APIVersion version in wanted)
-        {
-            WindowOptions attempt = options with
-            {
-                API = new GraphicsAPI(
-                    ContextAPI.OpenGL,
-                    ContextProfile.Core,
-                    ContextFlags.ForwardCompatible,
-                    version),
-            };
-
-            try
-            {
-                _window = Window.Create(attempt);
-                _window.Initialize();
-                GLVersion = version;
-                lastFailure = null;
-                break;
-            }
-            catch (Exception ex)
-            {
-                lastFailure = ex;
-                _window = null!;
-            }
-        }
-
-        if (_window is null || lastFailure is not null)
-        {
-            string message =
-                $"Could not create a {display.Size.X}x{display.Size.Y} OpenGL window. "
-                + "A driver supporting OpenGL 3.3 core or newer is required.";
-
-            throw lastFailure is null ? new PlatformException(message) : new PlatformException(message, lastFailure);
-        }
-
-        if (_window.GLContext is null)
-        {
-            _window.Dispose();
-            throw new PlatformException("The window was created without an OpenGL context.");
-        }
-
+        _window = CreateWindow(options, display);
         _input = _window.CreateInput();
         _cursorVisible = settings.CursorVisible;
 
@@ -199,9 +118,9 @@ public sealed class SilkGameWindow : IGameWindow
         ApplyCursorMode();
     }
 
-    private static IWindow CreateVulkanWindow(WindowOptions options, DesktopDisplay display)
+    private static IWindow CreateWindow(WindowOptions options, DesktopDisplay display)
     {
-        // A Vulkan window is created once with no GL context; Silk then exposes a VkSurface the device
+        // Created once, with no client-API context at all; Silk then exposes a VkSurface the device
         // builds its swapchain against. There is no version fallback ladder because the device, not the
         // window, negotiates the API version.
         WindowOptions attempt = options with { API = GraphicsAPI.DefaultVulkan };
@@ -225,27 +144,8 @@ public sealed class SilkGameWindow : IGameWindow
     /// <inheritdoc/>
     public event EventHandler? CloseRequested;
 
-    /// <summary>Gets a value indicating whether the window was created for the Vulkan backend.</summary>
-    /// <remarks>
-    /// A Vulkan window carries no GL context and presents through the device's own swapchain, so the
-    /// composition root reads this to know whether to build the device from <see cref="VkSurface"/> and
-    /// to leave <see cref="SwapBuffers"/> alone.
-    /// </remarks>
-    public bool IsVulkan => _isVulkan;
-
-    /// <summary>Gets the Vulkan surface source this window exposes, or <see langword="null"/> for a GL window.</summary>
+    /// <summary>Gets the Vulkan surface source this window exposes.</summary>
     public IVkSurface? VkSurface => _window.VkSurface;
-
-    /// <summary>Gets the OpenGL context this window owns, for building a graphics device against.</summary>
-    public IGLContext GLContext => _window.GLContext!;
-
-    /// <summary>Gets the context version that was actually created.</summary>
-    /// <remarks>
-    /// The highest of 4.6, 4.3 and 3.3 the driver would give. The backend branches on this rather than
-    /// on a driver string: 4.3 is where compute shaders and image load/store arrive, and 3.3 is the
-    /// floor the web and mobile backends share.
-    /// </remarks>
-    public APIVersion GLVersion { get; private set; } = new APIVersion(3, 3);
 
     /// <inheritdoc/>
     public string Title
@@ -514,22 +414,6 @@ public sealed class SilkGameWindow : IGameWindow
         // Shadow first, then dispatch: the events this call delivers belong to the frame about to run.
         Input.BeginFrame();
         _window.DoEvents();
-    }
-
-    /// <summary>Presents the back buffer.</summary>
-    /// <remarks>Hand this to the graphics device as its present callback; it is the <c>Flip</c>/<c>Blt</c> of the original's swap.</remarks>
-    public void SwapBuffers()
-    {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-
-        // A Vulkan window has no GL context to swap; its device presents through the swapchain itself,
-        // so this is inert and the composition root never wires it as the present callback.
-        if (_isVulkan)
-        {
-            return;
-        }
-
-        _window.GLContext!.SwapBuffers();
     }
 
     /// <inheritdoc/>

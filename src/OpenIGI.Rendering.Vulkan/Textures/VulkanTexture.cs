@@ -95,7 +95,10 @@ internal sealed unsafe class VulkanTexture : IDisposable
         Upload(device, allocator, commands, description, pixels);
 
         View = CreateView();
-        Sampler = CreateSampler(description, device.SamplerAnisotropy ? maxAnisotropy : 1f, mipLodBias);
+        Sampler = CreateSampler(
+            description,
+            device.SamplerAnisotropy ? maxAnisotropy : 1f,
+            device.SamplerMipLodBias ? mipLodBias : 0f);
     }
 
     /// <summary>Gets the image handle.</summary>
