@@ -2,7 +2,7 @@
 
 An open-source reimplementation of **Project I.G.I. — I'm Going In** (2000, Innerloop Studios), built
 to run against the original retail game data. Written in C# on **.NET 10** with **Silk.NET** and an
-OpenGL renderer.
+Vulkan renderer.
 
 > **You must own an original copy of the game.** OpenIGI ships **no** game assets and no original
 > code. It reads the data files from your own installation, and every texture, model, sound and script
@@ -39,7 +39,7 @@ retail handheld panel, and a full-screen tactical interface.
 **Not yet.** There is **no audio** — the OpenAL backend is an empty project. Global illumination was
 removed for a clean-slate reimplementation, so interiors light from the game's own baked lightmaps and
 a flat ambient term. Only the desktop platforms are wired up; the mobile and web backends are planned
-but not started.
+but not started. On macOS the hardware ray-tracing tier is unavailable — see **Platforms** below.
 
 ## Quick start
 
@@ -101,6 +101,29 @@ to be downloaded and nothing is committed here — the maps come from your own i
 
 `ResExtract maps` pre-bakes them in one pass if you would rather not pay for it as you play, and
 `r_material_pack` points at the result.
+
+## Platforms
+
+Rendering is Vulkan only. There is no OpenGL path: the deferred G-buffer, the temporal resolve and the
+hardware-traced lighting are all built on explicit synchronisation and ray query, and maintaining a
+second backend that could reach none of them was paying for a fallback nobody ran.
+
+| Platform | Vulkan comes from | Hardware ray tracing |
+|---|---|---|
+| Windows | the vendor driver | yes, on an RTX/RDNA2-class adapter |
+| Linux | the vendor driver or Mesa | yes, on an RTX/RDNA2-class adapter |
+| macOS 13+ | MoltenVK, shipped in the build | **no** — see below |
+
+**macOS.** Apple ships no Vulkan, so the build carries MoltenVK — a translation layer onto Metal —
+beside the executable; nothing needs installing. MoltenVK does not implement
+`VK_KHR_acceleration_structure` or `VK_KHR_ray_query`, so the traced tier stands down: sun and lamp
+shadows fall back to shadow maps, reflections to the screen-space march, and indirect light to the
+screen-space gather. Everything is capability-gated, so this is a quieter picture rather than a broken
+one, but the `ultra` preset does not look on macOS the way it looks on Windows. Reaching parity would
+mean a Metal backend built on `MTLAccelerationStructure`, not a change to this one.
+
+Build the bundle with `tools/package-macos.sh` — a loose executable runs but macOS gives it no focus,
+Dock icon or menu bar.
 
 ## Repository layout
 

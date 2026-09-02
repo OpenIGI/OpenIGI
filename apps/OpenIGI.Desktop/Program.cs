@@ -6,32 +6,15 @@ using OpenIGI.Game.Profiles;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.OpenGL;
 using OpenIGI.Rendering.Vulkan;
-using Silk.NET.OpenGL;
-
-// The backend is chosen with a bare -opengl or -vulkan flag (or OPENIGI_BACKEND), kept out of the
-// option parser so its grammar is untouched. Vulkan is the default: it is the path the deferred and
-// ray-traced work is built on, and -opengl is the way back to the legacy renderer. An explicit flag
-// wins over the environment variable, so a shell that exports one can still be overridden per run.
-bool wantsOpenGL = args.Any(a => a.Equals("-opengl", StringComparison.OrdinalIgnoreCase));
-bool wantsVulkan = args.Any(a => a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase));
-if (!wantsOpenGL && !wantsVulkan)
-{
-    string? requested = Environment.GetEnvironmentVariable("OPENIGI_BACKEND");
-    wantsOpenGL = string.Equals(requested, "opengl", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(requested, "gl", StringComparison.OrdinalIgnoreCase);
-}
-
-GraphicsBackend backend = wantsOpenGL ? GraphicsBackend.OpenGL : GraphicsBackend.Vulkan;
 
 DesktopOptions options;
 try
 {
+    // -vulkan is still swallowed rather than rejected. It names the only backend there is, so it does
+    // nothing, but a shortcut or a script that has carried it since there were two should keep working.
     options = DesktopOptions.Parse(
-        args.Where(a =>
-            !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)
-            && !a.Equals("-opengl", StringComparison.OrdinalIgnoreCase)).ToArray());
+        args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
 catch (ArgumentException ex)
 {
@@ -123,8 +106,7 @@ WindowSettings settings = new(
     Height: options.Height,
     Mode: options.Mode,
     CursorVisible: false,
-    VSync: options.VSync,
-    Backend: backend);
+    VSync: options.VSync);
 
 SilkGameWindow window;
 try
@@ -137,9 +119,9 @@ catch (PlatformException ex)
     return 3;
 }
 
-// macOS reports a zero drawable for a hidden OpenGL window. Show it before the graphics device reads
-// the drawable dimensions. Other platforms keep the window hidden until DesktopGame.Run so boot does
-// not present a blank focused surface.
+// macOS reports a zero drawable for a window that has never been shown, and the swapchain is sized from
+// it. Show it before the graphics device reads those dimensions. Other platforms keep the window hidden
+// until DesktopGame.Run so boot does not present a blank focused surface.
 if (OperatingSystem.IsMacOS())
 {
     window.Show();
@@ -153,8 +135,8 @@ using (window)
     int height = window.Height > 0 ? window.Height : options.Height > 0 ? options.Height : 480;
     DisplayMode displayMode = new(width, height, 32, window.RefreshRate);
 
-    // The Vulkan device presents through its own swapchain, so it takes the window's surface rather than
-    // a GL context and no present callback; the OpenGL device keeps the context-and-swap path unchanged.
+    // The device presents through its own swapchain, so it takes the window's surface rather than a
+    // context and a present callback.
     bool vulkanValidation = string.Equals(
         Environment.GetEnvironmentVariable("OPENIGI_VK_VALIDATION"),
         "1",
@@ -167,15 +149,13 @@ using (window)
         Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
         "0",
         StringComparison.Ordinal);
-    using IGraphicsDevice device = window.IsVulkan
-        ? new VulkanGraphicsDevice(
-            new VulkanSurfaceProvider(window.VkSurface!),
-            displayMode,
-            vulkanValidation,
-            vulkanDeferred,
-            options.ScreenshotPath is not null,
-            logger)
-        : new GLGraphicsDevice(GL.GetApi(window.GLContext), displayMode, window.SwapBuffers, logger);
+    using IGraphicsDevice device = new VulkanGraphicsDevice(
+        new VulkanSurfaceProvider(window.VkSurface!),
+        displayMode,
+        vulkanValidation,
+        vulkanDeferred,
+        options.ScreenshotPath is not null,
+        logger);
 
     using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);
     return game.Run();

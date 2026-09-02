@@ -12,7 +12,6 @@
     <Project Path="src/OpenIGI.Modding/OpenIGI.Modding.csproj" />
     <Project Path="src/OpenIGI.Platform.Desktop/OpenIGI.Platform.Desktop.csproj" />
     <Project Path="src/OpenIGI.Platform/OpenIGI.Platform.csproj" />
-    <Project Path="src/OpenIGI.Rendering.OpenGL/OpenIGI.Rendering.OpenGL.csproj" />
     <Project Path="src/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
     <Project Path="src/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
     <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />

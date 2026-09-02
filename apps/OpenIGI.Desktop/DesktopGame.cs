@@ -29,7 +29,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.OpenGL;
 
 namespace OpenIGI.Desktop;
 
@@ -1284,15 +1283,6 @@ internal sealed partial class DesktopGame : IDisposable
                 $"Baked {baked} mission(s). To ship them, copy the .giv files from "
                     + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Desktop/Assets/gi.");
             running = false;
-        }
-
-        // Kept as an opt-in diagnostic rather than a player-facing boot step. It compiles temporary
-        // shaders and reads their results back, so on a cold driver it can make an otherwise ready window
-        // appear to hang for seconds. A developer can still ask for the exact same proof with
-        // +r_compute_selftest 1.
-        if (RenderCVars.ComputeSelfTest.Value)
-        {
-            GLComputeSelfTest.Run(_device, _logger);
         }
 
         // The distance-field shader is compiled here, when the feature is on, rather than when a level
