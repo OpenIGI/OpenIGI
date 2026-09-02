@@ -375,14 +375,7 @@ public sealed partial class VulkanGraphicsDevice
             // The frame-to-frame camera motion, differenced in double from the double camera and narrowed
             // to float only now -- see the field for why this cannot be a single-precision subtraction of
             // two absolute positions. Formed once and read by every reprojecting pass below.
-            _cameraDelta = _hasPreviousFrame
-                ? new Vector3f(
-                    (float)(_cameraPositionPrecise.X - _previousCameraPositionPrecise.X),
-                    (float)(_cameraPositionPrecise.Y - _previousCameraPositionPrecise.Y),
-                    (float)(_cameraPositionPrecise.Z - _previousCameraPositionPrecise.Z))
-                : default;
-
-            DispatchOcclusion();
+            UpdateCameraDelta();
             DispatchVelocity();
 
             // The reflections, after the frame is lit and before the temporal pass -- so the pass reads
@@ -695,7 +688,19 @@ public sealed partial class VulkanGraphicsDevice
             Deferred.SceneTarget.HistoryScale,
             _presentWidth,
             _presentHeight,
-            _taaSettings.MotionSharpening);
+            _taaSettings.MotionSharpening,
+            _velocityDilated ? target.DilatedVelocityView : target.VelocityView,
+            target.HistoryRejectionView,
+            target.ShadingRejectionView,
+            target.UpscaleHistoryMetadataView,
+            _debugView switch
+            {
+                DebugView.Motion => 1,
+                DebugView.UpscaleParallax => 2,
+                DebugView.UpscaleShading => 3,
+                DebugView.UpscaleHistory => 4,
+                _ => 0,
+            });
 
         // The tone-map resolve samples the output next.
         OcclusionBarrier(
@@ -1028,6 +1033,17 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.ClosestDepthImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        // The closest-occluder scatter starts every frame as "nothing landed here": all-ones, which no
+        // float's bits exceed, so the dilation's atomic minimum can only lower it. The image lives in
+        // General, where a clear is legal, so no layout transition is needed around it.
+        OcclusionBarrier(
+            cmd, target.OccluderImage, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit);
+        ClearOccluderScatter(cmd, target.OccluderImage);
+        OcclusionBarrier(
+            cmd, target.OccluderImage, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
+            PipelineStageFlags.TransferBit, PipelineStageFlags.ComputeShaderBit);
+
         _deferred.DilateVelocity.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -1035,15 +1051,27 @@ public sealed partial class VulkanGraphicsDevice
             target.VelocityView,
             target.DilatedVelocityView,
             target.ClosestDepthView,
+            target.OccluderView,
             _captureWidth,
             _captureHeight,
-            _unprojection);
+            _viewToWorld,
+            _previousViewToWorld,
+            _cameraDelta,
+            _unprojection,
+            _previousUnprojection,
+            _taaSettings.JitterX,
+            _taaSettings.JitterY * VerticalJitterSign,
+            _previousJitterX,
+            _previousJitterY);
 
         OcclusionBarrier(
             cmd, target.DilatedVelocityImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
         OcclusionBarrier(
             cmd, target.ClosestDepthImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
+            PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
+        OcclusionBarrier(
+            cmd, target.OccluderImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
         // And then the verdict on the history the update is about to read. It compares against the
@@ -1066,6 +1094,7 @@ public sealed partial class VulkanGraphicsDevice
                 target.DilatedVelocityView,
                 previousFrame.DepthView,
                 target.HistoryRejectionView,
+                target.OccluderView,
                 _captureWidth,
                 _captureHeight,
                 _viewToWorld,
@@ -1091,6 +1120,27 @@ public sealed partial class VulkanGraphicsDevice
     // Whether this frame ran the dilation. The first captured frame has no motion to dilate, and the
     // history update must then read the cleared raw velocity rather than a stale dilation.
     private bool _velocityDilated;
+
+    /// <summary>Resets the closest-occluder scatter to "nothing landed here", which is all-ones.</summary>
+    private unsafe void ClearOccluderScatter(CommandBuffer cmd, Image occluder)
+    {
+        ClearColorValue allOnes = new()
+        {
+            Uint32_0 = uint.MaxValue,
+            Uint32_1 = uint.MaxValue,
+            Uint32_2 = uint.MaxValue,
+            Uint32_3 = uint.MaxValue,
+        };
+        ImageSubresourceRange range = new()
+        {
+            AspectMask = ImageAspectFlags.ColorBit,
+            BaseMipLevel = 0,
+            LevelCount = 1,
+            BaseArrayLayer = 0,
+            LayerCount = 1,
+        };
+        _instance.Vk.CmdClearColorImage(cmd, occluder, ImageLayout.General, &allOnes, 1, &range);
+    }
 
     // Whether this frame produced a history-rejection verdict. Without one the update trusts the
     // reprojection everywhere, which is what it did before that pass existed.
@@ -1619,10 +1669,38 @@ public sealed partial class VulkanGraphicsDevice
     /// </remarks>
     private void RecordBetweenPasses()
     {
+        // The frame-to-frame camera motion, formed HERE, at the first point in the frame anything
+        // reprojects. It used to be formed at the end of the capture, after the shading pass -- and the
+        // sun-shadow accumulation and the lamp denoiser, which both run in this gap, were reprojecting
+        // every frame with the PREVIOUS frame's delta: at rest a harmless zero, on a walk a shadow
+        // history dragged to where the camera was a frame ago. Differenced in double from the double
+        // camera and narrowed to float only now -- see the field for why.
+        UpdateCameraDelta();
+
         // The ray-traced sun shadow is the compute that lives in the gap between the two passes. It is a
         // shadow, so it reports under Shadows alongside any rasterised cascades.
-        using StageScope shadow = Measure(RenderStage.Shadows);
-        DispatchSunShadow();
+        using (StageScope shadow = Measure(RenderStage.Shadows))
+        {
+            DispatchSunShadow();
+        }
+
+        // The ambient occlusion, likewise in the gap, so THIS frame's lighting shades with this frame's
+        // occlusion. It used to be gathered after the shading pass and read by the next frame's lighting,
+        // a frame late and never reprojected: on a walk every contact shadow and every dark halo sat
+        // several pixels behind the thing that cast it, and the pass's own 87% history smeared that into
+        // a trail behind every strut and pole. At rest the latency was invisible, which is how it stayed.
+        DispatchOcclusion();
+    }
+
+    /// <summary>Forms this frame's camera motion from the two frames' double-precision positions.</summary>
+    private void UpdateCameraDelta()
+    {
+        _cameraDelta = _hasPreviousFrame
+            ? new Vector3f(
+                (float)(_cameraPositionPrecise.X - _previousCameraPositionPrecise.X),
+                (float)(_cameraPositionPrecise.Y - _previousCameraPositionPrecise.Y),
+                (float)(_cameraPositionPrecise.Z - _previousCameraPositionPrecise.Z))
+            : default;
     }
 
     /// <summary>Traces how much of each pixel's chosen lamp reaches it, for the shading to read.</summary>
@@ -2139,14 +2217,9 @@ public sealed partial class VulkanGraphicsDevice
         Deferred.ShadowMap shadowMap = _deferred.ShadowMap;
         Sky.SkyAtmosphere sky = _deferred.Sky;
 
-        // The freshest occlusion this frame can read is the OTHER slot's, written one captured frame ago;
-        // this slot's own is a frame older still. Only while the two slots are the same shape.
-        Deferred.SceneTarget previousForAo = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
-        ImageView freshestAo = previousForAo.Extent.Width == _sceneTarget!.Extent.Width
-            && previousForAo.Extent.Height == _sceneTarget.Extent.Height
-            && previousForAo.AoView.Handle != 0
-                ? previousForAo.AoView
-                : _sceneTarget.AoView;
+        // This frame's own occlusion: gathered in the gap between the geometry and shading passes, from
+        // the depth this frame stored, so it sits exactly under this frame's geometry.
+        ImageView freshestAo = _sceneTarget!.AoView;
 
         Memory.VulkanBuffer lamps = WriteLampUniform(frame);
 

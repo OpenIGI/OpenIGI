@@ -83,4 +83,22 @@ public enum DebugView
     /// somewhere else.
     /// </summary>
     LampLight = 14,
+
+    /// <summary>
+    /// The temporal pass's parallax verdict: white where the reprojected history held this surface,
+    /// black where it was hidden behind something nearer and the history restarts.
+    /// </summary>
+    UpscaleParallax = 15,
+
+    /// <summary>
+    /// The temporal pass's shading verdict: white where the history's shading still agrees with this
+    /// frame, black where it has been contradicted and the history is clamped or rebuilt.
+    /// </summary>
+    UpscaleShading = 16,
+
+    /// <summary>
+    /// How many frames' worth of samples each history texel holds, as a fraction of the ceiling: white
+    /// is a fully converged history, black a texel that restarted this frame.
+    /// </summary>
+    UpscaleHistory = 17,
 }
