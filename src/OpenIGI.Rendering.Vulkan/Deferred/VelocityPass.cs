@@ -98,12 +98,31 @@ internal sealed class VelocityPass : IDisposable
             vec2 rasterUv = (vec2(px) + 0.5) * p.uResolution.zw;
             float depth = texture(uDepth, rasterUv).r;
 
-            // Reverse-Z clears to zero, so a pixel the geometry never covered reads exactly zero. The sky
-            // has no surface to have moved, and reporting a velocity for it would drag whatever is behind
-            // it across the frame.
+            // Reverse-Z clears to zero, so a pixel the geometry never covered reads exactly zero. That is
+            // the sky, and the sky is not motionless: it sits at infinity, so it turns with the camera
+            // exactly as the ground does and only the camera's TRANSLATION leaves it where it was. It
+            // used to be reported as still, and then every pixel the sky had just been revealed at --
+            // behind a strut, a wire, a soldier against the horizon -- read its history from the same
+            // place rather than from where that sky came from, and kept a copy of whatever thin thing
+            // had stood there: a ghost one frame behind, on every pan. Reprojecting the pixel's view
+            // direction alone, with no parallax, is the sky's true motion.
             if (depth <= 0.0)
             {
-                imageStore(uVelocity, px, vec4(0.0));
+                vec2 currentUv = rasterUv - (p.uJitter.xy * p.uResolution.zw);
+                vec2 ndc = currentUv * 2.0 - 1.0;
+                vec3 direction = vec3(ndc.x / p.uUnproject.x, -ndc.y / p.uUnproject.y, 1.0);
+                vec3 worldDirection = (p.uViewToWorld * vec4(direction, 0.0)).xyz;
+                vec3 prevDirection = (p.uPrevWorldToView * vec4(worldDirection, 0.0)).xyz;
+                if (prevDirection.z <= 1e-4)
+                {
+                    imageStore(uVelocity, px, vec4(0.0));
+                    return;
+                }
+
+                vec2 prevSkyNdc = vec2(
+                    prevDirection.x * p.uPrevProjection.x / prevDirection.z,
+                    -prevDirection.y * p.uPrevProjection.y / prevDirection.z);
+                imageStore(uVelocity, px, vec4(currentUv - (prevSkyNdc * 0.5 + 0.5), 0.0, 0.0));
                 return;
             }
 

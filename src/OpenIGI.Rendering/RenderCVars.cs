@@ -542,6 +542,34 @@ public static class RenderCVars
         high: "0.75",
         ultra: "0.75");
 
+    /// <summary>The temporal history's per-texel sample ceiling, which sets how much of the past it keeps.</summary>
+    /// <remarks>
+    /// <para>
+    /// The history holds four texels per rendered pixel. The reference budgets sixteen samples per
+    /// output pixel and so allows each texel four, which also zeroes its velocity weight clamp (the
+    /// clamp's amplitude is <c>1 - 4 / ceiling</c>). Measured here, four is the sharpest at rest but
+    /// four times as flickery on distant ridges, and without the clamp a walk ghosts; thirty-two keeps
+    /// the ridge stable, is marginally sharper in motion than sixteen, and leaves the clamp holding a
+    /// moving pixel to an eighth of its history.
+    /// </para>
+    /// <para>
+    /// Not archived: the preset carries it, and a stale saved value here would silently undo a
+    /// retune of the clamp it also governs.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> TemporalHistorySamples = Presets.Define(
+        CVar.Float(
+            "r_upscale_samples",
+            32f,
+            1f,
+            256f,
+            CVarOptions.None,
+            "How many frames' worth of samples each temporal history texel may accumulate."),
+        vanilla: "32",
+        enhanced: "32",
+        high: "32",
+        ultra: "32");
+
     /// <summary>How wide the sun's disc is, in degrees, which is what gives a shadow its penumbra.</summary>
     /// <remarks>
     /// <para>

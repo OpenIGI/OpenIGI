@@ -481,13 +481,12 @@ public sealed partial class VulkanGraphicsDevice
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        // The reference's history sample count is an OUTPUT-pixel budget. A history texel covers only one quarter
-        // of an output pixel at the reference's 2x-per-axis history resolution, so its own ceiling is
-        // 16 / 2^2 = 4. Giving every history texel all sixteen samples makes the resolved output four
-        // times too persistent and compounds the low-pass reprojection under motion.
+        // The per-texel sample ceiling. The reference divides its sixteen-per-output-pixel budget by the
+        // history's texel count and lands on four, which also zeroes its velocity weight clamp; this
+        // pipeline measured better with a deeper history at rest and the clamp yielding it under motion,
+        // so the ceiling is its own cvar -- see RenderCVars.TemporalHistorySamples for the numbers.
         const float MaxOutputHistorySamples = 16f;
-        float historySampleCount = MaxOutputHistorySamples
-            / (Deferred.SceneTarget.HistoryScale * Deferred.SceneTarget.HistoryScale);
+        float historySampleCount = RenderCVars.TemporalHistorySamples.Value;
 
         // The shading guide follows the output-pixel sample budget, adjusted by the square of the
         // input-to-output fraction. During an upscale each rendered pixel represents more output area,
@@ -598,11 +597,7 @@ public sealed partial class VulkanGraphicsDevice
                 _lastAdaptedExposure,
                 theoricGuideBlend,
                 _historyDecimated,
-                RenderCVars.ThinGeometry.Value,
-                _taaSettings.JitterX,
-                _taaSettings.JitterY * VerticalJitterSign,
-                _previousJitterX,
-                _previousJitterY);
+                RenderCVars.ThinGeometry.Value);
 
             OcclusionBarrier(
                 cmd, target.ShadingRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
@@ -699,7 +694,8 @@ public sealed partial class VulkanGraphicsDevice
             _captureHeight,
             Deferred.SceneTarget.HistoryScale,
             _presentWidth,
-            _presentHeight);
+            _presentHeight,
+            _taaSettings.MotionSharpening);
 
         // The tone-map resolve samples the output next.
         OcclusionBarrier(
