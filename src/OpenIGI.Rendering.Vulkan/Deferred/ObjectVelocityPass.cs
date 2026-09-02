@@ -7,18 +7,25 @@ using Silk.NET.Vulkan;
 
 namespace OpenIGI.Rendering.Vulkan.Deferred;
 
-/// <summary>One animated draw whose screen motion must be stamped into the velocity image.</summary>
+/// <summary>One moving draw whose screen motion must be stamped into the velocity image.</summary>
 /// <param name="Mesh">The mesh that was drawn.</param>
 /// <param name="IndexOffset">The first index of the drawn range.</param>
 /// <param name="IndexCount">How many indices the range drew.</param>
-/// <param name="Current">This frame's model-view-projection, exactly as the G-buffer drew it.</param>
-/// <param name="Previous">The previous frame's, for the same mesh occurrence.</param>
+/// <param name="Current">This frame's raster model-view-projection, including its jitter.</param>
+/// <param name="Previous">
+/// The preceding frame's unjittered transform with the current jitter applied, so subtracting the two
+/// clip positions removes jitter while raster coverage still matches this frame.
+/// </param>
+/// <param name="FirstPerson">Whether the draw used the foreground depth-range sliver.</param>
+/// <param name="UsePreviousVertices">Whether an animated mesh advanced to a new pose since the preceding frame.</param>
 internal readonly record struct ObjectVelocityDraw(
     VulkanMesh Mesh,
     int IndexOffset,
     int IndexCount,
     Matrix4f Current,
-    Matrix4f Previous);
+    Matrix4f Previous,
+    bool FirstPerson,
+    bool UsePreviousVertices);
 
 /// <summary>
 /// A raster pass that overwrites the computed velocity with each MOVING object's own screen motion.
@@ -33,15 +40,17 @@ internal readonly record struct ObjectVelocityDraw(
 /// screen delta wherever the mesh actually won the depth test.
 /// </para>
 /// <para>
-/// The motion is RIGID per draw — the previous transform moves the current pose's vertices, so limb
-/// swing within the pose is not captured, only the body's own translation and turn. That is the bulk of
-/// the smear: the animated vertex buffers are rewritten in place each pose, so the previous pose's
-/// vertices no longer exist to be read. Capturing them is the refinement, not the requirement.
+/// Animated meshes bind the preceding pose as a second vertex stream when their pose advanced since the
+/// prior frame, so limb and hand motion is measured as well as rigid translation. On frames where the
+/// pose did not advance both inputs alias the current stream, preventing one tick's motion from being
+/// reported repeatedly on every rendered frame between simulation updates.
 /// </para>
 /// <para>
 /// The pass rasterises with the exact transform the G-buffer draw used (jitter and all) so the depths
-/// match, tests GREATER-OR-EQUAL with a whisker of bias toward the eye, and writes no depth. Occluded
-/// parts of the mesh fail the test and leave the background's motion alone.
+/// match. The previous clip transform carries the same current jitter, which cancels from the reported
+/// vector and keeps motion in the unjittered convention every temporal consumer uses. It tests
+/// GREATER-OR-EQUAL with a whisker of bias toward the eye and writes no depth. Occluded parts of the mesh
+/// fail the test and leave the background's motion alone.
 /// </para>
 /// </remarks>
 internal sealed unsafe class ObjectVelocityPass : IDisposable
@@ -61,6 +70,7 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         #version 450
 
         layout(location = 0) in vec3 aPosition;
+        layout(location = 1) in vec3 aPreviousPosition;
 
         layout(push_constant) uniform Push
         {
@@ -75,7 +85,7 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         {
             vec4 clip = push.uCurrent * vec4(aPosition, 1.0);
             vCurrentClip = clip;
-            vPreviousClip = push.uPrevious * vec4(aPosition, 1.0);
+            vPreviousClip = push.uPrevious * vec4(aPreviousPosition, 1.0);
 
             // The same OpenGL-to-Vulkan correction the G-buffer vertex stage applies, in the same order,
             // so the rasterised depth is bit-comparable with what that pass stored.
@@ -144,7 +154,7 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         _pipeline = CreatePipeline();
     }
 
-    /// <summary>Records the pass: one draw per recorded animated mesh, over the velocity image.</summary>
+    /// <summary>Records the pass: one draw per recorded moving mesh, over the velocity image.</summary>
     /// <param name="cmd">The command buffer to record into.</param>
     /// <param name="velocityView">The velocity image view, as a colour attachment.</param>
     /// <param name="velocityHandle">The velocity view's raw handle, keying the framebuffer cache.</param>
@@ -152,7 +162,7 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
     /// <param name="depthHandle">The depth view's raw handle, keying the framebuffer cache.</param>
     /// <param name="width">The render width.</param>
     /// <param name="height">The render height.</param>
-    /// <param name="draws">The animated draws recorded this frame.</param>
+    /// <param name="draws">The moving draws recorded this frame.</param>
     public void Record(
         CommandBuffer cmd,
         ImageView velocityView,
@@ -177,14 +187,33 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         _vk.CmdBeginRenderPass(cmd, &begin, SubpassContents.Inline);
         _vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _pipeline);
 
-        Silk.NET.Vulkan.Viewport viewport = new(0f, 0f, width, height, 0f, 1f);
         Rect2D scissor = new(new Offset2D(0, 0), new Extent2D(width, height));
-        _vk.CmdSetViewport(cmd, 0, 1, &viewport);
         _vk.CmdSetScissor(cmd, 0, 1, &scissor);
 
         Span<float> push = stackalloc float[32];
+        Buffer* vertexBuffers = stackalloc Buffer[2];
+        ulong* vertexOffsets = stackalloc ulong[2];
+        vertexOffsets[0] = 0;
+        vertexOffsets[1] = 0;
+        bool? viewportIsFirstPerson = null;
         foreach (ObjectVelocityDraw draw in draws)
         {
+            // The view model was originally rasterised into the nearest depth sliver so it could retain
+            // self-occlusion without a world wall cutting through it. Reproduce that viewport transform
+            // here or its rerasterised depth cannot match the stored depth and the velocity stamp fails.
+            if (viewportIsFirstPerson != draw.FirstPerson)
+            {
+                Silk.NET.Vulkan.Viewport viewport = new(
+                    0f,
+                    0f,
+                    width,
+                    height,
+                    draw.FirstPerson ? VulkanGraphicsDevice.ForegroundDepthFloor : 0f,
+                    1f);
+                _vk.CmdSetViewport(cmd, 0, 1, &viewport);
+                viewportIsFirstPerson = draw.FirstPerson;
+            }
+
             draw.Current.CopyColumnMajorTo(push[..16]);
             draw.Previous.CopyColumnMajorTo(push[16..]);
             fixed (float* data = push)
@@ -193,9 +222,9 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
                     cmd, _layout, ShaderStageFlags.VertexBit | ShaderStageFlags.FragmentBit, 0, 128, data);
             }
 
-            Buffer vertexBuffer = draw.Mesh.VertexBuffer;
-            ulong vertexOffset = 0;
-            _vk.CmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &vertexOffset);
+            vertexBuffers[0] = draw.Mesh.VertexBuffer;
+            vertexBuffers[1] = draw.UsePreviousVertices ? draw.Mesh.PreviousVertexBuffer : draw.Mesh.VertexBuffer;
+            _vk.CmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
             _vk.CmdBindIndexBuffer(cmd, draw.Mesh.IndexBuffer, 0, IndexType.Uint16);
             _vk.CmdDrawIndexed(cmd, (uint)draw.IndexCount, 1, (uint)draw.IndexOffset, 0, 0);
         }
@@ -390,17 +419,33 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
                 PName = (byte*)entryPoint,
             };
 
-            // Only the position is read; the rest of the Vertex3D stride is stepped over.
-            VertexInputBindingDescription vertexBinding = new()
+            // Current and previous positions come from whole-pose streams; the rest of each Vertex3D
+            // stride is stepped over. Static meshes simply bind the same buffer twice.
+            VertexInputBindingDescription* vertexBindings = stackalloc VertexInputBindingDescription[2];
+            vertexBindings[0] = new VertexInputBindingDescription
             {
                 Binding = 0,
                 Stride = (uint)Rendering.Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
-            VertexInputAttributeDescription attribute = new()
+            vertexBindings[1] = new VertexInputBindingDescription
+            {
+                Binding = 1,
+                Stride = (uint)Rendering.Vertex3D.Size,
+                InputRate = VertexInputRate.Vertex,
+            };
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[2];
+            attributes[0] = new VertexInputAttributeDescription
             {
                 Location = 0,
                 Binding = 0,
+                Format = Format.R32G32B32Sfloat,
+                Offset = 0,
+            };
+            attributes[1] = new VertexInputAttributeDescription
+            {
+                Location = 1,
+                Binding = 1,
                 Format = Format.R32G32B32Sfloat,
                 Offset = 0,
             };
@@ -408,10 +453,10 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = 1,
-                PVertexBindingDescriptions = &vertexBinding,
-                VertexAttributeDescriptionCount = 1,
-                PVertexAttributeDescriptions = &attribute,
+                VertexBindingDescriptionCount = 2,
+                PVertexBindingDescriptions = vertexBindings,
+                VertexAttributeDescriptionCount = 2,
+                PVertexAttributeDescriptions = attributes,
             };
 
             PipelineInputAssemblyStateCreateInfo inputAssembly = new()

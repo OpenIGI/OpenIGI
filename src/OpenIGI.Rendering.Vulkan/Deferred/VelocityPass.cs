@@ -42,8 +42,8 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class VelocityPass : IDisposable
 {
-    // Two 4x4 matrices and four 4-vectors.
-    private const int ParamSize = (2 * 64) + (4 * 16);
+    // Two 4x4 matrices and five 4-vectors.
+    private const int ParamSize = (2 * 64) + (5 * 16);
 
     private static readonly ComputeBindingKind[] Bindings =
     [
@@ -70,6 +70,7 @@ internal sealed class VelocityPass : IDisposable
             vec4 uResolution;        // width, height, 1/width, 1/height
             vec4 uCameraDelta;       // this frame's camera minus the previous frame's, w unused
             vec4 uPrevProjection;    // xScale, yScale, near, far of the previous unjittered projection
+            vec4 uJitter;            // current raster jitter in input pixels, xy; zw unused
         } p;
 
         // The view-space position a depth sample came from. Reverse-Z, so the stored depth is mapped back
@@ -94,8 +95,8 @@ internal sealed class VelocityPass : IDisposable
                 return;
             }
 
-            vec2 uv = (vec2(px) + 0.5) * p.uResolution.zw;
-            float depth = texture(uDepth, uv).r;
+            vec2 rasterUv = (vec2(px) + 0.5) * p.uResolution.zw;
+            float depth = texture(uDepth, rasterUv).r;
 
             // Reverse-Z clears to zero, so a pixel the geometry never covered reads exactly zero. The sky
             // has no surface to have moved, and reporting a velocity for it would drag whatever is behind
@@ -120,7 +121,13 @@ internal sealed class VelocityPass : IDisposable
                 return;
             }
 
-            vec3 viewPos = ViewPositionAt(uv, depth);
+            // The depth belongs to the ray displaced by this frame's projection jitter. Reconstruct that
+            // surface through its UNJITTERED screen position, just as the reference's no-AA clip transform
+            // does. Using rasterUv here happens to cancel for a held camera and for much of a rotation,
+            // but it reconstructs the wrong world point under translation; the parallax error then grows
+            // with walking speed and makes every history lookup land between the right samples.
+            vec2 currentUv = rasterUv - (p.uJitter.xy * p.uResolution.zw);
+            vec3 viewPos = ViewPositionAt(currentUv, depth);
 
             // Camera-relative throughout: the world position is never formed, only the offset from this
             // frame's camera, and then the offset from the previous one.
@@ -142,7 +149,10 @@ internal sealed class VelocityPass : IDisposable
                 -prevView.y * p.uPrevProjection.y / prevView.z);
             vec2 prevUv = prevNdc * 0.5 + 0.5;
 
-            imageStore(uVelocity, px, vec4(uv - prevUv, 0.0, 0.0));
+            // Motion is always unjittered-current minus unjittered-previous. Consumers that read a raw
+            // frame texture add that frame's jitter themselves; the super-sampled history is already in
+            // unjittered output space and uses this vector directly.
+            imageStore(uVelocity, px, vec4(currentUv - prevUv, 0.0, 0.0));
         }
         """;
 
@@ -183,6 +193,8 @@ internal sealed class VelocityPass : IDisposable
     /// <param name="cameraDelta">This frame's camera position minus the previous frame's.</param>
     /// <param name="unprojection">This frame's projection scales and planes.</param>
     /// <param name="previousUnprojection">The previous frame's, unjittered.</param>
+    /// <param name="jitterX">This frame's horizontal projection jitter, in input pixels.</param>
+    /// <param name="jitterY">This frame's vertical projection jitter, in input pixels.</param>
     public void Record(
         CommandBuffer cmd,
         int frame,
@@ -194,7 +206,9 @@ internal sealed class VelocityPass : IDisposable
         Matrix3f previousViewToWorld,
         Vector3f cameraDelta,
         DepthUnprojection unprojection,
-        DepthUnprojection previousUnprojection)
+        DepthUnprojection previousUnprojection,
+        float jitterX,
+        float jitterY)
     {
         // A rotation's inverse is its transpose, which is what turns a world-relative offset back into the
         // previous frame's view space without forming an inverse.
@@ -223,6 +237,11 @@ internal sealed class VelocityPass : IDisposable
         data[45] = previousUnprojection.YScale;
         data[46] = previousUnprojection.Near;
         data[47] = previousUnprojection.Far;
+
+        data[48] = jitterX;
+        data[49] = jitterY;
+        data[50] = 0f;
+        data[51] = 0f;
 
         ReadOnlySpan<ComputeResource> resources =
         [

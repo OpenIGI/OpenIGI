@@ -30,7 +30,9 @@ internal sealed unsafe class VulkanMesh : IDisposable
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
     private readonly VulkanBuffer _vertexBuffer;
+    private readonly VulkanBuffer? _secondVertexBuffer;
     private readonly VulkanBuffer _indexBuffer;
+    private bool _frontIsFirst = true;
     private bool _disposed;
 
     private VulkanMesh(
@@ -76,6 +78,15 @@ internal sealed unsafe class VulkanMesh : IDisposable
             (ulong)(vertexCapacity * Vertex3D.Size),
             BufferUsageFlags.VertexBufferBit | rayTracing,
             vertexHostVisible);
+        _secondVertexBuffer = animated
+            ? CreateBuffer(
+                vk,
+                device,
+                allocator,
+                (ulong)(vertexCapacity * Vertex3D.Size),
+                BufferUsageFlags.VertexBufferBit | rayTracing,
+                hostVisible: true)
+            : null;
         _indexBuffer = CreateBuffer(
             vk,
             device,
@@ -108,7 +119,10 @@ internal sealed unsafe class VulkanMesh : IDisposable
     }
 
     /// <summary>Gets the vertex buffer handle, to bind before drawing.</summary>
-    public Buffer VertexBuffer => _vertexBuffer.Handle;
+    public Buffer VertexBuffer => CurrentVertexBuffer.Handle;
+
+    /// <summary>Gets the preceding pose's vertex buffer, or the current buffer for a static mesh.</summary>
+    public Buffer PreviousVertexBuffer => (_secondVertexBuffer is null ? _vertexBuffer : PreviousPoseVertexBuffer).Handle;
 
     /// <summary>Gets the index buffer handle, to bind before drawing.</summary>
     public Buffer IndexBuffer => _indexBuffer.Handle;
@@ -119,7 +133,7 @@ internal sealed unsafe class VulkanMesh : IDisposable
     /// is the address rather than the handle. Only meaningful on a device that can trace, since only then
     /// were the buffers created addressable.
     /// </remarks>
-    public ulong VertexBufferAddress => _vertexBuffer.DeviceAddress;
+    public ulong VertexBufferAddress => CurrentVertexBuffer.DeviceAddress;
 
     /// <summary>Gets the index buffer's device address, for an acceleration-structure build.</summary>
     public ulong IndexBufferAddress => _indexBuffer.DeviceAddress;
@@ -135,6 +149,9 @@ internal sealed unsafe class VulkanMesh : IDisposable
 
     /// <summary>Gets a value indicating whether the mesh's vertices can be rewritten each pose.</summary>
     public bool Animated { get; }
+
+    /// <summary>Gets the serial of the pose currently stored in <see cref="VertexBuffer"/>.</summary>
+    public int PoseVersion { get; private set; }
 
     /// <summary>Creates an immutable mesh and stages its geometry.</summary>
     /// <param name="vk">The core Vulkan API.</param>
@@ -177,6 +194,7 @@ internal sealed unsafe class VulkanMesh : IDisposable
     {
         VulkanMesh mesh = new(vk, device, allocator, commands, Math.Max(1, vertices.Length), Math.Max(1, indices.Length), animated: true, storage: false);
         mesh._vertexBuffer.Write(vertices);
+        mesh._secondVertexBuffer!.Write(vertices);
         mesh.StageInto(mesh._indexBuffer.Handle, 0, indices);
         mesh.DrawableIndexCount = indices.Length;
         return mesh;
@@ -217,7 +235,13 @@ internal sealed unsafe class VulkanMesh : IDisposable
                 $"An animated mesh takes exactly {VertexCapacity} vertices but got {vertices.Length}.");
         }
 
-        _vertexBuffer.Write(vertices);
+        // Write the buffer holding the stale pose, then flip it to the front. The buffer that was drawn
+        // before the flip becomes the previous-pose stream without copying it, matching the OpenGL path
+        // and giving the velocity raster the actual old vertices for skinned motion.
+        VulkanBuffer stale = _frontIsFirst ? _secondVertexBuffer! : _vertexBuffer;
+        stale.Write(vertices);
+        _frontIsFirst = !_frontIsFirst;
+        PoseVersion++;
     }
 
     /// <summary>Writes a range of vertices and indices into a storage mesh.</summary>
@@ -259,8 +283,13 @@ internal sealed unsafe class VulkanMesh : IDisposable
 
         _disposed = true;
         _indexBuffer.Dispose();
+        _secondVertexBuffer?.Dispose();
         _vertexBuffer.Dispose();
     }
+
+    private VulkanBuffer CurrentVertexBuffer => _frontIsFirst ? _vertexBuffer : _secondVertexBuffer!;
+
+    private VulkanBuffer PreviousPoseVertexBuffer => _frontIsFirst ? _secondVertexBuffer! : _vertexBuffer;
 
     private void StageInto<T>(Buffer destination, ulong destinationOffset, ReadOnlySpan<T> data)
         where T : unmanaged

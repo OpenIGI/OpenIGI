@@ -106,6 +106,7 @@ public sealed partial class VulkanGraphicsDevice
     private bool _sunShadowTraced;
     private bool _sunShadowTracedLastFrame;
     private TemporalAaSettings _taaSettings;
+    private Matrix4f _temporalProjection = Matrix4f.Identity;
     private bool _temporalResolved;
     private int _captureWidth;
     private int _captureHeight;
@@ -373,8 +374,7 @@ public sealed partial class VulkanGraphicsDevice
             // contents), so a read-before-write barrier separates that from the compute write below.
             // The frame-to-frame camera motion, differenced in double from the double camera and narrowed
             // to float only now -- see the field for why this cannot be a single-precision subtraction of
-            // two absolute positions. Formed once and read by every reprojecting pass below and by the
-            // temporal resolve's dead-zone gate.
+            // two absolute positions. Formed once and read by every reprojecting pass below.
             _cameraDelta = _hasPreviousFrame
                 ? new Vector3f(
                     (float)(_cameraPositionPrecise.X - _previousCameraPositionPrecise.X),
@@ -481,6 +481,23 @@ public sealed partial class VulkanGraphicsDevice
         Deferred.SceneTarget target = _sceneTarget;
         CommandBuffer cmd = _frameCommandBuffer;
 
+        // The reference's history sample count is an OUTPUT-pixel budget. A history texel covers only one quarter
+        // of an output pixel at the reference's 2x-per-axis history resolution, so its own ceiling is
+        // 16 / 2^2 = 4. Giving every history texel all sixteen samples makes the resolved output four
+        // times too persistent and compounds the low-pass reprojection under motion.
+        const float MaxOutputHistorySamples = 16f;
+        float historySampleCount = MaxOutputHistorySamples
+            / (Deferred.SceneTarget.HistoryScale * Deferred.SceneTarget.HistoryScale);
+
+        // The shading guide follows the output-pixel sample budget, adjusted by the square of the
+        // input-to-output fraction. During an upscale each rendered pixel represents more output area,
+        // so the guide must move more slowly than it does at native resolution; using the per-history-
+        // texel ceiling here made a 0.7-scale guide replace a quarter of itself every frame instead of
+        // roughly three percent, quickly teaching the rejection pass to accept a motion-softened frame.
+        float inputToOutput = _captureWidth / (float)Math.Max(1, _presentWidth);
+        float theoricGuideBlend = 1f
+            / (1f + (MaxOutputHistorySamples / Math.Max(inputToOutput * inputToOutput, 1e-6f)));
+
         // The history is the OTHER frame slot's — written exactly one frame ago, which is the frame the
         // velocity spans. Reading this slot's own history would be TWO frames old, and reprojecting two
         // frames of motion with one frame's velocity smears every edge into a double image the moment the
@@ -490,6 +507,8 @@ public sealed partial class VulkanGraphicsDevice
         Deferred.SceneTarget previous = _deferred.PreviousTarget(_frameLoop.CurrentFrame);
         bool previousUsable = previous.Extent.Width == target.Extent.Width
             && previous.Extent.Height == target.Extent.Height
+            && previous.OutputExtent.Width == target.OutputExtent.Width
+            && previous.OutputExtent.Height == target.OutputExtent.Height
             && previous.UpscaleHistoryColourView.Handle != 0;
         ImageView historyColourView = previousUsable ? previous.UpscaleHistoryColourView : target.UpscaleHistoryColourView;
         ImageView historyMetadataView = previousUsable ? previous.UpscaleHistoryMetadataView : target.UpscaleHistoryMetadataView;
@@ -577,9 +596,13 @@ public sealed partial class VulkanGraphicsDevice
                 _captureWidth,
                 _captureHeight,
                 _lastAdaptedExposure,
-                1f / 16f,
+                theoricGuideBlend,
                 _historyDecimated,
-                RenderCVars.ThinGeometry.Value);
+                RenderCVars.ThinGeometry.Value,
+                _taaSettings.JitterX,
+                _taaSettings.JitterY * VerticalJitterSign,
+                _previousJitterX,
+                _previousJitterY);
 
             OcclusionBarrier(
                 cmd, target.ShadingRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
@@ -630,36 +653,6 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.SpatialAaImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
-        // How far the camera has moved the picture since last frame, in screen pixels, from BOTH its
-        // rotation and its translation -- the gate that decides whether the history may dead-zone the
-        // jittered-depth velocity on grazing terrain. Near zero when the camera is held (that velocity is
-        // then all artifact and worth zeroing); it must open on ANY real camera motion, and translation is
-        // as real as rotation. Leaving translation out was the bug that smeared forward and backward
-        // motion: a dolly has no rotation, so the gate read it as held, dead-zoned the far terrain's small
-        // real velocity, and the picture ghosted along the direction of travel.
-        //
-        // Rotation: the Frobenius product of the two view rotations is 1 + 2cos(theta), which recovers the
-        // swing angle without forming the relative rotation; scaled to pixels by the projection's own
-        // vertical scale. Translation: the camera-to-camera move, taken as the pixel motion it gives a
-        // surface a few metres away (near enough to catch a walk, far enough that the metre or so of float
-        // slop a held camera carries at these world coordinates stays well under a pixel).
-        Matrix3f cur = _viewToWorld;
-        Matrix3f prv = _previousViewToWorld;
-        float frob =
-            (cur.M11 * prv.M11) + (cur.M12 * prv.M12) + (cur.M13 * prv.M13) +
-            (cur.M21 * prv.M21) + (cur.M22 * prv.M22) + (cur.M23 * prv.M23) +
-            (cur.M31 * prv.M31) + (cur.M32 * prv.M32) + (cur.M33 * prv.M33);
-        float cosSwing = Math.Clamp((frob - 1f) * 0.5f, -1f, 1f);
-        float swingRadians = MathF.Acos(cosSwing);
-        float pixelsPerRadian = _unprojection.YScale * 0.5f * _captureHeight;
-
-        float translationMetres = MathF.Sqrt(
-            (_cameraDelta.X * _cameraDelta.X) + (_cameraDelta.Y * _cameraDelta.Y) + (_cameraDelta.Z * _cameraDelta.Z));
-        const float ReferenceDepthMetres = 5f;
-        float translationPixels = translationMetres / ReferenceDepthMetres * pixelsPerRadian;
-
-        float cameraPixelSpeed = (swingRadians * pixelsPerRadian) + translationPixels;
-
         _deferred.UpdateHistory.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -679,14 +672,13 @@ public sealed partial class VulkanGraphicsDevice
             _captureWidth,
             _captureHeight,
             Deferred.SceneTarget.HistoryScale,
+            _presentWidth,
+            _presentHeight,
             temporalOn: true,
-            maxSamples: 16f,
+            maxSamples: historySampleCount,
             _taaSettings.JitterX,
             _taaSettings.JitterY * VerticalJitterSign,
-            cameraPixelSpeed,
-            target.DepthView,
-            _unprojection.Near,
-            _unprojection.Far);
+            target.DepthView);
 
         // The resolve reads the history the update just wrote, and writes the frame-sized image.
         OcclusionBarrier(
@@ -1002,7 +994,9 @@ public sealed partial class VulkanGraphicsDevice
             _previousViewToWorld,
             _cameraDelta,
             _unprojection,
-            _previousUnprojection);
+            _previousUnprojection,
+            _taaSettings.JitterX,
+            _taaSettings.JitterY * VerticalJitterSign);
 
         OcclusionBarrier(
             cmd, velocity, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
@@ -1082,7 +1076,11 @@ public sealed partial class VulkanGraphicsDevice
                 _previousViewToWorld,
                 _cameraDelta,
                 _unprojection,
-                _previousUnprojection);
+                _previousUnprojection,
+                _taaSettings.JitterX,
+                _taaSettings.JitterY * VerticalJitterSign,
+                _previousJitterX,
+                _previousJitterY);
 
             OcclusionBarrier(
                 cmd, target.HistoryRejectionImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
@@ -1517,6 +1515,7 @@ public sealed partial class VulkanGraphicsDevice
     {
         ThrowIfDisposed();
         _taaSettings = settings;
+        _temporalProjection = projection;
         _cameraPositionPrecise = cameraPosition;
         _cameraPosition = new Vector3f((float)cameraPosition.X, (float)cameraPosition.Y, (float)cameraPosition.Z);
         _viewToWorld = viewToWorld;

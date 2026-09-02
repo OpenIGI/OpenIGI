@@ -27,33 +27,46 @@ public sealed partial class VulkanGraphicsDevice
     // All zero for everything that is not terrain, which is how the vertex stage tells them apart.
     private (float Scale, float Offset, float Slope, float Mode) _detailFade;
 
-    // Animated meshes drawn into this frame's G-buffer, and each occurrence's transform this frame and
-    // last. The velocity compute derives motion from the camera alone, so anything moving under its own
-    // power must stamp its true screen delta afterwards — see ObjectVelocityPass. The view-space
+    // Moving meshes drawn into this frame, and each occurrence's transform this frame and last. The
+    // velocity compute derives motion from the camera alone, so animated G-buffer objects and the
+    // separately transformed first-person layer must stamp their true screen delta afterwards — see
+    // ObjectVelocityPass. The view-space
     // translation rides along for the mispair guard below: the composed clip transform has no column
     // that means metres.
-    private readonly record struct ObjectVelocityState(Matrix4f Transform, Vector3f ViewTranslation);
+    private readonly record struct ObjectVelocityState(Matrix4f MotionTransform, Vector3f ViewTranslation, int PoseVersion);
 
     private readonly List<Deferred.ObjectVelocityDraw> _objectVelocityDraws = [];
     private readonly Dictionary<long, ObjectVelocityState> _objectVelocityPrevious = [];
     private readonly Dictionary<long, ObjectVelocityState> _objectVelocityCurrent = [];
     private readonly Dictionary<uint, int> _objectVelocityOccurrence = [];
 
-    /// <summary>Records one animated G-buffer draw for the object-velocity stamp.</summary>
+    /// <summary>Records one moving draw for the object-velocity stamp.</summary>
     /// <remarks>
     /// The key is the mesh plus which occurrence of it this is within the frame, so a mesh drawn several
     /// times pairs each draw with its own transform from the previous frame — as long as the draw order
     /// is stable, which a renderer iterating its own lists gives for free.
     /// </remarks>
-    private void RecordObjectVelocity(uint meshId, VulkanMesh resource, int indexOffset, int indexCount, in Matrix4f modelView)
+    private void RecordObjectVelocity(
+        uint meshId,
+        VulkanMesh resource,
+        int indexOffset,
+        int indexCount,
+        in Matrix4f modelView,
+        bool firstPerson)
     {
-        Matrix4f now = _projection * modelView;
+        // Raster with the exact current projection so the depth test covers the same fragments as the
+        // original draw. Motion itself is defined between UNJITTERED positions, matching the static
+        // velocity field: applying this frame's jitter to both ends below preserves raster coverage while
+        // cancelling the sampling offset out of the vector.
+        Matrix4f rasterNow = _projection * modelView;
+        Matrix4f motionNow = (firstPerson ? _projection : _temporalProjection) * modelView;
         Vector3f translation = new(modelView.M14, modelView.M24, modelView.M34);
         _objectVelocityOccurrence.TryGetValue(meshId, out int occurrence);
         _objectVelocityOccurrence[meshId] = occurrence + 1;
 
         long key = ((long)meshId << 16) | (uint)(occurrence & 0xFFFF);
-        Matrix4f previous = now;
+        Matrix4f previous = rasterNow;
+        bool usePreviousVertices = false;
         if (_objectVelocityPrevious.TryGetValue(key, out ObjectVelocityState prev))
         {
             // A plausibility guard on the pairing. The key is draw order, and draw order can shift when
@@ -64,12 +77,27 @@ public sealed partial class VulkanGraphicsDevice
             Vector3f jump = translation - prev.ViewTranslation;
             if (jump.LengthSquared <= 4f)
             {
-                previous = prev.Transform;
+                Matrix4f currentJitter = firstPerson
+                    ? Matrix4f.Identity
+                    : Matrix4f.CreateTranslation(
+                        _taaSettings.JitterX * 2f / Math.Max(1, _captureWidth),
+                        _taaSettings.JitterY * 2f / Math.Max(1, _captureHeight),
+                        0f);
+                previous = currentJitter * prev.MotionTransform;
+                usePreviousVertices = resource.Animated && prev.PoseVersion != resource.PoseVersion;
             }
         }
 
-        _objectVelocityCurrent[key] = new ObjectVelocityState(now, translation);
-        _objectVelocityDraws.Add(new Deferred.ObjectVelocityDraw(resource, indexOffset, indexCount, now, previous));
+        _objectVelocityCurrent[key] = new ObjectVelocityState(motionNow, translation, resource.PoseVersion);
+        _objectVelocityDraws.Add(
+            new Deferred.ObjectVelocityDraw(
+                resource,
+                indexOffset,
+                indexCount,
+                rasterNow,
+                previous,
+                firstPerson,
+                usePreviousVertices));
     }
 
     /// <summary>Rolls the object-velocity bookkeeping over to the next frame.</summary>
@@ -259,11 +287,26 @@ public sealed partial class VulkanGraphicsDevice
         ObserveForRayTracing(resource, modelView, diffuse, indexOffset, indexCount);
 
         // An animated mesh in the G-buffer is a thing that moves under its own power — a soldier, a
-        // door — and the camera-derived velocity is wrong for it. Remembered here, stamped after the
-        // velocity compute.
-        if (resource.Animated && _capturing && _deferredStage == DeferredStage.Geometry)
+        // door — and the camera-derived velocity is wrong for it. The first-person layer needs the same
+        // treatment for a different reason: its forward-drawn weapon parts are immutable meshes whose
+        // per-frame transforms carry recoil, and the foreground depth path deliberately gives them zero
+        // camera velocity. Without this stamp temporal upscaler accumulates the old weapon pose over the new one. Only
+        // opaque, depth-writing view-model draws participate; the additive muzzle flame neither owns the
+        // stored depth nor wants history.
+        bool animatedGeometry = resource.Animated && _deferredStage == DeferredStage.Geometry;
+        bool firstPersonForward = _firstPersonGeometry
+            && _deferredStage == DeferredStage.Forward
+            && blend == BlendMode.Opaque
+            && _depthState == DepthState.TestAndWrite;
+        if (_capturing && (animatedGeometry || firstPersonForward))
         {
-            RecordObjectVelocity(mesh.Id, resource, indexOffset, indexCount, modelView);
+            RecordObjectVelocity(
+                mesh.Id,
+                resource,
+                indexOffset,
+                indexCount,
+                modelView,
+                firstPerson: firstPersonForward);
         }
 
         _instance.Vk.CmdDrawIndexed(_frameCommandBuffer, (uint)indexCount, 1, (uint)indexOffset, 0, 0);
