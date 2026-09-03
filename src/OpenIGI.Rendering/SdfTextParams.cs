@@ -25,13 +25,17 @@ namespace OpenIGI.Rendering;
 /// <param name="GlowColor">The glow colour.</param>
 /// <param name="GlowWidth">The distance below the edge the glow fades over, or zero for no glow.</param>
 /// <param name="GlowIntensity">The glow's peak opacity, or zero for no glow.</param>
+/// <param name="Dissolve">How far the glyphs have burned away, zero whole to one gone.</param>
+/// <param name="DissolveSeed">Which grain of noise the burn follows.</param>
 public readonly record struct SdfTextParams(
     float PxRange,
     Bgra32 OutlineColor,
     float OutlineWidth,
     Bgra32 GlowColor,
     float GlowWidth,
-    float GlowIntensity)
+    float GlowIntensity,
+    float Dissolve = 0f,
+    float DissolveSeed = 0f)
 {
     /// <summary>Creates parameters for plain anti-aliased fill with no outline or glow.</summary>
     /// <param name="pxRange">The distance-field spread in atlas texels.</param>
@@ -53,4 +57,11 @@ public readonly record struct SdfTextParams(
     /// <returns>The parameters with the glow set.</returns>
     public SdfTextParams WithGlow(Bgra32 color, float width, float intensity) =>
         this with { GlowColor = color, GlowWidth = width, GlowIntensity = intensity };
+
+    /// <summary>Burns the glyphs away: zero is whole, one is gone, with an ember fringe along the cut.</summary>
+    /// <param name="amount">How far gone, from zero to one.</param>
+    /// <param name="seed">Which grain of noise the cut follows, so two blocks do not burn identically.</param>
+    /// <returns>The parameters with the dissolve applied.</returns>
+    public SdfTextParams WithDissolve(float amount, float seed = 0f) =>
+        this with { Dissolve = amount, DissolveSeed = seed };
 }

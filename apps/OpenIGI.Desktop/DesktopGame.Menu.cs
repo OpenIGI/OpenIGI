@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Game.World;
@@ -44,7 +44,9 @@ internal sealed partial class DesktopGame
         _scene = preview.Scene;
         _worldSolids = preview.Solids;
         _sun = preview.Sun;
-        _dayNight.Reset(RenderCVars.TimeOfDay.Value);
+
+        // Under the level's own sun, at the level's own hour -- see DayNightCycle.ResetForLevel.
+        _dayNight.ResetForLevel(preview.Sun, RenderCVars.TimeOfDay.Value);
         _playerTerrain = preview.Mission.Terrain is { IsUsable: true } standable ? standable : null;
 
         // Nobody stands in a backdrop, and the previous mission's player must not be left holding a scene
@@ -105,38 +107,44 @@ internal sealed partial class DesktopGame
         _probeField = preview.ProbeField;
         _device.SetIrradianceVolume(_probeField);
 
-        // The surface cache belongs to a played mission; a backdrop has none, so the frame loop must not go
-        // on lighting the last one's cards over this level's geometry.
-        _cardLighting?.Dispose();
-        _cardLighting = null;
-        _cardLookup?.Dispose();
-        _cardLookup = null;
-        _capturedCards = null;
-        _cardInstances = null;
-        _lightFixtures = [];
+        // The outgoing level's surface cache and distance fields go first: the cards were captured from
+        // the level that has just been replaced, and the clipmaps were traced against it.
+        DiscardSurfaceCache();
+        DiscardDistanceFields();
 
-        // And with the fixtures, the switches on them: they index that list and nothing else, so one left
-        // behind would switch the next level's lamps by number.
-        _lampSwitchboard = null;
-        _lampBounceRevision = -1;
+        // Then this level's own. A backdrop used to be a picture lit by the artists' bakes, with no lamps,
+        // no cards and no field, while the mission it became was lit by the real-time model -- so the
+        // picture changed the instant Play was pressed, and every one of those structures was then built
+        // on the render thread in front of the player. The preview worker has surveyed the lamps and read
+        // (or is baking) the field; what is left here is the upload and the capture, a few tens of
+        // milliseconds under the held frame the dissolve is about to fade off.
+        //
+        // The lamps first, and always: a model name means different art in different levels, so carrying
+        // one mission's lamps into the backdrop of the next glows whatever shares a name. The switches
+        // index the fixture list and nothing else, so they are rebuilt with it.
+        ApplyLamps(preview.Lamps, preview.MissionId);
 
-        if (_world is not null)
+        if (RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
         {
-            _world.Switchboard = null;
+            _attemptedFieldResolution = preview.DistanceFieldResolution;
+            _builtFieldResolution = preview.DistanceFieldResolution;
+
+            if (preview.DistanceField is { } readField)
+            {
+                AdoptDistanceField(readField, DistanceFieldAtlas.Build(readField.Fields), fromCache: true);
+            }
+            else if (preview.PendingDistanceField is { } baking)
+            {
+                // Handed to the same per-frame collect a played mission's bake uses, which adopts it and
+                // writes the cache when it lands -- under a held frame, so the menu does not show the
+                // cross-over either.
+                _sdfBake = baking;
+            }
         }
 
-        // And the emission that went with them: a model name means different art in different levels, so
-        // carrying one mission's lamps into the backdrop of the next glows whatever shares a name.
-        _lamps = LampDetector.Lamps.None;
-
-        // Likewise the distance fields: the clipmaps that are up were traced against the level that has
-        // just been replaced, and tracing new ones is work a backdrop does not need.
-        _sdfBake?.Cancel();
-        _sdfBake = null;
-        _sdfClipmaps?.Dispose();
-        _sdfClipmaps = null;
-        _sdfScene = null;
-        _sdfValidated = false;
+        // The capture is a render pass over every distinct model and has to run here. It reads the
+        // lamps' emission off the geometry, so it comes after them.
+        EnsureSurfaceCache();
 
         if (_sky.HasSky)
         {
@@ -183,6 +191,10 @@ internal sealed partial class DesktopGame
             try
             {
                 MissionPreview preview = loader.BuildForTooling(descriptor.Id);
+
+                // A tool wants the places, not a field; a bake started for a level nobody will look at
+                // would run to completion on a thread-pool thread for nothing.
+                preview.PendingDistanceField?.Cancel();
                 entries.Add(new ShowcasePointFile.Entry(
                     descriptor.Id,
                     strings.Get(descriptor.Name),
@@ -253,8 +265,7 @@ internal sealed partial class DesktopGame
             _dissolveTexture,
             new UiRect(0f, 0f, _window.Width, _window.Height),
 
-            // GL copied the frame bottom-up, so the source runs from the top of the texture downwards.
-            new RectF(0f, 1f, 1f, -1f),
+            RectF.Unit,
             Bgra32.White.WithAlpha((byte)(255f * Math.Clamp(amount, 0f, 1f))));
     }
 

@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Flow;
@@ -112,9 +112,11 @@ public sealed class MissionPreviewLoader(
 
             _wanted = missionId;
 
-            // A result for a mission nobody wants any more is not worth handing over.
+            // A result for a mission nobody wants any more is not worth handing over -- nor is the field it
+            // may still be baking for a level nobody is going to look at.
             if (_ready is not null && _ready.MissionId != missionId)
             {
+                _ready.PendingDistanceField?.Cancel();
                 _ready = null;
             }
 
@@ -163,6 +165,7 @@ public sealed class MissionPreviewLoader(
         lock (_gate)
         {
             _disposed = true;
+            _ready?.PendingDistanceField?.Cancel();
             _ready = null;
             _wanted = -1;
         }
@@ -199,6 +202,7 @@ public sealed class MissionPreviewLoader(
             }
             else if (built is not null)
             {
+                built.PendingDistanceField?.Cancel();
                 logger.Debug(LogCategory, $"Mission {missionId}'s backdrop finished after the selection moved on; dropped.");
             }
 
@@ -318,6 +322,34 @@ public sealed class MissionPreviewLoader(
             ? probeFields.TryLoad(missionId, RenderCVars.GlobalIlluminationSpacing.Value, bakeSun)
             : null;
 
+        // The level's lamps, surveyed here for two reasons that happen to coincide. It is the single
+        // largest cost promotion used to pay on the render thread -- decoding every emitter texture ran
+        // to about 140 ms -- and it is half of what makes a backdrop look like the mission: a lamplit
+        // interior previewed with its lamps out is simply a different, darker picture.
+        EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
+            ? EmissiveLightProposer.Propose(scene, resources, context.Lamps, missionId, logger)
+            : EmissiveLightProposer.Proposal.None;
+
+        // The other half: the distance field the real-time lighting traces against. Cached, it is a file
+        // read and belongs here; missed, the bake is started here and carried, so a mission that is
+        // browsed for a few seconds before Play has its field ready and one that is not hands the game
+        // the bake in flight rather than starting one from nothing on the way in. Single-threaded, so it
+        // takes one core and leaves the frame alone. The same gate the render loop applies.
+        int fieldResolution = RenderCVars.DistanceFieldResolution.Value;
+        SceneDistanceField? distanceField = null;
+        DistanceFieldBake? pendingField = null;
+        if (RenderCVars.DistanceFields.Value && context.ComputeSupported)
+        {
+            distanceField = context.DistanceFields.TryLoad(missionId, fieldResolution);
+            if (distanceField is null)
+            {
+                pendingField = DistanceFieldBake.Start(scene.Placements, fieldResolution, logger);
+                logger.Information(
+                    LogCategory,
+                    $"Mission {missionId} has no cached distance field; baking one at {fieldResolution} voxels behind the menu.");
+            }
+        }
+
         Bgra32[][] detail = groundDetail.GetAwaiter().GetResult();
 
         logger.Information(
@@ -337,7 +369,11 @@ public sealed class MissionPreviewLoader(
             sun,
             probeField,
             resources,
-            fileSystem);
+            fileSystem,
+            lamps,
+            distanceField,
+            pendingField,
+            fieldResolution);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

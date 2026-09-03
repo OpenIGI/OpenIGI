@@ -219,6 +219,62 @@ internal sealed unsafe class VulkanTexture : IDisposable
         });
     }
 
+    /// <summary>Records a device-side copy of another colour image's top-left region into mip level zero.</summary>
+    /// <param name="cmd">The command buffer to record into; the copy is ordered with whatever it already holds.</param>
+    /// <param name="source">The image to copy from, of the same texel format as this texture.</param>
+    /// <param name="sourceLayout">The layout <paramref name="source"/> is in, which must allow transfer reads.</param>
+    /// <param name="width">How many texels across to copy; clamped to this texture's own width.</param>
+    /// <param name="height">How many texels down to copy; clamped to this texture's own height.</param>
+    /// <remarks>
+    /// The texture is moved out of the sampled layout for the copy and back into it afterwards, so a draw
+    /// recorded after this in the same buffer can sample the copied frame. The source's own layout is the
+    /// caller's to manage: it is a swapchain image here, and only the device knows what that is doing.
+    /// </remarks>
+    public void CopyFromImage(CommandBuffer cmd, Image source, ImageLayout sourceLayout, int width, int height)
+    {
+        int copyWidth = Math.Min(width, Width);
+        int copyHeight = Math.Min(height, Height);
+        if (copyWidth <= 0 || copyHeight <= 0)
+        {
+            return;
+        }
+
+        TransitionLayout(
+            cmd,
+            Image,
+            ImageLayout.ShaderReadOnlyOptimal,
+            ImageLayout.TransferDstOptimal,
+            PipelineStageFlags.FragmentShaderBit,
+            PipelineStageFlags.TransferBit,
+            AccessFlags.ShaderReadBit,
+            AccessFlags.TransferWriteBit);
+
+        ImageSubresourceLayers layers = new()
+        {
+            AspectMask = ImageAspectFlags.ColorBit,
+            MipLevel = 0,
+            BaseArrayLayer = 0,
+            LayerCount = 1,
+        };
+        ImageCopy region = new()
+        {
+            SrcSubresource = layers,
+            DstSubresource = layers,
+            Extent = new Extent3D((uint)copyWidth, (uint)copyHeight, 1),
+        };
+        _vk.CmdCopyImage(cmd, source, sourceLayout, Image, ImageLayout.TransferDstOptimal, 1, &region);
+
+        TransitionLayout(
+            cmd,
+            Image,
+            ImageLayout.TransferDstOptimal,
+            ImageLayout.ShaderReadOnlyOptimal,
+            PipelineStageFlags.TransferBit,
+            PipelineStageFlags.FragmentShaderBit,
+            AccessFlags.TransferWriteBit,
+            AccessFlags.ShaderReadBit);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {

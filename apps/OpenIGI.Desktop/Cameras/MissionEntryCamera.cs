@@ -123,7 +123,12 @@ public sealed class MissionEntryCamera
     private const double BodyHiddenWithin = 6.0;
 
     /// <summary>How long a hold may extend before the shot gives up waiting and lands anyway, in seconds.</summary>
-    private const float HoldPatienceSeconds = 6.0f;
+    /// <remarks>
+    /// The same patience the warm-up gate has: a first-time play of a mission bakes its distance field
+    /// behind the hold, and the slowest measured bake is about seven seconds. Past this an honest hitch
+    /// is better than a camera that hangs.
+    /// </remarks>
+    public const float HoldPatienceSeconds = 30.0f;
 
     private readonly HandheldShake _shake = new();
 
@@ -136,7 +141,10 @@ public sealed class MissionEntryCamera
     private float _elapsed;
     private float _phaseElapsed;
     private bool _promoted;
+    private bool _ready;
     private bool _bodyHidden;
+    private Vector3d _spawnMetres;
+    private float _titleAge;
     private CameraPose _pose;
     private Camera3D _camera = Camera3D.Default;
 
@@ -151,14 +159,41 @@ public sealed class MissionEntryCamera
 
     /// <summary>Gets a value indicating whether the mission should be brought up now.</summary>
     /// <remarks>
-    /// Raised on reaching the hold and cleared by <see cref="NotifyPromoted"/>. The hold is where the
-    /// hand-over belongs: it is the one moment in the shot where the camera is not travelling, so
-    /// whatever the promotion costs is spent against a picture that was static anyway.
+    /// Raised as the travel begins and cleared by <see cref="NotifyPromoted"/>. The promotion is cheap now
+    /// that its structures are built behind the menu, and the one frame it still costs is best spent
+    /// where the camera is moving fastest and the smear is widest: at the top of the travel, nobody can
+    /// see a single dropped frame. It also gives the level the whole travel to settle before the hold.
     /// </remarks>
-    public bool WantsPromotion => Phase == MissionEntryPhase.Hold && !_promoted;
+    public bool WantsPromotion => Phase == MissionEntryPhase.Travel && !_promoted;
 
     /// <summary>Gets a value indicating whether the player's standing body should be drawn.</summary>
     public bool ShowPlayerBody { get; private set; }
+
+    /// <summary>Gets a value indicating whether the shot ends by dropping into the player's eyes.</summary>
+    /// <remarks>
+    /// A mission with an authored intro hands the view to its own camera instead: the shot ends over the
+    /// start, the bars open, and the cut-scene has the frame.
+    /// </remarks>
+    public bool Descends { get; private set; } = true;
+
+    /// <summary>Gets where the mission's caption is laid: on the ground at the player's start, in metres.</summary>
+    public Vector3d TitleAnchor => _spawnMetres;
+
+    /// <summary>Gets the heading the caption reads towards, so it is upright from the vantage.</summary>
+    public float TitleYaw => _travelYaw;
+
+    /// <summary>Gets how long the caption has been arriving, in seconds; zero until the travel begins.</summary>
+    public float TitleAge => _titleAge;
+
+    /// <summary>Gets how much of the caption shows: full over the travel and the hold, gone early in the descent.</summary>
+    public float WorldTitleOpacity =>
+        Phase switch
+        {
+            MissionEntryPhase.Travel or MissionEntryPhase.Hold => 1f,
+            MissionEntryPhase.Descend => 1f - Easing.Evaluate(Ease.InOutQuad, Math.Clamp(_phaseElapsed / (DescendSeconds * 0.45f), 0f, 1f)),
+            MissionEntryPhase.Chrome => Descends ? 0f : 1f - Easing.Evaluate(Ease.InOutQuad, Math.Clamp(_phaseElapsed / ChromeSeconds, 0f, 1f)),
+            _ => 0f,
+        };
 
     /// <summary>Gets how long the hold has been waiting for the mission, in seconds.</summary>
     public float HeldWaiting { get; private set; }
@@ -308,7 +343,8 @@ public sealed class MissionEntryCamera
     /// <param name="showcase">The pose the menu's orbit is in at the moment Play was pressed.</param>
     /// <param name="spawnPositionUnits">Where the level puts the player, in engine units.</param>
     /// <param name="groundHeightMetres">The height to measure the vantage above, in metres.</param>
-    public void Begin(in CameraPose showcase, Vector3d spawnPositionUnits, double groundHeightMetres)
+    /// <param name="descend">Whether the shot ends in the player's eyes, or hands off to an authored camera over the start.</param>
+    public void Begin(in CameraPose showcase, Vector3d spawnPositionUnits, double groundHeightMetres, bool descend = true)
     {
         const double unitsPerMetre = 4096.0;
 
@@ -317,6 +353,9 @@ public sealed class MissionEntryCamera
             spawnPositionUnits.X / unitsPerMetre,
             spawnPositionUnits.Y / unitsPerMetre,
             spawnPositionUnits.Z / unitsPerMetre);
+        _spawnMetres = spawn;
+        Descends = descend;
+        _titleAge = 0f;
 
         double dx = spawn.X - showcase.Position.X;
         double dy = spawn.Y - showcase.Position.Y;
@@ -353,6 +392,7 @@ public sealed class MissionEntryCamera
         _elapsed = 0f;
         _phaseElapsed = 0f;
         _promoted = false;
+        _ready = false;
         HeldWaiting = 0f;
         ShowPlayerBody = false;
         _bodyHidden = false;
@@ -361,8 +401,55 @@ public sealed class MissionEntryCamera
         _camera = showcase.ToCamera();
     }
 
-    /// <summary>Tells the shot the mission has been brought up and the descent may begin.</summary>
+    /// <summary>Begins the shot at its hold, already over the player's start, for a level that came up with no menu to leave.</summary>
+    /// <param name="landing">The player's own eye, which the descent lands on exactly.</param>
+    /// <param name="groundHeightMetres">The height to measure the vantage above, in metres.</param>
+    /// <param name="descend">Whether the shot ends in the player's eyes, or hands off to an authored camera.</param>
+    /// <remarks>
+    /// A cold start and a restart have nothing to rise out of: there was no orbit, only a loading card.
+    /// So the shot opens at altitude over the start, facing the way the player faces, holds there while
+    /// the level lights, and lands the same way every other route does. The interface and the bars are
+    /// taken as already gone and already in.
+    /// </remarks>
+    public void BeginAtHold(in CameraPose landing, double groundHeightMetres, bool descend = true)
+    {
+        Vector3d spawn = landing.Position;
+        _spawnMetres = spawn;
+        Descends = descend;
+        _titleAge = 0f;
+
+        double rise = Math.Clamp(MinimumApexRise * 1.5, MinimumApexRise, MaximumApexRise);
+        double apexZ = Math.Max(groundHeightMetres, spawn.Z) + rise;
+
+        _travelYaw = landing.Yaw;
+        _apexOverSpawn = new CameraPose(new Vector3d(spawn.X, spawn.Y, apexZ), _travelYaw, ApexPitch);
+        _apexOverStart = _apexOverSpawn;
+        _start = _apexOverSpawn;
+        _landing = landing;
+
+        // Past the reveal, the climb and the travel: the interface is gone and the bars are in.
+        _elapsed = RevealSeconds + AscendSeconds + TravelSeconds;
+        _phaseElapsed = 0f;
+        _promoted = true;
+        _ready = false;
+        HeldWaiting = 0f;
+        ShowPlayerBody = false;
+        _bodyHidden = false;
+        Phase = MissionEntryPhase.Hold;
+        _pose = _apexOverSpawn;
+        _camera = _apexOverSpawn.ToCamera();
+    }
+
+    /// <summary>Tells the shot the mission has been brought up.</summary>
     public void NotifyPromoted() => _promoted = true;
+
+    /// <summary>Tells the shot the picture under it is final and the descent may begin.</summary>
+    /// <remarks>
+    /// Separate from <see cref="NotifyPromoted"/> because the two are separate moments: a level is brought
+    /// up in one frame, and lit -- its field baked, its cache converged, its temporal passes settled --
+    /// over the frames that follow. The hold waits for the second.
+    /// </remarks>
+    public void NotifyReady() => _ready = true;
 
     /// <summary>Puts the shot back to idle.</summary>
     public void Reset()
@@ -371,6 +458,7 @@ public sealed class MissionEntryCamera
         _elapsed = 0f;
         _phaseElapsed = 0f;
         _promoted = false;
+        _ready = false;
         HeldWaiting = 0f;
         ShowPlayerBody = false;
         _bodyHidden = false;
@@ -392,6 +480,13 @@ public sealed class MissionEntryCamera
         _elapsed += step;
         _phaseElapsed += step;
 
+        // The caption's letters arrive from the moment the travel begins -- by the time the camera is
+        // over the start they are laid.
+        if (Phase >= MissionEntryPhase.Travel)
+        {
+            _titleAge += step;
+        }
+
         if (gameplayEye is { } landing)
         {
             _landing = landing;
@@ -406,7 +501,10 @@ public sealed class MissionEntryCamera
             MissionEntryPhase.Travel => Travelling(),
             MissionEntryPhase.Hold => Holding(),
             MissionEntryPhase.Descend => Descending(),
-            _ => _landing,
+
+            // A shot that hands off to an authored camera never leaves the vantage; the ones that land
+            // are at the landing exactly, which is the no-pop guarantee.
+            _ => Descends ? _landing : _apexOverSpawn,
         };
 
         // The shake, weighted so it is absent at both ends of the shot and full at altitude. Rotation
@@ -481,10 +579,11 @@ public sealed class MissionEntryCamera
                 break;
 
             case MissionEntryPhase.Hold:
-                // The beat waits for the mission. While it waits the picture keeps moving -- the drift
-                // below and the shake carry on -- so a wait is a longer shot rather than a frozen one.
-                // Past the patience it lands anyway: an honest hitch is better than a camera that hangs.
-                if (!_promoted)
+                // The beat waits for the mission, and then for its picture to be final. While it waits
+                // the picture keeps moving -- the drift below and the shake carry on -- so a wait is a
+                // longer shot rather than a frozen one. Past the patience it lands anyway: an honest
+                // hitch is better than a camera that hangs.
+                if (!_promoted || !_ready)
                 {
                     HeldWaiting += _phaseElapsed - HeldWaiting;
                     if (HeldWaiting < HoldPatienceSeconds)
@@ -495,7 +594,7 @@ public sealed class MissionEntryCamera
 
                 if (_phaseElapsed >= HoldSeconds)
                 {
-                    EnterPhase(MissionEntryPhase.Descend);
+                    EnterPhase(Descends ? MissionEntryPhase.Descend : MissionEntryPhase.Chrome);
                 }
 
                 break;

@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Rendering;
@@ -112,6 +112,16 @@ public interface IGraphicsDevice : IDisposable
     /// renderer only keeps one of.
     /// </remarks>
     void CopyFrameToTexture(TextureHandle texture, int width, int height);
+
+    /// <summary>Draws the loading backdrop over the whole frame: a held picture defocused and graded, or a procedural surface.</summary>
+    /// <param name="texture">The held picture, as captured by <see cref="CopyFrameToTexture"/>; ignored when the settings say there is none.</param>
+    /// <param name="settings">How far out of focus, how graded, how faded, and the rest.</param>
+    /// <remarks>
+    /// A fullscreen pass rather than sprites, because a defocus and a grade are per-pixel work no number
+    /// of tinted quads can imitate. Blended over the frame, so the reveal can fade it off the live level.
+    /// Drawn outside any sprite batch.
+    /// </remarks>
+    void DrawLoadingBackdrop(TextureHandle texture, in LoadingBackdropSettings settings);
 
     /// <summary>Allocates a texture and uploads its pixels. Mirrors <c>AllocTexture</c> + <c>DownloadTexture</c>.</summary>
     /// <param name="description">The texture's size, mip count and sampling.</param>

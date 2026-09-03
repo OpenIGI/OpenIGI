@@ -233,8 +233,69 @@ public sealed class SpriteBatch
         _quadCount++;
     }
 
+    /// <summary>Queues a distance-field glyph on four arbitrary corners, for text projected into the world.</summary>
+    /// <param name="atlas">The distance-field atlas.</param>
+    /// <param name="topLeft">The glyph's top-left corner, with its atlas coordinate and colour.</param>
+    /// <param name="topRight">The top-right corner.</param>
+    /// <param name="bottomRight">The bottom-right corner.</param>
+    /// <param name="bottomLeft">The bottom-left corner.</param>
+    /// <param name="parameters">The edge, outline and glow.</param>
+    /// <param name="blend">How the glyph combines with what is under it.</param>
+    /// <remarks>
+    /// <see cref="DrawText"/> with the corners free: a glyph standing in the level is a perspective
+    /// quadrilateral on screen, not a rectangle. The atlas coordinates interpolate affinely across it,
+    /// which is exact for a rectangle and a hair off for a strongly foreshortened one -- invisible at
+    /// the sizes and angles a title is read at. On a device with no distance-field shading it falls
+    /// back to coverage, as the rectangular path does.
+    /// </remarks>
+    public void DrawTextQuad(
+        TextureHandle atlas,
+        in Vertex2D topLeft,
+        in Vertex2D topRight,
+        in Vertex2D bottomRight,
+        in Vertex2D bottomLeft,
+        in SdfTextParams parameters,
+        BlendMode blend = BlendMode.AlphaBlend)
+    {
+        if (!_inBatch)
+        {
+            throw new InvalidOperationException("DrawTextQuad was called outside a Begin/End pair.");
+        }
+
+        if (_sdfDevice is null)
+        {
+            DrawQuad(atlas, topLeft, topRight, bottomRight, bottomLeft, blend);
+            return;
+        }
+
+        bool differentRun = atlas != _texture || blend != _blend || !_isText || !_textParams.Equals(parameters);
+        if (_quadCount > 0 && differentRun)
+        {
+            Flush();
+        }
+
+        if (_quadCount == _capacityInQuads)
+        {
+            Flush();
+        }
+
+        _texture = atlas;
+        _blend = blend;
+        _isText = true;
+        _textParams = parameters;
+
+        int v = _quadCount * 4;
+        _vertices[v + 0] = topLeft;
+        _vertices[v + 1] = topRight;
+        _vertices[v + 2] = bottomRight;
+        _vertices[v + 3] = bottomLeft;
+        _quadCount++;
+    }
+
+
     /// <summary>Flushes any pending quads and closes the batch.</summary>
     /// <exception cref="InvalidOperationException">No batch is open.</exception>
+
     public void End()
     {
         if (!_inBatch)

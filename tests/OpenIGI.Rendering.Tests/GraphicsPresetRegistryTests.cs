@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 using Xunit;
 
@@ -10,30 +10,47 @@ namespace OpenIGI.Rendering.Tests;
 public sealed class GraphicsPresetRegistryTests
 {
     /// <summary>
-    /// Ultra lights in real time; every cheaper preset keeps the artists' bakes.
+    /// Vanilla alone keeps the artists' bakes; every preset above it lights in real time, and does so
+    /// with the whole real-time stack rather than a fraction of it.
     /// </summary>
     /// <remarks>
-    /// This assertion used to run the other way — ultra held <see cref="LightingModel.Baked"/> "until
-    /// probe irradiance exists", because a dynamic preset without it would have thrown away
-    /// hand-authored lighting for a flat ambient term. The probe irradiance field exists now and ultra
-    /// lights from the screen gather floored against it, so the wait is over and the pin is that ultra
-    /// is the ONE preset that made the move. Pinning the cheaper three matters as much as pinning
-    /// ultra: they are what a machine that cannot afford the gather falls back to, and a preset that
-    /// silently went dynamic would light those machines from a screen field they never render.
+    /// <para>
+    /// This assertion has run two ways before. First that ultra held <see cref="LightingModel.Baked"/>
+    /// "until probe irradiance exists"; then, once it did, that ultra was the ONE preset that had moved.
+    /// Both were pins on how far the work had got, not on what the presets are for. Enhanced and high now
+    /// light in real time too, so what is worth pinning is the shape the tiers actually have: the same
+    /// systems everywhere, differing only in budget.
+    /// </para>
+    /// <para>
+    /// The second half is the half that bites. A preset can be set to <c>dynamic</c> and still be broken,
+    /// because dynamic lighting DISCARDS the bakes and has nothing to put in their place unless the
+    /// surface cache, the distance field, the gather and the lamps are all on together — a gather with no
+    /// cache to trace returns nothing, and a dynamic preset with no lamps renders a windowless room black.
+    /// Half-enabling the stack on a tier is therefore the likely mistake, and it looks like a lighting bug
+    /// rather than a preset one.
+    /// </para>
     /// </remarks>
     [Fact]
-    public void OnlyUltraLightsInRealTime()
+    public void OnlyVanillaKeepsTheBakes()
     {
         _ = RenderCVars.Lighting;
 
-        GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Ultra);
-        Assert.Equal(LightingModel.Dynamic, RenderCVars.Lighting.Value);
+        GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
+        Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
 
         foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
-            [GraphicsPreset.Vanilla, GraphicsPreset.Enhanced, GraphicsPreset.High])
+            [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
         {
             GraphicsPresetRegistry.Default.Apply(preset);
-            Assert.Equal(LightingModel.Baked, RenderCVars.Lighting.Value);
+
+            Assert.Equal(LightingModel.Dynamic, RenderCVars.Lighting.Value);
+
+            // Everything the dynamic model needs in order to have anything to light with.
+            Assert.True(RenderCVars.SurfaceCache.Value, $"{preset} lights dynamically with no surface cache");
+            Assert.True(RenderCVars.DistanceFields.Value, $"{preset} lights dynamically with no distance field");
+            Assert.True(RenderCVars.ScreenGather.Value > 0f, $"{preset} lights dynamically with no screen gather");
+            Assert.True(RenderCVars.RadianceCache.Value != 0, $"{preset} lights dynamically with no radiance cache");
+            Assert.True(RenderCVars.LocalLightScale.Value > 0f, $"{preset} lights dynamically with no lamps");
         }
     }
 
@@ -54,14 +71,18 @@ public sealed class GraphicsPresetRegistryTests
     [Fact]
     public void EveryArchivedRenderSettingIsNamedByThePresets()
     {
-        // Not quality levels: the first four are the scene's own state rather than how well it is drawn,
-        // the next two are the player's own display and performance preferences, and the last names a
-        // directory on their disk. A preset has no business overwriting any of them.
+        // Not quality levels: the first six are the scene's own state rather than how well it is drawn,
+        // r_vsync is the player's own display preference, and the last names a directory on their disk.
+        // A preset has no business overwriting any of them.
+        //
+        // r_scale used to be listed here and no longer is. It is the internal resolution the temporal
+        // upscaler reconstructs from, which is the single largest difference between the quality tiers,
+        // so it is a quality level in the fullest sense -- and it is now named by all four presets.
         string[] preferences =
         [
-            "r_time_of_day", "r_weather_enabled", "r_weather_kind", "r_weather_speed",
+            "r_weather_enabled", "r_weather_kind", "r_weather_speed",
             "r_storm_intensity", "r_weather_force",
-            "r_vsync", "r_scale", "r_material_pack",
+            "r_vsync", "r_material_pack", "r_world_briefing",
         ];
 
         _ = RenderCVars.Lighting;

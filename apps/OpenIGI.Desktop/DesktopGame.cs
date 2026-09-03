@@ -1,4 +1,4 @@
-﻿using OpenIGI.Audio;
+using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Desktop.Audio;
 using OpenIGI.Desktop.World;
@@ -88,6 +88,7 @@ internal sealed partial class DesktopGame : IDisposable
     private ITimeSource _timeSource = null!;
     private GameLoop _loop = null!;
     private GiBakeCache _giCache = null!;
+    private DistanceFieldCache _sdfCache = null!;
     private LightmapBakeCache _lightmapCache = null!;
     private MissionRegistry _missions = null!;
     private MagicObjectRegistry _magic = null!;
@@ -481,7 +482,16 @@ internal sealed partial class DesktopGame : IDisposable
 
         MenuStringTable strings = new(_resources);
         configHost.Strings = strings;
+
+        // Held so anything outside this method can name a mission the way the player saw it named. A
+        // descriptor's own Name is the table KEY -- it reads "Mission 1 Name" -- so a loading panel that
+        // showed it would be showing the campaign screen a different title than the one it just listed.
+        _menuStrings = strings;
         SpriteBatch batch = new(_device);
+
+        // Held so a loading frame can be drawn and swapped from outside this loop, before a mission
+        // load blocks it. See DesktopGame.MissionWarmUp.cs.
+        _batch = batch;
         _renderer = null;
         bool running = true;
 
@@ -598,6 +608,15 @@ internal sealed partial class DesktopGame : IDisposable
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
             _logger);
 
+        // The level's distance fields, cached the same way and for a sharper reason. This is the one bake
+        // the real-time lighting model WAITS on -- until it lands the frame renders from the artists'
+        // lightmaps and then visibly crosses over -- and it is the most cacheable thing in the renderer,
+        // depending on nothing but the level's static geometry and one integer. See DistanceFieldCache.
+        _sdfCache = DistanceFieldCache.Create(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "sdf"),
+            Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "sdf"),
+            _logger);
+
         // The path-traced object lightmaps, cached the same way: baked once, read instantly after. The
         // shipped bakes live beside the probe fields; freshly-baked ones write to the per-user cache.
         _lightmapCache = LightmapBakeCache.Create(
@@ -618,12 +637,6 @@ internal sealed partial class DesktopGame : IDisposable
         // nothing.
         GameMusicNatives musicNatives = new(_music!);
         musicNatives.Register(_loop.Natives);
-
-        // What a menu backdrop needs to be promotable into the played mission rather than thrown away.
-        // Built here because every part of it is finished being written by this point and none of it is
-        // mutated afterwards, which is what makes it safe to hand to a worker.
-        _previewContext = new MissionPreviewContext(
-            _timeSource, menuHost, _scheduler, missionState, _sessionArchives);
 
         // The magic-object table is what turns a level's few hundred scripted objects into its full
         // contents: every model's attachments name an entry here. Loading it is a startup step, like the
@@ -828,6 +841,21 @@ internal sealed partial class DesktopGame : IDisposable
             Path.Combine(AppContext.BaseDirectory, "Assets", "lamps.json"),
             _logger);
 
+        // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
+        // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
+        // checked against and the field cache it reads. Built here because every part of it is finished
+        // being written by this point and none of it is mutated afterwards, which is what makes it safe
+        // to hand to a worker.
+        _previewContext = new MissionPreviewContext(
+            _timeSource,
+            menuHost,
+            _scheduler,
+            missionState,
+            _sessionArchives,
+            _lampManifest,
+            _sdfCache,
+            _device.Capabilities.SupportsCompute);
+
         // The derived surface detail this game never shipped -- normals, roughness, metal. Built by
         // `ResExtract maps` and pointed at by r_material_pack; an installation that has never run the tool
         // has none, and renders exactly as it did before any of this existed.
@@ -944,12 +972,8 @@ internal sealed partial class DesktopGame : IDisposable
         UiFont? shellHeadingFont = null;
 
         // What the mission-entry shot types over its vantage. Filled when the shot begins.
-        string entryTitle = string.Empty;
-        string entrySubtitle = string.Empty;
 
         // Where the shot's character stands, in engine units, and which way it faces.
-        Vector3d entrySpawnPosition = default;
-        float entrySpawnGamma = 0f;
         bool menuMode = false;
 
         // The shell is up over a LIVE mission -- the pause menu -- rather than over the showcase. It always
@@ -983,6 +1007,15 @@ internal sealed partial class DesktopGame : IDisposable
         bool holdFrameForDissolve = false;
         bool heldFrameReady = false;
         bool heldFrameIsPicture = false;
+        bool dissolveRevealPending = false;
+
+        // A field that finished baking for the backdrop, waiting for the frame after the hold to be
+        // adopted -- see the collect further down.
+        DistanceFieldBake.Result? bakedFieldForBackdrop = null;
+
+        // The menu is held to the display's rate rather than rendering as fast as it can. See FramePacer.
+        var menuPacer = new FramePacer();
+        bool lastPassRendered = false;
 
         // How long a mission has to stay selected before its level is built. Every selection re-arms the
         // timer, so running down the list faster than this builds nothing at all. It can be short now that
@@ -1027,6 +1060,7 @@ internal sealed partial class DesktopGame : IDisposable
             // listed level 10 between level 1 and level 2. The retail menu walks the chain (0x405660) and
             // so does this.
             var shellMissions = new List<MissionInfo>();
+            _shellMissions = shellMissions;
             int missionNumber = 1;
             foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())
             {
@@ -1048,65 +1082,80 @@ internal sealed partial class DesktopGame : IDisposable
                         activeProfile.Difficulty = difficulty;
                     }
 
+                    // A load already under way owns the screen; a second press is nothing.
+                    if (_loadSequence.IsActive)
+                    {
+                        return;
+                    }
+
                     // Reachable from the pause menu as well as from the front end — the campaign is in the
                     // bar either way — so the shell is told it is no longer over a mission it was paused on.
-                    shell?.ClosePauseMenu();
-                    menuMode = false;
-                    pauseMenu = false;
-                    ApplyGameplayDepthOfField();
+                    // Deferred where a sequence covers the load: the menu keeps drawing under the departure
+                    // and is put away on the frame the load actually runs.
+                    void LeaveTheMenu()
+                    {
+                        shell?.ClosePauseMenu();
+                        menuMode = false;
+                        pauseMenu = false;
+                        ApplyGameplayDepthOfField();
+                    }
 
                     // The menu has been drawing this very level for as long as the player has been
                     // reading the briefing, built on a worker and complete. When it is the mission they
-                    // picked, the shot begins here and the level is PROMOTED partway through it rather
-                    // than loaded a second time — see MissionEntryCamera and PromoteBackdrop. `_backdrop`
-                    // is null over a played mission, so this cannot fire from the pause menu.
-                    //
-                    // -lockstep is excluded: the shot runs on wall-clock time, and a reference capture
-                    // has to land on the same frame every run.
-                    if (_backdrop is { } backdrop
-                        && backdrop.MissionId == id
-                        && !_options.Lockstep
-                        && _showcaseCamera is { } orbit
-                        && PlayerSpawn.TryFindGameplay(backdrop.LevelRoot, out PlayerSpawnPoint entrySpawn))
+                    // picked, the level is PROMOTED rather than loaded a second time — see
+                    // PromoteBackdrop — behind the same going-in sequence a restart gets: the picture
+                    // falls out of focus under the card, the promotion runs, and the shot opens over the
+                    // start. `_backdrop` is null over a played mission, so this cannot fire from the pause
+                    // menu. -lockstep is excluded: the sequence runs on wall-clock time, and a reference
+                    // capture has to land on the same frame every run.
+                    if (_backdrop is { } backdrop && backdrop.MissionId == id && !_options.Lockstep)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
-                        // An explicitly requested authored intro owns the mission from its first frame,
-                        // so promote immediately and let its EditCamera take over. In the normal (no
-                        // -cutscene) path the cinematic is skipped during promotion; keep the shell's
-                        // continuous rise/travel/descent shot instead of cutting straight to gameplay.
-                        if (_options.PlayCutscenes && HasAuthoredCutscene(backdrop.LevelRoot))
+
+                        void Promote()
                         {
+                            LeaveTheMenu();
                             if (PromoteBackdrop(backdrop))
                             {
                                 _window.CursorVisible = false;
                                 ReportWatchedFramePassesIn(2);
-                                return;
+                            }
+                            else
+                            {
+                                StartMission(id);
+                                _window.CursorVisible = false;
                             }
                         }
 
-                        lastEntryMilliseconds = _loop.TimeSource.Milliseconds;
-                        entrySpawnPosition = entrySpawn.Position;
-                        entrySpawnGamma = entrySpawn.Gamma;
+                        if (CinematicLoadAvailable)
+                        {
+                            BeginCinematicLoad(Promote);
+                        }
+                        else
+                        {
+                            Promote();
+                        }
 
-                        MissionInfo? entering = shellMissions.FirstOrDefault(m => m.Id == id);
-                        entryTitle = entering is null
-                            ? string.Empty
-                            : $"{entering.Number:00}  {entering.Name}".ToUpperInvariant();
-                        // The player's word for it, not the settings.qsc row key -- NameOf answers with
-                        // GD_2, which is what this caption used to put on screen.
-                        entrySubtitle = AiDifficultyNames.Of(difficulty).ToUpperInvariant();
-
-                        _entry.Begin(
-                            CameraPose.FromCamera(orbit.Update(0f)),
-                            entrySpawn.Position,
-                            backdrop.Scene.GroundHeight);
-                        _window.CursorVisible = false;
                         return;
                     }
 
-                    BeginWatchingFramePasses($"Loading mission {id}");
-                    StartMission(id);
-                    ReportWatchedFramePassesIn(5);
+                    void LoadCold()
+                    {
+                        LeaveTheMenu();
+                        BeginWatchingFramePasses($"Loading mission {id}");
+                        StartMission(id);
+                        ReportWatchedFramePassesIn(5);
+                        _window.CursorVisible = false;
+                    }
+
+                    if (CinematicLoadAvailable)
+                    {
+                        BeginCinematicLoad(LoadCold);
+                    }
+                    else
+                    {
+                        LoadCold();
+                    }
                 },
                 resumeMission: () =>
                 {
@@ -1119,18 +1168,35 @@ internal sealed partial class DesktopGame : IDisposable
                 },
                 restartMission: () =>
                 {
-                    if (_activeMission is { } mission)
+                    if (_activeMission is { } mission && !_loadSequence.IsActive)
                     {
-                        shell?.ClosePauseMenu();
-                        menuMode = false;
-                        pauseMenu = false;
-                        ApplyGameplayDepthOfField();
-                        StartMission(mission.Id);
-                        _window.CursorVisible = false;
+                        // The frozen mission under the pause menu is the picture the sequence holds: the
+                        // menu leaves, the place falls out of focus, and it comes back reset.
+                        void Restart()
+                        {
+                            shell?.ClosePauseMenu();
+                            menuMode = false;
+                            pauseMenu = false;
+                            ApplyGameplayDepthOfField();
+                            StartMission(mission.Id);
+                            _window.CursorVisible = false;
+                        }
+
+                        if (CinematicLoadAvailable)
+                        {
+                            BeginCinematicLoad(Restart);
+                        }
+                        else
+                        {
+                            Restart();
+                        }
                     }
                 },
                 abandonMission: () =>
                 {
+                    // Before it was ever shown, possibly. Counting the rest of the warm-up down would
+                    // hold a loading panel over the campaign screen.
+                    CancelMissionWarmUp();
                     ReleasePlayedMission();
                     shell?.ClosePauseMenu();
                     shell?.OpenOn("campaign");
@@ -1334,6 +1400,38 @@ internal sealed partial class DesktopGame : IDisposable
             // everything except the one frame it existed to measure.
             NoteFramePass(passStartedAt);
             FlushWatchedFramePasses();
+
+            // A load whose departure has played out runs here, between frames, where the picture it
+            // needs has already been held and nothing is half-drawn.
+            RunPendingLoadIfDue();
+
+            // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
+            // small upload between frames into a hitch. Only after a pass that presented, or the pacing
+            // would throttle the simulation's ticks as well; never under a capture, whose clock is its own.
+            // A level held behind the loading screen while its field bakes is paced harder still: the
+            // withheld frames exist to advance the temporal passes, which thirty a second does as well as
+            // a hundred, and every core the render thread is not spinning on is one the bake gets.
+            if (lastPassRendered && !_options.Lockstep && !_options.IsBenchmark)
+            {
+                if (IsWarmingUp && _sdfBake is not null)
+                {
+                    menuPacer.Pace(30);
+                }
+                else if (menuMode && !RenderCVars.VSync.Value)
+                {
+                    menuPacer.Pace(_window.RefreshRate > 0 ? _window.RefreshRate : 60);
+                }
+                else
+                {
+                    menuPacer.Reset();
+                }
+            }
+            else
+            {
+                menuPacer.Reset();
+            }
+
+            lastPassRendered = false;
             passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             _window.PumpEvents();
@@ -1429,17 +1527,31 @@ internal sealed partial class DesktopGame : IDisposable
                 lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
             }
 
+            // Whatever the real-time lighting model needs and does not have yet. Every frame rather than
+            // at load, because the settings menu can ask for that model at any moment and the structures it
+            // reads have to be able to arrive afterwards -- see DesktopGame.RealtimeGi.cs. A no-op once
+            // they exist, which is every frame but the handful after the switch.
+            EnsureRealtimeGiStructures();
+
+            // This frame's share of a convergence in flight, so a level lights up behind the loading
+            // screen or under the entry shot's hold rather than in one stall.
+            StepGiConvergence();
+
             // Same handover, same reason: the atlas becomes a GL volume, and the context belongs here.
+            // Behind the menu the adoption is deferred to the frame after the picture has been held, so
+            // the backdrop crossing over to its real-time lighting happens under the dissolve rather than
+            // in front of the player -- the same shape as a backdrop swap.
             if (_sdfBake is { } pendingField && pendingField.TryCollect(out DistanceFieldBake.Result baked))
             {
                 _sdfBake = null;
-                _sdfScene = baked.Scene;
-                _sdfClipmaps = GlobalDistanceField.Create(
-                    _device,
-                    baked.Scene,
-                    baked.Atlas,
-                    GlobalDistanceFieldSettings.Default,
-                    _logger);
+                if (menuMode && !pauseMenu && _backdrop is not null)
+                {
+                    bakedFieldForBackdrop = baked;
+                }
+                else
+                {
+                    AdoptDistanceField(baked.Scene, baked.Atlas, fromCache: false);
+                }
             }
 
             // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
@@ -1499,11 +1611,27 @@ internal sealed partial class DesktopGame : IDisposable
                 // showcase camera has held a place long enough to move to the next one. Either way the
                 // frame on screen is held first, so the two can be blended rather than cut between.
                 // None of it applies to the pause menu, whose picture is a level that is not going anywhere.
+                // Not while a load is departing: the held frame is the sequence's picture from here, and
+                // a backdrop swapped under a departure would be a different place from the one the card
+                // is over.
                 bool changeWanted = !pauseMenu
-                    && (previewLoader is { HasResult: true } || _showcaseCamera is { IsCutDue: true });
+                    && !_loadSequence.IsActive
+                    && (previewLoader is { HasResult: true }
+                        || _showcaseCamera is { IsCutDue: true }
+                        || bakedFieldForBackdrop is not null);
                 if (changeWanted && !holdFrameForDissolve && !heldFrameReady)
                 {
                     holdFrameForDissolve = true;
+                }
+
+                // The held picture stays up until the incoming level has converged its lighting, so what
+                // the dissolve reveals is the settled backdrop rather than one still lighting up. A field
+                // that is still baking is not waited for -- that is seconds, and it crosses over under its
+                // own hold when it lands.
+                if (dissolveRevealPending && !IsGiConverging)
+                {
+                    dissolveRevealPending = false;
+                    dissolve.Retarget(0f);
                 }
 
                 dissolve.Update(shellElapsed);
@@ -1529,8 +1657,9 @@ internal sealed partial class DesktopGame : IDisposable
                     liveOrbit,
                     _player is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
 
-                // The hand-over, taken at the beat: the one moment in the shot where the camera is not
-                // travelling, so whatever it costs is spent against a picture that was holding anyway.
+                // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
+                // where the one frame the promotion still costs is least visible. What it used to cost --
+                // several hundred milliseconds -- has moved onto the preview worker; see AdoptPreview.
                 if (_entry.WantsPromotion)
                 {
                     if (_backdrop is { } entering && PromoteBackdrop(entering))
@@ -1546,6 +1675,15 @@ internal sealed partial class DesktopGame : IDisposable
                     }
                 }
 
+                // The beat holds until the picture under it is final -- the lighting built and converged,
+                // the temporal passes settled -- which is what the warm-up decides. The camera keeps
+                // drifting while it waits, so a cold first-time bake reads as a longer shot rather than a
+                // frozen one.
+                if (_entry.Phase == MissionEntryPhase.Hold && !IsWarmingUp && !_loadSequence.IsActive)
+                {
+                    _entry.NotifyReady();
+                }
+
                 // Nothing takes input for the length of the shot -- not the shell, not the player, not
                 // the free camera. The shell still ANIMATES, so its fade plays out; it just hears nothing.
                 if (_entry.IsCameraActive && !console.IsOpen)
@@ -1559,9 +1697,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // no pose until something puts one in it.
                 if (_soldiers is { } bodies)
                 {
-                    if (_entry.ShowPlayerBody)
+                    if (_entry.ShowPlayerBody && _player is { } standingBody)
                     {
-                        bodies.StandPlayerBodyAt(entrySpawnPosition, entrySpawnGamma);
+                        bodies.StandPlayerBodyAt(standingBody.Body.Position, standingBody.Body.Yaw);
                     }
                     else
                     {
@@ -1879,17 +2017,23 @@ internal sealed partial class DesktopGame : IDisposable
                     showcase.CommitCut();
                     changed = true;
                 }
+                else if (bakedFieldForBackdrop is { } landedField)
+                {
+                    // The backdrop's field, baked behind the menu, adopted under the held frame so the
+                    // level's cross-over to its real-time lighting is dissolved to rather than watched.
+                    bakedFieldForBackdrop = null;
+                    AdoptDistanceField(landedField.Scene, landedField.Atlas, fromCache: false);
+                    changed = true;
+                }
 
                 heldFrameReady = false;
 
-                // The held frame is now the whole picture; it dissolves off to reveal what is behind it.
+                // The held frame is now the whole picture; it dissolves off to reveal what is behind it,
+                // once the lighting behind it has converged.
                 if (changed)
                 {
                     dissolve.SnapTo(heldFrameIsPicture ? 1f : 0f);
-                    if (heldFrameIsPicture)
-                    {
-                        dissolve.Retarget(0f);
-                    }
+                    dissolveRevealPending = heldFrameIsPicture;
                 }
             }
 
@@ -2115,9 +2259,13 @@ internal sealed partial class DesktopGame : IDisposable
             // doors and the level clock all stand still. The scheduler is left alone -- ticks keep arriving
             // and finding nothing to do -- which is what stops a menu held open for a minute from being
             // followed by a minute's worth of catch-up.
+            // And the level's half of the warm-up: a withheld level must not run. Its intro cut-scene,
+            // its patrols and its scripted clocks all start from the frame the player first SEES, not
+            // from the frame the load finished -- a cut-scene that played out behind the loading screen
+            // is one the player never gets to watch.
             if (_activeLevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = pauseMenu;
+                pausableLevel.IsPaused = pauseMenu || PresentationHoldsLevel;
             }
 
             BeginStage();
@@ -2132,7 +2280,9 @@ internal sealed partial class DesktopGame : IDisposable
             // The retail in-game menu pauses the game task. Once LevelFlow failure has opened that menu --
             // or the player has opened the pause menu -- do not advance the desktop-owned player/AI
             // simulation until they choose an action.
-            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || pauseMenu))
+            // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
+            // the cut-scene runtime, the weather -- stands still until the level is revealed.
+            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || pauseMenu || PresentationHoldsLevel))
             {
                 continue;
             }
@@ -2704,6 +2854,8 @@ internal sealed partial class DesktopGame : IDisposable
                 continue;
             }
 
+            lastPassRendered = true;
+
             if (_options.IsBenchmark && _loop.Clock.FrameCount == BenchmarkSchedule.WarmUpFrames)
             {
                 framePerformance.Reset();
@@ -2867,7 +3019,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
                     // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
                     // display-encoded and has to be decoded before the tone map.
-                    SceneIsDisplayEncoded: RenderCVars.Lighting.Value != LightingModel.Dynamic,
+                    SceneIsDisplayEncoded: EffectiveLighting != LightingModel.Dynamic,
                     Contrast: RenderCVars.Contrast.Value,
                     Saturation: RenderCVars.Saturation.Value,
                     Vignette: RenderCVars.Vignette.Value,
@@ -3080,7 +3232,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // does the upsampling: without it these are two buffers holding a stretched copy.
                     OutputWidth: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Width : 0,
                     OutputHeight: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Height : 0,
-                    GBuffer: (RenderCVars.Lighting.Value != LightingModel.Dynamic
+                    GBuffer: (EffectiveLighting != LightingModel.Dynamic
                             ? GBufferLayout.BakedLighting
                             : GBufferLayout.Compact)
                         | (wantsTemporal || RenderCVars.MotionBlur.Value > 0f
@@ -3571,7 +3723,7 @@ internal sealed partial class DesktopGame : IDisposable
                     Vector3f scaledAmbient = light.Ambient * RenderCVars.AmbientScale.Value;
 
                     _device.SetLighting(new SceneLighting(
-                        RenderCVars.Lighting.Value,
+                        EffectiveLighting,
                         viewSunDirection,
                         scaledSun,
                         scaledAmbient,
@@ -3980,7 +4132,7 @@ internal sealed partial class DesktopGame : IDisposable
                 float localLightRange = RenderCVars.LocalLightRange.Value;
                 if (captured
                     && localLightScale > 0f
-                    && RenderCVars.Lighting.Value != LightingModel.Baked
+                    && EffectiveLighting != LightingModel.Baked
                     && _lightFixtures.Count > 0)
                 {
                     Matrix3f worldToView = eye.Orientation.Transposed();
@@ -5032,6 +5184,10 @@ internal sealed partial class DesktopGame : IDisposable
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
                 batch.Begin();
 
+                // The going-in sequence's picture: the level exactly as it is drawn, before any of the
+                // interface goes over it. Taken here for the same reason the dissolve's hold is.
+                CaptureLoadPictureIfWanted();
+
                 // None of the backdrop machinery applies to the pause menu: its backdrop is the mission,
                 // already drawn on this very frame, and there is no swap for it to dissolve between.
                 if (!pauseMenu)
@@ -5073,7 +5229,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // each screen's own transition, because a screen deliberately draws its top bar outside
                 // that fade and the stack draws the pointer outside every screen — so only a push around
                 // the whole draw takes all of it, chrome and cursor included.
-                float shellOpacity = _entry.IsRunning ? _entry.ShellOpacity : 1f;
+                float shellOpacity = MathF.Min(
+                    _entry.IsRunning ? _entry.ShellOpacity : 1f,
+                    _loadSequence.ShellOpacity);
                 if (shellOpacity > 0.001f)
                 {
                     shellPainter.PushOpacity(shellOpacity);
@@ -5085,12 +5243,21 @@ internal sealed partial class DesktopGame : IDisposable
                 // belong to the cinematic, not to the menu, and they must not fade out with it.
                 if (_entry.IsRunning)
                 {
-                    DrawEntryFraming(shellPainter, entryTitle, entrySubtitle);
+                    DrawEntryFraming(shellPainter);
                 }
 
                 batch.End();
                 _device.EndStageTiming();
             }
+
+            // The level, withheld while it settles. Over the HUD and the menus because it stands in for
+            // the whole picture, and under the console because the console has to be usable while a level
+            // is warming -- that is exactly when somebody is looking into why it is.
+            DrawMissionWarmUp(batch);
+
+            // The mission's caption, standing in the level under the shot: over the defocus, so it is the
+            // one sharp thing while the lighting settles, and under the console.
+            DrawWorldTitle(batch);
 
             // The console goes over everything, including the menus, so it is the last thing drawn.
             // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up

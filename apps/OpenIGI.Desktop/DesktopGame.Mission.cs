@@ -29,6 +29,14 @@ internal sealed partial class DesktopGame
             return;
         }
 
+        // The hold starts before anything blocks, and so does the panel. Everything below this line
+        // runs on the render thread without presenting, so without a frame pushed out here the window
+        // simply freezes on whatever it was last showing for the half second it takes -- and the warm-up
+        // panel cannot cover that, being drawn by the loop this is blocking. One frame now, holding the
+        // picture the player was looking at, and the panel is already up when the load blocks.
+        BeginMissionWarmUp(chosen);
+        PresentLoadingFrame();
+
         ReleasePlayedMission();
 
         _logger.Information("Mission", $"Starting {chosen}.");
@@ -681,56 +689,44 @@ internal sealed partial class DesktopGame
                 // The distance fields, on a worker beside the probe bake. Tracing every distinct
                 // model is arithmetic and moves off the render thread freely; only the upload cannot,
                 // because a GL texture belongs to the context that made it.
-                if (RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
+                //
+                // Started here rather than built here: EnsureDistanceFields is the same call the render
+                // loop makes every frame, so a level begins its bake at load and a player who switches the
+                // lighting model on later gets one started for them. See DesktopGame.RealtimeGi.cs.
+                // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
+                // field is one of the two moments that can complete the pair and converge the cache, and
+                // with the old cards still standing it would converge THOSE against the new level's field
+                // -- then latch, so the real convergence a few hundred lines below was skipped and the
+                // level opened on the ramp this is all meant to remove. It failed silently, because a
+                // converged-looking cache and a stale one differ only in the picture.
+                // Not on a promotion: the backdrop already carries this very mission's cards and field
+                // -- built or baking behind the menu, which is what lets the menu show the lit level --
+                // and discarding them here would throw the field away and bake it again in front of
+                // the player.
+                if (!promoted)
                 {
-                    _sdfClipmaps?.Dispose();
-                    _sdfClipmaps = null;
-                    _sdfScene = null;
-                    _sdfValidated = false;
-
-                    _sdfBake?.Cancel();
-                    _sdfBake = DistanceFieldBake.Start(
-                        _scene.Placements, RenderCVars.DistanceFieldResolution.Value, _logger);
-
-                    // A capture must not race the worker, for the reason the probe bake records: a
-                    // reference image has to either contain the field or not, never whichever frame
-                    // the worker happened to reach.
-                    if (_options.Lockstep && _sdfBake.WaitForResult() is { } readyField)
-                    {
-                        _sdfScene = readyField.Scene;
-                        _sdfClipmaps = GlobalDistanceField.Create(
-                            _device,
-                            readyField.Scene,
-                            readyField.Atlas,
-                            GlobalDistanceFieldSettings.Default,
-                            _logger);
-                        _sdfBake = null;
-                    }
+                    DiscardSurfaceCache();
+                    DiscardDistanceFields();
                 }
 
-                // Every distinct model's surface, captured into the card atlas. On the render thread
-                // because it IS a render pass -- the atlas is a framebuffer and the geometry is already
-                // uploaded, and both belong to the context that made them.
-                if (RenderCVars.SurfaceCache.Value && _world is not null)
+                EnsureDistanceFields();
+
+                // A capture must not race the worker, for the reason the probe bake records: a
+                // reference image has to either contain the field or not, never whichever frame
+                // the worker happened to reach.
+                if (_options.Lockstep && _sdfBake is { } pendingField
+                    && pendingField.WaitForResult() is { } readyField)
                 {
-                    if (_world.CaptureSurfaceCache(_scene, RenderCVars.SurfaceCacheDensity.Value)
-                        is { } cards)
-                    {
-                        string into = RenderCVars.SurfaceCacheDump.Value;
-
-                        if (into.Length > 0)
-                        {
-                            SurfaceCacheDebugDumps.CardAtlas(_device, cards.Capture, into, _logger);
-                        }
-
-                        // Only the ATLAS is built here. Lighting it needs the level's own sun, which is
-                        // not read until further down this load -- and lighting the cards before that
-                        // gave every page a zero sun direction and a picture of pure sky, which is
-                        // exactly what the first run produced.
-                        _capturedCards = cards.Capture;
-                        _cardInstances = cards.Instances;
-                    }
+                    _sdfBake = null;
+                    AdoptDistanceField(readyField.Scene, readyField.Atlas, fromCache: false);
                 }
+
+                // Every distinct model's surface is captured into the card atlas, but deliberately NOT
+                // here -- even though this is where the geometry first exists. Lighting the cache needs
+                // the level's own sun, which is not read until further down this load, and lighting the
+                // cards before that gave every page a zero sun direction and a picture of pure sky, which
+                // is exactly what the first run produced. EnsureSurfaceCache captures and lights in one
+                // go, so it is called once the sun is known; the outgoing cards were dropped above.
 
                 _device.SetIrradianceVolume(_probeField);
                 ApplyColourLookup(_options.StartMission);
@@ -1009,7 +1005,10 @@ internal sealed partial class DesktopGame
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
                 _sun = readSun;
-                _dayNight.Reset(RenderCVars.TimeOfDay.Value);
+
+                // At the hour the level's authors placed the sun for, not a fixed one: the cycle lands
+                // back on the authored direction only there.
+                _dayNight.ResetForLevel(readSun, RenderCVars.TimeOfDay.Value);
                 _logger.Information(
                     "Light",
                     FormattableString.Invariant(
@@ -1026,6 +1025,7 @@ internal sealed partial class DesktopGame
             }
             else
             {
+                _dayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
 
@@ -1068,80 +1068,24 @@ internal sealed partial class DesktopGame
         // this depends on it: the glow is a material and the lights are punctual, so binding the whole
         // conclusion to whether the cards were captured would have switched a level's lamps off for
         // anyone running ultra with r_surface_cache 0.
-        EmissiveLightProposer.Proposal lamps = RenderCVars.GlobalIlluminationLamps.Value != 0
-            ? EmissiveLightProposer.Propose(_scene, _resources, _lampManifest, id, _logger)
-            : EmissiveLightProposer.Proposal.None;
-
-        _lightFixtures = lamps.Fixtures;
-
-        // One switchboard per set of fixtures, seeded by the mission so two levels' broken tubes do not
-        // stutter in step. Everything that reads a lamp's output reads it from here, and everything that
-        // holds one is handed the same instance rather than a copy of its state.
-        _lampSwitchboard = new LampSwitchboard(lamps.Fixtures, id);
-        _lampBounceRevision = _lampSwitchboard.Revision;
-
-        // Which sub-meshes glow and how brightly. Per sub-mesh rather than per texture, because one
-        // texture is not one brightness -- a floodlight and the lamp over a door draw with the same page
-        // -- and because a lamp's page also skins the furniture beside it. r_lamp_emissive scales the
-        // whole set on the way in rather than in the shader: it is a property of the material, so it
-        // belongs where the material is decided and costs nothing per pixel.
-        float emissiveScale = RenderCVars.LampEmissiveScale.Value;
-
-        _lamps = emissiveScale == 1f
-            ? lamps.Lamps
-            : lamps.Lamps with
-            {
-                SubMeshes = lamps.Lamps.SubMeshes.ToDictionary(
-                    e => e.Key, e => e.Value * emissiveScale, StringComparer.OrdinalIgnoreCase),
-            };
-
-        if (_world is not null)
+        //
+        // A promoted backdrop surveyed its lamps on the preview worker and has been showing them for as
+        // long as the player was reading the briefing; surveying again here was the largest single cost
+        // of pressing Play, and it would have produced the same answer.
+        // A cold start has a NEW world renderer that has to be handed them either way.
+        if (_lampsMissionId != id || !promoted)
         {
-            _world.Lamps = _lamps;
-            _world.Switchboard = _lampSwitchboard;
+            ApplyLamps(
+                RenderCVars.GlobalIlluminationLamps.Value != 0
+                    ? EmissiveLightProposer.Propose(_scene, _resources, _lampManifest, id, _logger)
+                    : EmissiveLightProposer.Proposal.None,
+                id);
         }
 
-        if (_capturedCards is { } surfaces && _cardInstances is { } placedCards)
-        {
-            _cardLighting?.Dispose();
-            _cardLighting = SurfaceCacheLighting.Create(_device, surfaces, placedCards, _logger);
-
-            // A fresh pass has no history to accumulate onto, so the next bounce converges in one shot.
-            _cardBounceFrame = 0;
-
-            // The cache now climbs from dark to its full bounce over the frames that follow; hold the
-            // exposure on a fast rate for that stretch so it tracks the light in rather than dimming after.
-            _giExposureWarmup = GiExposureWarmupFrames;
-
-            if (_cardLighting is not null)
-            {
-                // And into the bounce: the fixtures are area emitters as far as the cache is concerned,
-                // so a lamplit room lights its own walls off each other.
-                _cardLighting.SetLocalLights(lamps.Fixtures);
-
-                // Built once, from the same capture and placements the lighting was. A ray that stops
-                // somewhere knows only that it stopped; this is what lets it read the surface it hit.
-                _cardLookup?.Dispose();
-                _cardLookup = SurfaceCacheLookup.Build(
-                    _device, surfaces, placedCards, _cardLighting.Origin, _logger);
-                _cardLighting.SetLookup(_cardLookup);
-
-                // A level with no Dirlight has no sun to light the cards with, so they take the sky
-                // alone -- which is what such a level looks like anyway.
-                // Unshadowed at load. The clipmaps do not exist yet -- the field bake is still on its
-                // worker -- so this establishes sun and sky, and the per-frame pass below adds the
-                // shadow once there is a field to trace against.
-                _cardLighting.Light(
-                    _sun is { IsBelowHorizon: false } lit ? lit.Direction : default,
-                    _sun?.Colour ?? default,
-                    SkyFillColour());
-
-                if (RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } lightingInto)
-                {
-                    SurfaceCacheDebugDumps.CardLighting(_device, _cardLighting, lightingInto, _logger, 0, "cards-direct-load.png");
-                }
-            }
-        }
+        // The surfaces, now that the sun and the fixtures they are lit by are both known. Captures the
+        // atlas and lights it in one step -- see DesktopGame.RealtimeGi.cs, which is also what the render
+        // loop calls when the lighting model is switched on mid-level.
+        EnsureSurfaceCache();
 
         // The player stands where the camera looks from, dropped onto whatever is under it. Terrain is
         // optional: Mission 14 is entirely inside placed building/tunnel models, whose collision floors
@@ -1511,6 +1455,9 @@ internal sealed partial class DesktopGame
         // stopped being scenery.
         _backdrop = null;
         _arming = null;
+
+        // Built. What the hold is waiting on from here is the lighting, not the level.
+        NotifyMissionBuilt();
         _logger.Information("Mission", $"{(promoted ? "Promoted" : "Loaded")} {loaded}.");
     }
 
@@ -1551,6 +1498,19 @@ internal sealed partial class DesktopGame
         }
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        // The level is about to be built; it is not yet worth looking at. Everything temporal -- the
+        // probe gather, the radiance cache, the resolve's history, the eye -- needs frames rather than
+        // load time, so those frames are drawn with the picture withheld, under the entry shot's hold.
+        // See DesktopGame.MissionWarmUp.cs.
+        BeginMissionWarmUp(chosen);
+
+        // A mission with an authored intro is promoted straight from the menu with no shot to cover it,
+        // so it goes in behind the sequence's card, over the picture the menu held.
+        if (!_entry.IsRunning)
+        {
+            PresentLoadingFrame();
+        }
 
         // The schedule moves across before the incoming loop runs a single frame. A fresh GameLoop builds
         // its own GameClock starting at tick zero, and -lockstep derives its synthetic milliseconds FROM

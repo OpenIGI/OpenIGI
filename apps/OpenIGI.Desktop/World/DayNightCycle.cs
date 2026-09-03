@@ -82,6 +82,23 @@ internal sealed class DayNightCycle
         _rotZ = 0f;
     }
 
+    /// <summary>Returns the cycle to the hour a level opens on: its own authored hour, unless overridden.</summary>
+    /// <param name="authored">The level's sun, or <see langword="null"/> for a level that declares none.</param>
+    /// <param name="overrideHours">A start hour asked for explicitly, or negative for the level's own.</param>
+    /// <remarks>
+    /// <see cref="Apply"/> reproduces the authored sun exactly only at the authored hour -- the arc is
+    /// fitted through it -- so this is the one reset that guarantees a level opens under the light its
+    /// authors placed. A level with no usable hour opens at noon, which is the arc's own reference.
+    /// </remarks>
+    public void ResetForLevel(DirectionalLightSettings? authored, float overrideHours = -1f)
+    {
+        float hour = overrideHours >= 0f
+            ? overrideHours
+            : authored is { TimeOfDay: > 0f and <= 24f } sun ? sun.TimeOfDay : 12f;
+
+        Reset(hour);
+    }
+
     /// <summary>Reads the cycle's keys and advances it on real elapsed time.</summary>
     /// <param name="keyboard">The keyboard to read. Its own capture flag suppresses input for the console.</param>
     /// <param name="deltaSeconds">Real seconds since the last call, already clamped by the caller.</param>

@@ -147,36 +147,77 @@ public sealed class SceneDistanceField
         int skipped = 0;
         int tooCoarse = 0;
 
-        foreach (WorldPlacement placement in placements)
+        // The distinct models, in the order they are first placed. The bake of each is independent of
+        // every other -- it is a pure function of one mesh and the resolution -- so they run in parallel;
+        // the ORDER is kept sequential, because a field's index is what the placements and the cached
+        // file refer to it by, and a parallel walk that assigned indices as bakes finished would write a
+        // different file from the same level every run.
+        WorldPlacement[] placed = [.. placements];
+        List<MefModel> models = [];
+        Dictionary<MefModel, int> slots = [];
+        foreach (WorldPlacement placement in placed)
+        {
+            if (!slots.ContainsKey(placement.Model))
+            {
+                slots[placement.Model] = models.Count;
+                models.Add(placement.Model);
+            }
+        }
+
+        // The geometry first, on this thread: the callback caches what it builds and is not written to
+        // be entered from several at once.
+        MeshGeometry?[] meshes = new MeshGeometry?[models.Count];
+        for (int i = 0; i < models.Count; i++)
         {
             cancellation.ThrowIfCancellationRequested();
+            meshes[i] = geometry(models[i]);
+        }
 
-            if (!baked.TryGetValue(placement.Model, out int index))
+        // One core is left free, so a bake behind a loading screen or a menu does not take the render
+        // thread's with it. This is what used to hold the level for ten to twenty seconds on one core.
+        MeshDistanceField?[] bakes = new MeshDistanceField?[models.Count];
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount - 1),
+            CancellationToken = cancellation,
+        };
+
+        Parallel.For(0, models.Count, options, i =>
+        {
+            if (meshes[i] is { } mesh && mesh.Indices.Length >= 3)
             {
-                index = -1;
+                bakes[i] = MeshDistanceFieldBaker.Bake(mesh.Vertices, mesh.Indices, resolution);
+            }
+        });
 
-                if (geometry(placement.Model) is { } mesh && mesh.Indices.Length >= 3)
+        cancellation.ThrowIfCancellationRequested();
+
+        for (int i = 0; i < models.Count; i++)
+        {
+            int index = -1;
+
+            if (bakes[i] is { } field)
+            {
+                float coarsest = MathF.Max(
+                    MathF.Max(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z);
+
+                if (coarsest <= MaximumVoxelSize)
                 {
-                    if (MeshDistanceFieldBaker.Bake(mesh.Vertices, mesh.Indices, resolution) is { } field)
-                    {
-                        float coarsest = MathF.Max(
-                            MathF.Max(field.VoxelSize.X, field.VoxelSize.Y), field.VoxelSize.Z);
-
-                        if (coarsest <= MaximumVoxelSize)
-                        {
-                            index = fields.Count;
-                            fields.Add(field);
-                        }
-                        else
-                        {
-                            tooCoarse++;
-                        }
-                    }
+                    index = fields.Count;
+                    fields.Add(field);
                 }
-
-                baked[placement.Model] = index;
+                else
+                {
+                    tooCoarse++;
+                }
             }
 
+            baked[models[i]] = index;
+        }
+
+        foreach (WorldPlacement placement in placed)
+        {
+            int index = baked[placement.Model];
             if (index < 0)
             {
                 skipped++;

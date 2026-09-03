@@ -157,6 +157,10 @@ internal sealed partial class DesktopGame
                 FormattableString.Invariant($"  {what}: {milliseconds:F1} ms."));
         }
 
+        // One more share of the loading bar, and a frame to show it on: the load is the one stretch
+        // where nothing else presents. See DesktopGame.MissionWarmUp.cs.
+        ReportLoadStage();
+
         _stageStartedAt = Stopwatch.GetTimestamp();
     }
 
@@ -284,11 +288,13 @@ internal sealed partial class DesktopGame
     private UiFont? _shellBodyFont;
     private UiFont? _shellHeadingFont;
 
-    /// <summary>Draws the shot's own chrome: the bars, and the mission's name over the vantage.</summary>
+    /// <summary>Draws the shot's own chrome: the cinematic bars.</summary>
     /// <param name="painter">The shell's painter, drawing on the back buffer over everything else.</param>
-    /// <param name="title">The mission's number and name.</param>
-    /// <param name="subtitle">The difficulty, or whatever else belongs under the title.</param>
-    private void DrawEntryFraming(UiPainter painter, string title, string subtitle)
+    /// <remarks>
+    /// The mission's name used to be set here, over the vantage. It stands in the level now -- see
+    /// <see cref="WorldTitleRenderer"/> -- so the frame's chrome is the bars alone.
+    /// </remarks>
+    private void DrawEntryFraming(UiPainter painter)
     {
         float width = _window.Width;
         float height = _window.Height;
@@ -300,39 +306,6 @@ internal sealed partial class DesktopGame
             painter.FillRect(new UiRect(0f, 0f, width, bars), black);
             painter.FillRect(new UiRect(0f, height - bars, width, bars), black);
         }
-
-        float titleOpacity = Math.Clamp(_entry.TitleOpacity, 0f, 1f);
-        if (titleOpacity <= 0.004f || _shellHeadingFont is null || _shellBodyFont is null)
-        {
-            return;
-        }
-
-        // Set against the lower bar rather than centred: the vantage is looking down at the level, and
-        // putting a caption through the middle of it would cover the thing it is captioning.
-        float scale = Math.Max(1f, height / 1080f);
-        float baseline = height - bars - (72f * scale);
-        float left = width * 0.08f;
-
-        float titleSize = 44f * scale;
-        float subtitleSize = 20f * scale;
-
-        // The subtitle hangs a small fixed gap under the TITLE'S BASELINE, not under an arbitrary offset
-        // from its top. The title is set in the condensed heading face and the subtitle in the body one,
-        // at less than half the size, so the two line boxes have nothing to do with each other and a
-        // constant measured from the top of the first lands wherever the heading font's leading happens
-        // to put it. Measuring from the baseline is what a typesetter would do, and it keeps the pair
-        // reading as one block at every window size rather than only at the one it was eyeballed on.
-        float titleBaseline = _shellHeadingFont.Ascent(titleSize);
-
-        painter.PushOpacity(titleOpacity);
-        painter.DrawText(_shellHeadingFont, title, new UiVec2(left, baseline), titleSize, Bgra32.White);
-        painter.DrawText(
-            _shellBodyFont,
-            subtitle,
-            new UiVec2(left, baseline + titleBaseline + (2f * scale)),
-            subtitleSize,
-            Bgra32.FromRgb(170, 178, 190));
-        painter.PopOpacity();
     }
 
     /// <summary>The focal distance the menu frames its backdrop at, in metres.</summary>

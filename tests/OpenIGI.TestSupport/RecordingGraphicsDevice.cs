@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
@@ -632,6 +632,10 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public void CaptureFrame(int width, int height, Span<Bgra32> destination) => destination.Clear();
 
     public void CopyFrameToTexture(TextureHandle texture, int width, int height)
+    {
+    }
+
+    public void DrawLoadingBackdrop(TextureHandle texture, in LoadingBackdropSettings settings)
     {
     }
 

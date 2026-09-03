@@ -108,10 +108,65 @@ public sealed partial class VulkanGraphicsDevice
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The foundation presents straight to the swapchain, so there is no captured colour to copy from
-    /// yet; this waits for the offscreen scene target the deferred path adds.
+    /// <para>
+    /// Two situations, one texture. Mid-frame -- the ordinary case, the menu holding the outgoing level
+    /// after the resolve and before the interface goes over it -- the copy is recorded into the frame's
+    /// own command buffer: the present pass is closed (which leaves the swapchain image presentable), the
+    /// image is moved to a transfer source, copied, moved to a colour attachment, and the pass is
+    /// re-opened through <see cref="Pipelines.PresentTarget.ResumeRenderPass"/> so what the resolve drew
+    /// survives. The draws that follow can sample the copy in the same frame.
+    /// </para>
+    /// <para>
+    /// Between frames -- a loading screen holding whatever was last on screen before a blocking load --
+    /// there is no frame to record into, so the last PRESENTED image is copied with one blocking submit,
+    /// the way a one-off screenshot is. That reads an image the presentation engine may still be
+    /// scanning out; it is a once-per-load event and the worst case is a tear in a picture that is about
+    /// to be dimmed under a panel.
+    /// </para>
     /// </remarks>
-    public void CopyFrameToTexture(TextureHandle texture, int width, int height) => ThrowIfDisposed();
+    public unsafe void CopyFrameToTexture(TextureHandle texture, int width, int height)
+    {
+        ThrowIfDisposed();
+        if (!_textures.TryGetValue(texture.Id, out VulkanTexture? destination))
+        {
+            throw new ArgumentException($"Unknown texture {texture}.", nameof(texture));
+        }
+
+        if (_frameOpen)
+        {
+            EnsurePresentPass();
+            EndPresentPassIfActive();
+
+            CommandBuffer cmd = _frameCommandBuffer;
+            Image source = _swapchain.ImageAt(_frameImageIndex);
+            TransitionSwapchainImage(
+                cmd, source, ImageLayout.PresentSrcKhr, ImageLayout.TransferSrcOptimal,
+                AccessFlags.ColorAttachmentWriteBit, AccessFlags.TransferReadBit);
+            destination.CopyFromImage(cmd, source, ImageLayout.TransferSrcOptimal, width, height);
+            TransitionSwapchainImage(
+                cmd, source, ImageLayout.TransferSrcOptimal, ImageLayout.ColorAttachmentOptimal,
+                AccessFlags.TransferReadBit, AccessFlags.ColorAttachmentWriteBit);
+
+            _presentPassResumes = true;
+            EnsurePresentPass();
+            return;
+        }
+
+        if (!_hasPresented)
+        {
+            return;
+        }
+
+        Image last = _swapchain.ImageAt(_frameImageIndex);
+        _commands.SingleTime(cmd =>
+        {
+            TransitionSwapchainImage(
+                cmd, last, ImageLayout.PresentSrcKhr, ImageLayout.TransferSrcOptimal, 0, AccessFlags.TransferReadBit);
+            destination.CopyFromImage(cmd, last, ImageLayout.TransferSrcOptimal, width, height);
+            TransitionSwapchainImage(
+                cmd, last, ImageLayout.TransferSrcOptimal, ImageLayout.PresentSrcKhr, AccessFlags.TransferReadBit, 0);
+        });
+    }
 
     /// <inheritdoc/>
     /// <remarks>

@@ -55,12 +55,27 @@ internal sealed unsafe class PresentTarget : IDisposable
         _allocator = allocator;
 
         DepthFormat = ChooseDepthFormat();
-        RenderPass = CreateRenderPass(swapchain.Format);
+        RenderPass = CreateRenderPass(swapchain.Format, resume: false);
+        ResumeRenderPass = CreateRenderPass(swapchain.Format, resume: true);
         Recreate(swapchain);
     }
 
     /// <summary>Gets the render pass compatible with the swapchain's colour format and the depth format.</summary>
     public RenderPass RenderPass { get; }
+
+    /// <summary>
+    /// Gets the same pass with the colour attachment LOADED rather than cleared, for picking a frame back up
+    /// after it was interrupted outside a pass.
+    /// </summary>
+    /// <remarks>
+    /// A frame that copies its own back buffer mid-way -- the menu holding the outgoing picture for a
+    /// dissolve -- has to leave the present pass to do it, and re-entering through <see cref="RenderPass"/>
+    /// would clear what the resolve had just drawn. This pass differs only in its load operation and
+    /// initial layout, which keeps it compatible with the framebuffers and the pipelines built against the
+    /// other; the depth attachment is cleared again, because nothing drawn after the resolve depth-tests
+    /// against the scene.
+    /// </remarks>
+    public RenderPass ResumeRenderPass { get; }
 
     /// <summary>Gets the depth format the pass and its images use.</summary>
     public Format DepthFormat { get; }
@@ -124,6 +139,7 @@ internal sealed unsafe class PresentTarget : IDisposable
         _disposed = true;
         DestroyFramebuffersAndDepth();
         _vk.DestroyRenderPass(_device.Device, RenderPass, null);
+        _vk.DestroyRenderPass(_device.Device, ResumeRenderPass, null);
     }
 
     private Format ChooseDepthFormat()
@@ -195,18 +211,18 @@ internal sealed unsafe class PresentTarget : IDisposable
         _depthViews[index] = view;
     }
 
-    private RenderPass CreateRenderPass(Format colourFormat)
+    private RenderPass CreateRenderPass(Format colourFormat, bool resume)
     {
         AttachmentDescription* attachments = stackalloc AttachmentDescription[2];
         attachments[0] = new AttachmentDescription
         {
             Format = colourFormat,
             Samples = SampleCountFlags.Count1Bit,
-            LoadOp = AttachmentLoadOp.Clear,
+            LoadOp = resume ? AttachmentLoadOp.Load : AttachmentLoadOp.Clear,
             StoreOp = AttachmentStoreOp.Store,
             StencilLoadOp = AttachmentLoadOp.DontCare,
             StencilStoreOp = AttachmentStoreOp.DontCare,
-            InitialLayout = ImageLayout.Undefined,
+            InitialLayout = resume ? ImageLayout.ColorAttachmentOptimal : ImageLayout.Undefined,
             FinalLayout = ImageLayout.PresentSrcKhr,
         };
         attachments[1] = new AttachmentDescription

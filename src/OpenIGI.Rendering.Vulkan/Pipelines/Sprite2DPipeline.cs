@@ -26,6 +26,8 @@ namespace OpenIGI.Rendering.Vulkan.Pipelines;
 internal sealed unsafe class Sprite2DPipeline : IDisposable
 {
     private readonly Vk _vk;
+    private readonly uint _fragmentPushOffset;
+    private readonly uint _fragmentPushBytes;
     private readonly Device _device;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
@@ -39,12 +41,37 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
     /// <param name="renderPass">The render pass the pipelines are compatible with.</param>
     /// <exception cref="GraphicsDeviceException">A pipeline or its layout could not be created.</exception>
     public Sprite2DPipeline(Vk vk, VulkanDevice device, ShaderCompiler compiler, RenderPass renderPass)
+        : this(vk, device, compiler, renderPass, Sprite2DShaderSource.Fragment, "sprite2d.frag", 0, 0)
+    {
+    }
+
+    /// <summary>Initialises a variant with its own fragment stage, such as distance-field text.</summary>
+    /// <param name="vk">The core Vulkan API.</param>
+    /// <param name="device">The device the pipeline lives on.</param>
+    /// <param name="compiler">The shader compiler.</param>
+    /// <param name="renderPass">The pass the pipeline draws into.</param>
+    /// <param name="fragmentSource">The fragment shader's GLSL.</param>
+    /// <param name="fragmentName">The fragment shader's name, for the compiler's diagnostics.</param>
+    /// <param name="fragmentPushOffset">Where the fragment stage's push block starts, past the vertex stage's.</param>
+    /// <param name="fragmentPushBytes">How many bytes the fragment stage pushes, or zero for none.</param>
+    public Sprite2DPipeline(
+        Vk vk,
+        VulkanDevice device,
+        ShaderCompiler compiler,
+        RenderPass renderPass,
+        string fragmentSource,
+        string fragmentName,
+        uint fragmentPushOffset,
+        uint fragmentPushBytes)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(compiler);
+        ArgumentNullException.ThrowIfNull(fragmentSource);
         _vk = vk;
         _device = device.Device;
+        _fragmentPushOffset = fragmentPushOffset;
+        _fragmentPushBytes = fragmentPushBytes;
 
         _vertex = new VulkanShaderModule(
             vk,
@@ -54,7 +81,7 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
         _fragment = new VulkanShaderModule(
             vk,
             _device,
-            compiler.Compile(Sprite2DShaderSource.Fragment, ShaderStage.Fragment, "sprite2d.frag"),
+            compiler.Compile(fragmentSource, ShaderStage.Fragment, fragmentName),
             ShaderStage.Fragment);
 
         DescriptorSetLayout = CreateDescriptorSetLayout();
@@ -125,11 +152,18 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
 
     private PipelineLayout CreatePipelineLayout(DescriptorSetLayout setLayout)
     {
-        PushConstantRange push = new()
+        PushConstantRange* push = stackalloc PushConstantRange[2];
+        push[0] = new PushConstantRange
         {
             StageFlags = ShaderStageFlags.VertexBit,
             Offset = 0,
             Size = sizeof(float) * 2,
+        };
+        push[1] = new PushConstantRange
+        {
+            StageFlags = ShaderStageFlags.FragmentBit,
+            Offset = _fragmentPushOffset,
+            Size = _fragmentPushBytes,
         };
 
         PipelineLayoutCreateInfo createInfo = new()
@@ -137,8 +171,8 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
             SType = StructureType.PipelineLayoutCreateInfo,
             SetLayoutCount = 1,
             PSetLayouts = &setLayout,
-            PushConstantRangeCount = 1,
-            PPushConstantRanges = &push,
+            PushConstantRangeCount = _fragmentPushBytes > 0 ? 2u : 1u,
+            PPushConstantRanges = push,
         };
 
         PipelineLayout layout;

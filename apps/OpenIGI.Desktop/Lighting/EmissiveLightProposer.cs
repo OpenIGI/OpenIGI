@@ -27,7 +27,7 @@ namespace OpenIGI.Desktop;
 /// walk and every texture decode off the load path entirely.
 /// </para>
 /// </remarks>
-internal static class EmissiveLightProposer
+public static class EmissiveLightProposer
 {
     /// <summary>What a level's own geometry says it is lit by.</summary>
     /// <param name="Fixtures">The placed lights, which may be empty.</param>

@@ -35,6 +35,7 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
     /// <param name="renderPass">The render pass the pipeline is compatible with.</param>
     /// <param name="subpass">The subpass index within that render pass.</param>
     /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
+    /// <param name="alphaBlend">Whether the pass blends over the target by its alpha rather than replacing it.</param>
     public FullscreenPipeline(
         Vk vk,
         VulkanDevice device,
@@ -44,7 +45,8 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         DescriptorSetLayout descriptorSetLayout,
         uint pushConstantSize,
         RenderPass renderPass,
-        uint subpass)
+        uint subpass,
+        bool alphaBlend = false)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -64,7 +66,7 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
             ShaderStage.Fragment);
 
         PipelineLayout = CreatePipelineLayout(descriptorSetLayout, pushConstantSize);
-        Pipeline = CreatePipeline(renderPass, subpass);
+        Pipeline = CreatePipeline(renderPass, subpass, alphaBlend);
     }
 
     /// <summary>Gets the pipeline.</summary>
@@ -111,7 +113,7 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
         return layout;
     }
 
-    private Pipeline CreatePipeline(RenderPass renderPass, uint subpass)
+    private Pipeline CreatePipeline(RenderPass renderPass, uint subpass, bool alphaBlend)
     {
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
@@ -180,7 +182,19 @@ internal sealed unsafe class FullscreenPipeline : IDisposable
 
             const ColorComponentFlags writeAll = ColorComponentFlags.RBit | ColorComponentFlags.GBit
                 | ColorComponentFlags.BBit | ColorComponentFlags.ABit;
-            PipelineColorBlendAttachmentState blendAttachment = new() { ColorWriteMask = writeAll, BlendEnable = false };
+            // Opaque for a resolve, which owns the whole target; blended for a pass that composes over
+            // what the frame already holds, such as the loading backdrop fading off the live level.
+            PipelineColorBlendAttachmentState blendAttachment = new()
+            {
+                ColorWriteMask = writeAll,
+                BlendEnable = alphaBlend,
+                SrcColorBlendFactor = BlendFactor.SrcAlpha,
+                DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                ColorBlendOp = BlendOp.Add,
+                SrcAlphaBlendFactor = BlendFactor.One,
+                DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                AlphaBlendOp = BlendOp.Add,
+            };
             PipelineColorBlendStateCreateInfo colorBlend = new()
             {
                 SType = StructureType.PipelineColorBlendStateCreateInfo,

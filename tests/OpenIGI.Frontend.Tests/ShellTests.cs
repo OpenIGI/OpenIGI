@@ -4,6 +4,7 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend.Screens;
+using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Input;
@@ -477,8 +478,18 @@ public sealed class ShellTests
         }
     }
 
+    /// <summary>
+    /// Settings open on one graphics page: the preset, then a row per subject, and no second half.
+    /// </summary>
+    /// <remarks>
+    /// This used to assert the opposite — that a Basic/Advanced switch was present and reading Basic. The
+    /// Advanced half listed every graphics variable as its own row, which meant the menu offered a card
+    /// atlas density and a probe gather cadence as sliders. It is gone; the console is the advanced
+    /// interface. The pin now is that the switch does NOT come back, because the easiest way to undo this
+    /// is to add "just one" raw row.
+    /// </remarks>
     [Fact]
-    public void Settings_open_on_the_basic_graphics_page_with_advanced_a_tab_away()
+    public void Settings_open_on_one_graphics_page_with_no_advanced_half()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
         try
@@ -491,16 +502,15 @@ public sealed class ShellTests
             var screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
             TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
 
-            // Advanced is not a category beside Audio and Controls; it is the other half of Graphics.
             Assert.Equal(["Graphics", "Display", "Audio", "Controls", "Gameplay"], tabs.Tabs);
             Assert.Equal(0, tabs.SelectedIndex);
 
-            Button basic = Find<Button>(screen, b => b.Text == "Basic")!;
-            Button advanced = Find<Button>(screen, b => b.Text == "Advanced")!;
-            Assert.True(basic.Selected);
-            Assert.False(advanced.Selected);
+            Assert.Null(Find<Button>(screen, b => b.Text == "Basic"));
+            Assert.Null(Find<Button>(screen, b => b.Text == "Advanced"));
 
-            // The preset is on the basic half — it is the one control that answers the whole question.
+            // The preset leads: it is the one control that answers the whole question at once. It is also
+            // the only row this harness can show, its registry being empty -- what the page makes of a
+            // populated one is QualityBindingTests' business.
             Assert.NotNull(screen.Root!.Descendants().OfType<Dropdown>().FirstOrDefault(d => d.Label == "Preset"));
         }
         finally

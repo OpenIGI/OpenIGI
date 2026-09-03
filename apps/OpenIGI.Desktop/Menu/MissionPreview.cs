@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Graphics;
+using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
@@ -51,6 +51,22 @@ namespace OpenIGI.Desktop;
 /// <param name="ProbeField">A shipped or cached probe field, or <see langword="null"/> when the mission has no bake.</param>
 /// <param name="Resources">The registry the preview's packs were opened into; the world renderer reads through it.</param>
 /// <param name="FileSystem">The file system the preview's <c>MISSION:</c> alias is bound in.</param>
+/// <param name="Lamps">
+/// The level's proposed fixtures and glowing geometry, surveyed on the worker. What used to be the single
+/// largest cost of promoting a backdrop (around 140 ms of texture decoding on the render thread), and
+/// also what a backdrop needs in order to be lit the way the mission is: a lamplit room previewed with its
+/// lamps off is a different picture.
+/// </param>
+/// <param name="DistanceField">
+/// The level's cached distance field, read on the worker, or <see langword="null"/> when the cache missed
+/// or the field is not wanted. Uploading it is the render thread's; reading it is not.
+/// </param>
+/// <param name="PendingDistanceField">
+/// A bake started on the worker when the cache missed, or <see langword="null"/>. The render loop collects
+/// it exactly as it collects a bake started by a played mission, so a backdrop that was browsed long enough
+/// hands the mission a finished field, and one that was not hands it the bake in flight.
+/// </param>
+/// <param name="DistanceFieldResolution">The voxel resolution the field was read or is being baked at.</param>
 public sealed record MissionPreview(
     int MissionId,
     LoadedMission Mission,
@@ -64,4 +80,8 @@ public sealed record MissionPreview(
     DirectionalLightSettings? Sun,
     IrradianceVolume? ProbeField,
     ResourceRegistry Resources,
-    VirtualFileSystem FileSystem);
+    VirtualFileSystem FileSystem,
+    EmissiveLightProposer.Proposal Lamps,
+    SceneDistanceField? DistanceField,
+    DistanceFieldBake? PendingDistanceField,
+    int DistanceFieldResolution);

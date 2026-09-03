@@ -73,6 +73,11 @@ public sealed class MissionEntryCameraTests
                 entry.NotifyPromoted();
             }
 
+            if (entry.Phase == MissionEntryPhase.Hold)
+            {
+                entry.NotifyReady();
+            }
+
             entry.Update(Frame, showcase, landing);
             steps.Add(Distance(previous, entry.Pose.Position));
             previous = entry.Pose.Position;
@@ -120,12 +125,21 @@ public sealed class MissionEntryCameraTests
         // must not be frozen. A wait should read as a longer shot, never as the game having stopped.
         MissionEntryCamera entry = Begin(out CameraPose showcase, out CameraPose landing);
 
+        // The mission is brought up as the travel begins, where a dropped frame is least visible...
+        bool promotionWanted = false;
         while (entry.Phase != MissionEntryPhase.Hold)
         {
             entry.Update(Frame, showcase, landing);
+            if (entry.WantsPromotion)
+            {
+                Assert.Equal(MissionEntryPhase.Travel, entry.Phase);
+                promotionWanted = true;
+                entry.NotifyPromoted();
+            }
         }
 
-        Assert.True(entry.WantsPromotion);
+        Assert.True(promotionWanted);
+        Assert.False(entry.WantsPromotion);
 
         Vector3d previous = entry.Pose.Position;
         int frames = 0;
@@ -140,8 +154,9 @@ public sealed class MissionEntryCameraTests
 
         Assert.Equal(120, frames);
 
-        // And once the mission is up it goes on to the descent rather than sitting there.
-        entry.NotifyPromoted();
+        // ...and the hold waits for the picture to be final, not merely for the level to be up. Once it
+        // is, the shot goes on to the descent rather than sitting there.
+        entry.NotifyReady();
         entry.Update(Frame, showcase, landing);
         entry.Update(Frame, showcase, landing);
         Assert.Equal(MissionEntryPhase.Descend, entry.Phase);
@@ -154,7 +169,7 @@ public sealed class MissionEntryCameraTests
         // up, the shot still finishes.
         MissionEntryCamera entry = Begin(out CameraPose showcase, out CameraPose landing);
 
-        for (int i = 0; i < 60 * 30; i++)
+        for (int i = 0; i < 60 * 40; i++)
         {
             entry.Update(Frame, showcase, landing);
         }
@@ -247,6 +262,11 @@ public sealed class MissionEntryCameraTests
                 entry.NotifyPromoted();
             }
 
+            if (entry.Phase == MissionEntryPhase.Hold)
+            {
+                entry.NotifyReady();
+            }
+
             double jitter = ((wobble++ % 2) == 0 ? 0.35 : -0.35);
             var unsettled = landing with
             {
@@ -335,10 +355,66 @@ public sealed class MissionEntryCameraTests
                 entry.NotifyPromoted();
             }
 
+            if (entry.Phase == MissionEntryPhase.Hold)
+            {
+                entry.NotifyReady();
+            }
+
             entry.Update(Frame, showcase, landing);
         }
 
         Assert.Equal(0f, entry.MenuDepthOfField);
+    }
+
+    [Fact]
+    public void AShotThatOpensAtAltitudeHoldsOverTheStartAndLandsInTheEyes()
+    {
+        // A cold start or a restart has no orbit to rise out of: the shot begins at its hold, with the
+        // interface already gone and the bars already in, and lands exactly where every other route does.
+        var entry = new MissionEntryCamera();
+        var landing = new CameraPose(new Vector3d(120.0, -40.0, 12.5), 0.7f, -0.05f);
+
+        entry.BeginAtHold(landing, groundHeightMetres: 10.0);
+
+        Assert.Equal(MissionEntryPhase.Hold, entry.Phase);
+        Assert.Equal(0f, entry.ShellOpacity, 3);
+        Assert.Equal(1f, entry.LetterboxAmount, 3);
+        Assert.True(entry.Pose.Position.Z > landing.Position.Z + MissionEntryCamera.MinimumApexRise - 1.0);
+        Assert.Equal(landing.Position.X, entry.TitleAnchor.X, 6);
+        Assert.Equal(landing.Yaw, entry.TitleYaw, 6);
+
+        // It waits for the picture to be final, moving all the while...
+        Vector3d previous = entry.Pose.Position;
+        for (int i = 0; i < 90; i++)
+        {
+            entry.Update(Frame, entry.Pose, landing);
+            Assert.Equal(MissionEntryPhase.Hold, entry.Phase);
+            Assert.NotEqual(previous, entry.Pose.Position);
+            previous = entry.Pose.Position;
+        }
+
+        // ...and then descends into the player's own eyes.
+        entry.NotifyReady();
+        RunToEnd(entry, entry.Pose, landing);
+        Assert.Equal(MissionEntryPhase.Done, entry.Phase);
+        Assert.Equal(landing.Position.X, entry.Pose.Position.X);
+        Assert.Equal(landing.Position.Z, entry.Pose.Position.Z);
+    }
+
+    [Fact]
+    public void AMissionWithItsOwnIntroEndsTheShotOverTheStart()
+    {
+        var entry = new MissionEntryCamera();
+        var landing = new CameraPose(new Vector3d(0.0, 0.0, 5.0), 0f, 0f);
+
+        entry.BeginAtHold(landing, groundHeightMetres: 0.0, descend: false);
+        entry.NotifyReady();
+        RunToEnd(entry, entry.Pose, landing);
+
+        // Finished, and still at altitude: the authored camera takes the frame from here.
+        Assert.Equal(MissionEntryPhase.Done, entry.Phase);
+        Assert.False(entry.Descends);
+        Assert.True(entry.Pose.Position.Z > landing.Position.Z + 50.0);
     }
 
     [Fact]
@@ -405,6 +481,11 @@ public sealed class MissionEntryCameraTests
             if (entry.WantsPromotion)
             {
                 entry.NotifyPromoted();
+            }
+
+            if (entry.Phase == MissionEntryPhase.Hold)
+            {
+                entry.NotifyReady();
             }
 
             entry.Update(Frame, orbit, target);

@@ -39,9 +39,25 @@ namespace OpenIGI.Desktop;
 /// the registry everything resolves through, and reading them out of the session's own registry on a
 /// worker would be exactly the shared-state race the private context exists to avoid.
 /// </param>
+/// <param name="Lamps">
+/// The lamps a person named by hand, read once at start-up. A backdrop proposes its level's fixtures on
+/// the worker so the menu is lit the way the played mission will be, and the manifest is what the
+/// proposal is checked against.
+/// </param>
+/// <param name="DistanceFields">
+/// The shipped and per-user distance-field caches. Read on the worker, so a cached field arrives with
+/// the backdrop rather than being loaded on the render thread after it; never written from there.
+/// </param>
+/// <param name="ComputeSupported">
+/// Whether the device can run compute at all. A distance field is only ever traced against on a device
+/// that can, so a backdrop built for one that cannot should not spend a worker baking one.
+/// </param>
 public sealed record MissionPreviewContext(
     ITimeSource TimeSource,
     IFlowHost Host,
     IRenderScheduler Scheduler,
     GameMissionState MissionState,
-    IReadOnlyDictionary<string, byte[]> SessionArchives);
+    IReadOnlyDictionary<string, byte[]> SessionArchives,
+    LampManifest Lamps,
+    DistanceFieldCache DistanceFields,
+    bool ComputeSupported);

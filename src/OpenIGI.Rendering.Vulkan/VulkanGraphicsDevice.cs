@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Diagnostics;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
@@ -98,6 +98,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     // Frame state. A frame's command buffer is opened lazily; no render pass begins until a draw needs
     // one, so the direct path opens the present pass and the deferred path opens its own instead.
     private bool _frameOpen;
+
+    // Whether the next present pass picks the back buffer up as it is rather than clearing it -- set by a
+    // mid-frame copy of the frame, which has to leave the pass to read the image. See PresentTarget.
+    private bool _presentPassResumes;
     private bool _presentPassActive;
     private CommandBuffer _frameCommandBuffer;
     private uint _frameImageIndex;
@@ -562,6 +566,8 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _mesh3D.Dispose();
         _textureDescriptors.Dispose();
         _sprite2DGeometry.Dispose();
+        _loadingBackdrop?.Dispose();
+        _sdfText2D?.Dispose();
         _sprite2D.Dispose();
         _shaderCompiler.Dispose();
         _stageProfiler?.Dispose();
@@ -667,6 +673,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         _frameOpen = true;
         _presentPassActive = false;
+        _presentPassResumes = false;
 
         // Read back the timestamps this slot last carried and reset its block for the frame about to record.
         // Outside any render pass, which is exactly where a fresh frame's command buffer is here.
@@ -721,15 +728,18 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         };
         clears[1] = new ClearValue { DepthStencil = new ClearDepthStencilValue(0.0f, 0) };
 
+        // Loaded rather than cleared when the frame was interrupted for a back-buffer copy: the picture
+        // the resolve drew is still on the image and is what the rest of the frame draws over.
         RenderPassBeginInfo beginInfo = new()
         {
             SType = StructureType.RenderPassBeginInfo,
-            RenderPass = _presentTarget.RenderPass,
+            RenderPass = _presentPassResumes ? _presentTarget.ResumeRenderPass : _presentTarget.RenderPass,
             Framebuffer = _presentTarget.Framebuffer(_frameImageIndex),
             RenderArea = new Rect2D(new Offset2D(0, 0), _presentTarget.Extent),
             ClearValueCount = 2,
             PClearValues = clears,
         };
+        _presentPassResumes = false;
 
         FlushComputeBeforePass();
         vk.CmdBeginRenderPass(_frameCommandBuffer, &beginInfo, SubpassContents.Inline);
