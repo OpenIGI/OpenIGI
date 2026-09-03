@@ -2154,26 +2154,24 @@ internal sealed partial class DesktopGame : IDisposable
                 }
 
                 _missionObjectives?.TickAfterLevelState();
-                if (_missionObjectives is { IsFailed: true })
+                MissionResultDecision missionResult = MissionResultArbitration.Evaluate(
+                    _playerDead,
+                    _missionObjectives is { IsFailed: true },
+                    _missionObjectives is { IsComplete: true },
+                    _missionFailedMenu,
+                    _missionResultHandled,
+                    _missionFailureTicks);
+                _missionFailureTicks = missionResult.FailureTicks;
+
+                if (missionResult.Result == MissionResult.PlayerDeathFailure)
                 {
-                    // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
-                    // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
-                    if (!_missionFailedMenu && ++_missionFailureTicks > 151)
-                    {
-                        _missionFailedMenu = true;
-                        _computerOpen = false;
-                        _computerFlight.Reset();
-                        _player?.SetMapComputerOpen(false);
-                        _window.CursorVisible = true;
-                        _window.CursorLocked = false;
-                    }
+                    OpenMissionFailedMenu("Mission failed: the player died.");
                 }
-                else
+                else if (missionResult.Result == MissionResult.AuthoredFailure)
                 {
-                    _missionFailureTicks = 0;
+                    OpenMissionFailedMenu("Mission failed: the LevelFlow failure expression fired.");
                 }
-                if (!_missionResultHandled
-                    && _missionObjectives is { IsComplete: true }
+                if (missionResult.ShouldHandleCompletion
                     && _activeMission is { } completedMission)
                 {
                     _missionResultHandled = true;
