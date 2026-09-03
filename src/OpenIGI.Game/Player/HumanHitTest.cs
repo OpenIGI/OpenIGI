@@ -272,6 +272,137 @@ public static class HumanHitTest
         return true;
     }
 
+    /// <summary>Traces a round through the linearly blended collision mesh the renderer is presenting.</summary>
+    /// <param name="origin">Where the round starts, in world units.</param>
+    /// <param name="end">Where the round stops.</param>
+    /// <param name="root">The displayed model origin (pelvis), in world units.</param>
+    /// <param name="facing">The displayed forward direction in world space.</param>
+    /// <param name="mesh">The collision mesh whose vertices are rigidly bound to the supplied poses.</param>
+    /// <param name="currentPose">The pose in the current animated GPU vertex stream, in model space.</param>
+    /// <param name="previousPose">The pose in the previous animated GPU vertex stream, in model space.</param>
+    /// <param name="orientation">The displayed model-space-to-world rotation.</param>
+    /// <param name="previousShare">How much of the previous stream the displayed vertex contains.</param>
+    /// <param name="hit">The contact, when there is one.</param>
+    /// <returns><see langword="false"/> when the round misses.</returns>
+    /// <remarks>
+    /// The desktop renderer submits <c>current + previousShare × (previous - current)</c> for every
+    /// skinned vertex before applying one interpolated model transform. A hitscan fired while a target is
+    /// smoothed must trace that exact triangle, not a convenient interpolated bone matrix: the two are not
+    /// equivalent for a rotating limb.
+    /// </remarks>
+    public static bool TryCastMeshBlended(
+        Vector3d origin,
+        Vector3d end,
+        Vector3d root,
+        Vector3f facing,
+        MefCollisionMesh mesh,
+        BonePose currentPose,
+        BonePose previousPose,
+        Matrix3f orientation,
+        float previousShare,
+        out HumanHit hit)
+    {
+        ArgumentNullException.ThrowIfNull(mesh);
+        ArgumentNullException.ThrowIfNull(currentPose);
+        ArgumentNullException.ThrowIfNull(previousPose);
+        hit = default;
+
+        int count = mesh.Vertices.Count;
+        if (count == 0 || mesh.Faces.Count == 0)
+        {
+            return false;
+        }
+
+        float share = Math.Clamp(previousShare, 0f, 1f);
+        Vector3d[] world = new Vector3d[count];
+        for (int i = 0; i < count; i++)
+        {
+            Vector3f current = SkinCollisionVertex(mesh, i, currentPose);
+            Vector3f previous = SkinCollisionVertex(mesh, i, previousPose);
+            Vector3f local = new(
+                current.X + (share * (previous.X - current.X)),
+                current.Y + (share * (previous.Y - current.Y)),
+                current.Z + (share * (previous.Z - current.Z)));
+            Vector3f turned = orientation.Transposed().Transform(local);
+            world[i] = new Vector3d(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
+        }
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double nearest = double.PositiveInfinity;
+        int hitBone = -1;
+        Vector3d contact = default;
+
+        foreach (MefCollisionFace face in mesh.Faces)
+        {
+            if (!RayTriangle.Intersect(origin, direction, world[face.I0], world[face.I1], world[face.I2], out double t)
+                || t >= nearest)
+            {
+                continue;
+            }
+
+            nearest = t;
+            int b0 = mesh.VertexBones[face.I0];
+            int b1 = mesh.VertexBones[face.I1];
+            hitBone = b1 != b0 && b1 == mesh.VertexBones[face.I2] ? b1 : b0;
+            contact = new Vector3d(
+                origin.X + (direction.X * t),
+                origin.Y + (direction.Y * t),
+                origin.Z + (direction.Z * t));
+        }
+
+        if (hitBone < 0)
+        {
+            return false;
+        }
+
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        Vector3f incoming = Normalise(new Vector3f((float)-direction.X, (float)-direction.Y, (float)-direction.Z));
+        Vector3f forward = Normalise(facing);
+        float localForward = (incoming.X * forward.X) + (incoming.Y * forward.Y);
+        float localSide = (incoming.X * -forward.Y) + (incoming.Y * forward.X);
+        int zone = HumanDamage.RefineByDirection(HumanDamage.ZoneOfBone(hitBone), localForward, localSide);
+
+        if (HumanDamage.ProximityBoneIndex < currentPose.BoneCount
+            && HumanDamage.ProximityBoneIndex < previousPose.BoneCount)
+        {
+            int head = HumanDamage.ProximityBoneIndex;
+            Vector3f current = currentPose.Positions[head];
+            Vector3f previous = previousPose.Positions[head];
+            Vector3f local = new(
+                current.X + (share * (previous.X - current.X)),
+                current.Y + (share * (previous.Y - current.Y)),
+                current.Z + (share * (previous.Z - current.Z)));
+            Vector3f turned = orientation.Transposed().Transform(local);
+            Vector3d headWorld = new(root.X + turned.X, root.Y + turned.Y, root.Z + turned.Z);
+            double distance = DistanceToSegment(origin, direction, headWorld);
+            if (HumanDamage.TakesProximityZone((float)distance, localForward))
+            {
+                zone = HumanDamage.ProximityZone;
+            }
+        }
+
+        hit = new HumanHit(contact, nearest * length, zone, localForward, localSide, hitBone);
+        return true;
+    }
+
+    private static Vector3f SkinCollisionVertex(MefCollisionMesh mesh, int vertex, BonePose pose)
+    {
+        int bone = mesh.VertexBones[vertex];
+        if ((uint)bone >= (uint)pose.BoneCount)
+        {
+            bone = 0;
+        }
+
+        Vector3f local = mesh.Vertices[vertex];
+        Matrix3f rotation = pose.Rotations[bone];
+        Vector3f translation = pose.Positions[bone];
+        return new Vector3f(
+            (rotation.M11 * local.X) + (rotation.M12 * local.Y) + (rotation.M13 * local.Z) + translation.X,
+            (rotation.M21 * local.X) + (rotation.M22 * local.Y) + (rotation.M23 * local.Z) + translation.Y,
+            (rotation.M31 * local.X) + (rotation.M32 * local.Y) + (rotation.M33 * local.Z) + translation.Z);
+    }
+
     /// <summary>Finds the bone whose segment passes closest to a round's line.</summary>
     /// <param name="origin">Where the round starts, in world units.</param>
     /// <param name="direction">Its travel, origin to end.</param>

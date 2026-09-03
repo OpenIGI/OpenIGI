@@ -35,6 +35,11 @@ public sealed class ObjectCollisionIndex
     private readonly Dictionary<GameTask, Entry[]> _entriesByOwner;
     private readonly Dictionary<WorldPlacement, Entry[]> _entriesByPlacement;
 
+    // Living human bodies, re-supplied by the host every frame. They are cast separately from the
+    // static mesh entries because a soldier has no collision mesh of its own in the port — the body is
+    // the analytic capsule the renderer uses to keep humans apart.
+    private HumanBody[] _humanBodies = [];
+
     // Legacy/manual passability override. Mission doors no longer use it: their collision mesh follows
     // the live task transform through UpdateTransform, including every half-open pose.
     private readonly HashSet<GameTask> _passable = [];
@@ -473,8 +478,100 @@ public sealed class ObjectCollisionIndex
     /// Human movement therefore follows collision mesh level one, not the default level-zero geometry
     /// that visibility and ordinary world traces use.
     /// </remarks>
-    public bool TryCastForPlayer(Vector3d origin, Vector3d end, out WorldRayHit hit) =>
-        Cast(_playerEntries, origin, end, honourPassable: true, out hit);
+    /// <summary>Replaces the set of living human collision bodies.</summary>
+    /// <param name="bodies">The capsule bodies, in world units, for every solid human.</param>
+    /// <remarks>
+    /// A mission re-supplies this on every tick after the soldiers move. Each body's
+    /// <see cref="RayCapsule"/> test is folded into the player cast below, so the existing human wall
+    /// sweep treats a living soldier as a wall and the player cannot walk through one.
+    /// </remarks>
+    public void SetHumanBodies(IReadOnlyList<HumanBody> bodies)
+    {
+        ArgumentNullException.ThrowIfNull(bodies);
+        if (bodies.Count == 0)
+        {
+            _humanBodies = [];
+            return;
+        }
+
+        HumanBody[] copy = new HumanBody[bodies.Count];
+        for (int i = 0; i < bodies.Count; i++)
+        {
+            copy[i] = bodies[i];
+        }
+
+        _humanBodies = copy;
+    }
+
+    /// <summary>Casts the retail-human object trace, plus every living human body.</summary>
+    /// <remarks>
+    /// IGI1's <c>0x461A70</c> calls <c>0x4CDB20</c> with <c>iMesh = 1</c> at <c>0x461D71</c>.
+    /// Human movement therefore follows collision mesh level one, not the default level-zero geometry
+    /// that visibility and ordinary world traces use. Living human bodies join that trace so a soldier
+    /// presents the same solid wall retail got from its registered mesh.
+    /// </remarks>
+    public bool TryCastForPlayer(Vector3d origin, Vector3d end, out WorldRayHit hit)
+    {
+        bool found = Cast(_playerEntries, origin, end, honourPassable: true, out hit);
+        if (CastHumanBodies(origin, end, out WorldRayHit body) && (!found || body.Distance < hit.Distance))
+        {
+            hit = body;
+            found = true;
+        }
+
+        return found;
+    }
+
+    private bool CastHumanBodies(Vector3d origin, Vector3d end, out WorldRayHit hit)
+    {
+        hit = default;
+        if (_humanBodies.Length == 0)
+        {
+            return false;
+        }
+
+        Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
+        double length = Math.Sqrt(
+            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
+        if (length <= 0.0)
+        {
+            return false;
+        }
+
+        double nearest = double.MaxValue;
+        Vector3d position = default;
+        Vector3f normal = default;
+        foreach (HumanBody body in _humanBodies)
+        {
+            if (!RayCapsule.Intersect(
+                    origin,
+                    direction,
+                    body.AxisA,
+                    body.AxisB,
+                    body.Radius,
+                    out double t,
+                    out Vector3d capsuleNormal)
+                || t >= nearest)
+            {
+                continue;
+            }
+
+            nearest = t;
+            position = new Vector3d(
+                origin.X + (direction.X * t),
+                origin.Y + (direction.Y * t),
+                origin.Z + (direction.Z * t));
+            normal = new Vector3f((float)capsuleNormal.X, (float)capsuleNormal.Y, (float)capsuleNormal.Z);
+        }
+
+        if (nearest < double.MaxValue)
+        {
+            hit = new WorldRayHit(position, normal, nearest * length, 0);
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Gets whether the human object trace still contains an entry for the named placed instance.

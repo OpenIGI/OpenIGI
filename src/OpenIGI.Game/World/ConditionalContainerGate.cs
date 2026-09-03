@@ -1,5 +1,6 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.Ai;
 using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 
@@ -29,6 +30,25 @@ public sealed class ConditionalContainerGate
     private readonly IIgiLogger _logger;
     private readonly Dictionary<string, ScriptExpression?> _parseCache = new(StringComparer.Ordinal);
 
+    // Diagnostic (headless verification only): IGI_DIAG_FORCE_CC=3902 or IGI_DIAG_FORCE_CC=3902:Expr forces
+    // those container ids open regardless of their authored condition -- optionally until the given
+    // expression is true -- so an area-gated subtree can be exercised without walking a frozen player into
+    // an objective zone. Repeated ids overwrite cleanly (last entry wins) rather than throwing, so a stray
+    // trailing comma or a double-listed id cannot break diagnostic startup.
+    private readonly Dictionary<int, string?> _forcedContainers = Environment
+        .GetEnvironmentVariable("IGI_DIAG_FORCE_CC") is { Length: > 0 } force
+        ? force.Split(',')
+            .Where(entry => int.TryParse(entry.Split(':', 2)[0], out _))
+            .GroupBy(entry => int.Parse(entry.Split(':', 2)[0], System.Globalization.CultureInfo.InvariantCulture))
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                {
+                    string[] parts = group.Last().Split(':', 2);
+                    return parts is [_, var gateExpr] and not [_, ""] ? gateExpr : null;
+                })
+        : [];
+
     /// <summary>Initializes a new instance of the <see cref="ConditionalContainerGate"/> class.</summary>
     /// <param name="variables">The level's exported script variables, which the conditions read.</param>
     /// <param name="logger">Where to report a condition that would not parse; defaults to a sink.</param>
@@ -55,6 +75,14 @@ public sealed class ConditionalContainerGate
         for (GameTask? current = task; current is not null; current = current.Parent)
         {
             if (current is ConditionalContainerTask container && !container.IsRun)
+            {
+                return false;
+            }
+
+            // A GuardGenerator's nested HumanSoldier is an authored template until the generator's
+            // first successful update. IGI1's 0x488000 clone path only registers that live copy then;
+            // keeping the parsed template out of runtime walks reproduces the same distinction.
+            if (current is GuardGeneratorTask generator && !generator.IsSpawned)
             {
                 return false;
             }
@@ -103,6 +131,16 @@ public sealed class ConditionalContainerGate
 
     private bool Resolve(ConditionalContainerTask container)
     {
+        if (_forcedContainers.TryGetValue(container.Id, out string? forcedCondition))
+        {
+            if (forcedCondition is null)
+            {
+                return true;
+            }
+
+            return Evaluate(container, forcedCondition);
+        }
+
         if (string.IsNullOrWhiteSpace(container.Condition))
         {
             // An unconditional container runs; nothing in retail level data reaches this, but hiding a
@@ -110,22 +148,28 @@ public sealed class ConditionalContainerGate
             return true;
         }
 
-        if (!_parseCache.TryGetValue(container.Condition, out ScriptExpression? expression))
+        return Evaluate(container, container.Condition);
+    }
+
+    /// <summary>Parses (once, cached) and evaluates one condition expression against the level variables.</summary>
+    private bool Evaluate(ConditionalContainerTask container, string condition)
+    {
+        if (!_parseCache.TryGetValue(condition, out ScriptExpression? expression))
         {
             try
             {
-                expression = ScriptExpressionParser.Parse(container.Condition, ResolveConstant);
+                expression = ScriptExpressionParser.Parse(condition, ResolveConstant);
             }
             catch (ScriptExpressionException ex)
             {
                 _logger.Warning(
                     LogCategory,
-                    $"Conditional container condition '{container.Condition}' did not parse ({ex.Message}); "
+                    $"Conditional container condition '{condition}' did not parse ({ex.Message}); "
                         + "treating it as running.");
                 expression = null;
             }
 
-            _parseCache[container.Condition] = expression;
+            _parseCache[condition] = expression;
         }
 
         if (expression is null)

@@ -66,6 +66,38 @@ internal sealed partial class DesktopGame
         BringMissionUp(loaded, levelRoot, id, promoted: false);
     }
 
+    /// <summary>Resolves a retail directory without assuming the install's casing matches the script.</summary>
+    private static string? ResolveDirectoryCaseInsensitive(string root, string relativePath)
+    {
+        string current = Path.GetFullPath(root);
+        foreach (string part in relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string exact = Path.Combine(current, part);
+            if (Directory.Exists(exact))
+            {
+                current = exact;
+                continue;
+            }
+
+            if (!Directory.Exists(current))
+            {
+                return null;
+            }
+
+            string? match = Directory.EnumerateDirectories(current)
+                .FirstOrDefault(path => string.Equals(
+                    Path.GetFileName(path), part, StringComparison.OrdinalIgnoreCase));
+            if (match is null)
+            {
+                return null;
+            }
+
+            current = match;
+        }
+
+        return current;
+    }
+
     /// <summary>Gets the along-track extent retail uses to space cars in a Train consist.</summary>
     private static float CutsceneModelLength(LoadedMission mission, string name)
     {
@@ -88,17 +120,34 @@ internal sealed partial class DesktopGame
         return WorldScene.TrainCouplingPivotFraction(model);
     }
 
-    /// <summary>Chooses the engine-unit occupant used by AreaActivate building-streaming volumes.</summary>
+    /// <summary>Chooses the engine-unit occupant used by retail AreaActivate volumes.</summary>
     /// <param name="playerUnits">The player's body position in engine units.</param>
-    /// <param name="activeViewMetres">
-    /// The authored/free-camera position in renderer metres when that view owns the frame; otherwise null.
+    /// <param name="cutsceneViewMetres">
+    /// The authored cutscene camera in renderer metres when it owns the frame; otherwise null.
+    /// </param>
+    /// <param name="freeViewMetres">
+    /// The diagnostic free camera in renderer metres. It is only a fallback when no player body exists;
+    /// moving a debug camera must never satisfy gameplay gates such as Mission 4's extraction volume.
     /// </param>
     internal static Vector3d? AreaActivationOccupant(
         Vector3d? playerUnits,
-        Vector3d? activeViewMetres) =>
-        activeViewMetres is { } view
-            ? view * WorldScene.UnitsPerMetre
-            : playerUnits;
+        Vector3d? cutsceneViewMetres,
+        Vector3d? freeViewMetres = null)
+    {
+        if (cutsceneViewMetres is { } cutscene)
+        {
+            return cutscene * WorldScene.UnitsPerMetre;
+        }
+
+        if (playerUnits is { } player)
+        {
+            return player;
+        }
+
+        return freeViewMetres is { } free
+            ? free * WorldScene.UnitsPerMetre
+            : null;
+    }
 
     /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
@@ -156,7 +205,9 @@ internal sealed partial class DesktopGame
             SetCutsceneSound,
             modelLength: name => CutsceneModelLength(loaded, name),
             modelPivot: name => CutsceneModelPivot(loaded, name),
-            vehiclePhysics: _vehiclePhysics);
+            vehiclePhysics: _vehiclePhysics,
+            terrain: loaded.Terrain,
+            logger: _logger);
         _missionObjectives = new MissionObjectiveRuntime(
             levelRoot,
             _loop.Variables,
@@ -169,6 +220,21 @@ internal sealed partial class DesktopGame
         // break key, closes the intro container, and the cutscene tick applies that transition before
         // the first gameplay frame, so neither its camera nor its ConditionalSounds leak through.
         if (!_options.PlayCutscenes && _cutscenes.IsPlaying)
+        {
+            _cutscenes.RequestBreak();
+            _missionObjectives.TickLevelState();
+            _cutscenes.Tick();
+            _cutscenes.FinishExpressionTick();
+            StopCutsceneSounds();
+        }
+
+        // Same native edge as Escape (LevelFlow_GetBreakCutSceneKey). Used by the
+        // agent playtest so lockstep/-frames can skip the intro without a HITL key.
+        if (string.Equals(
+                Environment.GetEnvironmentVariable("OPENIGI_BREAK_CUTSCENE"),
+                "1",
+                StringComparison.Ordinal)
+            && _cutscenes.IsPlaying)
         {
             _cutscenes.RequestBreak();
             _missionObjectives.TickLevelState();
@@ -242,6 +308,14 @@ internal sealed partial class DesktopGame
             _worldSolids = solids;
             EndStage("the scene walk, the world renderer and the collision index");
         }
+        // Mission 4's authored getaway Bell is a one-shot terminal landing. Configure that
+        // behavior explicitly here; CutsceneRuntime remains generic and does not infer it from ids.
+        if (id == 4 && levelRoot.Tree.FromId(800) is { } getawayBell)
+        {
+            _cutscenes.EnableTerminalTerrainLanding(getawayBell);
+        }
+
+        _cutscenes.CollisionIndex = id == 4 ? solids : null;
         world.Cutscenes = _cutscenes;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
@@ -376,12 +450,19 @@ internal sealed partial class DesktopGame
         // which is why guards walked to places no patrol goes and off the edge of the level.
         try
         {
-            string graphDirectory = Path.Combine(
-                _gamePath, loaded.Descriptor.MissionDirectory, "graphs");
+            string graphDirectory = ResolveDirectoryCaseInsensitive(
+                    _gamePath, Path.Combine(loaded.Descriptor.MissionDirectory, "graphs"))
+                ?? Path.Combine(_gamePath, loaded.Descriptor.MissionDirectory, "graphs");
             Dictionary<int, GraphFile> graphs = [];
             if (Directory.Exists(graphDirectory))
             {
-                foreach (string file in Directory.GetFiles(graphDirectory, "graph*.dat"))
+                // Retail installs commonly preserve uppercase pack names (GRAPHS/GRAPH9.DAT). The
+                // VFS accepts those names, but this direct filesystem walk must do so explicitly on a
+                // case-sensitive volume as well.
+                foreach (string file in Directory.EnumerateFiles(graphDirectory)
+                    .Where(file => Path.GetFileNameWithoutExtension(file)
+                        .StartsWith("graph", StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(Path.GetExtension(file), ".dat", StringComparison.OrdinalIgnoreCase)))
                 {
                     string stem = Path.GetFileNameWithoutExtension(file);
                     if (!int.TryParse(stem.AsSpan("graph".Length), out int graphId))
@@ -413,6 +494,7 @@ internal sealed partial class DesktopGame
                     "Ai",
                     $"Nav graphs: {graphs.Count} — " +
                     string.Join(", ", graphs.OrderBy(p => p.Key).Select(p => $"{p.Key}:{p.Value.Nodes.Count}n")));
+
                 // The difficulty every guard reads its combat row at. Faithfully the ACTIVE PLAYER PROFILE's
                 // (sub_406F70 takes it from sub_406220()'s first field), so the difficulty the player picked
                 // in the menu actually reaches the AI -- which it did not while this was a hardcoded default,
@@ -462,7 +544,7 @@ internal sealed partial class DesktopGame
                 // where it becomes a cast. The AI's hit probability decides whether the round is on
                 // target -- the original hands that same figure to the gun with every shot (ai.md 11.6),
                 // so a miss is a round that went somewhere else rather than a round that never existed.
-                _soldiers.SetRoundHandler((from, at, probability, weapon) =>
+                _soldiers.SetRoundHandler((from, at, probability, weapon, shooter) =>
                 {
                     _guardRounds++;
                     if (_player is null)
@@ -481,16 +563,34 @@ internal sealed partial class DesktopGame
 
                     Vector3d feet = _player.Body.Position;
 
+                    // Which side fired decides who the round may hurt. A guard's round (opposing the
+                    // player's team) may strike the player; a friendly's may not -- it is aimed at an
+                    // opposing soldier and a friendly's own gun never endangers the player. Null is
+                    // defensive: the player's own shots do not flow through this handler, so no real
+                    // round is hostile-neutral; treating it as hostile keeps a round from vanishing.
+                    bool shooterHostileToPlayer = shooter is null
+                        || shooter.Soldier.Team != _soldiers.PlayerTeam;
+
+                    // The player's living body is a physical obstacle to every round, whatever the
+                    // shooter's team -- retail's cast collides with a same-team human too (it just deals
+                    // no damage). A DEAD player is not: the detection scan unregisters the corpse, so a
+                    // round passes through where the body fell instead of hanging in the air on it.
+                    bool playerInTheRay = !_playerHealth.IsDead;
+
                     // Resolve the guard's round against the player's OWN skinned body (limb hits do less,
                     // and the hitbox is the real body, not a fat cylinder). Only if the body is not loaded
-                    // does it fall back to the cylinder-and-trunk stand-in.
+                    // does it fall back to the cylinder-and-trunk stand-in. Skipped entirely for a corpse.
                     HumanHit hit = default;
-                    bool met = _soldiers is not null
-                        && _soldiers.TryHitPlayerBody(from, to, feet, _player.Body.Yaw, out hit);
-                    if (!met)
+                    bool met = false;
+                    if (playerInTheRay)
                     {
-                        Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
-                        met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
+                        met = _soldiers is not null
+                            && _soldiers.TryHitPlayerBody(from, to, feet, _player.Body.Yaw, out hit);
+                        if (!met)
+                        {
+                            Vector3f facing = new(-MathF.Sin(_player.Body.Yaw), MathF.Cos(_player.Body.Yaw), 0f);
+                            met = HumanHitTest.TryCast(from, to, feet, facing, pose: null, out hit);
+                        }
                     }
 
                     // Where the world stops this ray, over its whole length -- one cast serves cover,
@@ -502,6 +602,16 @@ internal sealed partial class DesktopGame
                         new WorldTraceRequest(from, to, WorldTraceMask.World),
                         out WorldTraceHit blocker);
                     WorldRayHit worldHit = worldBlocked ? blocker.RayHit : default;
+
+                    // A round that meets no hostile body falls through to the soldiers behind the
+                    // player -- an opposing soldier for a guard, a guard for a friendly. This is the
+                    // NPC-vs-NPC half of the gate fight: the round is offered to every soldier on the
+                    // ray, nearest first, and the first one it meets (per its own probability roll)
+                    // takes it. True when a soldier consumed the round; false when it flew past them all.
+                    bool SoldiersTakeTheRound()
+                        => _soldiers is not null
+                            && _soldiers.TryShootAiRound(
+                                from, to, probability, weapon, shooter, worldBlocked ? worldHit : null, out _);
 
                     // The streak, before the outcome: visual only, along the very ray this handler is
                     // resolving, dying where the world stops it. Whether the round connects is decided
@@ -565,8 +675,13 @@ internal sealed partial class DesktopGame
 
                     if (!met)
                     {
-                        // Geometric miss -- aim lag against a moving target, or a running patrol's
-                        // spray. The round flies on and lands where the world says.
+                        // Geometric miss -- aim lag against a moving target, a running patrol's spray, or
+                        // a dead player whose corpse stops nothing. The round flies on: offer it to the
+                        // soldiers, and only then does it land where the world says.
+                        if (SoldiersTakeTheRound())
+                        {
+                            return;
+                        }
                         MarkTheImpact();
                         return;
                     }
@@ -591,14 +706,23 @@ internal sealed partial class DesktopGame
                     // -- through to whatever stands behind the player, where it marks.
                     if (_shotRandom.NextDouble() > probability)
                     {
+                        // The roll failed against the player -- the round flies past to whoever stands
+                        // behind them: an opposing soldier if the shooter is hostile, a guard if the
+                        // shooter is a friendly.
+                        if (SoldiersTakeTheRound())
+                        {
+                            return;
+                        }
                         MarkTheImpact();
                         return;
                     }
 
-                    if (_playerHealth.IsDead)
+                    // The roll connected with the player's body. A friendly's round that meets the
+                    // player is consumed there with no damage -- retail's cast collides with a same-team
+                    // human but deals none, and it never flies on to a soldier behind the player. Only a
+                    // hostile round may hurt the player.
+                    if (!shooterHostileToPlayer)
                     {
-                        // Already down. Nothing kills you twice, and without this the log filled with
-                        // hundreds of "DEAD" lines while the guards kept shooting the corpse.
                         return;
                     }
 

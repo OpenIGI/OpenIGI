@@ -51,6 +51,12 @@ internal sealed partial class DesktopGame : IDisposable
     // --- Environment, supplied by the composition root ---
     private readonly DesktopPlatformHost _platform;
     private readonly SilkGameWindow _window;
+
+    /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
+    private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
+
+    /// <summary>Gets the window height, or the authored 240 when a minimize/dock race reports 0x0.</summary>
+    private int SafeWindowHeight => _window.Height > 0 ? _window.Height : 240;
     private readonly GLGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
     private readonly DesktopOptions _options;
@@ -263,8 +269,16 @@ internal sealed partial class DesktopGame : IDisposable
         Resize(_window.Width, _window.Height);
         _window.Resized += (_, e) => Resize(e.Width, e.Height);
 
+        // Some window systems fire a degenerate 0x0 resize during creation (minimize/dock races).
+        // Setting a zero-sized projection is an immediate renderer fault, so defer until a real size
+        // arrives; the next genuine resize re-applies both.
         void Resize(int width, int height)
         {
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
             _logger.Information("Desktop", $"Framebuffer resize event: {width}x{height}.");
             _device.SetViewport(new Viewport(0, 0, width, height));
             _device.Set2DProjection(width, height);
@@ -1874,15 +1888,19 @@ internal sealed partial class DesktopGame : IDisposable
                 // alarm latch depends on that order: reversing it sets and clears the latch during the
                 // same multi-tick switch pulse, cutting the siren off almost as soon as it starts.
                 // Mission 14 streams 108 of its 120 building tasks through AreaActivate volumes. During
-                // an authored cinematic (or while inspecting in the free camera), the visible occupant
-                // is the active view rather than the stationary player body at the gameplay spawn.
-                // Driving those volumes from the body left whole tunnel sections unregistered as the
-                // camera crossed into them. Ordinary walking remains player-driven.
-                Vector3d? activationViewMetres = _cutscenes?.Frame?.Camera.Position
-                    ?? (!_playerMode ? _camera?.Position : null);
+                // an authored cinematic the visible occupant is the cutscene camera rather than the
+                // stationary player body at the gameplay spawn. A diagnostic free camera is different:
+                // when a player body exists it must not impersonate that player and satisfy gameplay
+                // gates. Mission 4 AreaActivate_156 otherwise starts the extraction/outro merely because
+                // the free camera follows Bell 800 onto the warehouse landing.
+                Vector3d? cutsceneViewMetres = _cutscenes?.Frame?.Camera.Position;
+                Vector3d? freeViewMetres = !_playerMode ? _camera?.Position : null;
+                _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
                 _missionObjectives?.TickLevelState(AreaActivationOccupant(
                     _player?.Body.Position,
-                    activationViewMetres));
+                    cutsceneViewMetres,
+                    freeViewMetres),
+                    _soldiers?.PlayerTeam ?? 0);
                 _cutscenes?.FinishExpressionTick();
                 if (_securityCameras is { } cameras)
                 {
@@ -2267,6 +2285,11 @@ internal sealed partial class DesktopGame : IDisposable
                     : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
+                if (aspectRatio <= 0f)
+                {
+                    aspectRatio = 1.3333f;
+                }
+
                 float horizontalTangent = sight.TanX;
                 float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
 
@@ -2357,6 +2380,11 @@ internal sealed partial class DesktopGame : IDisposable
                 if (mapScene is { } mapView)
                 {
                     aspectRatio = (float)mapView.Viewport.Width / Math.Max(1, mapView.Viewport.Height);
+                    if (aspectRatio <= 0f)
+                    {
+                        aspectRatio = 1.3333f;
+                    }
+
                     verticalFieldOfView = mapView.FieldOfView;
                 }
                 // The near plane is the original's default: 0x493580 initialises it to 409.6 units, which
@@ -3051,7 +3079,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { Weapons: { } carried }
                     && _hud is { IsReady: true } retailHud)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     // Scoped, the Dragunov's overlay REPLACES the weapon HUD -- 0x473040's latch branch
                     // never calls the parent handler.
@@ -3100,7 +3128,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _hud is { IsReady: true } retailActions
                     && _player?.ActionSprite is { } actionSprite)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     retailActions.DrawAction(
                         batch,
@@ -3119,7 +3147,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _missionObjectives is { } messageRuntime
                     && _hud is { IsReady: true } retailMessages)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     retailMessages.DrawStatusMessages(
                         batch,
@@ -3138,7 +3166,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { } retailPlayer
                     && _hud is { IsReady: true } retailStatus)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     retailStatus.DrawPlayerStatus(
                         batch,
@@ -3201,7 +3229,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _missionObjectives is { } objectiveRuntime
                     && _player is { } computerPlayer)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     if (TacticalComputer is { } tacticalChrome)
                     {
@@ -3232,7 +3260,7 @@ internal sealed partial class DesktopGame : IDisposable
 
                 if (_missionFailedMenu)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     if (TacticalComputer is { } tacticalFailed)
                     {
@@ -3263,7 +3291,7 @@ internal sealed partial class DesktopGame : IDisposable
                     Bgra32 Red(float alpha) =>
                         new(0, 0, 255, (byte)Math.Clamp((int)(alpha * flashStrength * 255f), 0, 255));
 
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     batch.DrawQuad(
                         TextureHandle.None,
@@ -3281,7 +3309,7 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     byte whiteAlpha = (byte)Math.Clamp((int)(Math.Min(_flashbangStrength, 1f) * 255f), 0, 255);
                     Bgra32 white = new(255, 255, 255, whiteAlpha);
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     batch.DrawQuad(
                         TextureHandle.None,
@@ -3299,7 +3327,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player?.InteractionProgress is float interactionProgress
                     && _remasteredHud is { IsReady: true } interactionHud)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     interactionHud.DrawInteractionProgress(
                         batch, interactionProgress, _window.Width, _window.Height);
@@ -3316,7 +3344,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _player is { IsSniperScoped: true }
                     && _hud is { IsReady: true } scopeHud)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     scopeHud.DrawSniperScope(batch, _window.Width, _window.Height);
                     batch.End();
@@ -3349,7 +3377,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _remasteredHud is { IsReady: true } modernHud)
                 {
                     CarriedWeapon? inHand = modernCarried.InHand;
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     modernHud.Draw(
                         batch,
@@ -3373,7 +3401,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _missionObjectives is { } modernMessages
                     && _messages is { IsReady: true } modernCards)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     float topOffset = new LayoutContext(_window.Width, _window.Height)
                         .Px(RemasteredHudRenderer.MessageTopInsetDesign);
@@ -3390,7 +3418,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // camera owns the frame even though the arms, weapon and ordinary mission UI are hidden.
                 if (_cutscenes?.IsPlaying == true && _missionObjectives is { } subtitleRuntime)
                 {
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     // Retail cutscenes always use StatusMessageScreen's shipped bitmap face and its
                     // left-aligned 620/640-width line. TacticalMessages only replaces the in-game feed;
@@ -3514,7 +3542,7 @@ internal sealed partial class DesktopGame : IDisposable
                         lines.Add(detect);
                     }
 
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     debugPanelHeight = debugOverlay.Draw(batch, lines, _window.Width, _window.Height);
 
@@ -3579,7 +3607,7 @@ internal sealed partial class DesktopGame : IDisposable
                         ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                         : "measuring...");
 
-                    _device.Set2DProjection(_window.Width, _window.Height);
+                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     float performanceTopOffset = debugPanelHeight > 0f
                         ? debugPanelHeight + DebugOverlayRenderer.PanelGapPixels(_window.Width, _window.Height)
@@ -3625,7 +3653,7 @@ internal sealed partial class DesktopGame : IDisposable
                 shell.Stack.PointerSuppressed = console.IsOpen;
 
                 _device.BeginStageTiming(RenderStage.UserInterface);
-                _device.Set2DProjection(_window.Width, _window.Height);
+                _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
                 batch.Begin();
 
@@ -3696,7 +3724,7 @@ internal sealed partial class DesktopGame : IDisposable
             if (console.WantsDraw)
             {
                 _device.BeginStageTiming(RenderStage.UserInterface);
-                _device.Set2DProjection(_window.Width, _window.Height);
+                _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                 batch.Begin();
                 console.Draw(batch, _window.Width, _window.Height, UiScale.Resolve(_options.UiScale, _window.Width, _window.Height));
                 batch.End();
