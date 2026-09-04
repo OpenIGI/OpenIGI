@@ -631,10 +631,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// </summary>
     /// <remarks>
     /// <para>
-    /// One group, now: what is left of the post-process chain. The resolve runs the lens scatter, the
-    /// shutter, the vignette, the film grain, exposure, the curve and the authored grade, so what remains
-    /// unread is the grade's KNOBS — contrast and saturation — and the effects the reference leaves
-    /// switched off here.
+    /// What is left of the post-process chain. The resolve runs the lens scatter, the shutter, the
+    /// vignette, the film grain, exposure, the curve, the authored grade and its knobs, the chromatic
+    /// aberration and the sharpen — so what remains is depth of field, which is a pass rather than a
+    /// knob, and one dial the motion gather superseded.
     /// </para>
     /// <para>
     /// Keep this list honest in both directions: an entry that has since been implemented is as
@@ -645,9 +645,13 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// </remarks>
     private static readonly string[] UnimplementedOnVulkan =
     [
-        // The grade, and the post-process effects the reference leaves switched off.
-        "r_chromatic", "r_sharpen",
-        "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
+        // Depth of field, which is a pass of its own and not a knob: a circle of confusion per pixel
+        // from the depth, and a gather wide enough to be worth the name. The reference leaves it off at
+        // every tier, so nothing has asked for it yet.
+        "r_dof", "r_dof_range", "r_dof_blur",
+
+        // Superseded rather than missing. The motion gather takes its sample count from the blur length
+        // it is asked for, the way the reference does, so there is no separate tap count left to set.
         "r_camera_taps",
     ];
 

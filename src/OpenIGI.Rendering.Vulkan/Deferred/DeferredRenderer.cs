@@ -191,7 +191,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             DeferredShaderSource.ResolveFragment,
             "resolve.frag",
             _resolveLayout,
-            sizeof(float) * 12,
+
+            // Five vectors: the exposure and curve, the vignette, the film and the grade's table, the
+            // lens, and the grade's own knobs.
+            sizeof(float) * 20,
             presentRenderPass,
             0);
         Forward = new Mesh3DPipeline(vk, device, compiler, _renderPass.Shading, DeferredRenderPass.ForwardSubpass);

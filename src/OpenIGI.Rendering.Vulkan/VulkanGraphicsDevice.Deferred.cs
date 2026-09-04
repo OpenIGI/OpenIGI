@@ -1339,7 +1339,12 @@ public sealed partial class VulkanGraphicsDevice
         // a magnitude where a float has no fractional bits left to give the shader.
         _grainFrame = (_grainFrame + 1) & 1023;
 
-        float* parameters = stackalloc float[12]
+        // One texel of the resolved picture, which is what the lens effects step by. The resolve draws
+        // at the PRESENT size whatever the scene was rendered at, so this is the presented extent.
+        float presentWidth = Math.Max(1, (int)_presentTarget.Extent.Width);
+        float presentHeight = Math.Max(1, (int)_presentTarget.Extent.Height);
+
+        float* parameters = stackalloc float[20]
         {
             post.Exposure * adaptedExposure,
             (int)post.ToneMap,
@@ -1364,8 +1369,21 @@ public sealed partial class VulkanGraphicsDevice
             // same reason it gets no curve: it is a channel being read, not a picture being looked at.
             graded ? Math.Clamp(post.ColourLookup, 0f, 1f) : 0f,
             graded ? _colourLut.Size : 0f,
+
+            // The lens. A mask view is a channel being read rather than a picture being looked at, so
+            // it keeps none of it -- the same rule the curve, the film and the grade follow.
+            maskView ? 0f : MathF.Max(post.ChromaticAberration, 0f),
+            maskView ? 0f : MathF.Max(post.Sharpen, 0f),
+            1f / presentWidth,
+            1f / presentHeight,
+
+            // The grade's knobs, which trim whatever the authored table set.
+            maskView ? 1f : post.Contrast,
+            maskView ? 1f : post.Saturation,
+            !maskView && post.GreenPhosphor ? 1f : 0f,
+            0f,
         };
-        vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 12, parameters);
+        vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 20, parameters);
 
         // The resolve fills the whole back buffer regardless of any scene sub-viewport that was set.
         ApplyViewportAndScissor(cmd, new Viewport(0, 0, (int)_presentTarget.Extent.Width, (int)_presentTarget.Extent.Height));
