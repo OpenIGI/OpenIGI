@@ -20,7 +20,23 @@ internal sealed partial class DesktopGame
     private BoneAnimationSet? _viewRigAnimations;
     private bool _sharedAnimationsRead;
 
-    /// <summary>Reads the two shared animation sets, once for the whole session.</summary>
+    // The read, in flight on a worker. Started at start-up and waited for at the first mission, which is
+    // seconds later and usually long finished.
+    private Task<(BoneAnimationSet? Body, BoneAnimationSet? Rig)>? _sharedAnimationsTask;
+
+    /// <summary>Starts reading the two shared animation sets on a worker.</summary>
+    /// <remarks>
+    /// Two and a half megabytes of IFF, parsed into quaternion tracks. It reads files and allocates and
+    /// touches nothing else in the session, so there is no reason for it to be between the player and
+    /// the first frame — and at start-up the render thread is otherwise waiting on the driver to build a
+    /// device, which is exactly the moment a worker is free.
+    /// </remarks>
+    private void BeginReadingSharedAnimations() =>
+        _sharedAnimationsTask ??= Task.Run(() =>
+            (ReadAnimationSet("000.iff", "the player cannot walk"),
+             ReadAnimationSet("005.iff", "no weapon can be held")));
+
+    /// <summary>Makes the two shared animation sets available, waiting for the read if it is still going.</summary>
     /// <remarks>
     /// Failure is not fatal and is not retried: without skeleton 0 the player can stand and fall but not
     /// walk, and without skeleton 5 nothing can be held — both of which the callers already report. A
@@ -34,8 +50,8 @@ internal sealed partial class DesktopGame
         }
 
         _sharedAnimationsRead = true;
-        _playerBodyAnimations = ReadAnimationSet("000.iff", "the player cannot walk");
-        _viewRigAnimations = ReadAnimationSet("005.iff", "no weapon can be held");
+        BeginReadingSharedAnimations();
+        (_playerBodyAnimations, _viewRigAnimations) = _sharedAnimationsTask!.GetAwaiter().GetResult();
     }
 
     private BoneAnimationSet? ReadAnimationSet(string name, string consequence)

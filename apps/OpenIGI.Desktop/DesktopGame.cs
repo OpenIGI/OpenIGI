@@ -287,6 +287,15 @@ internal sealed partial class DesktopGame : IDisposable
 
     // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
     private long _backdropCycleRow = -1;
+
+    /// <summary>Milliseconds since the process was started, for the start-up timings.</summary>
+    /// <remarks>
+    /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
+    /// the runtime's own start-up -- assembly loading and the first JIT, which is a good share of the
+    /// wait -- is inside the number rather than before it.
+    /// </remarks>
+    private static double SinceProcessStart() =>
+        (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
     private DirectionalLightSettings? _sun;
 
     // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
@@ -543,7 +552,12 @@ internal sealed partial class DesktopGame : IDisposable
 
         // Audio comes up here, after settings.cfg and the +statements, for the same reason the renderer's
         // settings do: the voice count and the output rate are read once, when the device opens.
-        OpenAudioDevice();
+        //
+        // On a worker, because opening OpenAL and decoding the menu track's ADPCM is a tenth of a second
+        // that nothing on this thread depends on, and start-up is the one time the player is waiting for
+        // this thread specifically. Everything that touches the audio device does so from the frame loop,
+        // which is collected below, before the first line that reads it.
+        Task audioReady = Task.Run(OpenAudioDevice);
 
         // Set before anything uploads a texture: mip generation happens at upload, so a level loaded
         // before this would keep the unfiltered tiles it started with.
@@ -634,6 +648,11 @@ internal sealed partial class DesktopGame : IDisposable
         _missions.Register(_loop.Natives);
         GameMissionState missionState = new();
         missionState.Register(_loop.Natives);
+
+        // The audio device, collected here: this is the first line that reads it, and everything between
+        // it and the Task.Run above -- the scheduler, the console, the cvar wiring -- is work the open
+        // ran alongside rather than after.
+        audioReady.GetAwaiter().GetResult();
 
         // Game_EnableMusic / Game_DisableMusic / Game_SetMusicVolume. Without these the options menu's
         // music slider -- whose script is literally Game_SetMusicVolume(this.vValue) -- moves and does
@@ -881,9 +900,12 @@ internal sealed partial class DesktopGame : IDisposable
 
         // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
         // They live under common/, so they are the same 2.4 MB of IFF for every mission, and parsing
-        // them was the single largest thing standing a player up used to do on the render thread. Doing
-        // it at start-up costs a moment nobody is looking at instead of a moment everybody is.
-        ReadSharedAnimations();
+        // them was the single largest thing standing a player up used to do on the render thread.
+        //
+        // Started rather than done: at start-up the thing between the player and the first frame is this
+        // thread, and the read needs nothing from it. The first mission waits for the result, by when it
+        // has been sitting finished for several seconds.
+        BeginReadingSharedAnimations();
 
 
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
@@ -987,6 +1009,7 @@ internal sealed partial class DesktopGame : IDisposable
         // world is frozen instead of advanced. Escape opens it and Escape closes it again.
         bool pauseMenu = false;
         bool showcasePending = false;
+        bool firstFrameReported = false;
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
         bool entryCamPending = false;
@@ -1281,12 +1304,25 @@ internal sealed partial class DesktopGame : IDisposable
             }
             else
             {
-                // The showcase level is loaded a couple of frames into the loop, not here: loading it now
-                // would block for a few seconds before the window ever showed the menu (the "blue screen"
-                // that is just the frame's clear). Deferring it lets the menu draw first over a dark
-                // backdrop, then the showcase streams in behind it.
+                // The showcase level is ASKED FOR here and arrives when it arrives. It used to be
+                // requested a couple of frames into the loop, because building it once blocked for
+                // seconds and doing that before the window was shown was a blue screen where the menu
+                // should be. It has not blocked since the build moved to a worker, and the wait between
+                // asking and the backdrop appearing is that worker's -- so asking now rather than two
+                // frames later is the whole of it earlier. The menu still draws over its dark backdrop
+                // in the meantime, which is what the deferral was protecting.
                 menuMode = true;
-                showcasePending = true;
+                int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
+                currentShowcaseMissionId = firstShowcase;
+
+                if (previewLoader is { } opening)
+                {
+                    opening.Request(firstShowcase);
+                }
+                else
+                {
+                    showcasePending = true;
+                }
 
                 // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
                 // Through a helper because what it displaces has to be given back: these are Archive
@@ -1320,7 +1356,10 @@ internal sealed partial class DesktopGame : IDisposable
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
-        _logger.Information("Desktop", $"{_platform.Name} up on {_device.Capabilities.Renderer}.");
+        _logger.Information(
+            "Desktop",
+            $"{_platform.Name} up on {_device.Capabilities.Renderer}; the window is on screen "
+            + $"{SinceProcessStart():0} ms after the process started.");
 
         // -poidump: build every mission, find the places its menu backdrop should circle, write them out
         // and quit. A tool run once; what it writes is then owned and edited by hand.
@@ -2301,6 +2340,18 @@ internal sealed partial class DesktopGame : IDisposable
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
+
+            // The number that says how long the player waited for a picture, said once. Everything above
+            // it -- the runtime coming up, the window, the device, the swapchain, the first pipelines --
+            // is time nobody can do anything during, and it is the only start-up figure that is about
+            // what a person experiences rather than about where the CPU went.
+            if (!firstFrameReported && outcome != FrameOutcome.Tick)
+            {
+                firstFrameReported = true;
+                _logger.Information(
+                    "Desktop",
+                    FormattableString.Invariant($"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
+            }
 
             // Retire finished voices, refill streaming buffers and advance any crossfade. This sits
             // ABOVE the pause check on purpose: a paused game still has to feed the music, and a stream
