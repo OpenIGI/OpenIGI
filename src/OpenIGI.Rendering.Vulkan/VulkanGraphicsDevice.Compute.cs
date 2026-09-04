@@ -324,14 +324,16 @@ public sealed partial class VulkanGraphicsDevice
             throw new GraphicsDeviceException($"{texture} holds {expected} bytes; {offered} were offered.");
         }
 
-        using VulkanBuffer staging = new(
+        // Held by the batch; a distance-field atlas is tens of megabytes and used to be its own wait.
+        VulkanBuffer staging = new(
             _instance.Vk, _device, _allocator, (ulong)expected,
             BufferUsageFlags.TransferSrcBit,
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
         staging.Write(data);
 
         Buffer source = staging.Handle;
-        _commands.SingleTime(cmd =>
+        _commands.SingleTimeBatched(
+            cmd =>
         {
             image.BarrierStoreToRead(cmd);
             BufferImageCopy region = new()
@@ -346,7 +348,9 @@ public sealed partial class VulkanGraphicsDevice
                 ImageExtent = new Extent3D((uint)image.Width, (uint)image.Height, (uint)image.Depth),
             };
             _instance.Vk.CmdCopyBufferToImage(cmd, source, image.Image, ImageLayout.General, 1, &region);
-        });
+        },
+            keepAlive: staging,
+            stagingBytes: (ulong)expected);
     }
 
     /// <inheritdoc/>

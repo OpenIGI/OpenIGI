@@ -457,6 +457,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // buffer is ended. What it measures against the sum of the stages is the work no stage claims.
         _stageProfiler?.EndFrame(_frameCommandBuffer, _frameLoop.CurrentFrame);
 
+        // And the other end of the batch. A mesh staged DURING a frame -- the terrain's batch pages,
+        // uploaded by the very draw that needs them -- must reach the queue before the frame that reads
+        // it does, and there is no earlier moment than this that still covers every page the frame took.
+        _commands.FlushBatched();
+
         bool presented = _frameLoop.EndFrame(_frameImageIndex);
         _frameOpen = false;
         if (presented)
@@ -664,6 +669,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         {
             return;
         }
+
+        // Whatever the loaders batched since the last frame goes to the queue before this one opens, so
+        // the frame about to record can sample every texture and draw every mesh that was created for
+        // it. This is the one wait the batching leaves, and there is at most one of them a frame.
+        _commands.FlushBatched();
 
         // Here and nowhere else: no command buffer is recording, so nothing holds a reference to what a
         // pending release is about to free, and everything that does hold one has been submitted and can

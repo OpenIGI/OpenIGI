@@ -304,7 +304,11 @@ internal sealed unsafe class VulkanMesh : IDisposable
         }
 
         ulong bytes = (ulong)(data.Length * Unsafe.SizeOf<T>());
-        using VulkanBuffer staging = new(
+
+        // Handed to the batch rather than disposed here; see VulkanCommands.SingleTimeBatched. The batch
+        // is flushed both before a frame opens and before it is submitted, so a page staged mid-frame
+        // still reaches the queue ahead of the draw that reads it.
+        VulkanBuffer staging = new(
             _vk,
             _device,
             _allocator,
@@ -314,7 +318,8 @@ internal sealed unsafe class VulkanMesh : IDisposable
         staging.Write(data);
 
         Buffer source = staging.Handle;
-        _commands.SingleTime(cmd =>
+        _commands.SingleTimeBatched(
+            cmd =>
         {
             BufferCopy region = new()
             {
@@ -345,6 +350,8 @@ internal sealed unsafe class VulkanMesh : IDisposable
                 null,
                 0,
                 null);
-        });
+        },
+            keepAlive: staging,
+            stagingBytes: bytes);
     }
 }

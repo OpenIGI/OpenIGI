@@ -19,13 +19,35 @@ namespace OpenIGI.Rendering.Vulkan;
 /// a mip chain, moving an image to its first layout — where the simplicity of a synchronous copy is
 /// worth more than the pipelining a fence-and-poll would keep. Nothing on the frame path uses it.
 /// </para>
+/// <para>
+/// <see cref="SingleTimeBatched"/> is the same work without the per-item wait. A submit-and-wait costs
+/// a queue round trip whatever it carries, and a level's worth of textures is hundreds of them: measured
+/// over a menu session, six hundred milliseconds of the render thread went on <c>vkWaitForFences</c>
+/// waiting for copies that together took a fraction of that. Batched, they accumulate into one buffer
+/// and pay one round trip between them. The guarantee is unchanged — the batch is flushed, and waited
+/// on, before anything else is submitted or a frame opens — so a caller still cannot observe an upload
+/// that has not happened.
+/// </para>
 /// </remarks>
 internal sealed unsafe class VulkanCommands : IDisposable
 {
+    // How much a batch accumulates before it goes on its own. The count keeps a pathological run of tiny
+    // uploads from holding a command buffer open all load; the byte cap keeps the staging memory they
+    // hold alive bounded, which is the real resource at stake -- a level's textures are megabytes each.
+    private const int MaxBatchedItems = 192;
+    private const ulong MaxBatchedBytes = 96UL * 1024 * 1024;
+
     private readonly Vk _vk;
     private readonly VulkanDevice _device;
     private readonly CommandPool _pool;
     private readonly CommandPool _singleTimePool;
+
+    // The open batch, the staging it holds alive until the batch has run, and how much of each it has.
+    private readonly List<IDisposable> _batchHeld = [];
+    private CommandBuffer _batch;
+    private int _batchItems;
+    private ulong _batchBytes;
+
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="VulkanCommands"/> class.</summary>
@@ -103,6 +125,76 @@ internal sealed unsafe class VulkanCommands : IDisposable
         SubmitOneOff(commandBuffer);
     }
 
+    /// <summary>Records one-off work into the shared batch instead of submitting it on its own.</summary>
+    /// <param name="record">Records the commands into the batch's buffer.</param>
+    /// <param name="keepAlive">
+    /// A staging resource the recorded commands read, disposed once the batch has actually run. Passing
+    /// it here rather than disposing at the call site is the whole difference: the copy no longer has to
+    /// have completed by the time the caller returns.
+    /// </param>
+    /// <param name="stagingBytes">How much host-visible memory <paramref name="keepAlive"/> holds.</param>
+    /// <remarks>
+    /// For uploads and layout moves whose result nothing reads until the next submission — which is every
+    /// texture, mesh and buffer the loaders create. Work whose result the HOST reads back, or which must
+    /// have finished before the call returns for any other reason, belongs in <see cref="SingleTime"/>.
+    /// </remarks>
+    public void SingleTimeBatched(Action<CommandBuffer> record, IDisposable? keepAlive = null, ulong stagingBytes = 0)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        if (_batch.Handle == 0)
+        {
+            _batch = BeginOneOffCore();
+        }
+
+        record(_batch);
+        _batchItems++;
+        _batchBytes += stagingBytes;
+
+        if (keepAlive is not null)
+        {
+            _batchHeld.Add(keepAlive);
+        }
+
+        if (_batchItems >= MaxBatchedItems || _batchBytes >= MaxBatchedBytes)
+        {
+            FlushBatched();
+        }
+    }
+
+    /// <summary>Submits whatever the batch holds and waits for it, freeing the staging it kept alive.</summary>
+    /// <remarks>
+    /// Called before anything else reaches the queue -- another one-off, a frame opening -- so batched
+    /// work is always ordered and complete ahead of whatever might read it. Cheap and safe to call with
+    /// an empty batch, which is what it is on nearly every frame.
+    /// </remarks>
+    public void FlushBatched()
+    {
+        if (_batch.Handle == 0)
+        {
+            return;
+        }
+
+        CommandBuffer buffer = _batch;
+        _batch = default;
+        _batchItems = 0;
+        _batchBytes = 0;
+
+        try
+        {
+            SubmitOneOffCore(buffer);
+        }
+        finally
+        {
+            foreach (IDisposable held in _batchHeld)
+            {
+                held.Dispose();
+            }
+
+            _batchHeld.Clear();
+        }
+    }
+
     /// <summary>Opens a one-off command buffer whose recording spans more than one call.</summary>
     /// <returns>The command buffer, already begun.</returns>
     /// <remarks>
@@ -112,6 +204,14 @@ internal sealed unsafe class VulkanCommands : IDisposable
     /// </remarks>
     /// <exception cref="GraphicsDeviceException">The buffer could not be allocated or begun.</exception>
     public CommandBuffer BeginOneOff()
+    {
+        // Ahead of anything that is not the batch, so the queue sees the uploads first and the buffer
+        // about to be recorded can read what they wrote.
+        FlushBatched();
+        return BeginOneOffCore();
+    }
+
+    private CommandBuffer BeginOneOffCore()
     {
         CommandBufferAllocateInfo allocInfo = new()
         {
@@ -136,6 +236,12 @@ internal sealed unsafe class VulkanCommands : IDisposable
     /// <param name="commandBuffer">The buffer to finish.</param>
     /// <exception cref="GraphicsDeviceException">The submission failed.</exception>
     public void SubmitOneOff(CommandBuffer commandBuffer)
+    {
+        FlushBatched();
+        SubmitOneOffCore(commandBuffer);
+    }
+
+    private void SubmitOneOffCore(CommandBuffer commandBuffer)
     {
         VkCheck.Ok(_vk.EndCommandBuffer(commandBuffer), "vkEndCommandBuffer");
 
@@ -173,6 +279,7 @@ internal sealed unsafe class VulkanCommands : IDisposable
         }
 
         _disposed = true;
+        FlushBatched();
         _vk.DestroyCommandPool(_device.Device, _singleTimePool, null);
         _vk.DestroyCommandPool(_device.Device, _pool, null);
     }

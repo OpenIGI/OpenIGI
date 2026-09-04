@@ -169,11 +169,14 @@ internal sealed unsafe class VulkanTexture : IDisposable
                 $"Mip level {mipLevel} needs {levelWidth * levelHeight} pixels but got {pixels.Length}.");
         }
 
-        using VulkanBuffer staging = new(
+        // Not disposed here: the copy is batched, so the staging has to outlive this call and is handed
+        // to the batch, which frees it once the copy has actually run.
+        ulong stagingBytes = (ulong)(levelWidth * levelHeight * Bgra32.Size);
+        VulkanBuffer staging = new(
             _vk,
             device,
             allocator,
-            (ulong)(levelWidth * levelHeight * Bgra32.Size),
+            stagingBytes,
             BufferUsageFlags.TransferSrcBit,
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
         staging.Write(pixels[..(levelWidth * levelHeight)]);
@@ -181,7 +184,8 @@ internal sealed unsafe class VulkanTexture : IDisposable
         Image image = Image;
         Buffer stagingHandle = staging.Handle;
         int level = mipLevel;
-        commands.SingleTime(cmd =>
+        commands.SingleTimeBatched(
+            cmd =>
         {
             TransitionLayout(
                 cmd,
@@ -216,7 +220,9 @@ internal sealed unsafe class VulkanTexture : IDisposable
                 PipelineStageFlags.FragmentShaderBit,
                 AccessFlags.TransferWriteBit,
                 AccessFlags.ShaderReadBit);
-        });
+        },
+            keepAlive: staging,
+            stagingBytes: stagingBytes);
     }
 
     /// <summary>Records a device-side copy of another colour image's top-left region into mip level zero.</summary>
@@ -297,11 +303,14 @@ internal sealed unsafe class VulkanTexture : IDisposable
         in TextureDescription description,
         ReadOnlySpan<Bgra32> pixels)
     {
-        using VulkanBuffer staging = new(
+        // Held by the batch rather than by this scope; see UpdateLevel. This is the hot one -- a level's
+        // worth of textures is hundreds of these, and each used to be its own submit and its own wait.
+        ulong stagingBytes = (ulong)(pixels.Length * Bgra32.Size);
+        VulkanBuffer staging = new(
             _vk,
             device,
             allocator,
-            (ulong)(pixels.Length * Bgra32.Size),
+            stagingBytes,
             BufferUsageFlags.TransferSrcBit,
             MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
         staging.Write(pixels);
@@ -326,7 +335,8 @@ internal sealed unsafe class VulkanTexture : IDisposable
 
         Image image = Image;
         Buffer stagingHandle = staging.Handle;
-        commands.SingleTime(cmd =>
+        commands.SingleTimeBatched(
+            cmd =>
         {
             TransitionLayout(
                 cmd,
@@ -365,7 +375,9 @@ internal sealed unsafe class VulkanTexture : IDisposable
                 PipelineStageFlags.FragmentShaderBit,
                 AccessFlags.TransferWriteBit,
                 AccessFlags.ShaderReadBit);
-        });
+        },
+            keepAlive: staging,
+            stagingBytes: stagingBytes);
     }
 
     private void TransitionLayout(
