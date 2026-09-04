@@ -2371,13 +2371,18 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Film grain. A little also hides the banding an 8-bit display gives a smooth gradient."),
 
-        // Off. It was added on the assumption that the temporal accumulation would keep it to a
-        // suggestion; with no accumulation it is one more source of noise on top of the stochastic
-        // passes, and the thing it was hiding -- 8-bit banding -- is the lesser complaint.
+        // A fifth of the slider's own range, which is a grain you have to look for rather than one that
+        // reads as noise. It was off on every preset for a while: added on the assumption that the
+        // temporal accumulation would keep it to a suggestion, then turned off when there was no
+        // accumulation to do that and it was one more source of noise on top of the stochastic passes.
+        // Both halves of that argument have moved -- the temporal resolve carries the frame now -- and the
+        // complaint it answers has not: an 8-bit display bands a smooth gradient (a sky, a wall falling
+        // into shadow) into visible steps, and a dither at this depth is what breaks them up. Off at
+        // vanilla, which has neither the gradients nor the resolve.
         vanilla: "0",
-        enhanced: "0",
-        high: "0",
-        ultra: "0");
+        enhanced: "0.04",
+        high: "0.04",
+        ultra: "0.04");
 
     /// <summary>How far the red and blue channels separate towards the corners.</summary>
     public static readonly NumericCVar<float> ChromaticAberration = Presets.Define(

@@ -377,8 +377,8 @@ public static class GraphicsMenu
                 new GraphicsSetting(
                     "r_grain",
                     "Film Grain",
-                    "Adds a fine moving speckle over the frame, like film stock. Entirely a matter of "
-                        + "taste, and off by default."),
+                    "Adds a fine moving speckle over the frame, like film stock. A little of it also "
+                        + "breaks up the banding a smooth sky picks up on an 8-bit display."),
             ]),
     ];
 
