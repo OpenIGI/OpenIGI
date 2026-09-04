@@ -31,13 +31,13 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
     private readonly Device _device;
     private readonly DescriptorSetLayout _layout;
     private readonly List<DescriptorPool> _pools = [];
-    private readonly Dictionary<(uint Diffuse, uint Lightmap), Entry> _sets = [];
+    private readonly Dictionary<(uint Diffuse, uint Lightmap, uint Detail), Entry> _sets = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="MeshTextureDescriptorCache"/> class.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the pool lives on.</param>
-    /// <param name="layout">The two-sampler descriptor set layout the sets are allocated to.</param>
+    /// <param name="layout">The three-sampler descriptor set layout the sets are allocated to.</param>
     /// <exception cref="GraphicsDeviceException">The descriptor pool could not be created.</exception>
     public MeshTextureDescriptorCache(Vk vk, Device device, DescriptorSetLayout layout)
     {
@@ -54,14 +54,27 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
     /// <param name="diffuse">The diffuse texture.</param>
     /// <param name="lightmapId">The lightmap texture's handle id.</param>
     /// <param name="lightmap">The lightmap texture.</param>
-    /// <returns>The descriptor set binding both textures.</returns>
+    /// <param name="detailId">The surface-detail texture's handle id.</param>
+    /// <param name="detail">
+    /// The surface-detail texture. A diffuse with no map of its own is given the neutral one, whose
+    /// values are the identity of everything the detail block does, so no draw needs a flag saying which
+    /// it has.
+    /// </param>
+    /// <returns>The descriptor set binding all three textures.</returns>
     /// <exception cref="GraphicsDeviceException">A set could not be allocated.</exception>
-    public DescriptorSet Get(uint diffuseId, VulkanTexture diffuse, uint lightmapId, VulkanTexture lightmap)
+    public DescriptorSet Get(
+        uint diffuseId,
+        VulkanTexture diffuse,
+        uint lightmapId,
+        VulkanTexture lightmap,
+        uint detailId,
+        VulkanTexture detail)
     {
         ArgumentNullException.ThrowIfNull(diffuse);
         ArgumentNullException.ThrowIfNull(lightmap);
+        ArgumentNullException.ThrowIfNull(detail);
 
-        (uint, uint) key = (diffuseId, lightmapId);
+        (uint, uint, uint) key = (diffuseId, lightmapId, detailId);
         if (_sets.TryGetValue(key, out Entry existing))
         {
             return existing.Set;
@@ -69,7 +82,7 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
 
         (DescriptorPool owner, DescriptorSet set) = Allocate();
 
-        DescriptorImageInfo* images = stackalloc DescriptorImageInfo[2];
+        DescriptorImageInfo* images = stackalloc DescriptorImageInfo[3];
         images[0] = new DescriptorImageInfo
         {
             Sampler = diffuse.Sampler,
@@ -82,8 +95,14 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
             ImageView = lightmap.View,
             ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
         };
+        images[2] = new DescriptorImageInfo
+        {
+            Sampler = detail.Sampler,
+            ImageView = detail.View,
+            ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+        };
 
-        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[2];
+        WriteDescriptorSet* writes = stackalloc WriteDescriptorSet[3];
         writes[0] = new WriteDescriptorSet
         {
             SType = StructureType.WriteDescriptorSet,
@@ -103,7 +122,17 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
             PImageInfo = &images[1],
         };
 
-        _vk.UpdateDescriptorSets(_device, 2, writes, 0, null);
+        writes[2] = new WriteDescriptorSet
+        {
+            SType = StructureType.WriteDescriptorSet,
+            DstSet = set,
+            DstBinding = 2,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            PImageInfo = &images[2],
+        };
+
+        _vk.UpdateDescriptorSets(_device, 3, writes, 0, null);
         _sets[key] = new Entry(owner, set);
         return set;
     }
@@ -112,16 +141,16 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
     /// <param name="textureId">The texture's handle id.</param>
     public void Forget(uint textureId)
     {
-        List<(uint Diffuse, uint Lightmap)> stale = [];
-        foreach ((uint Diffuse, uint Lightmap) key in _sets.Keys)
+        List<(uint Diffuse, uint Lightmap, uint Detail)> stale = [];
+        foreach ((uint Diffuse, uint Lightmap, uint Detail) key in _sets.Keys)
         {
-            if (key.Diffuse == textureId || key.Lightmap == textureId)
+            if (key.Diffuse == textureId || key.Lightmap == textureId || key.Detail == textureId)
             {
                 stale.Add(key);
             }
         }
 
-        foreach ((uint Diffuse, uint Lightmap) key in stale)
+        foreach ((uint Diffuse, uint Lightmap, uint Detail) key in stale)
         {
             Entry entry = _sets[key];
             _sets.Remove(key);
@@ -193,7 +222,7 @@ internal sealed unsafe class MeshTextureDescriptorCache : IDisposable
         DescriptorPoolSize poolSize = new()
         {
             Type = DescriptorType.CombinedImageSampler,
-            DescriptorCount = SetsPerPool * 2,
+            DescriptorCount = SetsPerPool * 3,
         };
 
         DescriptorPoolCreateInfo createInfo = new()

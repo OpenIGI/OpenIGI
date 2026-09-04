@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Silk.NET.Core.Native;
@@ -12,7 +12,7 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </summary>
 /// <remarks>
 /// Geometry is always opaque — translucency is the forward subpass's job — so blend does not vary here;
-/// only depth behaviour and culling do. The texture set is the same two-sampler layout the forward mesh
+/// only depth behaviour and culling do. The texture set is the same layout the forward mesh
 /// pipeline uses, so a draw's descriptor set is shared between the two paths.
 /// </remarks>
 internal sealed unsafe class GBufferPipeline : IDisposable
@@ -30,14 +30,16 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     /// <param name="device">The device the pipelines live on.</param>
     /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The deferred render pass.</param>
-    /// <param name="textureSetLayout">The two-sampler descriptor layout shared with the forward mesh path.</param>
+    /// <param name="textureSetLayout">The sampler descriptor layout shared with the forward mesh path.</param>
+    /// <param name="surfaceSetLayout">The per-frame surface block's layout, bound as set one.</param>
     /// <exception cref="GraphicsDeviceException">The layout or shaders could not be created.</exception>
     public GBufferPipeline(
         Vk vk,
         VulkanDevice device,
         ShaderCompiler compiler,
         RenderPass renderPass,
-        DescriptorSetLayout textureSetLayout)
+        DescriptorSetLayout textureSetLayout,
+        DescriptorSetLayout surfaceSetLayout)
     {
         ArgumentNullException.ThrowIfNull(vk);
         ArgumentNullException.ThrowIfNull(device);
@@ -57,7 +59,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
             compiler.Compile(DeferredShaderSource.GBufferFragment, ShaderStage.Fragment, "gbuffer.frag"),
             ShaderStage.Fragment);
 
-        PipelineLayout = CreatePipelineLayout(textureSetLayout);
+        PipelineLayout = CreatePipelineLayout(textureSetLayout, surfaceSetLayout);
     }
 
     /// <summary>Gets the pipeline layout: the texture set and the 128-byte push constant.</summary>
@@ -98,7 +100,9 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         _vertex.Dispose();
     }
 
-    private PipelineLayout CreatePipelineLayout(DescriptorSetLayout textureSetLayout)
+    private PipelineLayout CreatePipelineLayout(
+        DescriptorSetLayout textureSetLayout,
+        DescriptorSetLayout surfaceSetLayout)
     {
         PushConstantRange push = new()
         {
@@ -107,11 +111,18 @@ internal sealed unsafe class GBufferPipeline : IDisposable
             Size = 128,
         };
 
+        // Set zero is the draw's own textures, set one the frame's surface block. The split is what the
+        // two are: one changes with every material and is cached per pairing, the other changes once a
+        // frame and would have to be rewritten into every cached set if it shared theirs.
+        DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[2];
+        layouts[0] = textureSetLayout;
+        layouts[1] = surfaceSetLayout;
+
         PipelineLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.PipelineLayoutCreateInfo,
-            SetLayoutCount = 1,
-            PSetLayouts = &textureSetLayout,
+            SetLayoutCount = 2,
+            PSetLayouts = layouts,
             PushConstantRangeCount = 1,
             PPushConstantRanges = &push,
         };

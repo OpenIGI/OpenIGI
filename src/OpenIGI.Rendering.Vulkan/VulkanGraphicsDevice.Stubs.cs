@@ -65,14 +65,57 @@ public sealed partial class VulkanGraphicsDevice
     private float _alphaHashSeed;
 
     /// <inheritdoc/>
-    public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail) => ThrowIfDisposed();
+    /// <remarks>
+    /// Recorded against the diffuse texture's own id, and looked up when a draw binds that diffuse. The
+    /// pairing outlives any draw, so nothing between here and the G-buffer has to carry it: the descriptor
+    /// set a draw is given is keyed by all three textures and built once.
+    /// </remarks>
+    public void SetTextureDetail(TextureHandle diffuse, TextureHandle detail)
+    {
+        ThrowIfDisposed();
+        if (!diffuse.IsValid || !_textures.ContainsKey(diffuse.Id))
+        {
+            throw new GraphicsDeviceException($"{diffuse} does not belong to this device.");
+        }
+
+        if (detail.IsValid && _textures.ContainsKey(detail.Id))
+        {
+            _textureDetail[diffuse.Id] = detail.Id;
+        }
+        else
+        {
+            _textureDetail.Remove(diffuse.Id);
+        }
+    }
 
     /// <inheritdoc/>
-    public void SetMaterialDetail(float strength) => ThrowIfDisposed();
+    /// <remarks>
+    /// Per frame rather than per draw, so it travels in the geometry pass's own surface block rather than
+    /// in the push constant every draw already fills to the last float. Zero folds the whole detail term
+    /// away in the shader, which is what every preset below high asks for.
+    /// </remarks>
+    public void SetMaterialDetail(float strength)
+    {
+        ThrowIfDisposed();
+        _materialDetail = MathF.Max(strength, 0f);
+    }
+
+    private float _materialDetail;
 
     /// <inheritdoc/>
-    /// <remarks>The up-facing floor sheen is not modelled by the Vulkan lighting yet; recorded and ignored.</remarks>
-    public void SetFloorGloss(float gloss) => ThrowIfDisposed();
+    /// <remarks>
+    /// Applied in the G-buffer rather than in the shading, because the roughness it smooths is read by
+    /// more than the lighting: the screen-space reflections decide what reflects from the same channel,
+    /// and a floor that is glossy only to the light would be the one surface the effect exists for and
+    /// still not reflect.
+    /// </remarks>
+    public void SetFloorGloss(float gloss)
+    {
+        ThrowIfDisposed();
+        _floorGloss = Math.Clamp(gloss, 0f, 1f);
+    }
+
+    private float _floorGloss = 1f;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -150,7 +193,17 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public void SetColourLookup(ColourLookupTable? table) => ThrowIfDisposed();
+    /// <remarks>
+    /// Uploaded here and read by the resolve, which applies it to the display-encoded picture — the only
+    /// space a grade means anything in, because a colourist authored it looking at a picture rather than
+    /// at radiance. A table is resident until another replaces it; the upload blocks, and it happens
+    /// when a level or the console chooses a grade rather than inside a frame.
+    /// </remarks>
+    public void SetColourLookup(ColourLookupTable? table)
+    {
+        ThrowIfDisposed();
+        _colourLut.Set(table);
+    }
 
 
     // ---- Compute, storage buffers, storage images and volumes are in VulkanGraphicsDevice.Compute.cs.

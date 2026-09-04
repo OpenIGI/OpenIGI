@@ -30,6 +30,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly ProbeVolumes _probes;
     private readonly VulkanBuffer[] _giUniforms;
     private readonly VulkanBuffer[] _lampUniforms;
+    private readonly VulkanBuffer[] _surfaceUniforms;
+    private readonly DescriptorSetLayout _surfaceLayout;
+    private readonly DescriptorSet[] _surfaceSets;
     private readonly ShadowMap _shadowMap;
     private readonly ShadowPipeline _shadowPipeline;
     private readonly bool _rayQuery;
@@ -60,6 +63,14 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
     public const int GiUniformSize = 1024;
 
+    /// <summary>The size in bytes of the geometry pass's per-frame surface block.</summary>
+    /// <remarks>
+    /// One vector: how strongly the derived detail maps are trusted, and how far an up-facing surface's
+    /// roughness is smoothed towards a floor's. Both are per FRAME rather than per draw, and the
+    /// geometry pass's push block is full to the last float, so they arrive as a set of their own.
+    /// </remarks>
+    public const int SurfaceUniformSize = 16;
+
     /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
     /// <remarks>
     /// Two <c>vec4</c>s of counts and control, then three per light: position and reach, colour and
@@ -75,7 +86,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="allocator">The allocator backing the scene targets.</param>
     /// <param name="commands">The command pool the probe uploads come from.</param>
     /// <param name="compiler">The shader compiler.</param>
-    /// <param name="textureSetLayout">The two-sampler layout shared with the mesh path, for geometry.</param>
+    /// <param name="textureSetLayout">The sampler layout shared with the mesh path, for geometry.</param>
     /// <param name="presentRenderPass">The back-buffer render pass the resolve draws into.</param>
     /// <param name="framesInFlight">How many scene targets to keep — one per frame in flight.</param>
     /// <exception cref="GraphicsDeviceException">A resource could not be created.</exception>
@@ -137,8 +148,13 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             : null;
         _giUniforms = new VulkanBuffer[framesInFlight];
         _lampUniforms = new VulkanBuffer[framesInFlight];
+        _surfaceUniforms = new VulkanBuffer[framesInFlight];
         for (int i = 0; i < framesInFlight; i++)
         {
+            _surfaceUniforms[i] = new VulkanBuffer(
+                vk, device, allocator, SurfaceUniformSize,
+                BufferUsageFlags.UniformBufferBit,
+                MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit);
             _giUniforms[i] = new VulkanBuffer(
                 vk, device, allocator, GiUniformSize,
                 BufferUsageFlags.UniformBufferBit,
@@ -154,8 +170,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _resolveLayout = CreateResolveLayout();
         _pool = CreatePool(framesInFlight);
         _sampler = CreateSampler();
+        _surfaceLayout = CreateSurfaceLayout();
+        _surfaceSets = AllocateSurfaceSets(framesInFlight);
 
-        Geometry = new GBufferPipeline(vk, device, compiler, _renderPass.Geometry, textureSetLayout);
+        Geometry = new GBufferPipeline(vk, device, compiler, _renderPass.Geometry, textureSetLayout, _surfaceLayout);
         Lighting = new FullscreenPipeline(
             vk,
             device,
@@ -213,6 +231,16 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     /// <param name="frame">The frame-in-flight index.</param>
     /// <returns>The buffer.</returns>
     public VulkanBuffer GiUniform(int frame) => _giUniforms[frame];
+
+    /// <summary>Gets the geometry pass's per-frame surface buffer for a frame in flight.</summary>
+    /// <param name="frame">The frame-in-flight index.</param>
+    /// <returns>The buffer to write before the geometry pass records.</returns>
+    public VulkanBuffer SurfaceUniform(int frame) => _surfaceUniforms[frame];
+
+    /// <summary>Gets the descriptor set that points at that buffer.</summary>
+    /// <param name="frame">The frame-in-flight index.</param>
+    /// <returns>The set, bound as set one under the geometry pipeline layout.</returns>
+    public DescriptorSet SurfaceSet(int frame) => _surfaceSets[frame];
 
     /// <summary>Gets the local-light uniform buffer for a frame in flight.</summary>
     /// <param name="frame">The frame-in-flight index.</param>
@@ -391,6 +419,12 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         Geometry.Dispose();
         _vk.DestroySampler(_device, _sampler, null);
         _vk.DestroyDescriptorPool(_device, _pool, null);
+        _vk.DestroyDescriptorSetLayout(_device, _surfaceLayout, null);
+        foreach (VulkanBuffer buffer in _surfaceUniforms)
+        {
+            buffer.Dispose();
+        }
+
         _vk.DestroyDescriptorSetLayout(_device, _resolveLayout, null);
         _vk.DestroyDescriptorSetLayout(_device, _lightingLayout, null);
         _renderPass.Dispose();
@@ -551,11 +585,90 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         return layout;
     }
 
+    private DescriptorSetLayout CreateSurfaceLayout()
+    {
+        DescriptorSetLayoutBinding binding = new()
+        {
+            Binding = 0,
+            DescriptorType = DescriptorType.UniformBuffer,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
+        DescriptorSetLayoutCreateInfo createInfo = new()
+        {
+            SType = StructureType.DescriptorSetLayoutCreateInfo,
+            BindingCount = 1,
+            PBindings = &binding,
+        };
+
+        DescriptorSetLayout layout;
+        VkCheck.Ok(
+            _vk.CreateDescriptorSetLayout(_device, &createInfo, null, &layout),
+            "vkCreateDescriptorSetLayout (surface)");
+        return layout;
+    }
+
+    /// <summary>Allocates one surface set per frame in flight and points each at its own buffer.</summary>
+    /// <remarks>
+    /// Written once, here. The buffer a set names never changes — only its contents do, and those are
+    /// written through the mapping of a buffer whose frame has already been waited on.
+    /// </remarks>
+    private DescriptorSet[] AllocateSurfaceSets(int framesInFlight)
+    {
+        DescriptorSet[] sets = new DescriptorSet[framesInFlight];
+        DescriptorSetLayout* layouts = stackalloc DescriptorSetLayout[framesInFlight];
+        for (int i = 0; i < framesInFlight; i++)
+        {
+            layouts[i] = _surfaceLayout;
+        }
+
+        DescriptorSetAllocateInfo allocInfo = new()
+        {
+            SType = StructureType.DescriptorSetAllocateInfo,
+            DescriptorPool = _pool,
+            DescriptorSetCount = (uint)framesInFlight,
+            PSetLayouts = layouts,
+        };
+
+        fixed (DescriptorSet* target = sets)
+        {
+            VkCheck.Ok(
+                _vk.AllocateDescriptorSets(_device, &allocInfo, target),
+                "vkAllocateDescriptorSets (surface)");
+        }
+
+        for (int i = 0; i < framesInFlight; i++)
+        {
+            DescriptorBufferInfo info = new()
+            {
+                Buffer = _surfaceUniforms[i].Handle,
+                Offset = 0,
+                Range = SurfaceUniformSize,
+            };
+            WriteDescriptorSet write = new()
+            {
+                SType = StructureType.WriteDescriptorSet,
+                DstSet = sets[i],
+                DstBinding = 0,
+                DescriptorType = DescriptorType.UniformBuffer,
+                DescriptorCount = 1,
+                PBufferInfo = &info,
+            };
+            _vk.UpdateDescriptorSets(_device, 1, &write, 0, null);
+        }
+
+        return sets;
+    }
+
     private DescriptorSetLayout CreateResolveLayout()
     {
-        // Binding 0 is the resolved scene, binding 1 the bloom the reference composites into it.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
-        for (uint i = 0; i < 2; i++)
+        // Binding 0 is the resolved scene, binding 1 the bloom the reference composites into it, and
+        // binding 2 the authored grade as a cube. All three are always declared: a frame with no grade
+        // binds a stand-in and the push block tells the shader to leave the colour alone, because a
+        // binding that came and went would need a second pipeline for the one shader.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
+        for (uint i = 0; i < 3; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
             {
@@ -569,7 +682,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 2,
+            BindingCount = 3,
             PBindings = bindings,
         };
 
@@ -588,11 +701,13 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // cascades, the occlusion, three atmosphere tables, the traced sun mask, the scene depth and the
         // fog volume -- with headroom, and two sets per frame.
         sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 16 * 2) };
-        // Two uniform buffers per lighting set now -- the GI block and the lamps -- so twice the count.
-        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 4) };
+        // Two uniform buffers per lighting set -- the GI block and the lamps -- plus the geometry pass's
+        // own surface block, one per frame in flight.
+        sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 6) };
 
-        // The two resolve sets — the raw lit and the temporally-resolved — each carry one sampler.
-        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 4) };
+        // The three resolve sets -- the raw lit, the temporally-resolved and the motion-blurred -- each
+        // carry the scene, the bloom and the grade.
+        sizes[3] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 12) };
 
         // The lamp visibility each lighting set reads, where the adapter can trace one.
         sizes[4] = new DescriptorPoolSize
@@ -612,7 +727,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         {
             SType = StructureType.DescriptorPoolCreateInfo,
             Flags = DescriptorPoolCreateFlags.FreeDescriptorSetBit,
-            MaxSets = (uint)(framesInFlight * 3 * 2),
+            MaxSets = (uint)(framesInFlight * 4 * 2),
             PoolSizeCount = _rayQuery ? 6u : 4u,
             PPoolSizes = sizes,
         };

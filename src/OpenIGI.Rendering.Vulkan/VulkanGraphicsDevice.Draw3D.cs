@@ -171,6 +171,7 @@ public sealed partial class VulkanGraphicsDevice
     private Buffer _boundPreviousVertexBuffer;
     private Buffer _boundIndexBuffer;
     private DescriptorSet _boundDescriptorSet;
+    private DescriptorSet _boundSurfaceSet;
     private PipelineLayout _boundDescriptorLayout;
 
     /// <summary>Forgets what is bound, so the next draw restates all of it.</summary>
@@ -187,6 +188,7 @@ public sealed partial class VulkanGraphicsDevice
         _boundIndexBuffer = default;
         _boundDescriptorSet = default;
         _boundDescriptorLayout = default;
+        _boundSurfaceSet = default;
     }
 
     /// <summary>Binds a graphics pipeline unless it is the one already bound.</summary>
@@ -575,6 +577,7 @@ public sealed partial class VulkanGraphicsDevice
         BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode));
         BindMeshBuffers(mesh);
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
+        BindSurfaceSet();
 
         // The 128-byte push: the model-view-projection for position, a rotation for the normal, and the
         // material with the lightmap scale.
@@ -794,15 +797,52 @@ public sealed partial class VulkanGraphicsDevice
         }
     }
 
+    /// <summary>Binds the geometry pass's per-frame surface block as set one, unless it is already bound.</summary>
+    /// <remarks>
+    /// Bound beside the textures rather than once when the pass opens, because a pipeline whose layout
+    /// is incompatible for a set unbinds it — and the occlusion queries bind a pipeline of their own in
+    /// the middle of the geometry pass. Restating it costs a handle comparison on every draw but one.
+    /// </remarks>
+    private unsafe void BindSurfaceSet()
+    {
+        DescriptorSet set = _deferred.SurfaceSet(_frameLoop.CurrentFrame);
+        if (_boundSurfaceSet.Handle == set.Handle)
+        {
+            return;
+        }
+
+        _instance.Vk.CmdBindDescriptorSets(
+            _frameCommandBuffer,
+            PipelineBindPoint.Graphics,
+            _deferred.Geometry.PipelineLayout,
+            1,
+            1,
+            &set,
+            0,
+            null);
+        _boundSurfaceSet = set;
+    }
+
     private unsafe void BindMeshTextures(PipelineLayout layout, TextureHandle diffuse, TextureHandle lightmap)
     {
         uint diffuseId = TextureKey(diffuse);
         uint lightmapId = TextureKey(lightmap);
+
+        // The detail map is a property of the diffuse texture rather than of the draw, so it is looked up
+        // here and nothing upstream has to carry it. A diffuse with none registered takes the neutral
+        // map, whose value is the identity of every term the detail block applies -- which is what lets
+        // the shader run the block unconditionally instead of branching on whether one exists.
+        uint detailId = _textureDetail.TryGetValue(diffuseId, out uint mapped) && _textures.ContainsKey(mapped)
+            ? mapped
+            : TextureKey(_neutralDetailTexture);
+
         DescriptorSet descriptorSet = _meshTextureDescriptors.Get(
             diffuseId,
             _textures[diffuseId],
             lightmapId,
-            _textures[lightmapId]);
+            _textures[lightmapId],
+            detailId,
+            _textures[detailId]);
 
         // The layout travels with the set: the same set bound under a different pipeline layout is a
         // different binding, and the shadow, geometry and forward pipelines do not share one.

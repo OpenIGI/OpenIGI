@@ -112,26 +112,26 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
     private DescriptorSetLayout CreateDescriptorSetLayout()
     {
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[2];
-        bindings[0] = new DescriptorSetLayoutBinding
+        // 0 the diffuse, 1 the baked lightmap, 2 the derived surface detail. The third is declared here,
+        // in the layout the forward and shadow paths share, rather than in one of the geometry pass's
+        // own: a set is built per texture pairing and reused by whichever pipeline draws it, so all
+        // three have to agree about its shape even though only the G-buffer reads the detail.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[3];
+        for (uint i = 0; i < 3; i++)
         {
-            Binding = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
-        bindings[1] = new DescriptorSetLayoutBinding
-        {
-            Binding = 1,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            StageFlags = ShaderStageFlags.FragmentBit,
-        };
+            bindings[i] = new DescriptorSetLayoutBinding
+            {
+                Binding = i,
+                DescriptorType = DescriptorType.CombinedImageSampler,
+                DescriptorCount = 1,
+                StageFlags = ShaderStageFlags.FragmentBit,
+            };
+        }
 
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
-            BindingCount = 2,
+            BindingCount = 3,
             PBindings = bindings,
         };
 

@@ -93,6 +93,15 @@ public sealed partial class VulkanGraphicsDevice
         {
             _textureDescriptors.Forget(id);
             _meshTextureDescriptors.Forget(id);
+
+            // The pairing a diffuse held, and any pairing that named this map. Identifiers are never
+            // reused, so a stale entry would mispair nothing -- but a session that loads mission after
+            // mission would accumulate one per textured surface it had ever seen.
+            _textureDetail.Remove(id);
+            foreach (uint diffuse in _textureDetail.Where(pair => pair.Value == id).Select(pair => pair.Key).ToList())
+            {
+                _textureDetail.Remove(diffuse);
+            }
             resource.Dispose();
         });
     }
@@ -350,6 +359,21 @@ public sealed partial class VulkanGraphicsDevice
     {
         Span<Bgra32> white = [Bgra32.White];
         return CreateTexture(new TextureDescription(1, 1), white);
+    }
+
+    /// <summary>Builds the surface-detail map a diffuse with none of its own is given.</summary>
+    /// <returns>A one-pixel map whose every channel is the identity of what it drives.</returns>
+    /// <remarks>
+    /// Not white, and the exact values are the point. A flat tangent normal is a half in x and y, since
+    /// the channel stores the range minus one to one biased into zero to one; a roughness multiplier of
+    /// one is stored halved, so a half again; and the alpha holds how DIELECTRIC a surface is, so opaque
+    /// leaves the material's own metallic alone. Every term of the detail block therefore folds to what
+    /// it would have been, and no draw needs a flag saying whether it has a map.
+    /// </remarks>
+    private TextureHandle CreateNeutralDetailTexture()
+    {
+        Span<Bgra32> neutral = [new Bgra32(128, 128, 128, 255)];
+        return CreateTexture(new TextureDescription(1, 1), neutral);
     }
 
     private VulkanTexture ResolveTextureOrWhite(TextureHandle texture)

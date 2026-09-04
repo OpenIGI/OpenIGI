@@ -1312,8 +1312,20 @@ public sealed partial class VulkanGraphicsDevice
         Vk vk = _instance.Vk;
         vk.CmdBindPipeline(cmd, PipelineBindPoint.Graphics, _deferred.Resolve.Pipeline);
 
+        // A mask view is a channel being read rather than a picture being looked at, so it keeps neither
+        // the curve, the lens, the film nor the grade.
+        bool maskViewPending = _debugView is not DebugView.None and not DebugView.Lighting and not DebugView.LampLight;
+
         // The stable accumulated colour when the temporal pass ran this frame; the raw lit colour when
         // nothing accumulated and the lit image is already the final word.
+        // The grade, into all three resolve sets. Written here rather than when it was uploaded because
+        // the sets outlive neither a resize nor a table change and this is the one point both have
+        // certainly happened by. The lit view stands in when there is no grade, so the binding a layout
+        // declares is never left unwritten -- reading one that is, is undefined even where nothing does.
+        bool graded = _colourLut.Ready && post.ColourLookup > 0f && !maskViewPending;
+        _sceneTarget.WriteColourLut(
+            graded ? _colourLut.View : default, _colourLut.Sampler, _sceneTarget.LitView);
+
         DescriptorSet set = motionBlurred
             ? _sceneTarget.ResolveSetMotionBlur
             : _temporalResolved ? _sceneTarget.ResolveSetTsr : _sceneTarget.ResolveSet;
@@ -1321,7 +1333,7 @@ public sealed partial class VulkanGraphicsDevice
         InvalidateBoundState();
 
         // A mask view is a code value rather than radiance, so it keeps neither the curve nor the lens.
-        bool maskView = _debugView is not DebugView.None and not DebugView.Lighting and not DebugView.LampLight;
+        bool maskView = maskViewPending;
 
         // The grain's phase advances once per resolved frame, wrapped so the counter cannot drift into
         // a magnitude where a float has no fractional bits left to give the shader.
@@ -1347,8 +1359,11 @@ public sealed partial class VulkanGraphicsDevice
             // rather than walking through it, which is what stops the grain crawling in one direction.
             maskView ? 0f : Math.Clamp(post.Grain, 0f, 1f),
             _grainFrame * 0.61803399f,
-            0f,
-            0f,
+
+            // The authored grade and the cube it was sampled onto. A mask view gets none of it, for the
+            // same reason it gets no curve: it is a channel being read, not a picture being looked at.
+            graded ? Math.Clamp(post.ColourLookup, 0f, 1f) : 0f,
+            graded ? _colourLut.Size : 0f,
         };
         vk.CmdPushConstants(cmd, _deferred.Resolve.PipelineLayout, ShaderStageFlags.FragmentBit, 0, sizeof(float) * 12, parameters);
 
@@ -1725,6 +1740,8 @@ public sealed partial class VulkanGraphicsDevice
         {
             throw new GraphicsDeviceException("The scene target is not configured.");
         }
+
+        WriteSurfaceUniform();
 
         ClearValue* clears = stackalloc ClearValue[5];
         for (int i = 0; i < 4; i++)
@@ -2236,6 +2253,24 @@ public sealed partial class VulkanGraphicsDevice
         // through LampLightAtEye: cleared here, the weapon saw zero lamps and fell to a night silhouette
         // while the wall behind it was lit by the very fittings it could not see. EndSceneCapture clears
         // them once the forward draws that need them are done, which keeps the no-carry-over guarantee.
+    }
+
+    /// <summary>Fills this frame's surface block: how far the detail maps are trusted, and the floor sheen.</summary>
+    /// <remarks>
+    /// Written once as the geometry pass opens, into the buffer belonging to this frame in flight — whose
+    /// fence the frame loop has already waited on, so nothing the GPU is still reading is being changed
+    /// underneath it. The set that names the buffer was written when the renderer was built and never
+    /// changes.
+    /// </remarks>
+    private unsafe void WriteSurfaceUniform()
+    {
+        Memory.VulkanBuffer surface = _deferred.SurfaceUniform(_frameLoop.CurrentFrame);
+        float* u = stackalloc float[Deferred.DeferredRenderer.SurfaceUniformSize / sizeof(float)];
+        u[0] = _materialDetail;
+        u[1] = _floorGloss;
+        u[2] = 0f;
+        u[3] = 0f;
+        surface.Write<float>(new ReadOnlySpan<float>(u, Deferred.DeferredRenderer.SurfaceUniformSize / sizeof(float)));
     }
 
     /// <summary>Fills this frame's GI uniform with the probe-field parameters and points the set at it.</summary>

@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Silk.NET.Core.Native;
@@ -29,7 +29,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
     /// <param name="device">The device the pipeline lives on.</param>
     /// <param name="compiler">The shader compiler.</param>
     /// <param name="renderPass">The shadow render pass.</param>
-    /// <param name="textureSetLayout">The two-sampler texture set, for the cut-out test's alpha.</param>
+    /// <param name="textureSetLayout">The shared texture set, for the cut-out test's alpha.</param>
     /// <exception cref="GraphicsDeviceException">The pipeline could not be created.</exception>
     public ShadowPipeline(
         Vk vk,

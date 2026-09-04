@@ -66,9 +66,20 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     // turning it on is a change of one environment variable rather than of the code that uses it.
     private readonly Queues.VulkanSubmissionQueue _submission;
 
+    // The authored colour grade, if a level or the console has chosen one. Resident rather than
+    // per-frame: a cube is a constant, and re-uploading it every frame would cost more bandwidth than
+    // applying it does.
+    private readonly Textures.ColourLutTexture _colourLut;
+
     private readonly Dictionary<uint, VulkanTexture> _textures = [];
     private uint _nextTextureId = 1;
     private readonly TextureHandle _whiteTexture;
+
+    // The map a diffuse with no derived detail of its own is drawn with, and the pairings the app has
+    // registered. Keyed by the diffuse's own id, because a detail map belongs to a texture wherever that
+    // texture is used -- which is what keeps it out of every draw call and every renderer.
+    private readonly TextureHandle _neutralDetailTexture;
+    private readonly Dictionary<uint, uint> _textureDetail = [];
 
     // Rebuilt in place on resize through their own Recreate methods rather than reassigned, so the
     // references themselves never change.
@@ -181,6 +192,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _textureDescriptors = new TextureDescriptorCache(_instance.Vk, _device.Device, _sprite2D.DescriptorSetLayout);
         _mesh3D = new Mesh3DPipeline(_instance.Vk, _device, _shaderCompiler, _presentTarget.RenderPass);
         _meshTextureDescriptors = new MeshTextureDescriptorCache(_instance.Vk, _device.Device, _mesh3D.DescriptorSetLayout);
+        _colourLut = new Textures.ColourLutTexture(_instance.Vk, _device, _allocator, _commands);
         _deferred = new Deferred.DeferredRenderer(
             _instance.Vk,
             _device,
@@ -263,6 +275,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _projectionHeight = height;
 
         _whiteTexture = CreateWhiteTexture();
+        _neutralDetailTexture = CreateNeutralDetailTexture();
         _logger.Information("Vulkan", $"Vulkan backend ready on '{selection.Name}'.");
     }
 
@@ -563,6 +576,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _occlusion.Dispose();
         _deferred.Dispose();
         _meshTextureDescriptors.Dispose();
+        _colourLut.Dispose();
         _mesh3D.Dispose();
         _textureDescriptors.Dispose();
         _sprite2DGeometry.Dispose();
@@ -619,9 +633,8 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// <para>
     /// Two groups. What is left of the post-process chain — the resolve now runs the lens scatter, the
     /// shutter, the vignette, the film grain, exposure and the curve, so what remains unread is the grade
-    /// (contrast, saturation, the colour lookup) and the effects the reference does not use here. And the
-    /// lighting features whose device setters record their arguments and return: reflections, the floor
-    /// sheen, the detail maps, the realtime probe volume.
+    /// (contrast, saturation) and the effects the reference does not use here. And the lighting features whose
+    /// device setters record their arguments and return: reflections, and the realtime probe volume.
     /// </para>
     /// <para>
     /// Keep this list honest in both directions: an entry that has since been implemented is as
@@ -635,10 +648,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // The grade, and the post-process effects the reference leaves switched off.
         "r_chromatic", "r_sharpen",
         "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
-        "r_camera_taps", "r_lut",
+        "r_camera_taps",
 
         // Lighting features whose setters record and return.
-        "r_ssr", "r_ssr_intensity", "r_ssr_max_roughness", "r_floor_gloss", "r_material_detail",
+        "r_ssr", "r_ssr_intensity", "r_ssr_max_roughness",
     ];
 
     private void EnsureFrame()
