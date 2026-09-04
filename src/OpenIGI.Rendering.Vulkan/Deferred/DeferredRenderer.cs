@@ -39,6 +39,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private readonly LampShadowPass? _lampShadow;
     private readonly LampDenoisePass? _lampDenoise;
     private readonly SsaoPass _ssao;
+    private readonly VolumetricFogPass _fog;
     private readonly ReflectionPass _reflection;
     private readonly AutoExposurePass _autoExposure;
     private readonly VelocityPass _velocity;
@@ -57,7 +58,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
-    public const int GiUniformSize = 1008;
+    public const int GiUniformSize = 1024;
 
     /// <summary>The size in bytes of the lighting pass's local-light block.</summary>
     /// <remarks>
@@ -101,6 +102,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _shadowMap = new ShadowMap(vk, device, allocator, commands);
         _shadowPipeline = new ShadowPipeline(vk, device, compiler, _shadowMap.RenderPass, textureSetLayout);
         _ssao = new SsaoPass(vk, device, allocator, compiler, framesInFlight);
+        _fog = new VolumetricFogPass(vk, device, allocator, commands, compiler, framesInFlight);
         _reflection = new ReflectionPass(vk, device, allocator, compiler, framesInFlight);
         _velocity = new VelocityPass(vk, device, allocator, compiler, framesInFlight);
         _objectVelocity = new ObjectVelocityPass(vk, device, compiler, DeferredRenderPass.DepthFormat);
@@ -225,6 +227,9 @@ internal sealed unsafe class DeferredRenderer : IDisposable
 
     /// <summary>Gets the ambient-occlusion compute pass.</summary>
     public SsaoPass Ssao => _ssao;
+
+    /// <summary>Gets the froxel volumetric fog the shading pass reads through.</summary>
+    public VolumetricFogPass Fog => _fog;
 
     /// <summary>Gets the screen-space reflection pass.</summary>
     public ReflectionPass Reflection => _reflection;
@@ -375,6 +380,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         _updateHistory.Dispose();
         _resolveHistory.Dispose();
         _ssao.Dispose();
+        _fog.Dispose();
         _reflection.Dispose();
         _shadowPipeline.Dispose();
         _shadowMap.Dispose();
@@ -397,7 +403,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
         // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
         // traced sun-shadow mask.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[21];
+        // 21 the integrated fog volume the shading pass looks up.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[22];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -521,6 +528,17 @@ internal sealed unsafe class DeferredRenderer : IDisposable
             };
         }
 
+        // 21 the integrated fog volume, which the shading pass looks its own pixel up in. Always present:
+        // a frame with no fog binds the volume anyway and is told to ignore it, because a binding that
+        // comes and goes would need two pipelines for the one shader.
+        bindings[next++] = new DescriptorSetLayoutBinding
+        {
+            Binding = 21,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
         DescriptorSetLayoutCreateInfo createInfo = new()
         {
             SType = StructureType.DescriptorSetLayoutCreateInfo,
@@ -566,7 +584,10 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // reallocates, so the pool allows freeing and is sized with headroom.
         DescriptorPoolSize* sizes = stackalloc DescriptorPoolSize[6];
         sizes[0] = new DescriptorPoolSize { Type = DescriptorType.InputAttachment, DescriptorCount = (uint)(framesInFlight * 5 * 2) };
-        sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 8 * 2) };
+        // Thirteen combined samplers per lighting set -- four probe volumes, the screen-GI atlas, the
+        // cascades, the occlusion, three atmosphere tables, the traced sun mask, the scene depth and the
+        // fog volume -- with headroom, and two sets per frame.
+        sizes[1] = new DescriptorPoolSize { Type = DescriptorType.CombinedImageSampler, DescriptorCount = (uint)(framesInFlight * 16 * 2) };
         // Two uniform buffers per lighting set now -- the GI block and the lamps -- so twice the count.
         sizes[2] = new DescriptorPoolSize { Type = DescriptorType.UniformBuffer, DescriptorCount = (uint)(framesInFlight * 4) };
 

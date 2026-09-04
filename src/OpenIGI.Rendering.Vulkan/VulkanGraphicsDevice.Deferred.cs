@@ -87,6 +87,13 @@ public sealed partial class VulkanGraphicsDevice
     // Ambient occlusion, gathered by a compute pass after the deferred pass and applied a frame later.
     private AmbientOcclusionSettings _aoSettings = AmbientOcclusionSettings.Off;
     private WetnessSettings _wetness = WetnessSettings.Dry;
+
+    // The medium the frame is seen through, and the level's exceptions to it already rebased against
+    // the camera. Whether the volume was actually built this frame decides whether the shading reads it.
+    private VolumetricFogSettings _fogSettings = VolumetricFogSettings.Off;
+    private readonly LocalFogVolume[] _fogVolumes = new LocalFogVolume[LocalFogVolume.MaxPerLevel];
+    private int _fogVolumeCount;
+    private bool _fogActive;
     private ReflectionSettings _reflectionSettings = ReflectionSettings.Off;
     private readonly WetShelter[] _wetShelters = new WetShelter[WetShelter.Capacity];
     private int _wetShelterCount;
@@ -289,6 +296,9 @@ public sealed partial class VulkanGraphicsDevice
                 DispatchLampShadow();
             }
 
+            // The fog, after the lamps it lights from and before the shading pass that reads it.
+            DispatchVolumetricFog();
+
             BeginShadingPass();
             RecordLighting();
             _deferredStage = DeferredStage.Lighting;
@@ -320,6 +330,10 @@ public sealed partial class VulkanGraphicsDevice
         _objectVelocityCurrent.Clear();
         _objectVelocityOccurrence.Clear();
         _objectVelocityDraws.Clear();
+
+        // And the fog it accumulated, for the same reason: the next level's first frame would otherwise
+        // blend nine parts of the air of the mission being left.
+        _deferred.Fog.Invalidate();
     }
 
     /// <summary>Carries out a pending world release, on a frame boundary with nothing recording.</summary>
@@ -1598,7 +1612,13 @@ public sealed partial class VulkanGraphicsDevice
     }
 
     /// <inheritdoc/>
-    /// <remarks>Only the camera position is taken — the fog march itself is not yet ported.</remarks>
+    /// <remarks>
+    /// Held here and acted on between the two render passes, once the frame's lamps are known — see
+    /// <see cref="DispatchVolumetricFog"/>. The volumes are rebased against the camera on the way in,
+    /// because everything downstream of the seam works camera-relative: a level sits tens of kilometres
+    /// from the world origin, and a froxel's offset from the camera is a number with digits to spare
+    /// where its absolute position is not.
+    /// </remarks>
     public void SetVolumetricFog(
         in VolumetricFogSettings fog,
         Vector3f cameraPosition,
@@ -1606,6 +1626,97 @@ public sealed partial class VulkanGraphicsDevice
     {
         ThrowIfDisposed();
         _cameraPosition = cameraPosition;
+        _fogSettings = fog;
+
+        _fogVolumeCount = Math.Min(volumes.Length, LocalFogVolume.MaxPerLevel);
+        for (int i = 0; i < _fogVolumeCount; i++)
+        {
+            LocalFogVolume volume = volumes[i];
+            _fogVolumes[i] = volume with
+            {
+                Centre = new Vector3f(
+                    volume.Centre.X - cameraPosition.X,
+                    volume.Centre.Y - cameraPosition.Y,
+                    volume.Centre.Z - cameraPosition.Z),
+            };
+        }
+
+        for (int i = _fogVolumeCount; i < _fogVolumes.Length; i++)
+        {
+            _fogVolumes[i] = default;
+        }
+    }
+
+    /// <summary>Lights and integrates this frame's fog volume, between the geometry and shading passes.</summary>
+    /// <remarks>
+    /// <para>
+    /// Here rather than earlier because it needs the frame's lamps, which the game submits after the
+    /// G-buffer is filled; and here rather than later because the shading pass is what reads the result,
+    /// and a compute dispatch cannot run inside a render pass. The cascades it shadows against were
+    /// filled before the capture even opened, so they are ready whichever way the sun's shadow is drawn.
+    /// </para>
+    /// <para>
+    /// Skipped under a debug view for the same reason the reflections are: those views isolate one term
+    /// of the lighting, and a term is not isolated if the whole scene's fog is composited over it.
+    /// </para>
+    /// </remarks>
+    private void DispatchVolumetricFog()
+    {
+        _fogActive = false;
+        if (_sceneTarget is not { } target
+            || !_capturing
+            || !_fogSettings.Enabled
+            || _debugView is not DebugView.None)
+        {
+            return;
+        }
+
+        int width = (int)target.Extent.Width;
+        int height = (int)target.Extent.Height;
+        if (!_deferred.Fog.Ensure(width, height, _fogSettings.Steps))
+        {
+            return;
+        }
+
+        using StageScope timing = Measure(RenderStage.FogIntegrate);
+
+        // The sky's harmonics carry the ambient a froxel scatters, when the atmosphere has run at all;
+        // otherwise the flat ambient the seam handed over stands in for it.
+        Sky.SkyAtmosphere sky = _deferred.Sky;
+        bool skyValid = sky.IrradianceLut.Handle != 0 && _lighting.Model != LightingModel.Baked;
+
+        VolumetricFogFrame frame = new(
+            _fogSettings,
+            _fogVolumes.AsMemory(0, _fogVolumeCount),
+            _localLights,
+            _localLightCount,
+            _lighting.SunDirection,
+            new Vector3f(
+                _lighting.SunColour.X * _lighting.Scale,
+                _lighting.SunColour.Y * _lighting.Scale,
+                _lighting.SunColour.Z * _lighting.Scale),
+            _lighting.AmbientColour,
+            skyValid,
+            _fogSettings.BaseHeight - _cameraPosition.Z);
+
+        bool cascades = _shadowCascadeCount > 0 && _deferred.ShadowMap.Ready;
+
+        _deferred.Fog.Record(
+            _frameCommandBuffer,
+            _frameLoop.CurrentFrame,
+            frame,
+            _deferred.ShadowMap.ArrayView,
+            sky.IrradianceLut,
+            _viewToWorld,
+            _hasPreviousFrame ? _previousViewToWorld : _viewToWorld,
+            _cameraDelta,
+            _unprojection,
+            _hasPreviousFrame ? _previousUnprojection : _unprojection,
+            _cascadeMatrices,
+            _cascadeSplits,
+            cascades ? _shadowCascadeCount : 0);
+
+        _fogActive = true;
     }
 
     private unsafe void BeginGeometryPass()
@@ -2227,6 +2338,15 @@ public sealed partial class VulkanGraphicsDevice
             u[at + 4] = shelter.Maximum.X; u[at + 5] = shelter.Maximum.Y; u[at + 6] = shelter.Maximum.Z; u[at + 7] = 0f;
         }
 
+        // uFog: the slice distribution the shading looks a pixel up with. A scale of zero says there is
+        // no volume this frame, which is how the shader knows to leave the colour alone rather than
+        // sample whatever was bound in the volume's place.
+        Deferred.FogSliceParams fogZ = _deferred.Fog.ZParams;
+        u[252] = _fogActive ? fogZ.B : 0f;
+        u[253] = _fogActive ? fogZ.O : 0f;
+        u[254] = _fogActive ? fogZ.Scale : 0f;
+        u[255] = _fogActive ? fogZ.InverseSlices : 0f;
+
         gi.Write<float>(new ReadOnlySpan<float>(u, DeferredRenderer.GiUniformSize / sizeof(float)));
 
         (ImageView giView, Sampler giSampler, ImageLayout giLayout) = ResolveScreenGi();
@@ -2247,7 +2367,9 @@ public sealed partial class VulkanGraphicsDevice
             shadowMap.ArrayView, shadowMap.Sampler,
             new Deferred.SkyTables(sky.SkyViewLut, sky.TransmittanceLut, sky.IrradianceLut, sky.Sampler),
             freshestAo,
-            TracedWorld());
+            TracedWorld(),
+            _fogActive ? _deferred.Fog.Integrated?.View ?? default : default,
+            _fogActive ? _deferred.Fog.Integrated?.Sampler ?? default : default);
     }
 
     /// <summary>The world the lamps shadow against, or nothing when there is none to trace.</summary>

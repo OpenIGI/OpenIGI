@@ -2753,10 +2753,17 @@ public static class RenderCVars
             0.2f,
             CVarOptions.Archive,
             "Fog extinction per metre at its base height; 0 derives it from the level's own FlatSky data."),
+
+        // Ultra takes the level's own density like every other tier. It used to override it with 0.11,
+        // which is an extinction that leaves five per cent of a surface visible at twenty-seven metres --
+        // the whole frame a white wash. That went unnoticed because no backend rendered the medium at the
+        // time it was set: the OpenGL path that could have was removed, and the Vulkan one only reached
+        // its setter. A level's own FlatSky haze is both authored and per-mission, which is the right
+        // default now that the froxel volume actually integrates it.
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0.11");
+        ultra: "0");
 
     /// <summary>The height in metres over which fog density falls to a third.</summary>
     /// <remarks>What makes fog pool in valleys rather than hang as a flat sheet.</remarks>

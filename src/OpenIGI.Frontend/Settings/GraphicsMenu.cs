@@ -230,7 +230,7 @@ public static class GraphicsMenu
                         "Ultra",
                         ("r_fog_quality", "96"),
                         ("r_fog_distance", "800"),
-                        ("r_fog_density", "0.11"),
+                        ("r_fog_density", "0"),
                         ("r_fog_height", "240.4"),
                         ("r_fog_anisotropy", "-0.38"))),
             ],
