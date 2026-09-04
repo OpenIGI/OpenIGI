@@ -705,7 +705,8 @@ public sealed class TerrainRenderer : IDisposable
             block,
             _surface,
             (float)(1.0 / WorldScene.UnitsPerMetre),
-            pool: _geometryPool);
+            _surface.Heights.Resolve(chunk),
+            _geometryPool);
 
         if (geometry is null)
         {

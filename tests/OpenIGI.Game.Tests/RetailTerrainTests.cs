@@ -534,11 +534,10 @@ public sealed class RetailTerrainTests
         Assert.NotNull(terrain);
         Assert.NotNull(terrain.Heightmap);
 
-        // Level 1 is one of the six that ship a heightmap. The binding a chunk samples it through comes
-        // from a level-script task that has not been read out of the binary yet, so this drives the
-        // sampling directly rather than through a load.
+        // Level 1 is one of the six that ship a heightmap. This drives the sampling directly with a
+        // binding of its own; TerrainHeightBindingTests covers the ones the level's tasks publish.
         TerrainHeightGrid grid = default;
-        for (int id = 1; id < TerrainGridTable.RecordCount && grid.Corners.IsEmpty; id++)
+        for (int id = 0; id < TerrainGridTable.RecordCount && grid.Corners.IsEmpty; id++)
         {
             terrain.Heightmap.TryGetGrid(id, out grid);
         }
@@ -546,9 +545,18 @@ public sealed class RetailTerrainTests
         Assert.False(grid.Corners.IsEmpty);
         Assert.Equal(grid.Size + 1, grid.Stride);
 
-        // A sample outside the grid reads flat rather than wrapping into the next row.
+        // A sample outside the grid reads flat rather than wrapping into the next row; the far edge is
+        // inside it and reads the last corner, which is what keeps two cells' grids continuous.
         Assert.Equal(0.0, grid.Sample(-1.0, 0.0));
-        Assert.Equal(0.0, grid.Sample(grid.Size, 0.0));
+        Assert.Equal(0.0, grid.Sample(grid.Size + 1.0, 0.0));
+        Assert.Equal(
+            (grid.Corner(grid.Size, 0) - TerrainHeightGrid.Bias) * TerrainHeightGrid.UnitsPerSample,
+            grid.Sample(grid.Size, 0.0),
+            6);
+        Assert.Equal(
+            (grid.Corner(grid.Size, grid.Size) - TerrainHeightGrid.Bias) * TerrainHeightGrid.UnitsPerSample,
+            grid.Sample(grid.Size, grid.Size),
+            6);
 
         // Interpolating between two corners has to land between their two heights.
         double left = (grid.Corner(0, 0) - TerrainHeightGrid.Bias) * TerrainHeightGrid.UnitsPerSample;
