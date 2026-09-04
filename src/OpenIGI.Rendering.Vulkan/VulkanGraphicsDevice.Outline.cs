@@ -118,7 +118,7 @@ public sealed partial class VulkanGraphicsDevice
         // and for the same reason. The direct path draws straight to a display-encoded target, where the
         // colour already means what it says.
         float exposure = _deferredPassActive
-            ? MathF.Max(RenderCVars.Exposure.Value * _lastAdaptedExposure, 1e-3f)
+            ? MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f)
             : 1f;
 
         float* push = stackalloc float[OutlinePipeline.PushSize / sizeof(float)];

@@ -70,6 +70,50 @@ public sealed class DayNightCycleTests
     }
 
     [Fact]
+    public void NightfallIsNoughtUnderTheAuthoredMiddaySunAndOneAtMidnight()
+    {
+        // What the exposure reads to know how much brightness to take off. Midday must give back exactly
+        // nothing, or a level nobody has scrubbed would open darker than its authors lit it.
+        DirectionalLightSettings authored = AuthoredAt(12f);
+        var cycle = new DayNightCycle();
+
+        cycle.ResetForLevel(authored);
+        cycle.Apply(authored);
+        Assert.Equal(0f, cycle.Nightfall, 4);
+
+        cycle.Reset(0f);
+        cycle.Apply(authored);
+        Assert.Equal(1f, cycle.Nightfall, 4);
+    }
+
+    [Fact]
+    public void NightfallComesOnThroughDuskRatherThanAtAMoment()
+    {
+        // The half of the ask the endpoints cannot show: between the two it has to move, and only ever
+        // one way, so the picture darkens into the night and lightens back out of it.
+        DirectionalLightSettings authored = AuthoredAt(12f);
+        var cycle = new DayNightCycle();
+
+        float previous = -1f;
+        bool moved = false;
+
+        for (float hour = 12f; hour <= 24f; hour += 0.5f)
+        {
+            cycle.Reset(hour % 24f);
+            cycle.Apply(authored);
+
+            Assert.True(
+                cycle.Nightfall >= previous - 1e-5f,
+                $"nightfall fell back from {previous:F4} to {cycle.Nightfall:F4} at {hour:F1}h");
+
+            moved |= cycle.Nightfall is > 0.01f and < 0.99f;
+            previous = cycle.Nightfall;
+        }
+
+        Assert.True(moved, "nightfall never took an intermediate value: the transition is a step, not a fade");
+    }
+
+    [Fact]
     public void ALevelWithNoUsableHourOpensAtNoon()
     {
         var cycle = new DayNightCycle();

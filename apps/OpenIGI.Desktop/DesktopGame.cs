@@ -3092,7 +3092,11 @@ internal sealed partial class DesktopGame : IDisposable
                 float binocularAberration = binocularDisplay.Amount * 2f;
                 PostProcessSettings postProcess = new(
                     RenderCVars.ToneMap.Value,
-                    RenderCVars.Exposure.Value,
+
+                    // The player's brightness less whatever the night is taking off it; see
+                    // RenderCVars.EffectiveExposure. Never r_exposure directly -- the night must not be
+                    // able to edit, and then have to put back, the setting the player chose.
+                    RenderCVars.EffectiveExposure,
                     RenderCVars.Bloom.Value,
                     RenderCVars.BloomThreshold.Value,
                     RenderCVars.WhitePoint.Value,
@@ -3342,6 +3346,13 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     light = _dayNight.Apply(_sun ?? defaultSun);
                 }
+
+                // What the night is doing to the picture, published for the exposure. The sweep is the only
+                // thing that knows how far under the horizon the sun has gone, and the resolve is a long way
+                // from here, so it travels as the one hidden variable rather than as another argument
+                // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
+                // a reference render wants: a pinned sun and an unmodified exposure.
+                RenderCVars.Nightfall.Value = _dayNight.Nightfall;
 
                 // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
                 // reference scene lights with — because rewriting it to a neutral key is exactly the kind

@@ -669,7 +669,7 @@ public sealed partial class VulkanGraphicsDevice
         // terms (the retail look), so it is divided by the exposure the resolve will apply — written
         // raw, the eye adaptation of a dim interior multiplied the arms into pure white.
         bool litViewModel = _firstPersonGeometry && blend == BlendMode.Opaque;
-        float exposure = MathF.Max(RenderCVars.Exposure.Value * _lastAdaptedExposure, 1e-3f);
+        float exposure = MathF.Max(RenderCVars.EffectiveExposure * _lastAdaptedExposure, 1e-3f);
         data[17] = litViewModel ? 1f / exposure : 1f;
 
         // How much of the previous pose is in the position drawn. This block is the guaranteed 128 bytes

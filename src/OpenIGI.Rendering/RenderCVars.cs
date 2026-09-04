@@ -327,43 +327,95 @@ public static class RenderCVars
 
     /// <summary>A linear multiplier applied to the scene before tone mapping.</summary>
     /// <remarks>
+    /// <para>
     /// With <see cref="AutoExposure"/> on this becomes a bias on the adapted exposure rather than the
     /// whole of it: the eye adapts to the scene's own brightness and this nudges the result up or down.
+    /// </para>
+    /// <para>
+    /// This is the player's knob and nothing else writes it. The day/night cycle's own dimming is a
+    /// SEPARATE term -- see <see cref="Nightfall"/> and <see cref="EffectiveExposure"/> -- so that a
+    /// night which darkens the picture never rewrites, and never has to restore, the brightness the
+    /// player chose. Read <see cref="EffectiveExposure"/>, not this, wherever the frame is exposed.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> Exposure = Presets.Define(
         CVar.Float(
             "r_exposure",
             1.0f,
-            0.05f,
+            MinimumExposure,
             16.0f,
             CVarOptions.Archive,
             "Scene brightness before tone mapping. 1 leaves the level's own lighting alone."),
 
-        // Vanilla never tone maps, so its value is ignored. The other three share one value because they
-        // now share one lighting model: this is a calibration against the DYNAMIC path's brightness, not a
-        // quality tier, and the moment a preset stops sampling the artists' lightmaps its old baked-era
-        // figure (enhanced 1.4, high 1.6) is simply the wrong exposure for a differently-lit scene.
+        // One on every preset, and one is the identity: the frame is exposed at the brightness its
+        // lighting model produces, and the slider starts from a picture nobody has already graded.
         //
-        // It belongs to a cluster that has to move together for the same reason -- r_sun_scale and
-        // r_atmosphere_sun_scale are read ONLY by the dynamic model, r_white_point and r_bloom_threshold
-        // were shaped against its curve, and r_screen_gi_max bounds its feedback loop. Change the lighting
-        // model on a preset without bringing all of them and the frame is mis-exposed, not merely cheaper.
+        // The three modern presets used to sit at 1.414 -- the reference renderer's half-stop
+        // auto-exposure compensation, matched when the whole point of the number was to land this port's
+        // frame on that reference's channel for channel. That is a calibration against another engine,
+        // not a default a player should inherit, and it is what made "brightness" read as 1.4 before the
+        // player had touched anything: the slider's own neutral was not neutral. Anyone reproducing the
+        // reference comparison sets r_exposure 1.414 for the shot.
+        //
+        // It still belongs to a cluster that moves together -- r_sun_scale and r_atmosphere_sun_scale are
+        // read ONLY by the dynamic model, r_white_point and r_bloom_threshold were shaped against its
+        // curve, and r_screen_gi_max bounds its feedback loop. Change the lighting model on a preset
+        // without bringing all of them and the frame is mis-exposed, not merely cheaper. Vanilla never
+        // tone maps, so its value is ignored either way.
         vanilla: "1",
-        enhanced: "1.414",
-        high: "1.414",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
-        // Recalibrated once the metering and the curve were the reference's. The old 0.6 DARKENED the
-        // adapted exposure, a crutch from when a whole-frame mean meter -- dragged up by any window -- was
-        // over-reporting the scene's brightness, so it had to be pulled back down. The meter is now a
-        // histogram percentile band that leaves the window out, local exposure lifts the shadows, and the
-        // warm ambient/sky tints that muddied the frame are gone; the scene reports its real, lower
-        // brightness, so the bias goes the other way and OPENS it up to the reference's bright, airy
-        // interior. Auto-exposure still adapts around this; it is the bias on that, near the +0.4 EV the
-        // reference biases a daylight interior by. Measured on the office (bright, filled, window held under
-        // the shoulder, its channel means on the reference's) and the outdoor spawn (balanced, not blown).
-        // Now 1.414: exactly the reference's auto-exposure bias of half a stop (2^0.5), applied the same
-        // way -- as compensation multiplied onto the adapted exposure -- so the two meters agree.
-        ultra: "1.414");
+    /// <summary>The least exposure the frame may be shown at, which is the floor on <see cref="Exposure"/>.</summary>
+    /// <remarks>
+    /// Named because <see cref="EffectiveExposure"/> subtracts from the player's value and has to land
+    /// somewhere: a night deep enough to take the whole of a low brightness setting must still leave a
+    /// picture, not a black screen.
+    /// </remarks>
+    public const float MinimumExposure = 0.05f;
+
+    /// <summary>How much brightness a full night takes off <see cref="Exposure"/>.</summary>
+    /// <remarks>
+    /// Subtractive, in the slider's own units, so a default brightness of one is shown at 0.7 under a
+    /// midnight sky. It is deliberately small: the lighting model already darkens a night scene on its
+    /// own, and this exists because the eye adaptation then spends most of that darkness lifting the
+    /// picture back towards day. Taking a little off the compensation is what lets a night read as one.
+    /// </remarks>
+    public const float NightBrightnessDrop = 0.3f;
+
+    /// <summary>How far into night the day/night cycle has taken the scene: 0 in daylight, 1 at full night.</summary>
+    /// <remarks>
+    /// <para>
+    /// Written by the day/night cycle once per frame from the swept sun's own elevation, and read only
+    /// through <see cref="EffectiveExposure"/>. It is the hidden half of the brightness: the player owns
+    /// <see cref="Exposure"/>, the sky owns this, and the two are combined at the point of use rather
+    /// than the sky editing the player's setting behind their back.
+    /// </para>
+    /// <para>
+    /// Published rather than kept as a private field so the console can be asked what the night is
+    /// currently doing to the picture; read-only there, because the next frame's sweep would overwrite
+    /// anything typed at it.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> Nightfall = CVar.Float(
+        "r_nightfall",
+        0f,
+        0f,
+        1f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How far into night the sun has gone, 0 to 1. Dims the picture; not a setting.");
+
+    /// <summary>The brightness the frame is actually exposed at: the player's, less the night's.</summary>
+    /// <remarks>
+    /// Every consumer of the exposure reads THIS, including the two that only want to divide a
+    /// display-referred colour by whatever the resolve is about to multiply it by -- the first-person
+    /// rig's lighting and the selection glow. Reading <see cref="Exposure"/> there instead would leave
+    /// them compensating for an exposure the frame is no longer using, so the arms and the marker would
+    /// drift brighter as the night came in.
+    /// </remarks>
+    public static float EffectiveExposure =>
+        MathF.Max(Exposure.Value - (NightBrightnessDrop * Nightfall.Value), MinimumExposure);
 
     /// <summary>How much of the surface cache's bounced radiance a traced gather ray keeps.</summary>
     /// <remarks>

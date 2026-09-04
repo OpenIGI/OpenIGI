@@ -59,6 +59,16 @@ internal sealed class DayNightCycle
     /// </remarks>
     public float Moonrise { get; private set; }
 
+    /// <summary>Gets how far into night the sun has gone: nought in daylight, one under a midnight sky.</summary>
+    /// <remarks>
+    /// Measured off the sun's own elevation before the moon takes its place, and eased across a band that
+    /// opens as the sun reaches the horizon and closes once it is properly under it -- so it comes on
+    /// through dusk and goes off through dawn rather than switching at a moment. What reads it is the
+    /// exposure: the frame is shown a little darker at night, because the eye adaptation otherwise spends
+    /// the night lifting it back towards day. Stays nought when <see cref="Apply"/> is bypassed.
+    /// </remarks>
+    public float Nightfall { get; private set; }
+
     /// <summary>Turns the sun's arc about one world axis, for the gizmo to drive as the numpad keys do.</summary>
     /// <param name="axis">0 for X, 1 for Y, 2 for Z.</param>
     /// <param name="radians">The angle to add.</param>
@@ -212,6 +222,14 @@ internal sealed class DayNightCycle
         // How much of a day the surface sees: zero once the sun is a little below the horizon, one once it
         // is a little above, a soft twilight band between. Colour and sky fill both cross this band.
         float daylight = Smoothstep(-0.10f, 0.10f, direction.Z);
+
+        // How far into night the sky is, for the exposure. Deliberately a WIDER and lower band than the
+        // daylight above: that one is about whether there is a sun to light with and wants to be decisive
+        // about it, this one is about how dark the picture should be shown and wants the whole of dusk to
+        // fade through. It closes at a sun still a little above the horizon rather than at zero, because a
+        // level whose authored sun barely rises has its arc clamped to about that elevation and must still
+        // read as full day at its own noon.
+        Nightfall = 1f - Smoothstep(-0.35f, 0.10f, direction.Z);
 
         // Near the horizon the sun reddens; the tint eases back to white as it climbs. Multiplied by the
         // daylight so the sun fades out entirely at night rather than lingering as a dim disc.
