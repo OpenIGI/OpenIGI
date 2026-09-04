@@ -120,13 +120,23 @@ internal sealed unsafe class ShadowPipeline : IDisposable
 
             // The same vertex buffer the world draws from: the position, and the texture coordinate the
             // cut-out test needs.
-            VertexInputBindingDescription binding = new()
+            VertexInputBindingDescription* bindings = stackalloc VertexInputBindingDescription[2];
+            bindings[0] = new VertexInputBindingDescription
             {
                 Binding = 0,
                 Stride = (uint)Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[5];
+
+            // The previous pose, so a body casts from the position it is drawn in rather than from the
+            // last pose the simulation happened to have finished.
+            bindings[1] = new VertexInputBindingDescription
+            {
+                Binding = 1,
+                Stride = (uint)Vertex3D.Size,
+                InputRate = VertexInputRate.Vertex,
+            };
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[6];
             attributes[0] = new VertexInputAttributeDescription
             {
                 Location = 0,
@@ -164,12 +174,21 @@ internal sealed unsafe class ShadowPipeline : IDisposable
                 Format = Format.R32G32Sfloat,
                 Offset = 32,
             };
+
+            // The previous pose's position. A depth-only pass needs no normal from it.
+            attributes[5] = new VertexInputAttributeDescription
+            {
+                Location = 5,
+                Binding = 1,
+                Format = Format.R32G32B32Sfloat,
+                Offset = 0,
+            };
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = 1,
-                PVertexBindingDescriptions = &binding,
-                VertexAttributeDescriptionCount = 5,
+                VertexBindingDescriptionCount = 2,
+                PVertexBindingDescriptions = bindings,
+                VertexAttributeDescriptionCount = 6,
                 PVertexAttributeDescriptions = attributes,
             };
 

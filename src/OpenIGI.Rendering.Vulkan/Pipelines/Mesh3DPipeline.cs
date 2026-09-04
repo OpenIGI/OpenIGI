@@ -184,26 +184,37 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
                 PName = (byte*)entryPoint,
             };
 
-            VertexInputBindingDescription vertexBinding = new()
+            // Two streams: the pose the mesh holds now, and the pose it held before. The first-person rig
+            // is skinned like a body and drawn through here, so it blends between the two as they do.
+            VertexInputBindingDescription* vertexBindings = stackalloc VertexInputBindingDescription[2];
+            vertexBindings[0] = new VertexInputBindingDescription
             {
                 Binding = 0,
                 Stride = (uint)Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
+            vertexBindings[1] = new VertexInputBindingDescription
+            {
+                Binding = 1,
+                Stride = (uint)Vertex3D.Size,
+                InputRate = VertexInputRate.Vertex,
+            };
 
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[5];
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[7];
             attributes[0] = new VertexInputAttributeDescription { Location = 0, Binding = 0, Format = Format.R32G32B32Sfloat, Offset = 0 };
             attributes[1] = new VertexInputAttributeDescription { Location = 1, Binding = 0, Format = Format.R32G32B32Sfloat, Offset = 12 };
             attributes[2] = new VertexInputAttributeDescription { Location = 2, Binding = 0, Format = Format.R32G32Sfloat, Offset = 24 };
             attributes[3] = new VertexInputAttributeDescription { Location = 3, Binding = 0, Format = Format.R32G32Sfloat, Offset = 32 };
             attributes[4] = new VertexInputAttributeDescription { Location = 4, Binding = 0, Format = Format.R8G8B8A8Unorm, Offset = (uint)Vertex3D.ColourOffset };
+            attributes[5] = new VertexInputAttributeDescription { Location = 5, Binding = 1, Format = Format.R32G32B32Sfloat, Offset = 0 };
+            attributes[6] = new VertexInputAttributeDescription { Location = 6, Binding = 1, Format = Format.R32G32B32Sfloat, Offset = 12 };
 
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = 1,
-                PVertexBindingDescriptions = &vertexBinding,
-                VertexAttributeDescriptionCount = 5,
+                VertexBindingDescriptionCount = 2,
+                PVertexBindingDescriptions = vertexBindings,
+                VertexAttributeDescriptionCount = 7,
                 PVertexAttributeDescriptions = attributes,
             };
 

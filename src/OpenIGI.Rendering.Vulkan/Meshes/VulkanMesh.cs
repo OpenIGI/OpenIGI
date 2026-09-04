@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+﻿using System.Runtime.CompilerServices;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Memory;
@@ -150,9 +150,6 @@ internal sealed unsafe class VulkanMesh : IDisposable
     /// <summary>Gets a value indicating whether the mesh's vertices can be rewritten each pose.</summary>
     public bool Animated { get; }
 
-    /// <summary>Gets the serial of the pose currently stored in <see cref="VertexBuffer"/>.</summary>
-    public int PoseVersion { get; private set; }
-
     /// <summary>Gets a counter that advances on every range written into a storage mesh.</summary>
     /// <remarks>
     /// What the ray-traced world compares to know that a caster mesh has been rewritten and its
@@ -248,7 +245,6 @@ internal sealed unsafe class VulkanMesh : IDisposable
         VulkanBuffer stale = _frontIsFirst ? _secondVertexBuffer! : _vertexBuffer;
         stale.Write(vertices);
         _frontIsFirst = !_frontIsFirst;
-        PoseVersion++;
     }
 
     /// <summary>Writes a range of vertices and indices into a storage mesh.</summary>

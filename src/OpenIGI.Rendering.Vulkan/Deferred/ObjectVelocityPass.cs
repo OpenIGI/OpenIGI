@@ -17,7 +17,14 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// clip positions removes jitter while raster coverage still matches this frame.
 /// </param>
 /// <param name="FirstPerson">Whether the draw used the foreground depth-range sliver.</param>
-/// <param name="UsePreviousVertices">Whether an animated mesh advanced to a new pose since the preceding frame.</param>
+/// <param name="PoseBlend">
+/// How much of the previous-pose stream is in the position the G-buffer drew — the same blend, or this
+/// pass rasterises a shape the depth test will reject.
+/// </param>
+/// <param name="PreviousPoseBlend">
+/// The blend that reconstructs LAST frame's position from the same two streams. The difference between
+/// the two is the whole of the pose motion; equal blends report rigid motion alone.
+/// </param>
 internal readonly record struct ObjectVelocityDraw(
     VulkanMesh Mesh,
     int IndexOffset,
@@ -25,7 +32,8 @@ internal readonly record struct ObjectVelocityDraw(
     Matrix4f Current,
     Matrix4f Previous,
     bool FirstPerson,
-    bool UsePreviousVertices);
+    float PoseBlend,
+    float PreviousPoseBlend);
 
 /// <summary>
 /// A raster pass that overwrites the computed velocity with each MOVING object's own screen motion.
@@ -40,10 +48,12 @@ internal readonly record struct ObjectVelocityDraw(
 /// screen delta wherever the mesh actually won the depth test.
 /// </para>
 /// <para>
-/// Animated meshes bind the preceding pose as a second vertex stream when their pose advanced since the
-/// prior frame, so limb and hand motion is measured as well as rigid translation. On frames where the
-/// pose did not advance both inputs alias the current stream, preventing one tick's motion from being
-/// reported repeatedly on every rendered frame between simulation updates.
+/// Every mesh binds its preceding pose as a second vertex stream, so limb and hand motion is measured
+/// as well as rigid translation. What each frame reports is not the whole of a tick's motion but the
+/// part of it that fell between the two frames: the drawn position is a blend of the two poses and the
+/// caller says which blend named last frame's, so a body drawn a third of the way between two ticks
+/// reports a third of the step. A mesh that does not animate reports one buffer as both streams and
+/// its pose motion is zero by construction.
 /// </para>
 /// <para>
 /// The pass rasterises with the exact transform the G-buffer draw used (jitter and all) so the depths
@@ -72,10 +82,16 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         layout(location = 0) in vec3 aPosition;
         layout(location = 1) in vec3 aPreviousPosition;
 
+        // The previous transform arrives as three rows rather than a matrix. Nothing downstream reads
+        // the previous depth -- the vector is formed from x, y and w alone -- so its z row would be
+        // twelve wasted bytes in a block that is full at 128, and the pose blends go there instead.
         layout(push_constant) uniform Push
         {
-            mat4 uCurrent;    // this frame's model-view-projection, exactly as the G-buffer drew it
-            mat4 uPrevious;   // the previous frame's, same mesh occurrence
+            mat4 uCurrent;      // this frame's model-view-projection, exactly as the G-buffer drew it
+            vec4 uPreviousX;    // the previous frame's, same mesh occurrence: its x row,
+            vec4 uPreviousY;    // its y row,
+            vec4 uPreviousW;    // and its w row.
+            vec4 uPose;         // x: this frame's pose blend, y: the one that names last frame's
         } push;
 
         layout(location = 0) out vec4 vCurrentClip;
@@ -83,9 +99,20 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
 
         void main()
         {
-            vec4 clip = push.uCurrent * vec4(aPosition, 1.0);
+            // Both frames' vertices are mixes of the same two poses, so one delta and two blends give
+            // both. A mesh that does not animate has a zero delta and lands on aPosition either way,
+            // which is what keeps its motion purely the transform's.
+            vec3 poseDelta = aPreviousPosition - aPosition;
+            vec4 here = vec4(aPosition + push.uPose.x * poseDelta, 1.0);
+            vec4 was = vec4(aPosition + push.uPose.y * poseDelta, 1.0);
+
+            vec4 clip = push.uCurrent * here;
             vCurrentClip = clip;
-            vPreviousClip = push.uPrevious * vec4(aPreviousPosition, 1.0);
+            vPreviousClip = vec4(
+                dot(push.uPreviousX, was),
+                dot(push.uPreviousY, was),
+                0.0,
+                dot(push.uPreviousW, was));
 
             // The same OpenGL-to-Vulkan correction the G-buffer vertex stage applies, in the same order,
             // so the rasterised depth is bit-comparable with what that pass stored.
@@ -102,7 +129,10 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
         layout(push_constant) uniform Push
         {
             mat4 uCurrent;
-            mat4 uPrevious;
+            vec4 uPreviousX;
+            vec4 uPreviousY;
+            vec4 uPreviousW;
+            vec4 uPose;
         } push;
 
         layout(location = 0) in vec4 vCurrentClip;
@@ -215,7 +245,17 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
             }
 
             draw.Current.CopyColumnMajorTo(push[..16]);
-            draw.Previous.CopyColumnMajorTo(push[16..]);
+
+            // The previous transform's x, y and w rows; its z row is the one the vector never asks for.
+            Matrix4f was = draw.Previous;
+            push[16] = was.M11; push[17] = was.M12; push[18] = was.M13; push[19] = was.M14;
+            push[20] = was.M21; push[21] = was.M22; push[22] = was.M23; push[23] = was.M24;
+            push[24] = was.M41; push[25] = was.M42; push[26] = was.M43; push[27] = was.M44;
+
+            push[28] = draw.PoseBlend;
+            push[29] = draw.PreviousPoseBlend;
+            push[30] = 0f;
+            push[31] = 0f;
             fixed (float* data = push)
             {
                 _vk.CmdPushConstants(
@@ -223,7 +263,7 @@ internal sealed unsafe class ObjectVelocityPass : IDisposable
             }
 
             vertexBuffers[0] = draw.Mesh.VertexBuffer;
-            vertexBuffers[1] = draw.UsePreviousVertices ? draw.Mesh.PreviousVertexBuffer : draw.Mesh.VertexBuffer;
+            vertexBuffers[1] = draw.Mesh.PreviousVertexBuffer;
             _vk.CmdBindVertexBuffers(cmd, 0, 2, vertexBuffers, vertexOffsets);
             _vk.CmdBindIndexBuffer(cmd, draw.Mesh.IndexBuffer, 0, IndexType.Uint16);
             _vk.CmdDrawIndexed(cmd, (uint)draw.IndexCount, 1, (uint)draw.IndexOffset, 0, 0);

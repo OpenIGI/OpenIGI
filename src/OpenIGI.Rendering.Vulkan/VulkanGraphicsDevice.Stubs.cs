@@ -180,16 +180,20 @@ public sealed partial class VulkanGraphicsDevice
     // SetAmbientOcclusion is implemented in VulkanGraphicsDevice.Deferred.cs — it drives the occlusion pass.
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Recorded and ignored, because this backend already knows the answer. The object-velocity stamp
+    /// keeps each drawn occurrence's own transform from the previous frame and pairs the two itself
+    /// (see <c>RecordObjectVelocity</c>), so a caller's previous model-view would only repeat what the
+    /// pass has measured. The pose half of the same motion is not ignored: that one cannot be inferred
+    /// from a transform, and <see cref="SetPoseInterpolation"/> carries it.
+    /// </remarks>
     public void SetPreviousPose(in Matrix4f previousModelView) => ThrowIfDisposed();
 
     /// <inheritdoc/>
     public void ClearPreviousPose() => ThrowIfDisposed();
 
-    /// <inheritdoc/>
-    public void SetPoseInterpolation(float currentBlend, float previousBlend) => ThrowIfDisposed();
-
-    /// <inheritdoc/>
-    public void ClearPoseInterpolation() => ThrowIfDisposed();
+    // SetPoseInterpolation / ClearPoseInterpolation are implemented in VulkanGraphicsDevice.Draw3D.cs —
+    // they blend the two vertex streams every mesh pipeline is handed.
 
     /// <inheritdoc/>
     /// <remarks>

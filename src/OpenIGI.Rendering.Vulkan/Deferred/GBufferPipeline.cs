@@ -130,14 +130,23 @@ internal sealed unsafe class GBufferPipeline : IDisposable
             stages[0] = Stage(ShaderStageFlags.VertexBit, _vertex.Handle, entryPoint);
             stages[1] = Stage(ShaderStageFlags.FragmentBit, _fragment.Handle, entryPoint);
 
-            VertexInputBindingDescription vertexBinding = new()
+            // Two streams of the same shape: the pose the mesh holds now, and the pose it held before.
+            // A static mesh reports one buffer as both, so the delta the vertex stage forms is zero.
+            VertexInputBindingDescription* vertexBindings = stackalloc VertexInputBindingDescription[2];
+            vertexBindings[0] = new VertexInputBindingDescription
             {
                 Binding = 0,
                 Stride = (uint)Vertex3D.Size,
                 InputRate = VertexInputRate.Vertex,
             };
+            vertexBindings[1] = new VertexInputBindingDescription
+            {
+                Binding = 1,
+                Stride = (uint)Vertex3D.Size,
+                InputRate = VertexInputRate.Vertex,
+            };
 
-            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[6];
+            VertexInputAttributeDescription* attributes = stackalloc VertexInputAttributeDescription[8];
             attributes[0] = new VertexInputAttributeDescription { Location = 0, Binding = 0, Format = Format.R32G32B32Sfloat, Offset = 0 };
             attributes[1] = new VertexInputAttributeDescription { Location = 1, Binding = 0, Format = Format.R32G32B32Sfloat, Offset = 12 };
             attributes[2] = new VertexInputAttributeDescription { Location = 2, Binding = 0, Format = Format.R32G32Sfloat, Offset = 24 };
@@ -145,12 +154,17 @@ internal sealed unsafe class GBufferPipeline : IDisposable
             attributes[4] = new VertexInputAttributeDescription { Location = 4, Binding = 0, Format = Format.R8G8B8A8Unorm, Offset = (uint)Vertex3D.ColourOffset };
             attributes[5] = new VertexInputAttributeDescription { Location = 5, Binding = 0, Format = Format.R8G8B8A8Unorm, Offset = (uint)Vertex3D.SurfaceNormalOffset };
 
+            // The previous pose's position and normal, out of the second stream. Only these two: nothing
+            // else about a vertex changes when a body is re-skinned.
+            attributes[6] = new VertexInputAttributeDescription { Location = 6, Binding = 1, Format = Format.R32G32B32Sfloat, Offset = 0 };
+            attributes[7] = new VertexInputAttributeDescription { Location = 7, Binding = 1, Format = Format.R32G32B32Sfloat, Offset = 12 };
+
             PipelineVertexInputStateCreateInfo vertexInput = new()
             {
                 SType = StructureType.PipelineVertexInputStateCreateInfo,
-                VertexBindingDescriptionCount = 1,
-                PVertexBindingDescriptions = &vertexBinding,
-                VertexAttributeDescriptionCount = 6,
+                VertexBindingDescriptionCount = 2,
+                PVertexBindingDescriptions = vertexBindings,
+                VertexAttributeDescriptionCount = 8,
                 PVertexAttributeDescriptions = attributes,
             };
 

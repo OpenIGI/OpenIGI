@@ -27,18 +27,55 @@ public sealed partial class VulkanGraphicsDevice
     // All zero for everything that is not terrain, which is how the vertex stage tells them apart.
     private (float Scale, float Offset, float Slope, float Mode) _detailFade;
 
+    // How much of the previous-pose vertex stream is in the position drawn now, and how much was in the
+    // one drawn last frame. Zero for everything that does not animate -- and for those two streams are
+    // one buffer, so any blend of a value with itself is that value and the picture is unchanged.
+    private float _poseBlend;
+    private float _previousPoseBlend;
+
     // Moving meshes drawn into this frame, and each occurrence's transform this frame and last. The
     // velocity compute derives motion from the camera alone, so animated G-buffer objects and the
     // separately transformed first-person layer must stamp their true screen delta afterwards — see
     // ObjectVelocityPass. The view-space
     // translation rides along for the mispair guard below: the composed clip transform has no column
     // that means metres.
-    private readonly record struct ObjectVelocityState(Matrix4f MotionTransform, Vector3f ViewTranslation, int PoseVersion);
+    private readonly record struct ObjectVelocityState(Matrix4f MotionTransform, Vector3f ViewTranslation);
 
     private readonly List<Deferred.ObjectVelocityDraw> _objectVelocityDraws = [];
     private readonly Dictionary<long, ObjectVelocityState> _objectVelocityPrevious = [];
     private readonly Dictionary<long, ObjectVelocityState> _objectVelocityCurrent = [];
     private readonly Dictionary<uint, int> _objectVelocityOccurrence = [];
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// Every mesh pipeline takes the mesh's previous-pose stream as a second vertex binding, so the
+    /// blend is one number per draw and the vertex stage slides each vertex along its own delta. A
+    /// simulation that ticks at thirty and a frame that presents at whatever the display asks for meet
+    /// here: the frame draws a soldier <em>between</em> the two poses either side of it, rather than
+    /// snapping onto the last one that landed.
+    /// </para>
+    /// <para>
+    /// A mesh that is not animated reports its own vertices as its previous pose, so its delta is zero
+    /// to the bit and no blend of it can move a vertex. That is what lets this be state the whole draw
+    /// path carries rather than a branch: the terrain, the world and every static prop are drawn through
+    /// the same shader and come out identical whatever is set here.
+    /// </para>
+    /// </remarks>
+    public void SetPoseInterpolation(float currentBlend, float previousBlend)
+    {
+        ThrowIfDisposed();
+        _poseBlend = Math.Clamp(currentBlend, 0f, 1f);
+        _previousPoseBlend = Math.Clamp(previousBlend, 0f, 1f);
+    }
+
+    /// <inheritdoc/>
+    public void ClearPoseInterpolation()
+    {
+        ThrowIfDisposed();
+        _poseBlend = 0f;
+        _previousPoseBlend = 0f;
+    }
 
     /// <summary>Records one moving draw for the object-velocity stamp.</summary>
     /// <remarks>
@@ -66,7 +103,13 @@ public sealed partial class VulkanGraphicsDevice
 
         long key = ((long)meshId << 16) | (uint)(occurrence & 0xFFFF);
         Matrix4f previous = rasterNow;
-        bool usePreviousVertices = false;
+
+        // The pose half of the motion, which no transform can express. Both frames' vertices are mixes
+        // of the same two streams, so the difference between the two blends -- applied to one delta --
+        // is the whole of it. A frame that reports no previous transform reports no pose motion either:
+        // the two would otherwise disagree about which frame they are measuring from.
+        float poseBlend = _poseBlend;
+        float previousPoseBlend = _poseBlend;
         if (_objectVelocityPrevious.TryGetValue(key, out ObjectVelocityState prev))
         {
             // A plausibility guard on the pairing. The key is draw order, and draw order can shift when
@@ -84,11 +127,11 @@ public sealed partial class VulkanGraphicsDevice
                         _taaSettings.JitterY * 2f / Math.Max(1, _captureHeight),
                         0f);
                 previous = currentJitter * prev.MotionTransform;
-                usePreviousVertices = resource.Animated && prev.PoseVersion != resource.PoseVersion;
+                previousPoseBlend = _previousPoseBlend;
             }
         }
 
-        _objectVelocityCurrent[key] = new ObjectVelocityState(motionNow, translation, resource.PoseVersion);
+        _objectVelocityCurrent[key] = new ObjectVelocityState(motionNow, translation);
         _objectVelocityDraws.Add(
             new Deferred.ObjectVelocityDraw(
                 resource,
@@ -97,7 +140,8 @@ public sealed partial class VulkanGraphicsDevice
                 rasterNow,
                 previous,
                 firstPerson,
-                usePreviousVertices));
+                poseBlend,
+                previousPoseBlend));
     }
 
     /// <summary>Rolls the object-velocity bookkeeping over to the next frame.</summary>
@@ -124,6 +168,7 @@ public sealed partial class VulkanGraphicsDevice
     private CommandBuffer _boundCommandBuffer;
     private Pipeline _boundPipeline;
     private Buffer _boundVertexBuffer;
+    private Buffer _boundPreviousVertexBuffer;
     private Buffer _boundIndexBuffer;
     private DescriptorSet _boundDescriptorSet;
     private PipelineLayout _boundDescriptorLayout;
@@ -138,6 +183,7 @@ public sealed partial class VulkanGraphicsDevice
     {
         _boundPipeline = default;
         _boundVertexBuffer = default;
+        _boundPreviousVertexBuffer = default;
         _boundIndexBuffer = default;
         _boundDescriptorSet = default;
         _boundDescriptorLayout = default;
@@ -500,15 +546,19 @@ public sealed partial class VulkanGraphicsDevice
         {
             data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
             data[19] = _detailFade.Mode;
-            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z; data[23] = 0f;
+            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z;
         }
         else
         {
-            for (int i = 16; i < 24; i++)
+            for (int i = 16; i < 23; i++)
             {
                 data[i] = 0f;
             }
         }
+
+        // A body casts the shadow of the pose it is drawn in, or its shadow walks at the tick rate while
+        // it does not. The terrain never animates, so this slot is free in both branches above.
+        data[23] = _poseBlend;
 
         vk.CmdPushConstants(cmd, _deferred.ShadowPipeline.PipelineLayout, ShaderStageFlags.VertexBit, 0, sizeof(float) * 24, data);
     }
@@ -557,15 +607,20 @@ public sealed partial class VulkanGraphicsDevice
         {
             data[16] = _detailFade.Scale; data[17] = _detailFade.Offset; data[18] = _detailFade.Slope;
             data[19] = _detailFade.Mode;
-            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z; data[23] = 0f;
+            data[20] = offset.X; data[21] = offset.Y; data[22] = offset.Z;
             data[24] = 0f; data[25] = 0f; data[26] = 0f; data[27] = _alphaHashSeed;
         }
         else
         {
             data[16] = normalMatrix.M11; data[17] = normalMatrix.M21; data[18] = normalMatrix.M31; data[19] = 0f;
-            data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32; data[23] = 0f;
+            data[20] = normalMatrix.M12; data[21] = normalMatrix.M22; data[22] = normalMatrix.M32;
             data[24] = normalMatrix.M13; data[25] = normalMatrix.M23; data[26] = normalMatrix.M33; data[27] = _alphaHashSeed;
         }
+
+        // How much of the previous pose is in the position drawn. The second normal row's fourth
+        // component is spare whichever branch wrote it — a terrain page puts its offset in the first
+        // three and a rotated mesh a matrix column, and neither has a use for the fourth.
+        data[23] = _poseBlend;
 
         data[28] = _material.Roughness;
         data[29] = _material.Metallic;
@@ -613,7 +668,13 @@ public sealed partial class VulkanGraphicsDevice
         bool litViewModel = _firstPersonGeometry && blend == BlendMode.Opaque;
         float exposure = MathF.Max(RenderCVars.Exposure.Value * _lastAdaptedExposure, 1e-3f);
         data[17] = litViewModel ? 1f / exposure : 1f;
-        data[18] = litViewModel ? 1f : 0f;
+
+        // How much of the previous pose is in the position drawn. This block is the guaranteed 128 bytes
+        // to the last float, and the slot it takes used to carry "light this draw with the rig's key",
+        // which was the marker above written twice: a lit draw is exactly a first-person opaque one, and
+        // that is precisely the marker's own zero. The fragment stage reads the condition off the marker
+        // now, which frees this for the one number the vertex stage was missing.
+        data[18] = _poseBlend;
 
         // The lamps standing around the player, added to the rig's key and fill. Without this the arms
         // are lit by the SUN and nothing else: at noon that is right and at night it is a black key over
@@ -694,20 +755,36 @@ public sealed partial class VulkanGraphicsDevice
         return total;
     }
 
+    /// <summary>Binds a mesh's two vertex streams and its indices, skipping what is already bound.</summary>
+    /// <remarks>
+    /// Two streams, always: the pose the mesh holds now and the pose it held before. An animated body
+    /// keeps the two apart and every mesh pipeline blends between them (see
+    /// <see cref="SetPoseInterpolation"/>); everything else reports its own buffer as both, which costs
+    /// one more binding and nothing else — the delta the shader forms is then zero to the bit.
+    /// </remarks>
     private unsafe void BindMeshBuffers(VulkanMesh mesh)
     {
         Vk vk = _instance.Vk;
         Buffer vertexBuffer = mesh.VertexBuffer;
+        Buffer previousVertexBuffer = mesh.PreviousVertexBuffer;
         Buffer indexBuffer = mesh.IndexBuffer;
 
         // A terrain page is one mesh holding every chunk batched into it, drawn as a run of ranges, and a
         // model is drawn once per cascade and again for the frame. Both arrive here with the buffers they
-        // asked for last time still bound.
-        if (_boundVertexBuffer.Handle != vertexBuffer.Handle)
+        // asked for last time still bound. An animated mesh flips its two streams on every re-skin, so
+        // the pair is compared rather than the first of it.
+        if (_boundVertexBuffer.Handle != vertexBuffer.Handle
+            || _boundPreviousVertexBuffer.Handle != previousVertexBuffer.Handle)
         {
-            ulong vertexOffset = 0;
-            vk.CmdBindVertexBuffers(_frameCommandBuffer, 0, 1, &vertexBuffer, &vertexOffset);
+            Buffer* buffers = stackalloc Buffer[2];
+            buffers[0] = vertexBuffer;
+            buffers[1] = previousVertexBuffer;
+            ulong* vertexOffsets = stackalloc ulong[2];
+            vertexOffsets[0] = 0;
+            vertexOffsets[1] = 0;
+            vk.CmdBindVertexBuffers(_frameCommandBuffer, 0, 2, buffers, vertexOffsets);
             _boundVertexBuffer = vertexBuffer;
+            _boundPreviousVertexBuffer = previousVertexBuffer;
         }
 
         if (_boundIndexBuffer.Handle != indexBuffer.Handle)
