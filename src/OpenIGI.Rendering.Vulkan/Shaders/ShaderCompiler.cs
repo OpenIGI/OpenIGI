@@ -29,6 +29,12 @@ internal sealed unsafe class ShaderCompiler : IDisposable
     private readonly Shaderc _shaderc;
     private readonly Compiler* _compiler;
     private readonly CompileOptions* _options;
+    private readonly ShaderBinaryCache _cache = new();
+
+    // shaderc's compiler object is not safe to use from two threads at once, and the prewarm below is
+    // deliberately several threads deep. The lock is only ever taken around a genuine compile, which
+    // after the first run of a build is almost never.
+    private readonly System.Threading.Lock _gate = new();
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ShaderCompiler"/> class.</summary>
@@ -61,10 +67,37 @@ internal sealed unsafe class ShaderCompiler : IDisposable
     /// <param name="name">A name for the source, used in compiler diagnostics.</param>
     /// <returns>The SPIR-V, as a byte array whose length is a multiple of four.</returns>
     /// <exception cref="GraphicsDeviceException">The source did not compile.</exception>
+    /// <remarks>
+    /// Answered from <see cref="ShaderBinaryCache"/> where it can be. The source is a constant, the
+    /// compiler is deterministic and the options never change within a build, so the second run of a
+    /// given shader has nothing to work out -- and the compiles this saves were happening on the render
+    /// thread, in front of the player, every time a level built its programs.
+    /// </remarks>
     public byte[] Compile(string source, ShaderStage stage, string name)
     {
         ArgumentException.ThrowIfNullOrEmpty(source);
 
+        string key = ShaderBinaryCache.KeyFor(source, stage);
+        if (_cache.TryRead(key) is { } cached)
+        {
+            return cached;
+        }
+
+        byte[] spirv = CompileUncached(source, stage, name);
+        _cache.Write(key, spirv);
+        return spirv;
+    }
+
+    private byte[] CompileUncached(string source, ShaderStage stage, string name)
+    {
+        lock (_gate)
+        {
+            return CompileLocked(source, stage, name);
+        }
+    }
+
+    private byte[] CompileLocked(string source, ShaderStage stage, string name)
+    {
         nint sourcePtr = SilkMarshal.StringToPtr(source, NativeStringEncoding.UTF8);
         nint namePtr = SilkMarshal.StringToPtr(name, NativeStringEncoding.UTF8);
         nint entryPtr = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
