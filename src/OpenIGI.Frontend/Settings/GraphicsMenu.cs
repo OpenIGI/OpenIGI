@@ -396,6 +396,17 @@ public static class GraphicsMenu
     public static IReadOnlyList<GraphicsSetting> InterfaceSettings { get; } =
     [
         new GraphicsSetting(
+            "r_day_night_cycle",
+            "Day/Night Cycle",
+            "Lets time pass while you play. A mission still begins at the hour it was written for, and "
+                + "the sun goes on from there, so a long mission can end under a different sky. Off, "
+                + "every mission stays at its own hour, the way the original's do."),
+        new GraphicsSetting(
+            "r_day_length",
+            "Day Length",
+            "How long a whole day takes, in minutes, once the cycle above is on. Forty is a sun you "
+                + "notice having moved; a minute or two is a sunrise you can stand and watch."),
+        new GraphicsSetting(
             "r_remastered_hud",
             "Remastered HUD",
             "Draws the health, ammunition and objective readouts in the remaster's own style. Off returns "

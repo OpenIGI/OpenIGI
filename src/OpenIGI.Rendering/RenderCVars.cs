@@ -406,6 +406,53 @@ public static class RenderCVars
         CVarOptions.Hidden | CVarOptions.ReadOnly,
         "How far into night the sun has gone, 0 to 1. Dims the picture; not a setting.");
 
+    /// <summary>Whether the time of day runs on its own while a mission is played.</summary>
+    /// <remarks>
+    /// <para>
+    /// Off, a mission stays at the hour its authors lit it at, which is what every mission in the
+    /// original does and what its lighting was designed around. On, that authored hour is merely where
+    /// the mission opens: the sun then sweeps on from there at whatever <see cref="DayLength"/> is set
+    /// to, which is quick enough by default that a mission of ordinary length ends under a different sky
+    /// than it began under.
+    /// </para>
+    /// <para>
+    /// Default off, because it changes the look of every level away from the one its artists chose, and
+    /// because a mission whose sun set halfway through is a different mission to play.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar DayNightCycle = CVar.Bool(
+        "r_day_night_cycle",
+        false,
+        CVarOptions.Archive,
+        "Let the time of day run while a mission is played; r_day_length says how long a day takes.");
+
+    /// <summary>How long a whole day of the cycle takes, in real minutes.</summary>
+    /// <remarks>
+    /// <para>
+    /// Forty minutes by default: long enough that the light is a setting rather than a strobe, short
+    /// enough that a mission of ordinary length visibly ends under a different sky than it opened on. An
+    /// hour was the first figure tried and it was too slow to be worth having -- most missions finished
+    /// under the sun they started with, so the setting did nothing anybody could see.
+    /// </para>
+    /// <para>
+    /// Free to set to anything, including a minute, which is the honest way to LOOK at the sweep: a
+    /// whole sunrise-to-night pass in the time it takes to walk across a level. The cycle steps the
+    /// clock a fixed slice of the arc at a time rather than a fixed number of seconds, so the sweep is
+    /// equally smooth at a minute a day and at half a day a day; what changes is how often it steps.
+    /// </para>
+    /// <para>
+    /// Does nothing at all unless <see cref="DayNightCycle"/> is on. It is not the scrub keys' rate --
+    /// those sweep a day in thirty seconds and are meant to be held and watched.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> DayLength = CVar.Float(
+        "r_day_length",
+        40f,
+        0.5f,
+        720f,
+        CVarOptions.Archive,
+        "How long a whole day takes when the day/night cycle is on, in real minutes.");
+
     /// <summary>The brightness the frame is actually exposed at: the player's, less the night's.</summary>
     /// <remarks>
     /// Every consumer of the exposure reads THIS, including the two that only want to divide a

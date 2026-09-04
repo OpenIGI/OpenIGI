@@ -78,10 +78,14 @@ public sealed class GraphicsPresetRegistryTests
         // r_scale used to be listed here and no longer is. It is the internal resolution the temporal
         // upscaler reconstructs from, which is the single largest difference between the quality tiers,
         // so it is a quality level in the fullest sense -- and it is now named by all four presets.
+        //
+        // r_day_night_cycle joins them for the same reason the weather does: it is a choice about what
+        // the world is doing while you play it, not about how well the world is drawn. A preset naming it
+        // would mean picking Ultra silently started the clock, or picking Vanilla silently stopped it.
         string[] preferences =
         [
             "r_weather_enabled", "r_weather_kind", "r_weather_speed",
-            "r_storm_intensity", "r_weather_force",
+            "r_storm_intensity", "r_weather_force", "r_day_night_cycle", "r_day_length",
             "r_vsync", "r_material_pack", "r_world_briefing",
         ];
 

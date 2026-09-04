@@ -2172,11 +2172,20 @@ internal sealed partial class DesktopGame : IDisposable
             // The day/night cycle is advanced on every pass, on real elapsed time, so holding [ or ] sweeps
             // the sun smoothly whatever the frame rate -- the same reasoning the camera below is advanced by.
             // The keyboard's own capture flag keeps the console's typing out of it.
+            //
+            // The automatic cycle, on top of the scrub, runs only while a mission is actually being played:
+            // menuMode covers the front end and the pause menu alike, and neither is time the player is
+            // spending in the level. The cycle banks the paused seconds nowhere, so coming back does not
+            // release a jump in the sun.
             {
                 int dayNightNow = _loop.TimeSource.Milliseconds;
                 float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
                 _dayNightMilliseconds = dayNightNow;
-                _dayNight.Update(_window.Input.Keyboard, dayNightElapsed);
+                bool clockRuns = RenderCVars.DayNightCycle.Value && !menuMode && _activeMission is not null;
+                _dayNight.Update(
+                    _window.Input.Keyboard,
+                    dayNightElapsed,
+                    clockRuns ? RenderCVars.DayLength.Value * 60f : 0f);
             }
 
             // The level's lamps, on every pass and on real elapsed time, for exactly the reasons the sweep

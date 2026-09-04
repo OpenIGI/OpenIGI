@@ -22,6 +22,10 @@ namespace OpenIGI.Desktop.World;
 /// fill all follow the sun round without a re-bake.
 /// </para>
 /// <para>
+/// It also runs on its own, when the player has asked it to, at a day length they set: that is the
+/// ordinary day/night cycle rather than the scrub, and it arrives through <see cref="Update"/>.
+/// </para>
+/// <para>
 /// Controls (ignored while the console has the keyboard): <c>[</c> and <c>]</c> scrub the time of day --
 /// held, a full day passes in <see cref="SecondsPerDay"/> seconds; the numpad re-orients the arc, 4/6
 /// around world Z, 8/2 around X, 9/7 around Y, and 5 clears the re-orientation and returns to noon.
@@ -31,6 +35,31 @@ internal sealed class DayNightCycle
 {
     /// <summary>Real seconds a held scrub key takes to advance a whole day.</summary>
     public const float SecondsPerDay = 30f;
+
+    /// <summary>How many times the automatic cycle moves the clock over one whole day.</summary>
+    /// <remarks>
+    /// <para>
+    /// The clock is advanced in whole ticks rather than continuously, and this is why: the sun is the
+    /// most expensive thing in the frame to move. Every distinct direction re-lights the surface cache,
+    /// re-gathers the radiance cache and re-fits the shadow cascades, and a sun advanced by a sliver on
+    /// every frame is a sun that never repeats -- so all of that runs perpetually, for a change nobody
+    /// can see. Held still between ticks, the sweep hands its consumers the same direction for a stretch
+    /// of frames and they can tell that nothing moved.
+    /// </para>
+    /// <para>
+    /// Counted per DAY rather than fixed in seconds so that a tick is always the same slice of the arc
+    /// -- a tenth of a degree of sun -- whatever a day has been set to cost in real time. That is what
+    /// lets the day length be a variable at all: at forty minutes a day the clock ticks about every
+    /// two-thirds of a second, at an hour once a second, at a minute every frame, and the sweep is
+    /// equally smooth at all of them. A tick fixed in seconds would instead be a step of sky that grew
+    /// with the rate, and past a point that is a sun which visibly jumps.
+    /// </para>
+    /// <para>
+    /// The scrub keys deliberately do NOT tick -- they sweep a day in <see cref="SecondsPerDay"/> and
+    /// are meant to be held and watched.
+    /// </para>
+    /// </remarks>
+    public const float AutomaticTicksPerDay = 3600f;
 
     private const float HoursPerDay = 24f;
     private const float Tau = MathF.PI * 2f;
@@ -42,6 +71,7 @@ internal sealed class DayNightCycle
     private float _rotX;
     private float _rotY;
     private float _rotZ;
+    private float _automaticSeconds;
     private Vector3f _lastDirection = Vector3f.UnitZ;
 
     /// <summary>Gets the current time of day, an hour in [0, 24).</summary>
@@ -90,6 +120,10 @@ internal sealed class DayNightCycle
         _rotX = 0f;
         _rotY = 0f;
         _rotZ = 0f;
+
+        // A fresh level opens exactly on its hour: whatever the last one had banked towards its next tick
+        // is not this one's, and carrying it over would move the sun off the authored hour immediately.
+        _automaticSeconds = 0f;
     }
 
     /// <summary>Returns the cycle to the hour a level opens on: its own authored hour, unless overridden.</summary>
@@ -112,13 +146,38 @@ internal sealed class DayNightCycle
     /// <summary>Reads the cycle's keys and advances it on real elapsed time.</summary>
     /// <param name="keyboard">The keyboard to read. Its own capture flag suppresses input for the console.</param>
     /// <param name="deltaSeconds">Real seconds since the last call, already clamped by the caller.</param>
-    public void Update(KeyboardState keyboard, float deltaSeconds)
+    /// <param name="automaticSecondsPerDay">
+    /// Real seconds a whole day should take, for the clock that runs on its own. Nought or less stops it
+    /// -- which is what the caller passes wherever time should not be passing, a menu or a paused
+    /// mission -- and drops the seconds banked towards the next tick, so a pause never releases a jump.
+    /// The rate is the caller's because it is the player's: it lives in <c>r_day_length</c>, and taking
+    /// it as an argument is what keeps this class something a test can drive at any rate it likes.
+    /// </param>
+    public void Update(KeyboardState keyboard, float deltaSeconds, float automaticSecondsPerDay = 0f)
     {
         ArgumentNullException.ThrowIfNull(keyboard);
 
         if (deltaSeconds <= 0f)
         {
             return;
+        }
+
+        // The automatic cycle, in whole ticks -- see AutomaticTicksPerDay for why it is not continuous.
+        // Accumulating and then spending the WHOLE accumulator, rather than one step of it, is what keeps
+        // the clock honest at any frame rate: a pass longer than a step still contributes every second it
+        // took, and a run of short passes contributes them together.
+        if (automaticSecondsPerDay > 0f)
+        {
+            _automaticSeconds += deltaSeconds;
+            if (_automaticSeconds >= automaticSecondsPerDay / AutomaticTicksPerDay)
+            {
+                _timeHours += (HoursPerDay / automaticSecondsPerDay) * _automaticSeconds;
+                _automaticSeconds = 0f;
+            }
+        }
+        else
+        {
+            _automaticSeconds = 0f;
         }
 
         float hourStep = (HoursPerDay / SecondsPerDay) * deltaSeconds;
