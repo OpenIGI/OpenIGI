@@ -631,10 +631,10 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Two groups. What is left of the post-process chain — the resolve now runs the lens scatter, the
-    /// shutter, the vignette, the film grain, exposure and the curve, so what remains unread is the grade
-    /// (contrast, saturation) and the effects the reference does not use here. And the lighting features whose
-    /// device setters record their arguments and return: reflections, and the realtime probe volume.
+    /// One group, now: what is left of the post-process chain. The resolve runs the lens scatter, the
+    /// shutter, the vignette, the film grain, exposure, the curve and the authored grade, so what remains
+    /// unread is the grade's KNOBS — contrast and saturation — and the effects the reference leaves
+    /// switched off here.
     /// </para>
     /// <para>
     /// Keep this list honest in both directions: an entry that has since been implemented is as
@@ -649,9 +649,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         "r_chromatic", "r_sharpen",
         "r_contrast", "r_saturation", "r_dof", "r_dof_range", "r_dof_blur",
         "r_camera_taps",
-
-        // Lighting features whose setters record and return.
-        "r_ssr", "r_ssr_intensity", "r_ssr_max_roughness",
     ];
 
     private void EnsureFrame()
