@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Rendering;
@@ -2775,10 +2775,16 @@ public static class RenderCVars
             400f,
             CVarOptions.Archive,
             "Height in metres over which fog thins out. Lower pools it harder into valleys."),
+
+        // Pinned to the default on every tier, like the other three fog dials. These describe the SHAPE
+        // of a mission's atmosphere, which fog-presets.json authors per level; a quality tier has no
+        // business replacing a level's own air with one number, and the shell reads "the player moved
+        // this off its default" as the signal to override, so a tier that assigned a value would be
+        // indistinguishable from a player who had.
         vanilla: "24",
         enhanced: "24",
         high: "24",
-        ultra: "240.4");
+        ultra: "24");
 
     /// <summary>How strongly the fog scatters forward.</summary>
     public static readonly NumericCVar<float> FogAnisotropy = Presets.Define(
@@ -2789,10 +2795,16 @@ public static class RenderCVars
             0.95f,
             CVarOptions.Archive,
             "Forward scattering, -0.95 to 0.95. Positive makes fog glow towards the sun."),
+
+        // Pinned to the default on every tier, like the other three fog dials. These describe the SHAPE
+        // of a mission's atmosphere, which fog-presets.json authors per level; a quality tier has no
+        // business replacing a level's own air with one number, and the shell reads "the player moved
+        // this off its default" as the signal to override, so a tier that assigned a value would be
+        // indistinguishable from a player who had.
         vanilla: "0.7",
         enhanced: "0.7",
         high: "0.7",
-        ultra: "-0.38");
+        ultra: "0.7");
 
     /// <summary>How far, in metres, the fog is marched before the cheaper haze takes over.</summary>
     public static readonly NumericCVar<float> FogDistance = Presets.Define(
@@ -2803,10 +2815,19 @@ public static class RenderCVars
             2000f,
             CVarOptions.Archive,
             "How far volumetric fog is marched, in metres."),
+
+        // Pinned to the default on every tier, like the other three fog dials. These describe the SHAPE
+        // of a mission's atmosphere, which fog-presets.json authors per level; a quality tier has no
+        // business replacing a level's own air with one number, and the shell reads "the player moved
+        // this off its default" as the signal to override, so a tier that assigned a value would be
+        // indistinguishable from a player who had.
+        // Distance used to be tiered because a longer march cost more steps. It does not any more: the
+        // froxel volume has the same cell count whatever range it covers, so how far the fog reaches is
+        // a look rather than a price, and it belongs with the rest of the mission's atmosphere.
         vanilla: "500",
-        enhanced: "350",
+        enhanced: "500",
         high: "500",
-        ultra: "800");
+        ultra: "500");
 
     /// <summary>The anisotropic filtering ratio, 1 for none.</summary>
     /// <remarks>

@@ -3372,9 +3372,31 @@ internal sealed partial class DesktopGame : IDisposable
 
                     // A console override beats the authored preset, so a value can be dialled in live and
                     // then written back into the file.
+                    //
+                    // "Overridden" is the variable having been moved off its own default, which is why
+                    // the graphics presets pin all four of these to their defaults on every tier: a
+                    // player choosing Ultra has not asked for one mission's authored atmosphere to be
+                    // replaced by a global number, and a preset that assigned one could not be told from
+                    // a player who had. Picking a preset therefore CLEARS an override and hands the
+                    // missions back their own air, which is the behaviour the settings page implies.
                     if (RenderCVars.FogDensity.Value > 0f)
                     {
                         medium = medium with { Density = RenderCVars.FogDensity.Value };
+                    }
+
+                    if (!RenderCVars.FogHeightFalloff.IsDefault)
+                    {
+                        medium = medium with { HeightFalloff = RenderCVars.FogHeightFalloff.Value };
+                    }
+
+                    if (!RenderCVars.FogAnisotropy.IsDefault)
+                    {
+                        medium = medium with { Anisotropy = RenderCVars.FogAnisotropy.Value };
+                    }
+
+                    if (!RenderCVars.FogDistance.IsDefault)
+                    {
+                        medium = medium with { Distance = RenderCVars.FogDistance.Value };
                     }
                 }
 

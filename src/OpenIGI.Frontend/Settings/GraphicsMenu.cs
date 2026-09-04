@@ -1,4 +1,4 @@
-namespace OpenIGI.Frontend.Settings;
+﻿namespace OpenIGI.Frontend.Settings;
 
 /// <summary>One row of the graphics page that is a single variable shown as itself.</summary>
 /// <param name="Variable">The variable the row drives.</param>
@@ -204,7 +204,8 @@ public static class GraphicsMenu
                     "Volumetric Fog",
                     "Fog that light actually travels through — shafts through windows, haze thickening "
                         + "down a valley. The samples taken along each ray are both the quality and the "
-                        + "cost.",
+                        + "cost; the fog's SHAPE is the mission's own, authored per level, which is why "
+                        + "only the sample count changes across these steps.",
                     new QualityLevel(
                         "Off",
                         ("r_fog_quality", "0"),
@@ -215,7 +216,7 @@ public static class GraphicsMenu
                     new QualityLevel(
                         "Enhanced",
                         ("r_fog_quality", "32"),
-                        ("r_fog_distance", "350"),
+                        ("r_fog_distance", "500"),
                         ("r_fog_density", "0"),
                         ("r_fog_height", "24"),
                         ("r_fog_anisotropy", "0.7")),
@@ -229,10 +230,10 @@ public static class GraphicsMenu
                     new QualityLevel(
                         "Ultra",
                         ("r_fog_quality", "96"),
-                        ("r_fog_distance", "800"),
+                        ("r_fog_distance", "500"),
                         ("r_fog_density", "0"),
-                        ("r_fog_height", "240.4"),
-                        ("r_fog_anisotropy", "-0.38"))),
+                        ("r_fog_height", "24"),
+                        ("r_fog_anisotropy", "0.7"))),
             ],
             []),
 

@@ -617,12 +617,11 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Three groups. What is left of the post-process chain — the resolve now runs the lens scatter, the
+    /// Two groups. What is left of the post-process chain — the resolve now runs the lens scatter, the
     /// shutter, the vignette, the film grain, exposure and the curve, so what remains unread is the grade
-    /// (contrast, saturation, the colour lookup) and the effects the reference does not use here. The
+    /// (contrast, saturation, the colour lookup) and the effects the reference does not use here. And the
     /// lighting features whose device setters record their arguments and return: reflections, the floor
-    /// sheen, the detail maps, the realtime probe volume. And three of the fog's dials, which are lost on
-    /// the way here rather than ignored once they arrive.
+    /// sheen, the detail maps, the realtime probe volume.
     /// </para>
     /// <para>
     /// Keep this list honest in both directions: an entry that has since been implemented is as
@@ -640,13 +639,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         // Lighting features whose setters record and return.
         "r_ssr", "r_ssr_intensity", "r_ssr_max_roughness", "r_floor_gloss", "r_material_detail",
-
-        // The fog's shape dials, which this backend does read -- and never sees. The shell resolves the
-        // medium from the fog preset file (FogPresets.Resolve) and overrides only its density from a
-        // cvar, so these three reach no seam at all. Named here because the sweep's question is whether
-        // flipping a variable changes the picture, and the answer for these is no, wherever it is lost.
-        // Quality and density are NOT here: those two drive the froxel volume and its extinction.
-        "r_fog_height", "r_fog_anisotropy", "r_fog_distance",
     ];
 
     private void EnsureFrame()
