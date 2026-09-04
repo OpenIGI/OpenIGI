@@ -20,9 +20,13 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class ReflectionPass : IDisposable
 {
-    // mat4 + five vec4s: the view-to-world rotation, the unprojection, the resolution, the SSR knobs, the
-    // wetness/frame block and the puddle block. The layout matches the shader's Params exactly.
-    private const int ReflectParamSize = (16 + (5 * 4)) * sizeof(float);
+    // mat4 + eight vec4s + the shelter boxes: the view-to-world rotation, the unprojection, the
+    // resolution, the SSR knobs, the wetness/frame block, two blocks of puddle and ripple, the shelter
+    // count, and then two vec4s per shelter. The layout matches the shader's Params exactly.
+    private const int ReflectParamSize = (16 + (8 * 4) + (WetShelter.Capacity * 8)) * sizeof(float);
+
+    // Where the shelter boxes start, in floats: past the mat4 and the eight vec4s above them.
+    private const int ShelterOffset = 16 + (8 * 4);
 
     // One vec4 of resolution.
     private const int CompositeParamSize = 4 * sizeof(float);
@@ -33,6 +37,12 @@ internal sealed class ReflectionPass : IDisposable
         ComputeBindingKind.SampledImage,   // depth
         ComputeBindingKind.SampledImage,   // world normal
         ComputeBindingKind.SampledImage,   // material
+
+        // The sky table, in the general layout the atmosphere passes leave it in. Read so that a marched
+        // reflection can take the place of the sky the shading already laid in the water rather than
+        // being piled on top of it.
+        ComputeBindingKind.SampledStorageImage,
+
         ComputeBindingKind.StorageImage,   // the reflection, written
     ];
 
@@ -77,12 +87,17 @@ internal sealed class ReflectionPass : IDisposable
     /// <param name="height">The full-resolution height.</param>
     /// <param name="viewToWorld">The view-space to camera-relative-world rotation.</param>
     /// <param name="unprojection">How a depth sample becomes a view position.</param>
+    /// <param name="skyView">The sky table, for the term a marched reflection stands in place of.</param>
     /// <param name="settings">The reflection knobs: steps, intensity, roughness cutoff, thickness.</param>
-    /// <param name="wetnessAmount">How wet the ground is, which is what makes it reflective.</param>
-    /// <param name="puddleCoverage">How much of the ground stands under water, for the puddle mask.</param>
-    /// <param name="puddleSize">The puddle lattice spacing, in metres, matching the shading pass.</param>
+    /// <param name="wetness">
+    /// The whole of the weather, not a few fields of it. The march has to arrive at the same water the
+    /// shading drew — the same puddles, rippled the same way at the same instant — which takes the ripple
+    /// lattice and its clock as much as it takes the coverage.
+    /// </param>
+    /// <param name="shelters">The roofs, camera-relative: no water stands under one, so none reflects.</param>
     /// <param name="cameraX">The camera's world X, which the puddle lattice is anchored to.</param>
     /// <param name="cameraY">The camera's world Y, which the puddle lattice is anchored to.</param>
+    /// <param name="viewHeightKm">The camera's height, for reading the sky table the same way.</param>
     /// <param name="frameIndex">Which frame this is, so the march's dither moves.</param>
     /// <param name="reach">How far, in metres, a reflected ray is marched.</param>
     public void RecordReflect(
@@ -92,17 +107,18 @@ internal sealed class ReflectionPass : IDisposable
         ImageView depth,
         ImageView normal,
         ImageView material,
+        ImageView skyView,
         ImageView reflection,
         int width,
         int height,
         in Matrix3f viewToWorld,
         in DepthUnprojection unprojection,
         in ReflectionSettings settings,
-        float wetnessAmount,
-        float puddleCoverage,
-        float puddleSize,
+        in WetnessSettings wetness,
+        ReadOnlySpan<WetShelter> shelters,
         float cameraX,
         float cameraY,
+        float viewHeightKm,
         int frameIndex,
         float reach)
     {
@@ -132,15 +148,38 @@ internal sealed class ReflectionPass : IDisposable
         data[26] = Math.Clamp(settings.MaxRoughness, 0f, 1f);
         data[27] = MathF.Max(settings.Thickness, 0.02f);
 
-        data[28] = MathF.Max(wetnessAmount, 0f);
+        data[28] = MathF.Max(wetness.Amount, 0f);
         data[29] = frameIndex;
         data[30] = MathF.Max(reach, 1f);
-        data[31] = 0f;
+        data[31] = viewHeightKm;
 
-        data[32] = Math.Clamp(puddleCoverage, 0f, 1f);
-        data[33] = MathF.Max(puddleSize, 0.05f);
-        data[34] = cameraX;
-        data[35] = cameraY;
+        // The wetness, packed exactly as the shading pass packs it into its own uniform. Both are read
+        // back into the same WetParams on the other side, which is what keeps the two descriptions of the
+        // water one description.
+        data[32] = Math.Clamp(wetness.PuddleCoverage, 0f, 1f);
+        data[33] = MathF.Max(wetness.PuddleSizeMetres, 0.05f);
+        data[34] = Math.Clamp(wetness.RippleStrength, 0f, 1f);
+        data[35] = wetness.Seconds;
+
+        data[36] = MathF.Max(wetness.RippleSizeMetres, 0.02f);
+        data[37] = Math.Clamp(wetness.WindRippleStrength, 0f, 1f);
+        data[38] = cameraX;
+        data[39] = cameraY;
+
+        int shelterCount = Math.Min(shelters.Length, WetShelter.Capacity);
+        data[40] = shelterCount;
+
+        for (int i = 0; i < shelterCount; i++)
+        {
+            WetShelter shelter = shelters[i];
+            int at = ShelterOffset + (i * 8);
+            data[at] = shelter.Minimum.X;
+            data[at + 1] = shelter.Minimum.Y;
+            data[at + 2] = shelter.Minimum.Z;
+            data[at + 4] = shelter.Maximum.X;
+            data[at + 5] = shelter.Maximum.Y;
+            data[at + 6] = shelter.Maximum.Z;
+        }
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -148,6 +187,7 @@ internal sealed class ReflectionPass : IDisposable
             new ComputeResource(depth),
             new ComputeResource(normal),
             new ComputeResource(material),
+            new ComputeResource(skyView),
             new ComputeResource(reflection),
         ];
 
