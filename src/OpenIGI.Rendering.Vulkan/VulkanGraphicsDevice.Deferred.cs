@@ -2299,9 +2299,21 @@ public sealed partial class VulkanGraphicsDevice
         int frame = _frameLoop.CurrentFrame;
         Memory.VulkanBuffer gi = _deferred.GiUniform(frame);
         ProbeVolumes probes = _deferred.Probes;
-        bool enabled = _hasProbeField && probes.HasData && _volumeSettings.Enabled;
 
-        float spacing = probes.Spacing;
+        // The world-space radiance cache stands in for the baked field when one is offered, and it
+        // describes its own grid: a different origin, spacing and count from the baked field's, so the
+        // parameters have to come from whichever is actually bound or every lookup lands in the wrong
+        // cell. It needs no baked data behind it -- it IS the field for this frame.
+        RealtimeProbeField? realtime = _realtimeProbe;
+        bool enabled = _volumeSettings.Enabled
+            && (realtime is not null || (_hasProbeField && probes.HasData));
+
+        Vector3f probeOrigin = realtime?.Origin ?? probes.Origin;
+        float spacing = realtime?.Spacing ?? probes.Spacing;
+        Vector3f inverseCount = realtime is { } live
+            ? new Vector3f(1f / live.CountX, 1f / live.CountY, 1f / live.CountZ)
+            : probes.InverseCount;
+
         float intensity = MathF.Max(_volumeSettings.Intensity, 0f);
         Matrix3f m = _viewToWorld;
 
@@ -2311,10 +2323,10 @@ public sealed partial class VulkanGraphicsDevice
         u[0] = _unprojection.XScale; u[1] = _unprojection.YScale; u[2] = _unprojection.Near; u[3] = _unprojection.Far;
 
         // uProbeOrigin: xyz origin, w whether the field is on.
-        u[4] = probes.Origin.X; u[5] = probes.Origin.Y; u[6] = probes.Origin.Z; u[7] = enabled ? 1f : 0f;
+        u[4] = probeOrigin.X; u[5] = probeOrigin.Y; u[6] = probeOrigin.Z; u[7] = enabled ? 1f : 0f;
 
         // uProbeInvCount: xyz one-over-count, w spacing.
-        u[8] = probes.InverseCount.X; u[9] = probes.InverseCount.Y; u[10] = probes.InverseCount.Z; u[11] = spacing;
+        u[8] = inverseCount.X; u[9] = inverseCount.Y; u[10] = inverseCount.Z; u[11] = spacing;
 
         // uProbeMisc: half-spacing normal offset, blend, light scale, and whether the sun's shadow comes
         // from a ray rather than from the cascades. The world is accumulated from what has been drawn, so
@@ -2414,6 +2426,18 @@ public sealed partial class VulkanGraphicsDevice
 
         Memory.VulkanBuffer lamps = WriteLampUniform(frame);
 
+        // The four views the lighting samples as the probe field: the radiance cache's when one is
+        // offered, the baked field's otherwise. A storage volume lives in the general layout for good,
+        // which is where the compute that fills it leaves it.
+        Deferred.ProbeFieldViews probeViews = _realtimeProbe is { } field
+            ? new Deferred.ProbeFieldViews(
+                ResolveStorageImage(field.Red).View,
+                ResolveStorageImage(field.Green).View,
+                ResolveStorageImage(field.Blue).View,
+                ResolveStorageImage(field.Distance).View,
+                ImageLayout.General)
+            : default;
+
         _sceneTarget.WriteGi(
             probes, gi.Handle, (ulong)DeferredRenderer.GiUniformSize,
             lamps.Handle, (ulong)DeferredRenderer.LampUniformSize,
@@ -2424,7 +2448,8 @@ public sealed partial class VulkanGraphicsDevice
             freshestAo,
             TracedWorld(),
             _fogActive ? _deferred.Fog.Integrated?.View ?? default : default,
-            _fogActive ? _deferred.Fog.Integrated?.Sampler ?? default : default);
+            _fogActive ? _deferred.Fog.Integrated?.Sampler ?? default : default,
+            probeViews);
     }
 
     /// <summary>The world the lamps shadow against, or nothing when there is none to trace.</summary>

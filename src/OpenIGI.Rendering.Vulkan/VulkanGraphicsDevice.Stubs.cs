@@ -219,6 +219,19 @@ public sealed partial class VulkanGraphicsDevice
     // render the sun's cascades into the shadow map the lighting then samples.
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <para>
+    /// The world-space radiance cache stands in for the baked field wherever it is offered: same layout,
+    /// same sampler, same four volumes, so the lighting reads it without knowing which it has. What it
+    /// buys is stability — the cache is held in world cells rather than on the moving screen, so it does
+    /// not shimmer as the camera turns the way a screen-space gather does.
+    /// </para>
+    /// <para>
+    /// It was recorded and ignored here, which was worse than not offering it: the cache was traced and
+    /// updated every frame at three of the four presets, at full cost, and then the lighting sampled the
+    /// baked field instead. The work was done and thrown away.
+    /// </para>
+    /// </remarks>
     public void SetRealtimeProbeVolume(
         TextureHandle red,
         TextureHandle green,
@@ -228,10 +241,52 @@ public sealed partial class VulkanGraphicsDevice
         float spacing,
         int countX,
         int countY,
-        int countZ) => ThrowIfDisposed();
+        int countZ)
+    {
+        ThrowIfDisposed();
+
+        // All four or none: three channels and a distance are one field, and a lighting pass handed a
+        // partial one would sample whatever the missing slot happened to hold.
+        if (!red.IsValid || !green.IsValid || !blue.IsValid || !distance.IsValid
+            || countX <= 0 || countY <= 0 || countZ <= 0 || spacing <= 0f)
+        {
+            ClearRealtimeProbeVolume();
+            return;
+        }
+
+        _realtimeProbe = new RealtimeProbeField(
+            red, green, blue, distance, origin, spacing, countX, countY, countZ);
+    }
 
     /// <inheritdoc/>
-    public void ClearRealtimeProbeVolume() => ThrowIfDisposed();
+    public void ClearRealtimeProbeVolume()
+    {
+        ThrowIfDisposed();
+        _realtimeProbe = null;
+    }
+
+    /// <summary>The world-space radiance cache offered in place of the baked probe field.</summary>
+    /// <param name="Red">The red channel's harmonics.</param>
+    /// <param name="Green">The green channel's.</param>
+    /// <param name="Blue">The blue channel's.</param>
+    /// <param name="Distance">How far each probe saw, which is what the leak rejection reads.</param>
+    /// <param name="Origin">The grid's world origin in metres.</param>
+    /// <param name="Spacing">Metres between probes.</param>
+    /// <param name="CountX">Probes along x.</param>
+    /// <param name="CountY">Probes along y.</param>
+    /// <param name="CountZ">Probes along z.</param>
+    private readonly record struct RealtimeProbeField(
+        TextureHandle Red,
+        TextureHandle Green,
+        TextureHandle Blue,
+        TextureHandle Distance,
+        Vector3f Origin,
+        float Spacing,
+        int CountX,
+        int CountY,
+        int CountZ);
+
+    private RealtimeProbeField? _realtimeProbe;
 
     // SetAmbientOcclusion is implemented in VulkanGraphicsDevice.Deferred.cs — it drives the occlusion pass.
 
