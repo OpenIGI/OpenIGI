@@ -33,7 +33,13 @@ public sealed class WorldRenderer : IDisposable
     /// value here that disagrees with the shaders would preserve the wrong quantity and thin the fence
     /// anyway. Change both together.
     /// </remarks>
-    private const float AlphaTestCutoff = 0.5f;
+    /// <summary>The alpha a cut-out texel must reach to be drawn, which the shaders test against.</summary>
+    /// <remarks>
+    /// Public because the decode that prepares a texture for this cutoff now happens off this class, on
+    /// a worker; see <see cref="TextureDecodeCache"/>. The two must use the same number or a chain is
+    /// corrected against a threshold nothing tests.
+    /// </remarks>
+    public const float AlphaTestCutoff = 0.5f;
 
     private const string LogCategory = "World";
 
@@ -1340,6 +1346,13 @@ public sealed class WorldRenderer : IDisposable
     /// </remarks>
     public MaterialDetailPack? DetailMaps { get; set; }
 
+    /// <summary>Gets or sets the level's textures, decoded ahead of this renderer on worker threads.</summary>
+    /// <remarks>
+    /// Optional and purely a speed-up: with none set every texture is decoded on the thread that first
+    /// draws it, which is what this renderer always did. See <see cref="TextureDecodeCache"/>.
+    /// </remarks>
+    public TextureDecodeCache? Decoded { get; set; }
+
     /// <summary>Captures every distinct model's surface into the card atlas.</summary>
     /// <param name="scene">The level, for the placements that name which models are used.</param>
     /// <param name="cardResolution">How many texels per world unit a card asks for.</param>
@@ -1451,6 +1464,28 @@ public sealed class WorldRenderer : IDisposable
             return cached;
         }
 
+        // Decoded on a worker while the backdrop was being built, if one was offered. Everything from
+        // the file down to the corrected mip chain has then already happened, and what is left here is
+        // the upload -- which is the only part that had to be on this thread in the first place.
+        if (Decoded is not null && Decoded.TryTake(name, out TextureImage? ready))
+        {
+            TextureHandle prepared = TextureHandle.None;
+            if (ready is not null)
+            {
+                try
+                {
+                    prepared = CreateFromDecoded(name, ready);
+                }
+                catch (GraphicsDeviceException ex)
+                {
+                    _logger.Warning(LogCategory, $"Texture '{name}' did not load: {ex.Message}");
+                }
+            }
+
+            _textures[name] = prepared;
+            return prepared;
+        }
+
         TextureHandle handle = TextureHandle.None;
         string resource = LoadedPack.TextureResourceName(name);
 
@@ -1486,15 +1521,7 @@ public sealed class WorldRenderer : IDisposable
                 image = cutout ? image.RebuildMipChain() : image.WithMipChain();
                 image.PreserveAlphaCoverage(AlphaTestCutoff);
 
-                handle = _device.CreateTexture(
-                    new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
-                    image.Pixels);
-
-                // The derived normal and roughness this game never shipped, if a pack has been built.
-                // Registered against the texture rather than carried through the draw, so nothing below
-                // this line knows the maps exist. The top level goes with it so a texture the pack has
-                // never seen can derive its own map instead of staying flat forever.
-                DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
+                handle = CreateFromDecoded(name, image);
             }
             catch (Exception ex) when (ex is TextureFormatException or ArgumentException or GraphicsDeviceException)
             {
@@ -1507,6 +1534,28 @@ public sealed class WorldRenderer : IDisposable
         }
 
         _textures[name] = handle;
+        return handle;
+    }
+
+    /// <summary>Uploads an already-decoded image and registers whatever derives from it.</summary>
+    /// <param name="name">The texture's name, which the detail pack keys its maps by.</param>
+    /// <param name="image">The decoded chain, from the cache or from this thread.</param>
+    /// <returns>The uploaded texture.</returns>
+    /// <remarks>
+    /// The half of <see cref="GetTexture"/> that has to be on the render thread, split out so the
+    /// decoded-ahead path and the decode-here path upload through exactly the same code.
+    /// </remarks>
+    private TextureHandle CreateFromDecoded(string name, TextureImage image)
+    {
+        TextureHandle handle = _device.CreateTexture(
+            new TextureDescription(image.Width, image.Height, image.MipLevels, TextureFilter.Linear, TextureAddressMode.Repeat),
+            image.Pixels);
+
+        // The derived normal and roughness this game never shipped, if a pack has been built.
+        // Registered against the texture rather than carried through the draw, so nothing below
+        // this line knows the maps exist. The top level goes with it so a texture the pack has
+        // never seen can derive its own map instead of staying flat forever.
+        DetailMaps?.Attach(name, handle, image.GetLevel(0), image.Width, image.Height);
         return handle;
     }
 }

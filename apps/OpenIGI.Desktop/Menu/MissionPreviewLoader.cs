@@ -352,6 +352,12 @@ public sealed class MissionPreviewLoader(
 
         Bgra32[][] detail = groundDetail.GetAwaiter().GetResult();
 
+        // The level's textures, decoded on the pool from here on. Started last, after everything that
+        // reads the registry on this thread has finished with it: the cache takes the bytes it needs now
+        // and touches the registry no further, so nothing races the render thread's own loads later.
+        TextureDecodeCache decoded = TextureDecodeCache.StartFor(
+            resources, WorldRenderer.AlphaTestCutoff, context.DetailMaps);
+
         logger.Information(
             LogCategory,
             $"Built the backdrop for mission {missionId} in {clock.ElapsedMilliseconds} ms off the render thread.");
@@ -373,7 +379,8 @@ public sealed class MissionPreviewLoader(
             lamps,
             distanceField,
             pendingField,
-            fieldResolution);
+            fieldResolution,
+            decoded);
     }
 
     /// <summary>Gets whether the selected render preset can consume derived ground detail.</summary>

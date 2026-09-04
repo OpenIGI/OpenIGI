@@ -67,6 +67,10 @@ namespace OpenIGI.Desktop;
 /// hands the mission a finished field, and one that was not hands it the bake in flight.
 /// </param>
 /// <param name="DistanceFieldResolution">The voxel resolution the field was read or is being baked at.</param>
+/// <param name="Decoded">
+/// The level's textures, decoded on the thread pool while the rest of this was being built. The render
+/// thread then only uploads them — see <see cref="TextureDecodeCache"/>.
+/// </param>
 public sealed record MissionPreview(
     int MissionId,
     LoadedMission Mission,
@@ -84,4 +88,5 @@ public sealed record MissionPreview(
     EmissiveLightProposer.Proposal Lamps,
     SceneDistanceField? DistanceField,
     DistanceFieldBake? PendingDistanceField,
-    int DistanceFieldResolution);
+    int DistanceFieldResolution,
+    TextureDecodeCache? Decoded);

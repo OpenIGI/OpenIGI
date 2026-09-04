@@ -844,21 +844,6 @@ internal sealed partial class DesktopGame : IDisposable
             Path.Combine(AppContext.BaseDirectory, "Assets", "lamps.json"),
             _logger);
 
-        // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
-        // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
-        // checked against and the field cache it reads. Built here because every part of it is finished
-        // being written by this point and none of it is mutated afterwards, which is what makes it safe
-        // to hand to a worker.
-        _previewContext = new MissionPreviewContext(
-            _timeSource,
-            menuHost,
-            _scheduler,
-            missionState,
-            _sessionArchives,
-            _lampManifest,
-            _sdfCache,
-            _device.Capabilities.SupportsCompute);
-
         // The derived surface detail this game never shipped -- normals, roughness, metal. Built by
         // `ResExtract maps` and pointed at by r_material_pack; an installation that has never run the tool
         // has none, and renders exactly as it did before any of this existed.
@@ -876,6 +861,23 @@ internal sealed partial class DesktopGame : IDisposable
             RenderCVars.MaterialPack.Value,
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
+
+        // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
+        // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
+        // checked against and the field cache it reads. Built here because every part of it is finished
+        // being written by this point and none of it is mutated afterwards, which is what makes it safe
+        // to hand to a worker.
+        _previewContext = new MissionPreviewContext(
+            _timeSource,
+            menuHost,
+            _scheduler,
+            missionState,
+            _detailMaps,
+            _sessionArchives,
+            _lampManifest,
+            _sdfCache,
+            _device.Capabilities.SupportsCompute);
+
 
         // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
         // They live under common/, so they are the same 2.4 MB of IFF for every mission, and parsing

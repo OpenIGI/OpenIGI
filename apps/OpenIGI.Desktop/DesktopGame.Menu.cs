@@ -62,6 +62,11 @@ internal sealed partial class DesktopGame
         {
             Materials = _materials,
             DetailMaps = _detailMaps,
+
+            // Decoded on the pool while this backdrop was being built, so the capture below uploads
+            // rather than decodes. Null on a preview built before there was a cache to fill, which the
+            // renderer handles by decoding as it always did.
+            Decoded = preview.Decoded,
         };
 
         // Held because the renderers read through the preview's own resource registry and file system for
@@ -165,7 +170,8 @@ internal sealed partial class DesktopGame
         // worker, so this is the whole of what a backdrop swap costs the render thread.
         _logger.Information(
             "Preview",
-            $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms.");
+            FormattableString.Invariant(
+                $"The backdrop is now mission {preview.MissionId}; the handover took {handover.ElapsedMilliseconds} ms, {SinceProcessStart():0} ms after the process started."));
     }
 
     /// <summary>Builds every mission and writes out the places its menu backdrop should circle.</summary>

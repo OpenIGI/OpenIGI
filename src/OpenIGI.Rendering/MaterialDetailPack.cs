@@ -38,6 +38,11 @@ public sealed class MaterialDetailPack : IDisposable
 
     private readonly IGraphicsDevice _device;
     private readonly IIgiLogger _logger;
+
+    // Detail PNGs read and decoded ahead of the render thread by Prewarm. A name maps to its pixels, or
+    // to null when the pack has no map for it -- which is an answer worth remembering, because a level
+    // full of textures with no maps would otherwise be a level's worth of File.Exists on the frame.
+    private readonly ConcurrentDictionary<string, ReadMap?> _read = new(StringComparer.OrdinalIgnoreCase);
     private readonly string? _root;
     private readonly string? _cacheRoot;
     private readonly Dictionary<string, TextureHandle> _maps = new(StringComparer.OrdinalIgnoreCase);
@@ -119,6 +124,52 @@ public sealed class MaterialDetailPack : IDisposable
 
     /// <summary>Gets how many maps have been uploaded.</summary>
     public int Count => _maps.Count(entry => entry.Value.IsValid);
+
+    /// <summary>Reads and decodes the maps for a set of textures on the thread pool.</summary>
+    /// <param name="names">The texture names, as the pack records them.</param>
+    /// <remarks>
+    /// <para>
+    /// A detail map is a PNG on disk, and finding and inflating one is file I/O and CPU with no graphics
+    /// in it at all -- yet it happened inside <c>Attach</c>, on the thread that was uploading the
+    /// texture it belongs to. Measured over one level's surface-cache capture: 219 ms of the render
+    /// thread, most of it inside the inflater.
+    /// </para>
+    /// <para>
+    /// So the reading is done here instead, wherever the caller has a worker to spare, and
+    /// <c>Attach</c> finds the pixels already in hand and does nothing but upload. Optional in
+    /// exactly the way the pack itself is: a name that was never prewarmed, or one prewarmed after the
+    /// frame asked for it, is read inline as it always was.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="names"/> is <see langword="null"/>.</exception>
+    public void Prewarm(IEnumerable<string> names)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+
+        if (_disposed || (_root is null && _cacheRoot is null))
+        {
+            return;
+        }
+
+        string[] wanted = [.. names];
+        if (wanted.Length == 0)
+        {
+            return;
+        }
+
+        // Capped, and the cap matters: unbounded this took every core, and the thread it took them from
+        // was the one drawing the frame. See TextureDecodeCache.MaxDecodeThreads, which is the same
+        // bargain -- the reads finish well inside the swap either way.
+        ParallelOptions options = new() { MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount / 4) };
+
+        _ = Task.Run(() => Parallel.ForEach(wanted, options, name =>
+        {
+            if (!_disposed && !string.IsNullOrEmpty(name) && !_read.ContainsKey(name))
+            {
+                _read[name] = ReadMap.From(FindMapPath(name));
+            }
+        }));
+    }
 
     /// <summary>Attaches this texture's detail map, if the pack has one.</summary>
     /// <param name="name">The texture's name, as the pack records it and as the file is named.</param>
@@ -489,15 +540,14 @@ public sealed class MaterialDetailPack : IDisposable
 
     private TextureHandle Load(string name)
     {
-        string path = Path.Combine(_root ?? _cacheRoot!, name + ".png");
-
-        if (!File.Exists(path) && _root is not null && _cacheRoot is not null)
+        // Decoded by Prewarm if a worker got to it, and read here if not. Taken rather than looked at:
+        // the pixels are about to become a texture and the only copy that matters after that is the GPU's.
+        if (!_read.TryRemove(name, out ReadMap? read))
         {
-            // The pack proper does not have it. A map derived on an earlier run might.
-            path = Path.Combine(_cacheRoot, name + ".png");
+            read = ReadMap.From(FindMapPath(name));
         }
 
-        if (!File.Exists(path))
+        if (read is null)
         {
             if (_missing.Add(name))
             {
@@ -507,23 +557,85 @@ public sealed class MaterialDetailPack : IDisposable
             return TextureHandle.None;
         }
 
+        if (read.Error is not null)
+        {
+            _logger.Warning(LogCategory, $"Detail map for '{name}' did not load: {read.Error}");
+            return TextureHandle.None;
+        }
+
         try
         {
-            (Bgra32[] pixels, int width, int height) = PngReader.Read(path);
-
             // Repeat, because the map tiles exactly as the texture it belongs to does -- and mipmapped,
             // because a normal map minified without one aliases far worse than a colour does. A wrong
             // normal is a wrong lighting direction, and the eye reads that as sparkle rather than as
             // detail.
             return _device.CreateTexture(
-                new TextureDescription(width, height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
-                pixels);
+                new TextureDescription(read.Width, read.Height, 1, TextureFilter.Linear, TextureAddressMode.Repeat),
+                read.Pixels);
         }
-        catch (Exception error)
-            when (error is InvalidDataException or IOException or ArgumentException or GraphicsDeviceException)
+        catch (GraphicsDeviceException error)
         {
             _logger.Warning(LogCategory, $"Detail map for '{name}' did not load: {error.Message}");
             return TextureHandle.None;
+        }
+    }
+
+    /// <summary>Finds which file holds a texture's map, preferring the authored pack over the cache.</summary>
+    /// <param name="name">The texture's name.</param>
+    /// <returns>The path, or <see langword="null"/> when neither has one.</returns>
+    private string? FindMapPath(string name)
+    {
+        if (_root is null && _cacheRoot is null)
+        {
+            return null;
+        }
+
+        string path = Path.Combine(_root ?? _cacheRoot!, name + ".png");
+        if (File.Exists(path))
+        {
+            return path;
+        }
+
+        if (_root is not null && _cacheRoot is not null)
+        {
+            // The pack proper does not have it. A map derived on an earlier run might.
+            path = Path.Combine(_cacheRoot, name + ".png");
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A detail PNG decoded off the device thread, or the reason it could not be.</summary>
+    /// <param name="Pixels">The decoded pixels.</param>
+    /// <param name="Width">The map width.</param>
+    /// <param name="Height">The map height.</param>
+    /// <param name="Error">Why the decode failed, or <see langword="null"/> when it did not.</param>
+    private sealed record ReadMap(Bgra32[] Pixels, int Width, int Height, string? Error)
+    {
+        /// <summary>Reads and decodes a map, on whichever thread asks. Touches no graphics state.</summary>
+        /// <param name="path">The file, or <see langword="null"/> when the pack has none.</param>
+        /// <returns>The decoded map, or <see langword="null"/> when there is no file to read.</returns>
+        public static ReadMap? From(string? path)
+        {
+            if (path is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                (Bgra32[] pixels, int width, int height) = PngReader.Read(path);
+                return new ReadMap(pixels, width, height, null);
+            }
+            catch (Exception error)
+                when (error is InvalidDataException or IOException or ArgumentException)
+            {
+                return new ReadMap([], 0, 0, error.Message);
+            }
         }
     }
 

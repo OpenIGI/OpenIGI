@@ -48,6 +48,11 @@ namespace OpenIGI.Desktop;
 /// The shipped and per-user distance-field caches. Read on the worker, so a cached field arrives with
 /// the backdrop rather than being loaded on the render thread after it; never written from there.
 /// </param>
+/// <param name="DetailMaps">
+/// The session's derived detail-map pack. A backdrop's textures are decoded on a worker, and their maps
+/// are read there too rather than on the frame that uploads them; the pack is shared across missions, so
+/// this is the session's own and not the preview's.
+/// </param>
 /// <param name="ComputeSupported">
 /// Whether the device can run compute at all. A distance field is only ever traced against on a device
 /// that can, so a backdrop built for one that cannot should not spend a worker baking one.
@@ -57,6 +62,7 @@ public sealed record MissionPreviewContext(
     IFlowHost Host,
     IRenderScheduler Scheduler,
     GameMissionState MissionState,
+    OpenIGI.Rendering.MaterialDetailPack? DetailMaps,
     IReadOnlyDictionary<string, byte[]> SessionArchives,
     LampManifest Lamps,
     DistanceFieldCache DistanceFields,
