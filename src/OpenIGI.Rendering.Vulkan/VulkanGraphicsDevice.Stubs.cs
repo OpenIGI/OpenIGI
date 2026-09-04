@@ -25,16 +25,7 @@ namespace OpenIGI.Rendering.Vulkan;
 /// </remarks>
 public sealed partial class VulkanGraphicsDevice
 {
-    // ---- The forward draw's outline (still a placeholder) -----------------------------------------
-
-    /// <inheritdoc/>
-    public void DrawOutline(
-        MeshHandle mesh,
-        ReadOnlySpan<MeshDrawRange> ranges,
-        in Matrix4f modelView,
-        Bgra32 colour,
-        float radius,
-        bool throughWalls) => ThrowIfDisposed();
+    // DrawOutline is implemented in VulkanGraphicsDevice.Outline.cs — the selection glow.
 
     // ---- Pipeline state the direct path still sets -------------------------------------------------
 

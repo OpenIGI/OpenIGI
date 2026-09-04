@@ -40,6 +40,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private readonly Sprite2DGeometry _sprite2DGeometry;
     private readonly TextureDescriptorCache _textureDescriptors;
     private readonly Mesh3DPipeline _mesh3D;
+    private readonly OutlinePipeline _outline;
     private readonly MeshTextureDescriptorCache _meshTextureDescriptors;
     private readonly Deferred.DeferredRenderer _deferred;
     private readonly VulkanOcclusionQueries _occlusion;
@@ -193,6 +194,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _mesh3D = new Mesh3DPipeline(_instance.Vk, _device, _shaderCompiler, _presentTarget.RenderPass);
         _meshTextureDescriptors = new MeshTextureDescriptorCache(_instance.Vk, _device.Device, _mesh3D.DescriptorSetLayout);
         _colourLut = new Textures.ColourLutTexture(_instance.Vk, _device, _allocator, _commands);
+        _outline = new OutlinePipeline(_instance.Vk, _device, _shaderCompiler);
         _deferred = new Deferred.DeferredRenderer(
             _instance.Vk,
             _device,
@@ -577,6 +579,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _deferred.Dispose();
         _meshTextureDescriptors.Dispose();
         _colourLut.Dispose();
+        _outline.Dispose();
         _mesh3D.Dispose();
         _textureDescriptors.Dispose();
         _sprite2DGeometry.Dispose();
