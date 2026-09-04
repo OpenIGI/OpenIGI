@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Shaders;
 using Silk.NET.Core.Native;
@@ -231,8 +231,13 @@ internal sealed unsafe class OutlinePipeline : IDisposable
                 SrcColorBlendFactor = BlendFactor.SrcAlpha,
                 DstColorBlendFactor = BlendFactor.OneMinusSrcAlpha,
                 ColorBlendOp = BlendOp.Add,
-                SrcAlphaBlendFactor = BlendFactor.One,
-                DstAlphaBlendFactor = BlendFactor.OneMinusSrcAlpha,
+                // The lit target's alpha is the frame's own marker for what is world geometry and what
+                // is only in front of the eye, and a shell forces it to zero: the glow is a mark ON the
+                // picture, not a thing standing in it. Both factors are zero, so whatever the shell
+                // covers reads as not-world however faint the shell itself was -- which is what keeps a
+                // marker out of the puddle it is standing over.
+                SrcAlphaBlendFactor = BlendFactor.Zero,
+                DstAlphaBlendFactor = BlendFactor.Zero,
                 AlphaBlendOp = BlendOp.Add,
 
                 // The mask writes no colour at all. That is the whole of what makes it a mask.

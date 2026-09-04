@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Meshes;
@@ -100,6 +100,27 @@ public sealed partial class VulkanGraphicsDevice
         float viewportWidth = MathF.Max(1f, _deferredPassActive ? _captureWidth : _viewport.Width);
         float viewportHeight = MathF.Max(1f, _deferredPassActive ? _captureHeight : _viewport.Height);
 
+        // A rim of a fixed pixel width is what a marker wants CLOSE UP, and the wrong thing entirely once
+        // the subject is small: a soldier sixty metres off stands about thirty pixels tall, and seven
+        // pixels of glow either side is a bright lozenge with a man somewhere inside it. So the width is
+        // also capped against the subject's own scale -- a third of a metre at its distance, projected --
+        // which leaves it untouched at the ranges the marker is read at and thins it to a proportionate
+        // line at the ranges where it was swallowing what it marks.
+        float viewDistance = MathF.Max(MathF.Abs(modelView.M34), 0.1f);
+        float metrePixels = MathF.Abs(_projection.M22) * viewportHeight * 0.5f / viewDistance;
+        float width = MathF.Min(radius, MathF.Max(metrePixels * 0.35f, 1f));
+
+        // The glow is written into the SCENE-REFERRED lit buffer, which the resolve then exposes and tone
+        // maps. A colour authored in display terms and written raw is at the mercy of the eye adaptation:
+        // in a dark scene the exposure is high, and an amber marker at full strength came out white and
+        // bloomed. Divided by the exposure the resolve will apply, it lands at the colour it was asked
+        // for whatever the scene is doing -- the same correction the first-person rig's lighting takes,
+        // and for the same reason. The direct path draws straight to a display-encoded target, where the
+        // colour already means what it says.
+        float exposure = _deferredPassActive
+            ? MathF.Max(RenderCVars.Exposure.Value * _lastAdaptedExposure, 1e-3f)
+            : 1f;
+
         float* push = stackalloc float[OutlinePipeline.PushSize / sizeof(float)];
         mvp.CopyColumnMajorTo(new Span<float>(push, 16));
         push[24] = viewportWidth;
@@ -146,11 +167,11 @@ public sealed partial class VulkanGraphicsDevice
             float step = Math.Clamp((wanted - covered) / MathF.Max(1e-3f, 1f - covered), 0f, 1f);
             covered = wanted;
 
-            push[16] = colour.R / 255f;
-            push[17] = colour.G / 255f;
-            push[18] = colour.B / 255f;
+            push[16] = colour.R / 255f / exposure;
+            push[17] = colour.G / 255f / exposure;
+            push[18] = colour.B / 255f / exposure;
             push[19] = step * (colour.A / 255f);
-            push[20] = radius * fraction;
+            push[20] = width * fraction;
 
             vk.CmdPushConstants(
                 cmd, _outline.PipelineLayout,
