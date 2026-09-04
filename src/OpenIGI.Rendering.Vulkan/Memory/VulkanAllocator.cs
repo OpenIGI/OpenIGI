@@ -1,3 +1,4 @@
+using System.Numerics;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Interop;
 using Silk.NET.Vulkan;
@@ -22,19 +23,41 @@ namespace OpenIGI.Rendering.Vulkan.Memory;
 /// pass be a change here rather than everywhere.
 /// </para>
 /// <para>
-/// A <em>freed block is retained rather than returned to the driver</em>, keyed by the exact shape it
-/// was allocated for (memory type, byte size, whether it carries a device address), and the next
-/// allocation of that same shape is handed a retained block instead of calling <c>vkAllocateMemory</c>
-/// again. A fresh host-visible allocation is a blocking driver call of tens to hundreds of milliseconds
-/// — the terrain streams growing pages in and out as the camera turns, and re-using a retired page's
-/// memory turns that per-page stall into a dictionary lookup. Retained memory is capped so the pool
-/// cannot grow without bound; over the cap a freed block is genuinely returned.
+/// A <em>freed block is retained rather than returned to the driver</em>, keyed by the shape it was
+/// allocated for (memory type, byte size, whether it carries a device address), and the next allocation
+/// of that same shape is handed a retained block instead of calling <c>vkAllocateMemory</c> again. A
+/// fresh host-visible allocation is a blocking driver call of tens to hundreds of milliseconds — the
+/// terrain streams growing pages in and out as the camera turns, and re-using a retired page's memory
+/// turns that per-page stall into a dictionary lookup. Retained memory is capped so the pool cannot grow
+/// without bound; over the cap a freed block is genuinely returned.
+/// </para>
+/// <para>
+/// The size in that key is <b>rounded up</b> rather than exact, and that is what makes the pool work at
+/// all for anything but the terrain. Pages are one size and hit an exact-size pool every time; a level's
+/// thousand textures are a thousand different sizes and hit it never — so swapping a menu backdrop was a
+/// thousand <c>vkAllocateMemory</c> calls against a thousand <c>vkFreeMemory</c> calls, measured at
+/// 794 ms allocating and 868 ms freeing over a handful of swaps, all of it on the render thread.
+/// Rounding to three significant binary digits (see <see cref="BucketSize"/>) puts eight buckets in
+/// every power of two: an eighth wasted at worst, and a texture the outgoing level freed fits the
+/// incoming one's.
 /// </para>
 /// </remarks>
 internal sealed unsafe class VulkanAllocator : IDisposable
 {
+    /// <summary>The ceiling on retained-but-unused memory, whatever the adapter's heaps say.</summary>
+    private const long MaxPooledBytesCeiling = 768L * 1024 * 1024;
+
+    /// <summary>The share of the largest heap the pool will hold, when that is the smaller number.</summary>
+    private const double MaxPooledHeapShare = 0.10;
+
+    /// <summary>Allocations at or under this are all rounded to it: below it the buckets are noise.</summary>
+    private const ulong SizeGrain = 64 * 1024;
+
+    /// <summary>How many significant binary digits a bucketed size keeps. Three is an eighth wasted.</summary>
+    private const int SizeMantissaBits = 3;
+
     /// <summary>The most retained-but-unused memory the pool keeps before it starts genuinely freeing.</summary>
-    private const long MaxPooledBytes = 256L * 1024 * 1024;
+    private readonly long _maxPooledBytes;
 
     private readonly Vk _vk;
     private readonly Device _device;
@@ -61,6 +84,13 @@ internal sealed unsafe class VulkanAllocator : IDisposable
         _memoryProperties = device.MemoryProperties;
         SupportsDeviceAddress = device.Capabilities.BufferDeviceAddress;
         ResizableBar = FindResizableBarType() is not null;
+
+        // Sized off the adapter rather than fixed: a tenth of the largest heap is generous on a card
+        // with ten gigabytes and still modest on one with four, and holding a level's worth of freed
+        // textures is the whole point - the incoming level allocates almost exactly what the outgoing
+        // one released.
+        _maxPooledBytes = (long)Math.Min(
+            (ulong)MaxPooledBytesCeiling, (ulong)(LargestHeapBytes() * MaxPooledHeapShare));
     }
 
     /// <summary>Gets a value indicating whether allocations can back buffers that carry a device address.</summary>
@@ -94,7 +124,11 @@ internal sealed unsafe class VulkanAllocator : IDisposable
     {
         uint typeIndex = FindMemoryType(requirements.MemoryTypeBits, properties);
         bool addressable = deviceAddressable && SupportsDeviceAddress;
-        PoolKey key = new(typeIndex, requirements.Size, addressable);
+
+        // The block is allocated at the bucketed size, not the requested one. Vulkan is happy to back a
+        // resource with memory larger than it needs - the requirement is a floor - so a block sized for
+        // its bucket serves every resource that rounds into it.
+        PoolKey key = new(typeIndex, BucketSize(requirements.Size), addressable);
 
         // Hand back a retired block of the identical shape before asking the driver for a new one.
         lock (_gate)
@@ -102,7 +136,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
             if (_free.TryGetValue(key, out Stack<DeviceMemory>? bucket) && bucket.Count > 0)
             {
                 DeviceMemory reused = bucket.Pop();
-                _pooledBytes -= (long)requirements.Size;
+                _pooledBytes -= (long)key.Size;
                 return reused;
             }
         }
@@ -117,7 +151,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
         {
             SType = StructureType.MemoryAllocateInfo,
             PNext = addressable ? &flagsInfo : null,
-            AllocationSize = requirements.Size,
+            AllocationSize = key.Size,
             MemoryTypeIndex = typeIndex,
         };
 
@@ -151,7 +185,7 @@ internal sealed unsafe class VulkanAllocator : IDisposable
         {
             if (!_disposed
                 && _shapes.TryGetValue(memory.Handle, out PoolKey key)
-                && _pooledBytes + (long)key.Size <= MaxPooledBytes)
+                && _pooledBytes + (long)key.Size <= _maxPooledBytes)
             {
                 if (!_free.TryGetValue(key, out Stack<DeviceMemory>? bucket))
                 {
@@ -226,6 +260,39 @@ internal sealed unsafe class VulkanAllocator : IDisposable
     {
         MemoryPropertyFlags host = MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit;
         return ResizableBar ? host | MemoryPropertyFlags.DeviceLocalBit : host;
+    }
+
+    /// <summary>Rounds an allocation up to the size its pool bucket is allocated at.</summary>
+    /// <param name="size">The size the resource's requirements asked for.</param>
+    /// <returns>The bucket's size, never less than <paramref name="size"/>.</returns>
+    /// <remarks>
+    /// Three significant binary digits: 64k, 72k, 80k ... 128k, 144k, and so on up. Eight buckets to a
+    /// power of two is coarse enough that a level's textures land on one another's blocks and fine
+    /// enough that nothing wastes more than an eighth of what it asked for.
+    /// </remarks>
+    internal static ulong BucketSize(ulong size)
+    {
+        if (size <= SizeGrain)
+        {
+            return SizeGrain;
+        }
+
+        int highestBit = 63 - BitOperations.LeadingZeroCount(size);
+        int shift = Math.Max(0, highestBit - SizeMantissaBits);
+        ulong step = 1UL << shift;
+        return (size + step - 1) & ~(step - 1);
+    }
+
+    private long LargestHeapBytes()
+    {
+        PhysicalDeviceMemoryProperties memory = _memoryProperties;
+        ulong largest = 0;
+        for (uint i = 0; i < memory.MemoryHeapCount; i++)
+        {
+            largest = Math.Max(largest, memory.MemoryHeaps[(int)i].Size);
+        }
+
+        return largest == 0 ? MaxPooledBytesCeiling : (long)largest;
     }
 
     private uint? FindResizableBarType()
