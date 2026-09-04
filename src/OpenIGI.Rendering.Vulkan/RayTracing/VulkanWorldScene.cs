@@ -101,9 +101,10 @@ internal sealed class VulkanWorldScene : IDisposable
     private const int MoverWindowFrames = 240;
     private const int MoverNewPlacements = 64;
 
-    // Streamed meshes waiting to stop growing, and the ones that have.
-    private readonly Dictionary<uint, Streaming> _streaming = [];
-    private readonly Dictionary<uint, int> _settled = [];
+    // The shadow casters offered for one frame at a time -- the terrain -- by the version of their
+    // contents their structure was built over, and the material record each was given once.
+    private readonly Dictionary<uint, int> _casterVersions = [];
+    private readonly Dictionary<uint, int> _casterRecords = [];
     private int _frame;
 
     // Building a structure is not free, and the first frame of a level offers every mesh in it at once.
@@ -111,8 +112,6 @@ internal sealed class VulkanWorldScene : IDisposable
     // stalling on the frame the level appears.
     private const int MaxNewGeometriesPerFrame = 8;
 
-    // How many frames a streamed mesh's size must hold still before it is built over.
-    private const int SettleFrames = 30;
 
     // Which material ranges of each mesh have been drawn, in the order they were first seen -- which is
     // the order they become geometries in, and therefore the geometry index a hit reports. Accumulated
@@ -210,36 +209,27 @@ internal sealed class VulkanWorldScene : IDisposable
             return;
         }
 
-        // Streamed geometry -- the terrain, which is the only thing that uses mesh storage -- is appended
-        // to as the world loads. Its written range only ever grows and is always contiguous from zero, so
-        // a structure built over it is sound; the danger is building one while it is still growing, and
-        // then tracing against triangles that have since been replaced by a larger buffer. So it waits
-        // until its size has held still for a while, and is taken as it stood then. Terrain that streams
-        // in afterwards is not traced: the structure is not rebuilt, which is the next piece of work here
-        // and the reason this is still behind a flag.
-        if (mesh.Storage && !IsSettled(meshId, mesh.DrawableIndexCount))
+        // Streamed geometry -- the terrain's batch pages, the only thing that uses mesh storage -- is not
+        // traced as drawn. A page holds every chunk ever streamed into it at its level of detail, the
+        // same ground is held again by the pages of the other levels, and the vertex stage slides what
+        // it draws towards the next level as the camera moves; a structure over a page therefore casts
+        // from a surface that is not the one on screen, and the ground shadowed itself in patches. The
+        // terrain offers what it drew, where it drew it, through ObserveCaster instead.
+        if (mesh.Storage)
         {
             return;
         }
 
-        // Which runs of this mesh have been drawn, and what each is made of. The terrain is the one
-        // exception: it is streamed, single-material, and drawn as hundreds of ranges of one buffer, so
-        // it stays a single geometry over the whole of itself rather than becoming hundreds of them.
+        // Which runs of this mesh have been drawn, and what each is made of.
         List<RayTracedSurface> surfaces = SurfacesFor(meshId, mesh, surface, out bool grew);
 
-        // A settled terrain mesh that has since grown is rebuilt over its new, larger extent. Its
-        // structure was taken when it first settled; the triangles the world streamed in afterwards are
-        // not in it, so a ray passes straight through terrain that is plainly there on screen. Now that
-        // it has settled again at the larger size, build a fresh structure over the whole of it, retire
-        // the old one once the frames still tracing against it have finished, and let the placements
-        // repoint themselves to the new address on the next scene build. Held to the same per-frame
-        // budget as a new mesh, and never done while the old structure is still moving under compaction.
-        //
         // A mesh whose material ranges have grown -- a part of it drawn for the first time this frame --
-        // is rebuilt for the same reason and on the same terms: the structure it has covers fewer runs
-        // than the mesh turns out to have.
+        // is rebuilt: the structure it has covers fewer runs than the mesh turns out to have. Retire the
+        // old one once the frames still tracing against it have finished, and let the placements repoint
+        // themselves to the new address on the next scene build. Held to the same per-frame budget as a
+        // new mesh, and never done while the old structure is still moving under compaction.
         if (_geometries.TryGetValue(meshId, out Geometry built)
-            && (grew || (mesh.Storage && built.IndexCount != mesh.DrawableIndexCount))
+            && grew
             && !_scene.IsCompacting(built.Structure)
             && _newThisFrame < MaxNewGeometriesPerFrame)
         {
@@ -361,13 +351,7 @@ internal sealed class VulkanWorldScene : IDisposable
             _surfaces[meshId] = surfaces;
         }
 
-        // The terrain is one geometry over the whole of itself whatever ranges it was drawn as. It is
-        // opaque and single-material, so nothing is lost, and it is drawn as hundreds of small ranges of
-        // one shared buffer -- as geometries those would cost more to build and traverse than the whole.
-        RayTracedSurface entry = mesh.Storage
-            ? new RayTracedSurface(0, mesh.DrawableIndexCount, Opaque: true, MaskLayer: -1)
-            : surface;
-
+        RayTracedSurface entry = surface;
         if (entry.IndexCount < 3 || entry.IndexOffset < 0 || entry.IndexOffset + entry.IndexCount > mesh.IndexCapacity)
         {
             grew = false;
@@ -385,16 +369,7 @@ internal sealed class VulkanWorldScene : IDisposable
             }
         }
 
-        // A terrain mesh that has grown replaces its single entry rather than gaining a second one that
-        // overlaps it; every other mesh accumulates.
-        if (mesh.Storage && surfaces.Count > 0)
-        {
-            surfaces[0] = entry;
-        }
-        else
-        {
-            surfaces.Add(entry);
-        }
+        surfaces.Add(entry);
 
         grew = _geometries.ContainsKey(meshId);
         if (grew)
@@ -405,46 +380,92 @@ internal sealed class VulkanWorldScene : IDisposable
         return surfaces;
     }
 
-    /// <summary>Whether a streamed mesh has stopped growing for long enough to be worth building over.</summary>
+    /// <summary>Places a caster mesh for this frame, building its structure over its current contents.</summary>
     /// <param name="meshId">The mesh's identifier.</param>
-    /// <param name="indexCount">How many indices it currently claims.</param>
-    /// <returns><see langword="true"/> once the size has held still, and for every frame after.</returns>
-    private bool IsSettled(uint meshId, int indexCount)
+    /// <param name="mesh">The mesh itself, a storage mesh whose contents its owner rewrites.</param>
+    /// <param name="worldTransform">Where it is placed, in absolute world space.</param>
+    /// <param name="indexCount">How many indices, from the start of the mesh, make up the caster.</param>
+    /// <remarks>
+    /// <para>
+    /// This is how the terrain is traced. Its owner writes the chunks it drew this frame, at the
+    /// positions the vertex stage drew them, into a mesh it hands over here; the placement goes into
+    /// the moving tail, so it lasts exactly one frame like any other mover's, and the structure is
+    /// built again whenever the mesh's <see cref="VulkanMesh.ContentVersion"/> says the contents
+    /// changed — a few thousand triangles, so a rebuild is cheaper than the bookkeeping a refit would
+    /// need. A caster that has not changed keeps its structure and costs a placement.
+    /// </para>
+    /// <para>
+    /// The material record is written once and reused: it names the mesh's buffers and a first index
+    /// of zero, which a rebuild does not change, so nothing a frame in flight reads is overwritten.
+    /// </para>
+    /// </remarks>
+    public void ObserveCaster(uint meshId, VulkanMesh mesh, in Matrix4f worldTransform, int indexCount)
     {
-        if (_settled.TryGetValue(meshId, out int settledCount))
+        ArgumentNullException.ThrowIfNull(mesh);
+
+        if (indexCount < 3 || indexCount > mesh.IndexCapacity)
         {
-            if (settledCount == indexCount)
+            return;
+        }
+
+        RayTracedSurface surface = new(0, indexCount, Opaque: true, MaskLayer: -1);
+        bool built = _geometries.TryGetValue(meshId, out Geometry geometry);
+        bool current = built
+            && _casterVersions.TryGetValue(meshId, out int version)
+            && version == mesh.ContentVersion
+            && geometry.IndexCount == indexCount;
+
+        if (!current && (!built || !_scene.IsCompacting(geometry.Structure)))
+        {
+            if (built)
             {
-                return true;
+                _scene.RetireStructure(geometry.Structure);
             }
 
-            // It has grown since the structure was built over it -- the world streamed more of the
-            // terrain in as the camera reached it. Treat it as unsettled again, so it is taken afresh
-            // at the new size and rebuilt once it has held still there.
-            _settled.Remove(meshId);
-            _streaming[meshId] = new Streaming(indexCount, _frame);
-            return false;
-        }
+            if (!_casterRecords.TryGetValue(meshId, out int recordBase))
+            {
+                recordBase = WriteRecords(mesh, [surface]);
+                _casterRecords[meshId] = recordBase;
+            }
 
-        if (!_streaming.TryGetValue(meshId, out Streaming state) || state.IndexCount != indexCount)
+            VulkanTriangleGeometry[] triangles =
+            [
+                new VulkanTriangleGeometry(
+                    mesh.VertexBufferAddress,
+                    VertexStride: (uint)Vertex3D.Size,
+                    VertexCount: (uint)mesh.VertexCapacity,
+                    mesh.IndexBufferAddress,
+                    PrimitiveCount: (uint)(indexCount / 3),
+                    FirstIndex: 0,
+                    Opaque: true),
+            ];
+
+            geometry = new Geometry(_scene.AddGeometry(triangles), indexCount, recordBase);
+            _geometries[meshId] = geometry;
+            _casterVersions[meshId] = mesh.ContentVersion;
+            _surfaces[meshId] = [surface];
+        }
+        else if (!built)
         {
-            _streaming[meshId] = new Streaming(indexCount, _frame);
-            return false;
+            return;
         }
 
-        if (_frame - state.Since < SettleFrames)
+        if (_instances.Count >= MaxInstances)
         {
-            return false;
+            return;
         }
 
-        _settled[meshId] = indexCount;
-        _streaming.Remove(meshId);
-        return true;
+        AddInstance(moving: true, meshId, VulkanRayTracingInstance.Create(
+            worldTransform,
+            customIndex: (uint)geometry.RecordBase & 0x00FFFFFFu,
+            VulkanRayTracingInstance.VisibleToAll,
+            hitGroupOffset: 0,
+            GeometryInstanceFlagsKHR.TriangleFacingCullDisableBitKhr,
+            geometry.Structure.DeviceAddress));
+
+        _instancesChanged = true;
     }
 
-    /// <summary>Records whatever building the scene needs this frame.</summary>
-    /// <param name="commandBuffer">The command buffer to record into. Must not be inside a render pass.</param>
-    /// <param name="queue">The queue the frame is submitted to.</param>
     public void Record(CommandBuffer commandBuffer, VulkanQueue queue)
     {
         _frame++;
@@ -598,8 +619,8 @@ internal sealed class VulkanWorldScene : IDisposable
         // CompactForgotten, which the same pre-build pass that repoints every placement already runs --
         // so a hundred evicted pages cost one walk of the instance list between them, not a hundred.
         _forgotten.Add(meshId);
-        _streaming.Remove(meshId);
-        _settled.Remove(meshId);
+        _casterVersions.Remove(meshId);
+        _casterRecords.Remove(meshId);
         _surfaces.Remove(meshId);
         _stale.Remove(meshId);
         _movers.Remove(meshId);
@@ -627,8 +648,8 @@ internal sealed class VulkanWorldScene : IDisposable
         _placed.Clear();
         _instances.Clear();
         _instanceMeshIds.Clear();
-        _streaming.Clear();
-        _settled.Clear();
+        _casterVersions.Clear();
+        _casterRecords.Clear();
         _movers.Clear();
         _demoted.Clear();
         _forgotten.Clear();
@@ -742,11 +763,6 @@ internal sealed class VulkanWorldScene : IDisposable
     /// </param>
     private readonly record struct Geometry(
         VulkanBottomLevelStructure Structure, int IndexCount, int RecordBase);
-
-    /// <summary>A streamed mesh's size, and the frame it last changed on.</summary>
-    /// <param name="IndexCount">How many indices it claimed then.</param>
-    /// <param name="Since">The frame the size was last seen to change.</param>
-    private readonly record struct Streaming(int IndexCount, int Since);
 
     /// <summary>A mesh at a place, quantised so that the same placement is recognised as the same one.</summary>
     /// <remarks>

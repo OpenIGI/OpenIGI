@@ -103,6 +103,9 @@ public sealed class TerrainRenderer : IDisposable
     private readonly TerrainData _terrain;
     private readonly IIgiLogger _logger;
     private readonly List<TerrainChunk> _chunks = [];
+
+    // What the ray-traced world traces instead of the pages: this frame's chunks, morphed as drawn.
+    private readonly TerrainShadowCaster _caster;
     private readonly Dictionary<ChunkKey, Entry> _cache = [];
 
     // The arrays evicted chunks give up, for the chunks coming into view to build into.
@@ -168,6 +171,7 @@ public sealed class TerrainRenderer : IDisposable
         _logger = logger ?? NullLogger.Instance;
         DetailMaps = detailMaps;
         _tiles = UploadTiles(derivedDetail);
+        _caster = new TerrainShadowCaster(device);
     }
 
     /// <summary>Gets how many chunks the last <see cref="Draw"/> selected.</summary>
@@ -380,6 +384,7 @@ public sealed class TerrainRenderer : IDisposable
             }
         }
         _device.ClearDetailFade();
+        SubmitShadowCaster(camera, fadeOffset, fadeSlope);
 
         LastChunkCount = result.Emitted - occludedChunks;
         LastPassCount = passes;
@@ -590,6 +595,7 @@ public sealed class TerrainRenderer : IDisposable
         }
 
         _disposed = true;
+        _caster.Dispose();
         foreach (List<BatchPage> pages in _batchPages.Values)
         {
             foreach (BatchPage page in pages)
@@ -771,6 +777,29 @@ public sealed class TerrainRenderer : IDisposable
             new Vector3f((float)offset.X, (float)offset.Y, (float)offset.Z));
         return new BatchedLayer(page, range, layer.TriangleCount);
     }
+
+    /// <summary>Hands the ray-traced world this frame's terrain, morphed exactly as the shader drew it.</summary>
+    /// <remarks>
+    /// Every chunk the traversal emitted, whether or not the occlusion queries let it be drawn: an
+    /// occluded chunk still shadows the ground in front of whatever hides it.
+    /// </remarks>
+    private void SubmitShadowCaster(in Camera3D camera, float fadeOffset, float fadeSlope)
+    {
+        _caster.Begin(camera.Position, fadeOffset, fadeSlope);
+        foreach (TerrainChunk chunk in _chunks)
+        {
+            if (TryGetEntry(chunk, out Entry? entry))
+            {
+                _caster.Add(chunk, entry.Geometry);
+            }
+        }
+
+        _caster.Submit(camera);
+        LastCasterTriangleCount = _caster.LastTriangleCount;
+    }
+
+    /// <summary>Gets how many triangles the last frame's shadow caster held.</summary>
+    public int LastCasterTriangleCount { get; private set; }
 
     /// <summary>Drops the chunks no recent frame drew, once the cache is over its bound.</summary>
     /// <remarks>

@@ -25,13 +25,11 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// casts a shadow exactly as wide as the object.
 /// </para>
 /// <para>
-/// Two things it does not yet see. The terrain is drawn from a mesh the world streams into, whose
-/// contents change under the structure that would describe them, so it is not offered to the scene — the
-/// cascaded map still covers it, and the shading takes the tighter of the two answers. And foliage is
-/// traced as solid: a canopy that the rasteriser cuts away with an opacity mask stops a ray as if it were
-/// a board, which over a forest and a low sun costs more light than it should. Both want the same next
-/// piece of work — the geometry behind an instance reachable from the shader — which is also what the
-/// indirect gathers need.
+/// The terrain reaches the scene by a route of its own. The pages it is rasterised from hold every
+/// chunk ever streamed into them at every level of detail, at positions the vertex stage then slides,
+/// so they are not traced; the terrain renderer offers the chunks it drew, morphed as drawn, as a
+/// one-frame caster instead (<c>VulkanWorldScene.ObserveCaster</c>). Foliage is traced through its
+/// opacity mask, so a canopy lets the sun through between its leaves.
 /// </para>
 /// <para>
 /// It runs between the pass that fills the G-buffer and the pass that shades it. Tracing in the shading

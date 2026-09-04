@@ -22,9 +22,10 @@ namespace OpenIGI.Desktop;
 /// <c>Camera3D.CreateModelView</c> folds the camera offset into each object's transform.
 /// </para>
 /// <para>
-/// <b>Terrain does not cast.</b> Its level of detail is chosen from the camera's position, so drawing
-/// it from the light would pick a tessellation for a viewpoint kilometres away — and its own shadowing
-/// is already in the baked lightmaps. Objects and soldiers are what throw the shadows a player reads.
+/// <b>Terrain does not cast here.</b> Its level of detail is chosen from the camera's position, so
+/// drawing it from the light would pick a tessellation for a viewpoint kilometres away — and its own
+/// shadowing is already in the baked lightmaps. Objects and soldiers are what throw the shadows a player
+/// reads. The ray-traced sun does see it, through <see cref="TerrainShadowCaster"/>.
 /// </para>
 /// </remarks>
 public sealed class ShadowCasterPass

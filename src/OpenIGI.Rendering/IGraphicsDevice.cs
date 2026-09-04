@@ -1189,6 +1189,28 @@ public interface IGraphicsDevice : IDisposable
         TextureHandle lightmap,
         BlendMode blend);
 
+    /// <summary>Offers a mesh to the ray-traced world for this frame only, as a shadow caster that is not drawn.</summary>
+    /// <param name="mesh">A mesh from <see cref="CreateMeshStorage"/> whose first <paramref name="indexCount"/> indices are the caster.</param>
+    /// <param name="modelView">The transform the mesh would be drawn with.</param>
+    /// <param name="indexCount">How many indices, from the start of the mesh, make up the caster.</param>
+    /// <remarks>
+    /// <para>
+    /// For geometry whose traceable shape is not what the rasteriser is handed: the terrain. Its pages
+    /// hold every chunk ever streamed into them at every level of detail, at positions the vertex stage
+    /// then slides towards the next level as the camera moves — so a structure built over a page casts
+    /// from a surface that is not the one on screen, and the ground shadows itself in patches. The
+    /// terrain instead writes the chunks it drew, at the positions it drew them, into a mesh of its own
+    /// and offers that here each frame; the placement lasts one frame, and the structure is rebuilt
+    /// whenever the mesh's contents change.
+    /// </para>
+    /// <para>
+    /// A backend without a traced world ignores the call, which is the default implementation.
+    /// </para>
+    /// </remarks>
+    void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount)
+    {
+    }
+
     /// <summary>Draws a glowing selection outline around a mesh.</summary>
     /// <param name="mesh">The mesh to outline.</param>
     /// <param name="ranges">

@@ -153,6 +153,13 @@ internal sealed unsafe class VulkanMesh : IDisposable
     /// <summary>Gets the serial of the pose currently stored in <see cref="VertexBuffer"/>.</summary>
     public int PoseVersion { get; private set; }
 
+    /// <summary>Gets a counter that advances on every range written into a storage mesh.</summary>
+    /// <remarks>
+    /// What the ray-traced world compares to know that a caster mesh has been rewritten and its
+    /// structure has to be built again.
+    /// </remarks>
+    public int ContentVersion { get; private set; }
+
     /// <summary>Creates an immutable mesh and stages its geometry.</summary>
     /// <param name="vk">The core Vulkan API.</param>
     /// <param name="device">The device the mesh lives on.</param>
@@ -271,6 +278,7 @@ internal sealed unsafe class VulkanMesh : IDisposable
         _vertexBuffer.WriteAt((ulong)(vertexOffset * Vertex3D.Size), vertices);
         _indexBuffer.WriteAt((ulong)(indexOffset * sizeof(ushort)), indices);
         DrawableIndexCount = Math.Max(DrawableIndexCount, indexOffset + indices.Length);
+        ContentVersion++;
     }
 
     /// <inheritdoc/>

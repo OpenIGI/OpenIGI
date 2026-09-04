@@ -839,6 +839,37 @@ public sealed partial class VulkanGraphicsDevice
             return;
         }
 
+        _worldScene.Observe(
+            meshId,
+            mesh,
+            WorldTransform(modelView),
+            new RayTracing.RayTracedSurface(indexOffset, indexCount, !cutout, maskLayer));
+    }
+
+    /// <inheritdoc/>
+    public void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount)
+    {
+        ThrowIfDisposed();
+
+        // Only from the G-buffer pass, for the same reason the observed draws are: the transform below
+        // is the world transform only for the frame's own camera.
+        if (_worldScene is null || !_capturing || _deferredStage != DeferredStage.Geometry)
+        {
+            return;
+        }
+
+        VulkanMesh resource = Resolve(mesh);
+        if (!_meshIds.TryGetValue(resource, out uint meshId))
+        {
+            return;
+        }
+
+        _worldScene.ObserveCaster(meshId, resource, WorldTransform(modelView), indexCount);
+    }
+
+    /// <summary>Recovers a draw's absolute world transform from its model-view, for the traced world.</summary>
+    private Matrix4f WorldTransform(in Matrix4f modelView)
+    {
         Matrix3f modelViewRotation = new(
             modelView.M11, modelView.M12, modelView.M13,
             modelView.M21, modelView.M22, modelView.M23,
@@ -850,16 +881,10 @@ public sealed partial class VulkanGraphicsDevice
         float ty = (m.M21 * modelView.M14) + (m.M22 * modelView.M24) + (m.M23 * modelView.M34);
         float tz = (m.M31 * modelView.M14) + (m.M32 * modelView.M24) + (m.M33 * modelView.M34);
 
-        Matrix4f world = new(
+        return new Matrix4f(
             normalMatrix.M11, normalMatrix.M12, normalMatrix.M13, tx + _cameraPosition.X,
             normalMatrix.M21, normalMatrix.M22, normalMatrix.M23, ty + _cameraPosition.Y,
             normalMatrix.M31, normalMatrix.M32, normalMatrix.M33, tz + _cameraPosition.Z,
             0f, 0f, 0f, 1f);
-
-        _worldScene.Observe(
-            meshId,
-            mesh,
-            world,
-            new RayTracing.RayTracedSurface(indexOffset, indexCount, !cutout, maskLayer));
     }
 }
