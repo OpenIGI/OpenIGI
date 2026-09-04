@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 
 namespace OpenIGI.Core.Numerics;
 
@@ -18,7 +21,15 @@ namespace OpenIGI.Core.Numerics;
 /// so a transform is <c>M · v</c> and composition reads right-to-left: <c>projection * view * world</c>.
 /// <see cref="CopyColumnMajorTo"/> writes the transpose, which is the layout OpenGL uniforms want.
 /// </para>
+/// <para>
+/// <b>The layout is load-bearing.</b> <see cref="Multiply"/> reads the sixteen elements as four
+/// four-wide vectors straight out of the struct, which is only correct while they sit in memory in
+/// declaration order with nothing between them. The attribute states that rather than relying on it,
+/// and <c>Matrix4fLayoutTests</c> checks it at run time so a change here fails loudly instead of
+/// producing a plausible but wrong transform.
+/// </para>
 /// </remarks>
+[StructLayout(LayoutKind.Sequential)]
 public readonly struct Matrix4f : IEquatable<Matrix4f>, IFormattable
 {
     /// <summary>The number of components in a matrix.</summary>
@@ -130,7 +141,59 @@ public readonly struct Matrix4f : IEquatable<Matrix4f>, IFormattable
     /// <param name="left">The transform applied second.</param>
     /// <param name="right">The transform applied first.</param>
     /// <returns>The product <c>left · right</c>.</returns>
-    public static Matrix4f Multiply(Matrix4f left, Matrix4f right) => new(
+    /// <remarks>
+    /// <para>
+    /// A row of the product is a weighted sum of the whole of <paramref name="right"/>: row <c>i</c> is
+    /// <c>left[i][0]·right[0] + left[i][1]·right[1] + …</c>, each term a scalar times a row. Written that
+    /// way the sixty-four multiplies and forty-eight adds the scalar form spelled out become sixteen
+    /// operations on four-wide vectors — the same arithmetic in the same order, four lanes at a time.
+    /// </para>
+    /// <para>
+    /// Not bit-identical to the scalar form on hardware with FMA: a fused multiply-add keeps full
+    /// precision through the multiply where the separate operations round twice, so a product element
+    /// can differ in its last bit. That is a strictly more accurate answer, and nothing in the port
+    /// compares matrices for exact equality across a composition.
+    /// </para>
+    /// </remarks>
+    public static Matrix4f Multiply(Matrix4f left, Matrix4f right)
+    {
+        if (!Vector128.IsHardwareAccelerated)
+        {
+            return MultiplyScalar(left, right);
+        }
+
+        ref float a = ref Unsafe.As<Matrix4f, float>(ref left);
+        ref float b = ref Unsafe.As<Matrix4f, float>(ref right);
+
+        Vector128<float> r0 = Vector128.LoadUnsafe(ref b, 0);
+        Vector128<float> r1 = Vector128.LoadUnsafe(ref b, 4);
+        Vector128<float> r2 = Vector128.LoadUnsafe(ref b, 8);
+        Vector128<float> r3 = Vector128.LoadUnsafe(ref b, 12);
+
+        Unsafe.SkipInit(out Matrix4f product);
+        ref float destination = ref Unsafe.As<Matrix4f, float>(ref product);
+
+        for (nuint row = 0; row < 16; row += 4)
+        {
+            // Each element of the left row weights a whole row of the right operand. Paired rather than
+            // chained so the two halves accumulate independently instead of queueing the last add behind
+            // the one before it.
+            Vector128<float> first =
+                (Vector128.Create(Unsafe.Add(ref a, row)) * r0)
+                + (Vector128.Create(Unsafe.Add(ref a, row + 1)) * r1);
+
+            Vector128<float> second =
+                (Vector128.Create(Unsafe.Add(ref a, row + 2)) * r2)
+                + (Vector128.Create(Unsafe.Add(ref a, row + 3)) * r3);
+
+            (first + second).StoreUnsafe(ref destination, row);
+        }
+
+        return product;
+    }
+
+    /// <summary>The product, element by element, for hardware with no vector unit.</summary>
+    private static Matrix4f MultiplyScalar(Matrix4f left, Matrix4f right) => new(
         (left.M11 * right.M11) + (left.M12 * right.M21) + (left.M13 * right.M31) + (left.M14 * right.M41),
         (left.M11 * right.M12) + (left.M12 * right.M22) + (left.M13 * right.M32) + (left.M14 * right.M42),
         (left.M11 * right.M13) + (left.M12 * right.M23) + (left.M13 * right.M33) + (left.M14 * right.M43),

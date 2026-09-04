@@ -526,56 +526,17 @@ public sealed class ObjectCollisionIndex
             string.Equals(entry.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Casts a rich request at the indexed placed objects.</summary>
+    /// <remarks>
+    /// Through the same broad phase as <see cref="TryCast"/>. This walked the flat list, which for the
+    /// storm's ground grid -- a hundred and more vertical probes a tick -- and every shot fired was a
+    /// sphere test against every placed object in the level per ray. Main thread only, like every live
+    /// cast here: the grid keeps per-query visit marks.
+    /// </remarks>
     public bool TryTrace(in WorldTraceRequest request, out WorldTraceHit hit)
     {
-        hit = default;
-
-        Vector3d direction = new(
-            request.End.X - request.Origin.X,
-            request.End.Y - request.Origin.Y,
-            request.End.Z - request.Origin.Z);
-        double length = Math.Sqrt(
-            (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
-        if (length <= 0.0)
-        {
-            return false;
-        }
-
-        double nearest = double.MaxValue;
-        bool found = false;
-        foreach (Entry entry in _entries)
-        {
-            if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
-                || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
-                || GenericPickups?.IsCollected(entry.Owner) == true
-                || _passable.Contains(entry.Owner)
-                || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
-            {
-                continue;
-            }
-
-            WorldTraceHitKind kind = entry.IsDynamic
-                ? WorldTraceHitKind.DynamicObject
-                : WorldTraceHitKind.StaticObject;
-            WorldTraceMask category = entry.IsDynamic
-                ? WorldTraceMask.DynamicObjects
-                : WorldTraceMask.StaticObjects;
-            if ((request.Mask & category) == 0
-                || !MeetsSphere(request.Origin, direction, entry.Centre, entry.Radius)
-                || !entry.TryCast(
-                    request.Origin,
-                    direction,
-                    ref nearest,
-                    useClosedTransform: false,
-                    out WorldRayHit candidate))
-            {
-                continue;
-            }
-
-            hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label);
-            found = true;
-        }
-
+        TraceTest test = new(this, request);
+        bool found = WalkIndexed(_entries, _defaultGrid, _dynamicDefault, request.Origin, request.End, ref test);
+        hit = test.Hit;
         return found;
     }
 
@@ -608,7 +569,7 @@ public sealed class ObjectCollisionIndex
     /// <c>honourPassable</c> true; only the visiting order differs, which the nearest-hit fold makes
     /// irrelevant.
     /// </remarks>
-    private bool   CastIndexed(
+    private bool CastIndexed(
         Entry[] set,
         StaticGrid grid,
         List<Entry> dynamics,
@@ -616,8 +577,28 @@ public sealed class ObjectCollisionIndex
         Vector3d end,
         out WorldRayHit hit)
     {
-        hit = default;
+        RayTest test = new(this);
+        bool found = WalkIndexed(set, grid, dynamics, origin, end, ref test);
+        hit = test.Hit;
+        return found;
+    }
 
+    /// <summary>The broad-phase walk itself, with the per-entry test supplied by the caller.</summary>
+    /// <remarks>
+    /// A struct visitor rather than a delegate so the two callers -- the legacy ray and the rich
+    /// request -- share one walk without paying an indirect call per entry on the hottest path in the
+    /// game. The visitor owns the hit it accumulates; the walk only needs to know the nearest distance
+    /// so far, to stop at the first cell that starts beyond it.
+    /// </remarks>
+    private static bool WalkIndexed<TTest>(
+        Entry[] set,
+        StaticGrid grid,
+        List<Entry> dynamics,
+        Vector3d origin,
+        Vector3d end,
+        ref TTest test)
+        where TTest : struct, IEntryTest
+    {
         Vector3d direction = new(end.X - origin.X, end.Y - origin.Y, end.Z - origin.Z);
         double length = Math.Sqrt(
             (direction.X * direction.X) + (direction.Y * direction.Y) + (direction.Z * direction.Z));
@@ -631,7 +612,7 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in dynamics)
         {
-            found |= TestEntry(entry, origin, direction, ref nearest, ref hit);
+            found |= test.Test(entry, origin, direction, ref nearest);
         }
 
         foreach (int index in grid.Oversized)
@@ -639,7 +620,7 @@ public sealed class ObjectCollisionIndex
             Entry entry = set[index];
             if (!entry.IsDynamic)
             {
-                found |= TestEntry(entry, origin, direction, ref nearest, ref hit);
+                found |= test.Test(entry, origin, direction, ref nearest);
             }
         }
 
@@ -682,7 +663,7 @@ public sealed class ObjectCollisionIndex
                     Entry entry = set[index];
                     if (!entry.IsDynamic)
                     {
-                        found |= TestEntry(entry, origin, direction, ref nearest, ref hit);
+                        found |= test.Test(entry, origin, direction, ref nearest);
                     }
                 }
             }
@@ -716,6 +697,56 @@ public sealed class ObjectCollisionIndex
         }
 
         return found;
+    }
+
+    /// <summary>What <see cref="WalkIndexed{TTest}"/> asks of each entry the ray's cells hold.</summary>
+    private interface IEntryTest
+    {
+        /// <returns><see langword="true"/> when the entry is the nearest contact so far.</returns>
+        bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest);
+    }
+
+    /// <summary>The legacy ray's test: <see cref="TestEntry"/>, accumulating a <see cref="WorldRayHit"/>.</summary>
+    private struct RayTest(ObjectCollisionIndex index) : IEntryTest
+    {
+        public WorldRayHit Hit;
+
+        public bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest) =>
+            index.TestEntry(entry, origin, direction, ref nearest, ref Hit);
+    }
+
+    /// <summary>The rich request's test: its ignore list and mask on top of the live filter.</summary>
+    private struct TraceTest(ObjectCollisionIndex index, WorldTraceRequest request) : IEntryTest
+    {
+        public WorldTraceHit Hit;
+
+        public bool Test(Entry entry, Vector3d origin, Vector3d direction, ref double nearest)
+        {
+            if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
+                || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
+                || index.GenericPickups?.IsCollected(entry.Owner) == true
+                || index._passable.Contains(entry.Owner)
+                || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
+            {
+                return false;
+            }
+
+            WorldTraceHitKind kind = entry.IsDynamic
+                ? WorldTraceHitKind.DynamicObject
+                : WorldTraceHitKind.StaticObject;
+            WorldTraceMask category = entry.IsDynamic
+                ? WorldTraceMask.DynamicObjects
+                : WorldTraceMask.StaticObjects;
+            if ((request.Mask & category) == 0
+                || !MeetsSphere(origin, direction, entry.Centre, entry.Radius)
+                || !entry.TryCast(origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
+            {
+                return false;
+            }
+
+            Hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label);
+            return true;
+        }
     }
 
     /// <summary>One entry's live-cast test: the filter, the sphere, then the triangles.</summary>

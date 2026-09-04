@@ -20,6 +20,7 @@
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/tests/">
+    <Project Path="tests/OpenIGI.Benchmarks/OpenIGI.Benchmarks.csproj" />
     <Project Path="tests/OpenIGI.TestSupport/OpenIGI.TestSupport.csproj" />
     <Project Path="tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj" />
     <Project Path="tests/OpenIGI.Audio.Tests/OpenIGI.Audio.Tests.csproj" />

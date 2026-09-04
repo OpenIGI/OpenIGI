@@ -98,3 +98,6 @@ a probe of the running original
 /scratch/macos/*.bash
 NuGetPackages.config
 NuGet.config
+
+# BenchmarkDotNet writes its reports and generated harness projects here.
+BenchmarkDotNet.Artifacts/

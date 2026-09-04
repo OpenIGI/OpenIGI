@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Engine.Audio;
 using OpenIGI.Formats.Ai;
@@ -995,6 +995,14 @@ internal sealed partial class DesktopGame
             _terrain = loaded.Terrain is { IsUsable: true } usable
                 ? new TerrainRenderer(_device, TerrainSurface.Build(usable, levelRoot, _logger), _logger, _detailMaps)
                 : null;
+
+            // A deterministic run compares one named frame's image, so its terrain has to be whole on the
+            // frame it is asked for rather than filling in over the next few. Everything else keeps the
+            // per-frame streaming bound -- see TerrainRenderer.DefaultMaximumBuildsPerFrame.
+            if (_terrain is not null && (_options.Lockstep || _options.IsBenchmark || _options.ScreenshotPath is not null))
+            {
+                _terrain.MaximumBuildsPerFrame = int.MaxValue;
+            }
 
             // The sky is script data on the level's task tree; its fog colour is also what the frame
             // clears to, so the horizon meets sky-coloured backing rather than black.

@@ -47,4 +47,10 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
   </ItemGroup>
 
+  <ItemGroup Label="Benchmarking">
+    <!-- The harness behind tests/OpenIGI.Benchmarks. Only that project references it, so it adds
+         nothing to a shipped build. -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
+  </ItemGroup>
+
 </Project>
