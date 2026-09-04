@@ -284,6 +284,9 @@ internal sealed partial class DesktopGame : IDisposable
 
     // The shot that carries the player out of the menu and into their own eyes.
     private readonly MissionEntryCamera _entry = new();
+
+    // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
+    private long _backdropCycleRow = -1;
     private DirectionalLightSettings? _sun;
 
     // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
@@ -1982,6 +1985,31 @@ internal sealed partial class DesktopGame : IDisposable
                 shellHostForEntryCam?.StartMission(
                     entryBackdrop.MissionId,
                     _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
+            }
+
+            // -backdropcycle walks the campaign's rows on a fixed cadence, taking the same path a player
+            // moving down the mission list takes: it asks the preview loader for the next mission and
+            // lets the ordinary handover below adopt it. Latched on the frame count so each row is asked
+            // for once, and only while the menu is actually up over a backdrop.
+            if (_options.BackdropCycleFrames > 0 && menuMode && !pauseMenu && previewLoader is not null)
+            {
+                long row = _loop.Clock.FrameCount / _options.BackdropCycleFrames;
+                if (row != _backdropCycleRow)
+                {
+                    _backdropCycleRow = row;
+                    int[] order = [.. _missions.InCampaignOrder().Select(m => m.Id)];
+                    if (order.Length > 0)
+                    {
+                        int next = order[(int)(row % order.Length)];
+                        if (next != currentShowcaseMissionId)
+                        {
+                            _logger.Information("Menu", $"-backdropcycle: selecting mission {next}.");
+                            pendingPreviewMissionId = null;
+                            currentShowcaseMissionId = next;
+                            previewLoader.Request(next);
+                        }
+                    }
+                }
             }
 
             // The build request, once the campaign selection has held still for a moment. The debounce is

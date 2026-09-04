@@ -35,6 +35,11 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
     private readonly List<Pending> _requested = [];
     private readonly List<VulkanBottomLevelStructure> _active = [];
 
+    // Structures that were freed while the handshake still named them. They keep their place in _active
+    // -- the query results come back by slot, so removing one would pair every later size with the wrong
+    // structure -- and are skipped when the copies are recorded.
+    private readonly HashSet<VulkanBottomLevelStructure> _abandoned = [];
+
     private ulong _queryCompletedAt;
     private bool _queriesRecorded;
     private bool _disposed;
@@ -137,6 +142,35 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         RecordQueries(commandBuffer, queue);
     }
 
+    /// <summary>Drops one structure from the handshake, because it is about to be freed.</summary>
+    /// <param name="structure">The structure being retired.</param>
+    /// <remarks>
+    /// The handshake spans three frames and holds a reference across all of them, so a structure retired
+    /// in the middle of one is still named by a copy the compactor has yet to record -- and the copy is
+    /// recorded from the <em>source</em> structure, which by then has been freed. That is a read of freed
+    /// acceleration-structure memory, which is what the device-fault report calls an invalid read: the
+    /// device loss a menu backdrop swap produced, where a level's worth of meshes are destroyed a few
+    /// frames after the last of them was built and requested. A structure that is going away has nothing
+    /// to gain from being shrunk, so it simply leaves the queue.
+    /// </remarks>
+    public void Forget(VulkanBottomLevelStructure structure)
+    {
+        ArgumentNullException.ThrowIfNull(structure);
+
+        for (int i = _requested.Count - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(_requested[i].Structure, structure))
+            {
+                _requested.RemoveAt(i);
+            }
+        }
+
+        if (_active.Contains(structure))
+        {
+            _abandoned.Add(structure);
+        }
+    }
+
     /// <summary>Forgets every structure queued or being measured, for a level change.</summary>
     /// <remarks>
     /// The structures themselves belong to the scene and are freed there. What this drops is the queue's
@@ -148,6 +182,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
     {
         _requested.Clear();
         _active.Clear();
+        _abandoned.Clear();
         _queriesRecorded = false;
         _queryCompletedAt = 0;
     }
@@ -163,6 +198,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         _disposed = true;
         _requested.Clear();
         _active.Clear();
+        _abandoned.Clear();
         _vk.DestroyQueryPool(_device.Device, _queryPool, null);
     }
 
@@ -232,6 +268,13 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
             ulong compacted = sizes[i];
             VulkanBottomLevelStructure structure = _active[i];
 
+            // Retired under the compactor since the query was recorded. Its memory is gone or going, so
+            // the copy would read what has been freed.
+            if (_abandoned.Contains(structure))
+            {
+                continue;
+            }
+
             // A zero size means the driver did not write the slot. Compacting to nothing would destroy
             // the structure, so the request is simply dropped.
             if (compacted == 0 || compacted >= structure.Structure.Size)
@@ -243,6 +286,7 @@ internal sealed unsafe class VulkanCompactionQueue : IDisposable
         }
 
         _active.Clear();
+        _abandoned.Clear();
         _queriesRecorded = false;
     }
 

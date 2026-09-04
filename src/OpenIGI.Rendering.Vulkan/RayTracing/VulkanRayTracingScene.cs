@@ -119,15 +119,28 @@ internal sealed class VulkanRayTracingScene : IDisposable
     /// <summary>Retires a structure a rebuild has replaced.</summary>
     /// <param name="structure">The structure no new build will name any more.</param>
     /// <remarks>
+    /// <para>
     /// It is dropped from the live set at once -- nothing built after this frame refers to it -- but its
     /// memory is only freed once the queue has passed this frame, because the scenes already in flight are
     /// still tracing rays against it. The freeing is dated in <see cref="RecordUpdate"/>, where the frame's
     /// submission value is known.
+    /// </para>
+    /// <para>
+    /// Out of the pending build and the compaction handshake as well as the live set, and that is the
+    /// whole of what makes the freeing safe. Both of those hold the structure across frames and both
+    /// record commands that READ it -- a build into it, a compacting copy out of it -- and neither is
+    /// looked at again once it has been retired, so either would be recorded against memory this frame
+    /// has just dated for release. That is the invalid read a device fault reports, and it is what a menu
+    /// backdrop swap produced: a level's worth of meshes destroyed a few frames after the last of them
+    /// was built, with the compactor still three frames into its handshake over them.
+    /// </para>
     /// </remarks>
     public void RetireStructure(VulkanBottomLevelStructure structure)
     {
         ArgumentNullException.ThrowIfNull(structure);
         _geometries.Remove(structure);
+        _pendingBuilds.Remove(structure);
+        _compaction.Forget(structure);
         _pendingRetire.Add(structure);
     }
 

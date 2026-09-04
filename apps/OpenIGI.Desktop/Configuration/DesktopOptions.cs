@@ -106,6 +106,7 @@ public readonly record struct DesktopOptions(
         int entryCamMission = 0;
         int computerCamFrame = 0;
         int missionCycleFrames = 0;
+        int backdropCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
         bool bakeAll = false;
@@ -419,6 +420,20 @@ public readonly record struct DesktopOptions(
                         $"-missioncycle expects a frame count, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("backdropcycle", StringComparison.OrdinalIgnoreCase))
+            {
+                // Walk the campaign's rows in the menu, every n frames, for as long as the run lasts.
+                // -missioncycle's counterpart on the other side of Play: swapping a backdrop replaces a
+                // whole level's worth of renderers, meshes and traced structures WITHOUT leaving the menu,
+                // and that path had no capture at all -- it could only be reached by clicking down the
+                // list by hand, which is exactly how it was found to lose the device. A development flag.
+                string value = Next(args, ref i, "backdropcycle");
+                if (!int.TryParse(value, out backdropCycleFrames) || backdropCycleFrames <= 0)
+                {
+                    throw new ArgumentException(
+                        $"-backdropcycle expects a frame count, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
             {
                 // Just the renderer: the cinematic shell over the original's render path.
@@ -505,6 +520,7 @@ public readonly record struct DesktopOptions(
             EntryCamMission = entryCamMission,
             ComputerCamFrame = computerCamFrame,
             MissionCycleFrames = missionCycleFrames,
+            BackdropCycleFrames = backdropCycleFrames,
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
@@ -546,6 +562,15 @@ public readonly record struct DesktopOptions(
     /// anything it fails to release, something a run can measure rather than something a player reports.
     /// </remarks>
     public int MissionCycleFrames { get; init; }
+
+    /// <summary>Gets how many frames a menu backdrop is shown for before the next mission is selected.</summary>
+    /// <remarks>
+    /// <see cref="MissionCycleFrames"/> on the menu's side of Play, set by <c>-backdropcycle</c>. A
+    /// backdrop swap tears down and rebuilds every renderer, every mesh and every traced structure a level
+    /// owns while the loop keeps presenting, which is a harder case than leaving a mission and had no way
+    /// to be run other than clicking down the campaign list.
+    /// </remarks>
+    public int BackdropCycleFrames { get; init; }
 
     /// <summary>
     /// Gets the cinematic shell's section to open on — <c>campaign</c>, <c>settings</c>, <c>profile</c> or
@@ -741,6 +766,9 @@ public readonly record struct DesktopOptions(
           -missioncycle N  Abandon the mission to the campaign and play it again every N frames, so the
                            cost of leaving a level -- and whether it releases what it built -- can be
                            measured over many cycles instead of clicked through by hand.
+          -backdropcycle N Select the next mission in the menu every N frames, so the backdrop swap --
+                           a whole level replaced while the loop keeps presenting -- can be run for as
+                           long as it takes instead of clicked down the list by hand.
           -computercam <n> Open the map computer by itself on frame <n> of a mission, so its camera
                            move and display boot can be captured from a known frame. Pair with
                            -frames and -screenshot for the whole transition as a sequence.
