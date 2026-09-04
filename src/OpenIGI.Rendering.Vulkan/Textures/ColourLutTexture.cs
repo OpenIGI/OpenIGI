@@ -71,23 +71,29 @@ internal sealed unsafe class ColourLutTexture : IDisposable
 
     /// <summary>Uploads a table, replacing whatever was loaded.</summary>
     /// <param name="table">The grade, or <see langword="null"/> to drop the one that is loaded.</param>
+    /// <param name="retire">
+    /// Where the cube being replaced is handed for release once the frames still naming it have
+    /// finished. Passing nothing frees it AT ONCE, which is only safe with no frame in flight.
+    /// </param>
     /// <remarks>
     /// A blocking upload on its own submit. It happens when a grade is chosen — a level load, or the
-    /// console — and never inside a frame, so the stall costs nothing anybody sees and buys a texture
-    /// that is simply resident from then on.
+    /// console — so the stall costs nothing anybody sees and buys a texture that is simply resident from
+    /// then on. The cube it replaces is not destroyed on the spot: the resolve sets of the frames still
+    /// in flight name that image, and freeing one the GPU is reading loses the device rather than
+    /// leaking it.
     /// </remarks>
     /// <exception cref="GraphicsDeviceException">The cube could not be created.</exception>
-    public void Set(ColourLookupTable? table)
+    public void Set(ColourLookupTable? table, Action<IDisposable>? retire = null)
     {
         if (table is null)
         {
-            Release();
+            Release(retire);
             return;
         }
 
         if (Size != table.Size)
         {
-            Release();
+            Release(retire);
             Create(table.Size);
             Size = table.Size;
         }
@@ -104,8 +110,37 @@ internal sealed unsafe class ColourLutTexture : IDisposable
         }
 
         _disposed = true;
-        Release();
+        Release(retire: null);
         _vk.DestroySampler(_device.Device, _sampler, null);
+    }
+
+    /// <summary>A cube that has been replaced, holding its handles until it is safe to free them.</summary>
+    /// <remarks>
+    /// The three handles travel together because they are one resource in three parts, and the order
+    /// they are given up in is the order they depend on each other: the view names the image, and the
+    /// image is bound to the memory.
+    /// </remarks>
+    private sealed class RetiredCube(
+        Vk vk, Device device, VulkanAllocator allocator, Image image, ImageView view, DeviceMemory memory)
+        : IDisposable
+    {
+        public void Dispose()
+        {
+            if (view.Handle != 0)
+            {
+                vk.DestroyImageView(device, view, null);
+            }
+
+            if (image.Handle != 0)
+            {
+                vk.DestroyImage(device, image, null);
+            }
+
+            if (memory.Handle != 0)
+            {
+                allocator.Free(memory);
+            }
+        }
     }
 
     /// <summary>Creates the sampler the lookup depends on being exactly right.</summary>
@@ -267,26 +302,26 @@ internal sealed unsafe class ColourLutTexture : IDisposable
         _vk.CmdPipelineBarrier(cmd, source, destination, 0, 0, null, 0, null, 1, &barrier);
     }
 
-    private void Release()
+    /// <summary>Gives up the loaded cube, either to the retirement queue or on the spot.</summary>
+    /// <param name="retire">
+    /// Where to hand it so it is freed once the frames that named it have cycled, or
+    /// <see langword="null"/> to free it immediately — which shutdown may do, having gone idle first.
+    /// </param>
+    private void Release(Action<IDisposable>? retire)
     {
-        if (_view.Handle != 0)
-        {
-            _vk.DestroyImageView(_device.Device, _view, null);
-            _view = default;
-        }
-
-        if (_image.Handle != 0)
-        {
-            _vk.DestroyImage(_device.Device, _image, null);
-            _image = default;
-        }
-
-        if (_memory.Handle != 0)
-        {
-            _allocator.Free(_memory);
-            _memory = default;
-        }
-
+        RetiredCube cube = new(_vk, _device.Device, _allocator, _image, _view, _memory);
+        _view = default;
+        _image = default;
+        _memory = default;
         Size = 0;
+
+        if (retire is null)
+        {
+            cube.Dispose();
+        }
+        else
+        {
+            retire(cube);
+        }
     }
 }

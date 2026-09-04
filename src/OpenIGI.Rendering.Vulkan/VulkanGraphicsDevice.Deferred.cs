@@ -1688,7 +1688,9 @@ public sealed partial class VulkanGraphicsDevice
 
         int width = (int)target.Extent.Width;
         int height = (int)target.Extent.Height;
-        if (!_deferred.Fog.Ensure(width, height, _fogSettings.Steps))
+        // Retired rather than freed: this runs inside a frame, and the volumes a quality change
+        // replaces are still named by the frames the GPU has not finished.
+        if (!_deferred.Fog.Ensure(width, height, _fogSettings.Steps, QueueDeletion))
         {
             return;
         }

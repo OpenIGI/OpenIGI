@@ -119,7 +119,13 @@ internal sealed class VolumetricFogPass : IDisposable
     private static readonly ComputeBindingKind[] ScatterBindings =
     [
         ComputeBindingKind.SampledImage,          // the cascaded shadow map
-        ComputeBindingKind.SampledImage,          // the sky's harmonics
+
+        // The sky's harmonics are WRITTEN by a compute pass of their own and so live in the general
+        // layout for good, which is how the lighting binds them too. Declaring them as an ordinary
+        // sampled image bound them as shader-read-only instead, and reading an image through a
+        // descriptor whose layout is not the one it is in is undefined -- the validation layer says so
+        // on every dispatch, and a driver is entitled to return anything for the ambient term.
+        ComputeBindingKind.SampledStorageImage,   // the sky's harmonics
         ComputeBindingKind.SampledStorageImage,   // the previous frame's scattering, as history
         ComputeBindingKind.StorageVolume,         // this frame's scattering, written
     ];
@@ -198,8 +204,19 @@ internal sealed class VolumetricFogPass : IDisposable
     /// <param name="width">The render width in pixels.</param>
     /// <param name="height">The render height in pixels.</param>
     /// <param name="slices">How many depth slices the quality dial asks for.</param>
+    /// <param name="retire">
+    /// Where the volumes being replaced are handed for release once the frames still reading them have
+    /// finished. Passing nothing frees them AT ONCE, which is only safe with no frame in flight.
+    /// </param>
     /// <returns><see langword="true"/> when a volume of some size exists.</returns>
-    public bool Ensure(int width, int height, int slices)
+    /// <remarks>
+    /// The rebuild is what a quality change costs: the grid's depth comes from the dial, so moving it
+    /// resizes three volumes. They cannot simply be destroyed. A frame or two is still executing against
+    /// the old ones -- their dispatches name those images, and their descriptor sets name those views --
+    /// and freeing an image the GPU is reading is not a leak but a lost device, which is exactly how
+    /// this first showed itself: changing the fog quality from the menu killed the adapter mid-frame.
+    /// </remarks>
+    public bool Ensure(int width, int height, int slices, Action<IDisposable>? retire = null)
     {
         int gridX = Math.Max(1, (width + TilePixels - 1) / TilePixels);
         int gridY = Math.Max(1, (height + TilePixels - 1) / TilePixels);
@@ -210,7 +227,7 @@ internal sealed class VolumetricFogPass : IDisposable
             return true;
         }
 
-        Release();
+        Release(retire);
 
         _gridX = gridX;
         _gridY = gridY;
@@ -334,7 +351,7 @@ internal sealed class VolumetricFogPass : IDisposable
         }
 
         _disposed = true;
-        Release();
+        Release(retire: null);
         _scatter.Dispose();
         _integrate.Dispose();
     }
@@ -597,16 +614,45 @@ internal sealed class VolumetricFogPass : IDisposable
     }
 
     /// <summary>Frees the volumes, for a resize or a shutdown.</summary>
-    private void Release()
+    /// <summary>Gives up the volumes, either to the retirement queue or on the spot.</summary>
+    /// <param name="retire">
+    /// Where to hand each volume so it is freed once the frames that used it have cycled, or
+    /// <see langword="null"/> to free it immediately — which shutdown may do, having gone idle first.
+    /// </param>
+    private void Release(Action<IDisposable>? retire)
     {
         for (int i = 0; i < _scattering.Length; i++)
         {
-            _scattering[i]?.Dispose();
+            Give(_scattering[i], retire);
             _scattering[i] = null;
         }
 
-        _integrated?.Dispose();
+        Give(_integrated, retire);
         _integrated = null;
         _hasHistory = false;
+
+        // The grid is gone, so nothing matches it: an Ensure asking for the size just released has to
+        // build again rather than believe the volumes are still there.
+        _gridX = 0;
+        _gridY = 0;
+        _gridZ = 0;
+    }
+
+    /// <summary>Hands one volume to the retirement queue, or frees it where there is none.</summary>
+    private static void Give(VulkanStorageImage? volume, Action<IDisposable>? retire)
+    {
+        if (volume is null)
+        {
+            return;
+        }
+
+        if (retire is null)
+        {
+            volume.Dispose();
+        }
+        else
+        {
+            retire(volume);
+        }
     }
 }

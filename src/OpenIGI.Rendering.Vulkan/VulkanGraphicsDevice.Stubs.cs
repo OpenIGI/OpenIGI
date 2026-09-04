@@ -202,7 +202,10 @@ public sealed partial class VulkanGraphicsDevice
     public void SetColourLookup(ColourLookupTable? table)
     {
         ThrowIfDisposed();
-        _colourLut.Set(table);
+
+        // Retired rather than freed: a grade can be chosen while frames are in flight, and their resolve
+        // sets name the cube being replaced.
+        _colourLut.Set(table, QueueDeletion);
     }
 
 
