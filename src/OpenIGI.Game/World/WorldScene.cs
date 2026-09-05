@@ -1051,12 +1051,14 @@ public sealed class WorldScene
         int added = 0;
         foreach (WorldObject child in node.Children)
         {
-            bool isRotor = magic is not null
+            bool isHelicopter = owner is DeclaredTask { Type.Name: "Heli" };
+            bool isRotor = (magic is not null
                 && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition)
                 && string.Equals(
                     magic.TaskTypeName(childDefinition.TaskType),
                     "TASKTYPE_ROTOR",
-                    StringComparison.Ordinal);
+                    StringComparison.Ordinal))
+                || (isHelicopter && HelicopterRotorCatalog.IsKnownRotorModel(child.Name));
             // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
