@@ -18,24 +18,55 @@ public sealed class ElectricFenceContactTests
             DamageScale = HumanHealth.DifficultyDamageScale(difficulty),
         };
 
-        ElectricFenceShock shock = ElectricFenceContact.Shock(health);
+        ElectricFenceShock shock = ElectricFenceContact.Shock(
+            health,
+            ElectricFenceContact.DefaultDamageFactor);
 
         Assert.Equal(HumanDamage.FrontZone, ElectricFenceContact.Zone);
-        Assert.Equal(0.5f, ElectricFenceContact.DamageFactor);
-        Assert.Equal(ElectricFenceContact.DamageFactor, shock.Damage, precision: 6);
-        Assert.Equal(ElectricFenceContact.DamageFactor, health.Damage, precision: 6);
+        Assert.Equal(0.5f, ElectricFenceContact.DefaultDamageFactor);
+        Assert.Equal(ElectricFenceContact.DefaultDamageFactor, shock.Damage, precision: 6);
+        Assert.Equal(ElectricFenceContact.DefaultDamageFactor, health.Damage, precision: 6);
         Assert.Equal(1, health.Hits);
         Assert.False(shock.IsLethal);
+    }
+
+    [Theory]
+    [InlineData(0.25f)]
+    [InlineData(0.5f)]
+    [InlineData(1.5f)]
+    public void ShockUsesTheAuthoredHumanPlayerArgumentEightDose(float dose)
+    {
+        // 0x412F80 multiplies flt_56E208 -- DefineHumanPlayerGeneral argument 8, written by 0x410137 --
+        // by the human's damage scale. A level that retunes the player owns its own shock, so the dose
+        // has to come from the parsed script rather than from the shipped 0.5.
+        HumanHitZone[] zones = ZonesWithDistinctFrontMultiplier();
+        HumanHealth health = new(zones, maximumHealth: 3f);
+
+        ElectricFenceShock shock = ElectricFenceContact.Shock(health, dose);
+
+        Assert.Equal(dose, shock.Damage, precision: 6);
+        Assert.Equal(dose, health.Damage, precision: 6);
+    }
+
+    [Fact]
+    public void TheDefaultDoseIsTheRetailArgumentEightValue()
+    {
+        float[] arguments = new float[HumanPlayerParameters.ArgumentCount];
+        arguments[8] = ElectricFenceContact.DefaultDamageFactor;
+
+        HumanPlayerParameters parameters = new(arguments);
+
+        Assert.Equal(ElectricFenceContact.DefaultDamageFactor, parameters.ElectricFenceDose);
     }
 
     [Fact]
     public void ShockReportsLethalityAtTheHumanHealthThreshold()
     {
         HumanHitZone[] zones = ZonesWithDistinctFrontMultiplier();
-        float damage = ElectricFenceContact.DamageFactor;
+        float damage = ElectricFenceContact.DefaultDamageFactor;
         HumanHealth health = new(zones, maximumHealth: damage);
 
-        ElectricFenceShock shock = ElectricFenceContact.Shock(health);
+        ElectricFenceShock shock = ElectricFenceContact.Shock(health, damage);
 
         Assert.Equal(damage, shock.Damage, precision: 6);
         Assert.True(health.IsDead);

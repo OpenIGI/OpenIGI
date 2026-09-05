@@ -100,6 +100,7 @@ internal sealed partial class DesktopGame : IDisposable
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
     private float _playerMaximumHealth;
+    private float _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
     private HumanHealth _playerHealth = null!;
     private bool _playerDead;
     private HumanDamageFlash _damageFlash = null!;
@@ -517,6 +518,7 @@ internal sealed partial class DesktopGame : IDisposable
         // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
         // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
         _playerMaximumHealth = HumanHitZoneTable.MaximumHealth;
+        _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
         _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
         {
             DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),

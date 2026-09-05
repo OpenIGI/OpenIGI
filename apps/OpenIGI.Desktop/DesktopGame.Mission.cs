@@ -1094,6 +1094,11 @@ internal sealed partial class DesktopGame
                     // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
                     // 3.0 in retail, and the single number that sets the player's time-to-kill.
                     _playerMaximumHealth = tuning.MaximumHealth;
+
+                    // Argument 8 is the dose one powered fence contact adds (0x412F80's fmul against
+                    // the human's damage scale) -- 0.5 in retail. Read it for the same reason argument
+                    // 7 is read: a retuned humanplayer.qvm owns its own shock, not the shipped number.
+                    _electricFenceDose = tuning.ElectricFenceDose;
                     _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
                     {
                         DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
@@ -1722,7 +1727,7 @@ internal sealed partial class DesktopGame
                 + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
                 + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
 
-        ElectricFenceShock shock = ElectricFenceContact.Shock(_playerHealth);
+        ElectricFenceShock shock = ElectricFenceContact.Shock(_playerHealth, _electricFenceDose);
         float dealt = shock.Damage;
         if (dealt <= 0f)
         {

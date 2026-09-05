@@ -21,8 +21,10 @@ internal readonly record struct ElectricFenceShock(float Damage, bool IsLethal);
 /// </remarks>
 internal static class ElectricFenceContact
 {
-    /// <summary>HumanPlayer QVM argument 8, used by the native fence-contact handler.</summary>
-    internal const float DamageFactor = 0.5f;
+    /// <summary>
+    /// The dose used when the level supplies no HumanPlayer tuning — the retail argument-8 value.
+    /// </summary>
+    internal const float DefaultDamageFactor = 0.5f;
 
     /// <summary>The native fence-contact bookkeeping zone.</summary>
     internal const int Zone = HumanDamage.FrontZone;
@@ -62,10 +64,15 @@ internal static class ElectricFenceContact
     }
 
     /// <summary>Applies the native direct health dose, bypassing generic hit and difficulty scaling.</summary>
-    internal static ElectricFenceShock Shock(HumanHealth health)
+    /// <param name="health">The player's damage accumulator.</param>
+    /// <param name="damageFactor">
+    /// The level's HumanPlayer argument 8, from <see cref="HumanPlayerParameters.ElectricFenceDose"/>.
+    /// A level that retunes the player must shock it by its own number, not by the retail one.
+    /// </param>
+    internal static ElectricFenceShock Shock(HumanHealth health, float damageFactor)
     {
         ArgumentNullException.ThrowIfNull(health);
-        float damage = health.ApplyDirect(Zone, DamageFactor);
+        float damage = health.ApplyDirect(Zone, damageFactor);
         return new ElectricFenceShock(damage, health.IsDead);
     }
 }

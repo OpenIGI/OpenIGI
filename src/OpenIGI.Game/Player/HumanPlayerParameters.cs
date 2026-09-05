@@ -74,7 +74,7 @@ public sealed class HumanPlayerParameters
         Distance5 = (float)(_raw[5] * UnitsPerMetre);
         Duration6Ticks = IgiMath.TruncToInt32(_raw[6] * TicksPerSecond);
         MaximumHealth = _raw[7];
-        Value8 = _raw[8];
+        ElectricFenceDose = _raw[8];
 
         _firstTable = new float[TableRowCount];
         _secondTable = new float[TableRowCount];
@@ -133,8 +133,17 @@ public sealed class HumanPlayerParameters
     /// </remarks>
     public float MaximumHealth { get; }
 
-    /// <summary>Gets argument 8, read by <c>0x412F80</c> (retail 0.5).</summary>
-    public float Value8 { get; }
+    /// <summary>
+    /// Gets argument 8 — the dose one powered electric-fence contact adds to the player's damage
+    /// accumulator (retail <b>0.5</b>).
+    /// </summary>
+    /// <remarks>
+    /// The only reader is the HumanPlayer fence-contact handler <c>0x412F80</c>, which the powered-fence
+    /// callback <c>0x43FF70</c> reaches through the entity event table. It multiplies this value by the
+    /// human's damage scale and adds the result straight to <c>Human+596</c>, bypassing the generic hit
+    /// path and its difficulty scaling.
+    /// </remarks>
+    public float ElectricFenceDose { get; }
 
     /// <summary>Gets arguments 9..25 — field <c>+0</c> of the 17 rows at <c>0x5389F8</c>.</summary>
     /// <remarks>What the rows enumerate is unresolved; see the original.</remarks>
