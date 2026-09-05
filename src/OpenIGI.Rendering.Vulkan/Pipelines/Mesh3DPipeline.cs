@@ -27,6 +27,11 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
+
+    // The device's own pipeline cache, copied here because this class keeps the raw handle
+    // rather than the wrapper. Passing it is what lets the driver return a previous run's
+    // compiled pipeline instead of building this one again.
+    private readonly PipelineCache _pipelineCache;
     private readonly RenderPass _renderPass;
     private readonly uint _subpass;
     private readonly VulkanShaderModule _vertex;
@@ -48,6 +53,7 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
+        _pipelineCache = device.PipelineCache;
         _renderPass = renderPass;
         _subpass = subpass;
 
@@ -283,7 +289,7 @@ internal sealed unsafe class Mesh3DPipeline : IDisposable
 
             Pipeline pipeline;
             VkCheck.Ok(
-                _vk.CreateGraphicsPipelines(_device, default, 1, &createInfo, null, &pipeline),
+                _vk.CreateGraphicsPipelines(_device, _pipelineCache, 1, &createInfo, null, &pipeline),
                 "vkCreateGraphicsPipelines");
             return pipeline;
         }

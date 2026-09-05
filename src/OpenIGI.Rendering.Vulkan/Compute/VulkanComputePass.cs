@@ -68,6 +68,11 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
+
+    // The device's own pipeline cache, copied here because this class keeps the raw handle
+    // rather than the wrapper. Passing it is what lets the driver return a previous run's
+    // compiled pipeline instead of building this one again.
+    private readonly PipelineCache _pipelineCache;
     private readonly VulkanShaderModule _module;
     private readonly DescriptorSetLayout _setLayout;
     private readonly PipelineLayout _pipelineLayout;
@@ -113,6 +118,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
         _vk = vk;
         _device = device.Device;
+        _pipelineCache = device.PipelineCache;
         _bindings = bindings.ToArray();
         _paramSize = parameterBytes;
         _frames = Math.Max(1, framesInFlight);
@@ -373,7 +379,7 @@ internal sealed unsafe class VulkanComputePass : IDisposable
 
             Pipeline pipeline;
             VkCheck.Ok(
-                _vk.CreateComputePipelines(_device, default, 1, &createInfo, null, &pipeline),
+                _vk.CreateComputePipelines(_device, _pipelineCache, 1, &createInfo, null, &pipeline),
                 $"vkCreateComputePipelines ({name})");
             return pipeline;
         }

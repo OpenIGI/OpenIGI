@@ -29,6 +29,11 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
     private readonly uint _fragmentPushOffset;
     private readonly uint _fragmentPushBytes;
     private readonly Device _device;
+
+    // The device's own pipeline cache, copied here because this class keeps the raw handle
+    // rather than the wrapper. Passing it is what lets the driver return a previous run's
+    // compiled pipeline instead of building this one again.
+    private readonly PipelineCache _pipelineCache;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
     private readonly Pipeline[] _pipelines;
@@ -70,6 +75,7 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(fragmentSource);
         _vk = vk;
         _device = device.Device;
+        _pipelineCache = device.PipelineCache;
         _fragmentPushOffset = fragmentPushOffset;
         _fragmentPushBytes = fragmentPushBytes;
 
@@ -314,7 +320,7 @@ internal sealed unsafe class Sprite2DPipeline : IDisposable
 
             Pipeline pipeline;
             VkCheck.Ok(
-                _vk.CreateGraphicsPipelines(_device, default, 1, &createInfo, null, &pipeline),
+                _vk.CreateGraphicsPipelines(_device, _pipelineCache, 1, &createInfo, null, &pipeline),
                 "vkCreateGraphicsPipelines");
             return pipeline;
         }

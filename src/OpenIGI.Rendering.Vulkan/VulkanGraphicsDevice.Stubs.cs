@@ -111,10 +111,9 @@ public sealed partial class VulkanGraphicsDevice
     /// <inheritdoc/>
     /// <remarks>
     /// Taken up by every texture created from here on — the app sets it before a level uploads anything,
-    /// which is why no existing sampler is rebuilt. Mip generation is already unconditional on this
-    /// backend, so only the anisotropy is recorded.
+    /// which is why no existing sampler is rebuilt.
     /// </remarks>
-    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps)
+    public void SetTextureQuality(int maxAnisotropy)
     {
         ThrowIfDisposed();
         _maxAnisotropy = Math.Max(1, maxAnisotropy);
@@ -281,19 +280,11 @@ public sealed partial class VulkanGraphicsDevice
 
     // SetAmbientOcclusion is implemented in VulkanGraphicsDevice.Deferred.cs — it drives the occlusion pass.
 
-    /// <inheritdoc/>
-    /// <remarks>
-    /// Recorded and ignored, because this backend already knows the answer. The object-velocity stamp
-    /// keeps each drawn occurrence's own transform from the previous frame and pairs the two itself
-    /// (see <c>RecordObjectVelocity</c>), so a caller's previous model-view would only repeat what the
-    /// pass has measured. The pose half of the same motion is not ignored: that one cannot be inferred
-    /// from a transform, and <see cref="SetPoseInterpolation"/> carries it.
-    /// </remarks>
-    public void SetPreviousPose(in Matrix4f previousModelView) => ThrowIfDisposed();
-
-    /// <inheritdoc/>
-    public void ClearPreviousPose() => ThrowIfDisposed();
-
+    // A caller used to be able to report an object's previous model-view. It was recorded and ignored:
+    // the object-velocity stamp keeps each drawn occurrence's own transform from the previous frame and
+    // pairs the two itself (see RecordObjectVelocity), so the caller's answer only repeated what the
+    // pass had already measured. The pose half of the same motion cannot be inferred from a transform,
+    // which is why SetPoseInterpolation remains and the rigid half does not.
     // SetPoseInterpolation / ClearPoseInterpolation are implemented in VulkanGraphicsDevice.Draw3D.cs —
     // they blend the two vertex streams every mesh pipeline is handed.
 

@@ -17,8 +17,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     private uint _nextMesh = 1;
     private uint _nextOcclusionQuery = 1;
 
-    public event EventHandler? DeviceRestored;
-
     public List<DrawCall> Draws { get; } = [];
 
     public List<MeshDrawCall> MeshDraws { get; } = [];
@@ -215,8 +213,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     /// <inheritdoc/>
     public TextureHandle SceneColour => new(90_007);
-
-    public SceneTextureConvention SceneConvention => SceneTextureConvention.OpenGl;
 
     public bool TryGetSkyIrradiance(Span<float> coefficients) => false;
 
@@ -459,12 +455,6 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The previous poses reported, in order; a null entry is a clear.</summary>
     public List<Matrix4f?> PreviousPoses { get; } = [];
 
-    /// <inheritdoc/>
-    public void SetPreviousPose(in Matrix4f previousModelView) => PreviousPoses.Add(previousModelView);
-
-    /// <inheritdoc/>
-    public void ClearPreviousPose() => PreviousPoses.Add(null);
-
     /// <summary>The pose blends reported, in order; a null entry is a clear.</summary>
     public List<(float Current, float Previous)?> PoseInterpolations { get; } = [];
 
@@ -494,12 +484,38 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     /// <summary>The fog settings each frame was given, in order.</summary>
     public List<VolumetricFogSettings> Fogs { get; } = [];
 
-    /// <summary>The texture-quality settings applied, in order.</summary>
-    public List<(int Anisotropy, bool Mipmaps)> TextureQuality { get; } = [];
+    /// <summary>The wetness settings applied, in order, with the shelter count each carried.</summary>
+    public List<(WetnessSettings Wetness, int Shelters)> Wetness { get; } = [];
 
     /// <inheritdoc/>
-    public void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps) =>
-        TextureQuality.Add((maxAnisotropy, generateMissingMipmaps));
+    public void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters) =>
+        Wetness.Add((wetness, shelters.Length));
+
+    /// <summary>What <see cref="GpuMeasuredTiming"/> reports. Zero unless a test sets it.</summary>
+    public GpuFrameTiming MeasuredTiming { get; set; }
+
+    /// <inheritdoc/>
+    public GpuFrameTiming GpuMeasuredTiming() => MeasuredTiming;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// False unless a test says otherwise: this double rasterises nothing, so the cascades are the
+    /// only sun shadow it could be said to have.
+    /// </remarks>
+    public bool SunShadowTraced { get; set; }
+
+    /// <summary>The shadow casters submitted, in order.</summary>
+    public List<(MeshHandle Mesh, Matrix4f ModelView, int IndexCount)> ShadowCasters { get; } = [];
+
+    /// <inheritdoc/>
+    public void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount) =>
+        ShadowCasters.Add((mesh, modelView, indexCount));
+
+    /// <summary>The texture-quality settings applied, in order.</summary>
+    public List<int> TextureQuality { get; } = [];
+
+    /// <inheritdoc/>
+    public void SetTextureQuality(int maxAnisotropy) => TextureQuality.Add(maxAnisotropy);
 
     /// <inheritdoc/>
     public void SetVolumetricFog(
@@ -605,15 +621,7 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
 
     public bool VSyncEnabled { get; set; }
 
-    public IReadOnlyList<DisplayMode> EnumerateDisplayModes() => [CurrentMode];
-
     public void SetMode(in DisplayMode mode) => CurrentMode = mode;
-
-    public void UnsetMode()
-    {
-    }
-
-    public void Restore() => DeviceRestored?.Invoke(this, EventArgs.Empty);
 
     public void Clear(Bgra32 color) => Clears.Add(color);
 

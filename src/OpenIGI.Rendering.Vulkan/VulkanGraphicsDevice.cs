@@ -282,9 +282,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    public event EventHandler? DeviceRestored;
-
-    /// <inheritdoc/>
     public GraphicsCapabilities Capabilities { get; }
 
     /// <summary>Gets a value indicating whether the adapter carries the hardware ray-tracing extensions.</summary>
@@ -319,10 +316,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     }
 
     /// <inheritdoc/>
-    /// <remarks>The platform layer owns the display list; the current mode is always a usable entry.</remarks>
-    public IReadOnlyList<DisplayMode> EnumerateDisplayModes() => [CurrentMode];
-
-    /// <inheritdoc/>
     public void SetMode(in DisplayMode mode)
     {
         ThrowIfDisposed();
@@ -335,18 +328,6 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         RecreateSwapchain();
         _viewport = new Viewport(0, 0, mode.Width, mode.Height);
         Set2DProjection(mode.Width, mode.Height);
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>The swapchain owns the mode's resources; unsetting waits for it to be idle.</remarks>
-    public void UnsetMode() => _device.WaitIdle();
-
-    /// <inheritdoc/>
-    /// <remarks>Vulkan does not lose its device the way Direct3D 7 did; recovery is announced for symmetry.</remarks>
-    public void Restore()
-    {
-        ThrowIfDisposed();
-        DeviceRestored?.Invoke(this, EventArgs.Empty);
     }
 
     /// <inheritdoc/>
@@ -657,6 +638,12 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // from the depth, and a gather wide enough to be worth the name. The reference leaves it off at
         // every tier, so nothing has asked for it yet.
         "r_dof", "r_dof_range", "r_dof_blur",
+
+        // Mip generation is unconditional here: every texture that arrives without a chain gets one,
+        // because minifying a single 128x128 terrain tile aliases into a crawling sparkle. So the
+        // setting that asks for the game's own unfiltered levels cannot be honoured, and saying so is
+        // better than a Texture Quality row whose first step quietly does nothing.
+        "r_generate_mipmaps",
 
         // Superseded rather than missing. The motion gather takes its sample count from the blur length
         // it is asked for, the way the reference does, so there is no separate tap count left to set.

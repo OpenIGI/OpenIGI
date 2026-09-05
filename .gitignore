@@ -107,3 +107,8 @@ NuGet.config
 
 # BenchmarkDotNet writes its reports and generated harness projects here.
 BenchmarkDotNet.Artifacts/
+
+# Vendor SDKs and runtimes fetched onto a developer's machine rather than carried here. They are
+# proprietary redistributables and this repository is GPL-3.0, so an accidental `git add -A` must not
+# be able to pull one in.
+third-party/

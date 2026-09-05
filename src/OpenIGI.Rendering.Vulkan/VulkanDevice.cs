@@ -25,6 +25,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
     private readonly Vk _vk;
     private readonly Instance _instance;
     private readonly IIgiLogger _logger;
+    private readonly Pipelines.VulkanPipelineCache _pipelineCache;
     private readonly bool _deviceFaultEnabled;
     private readonly List<VulkanQueue> _queues = [];
     private bool _disposed;
@@ -83,8 +84,21 @@ internal sealed unsafe class VulkanDevice : IDisposable
             TimelineSemaphores = timeline;
         }
 
+        // After the device and before anything builds a pipeline against it. Every pipeline in the
+        // backend is created through this, which is what lets the driver hand back what it compiled on
+        // a previous run instead of compiling it again on the frame that first needs it.
+        _pipelineCache = new Pipelines.VulkanPipelineCache(_vk, Device, selection.Properties, logger);
+
         logger.Information("Vulkan", $"Created logical device on '{selection.Name}'.");
     }
+
+    /// <summary>Gets the cache every pipeline creation is built through.</summary>
+    /// <remarks>
+    /// One per device, reached from the device rather than threaded through every pipeline class's
+    /// constructor -- they all already take a <see cref="VulkanDevice"/>, and a driver's compiled
+    /// output belongs to the device it was compiled for.
+    /// </remarks>
+    public PipelineCache PipelineCache => _pipelineCache.Handle;
 
     /// <summary>Gets the chosen adapter and its selection facts.</summary>
     public PhysicalDeviceSelection Selection { get; }
@@ -241,6 +255,10 @@ internal sealed unsafe class VulkanDevice : IDisposable
         }
 
         _queues.Clear();
+
+        // Before the device is destroyed: saving the cache reads it back out of the driver.
+        _pipelineCache.Dispose();
+
         TimelineSemaphores?.Dispose();
         Synchronization2?.Dispose();
         Swapchain.Dispose();

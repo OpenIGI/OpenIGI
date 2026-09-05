@@ -40,9 +40,6 @@ public sealed partial class VulkanGraphicsDevice
     public TextureHandle SceneColour => _sceneColour;
 
     /// <inheritdoc/>
-    public SceneTextureConvention SceneConvention => SceneTextureConvention.Vulkan;
-
-    /// <inheritdoc/>
     /// <remarks>
     /// Read from the atmosphere's own harmonics, copied down to the host each frame. The slot read here
     /// is the one whose fence the frame loop has already waited on, so the values are a frame or two old

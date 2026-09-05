@@ -573,11 +573,10 @@ internal sealed partial class DesktopGame : IDisposable
         // which is collected below, before the first line that reads it.
         Task audioReady = Task.Run(OpenAudioDevice);
 
-        // Set before anything uploads a texture: mip generation happens at upload, so a level loaded
-        // before this would keep the unfiltered tiles it started with.
-        _device.SetTextureQuality(RenderCVars.Anisotropy.Value, RenderCVars.GenerateMipmaps.Value);
-        RenderCVars.Anisotropy.Changed += (_, _) =>
-            _device.SetTextureQuality(RenderCVars.Anisotropy.Value, RenderCVars.GenerateMipmaps.Value);
+        // Set before anything uploads a texture: the sampler a texture is created with is the one it
+        // keeps, so a level loaded before this would keep the filtering it started with.
+        _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
+        RenderCVars.Anisotropy.Changed += (_, _) => _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
 
         _device.VSyncEnabled = RenderCVars.VSync.Value;
         RenderCVars.VSync.Changed += (_, _) => _device.VSyncEnabled = RenderCVars.VSync.Value;

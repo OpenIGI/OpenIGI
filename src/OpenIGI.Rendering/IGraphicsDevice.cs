@@ -26,14 +26,6 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public interface IGraphicsDevice : IDisposable
 {
-    /// <summary>Occurs after the device has recreated resources following a device loss.</summary>
-    /// <remarks>
-    /// The original handles this inline in <c>DisplaySwapBuffers</c>: it evicts managed textures,
-    /// restores all surfaces and re-applies render state. Backends raise this once recovery has
-    /// completed so that callers holding cached device state can re-apply it.
-    /// </remarks>
-    event EventHandler? DeviceRestored;
-
     /// <summary>Gets what this device supports. Mirrors <c>GetGFXCaps</c>.</summary>
     GraphicsCapabilities Capabilities { get; }
 
@@ -43,21 +35,10 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets or sets a value indicating whether presentation waits for the vertical blank. Mirrors <c>DisplayVSync</c>.</summary>
     bool VSyncEnabled { get; set; }
 
-    /// <summary>Enumerates the display modes the adapter reports. Mirrors the <c>Enum</c> method.</summary>
-    /// <returns>The available modes. May be empty when the backend cannot enumerate, which is not an error.</returns>
-    IReadOnlyList<DisplayMode> EnumerateDisplayModes();
-
     /// <summary>Sets the back-buffer size and colour depth. Mirrors <c>DisplaySetMode</c>.</summary>
     /// <param name="mode">The mode to apply.</param>
     /// <exception cref="GraphicsDeviceException">The mode could not be applied.</exception>
     void SetMode(in DisplayMode mode);
-
-    /// <summary>Releases the current mode's resources without destroying the device. Mirrors <c>DisplayUnsetMode</c>.</summary>
-    void UnsetMode();
-
-    /// <summary>Recreates resources lost to a device reset. Mirrors <c>DisplayRestore</c>.</summary>
-    /// <remarks>Backends that cannot lose their device may implement this as a no-op.</remarks>
-    void Restore();
 
     /// <summary>Clears the colour and depth buffers. Mirrors <c>DisplayClear</c>.</summary>
     /// <param name="color">The colour to fill with. The alpha channel is ignored, as it is in the original.</param>
@@ -198,7 +179,7 @@ public interface IGraphicsDevice : IDisposable
     /// each <see cref="UpdateAnimatedMesh"/> makes the vertices it replaces the mesh's <em>previous
     /// pose</em> — a second vertex stream the shaders can reach. That stream is what makes two things
     /// possible for a skinned body that a rigid transform cannot express: exact per-vertex motion for
-    /// the temporal resolve (see <see cref="SetPreviousPose"/>), and drawing <em>between</em> two
+    /// the temporal resolve, and drawing <em>between</em> two
     /// simulation poses (see <see cref="SetPoseInterpolation"/>).
     /// </para>
     /// <para>
@@ -403,15 +384,10 @@ public interface IGraphicsDevice : IDisposable
     /// sliver, mipmapping has to pick a level for its <em>widest</em> axis, and everything along the
     /// other axis is thrown away. That is what turns ground into a smear towards the horizon.
     /// </param>
-    /// <param name="generateMissingMipmaps">
-    /// Whether to build a mip chain for textures that arrive without one. The terrain's ground tiles
-    /// do: the atlas's layer descriptors carry no mip count, so every one is a single 128x128 level,
-    /// and minifying that without mips aliases into a crawling sparkle.
-    /// </param>
     /// <remarks>
     /// Applies to textures created afterwards, and re-applies the sampling to those already uploaded.
     /// </remarks>
-    void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps);
+    void SetTextureQuality(int maxAnisotropy);
 
     /// <summary>Sets the participating medium the scene is seen through.</summary>
     /// <param name="fog">The medium, or <see cref="VolumetricFogSettings.Off"/> for none.</param>
@@ -454,11 +430,7 @@ public interface IGraphicsDevice : IDisposable
     /// them. Ground under one of these stays dry however hard it is raining outside — without them the
     /// floor of every building in the level pools with water while the roof keeps the rain off it.
     /// </param>
-    void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters)
-    {
-        _ = wetness;
-        _ = shelters;
-    }
+    void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters);
 
     /// <summary>Sets what surfaces reflect and how far the frame is searched to find it.</summary>
     /// <param name="settings">The search, or <see cref="ReflectionSettings.Off"/> for none.</param>
@@ -565,15 +537,6 @@ public interface IGraphicsDevice : IDisposable
     /// indirect term onto the frame the same way the reference composites the surface cache's bounce.
     /// </remarks>
     TextureHandle SceneColour { get; }
-
-    /// <summary>Gets which contract <see cref="SceneDepth"/> and <see cref="SceneNormal"/> follow.</summary>
-    /// <remarks>
-    /// The OpenGL renderer stores standard depth (the sky at one) and view-space normals; the Vulkan
-    /// renderer stores reverse depth (the sky at zero) and world-space normals, rasterised through a
-    /// vertical flip. A compute pass reconstructing world positions from these buffers must be told which
-    /// contract it is reading, because reading one as the other places every sample at the near plane.
-    /// </remarks>
-    SceneTextureConvention SceneConvention { get; }
 
     /// <summary>Copies the sky's irradiance harmonics into <paramref name="coefficients"/>.</summary>
     /// <param name="coefficients">Room for 28 floats: seven vectors of four.</param>
@@ -903,7 +866,7 @@ public interface IGraphicsDevice : IDisposable
     /// (a small difference) from "not measured" (zero).
     /// </para>
     /// </remarks>
-    GpuFrameTiming GpuMeasuredTiming() => default;
+    GpuFrameTiming GpuMeasuredTiming();
 
     /// <summary>Gets whether this frame's sun shadow will come from a ray trace rather than the cascades.</summary>
     /// <remarks>
@@ -913,7 +876,7 @@ public interface IGraphicsDevice : IDisposable
     /// this frame (no ray support, no acceleration structure yet), in which case the cascades are the
     /// sun's only shadow and must keep rendering.
     /// </remarks>
-    bool SunShadowTraced => false;
+    bool SunShadowTraced { get; }
 
     /// <summary>Creates one asynchronous occlusion query.</summary>
     OcclusionQueryHandle CreateOcclusionQuery();
@@ -995,29 +958,6 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetAmbientOcclusion(in AmbientOcclusionSettings settings);
 
-    /// <summary>Says where the next meshes drawn stood in the previous frame.</summary>
-    /// <param name="previousModelView">
-    /// The object's previous pose seen through the <em>current</em> camera — the same matrix a draw
-    /// would have used last frame had the camera not moved since.
-    /// </param>
-    /// <remarks>
-    /// <para>
-    /// Only for geometry that moves of its own accord: soldiers, doors, trains, the player's body.
-    /// Everything static can ignore this entirely, because the temporal resolve already reprojects the
-    /// camera exactly and a static object's previous pose is its current one — which this reports as
-    /// zero motion without a renderer having to say anything.
-    /// </para>
-    /// <para>
-    /// The current camera rather than the previous one is not an approximation made for convenience: it
-    /// is what isolates the object's own movement from the camera's, so the two are recovered by
-    /// different means and neither is counted twice.
-    /// </para>
-    /// </remarks>
-    void SetPreviousPose(in Matrix4f previousModelView);
-
-    /// <summary>Stops reporting a previous pose; subsequent meshes are treated as not having moved.</summary>
-    void ClearPreviousPose();
-
     /// <summary>Sets how the next meshes drawn blend between their two poses.</summary>
     /// <param name="currentBlend">
     /// How much of the <em>previous-pose</em> vertex stream is mixed into the rasterised position, 0
@@ -1025,16 +965,15 @@ public interface IGraphicsDevice : IDisposable
     /// with, since its previous stream is itself.
     /// </param>
     /// <param name="previousBlend">
-    /// The same mix for the position reported as <em>last frame's</em>, alongside
-    /// <see cref="SetPreviousPose"/>. The difference between the two blends is precisely the pose
+    /// The same mix for the position reported as <em>last frame's</em>. The difference between the
+    /// two blends is precisely the pose
     /// motion the frame reports: a fixed-tick simulation renders between two known poses, so last
     /// frame's vertex is a different mix of the same two streams, not a third buffer.
     /// </param>
     /// <remarks>
     /// Meaningful only for meshes from <see cref="CreateAnimatedMesh"/>; everywhere else both streams
     /// are one buffer and any blend of a value with itself is that value. Cleared by
-    /// <see cref="ClearPoseInterpolation"/>, and by <see cref="ClearPreviousPose"/> callers should
-    /// clear both together — a pose blend without its matching previous pose reports half a motion.
+    /// <see cref="ClearPoseInterpolation"/>.
     /// </remarks>
     void SetPoseInterpolation(float currentBlend, float previousBlend);
 
@@ -1207,9 +1146,7 @@ public interface IGraphicsDevice : IDisposable
     /// A backend without a traced world ignores the call, which is the default implementation.
     /// </para>
     /// </remarks>
-    void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount)
-    {
-    }
+    void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount);
 
     /// <summary>Draws a glowing selection outline around a mesh.</summary>
     /// <param name="mesh">The mesh to outline.</param>

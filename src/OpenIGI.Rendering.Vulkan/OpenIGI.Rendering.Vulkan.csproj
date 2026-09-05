@@ -12,6 +12,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The pipeline cache's on-disk header decides whether a saved blob is usable, and a comparison
+         that wrongly rejects one is a permanent miss that reports nothing. It is therefore pinned by a
+         test. That check is implementation detail and stays internal; the test project is the one
+         thing allowed to see it. -->
+    <InternalsVisibleTo Include="OpenIGI.Rendering.Vulkan.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Silk.NET.Vulkan" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.KHR" />
     <PackageReference Include="Silk.NET.Vulkan.Extensions.EXT" />

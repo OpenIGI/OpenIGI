@@ -3870,7 +3870,6 @@ public sealed class SoldierRenderer : IDisposable
 
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
-        bool reportMotion = _device.CurrentPass == ScenePass.Geometry;
 
         foreach (Group group in _groups)
         {
@@ -3898,15 +3897,7 @@ public sealed class SoldierRenderer : IDisposable
                 // The gun first, with its OWN previous transform: it is placed by the hand bone, and
                 // handing it the body's previous pose would report it sliding by the distance between
                 // the two.
-                DrawWeapon(member, camera, projection, reportMotion);
-
-                // The body's previous rigid pose, through the CURRENT camera; the previous-pose vertex
-                // stream carries the limbs. Together they are the exact previous clip position — the
-                // thing whose absence had TAA off at every preset.
-                if (reportMotion && member.PreviousDrawn is { } previous)
-                {
-                    _device.SetPreviousPose(camera.CreateModelView(previous.Where, previous.Orientation));
-                }
+                DrawWeapon(member, camera, projection);
 
                 // Out of the ambient occlusion. A soldier is thin, close and moving, which is the
                 // worst case for a search that has to guess how deep a surface is from its front
@@ -3944,7 +3935,6 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 _device.SetMaterialOverride(SurfaceMaterial.Default);
-                _device.ClearPreviousPose();
                 _device.ClearPoseInterpolation();
             }
         }
@@ -4635,13 +4625,8 @@ public sealed class SoldierRenderer : IDisposable
         member.HasFrameState = true;
 
         Matrix4f modelView = camera.CreateModelView(where, orientation);
-        bool reportMotion = _device.CurrentPass == ScenePass.Geometry;
 
         _device.SetPoseInterpolation(member.PoseBlend, member.PreviousPoseBlend);
-        if (reportMotion && member.PreviousDrawn is { } previous)
-        {
-            _device.SetPreviousPose(camera.CreateModelView(previous.Where, previous.Orientation));
-        }
 
         if (member.NoHistoryThisFrame)
         {
@@ -4679,7 +4664,6 @@ public sealed class SoldierRenderer : IDisposable
             _device.SetMaterialOverride(SurfaceMaterial.Default);
         }
 
-        _device.ClearPreviousPose();
         _device.ClearPoseInterpolation();
     }
 
@@ -4861,7 +4845,6 @@ public sealed class SoldierRenderer : IDisposable
     /// <param name="member">The soldier.</param>
     /// <param name="camera">The eye.</param>
     /// <param name="projection">The current world projection.</param>
-    /// <param name="reportMotion">Whether this pass records motion — the geometry pass and no other.</param>
     /// <remarks>
     /// <para>
     /// The attachment handlers (<c>0x4600C0</c>, <c>player.md</c> §13) do exactly two things: they add the
@@ -4880,7 +4863,7 @@ public sealed class SoldierRenderer : IDisposable
     /// exactly; last frame's is reported as its previous pose on the geometry pass.
     /// </para>
     /// </remarks>
-    private void DrawWeapon(Member member, in Camera3D camera, in Matrix4f projection, bool reportMotion)
+    private void DrawWeapon(Member member, in Camera3D camera, in Matrix4f projection)
     {
         if (member.Weapon is not { } weapon || !member.HasWeaponFrameState)
         {
@@ -4905,11 +4888,6 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         Matrix4f modelView = camera.CreateModelView(member.DrawnWeaponOrigin, member.DrawnWeaponRotation);
-
-        if (reportMotion && member.PreviousWeapon is { } previous)
-        {
-            _device.SetPreviousPose(camera.CreateModelView(previous.Origin, previous.Rotation));
-        }
 
         foreach (MeshSubset subset in weapon.Geometry.Subsets)
         {
@@ -4937,11 +4915,6 @@ public sealed class SoldierRenderer : IDisposable
                 BlendMode.Opaque);
         }
 
-        if (reportMotion)
-        {
-            // The body reports its own previous pose next; the gun's must not leak onto it.
-            _device.ClearPreviousPose();
-        }
     }
 
     /// <summary>Offers a round to every soldier and scores it against the nearest one it meets.</summary>

@@ -20,6 +20,11 @@ internal sealed unsafe class ShadowPipeline : IDisposable
 {
     private readonly Vk _vk;
     private readonly Device _device;
+
+    // The device's own pipeline cache, copied here because this class keeps the raw handle
+    // rather than the wrapper. Passing it is what lets the driver return a previous run's
+    // compiled pipeline instead of building this one again.
+    private readonly PipelineCache _pipelineCache;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
     private bool _disposed;
@@ -43,6 +48,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
         ArgumentNullException.ThrowIfNull(compiler);
         _vk = vk;
         _device = device.Device;
+        _pipelineCache = device.PipelineCache;
 
         _vertex = new VulkanShaderModule(
             vk, _device, compiler.Compile(DeferredShaderSource.ShadowVertex, ShaderStage.Vertex, "shadow.vert"), ShaderStage.Vertex);
@@ -269,7 +275,7 @@ internal sealed unsafe class ShadowPipeline : IDisposable
             };
 
             Pipeline pipeline;
-            VkCheck.Ok(_vk.CreateGraphicsPipelines(_device, default, 1, &createInfo, null, &pipeline), "vkCreateGraphicsPipelines (shadow)");
+            VkCheck.Ok(_vk.CreateGraphicsPipelines(_device, _pipelineCache, 1, &createInfo, null, &pipeline), "vkCreateGraphicsPipelines (shadow)");
             return pipeline;
         }
         finally

@@ -405,7 +405,7 @@ internal sealed unsafe class VulkanRayQuerySelfTest
 
             Pipeline pipeline;
             VkCheck.Ok(
-                _vk.CreateComputePipelines(_device.Device, default, 1, &createInfo, null, &pipeline),
+                _vk.CreateComputePipelines(_device.Device, _device.PipelineCache, 1, &createInfo, null, &pipeline),
                 "vkCreateComputePipelines (ray-query self-test)");
             return pipeline;
         }
