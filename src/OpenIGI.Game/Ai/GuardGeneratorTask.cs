@@ -7,8 +7,8 @@ namespace OpenIGI.Game.Ai;
 /// IGI1 registers this type at <c>0x487BE0</c>. Its update at <c>0x487EE0</c> evaluates the
 /// <c>Generate guards</c> expression, creates at most <c>Max spawns</c> copies of the one authored child,
 /// and exports <c>isOn</c>, <c>isSpawned</c>, and <c>nSpawns</c>. The native clone helper
-/// (<c>0x488000</c>/<c>0x488040</c>) recursively rebuilds the authored subtree; the managed runtime can
-/// therefore reset the existing typed subtree without inventing another level object or another id.
+/// (<c>0x488000</c>/<c>0x488040</c>) recursively rebuilds the authored subtree; the managed runtime keeps
+/// the typed authored task as the template while creating a fresh live brain/view for every instance.
 /// </remarks>
 public partial class GuardGeneratorTask : ContainerTask
 {

@@ -1896,11 +1896,13 @@ internal sealed partial class DesktopGame : IDisposable
                 Vector3d? cutsceneViewMetres = _cutscenes?.Frame?.Camera.Position;
                 Vector3d? freeViewMetres = !_playerMode ? _camera?.Position : null;
                 _missionObjectives?.SetSoldierOccupants(_soldiers?.Occupants() ?? []);
-                _missionObjectives?.TickLevelState(AreaActivationOccupant(
+                TickAreaActivations(
+                    _missionObjectives,
                     _player?.Body.Position,
+                    _soldiers?.PlayerTeam ?? 0,
                     cutsceneViewMetres,
-                    freeViewMetres),
-                    _soldiers?.PlayerTeam ?? 0);
+                    freeViewMetres,
+                    playerAlive: !_playerDead);
                 _cutscenes?.FinishExpressionTick();
                 if (_securityCameras is { } cameras)
                 {

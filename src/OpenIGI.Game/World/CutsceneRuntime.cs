@@ -758,6 +758,16 @@ public sealed class CutsceneRuntime
     {
         foreach (ConditionalContainerTask container in _containers)
         {
+            // Mission 4's exact retail gate is AreaActivate_156.nActive && !HumanPlayer_0.isDead. When a
+            // friendly is its sole occupant, opening container 3902 unregisters gameplay container 3901
+            // (and that friendly) on the next tick. Scene 2222 already owns the camera at that point, so
+            // retain this one authored gate until its Run state releases the scene. Keep the exception
+            // deliberately exact: other levels combine areas with nested conditions that must be re-run.
+            if (RetainsLevelFourOutro(container))
+            {
+                continue;
+            }
+
             if (!container.Refresh(out bool started) || !executeTransitions)
             {
                 continue;
@@ -765,6 +775,41 @@ public sealed class CutsceneRuntime
 
             _expressions.Execute(started ? container.RunAtStart : container.RunAtStop);
         }
+    }
+
+    private bool RetainsLevelFourOutro(ConditionalContainerTask container)
+    {
+        if (_breakRequested
+            || !container.IsRun
+            || container.Id != 3902
+            || !string.Equals(
+                container.Condition.Trim(),
+                "AreaActivate_156.nActive && !HumanPlayer_0.isDead",
+                StringComparison.Ordinal)
+            || !_expressions.EvaluateCondition("!HumanPlayer_0.isDead", emptyValue: true))
+        {
+            return false;
+        }
+
+        foreach (SceneState scene in _scenes)
+        {
+            // IsRun deliberately remains true on the completion-boundary frame. Retaining the parent for
+            // that frame keeps the final authored camera available; the following scene tick clears IsRun.
+            if (scene.Task.Id != 2222 || !scene.Task.IsRun)
+            {
+                continue;
+            }
+
+            for (GameTask? ancestor = scene.Task.Parent; ancestor is not null; ancestor = ancestor.Parent)
+            {
+                if (ReferenceEquals(ancestor, container))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private QvmValue? InvokeNative(string name, ScriptArguments arguments)
@@ -797,14 +842,27 @@ public sealed class CutsceneRuntime
         CutSceneTask scene = state.Task;
         double time = scene.Ticks / (double)Frequency;
         List<TimedShot> timed = state.Timed(scene.TimeScale);
-        int current = 0;
-        for (int i = 1; i < timed.Count; i++)
+        // An EditCamera with no duration is a spline/filter endpoint, not a frame-owning shot. Retail
+        // keeps the preceding camera live on the two completion-boundary ticks; selecting a terminal
+        // zero-duration entry here exposes its marker pose as a visible flash (Mission 4's outro puts
+        // that pose inside Bell 356). Keep zero-length entries in `timed` so the preceding Hermite and
+        // filter interpolation can still end at their authored values, but never make one `active`.
+        bool OwnsFrame(TimedShot item) => Math.Max(0f, item.Shot.Duration * scene.TimeScale) > 0f;
+        int current = timed.FindIndex(OwnsFrame);
+        if (current < 0)
+        {
+            current = 0;
+        }
+        for (int i = current + 1; i < timed.Count; i++)
         {
             if (timed[i].Start > time)
             {
                 break;
             }
-            current = i;
+            if (OwnsFrame(timed[i]))
+            {
+                current = i;
+            }
         }
 
         int i0 = Math.Max(0, current - 1);

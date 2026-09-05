@@ -52,7 +52,7 @@ public sealed class LevelPositionVerificationTests
             foreach (WorldPlacement placement in scene.Placements)
             {
                 AssertFinite(placement.Position, $"mission {missionId} {placement}");
-                AssertOrthonormal(placement.Orientation, $"mission {missionId} {placement}");
+                AssertOrthonormal(placement.Orientation, $"mission {missionId} {placement}", placement.IsAttached);
 
                 // Attached children inherit their parent's transform plus their authored attachment
                 // offset, and spline segments are generated between waypoint tasks. In both cases the
@@ -66,6 +66,13 @@ public sealed class LevelPositionVerificationTests
                 if (placement.Owner is not DeclaredTask declared
                     || !TryReadAuthored(declared, out AuthoredLevelObjectTransform authored))
                 {
+                    continue;
+                }
+
+                if (declared.Type.Name == WorldScene.SecurityCameraType)
+                {
+                    AssertCameraTransform(scene, placement, declared, authored.PositionUnits);
+                    checkedObjects++;
                     continue;
                 }
 
@@ -116,6 +123,40 @@ public sealed class LevelPositionVerificationTests
                 Assert.Contains("Model=", line, StringComparison.Ordinal);
                 Assert.Contains("Source=LOCAL:missions/", line, StringComparison.Ordinal);
             });
+    }
+
+    private static void AssertCameraTransform(
+        WorldScene scene,
+        WorldPlacement placement,
+        DeclaredTask task,
+        Vector3d authoredPosition)
+    {
+        string holderName = task.TryGetValue("Holder Model", out object? model)
+            && model is string { Length: > 0 } name ? name : "313_01_1";
+        WorldPlacement holder = Assert.Single(scene.Placements,
+            candidate => ReferenceEquals(candidate.Owner, task)
+                && !candidate.IsAttached && candidate.Instance.Name == holderName);
+        float gamma = task.TryGetValue("Holder Gamma", out object? value) && value is float angle ? angle : 0f;
+        Matrix3f holderOrientation = Matrix3f.RotationZ(gamma);
+        if (ReferenceEquals(placement, holder))
+        {
+            Assert.True(LevelPositionValidator.PosMatch(authoredPosition, holder.Position));
+            Assert.True(LevelPositionValidator.OriMatch(holderOrientation, holder.Orientation));
+            return;
+        }
+
+        // The head mounts at the holder's magic vertex, not at the task's direct position.
+        // Calculate M*v explicitly to keep this check independent of the runtime transform helper.
+        Assert.True(holder.Model.TryGetMagicVertex(0, out Vector3f mount));
+        Vector3d offset = new(
+            (holderOrientation.M11 * mount.X) + (holderOrientation.M12 * mount.Y) + (holderOrientation.M13 * mount.Z),
+            (holderOrientation.M21 * mount.X) + (holderOrientation.M22 * mount.Y) + (holderOrientation.M23 * mount.Z),
+            (holderOrientation.M31 * mount.X) + (holderOrientation.M32 * mount.Y) + (holderOrientation.M33 * mount.Z));
+        Assert.True(LevelPositionValidator.PosMatch(authoredPosition + offset, placement.Position));
+        float alpha = task.TryGetValue("Camera Alpha", out object? a) && a is float av ? av : 0f;
+        float headGamma = task.TryGetValue("Camera Gamma", out object? g) && g is float gv ? gv : 0f;
+        Assert.True(LevelPositionValidator.OriMatch(
+            Matrix3f.FromEngineEulerAngles(alpha, 0f, gamma + headGamma), placement.Orientation));
     }
 
     private static WorldScene Build(int missionId, IIgiLogger? logger = null)
@@ -195,7 +236,7 @@ public sealed class LevelPositionVerificationTests
         Assert.True(double.IsFinite(value.Z), $"{context}: Z is not finite");
     }
 
-    private static void AssertOrthonormal(Matrix3f value, string context)
+    private static void AssertOrthonormal(Matrix3f value, string context, bool allowReflection = false)
     {
         Assert.True(float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13), context);
         Assert.True(float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23), context);
@@ -206,7 +247,9 @@ public sealed class LevelPositionVerificationTests
         Assert.InRange(Math.Abs(Dot(value.Row1, value.Row2)), 0f, 0.001f);
         Assert.InRange(Math.Abs(Dot(value.Row1, value.Row3)), 0f, 0.001f);
         Assert.InRange(Math.Abs(Dot(value.Row2, value.Row3)), 0f, 0.001f);
-        Assert.InRange(value.Determinant, 0.999f, 1.001f);
+        // Authored attachment matrices can reflect a mesh while remaining orthonormal.
+        float determinant = allowReflection ? Math.Abs(value.Determinant) : value.Determinant;
+        Assert.True(determinant >= 0.999f && determinant <= 1.001f, $"{context}: determinant={value.Determinant}");
     }
 
     private static float Dot(Vector3f left, Vector3f right) =>

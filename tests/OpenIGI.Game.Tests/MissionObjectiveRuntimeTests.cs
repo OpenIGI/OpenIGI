@@ -100,6 +100,41 @@ public sealed class MissionObjectiveRuntimeTests
     }
 
     [Fact]
+    public void AreaActivationCountsCameraAndBodyAsOnePlayer()
+    {
+        (GameLoop loop, MissionObjectiveRuntime runtime) = BuildPlayerAreaRuntime();
+        Vector3d inside = new(0.0, 0.0, 0.0);
+        Vector3d outside = new(100.0, 0.0, 0.0);
+
+        runtime.TickLevelState(
+            inside,
+            playerTeam: 0,
+            extraPlayerPosition: new Vector3d(2.0, 0.0, 0.0),
+            playerAlive: true);
+        Assert.Equal(1, ReadPlayerAreaActive(loop));
+
+        runtime.TickLevelState(outside, playerTeam: 0, extraPlayerPosition: inside, playerAlive: true);
+        Assert.Equal(1, ReadPlayerAreaActive(loop));
+
+        runtime.TickLevelState(inside, playerTeam: 0, extraPlayerPosition: outside, playerAlive: true);
+        Assert.Equal(1, ReadPlayerAreaActive(loop));
+    }
+
+    [Fact]
+    public void AreaActivationExcludesDeadPlayerProjections()
+    {
+        (GameLoop loop, MissionObjectiveRuntime runtime) = BuildPlayerAreaRuntime();
+
+        runtime.TickLevelState(
+            new Vector3d(0.0, 0.0, 0.0),
+            playerTeam: 0,
+            extraPlayerPosition: new Vector3d(2.0, 0.0, 0.0),
+            playerAlive: false);
+
+        Assert.Equal(0, ReadPlayerAreaActive(loop));
+    }
+
+    [Fact]
     public void AreaActivationUsesTheLoadedUpperZBound()
     {
         GameLoop loop = new();
@@ -234,5 +269,36 @@ public sealed class MissionObjectiveRuntimeTests
                 Assert.Equal(1, edit.ToInt32());
             }
         }
+    }
+
+    private static (GameLoop Loop, MissionObjectiveRuntime Runtime) BuildPlayerAreaRuntime()
+    {
+        GameLoop loop = new();
+        QvmProgram level = QvmProgram.Read(QvmExpression.BuildProgram(
+            QvmExpression.Call(
+                "Task_DeclareParameters",
+                QvmExpression.Text("AreaActivate"),
+                QvmExpression.Text("Position"), QvmExpression.Text("ObjectPos"),
+                QvmExpression.Text("Orientation"), QvmExpression.Text("Real32x9"),
+                QvmExpression.Text("Dimensions"), QvmExpression.Text("Real32x3"),
+                QvmExpression.Text("Criteria"), QvmExpression.Text("String32")),
+            QvmExpression.Call(
+                "Task_New",
+                QvmExpression.Int(900),
+                QvmExpression.Text("AreaActivate"),
+                QvmExpression.Text("Player activation volume"),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(0f), QvmExpression.Real(0f), QvmExpression.Real(0f),
+                QvmExpression.Real(20f), QvmExpression.Real(20f), QvmExpression.Real(20f),
+                QvmExpression.Text("PLAYER"))));
+        Assert.Equal(QvmError.None, new QvmInterpreter(level, loop.Natives).Run());
+
+        return (loop, new MissionObjectiveRuntime(loop.Tasks.Root, loop.Variables));
+    }
+
+    private static int ReadPlayerAreaActive(GameLoop loop)
+    {
+        Assert.True(loop.Variables.TryRead("AreaActivate_900.nActive", out QvmValue active));
+        return active.ToInt32();
     }
 }

@@ -15,6 +15,7 @@ using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
+using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -59,6 +60,503 @@ public sealed class SoldierRendererHitscanTests
         Assert.True(scenario.Renderer.TryShoot(ray.Origin, ray.End, damageFactor: 0.5f, WeaponCategory.Gun, out HumanHit hit));
         Assert.True(hit.Distance > 0.0);
         Assert.InRange(hit.Zone, 0, HumanHitZoneTable.Soldier.Count - 1);
+    }
+
+    [RequiresGameDataFact]
+    public void LethalDragunovHitKeepsTheLevelFourCorpseDrawable()
+    {
+        using Scenario scenario = CreateScenario();
+        MeshHitRay ray = FindAnyMeshHitRay(
+            scenario.Renderer,
+            view => view.Soldier.Team != scenario.Renderer.PlayerTeam
+                && !CinematicActor.IsStaged(view.Soldier));
+        object targetMember = MemberFor(scenario.Renderer, ray.View);
+        MeshHandle bodyMesh = Get<MeshHandle>(targetMember, "Mesh");
+        KeepOnlyTarget(scenario.Renderer, targetMember);
+
+        int maxHitsToKill = HumanHitZoneTable.HitsToKill(
+            damageFactor: 0.5f,
+            HumanHitZoneTable.Soldier.Min(zone => zone.Multiplier));
+        for (int shot = 0; shot < maxHitsToKill && !ray.View.IsDead; shot++)
+        {
+            ray = FindAnyMeshHitRay(
+                scenario.Renderer,
+                view => ReferenceEquals(view, ray.View));
+            Assert.True(scenario.Renderer.TryShoot(
+                ray.Origin,
+                ray.End,
+                damageFactor: 0.5f,
+                WeaponCategory.Gun,
+                out _));
+        }
+
+        Assert.True(ray.View.IsDead);
+        Assert.Contains(
+            scenario.Renderer.Occupants(),
+            occupant => occupant.IsDead && occupant.Position == ray.View.Position);
+
+        for (int tick = 0; tick < 180; tick++)
+        {
+            scenario.Renderer.Tick(enemyAlive: false);
+        }
+
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+        scenario.Renderer.Draw(
+            new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)),
+            Matrix4f.Identity);
+
+        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == bodyMesh);
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData(417)]
+    [InlineData(418)]
+    [InlineData(419)]
+    public void DragunovKillKeepsAnActivatedBehindWarehouseGuardAboveItsFloor(int taskId)
+    {
+        using RagdollScope ragdoll = new(enabled: false);
+        using Scenario scenario = CreateScenario(prepareContainers: true);
+        SoldierView target = Assert.Single(
+            RendererSoldiers(scenario.Renderer),
+            view => view.Soldier.Id == taskId);
+        Assert.False(ConditionalContainerGate.IsTaskActive(target.Soldier));
+
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            "EditVariable_752.nValue",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            "EditVariable_4000.nValue",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        Assert.True(scenario.Loop.Variables.TryRead(
+            "EditVariable_752.nValue",
+            out OpenIGI.Scripting.Runtime.QvmValue activation));
+        Assert.Equal(1, activation.ToInt32());
+        WriteInt(scenario, "ConditionalContainer_3900.isRun", 0);
+        WriteInt(scenario, "ConditionalContainer_3901.isRun", 1);
+        WriteInt(scenario, "ConditionalContainer_3902.isRun", 0);
+        scenario.Cutscenes!.Tick();
+        ConditionalContainerTask behindWarehouse = Assert.IsType<ConditionalContainerTask>(target.Soldier.Parent);
+        Assert.True(behindWarehouse.IsRun, $"Container {behindWarehouse.Id} did not run: {behindWarehouse.Condition}");
+        Assert.True(
+            ConditionalContainerGate.IsTaskActive(target.Soldier),
+            DescribeAncestry(target.Soldier));
+
+        object targetMember = MemberFor(scenario.Renderer, target);
+        Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(targetMember, "WeaponType").ScriptId);
+        Assert.NotNull(targetMember.GetType().GetProperty("Weapon")!.GetValue(targetMember));
+
+        scenario.Renderer.Tick(enemyAlive: false);
+        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+        Assert.True(Get<bool>(targetMember, "HasHandState"));
+        Assert.True(Get<bool>(targetMember, "HasWeaponFrameState"));
+
+        MeshHitRay ray = FindAnyMeshHitRay(
+            scenario.Renderer,
+            view => ReferenceEquals(view, target));
+        MeshHandle bodyMesh = Get<MeshHandle>(targetMember, "Mesh");
+        Vector3d spawnMetres = target.Position / WorldScene.UnitsPerMetre;
+
+        int maxHitsToKill = HumanHitZoneTable.HitsToKill(
+            damageFactor: 0.5f,
+            HumanHitZoneTable.Soldier.Min(zone => zone.Multiplier));
+        for (int shot = 0; shot < maxHitsToKill && !target.IsDead; shot++)
+        {
+            ray = FindAnyMeshHitRay(
+                scenario.Renderer,
+                view => ReferenceEquals(view, target));
+            Assert.True(scenario.Renderer.TryShoot(
+                ray.Origin,
+                ray.End,
+                damageFactor: 0.5f,
+                WeaponCategory.Gun,
+                out _));
+
+            scenario.Cutscenes.Tick();
+            scenario.Renderer.Tick(enemy: ray.Origin, enemyAlive: true);
+            scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+            Assert.True(ConditionalContainerGate.IsTaskActive(target.Soldier));
+            AssertBodyRemainsDrawableNearSpawn(scenario, targetMember, bodyMesh, spawnMetres, shot + 1);
+        }
+
+        Assert.True(target.IsDead);
+        for (int tick = 0; tick < 180; tick++)
+        {
+            scenario.Cutscenes.Tick();
+            scenario.Renderer.Tick(enemyAlive: false);
+        }
+
+        Assert.True(ConditionalContainerGate.IsTaskActive(target.Soldier));
+        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+        AssertBodyRemainsDrawableNearSpawn(scenario, targetMember, bodyMesh, spawnMetres, maxHitsToKill + 180);
+    }
+
+    [RequiresGameDataTheory]
+    [InlineData(429)]
+    [InlineData(430)]
+    [InlineData(431)]
+    public void PostRescueGeneratedGuardLeavesItsBodyAndRespawnsArmed(int taskId)
+    {
+        using RagdollScope ragdoll = new(enabled: false);
+        using Scenario scenario = CreateScenario(prepareContainers: true);
+        SoldierView firstLife = Assert.Single(
+            RendererSoldiers(scenario.Renderer),
+            view => view.Soldier.Id == taskId);
+        Assert.False(ConditionalContainerGate.IsTaskActive(firstLife.Soldier));
+
+        scenario.Cutscenes!.Tick();
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            "StatusMessage_977.isSendt",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            "ConditionalContainer_307.isRun",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            "ConditionalContainer_3901.isRun",
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(1)));
+        scenario.Renderer.Tick(enemyAlive: false);
+        Assert.True(
+            ConditionalContainerGate.IsTaskActive(firstLife.Soldier),
+            DescribeAncestry(firstLife.Soldier));
+
+        object firstMember = MemberFor(scenario.Renderer, firstLife);
+        Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(firstMember, "WeaponType").ScriptId);
+        Assert.NotNull(firstMember.GetType().GetProperty("Weapon")!.GetValue(firstMember));
+
+        MeshHitRay ray = FindAnyMeshHitRay(
+            scenario.Renderer,
+            view => ReferenceEquals(view, firstLife));
+        int maxHitsToKill = HumanHitZoneTable.HitsToKill(
+            damageFactor: 0.5f,
+            HumanHitZoneTable.Soldier.Min(zone => zone.Multiplier));
+        for (int shot = 0; shot < maxHitsToKill && !firstLife.IsDead; shot++)
+        {
+            ray = FindAnyMeshHitRay(
+                scenario.Renderer,
+                view => ReferenceEquals(view, firstLife));
+            Assert.True(scenario.Renderer.TryShoot(
+                ray.Origin,
+                ray.End,
+                damageFactor: 0.5f,
+                WeaponCategory.Gun,
+                out _));
+        }
+        Assert.True(firstLife.IsDead);
+        MeshHandle corpseMesh = Get<MeshHandle>(firstMember, "Mesh");
+
+        // Audio state and alert replies are keyed by runtime identity, not the authored task ID.
+        // A retained corpse must not advance its replacement's sound loop on the same tick.
+        List<int> soundEmitters = [];
+        scenario.Renderer.SetWeaponSound((id, _, _, _) => soundEmitters.Add(id));
+
+        // Retail GuardGenerator clones another live subtree. It does not revive and erase the corpse.
+        scenario.Renderer.Tick(enemyAlive: false);
+        AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
+        SoldierView[] lives = RendererSoldiers(scenario.Renderer)
+            .Where(view => view.Soldier.Id == taskId)
+            .ToArray();
+        Assert.Equal(2, lives.Length);
+        Assert.True(firstLife.IsDead);
+        SoldierView replacement = Assert.Single(lives, view => !view.IsDead);
+
+        object replacementMember = MemberFor(scenario.Renderer, replacement);
+        Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(replacementMember, "WeaponType").ScriptId);
+        object? replacementWeaponValue = replacementMember.GetType().GetProperty("Weapon")!.GetValue(replacementMember);
+        Assert.NotNull(replacementWeaponValue);
+        object replacementWeapon = replacementWeaponValue;
+        MeshHandle replacementWeaponMesh = Get<MeshHandle>(replacementWeapon, "Mesh");
+
+        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+        Assert.True(Get<bool>(replacementMember, "HasHandState"));
+        Assert.True(Get<bool>(replacementMember, "HasWeaponFrameState"));
+        Assert.Contains(scenario.Renderer.MapContacts(), position => position == replacement.Position);
+        Camera3D drawCamera = new(ray.Origin, Camera3D.LookRotation(0f, 0f));
+        Matrix4f replacementWeaponTransform = drawCamera.CreateModelView(
+            Get<Vector3d>(replacementMember, "DrawnWeaponOrigin"),
+            Get<Matrix3f>(replacementMember, "DrawnWeaponRotation"));
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.Draw(
+            drawCamera,
+            Matrix4f.Identity);
+        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
+        Assert.Contains(
+            scenario.Device.MeshDraws,
+            draw => draw.Mesh == replacementWeaponMesh && draw.ModelView == replacementWeaponTransform);
+
+        // Shoot the generated life too. This is the user-visible failure mode: the replacement used
+        // to be the original view reset in place, so its first hit made the body appear to evaporate.
+        for (int shot = 0; shot < maxHitsToKill && !replacement.IsDead; shot++)
+        {
+            MeshHitRay replacementRay = FindAnyMeshHitRay(
+                scenario.Renderer,
+                view => ReferenceEquals(view, replacement));
+            Assert.True(scenario.Renderer.TryShoot(
+                replacementRay.Origin,
+                replacementRay.End,
+                damageFactor: 0.5f,
+                WeaponCategory.Gun,
+                out _));
+        }
+        Assert.True(replacement.IsDead);
+        MeshHandle replacementCorpseMesh = Get<MeshHandle>(replacementMember, "Mesh");
+
+        soundEmitters.Clear();
+        scenario.Renderer.Tick(enemyAlive: false);
+        AssertDistinctRuntimeLifetimes(scenario.Renderer, soundEmitters);
+        SoldierView[] nextGeneration = RendererSoldiers(scenario.Renderer)
+            .Where(view => view.Soldier.Id == taskId)
+            .ToArray();
+        Assert.Equal(3, nextGeneration.Length);
+        Assert.Equal(2, nextGeneration.Count(view => view.IsDead));
+        SoldierView nextLive = Assert.Single(nextGeneration, view => !view.IsDead);
+        object nextMember = MemberFor(scenario.Renderer, nextLive);
+        Assert.Equal("WEAPON_ID_AK47", Get<WeaponType>(nextMember, "WeaponType").ScriptId);
+        Assert.NotNull(nextMember.GetType().GetProperty("Weapon")!.GetValue(nextMember));
+
+        scenario.Renderer.BeginFrame(tickFraction: 1f, smooth: false);
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.Draw(
+            new Camera3D(ray.Origin, Camera3D.LookRotation(0f, 0f)),
+            Matrix4f.Identity);
+        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == corpseMesh);
+        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == replacementCorpseMesh);
+    }
+
+    [RequiresGameDataFact]
+    public void FullLevelRendererSendsHarrisonModelToJosipBeforeRescueCompletes()
+    {
+        using Scenario scenario = CreateScenario(prepareContainers: true);
+        CutsceneRuntime cutscenes = Assert.IsType<CutsceneRuntime>(scenario.Cutscenes);
+        MissionObjectiveRuntime objectives = Assert.IsType<MissionObjectiveRuntime>(scenario.Objectives);
+        Vector3d playerOutside = new(112865840.0, -54000000.0, 176238000.0);
+        HumanSoldierTask harrisonTask = Assert.IsType<HumanSoldierTask>(scenario.Root.Tree.FromId(400));
+        Assert.Equal("022_01_1", harrisonTask.SoldierModel);
+        Assert.Equal(500, Assert.Single(harrisonTask.Children.OfType<HumanAiTask>()).Id);
+
+        SoldierView harrison = Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == 400);
+        SoldierView escortOne = Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == 401);
+        SoldierView escortTwo = Assert.Single(RendererSoldiers(scenario.Renderer), view => view.Soldier.Id == 402);
+        SoldierView[] squad = RendererSoldiers(scenario.Renderer)
+            .Where(view => view.Soldier.Id is >= 400 and <= 405)
+            .OrderBy(view => view.Soldier.Id)
+            .ToArray();
+        Assert.Equal(6, squad.Length);
+
+        // Reproduce the post-gate gameplay state without running a synthetic one-soldier brain: the real
+        // level renderer owns all six friendlies, their authored models, graph-1 routes and collision.
+        cutscenes.RequestBreak();
+        for (int tick = 0; tick < 10 && cutscenes.ActiveScene?.Id == 1000; tick++)
+        {
+            objectives.TickLevelState(playerOutside, playerTeam: 0);
+            cutscenes.Tick();
+            objectives.TickAfterLevelState();
+            cutscenes.FinishExpressionTick();
+        }
+        Assert.NotEqual(1000, cutscenes.ActiveScene?.Id);
+        WriteInt(scenario, "ConditionalContainer_3900.isRun", 0);
+        WriteInt(scenario, "ConditionalContainer_3901.isRun", 1);
+        WriteInt(scenario, "ConditionalContainer_3902.isRun", 0);
+        WriteInt(scenario, "ConditionalContainer_300.isRun", 1);
+        WriteInt(scenario, "AnimTask_850.nTick", (66 * 30) + 1);
+        WriteInt(scenario, "EditVariable_752.nValue", 2);
+
+        Dictionary<SoldierView, AiSoldier> brains = RendererBrains(scenario.Renderer);
+        SoldierView distantGuard = Assert.Single(brains.Keys, view => view.Soldier.Id == 420);
+        Vector3d distantPosition = new(playerOutside.X, playerOutside.Y, playerOutside.Z);
+        brains[distantGuard].SeparateTo(distantPosition);
+        distantGuard.PlaceAt(distantPosition, distantGuard.Orientation);
+        foreach (SoldierView view in RendererSoldiers(scenario.Renderer))
+        {
+            if (view != distantGuard && view.Soldier.Team != 0 && ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                view.Kill(-1);
+            }
+        }
+
+        scenario.Renderer.Tick(enemyAlive: false);
+        Assert.Equal(725, brains[harrison].Route?.Path.Id);
+        Assert.Equal(726, brains[escortOne].Route?.Path.Id);
+        Assert.Equal(727, brains[escortTwo].Route?.Path.Id);
+
+        // A killed local target must be retired even when another guard remains alive elsewhere.
+        // Reproduce an interrupted patrol for each of the three members of the rescue team.
+        SoldierView deadTarget = Assert.Single(brains.Keys, view => view.Soldier.Id == 417);
+        Dictionary<SoldierView, SoldierView> npcTargets = Assert.IsType<Dictionary<SoldierView, SoldierView>>(
+            typeof(SoldierRenderer).GetField("_npcTargetByBrain", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(scenario.Renderer));
+        foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })
+        {
+            typeof(AiSoldier).GetMethod("EnterCombat", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(brains[friendly], null);
+            npcTargets[friendly] = deadTarget;
+        }
+        scenario.Renderer.Tick(enemyAlive: false);
+        foreach (SoldierView friendly in new[] { harrison, escortOne, escortTwo })
+        {
+            Assert.NotEqual(AiSoldierActivity.Engaging, brains[friendly].Activity);
+        }
+        Assert.False(distantGuard.IsDead);
+
+        DeclaredTask area154 = Assert.IsType<DeclaredTask>(scenario.Root.Tree.FromId(154));
+        Bounds rescue = BoundsOf(area154);
+        int? firstInside = null;
+        int firstInsideTick = -1;
+        int harrisonInsideTick = -1;
+        HashSet<int> rescueArrivals = [];
+        for (int tick = 0; tick < 5000 && rescueArrivals.Count < 3; tick++)
+        {
+            scenario.Renderer.Tick(enemyAlive: false);
+            foreach (SoldierView view in squad)
+            {
+                if (rescue.Contains(view.Position))
+                {
+                    if (firstInside is null)
+                    {
+                        firstInside = view.Soldier.Id;
+                        firstInsideTick = tick;
+                    }
+                    if (view.Soldier.Id is 400 or 401 or 402)
+                    {
+                        rescueArrivals.Add(view.Soldier.Id);
+                    }
+                    if (view.Soldier.Id == 400 && harrisonInsideTick < 0)
+                    {
+                        harrisonInsideTick = tick;
+                    }
+                }
+            }
+        }
+
+        Assert.True(
+            firstInside is not null,
+            $"No friendly reached area 154; harrison=({harrison.Position.X:0},{harrison.Position.Y:0},{harrison.Position.Z:0}) "
+                + $"routes={brains[harrison].Route?.Path.Id},{brains[escortOne].Route?.Path.Id},{brains[escortTwo].Route?.Path.Id} "
+                + DescribeAncestry(harrison.Soldier));
+        Assert.True(
+            harrisonInsideTick >= firstInsideTick
+                && harrisonInsideTick <= firstInsideTick + (14 * 30),
+            $"first={firstInside} tick={firstInsideTick} harrisonTick={harrisonInsideTick} "
+                + $"harrison=({harrison.Position.X:0},{harrison.Position.Y:0},{harrison.Position.Z:0}) "
+                + $"escort401=({escortOne.Position.X:0},{escortOne.Position.Y:0},{escortOne.Position.Z:0}) "
+                + $"escort402=({escortTwo.Position.X:0},{escortTwo.Position.Y:0},{escortTwo.Position.Z:0}) "
+                + $"nodes={brains[harrison].CurrentNode}->{brains[harrison].DestinationNode},"
+                + $"{brains[escortOne].CurrentNode}->{brains[escortOne].DestinationNode},"
+                + $"{brains[escortTwo].CurrentNode}->{brains[escortTwo].DestinationNode} "
+                + $"waypoints={brains[harrison].DebugWaypoint},{brains[escortOne].DebugWaypoint},{brains[escortTwo].DebugWaypoint} "
+                + $"models={harrison.Soldier.SoldierModel},{escortOne.Soldier.SoldierModel},{escortTwo.Soldier.SoldierModel} "
+                + $"area={rescue}");
+        Assert.Equal(113, brains[harrison].DestinationNode);
+        Assert.Equal(3, rescueArrivals.Count);
+        Assert.Equal(112, brains[escortOne].DestinationNode);
+        Assert.Equal(114, brains[escortTwo].DestinationNode);
+
+        // Feed all six live friendlies through the real area/timer/message runtimes while Harrison is
+        // physically inside area 154. The authored rescue cannot advance team one's stage before the
+        // 14-second LevelTimer_761 finishes and sends StatusMessage_977.
+        int rescueSentTick = -1;
+        for (int tick = 0; tick < (15 * 30); tick++)
+        {
+            objectives.SetSoldierOccupants(scenario.Renderer.Occupants());
+            objectives.TickLevelState(playerOutside, playerTeam: 0);
+            cutscenes.Tick();
+            cutscenes.FinishExpressionTick();
+            objectives.TickAfterLevelState();
+
+            if (ReadInt(scenario, "StatusMessage_977.isSendt") != 0)
+            {
+                rescueSentTick = tick;
+                break;
+            }
+            Assert.Equal(2, ReadInt(scenario, "EditVariable_752.nValue"));
+        }
+        Assert.InRange(rescueSentTick, (14 * 30) - 1, (15 * 30) - 1);
+
+        // The next host tick consumes StatusMessage_977, advances team one's stage and registers the
+        // three authored GuardGenerators beside Josip's building.
+        cutscenes.Tick();
+        scenario.Renderer.Tick(enemyAlive: false);
+        objectives.SetSoldierOccupants(scenario.Renderer.Occupants());
+        objectives.TickLevelState(playerOutside, playerTeam: 0);
+        cutscenes.FinishExpressionTick();
+        objectives.TickAfterLevelState();
+        Assert.Equal(3, ReadInt(scenario, "EditVariable_752.nValue"));
+        Assert.True(ConditionalContainerGate.IsTaskActive(scenario.Root.Tree.FromId(429)!));
+        Assert.True(ConditionalContainerGate.IsTaskActive(scenario.Root.Tree.FromId(430)!));
+        Assert.True(ConditionalContainerGate.IsTaskActive(scenario.Root.Tree.FromId(431)!));
+    }
+
+    private static void WriteInt(Scenario scenario, string name, int value) =>
+        Assert.True(scenario.Loop.Variables.TryWrite(
+            name,
+            OpenIGI.Scripting.Runtime.QvmValue.FromInt32(value)));
+
+    private static int ReadInt(Scenario scenario, string name)
+    {
+        Assert.True(scenario.Loop.Variables.TryRead(name, out OpenIGI.Scripting.Runtime.QvmValue value));
+        return value.ToInt32();
+    }
+
+    private static Bounds BoundsOf(DeclaredTask task)
+    {
+        Assert.True(task.TryGetValue("Position", out object? position));
+        Assert.True(task.TryGetValue("Orientation", out object? orientation));
+        Assert.True(task.TryGetValue("Dimensions", out object? dimensions));
+        Vector3d centre = Assert.IsType<Vector3d>(position);
+        Vector3f angles = Assert.IsType<Vector3f>(orientation);
+        Matrix3f rotation = Matrix3f.FromEngineEulerAngles(angles.X, angles.Y, angles.Z);
+        Vector3f half = Assert.IsType<Vector3f>(dimensions) * 0.5f;
+        double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+        double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
+        for (int corner = 0; corner < 8; corner++)
+        {
+            Vector3f local = new(
+                (corner & 1) == 0 ? half.X : -half.X,
+                (corner & 2) == 0 ? half.Y : -half.Y,
+                (corner & 4) == 0 ? half.Z : -half.Z);
+            Vector3f rotated = rotation.Transposed().Transform(local);
+            Vector3d point = centre + new Vector3d(rotated.X, rotated.Y, rotated.Z);
+            minX = Math.Min(minX, point.X); minY = Math.Min(minY, point.Y); minZ = Math.Min(minZ, point.Z);
+            maxX = Math.Max(maxX, point.X); maxY = Math.Max(maxY, point.Y); maxZ = Math.Max(maxZ, point.Z);
+        }
+        return new Bounds(new Vector3d(minX, minY, minZ), new Vector3d(maxX, maxY, maxZ));
+    }
+
+    private static void AssertBodyRemainsDrawableNearSpawn(
+        Scenario scenario,
+        object targetMember,
+        MeshHandle bodyMesh,
+        Vector3d spawnMetres,
+        int tick)
+    {
+        Vector3d drawn = Get<Vector3d>(targetMember, "DrawnWhere");
+        double dx = spawnMetres.X - drawn.X;
+        double dy = spawnMetres.Y - drawn.Y;
+        double dz = spawnMetres.Z - drawn.Z;
+        double distance = Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
+        Assert.True(distance < 20.0, $"tick {tick}: guard moved {distance:0.000}m from {spawnMetres} to {drawn}");
+
+        (Vertex3D[] vertices, ushort[] indices) = scenario.Device.Meshes[bodyMesh.Id];
+        float maximumLocalZ = float.MinValue;
+        Assert.All(indices.Distinct(), index =>
+        {
+            Vertex3D vertex = vertices[index];
+            Assert.True(float.IsFinite(vertex.Position.X));
+            Assert.True(float.IsFinite(vertex.Position.Y));
+            Assert.True(float.IsFinite(vertex.Position.Z));
+            Assert.InRange(vertex.Position.X, -20f, 20f);
+            Assert.InRange(vertex.Position.Y, -20f, 20f);
+            Assert.InRange(vertex.Position.Z, -20f, 20f);
+            maximumLocalZ = Math.Max(maximumLocalZ, vertex.Position.Z);
+        });
+        Assert.True(
+            drawn.Z + maximumLocalZ > spawnMetres.Z,
+            $"tick {tick}: corpse is entirely below its authored floor; root={drawn.Z:0.000}, localMax={maximumLocalZ:0.000}, floor={spawnMetres.Z:0.000}");
+
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.Draw(
+            new Camera3D(spawnMetres + new Vector3d(0.0, -10.0, 2.0), Camera3D.LookRotation(0f, 0f)),
+            Matrix4f.Identity);
+        Assert.Contains(scenario.Device.MeshDraws, draw => draw.Mesh == bodyMesh);
     }
 
     [RequiresGameDataFact]
@@ -244,12 +742,19 @@ public sealed class SoldierRendererHitscanTests
         Assert.False(scenario.Renderer.TryShoot(origin, end, damageFactor: 0.5f, WeaponCategory.Gun, out _));
     }
 
-    private static MeshHitRay FindAnyMeshHitRay(SoldierRenderer renderer)
+    private static MeshHitRay FindAnyMeshHitRay(
+        SoldierRenderer renderer,
+        Func<SoldierView, bool>? accepts = null)
     {
         // Select against the skinned mesh itself, not TryPick: the test must not use the renderer's other
         // consumer of the broad-phase gate to decide which round counts as a hit.
         foreach ((SoldierView soldier, MefCollisionMesh mesh) in MeshBackedSoldiers(renderer))
         {
+            if (accepts is not null && !accepts(soldier))
+            {
+                continue;
+            }
+
             Vector3d feet = FeetOnGround(renderer, soldier);
             Matrix3f orientation = soldier.Orientation;
             Vector3f facing = new(orientation.M12, orientation.M22, orientation.M32);
@@ -456,6 +961,23 @@ public sealed class SoldierRendererHitscanTests
         }
     }
 
+    private static object MemberFor(SoldierRenderer renderer, SoldierView target)
+    {
+        foreach (object group in Assert.IsAssignableFrom<IEnumerable>(GroupsField.GetValue(renderer)))
+        {
+            foreach (object member in Assert.IsAssignableFrom<IEnumerable>(
+                group.GetType().GetProperty("Soldiers", BindingFlags.Instance | BindingFlags.Public)!.GetValue(group)))
+            {
+                if (ReferenceEquals(Get<SoldierView>(member, "View"), target))
+                {
+                    return member;
+                }
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException($"No renderer member owns soldier '{target.Soldier.Name}'.");
+    }
+
     private static void MovePresentationAwayFromSimulation(SoldierRenderer renderer, object member, bool smooth)
     {
         Vector3d simulatedRoot = Get<Vector3d>(member, "TickWhere");
@@ -541,12 +1063,43 @@ public sealed class SoldierRendererHitscanTests
         point.Y + (direction.Y * distance),
         point.Z + (direction.Z * distance));
 
+    private static void AssertDistinctRuntimeLifetimes(SoldierRenderer renderer, List<int> soundEmitters)
+    {
+        Assert.NotEmpty(soundEmitters);
+        Assert.Equal(soundEmitters.Count, soundEmitters.Distinct().Count());
+        Dictionary<SoldierView, AiSoldier> brains = RendererBrains(renderer);
+        Assert.Equal(brains.Count, brains.Values.Select(brain => brain.RuntimeId).Distinct().Count());
+        Dictionary<int, AiSoldier> recipients = Assert.IsType<Dictionary<int, AiSoldier>>(
+            typeof(SoldierRenderer).GetField("_brainsByRuntimeId", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(renderer));
+        foreach (AiSoldier brain in brains.Values)
+        {
+            Assert.Same(brain, recipients[brain.RuntimeId]);
+        }
+    }
+
     private static Dictionary<SoldierView, AiSoldier>.KeyCollection RendererSoldiers(SoldierRenderer renderer) =>
+        RendererBrains(renderer).Keys;
+
+    private static Dictionary<SoldierView, AiSoldier> RendererBrains(SoldierRenderer renderer) =>
         Assert.IsType<Dictionary<SoldierView, AiSoldier>>(
             typeof(SoldierRenderer)
                 .GetField("_brains", BindingFlags.Instance | BindingFlags.NonPublic)!
-                .GetValue(renderer))
-            .Keys;
+                .GetValue(renderer));
+
+    private static string DescribeAncestry(GameTask task)
+    {
+        List<string> ancestry = [];
+        for (GameTask? current = task; current is not null; current = current.Parent)
+        {
+            string state = current is ConditionalContainerTask container
+                ? $" run={container.IsRun} condition='{container.Condition}'"
+                : string.Empty;
+            ancestry.Add($"{current.Type.Name}_{current.Id}{state}");
+        }
+
+        return string.Join(" <- ", ancestry);
+    }
 
     private readonly record struct MeshHitRay(
         Vector3d Origin,
@@ -566,7 +1119,15 @@ public sealed class SoldierRendererHitscanTests
         BonePose Current,
         BonePose Previous);
 
-    private static Scenario CreateScenario()
+    private readonly record struct Bounds(Vector3d Minimum, Vector3d Maximum)
+    {
+        public bool Contains(Vector3d point) =>
+            point.X >= Minimum.X && point.X <= Maximum.X
+            && point.Y >= Minimum.Y && point.Y <= Maximum.Y
+            && point.Z >= Minimum.Z && point.Z <= Maximum.Z;
+    }
+
+    private static Scenario CreateScenario(bool prepareContainers = false)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -574,6 +1135,7 @@ public sealed class SoldierRendererHitscanTests
         GameLoop loop = new(new ManualTimeSource());
         PlayerTaskTypes.RegisterAll(loop.Types);
         AiTaskTypes.RegisterAll(loop.Types);
+        loop.Types.Register<CutSceneTask>(CutSceneTask.TypeName);
         loop.Types.Register<ConditionalContainerTask>(ConditionalContainerTask.TypeName);
 
         LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
@@ -586,16 +1148,90 @@ public sealed class SoldierRendererHitscanTests
             resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(4);
 
-        SoldierRenderer renderer = new(new RecordingGraphicsDevice(), resources);
-        Assert.True(renderer.Load(mission, root) > 0);
-        Assert.True(renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
-        return new Scenario(renderer);
+        CutsceneRuntime? cutscenes = null;
+        MissionObjectiveRuntime? objectives = null;
+        if (prepareContainers)
+        {
+            new ConditionalContainerGate(loop.Variables).Prepare(root);
+            cutscenes = new CutsceneRuntime(root, loop.Variables);
+            objectives = new MissionObjectiveRuntime(root, loop.Variables, native: cutscenes.TryInvokeNative);
+        }
+
+        RecordingGraphicsDevice device = new();
+        SoldierRenderer renderer = new(device, resources);
+        if (!prepareContainers)
+        {
+            Assert.True(renderer.Load(mission, root) > 0);
+            Assert.True(renderer.Animate(new Dictionary<int, GraphFile>(), levelRoot: root) > 0);
+            return new Scenario(renderer, device, loop, root, cutscenes, objectives);
+        }
+
+        WorldScene scene = WorldScene.Build(mission, root);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(scene.Placements);
+        Assert.True(renderer.Load(
+            mission,
+            root,
+            mission.Terrain is { IsUsable: true } terrain ? terrain : null,
+            solids.Caster()) > 0);
+        Dictionary<int, GraphFile> graphs = [];
+        string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs");
+        foreach (string path in Directory.EnumerateFiles(graphDirectory)
+            .Where(path => string.Equals(Path.GetExtension(path), ".dat", StringComparison.OrdinalIgnoreCase)))
+        {
+            string stem = Path.GetFileNameWithoutExtension(path);
+            if (!stem.StartsWith("graph", StringComparison.OrdinalIgnoreCase)
+                || !int.TryParse(stem.AsSpan("graph".Length), out int graphId))
+            {
+                continue;
+            }
+
+            GraphFile graph = GraphFile.Read(File.ReadAllBytes(path));
+            graph.ApplyWorldOffset(TaskGeometry.FindPosition(root, graphId));
+            graphs.Add(graphId, graph);
+        }
+        Assert.True(renderer.Animate(
+            graphs,
+            solids.Caster(),
+            resources,
+            loop.Natives,
+            root,
+            variables: loop.Variables) > 0);
+        WeaponTypeRegistry weapons = new();
+        weapons.Register(loop.Natives);
+        Assert.True(weapons.Load(fileSystem, resources, loop.Natives) > 0);
+        Assert.True(renderer.Arm(mission, weapons) > 0);
+        return new Scenario(renderer, device, loop, root, cutscenes, objectives);
     }
 
-    private sealed class Scenario(SoldierRenderer renderer) : IDisposable
+    private sealed class Scenario(
+        SoldierRenderer renderer,
+        RecordingGraphicsDevice device,
+        GameLoop loop,
+        LevelTask root,
+        CutsceneRuntime? cutscenes,
+        MissionObjectiveRuntime? objectives) : IDisposable
     {
         public SoldierRenderer Renderer { get; } = renderer;
 
+        public RecordingGraphicsDevice Device { get; } = device;
+
+        public GameLoop Loop { get; } = loop;
+
+        public LevelTask Root { get; } = root;
+
+        public CutsceneRuntime? Cutscenes { get; } = cutscenes;
+
+        public MissionObjectiveRuntime? Objectives { get; } = objectives;
+
         public void Dispose() => Renderer.Dispose();
+    }
+
+    private sealed class RagdollScope : IDisposable
+    {
+        private readonly bool _previous = GameplayCVars.Ragdoll.Value;
+
+        public RagdollScope(bool enabled) => GameplayCVars.Ragdoll.Value = enabled;
+
+        public void Dispose() => GameplayCVars.Ragdoll.Value = _previous;
     }
 }

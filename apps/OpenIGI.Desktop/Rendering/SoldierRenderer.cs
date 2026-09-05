@@ -76,6 +76,7 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<string, TextureHandle> _textures = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Group> _groups = [];
     private readonly List<HeldWeapon> _weapons = [];
+    private readonly Dictionary<string, HeldWeapon> _heldWeaponsByModel = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<SoldierView, HumanHealth> _health = [];
     // FUN_004D9620 writes Human+0xA0 from FUN_004D0950(model), which reads the authored model bound
     // at model+0x78. This is the exact value used by the retail detector; the derived vertex radius is
@@ -1409,32 +1410,7 @@ public sealed class SoldierRenderer : IDisposable
                 // vision gates read this: detection and every player-origin gunshot/impact/walk event are
                 // refused for a same-team player, so the friendly patrol stands down instead of shooting us.
                 brain.PlayerIsEnemy = view.Soldier.Team != _playerTeam;
-                brain.SetScriptSound((name, attached) => _scriptSound?.Invoke(name, view.Position, attached));
-                brain.SetEyeTransform(
-                    () =>
-                    {
-                        BonePose pose = view.Pose();
-                        if (HumanAttachPoints.AiEye >= pose.BoneCount)
-                        {
-                            return new Vector3d(
-                                view.Position.X,
-                                view.Position.Y,
-                                view.Position.Z + AiSoldier.HumanSeparationEyeHeight);
-                        }
-
-                        Vector3f eye = pose.Positions[HumanAttachPoints.AiEye];
-                        return new Vector3d(
-                            view.Position.X + eye.X,
-                            view.Position.Y + eye.Y,
-                            view.Position.Z + eye.Z);
-                    },
-                    () =>
-                    {
-                        BonePose pose = view.Pose();
-                        return HumanAttachPoints.AiEye < pose.BoneCount
-                            ? pose.Rotations[HumanAttachPoints.AiEye]
-                            : view.Orientation;
-                    });
+                BindViewTracking(brain, view);
                 brain.RuntimeId = index + 1;
                 brain.SetResponseRouter(source =>
                 {
@@ -1586,6 +1562,7 @@ public sealed class SoldierRenderer : IDisposable
         ArgumentNullException.ThrowIfNull(mission);
         ArgumentNullException.ThrowIfNull(roster);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _heldWeaponsByModel.Clear();
 
         if (_interactions is { } interactions)
         {
@@ -1647,6 +1624,7 @@ public sealed class SoldierRenderer : IDisposable
                 }
 
                 member.Weapon = held;
+                _heldWeaponsByModel[weapon.GunModel] = held;
                 armed++;
             }
         }
@@ -2632,62 +2610,170 @@ public sealed class SoldierRenderer : IDisposable
     /// <summary>Runs the native generator decision before any live soldier is advanced this tick.</summary>
     private void TickGuardGenerators()
     {
+        List<(GuardGeneratorTask Generator, SoldierView Dead)> respawns = [];
         foreach ((GuardGeneratorTask generator, SoldierView view) in _guardGenerators)
         {
             bool isOn = _guardExpressions?.EvaluateCondition(generator.GenerateGuards, emptyValue: false)
                 ?? generator.GenerateGuards.Trim() is "1" or "TRUE" or "true";
-            GuardSpawnDecision decision = generator.Advance(isOn, view.IsDead);
-            if (decision == GuardSpawnDecision.Respawn)
+            // Publish the first authored life immediately, but do not consume a bounded replacement
+            // until its mesh and runtime subtree have actually been created. A transient upload failure
+            // must leave the generator eligible to retry on the next tick.
+            GuardSpawnDecision decision = generator.Advance(isOn, childIsDead: false);
+            if (decision != GuardSpawnDecision.FirstSpawn
+                && isOn
+                && view.IsDead
+                && generator.SpawnCount < generator.MaxSpawns)
             {
-                RespawnGeneratedGuard(generator, view);
+                respawns.Add((generator, view));
+            }
+        }
+
+        foreach ((GuardGeneratorTask generator, SoldierView dead) in respawns)
+        {
+            if (SpawnGeneratedGuard(generator, dead) is { } fresh)
+            {
+                _ = generator.Advance(isOn: true, childIsDead: true);
+                _guardGenerators[generator] = fresh;
             }
         }
     }
 
-    /// <summary>Reinitializes the authored HumanSoldier/HumanAI subtree after a bounded generator spawn.</summary>
-    private void RespawnGeneratedGuard(GuardGeneratorTask generator, SoldierView view)
+    /// <summary>Clones a fresh rendered Human/HumanAI subtree while leaving the killed body in the world.</summary>
+    private SoldierView? SpawnGeneratedGuard(GuardGeneratorTask generator, SoldierView deadView)
     {
-        view.Respawn();
-        if (_health.TryGetValue(view, out HumanHealth? health))
+        Member? deadMember = FindMember(deadView);
+        if (deadMember is null || !_brains.TryGetValue(deadView, out AiSoldier? deadBrain))
         {
-            health.Reset();
+            _logger.Warning(LogCategory, $"{generator.Name} could not clone its missing rendered Human subtree.");
+            return null;
         }
 
-        Member? member = FindMember(view);
-        if (member is not null)
+        Group? group = _groups.FirstOrDefault(candidate => candidate.Soldiers.Contains(deadMember));
+        if (group is null)
         {
-            member.FiredThisTick = false;
-            member.ShotSequence = 0;
-            member.FireCooldown = 0;
-            member.ReloadTicks = 0;
-            member.AmmoInClip = member.WeaponType?.RoundsPerClip ?? 0;
-            member.Ragdoll = null;
-            member.DrawnPose = null;
-            member.HasTickState = false;
-            member.PoseFlippedSinceFrame = false;
+            _logger.Warning(LogCategory, $"{generator.Name} could not find its rendered Human group.");
+            return null;
         }
 
-        _npcTargets.Remove(view);
-        _hitQuietUntil.Remove(view);
-        _footCursors.Remove(view);
-        _lastCombatState.Remove(view);
-        _combatClipMissing.Remove(view);
+        SoldierView freshView = new(deadView.Soldier, deadView.Bones.Set);
+        Vector3d spawn = new(
+            deadMember.Position.X * WorldScene.UnitsPerMetre,
+            deadMember.Position.Y * WorldScene.UnitsPerMetre,
+            deadMember.Position.Z * WorldScene.UnitsPerMetre);
+        freshView.PlaceAt(spawn, Matrix3f.FromEngineEulerAngles(0f, 0f, deadView.Soldier.Gamma));
 
-        if (_brains.TryGetValue(view, out AiSoldier? deadBrain))
+        BonePose initialPose = freshView.UnrotatedPose();
+        Vertex3D[] initialSkin = new Vertex3D[group.Geometry.Vertices.Length];
+        group.Geometry.Vertices.CopyTo(initialSkin, 0);
+        bool initialSkinReady = false;
+        if (group.Model is { } skinModel)
         {
-            AiSoldier fresh = deadBrain.Respawned(
-                view.Position,
-                view.Soldier.Gamma,
-                member is null ? null : brain => CombatWeaponState(brain, member));
-
-            _brains[view] = fresh;
-            _brainsByRuntimeId[fresh.RuntimeId] = fresh;
+            try
+            {
+                MefSkinner.Skin(
+                    skinModel,
+                    initialPose,
+                    (float)(1.0 / WorldScene.UnitsPerMetre),
+                    initialSkin);
+                initialSkinReady = true;
+            }
+            catch (ArgumentException)
+            {
+                initialSkinReady = false;
+            }
         }
+
+        MeshHandle mesh;
+        try
+        {
+            mesh = _device.CreateAnimatedMesh(initialSkin, group.Geometry.Indices);
+        }
+        catch (Exception ex) when (ex is ArgumentException or GraphicsDeviceException or InvalidOperationException)
+        {
+            _logger.Warning(LogCategory, $"{generator.Name} could not upload its cloned Human: {ex.Message}");
+            return null;
+        }
+
+        HeldWeapon? weapon = null;
+        if (deadMember.WeaponType is { } weaponType)
+        {
+            _heldWeaponsByModel.TryGetValue(weaponType.GunModel, out weapon);
+        }
+
+        Member freshMember = new(freshView, deadMember.Position, mesh)
+        {
+            IsCutsceneActor = false,
+            DrawnPose = initialPose,
+            SkinScratch = initialSkin,
+            SkinnedPose = initialSkinReady ? initialPose : null,
+            PreviousSkinnedPose = initialSkinReady ? initialPose : null,
+            WeaponType = deadMember.WeaponType,
+            Weapon = weapon,
+            AmmoInClip = deadMember.WeaponType?.RoundsPerClip ?? 0,
+        };
+        group.Soldiers.Add(freshMember);
+
+        if (_detectorMarkerScaleMetres.TryGetValue(deadView, out float markerScale))
+        {
+            _detectorMarkerScaleMetres[freshView] = markerScale;
+        }
+        if (_combat.TryGetValue(deadView, out AiCombatParameters? combat))
+        {
+            _combat[freshView] = combat;
+        }
+        _health[freshView] = new HumanHealth(
+            HumanHitZoneTable.Soldier,
+            combat?.MaximumHealth ?? HumanHitZoneTable.MaximumHealth);
+
+        AiSoldier freshBrain = deadBrain.Respawned(
+            freshView.Position,
+            freshView.Soldier.Gamma,
+            brain => CombatWeaponState(brain, freshMember));
+        // The corpse remains registered: sharing its runtime ID would advance one weapon sound
+        // twice per tick and send replies to the old guard's alerts to its replacement instead.
+        // Keep the authored Soldier.Id for mission queries, but give each live instance its own ID.
+        freshBrain.RuntimeId = checked(_brainsByRuntimeId.Keys.DefaultIfEmpty(0).Max() + 1);
+        BindViewTracking(freshBrain, freshView);
+        freshBrain.SetDefaultTarget(_playerTarget);
+        _brains[freshView] = freshBrain;
+        _brainsByRuntimeId[freshBrain.RuntimeId] = freshBrain;
+        Count++;
 
         _logger.Information(
             LogCategory,
             $"{generator.Name} spawned {generator.SpawnCount}/{generator.MaxSpawns}: "
-                + $"{view.Soldier.Name} rebuilt at its authored position.");
+                + $"{freshView.Soldier.Name} cloned at its authored position; the previous body remains.");
+        return freshView;
+    }
+
+    private void BindViewTracking(AiSoldier brain, SoldierView view)
+    {
+        brain.SetScriptSound((name, attached) => _scriptSound?.Invoke(name, view.Position, attached));
+        brain.SetEyeTransform(
+            () =>
+            {
+                BonePose pose = view.Pose();
+                if (HumanAttachPoints.AiEye >= pose.BoneCount)
+                {
+                    return new Vector3d(
+                        view.Position.X,
+                        view.Position.Y,
+                        view.Position.Z + AiSoldier.HumanSeparationEyeHeight);
+                }
+
+                Vector3f eye = pose.Positions[HumanAttachPoints.AiEye];
+                return new Vector3d(
+                    view.Position.X + eye.X,
+                    view.Position.Y + eye.Y,
+                    view.Position.Z + eye.Z);
+            },
+            () =>
+            {
+                BonePose pose = view.Pose();
+                return HumanAttachPoints.AiEye < pose.BoneCount
+                    ? pose.Rotations[HumanAttachPoints.AiEye]
+                    : view.Orientation;
+            });
     }
 
     private static IEnumerable<GuardGeneratorTask> FindGuardGenerators(GameTask task)
@@ -3041,7 +3127,17 @@ public sealed class SoldierRenderer : IDisposable
             // The chosen enemy's eye is what the vision cones and sight ray are cast at (mid-body raise,
             // like the player's mark); its feet are what combat aims at and the body draws on.
             bool useNpc = nearestEnemy is not null && nearestRange < playerRange;
-            bool hadNpcTarget = _npcTargetByBrain.ContainsKey(view);
+            bool hadNpcTarget = _npcTargetByBrain.TryGetValue(view, out SoldierView? previousNpcTarget);
+            bool invalidNpcTarget = hadNpcTarget
+                && (previousNpcTarget!.IsDead
+                    || !ConditionalContainerGate.IsTaskActive(previousNpcTarget.Soldier));
+            // Retire a dead or unregistered human's detection slot before supplying another candidate.
+            // Reusing its visible/combat state for a distant living guard prevents the mission's next
+            // IDLE dispatch from resuming the authored patrol, even though the actual target is dead.
+            if (invalidNpcTarget)
+            {
+                useNpc = false;
+            }
             bool lostNpcTarget = hadNpcTarget && !useNpc;
             Vector3d npcFeet = useNpc
                 ? new Vector3d(
@@ -3084,7 +3180,7 @@ public sealed class SoldierRenderer : IDisposable
                     // Friendly Harrison squad members are not allowed to target the player. If their
                     // previous NPC target vanished, report that target as dead so AiSoldier leaves
                     // combat and the next idle tick re-runs retail 500.qvm (700 -> 711 -> 725 -> 732).
-                    enemyAlive: lostNpcTarget && !playerIsEnemyToBrain ? false : enemyAlive,
+                    enemyAlive: invalidNpcTarget || (lostNpcTarget && !playerIsEnemyToBrain) ? false : enemyAlive,
                     enemyFeet: feet, enemyCrouching: enemyCrouching);
             }
             SeparateFromOtherSoldiers(brain, before);
@@ -5560,6 +5656,7 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         _weapons.Clear();
+        _heldWeaponsByModel.Clear();
         _groups.Clear();
         _health.Clear();
         _detectorMarkerScaleMetres.Clear();

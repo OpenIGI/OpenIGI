@@ -44,6 +44,7 @@ public sealed class MissionObjectiveRuntime
     private readonly bool _hasLevelFlow;
     private readonly bool _interfaceTimerEnabled;
     private readonly float _maximumLevelPlayTimeSeconds;
+    private bool _playerAlive = true;
     private int _tick;
     private int _levelFlowTick;
 
@@ -74,6 +75,11 @@ public sealed class MissionObjectiveRuntime
             {
                 int id = task.Id;
                 variables.BindBool(task, "isDead", () => IsSoldierDead(id), _ => { });
+                continue;
+            }
+            if (string.Equals(task.Type.Name, "HumanPlayer", StringComparison.Ordinal))
+            {
+                variables.BindBool(task, "isDead", () => !_playerAlive, _ => { });
                 continue;
             }
 
@@ -306,6 +312,24 @@ public sealed class MissionObjectiveRuntime
     /// <summary>Advances area and edit-variable tasks before dependent alarm controls run.</summary>
     /// <param name="playerPosition">The player's current world position, when one exists.</param>
     /// <param name="playerTeam">The player's team, for criteria that name a team (CRITERIA_HUMAN0).</param>
+    public void TickLevelState(Vector3d? playerPosition = null, int playerTeam = 0) =>
+        TickLevelState(playerPosition, playerTeam, extraPlayerPosition: null, playerAlive: true);
+
+    /// <summary>Advances level state with alternate player projection and liveness information.</summary>
+    /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
+    /// <param name="playerTeam">The player's team, for criteria that name a team (CRITERIA_HUMAN0).</param>
+    /// <param name="extraPlayerPosition">
+    /// An alternate projection of the same player. The desktop host passes the player body here while a
+    /// cutscene camera drives <paramref name="playerPosition"/>: retail queries humans rather than
+    /// cameras, so the stationary body must keep occupying its volume through a cinematic. The two
+    /// positions still contribute at most one player to any individual area. Mission 4's latch-less gate
+    /// (<c>AreaActivate_156.nActive</c>) drops the moment the outro camera leaves the extraction volume
+    /// otherwise, aborting <c>CutScene_2222</c> and refiring it every other tick.
+    /// </param>
+    /// <param name="playerAlive">
+    /// Whether the logical player can occupy authored areas. A dead player contributes no occupancy,
+    /// matching the retail human-registration scan used by <c>AreaActivate</c>.
+    /// </param>
     /// <remarks>
     /// These tasks precede the mission's <c>AlarmControl</c>s in retail update order. Keeping this phase
     /// separate lets the desktop host preserve that ordering while evaluating the remaining objectives
@@ -318,12 +342,20 @@ public sealed class MissionObjectiveRuntime
     /// unregisters a corpse. The renderer reports every brain to preserve <c>isDead</c> bindings, so this
     /// query also excludes soldier tasks outside the live task world, just as the collision-body pass does.
     /// </remarks>
-    public void TickLevelState(Vector3d? playerPosition = null, int playerTeam = 0)
+    public void TickLevelState(
+        Vector3d? playerPosition,
+        int playerTeam,
+        Vector3d? extraPlayerPosition,
+        bool playerAlive = true)
     {
+        _playerAlive = playerAlive;
         foreach (AreaActivation area in _areaActivations)
         {
             int count = 0;
-            if (playerPosition is { } point && area.AcceptsPlayer(playerTeam) && area.Contains(point))
+            if (playerAlive
+                && area.AcceptsPlayer(playerTeam)
+                && ((playerPosition is { } point && area.Contains(point))
+                    || (extraPlayerPosition is { } extra && area.Contains(extra))))
             {
                 count++;
             }

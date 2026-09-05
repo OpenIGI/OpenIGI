@@ -149,7 +149,40 @@ internal sealed partial class DesktopGame
             : null;
     }
 
-    /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
+    /// <summary>
+    /// Gets the player-body projection that preserves occupancy while a cutscene camera drives activation.
+    /// </summary>
+    /// <param name="playerUnits">The player's body position in engine units.</param>
+    /// <param name="cutsceneViewMetres">
+    /// The authored cutscene camera in renderer metres when it owns the frame; otherwise null.
+    /// </param>
+    /// <remarks>
+    /// Retail queries humans rather than cameras, so the stationary body never stops occupying its
+    /// volume when a cinematic starts. Without this, Mission 4's latch-less outro gate
+    /// (<c>AreaActivate_156.nActive</c>) drops as soon as the <c>CutScene_2222</c> camera leaves the
+    /// extraction volume, aborting the cutscene and refiring it every other tick. The camera remains
+    /// the primary projection (Mission 14 streams tunnel sections off it), while the body is an
+    /// alternate projection of that same logical player rather than another occupant.
+    /// </remarks>
+    internal static Vector3d? AreaActivationExtraOccupant(
+        Vector3d? playerUnits,
+        Vector3d? cutsceneViewMetres) =>
+        cutsceneViewMetres is not null && playerUnits is { } player ? player : null;
+
+    /// <summary>Feeds the desktop host's player projections and liveness into authored areas.</summary>
+    internal static void TickAreaActivations(
+        MissionObjectiveRuntime? objectives,
+        Vector3d? playerUnits,
+        int playerTeam,
+        Vector3d? cutsceneViewMetres,
+        Vector3d? freeViewMetres,
+        bool playerAlive) =>
+        objectives?.TickLevelState(
+            AreaActivationOccupant(playerUnits, cutsceneViewMetres, freeViewMetres),
+            playerTeam,
+            AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres),
+            playerAlive);
+
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
     /// <param name="id">The mission id, for the colour grade and the log.</param>
