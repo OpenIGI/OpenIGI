@@ -81,6 +81,8 @@ public sealed class SoldierRendererHitscanTests
         HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(scenario.Root.Tree.FromId(3341));
         Assert.True(CinematicActor.IsStaged(jones),
             "Scene-702 Jones is script-gated cinematic content even though retail labels his ancestor 'Intro cutscnee'.");
+        Assert.False(scenario.Cutscenes!.TryGetAttachedDrawTransform(jones, out _, out _),
+            "A dormant actor cannot capture the parked vehicle's pose before its collision is registered.");
     }
 
     [RequiresGameDataFact]

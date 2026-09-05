@@ -3811,14 +3811,15 @@ public sealed class SoldierRenderer : IDisposable
         {
             foreach (Member member in group.Soldiers)
             {
-                if (member.IsCutsceneActor)
+                if (member.IsCutsceneActor
+                    && ConditionalContainerGate.IsTaskActive(member.View.Soldier))
                 {
                     AttachCutsceneActorToMovingGround(
                         member.View,
                         member.Position * WorldScene.UnitsPerMetre,
                         attachmentPosition: null,
                         mask: WorldTraceMask.DynamicObjects,
-                        includeInactiveOwners: true,
+                        includeInactiveOwners: false,
                         preferExistingBodyContact: true);
                 }
             }

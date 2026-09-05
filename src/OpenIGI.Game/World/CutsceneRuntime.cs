@@ -190,11 +190,9 @@ public sealed class CutsceneRuntime
             _scenes.Add(new SceneState(cutscene, ReadShots(cutscene)));
         }
 
-        // QVM children of a Heli/Plane/Train are already parented by CaptureTransform
-        // (Walk is parent-then-child). Mission 1 Jones 1666 is a sibling of the car, so
-        // Human ground 0x462390 / AttachedMovement 0x462CF0 still needs the near-vehicle
-        // pass for those staged cabin copies that are not tree children.
-        AttachStagedHumansToNearestVehicle();
+        // Sibling humans acquire a moving parent from their live collision contact.
+        // Proximity at construction can capture an inactive vehicle's parked pose,
+        // baking its height difference into the actor before the scene registers.
 
         // The gate is prepared by the mission loader before this runtime is created. Refreshing here
         // replaces its former steady-game snapshot with the authored initial registration state.
@@ -283,10 +281,6 @@ public sealed class CutsceneRuntime
     {
         SimulationTick++;
         RefreshContainers(executeTransitions: true);
-        // Human_SetParent (0x462390 / 0x462CF0) binds cabin copies when the vehicle
-        // is registered. A staged mission vehicle can open after the initial walk — a one-shot
-        // attach at construction leaves its riders on the dirt beside an empty hull.
-        AttachStagedHumansToNearestVehicle();
 
         foreach (TimerState timer in _timers)
         {
@@ -1205,61 +1199,6 @@ public sealed class CutsceneRuntime
     }
 
     private static bool IsVehicle(GameTask task) => CinematicActor.IsVehicle(task);
-
-    /// <summary>
-    /// How far a staged Human may sit from a vehicle origin and still inherit its ride (cabin / ramp).
-    /// </summary>
-    private const double StagedRideAttachRadiusMetres = 20.0;
-
-    private void AttachStagedHumansToNearestVehicle()
-    {
-        List<(HumanSoldierTask Human, TransformState State)> riders = [];
-        List<(GameTask Vehicle, TransformState State)> vehicles = [];
-        foreach ((GameTask task, TransformState state) in _taskTransforms)
-        {
-            if (task is HumanSoldierTask human && CinematicActor.IsStaged(human))
-            {
-                riders.Add((human, state));
-            }
-            else if (IsVehicle(task))
-            {
-                vehicles.Add((task, state));
-            }
-        }
-
-        double maxDistance = StagedRideAttachRadiusMetres * WorldScene.UnitsPerMetre;
-        double maxDistanceSquared = maxDistance * maxDistance;
-        foreach ((HumanSoldierTask human, TransformState rider) in riders)
-        {
-            if (_attachments.ContainsKey(human))
-            {
-                continue;
-            }
-
-            GameTask? best = null;
-            TransformState? bestState = null;
-            double bestDistanceSquared = maxDistanceSquared;
-            foreach ((GameTask vehicle, TransformState vehicleState) in vehicles)
-            {
-                double dx = rider.Position.X - vehicleState.Position.X;
-                double dy = rider.Position.Y - vehicleState.Position.Y;
-                double dz = rider.Position.Z - vehicleState.Position.Z;
-                double distanceSquared = (dx * dx) + (dy * dy) + (dz * dz);
-                if (distanceSquared <= bestDistanceSquared)
-                {
-                    bestDistanceSquared = distanceSquared;
-                    best = vehicle;
-                    bestState = vehicleState;
-                }
-            }
-
-            if (best is not null && bestState is not null)
-            {
-                CaptureAttachment(human, rider, best, bestState);
-                Note($"attach human={human.Id} vehicle={best.Id} dist2={bestDistanceSquared:R}");
-            }
-        }
-    }
 
     private void Remember(GameTask task, TransformState state)
     {
