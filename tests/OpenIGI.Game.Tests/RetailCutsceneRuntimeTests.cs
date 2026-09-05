@@ -146,17 +146,26 @@ public sealed class RetailCutsceneRuntimeTests
         VehiclePhysicsRegistry physics = new(); physics.Load(resources);
         new ConditionalContainerGate(loop.Variables).Prepare(root);
         CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
-        WorldPlacement rotor = Assert.Single(world.Placements.Where(
+        WorldPlacement[] rotors = world.Placements.Where(
             placement => placement.Owner.Id == 3339
-                && placement.Instance.Name == "711_02_1"));
+                && placement.Instance.Name == "711_02_1").ToArray();
+        Assert.Equal(2, rotors.Length);
 
         runtime.Tick();
-        Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState before));
+        RotorDrawState[] before = rotors.Select(rotor =>
+        {
+            Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState state));
+            return state;
+        }).ToArray();
         runtime.Tick();
-        Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState after));
-        Assert.NotEqual(before.FirstAngle, after.FirstAngle);
-        Assert.Equal(before.SampleCount, after.SampleCount);
-        Assert.True(after.SampleCount >= 2);
+        for (int i = 0; i < rotors.Length; i++)
+        {
+            Assert.True(runtime.TryGetRotorDrawState(rotors[i], out RotorDrawState after));
+            Assert.NotEqual(before[i].GetOrientation(0), after.GetOrientation(0));
+            Assert.Equal(before[i].Position, after.Position);
+            Assert.Equal(before[i].SampleCount, after.SampleCount);
+            Assert.True(after.SampleCount >= 2);
+        }
     }
 
     [RequiresGameDataFact]

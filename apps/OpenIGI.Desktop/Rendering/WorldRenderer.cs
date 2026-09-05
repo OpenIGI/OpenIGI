@@ -162,14 +162,15 @@ public sealed class WorldRenderer : IDisposable
     /// <param name="scene">The scene to draw.</param>
     /// <param name="camera">The camera to draw from.</param>
     /// <param name="projection">The view-to-clip transform.</param>
+    /// <param name="rotorsOnly">Draw translucent rotor attachments in the forward pass.</param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
-    public void Draw(WorldScene scene, in Camera3D camera, in Matrix4f projection)
+    public void Draw(WorldScene scene, in Camera3D camera, in Matrix4f projection, bool rotorsOnly = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         _device.SetProjection(projection);
-        _device.SetDepthState(DepthState.TestAndWrite);
+        _device.SetDepthState(rotorsOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
 
         // Both facings are drawn. The original culls with its own winding rule inside a strip, and until
         // a level renders correctly there is no way to tell a culled face from a missing one — so this
@@ -182,6 +183,10 @@ public sealed class WorldRenderer : IDisposable
 
         foreach (WorldPlacement authoredPlacement in scene.Placements)
         {
+            if (authoredPlacement.IsRotor != rotorsOnly)
+            {
+                continue;
+            }
             if (GenericPickups?.IsCollected(authoredPlacement.Owner) == true)
             {
                 continue;
@@ -274,7 +279,7 @@ public sealed class WorldRenderer : IDisposable
                         modelView,
                         diffuse,
                         lightmap,
-                        BlendMode.Opaque);
+                        rotorsOnly ? BlendMode.AlphaBlend : BlendMode.Opaque);
 
                     draws++;
                     triangles += subset.TriangleCount;
@@ -287,9 +292,9 @@ public sealed class WorldRenderer : IDisposable
 
         }
 
-        LastDrawCount = draws;
-        LastTriangleCount = triangles;
-        LastLightmappedCount = lit;
+        LastDrawCount = (rotorsOnly ? LastDrawCount : 0) + draws;
+        LastTriangleCount = (rotorsOnly ? LastTriangleCount : 0) + triangles;
+        LastLightmappedCount = (rotorsOnly ? LastLightmappedCount : 0) + lit;
     }
 
     private WorldPlacement DisplayedPlacement(WorldPlacement placement)

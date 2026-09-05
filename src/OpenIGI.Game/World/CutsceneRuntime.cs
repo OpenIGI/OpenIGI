@@ -606,9 +606,11 @@ public sealed class CutsceneRuntime
         }
         else
         {
+            // Rotor tasks keep ticking when the body's AnimTask stops emitting channels.
+            // Extend the last physics phase through those idle ticks without moving the body.
             float phase = state.TerminalLandingLatched
                 ? state.PhysicsTicks * visualCollective
-                : state.RotorPhase;
+                : state.RotorPhase + (Math.Max(0, SimulationTick - state.RotorPhaseTick) * visualCollective);
             float accumulatedPhase = phase * rotor.PhasePerCollectiveTick;
             firstAngle = accumulatedPhase * 21.362831f;
         }
@@ -1342,6 +1344,7 @@ public sealed class CutsceneRuntime
                 transform.Control = default;
                 transform.Heading = 0f;
                 transform.RotorPhase = 0f;
+                transform.RotorPhaseTick = SimulationTick;
                 transform.AngularMomentum = default;
                 transform.QueuedRotorForce = default;
                 transform.QueuedRotorTorque = default;
@@ -1438,6 +1441,7 @@ public sealed class CutsceneRuntime
                 transform.Thrust = 0f;
             }
             transform.RotorPhase += transform.Thrust;
+            transform.RotorPhaseTick = SimulationTick;
             if (target is DeclaredTask liveHeli)
             {
                 transform.CollisionEnabled = Bool(liveHeli, "Collision detection");
@@ -2660,6 +2664,7 @@ public sealed class CutsceneRuntime
         public bool TerminalLandingEventLogged { get; set; }
         public Vector3d TerminalLandingPosition { get; set; }
         public float RotorPhase { get; set; }
+        public int RotorPhaseTick { get; set; }
         public Vector3f AngularMomentum { get; set; }
         public int PhysicsTicks { get; set; }
         public float RotorAxialCoefficient { get; set; }
