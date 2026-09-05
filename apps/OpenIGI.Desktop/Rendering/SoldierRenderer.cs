@@ -3829,6 +3829,17 @@ public sealed class SoldierRenderer : IDisposable
     private void CaptureTickState(Member member)
     {
         (Vector3d where, Matrix3f orientation) = TickPlacementOf(member);
+        if (Environment.GetEnvironmentVariable("OPENIGI_TRACE_CUTSCENE_ACTOR") is { } traceActor
+            && traceActor == member.View.Soldier.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            && _tick % 30 == 0)
+        {
+            BoneClip? clip = member.View.Bones.SourceOf(0);
+            _logger.Warning(LogCategory,
+                $"[cutscene-actor] tick={_tick} actor={traceActor} active={ConditionalContainerGate.IsTaskActive(member.View.Soldier)} "
+                + $"scene={Cutscenes?.ActiveScene?.Id} staged={member.IsCutsceneActor} where={where} "
+                + $"view={member.View.Position} clip={member.View.CurrentAnimation} time={clip?.Time} "
+                + $"root={member.View.RootSample} delta={member.View.RootMotion()}");
+        }
         float facing = FacingOf(orientation);
 
         member.PrevTickWhere = member.HasTickState ? member.TickWhere : where;
