@@ -132,6 +132,34 @@ public sealed class RetailCutsceneRuntimeTests
     }
 
     [RequiresGameDataFact]
+    public void ParkedMissionThreeHelicopterKeepsItsAuthoredRotorPresentationMoving()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(3);
+        WorldScene world = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+        WorldPlacement rotor = Assert.Single(world.Placements.Where(
+            placement => placement.Owner.Id == 3339
+                && placement.Instance.Name == "711_02_1"));
+
+        runtime.Tick();
+        Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState before));
+        runtime.Tick();
+        Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState after));
+        Assert.NotEqual(before.FirstAngle, after.FirstAngle);
+        Assert.Equal(before.SampleCount, after.SampleCount);
+        Assert.True(after.SampleCount >= 2);
+    }
+
+    [RequiresGameDataFact]
     public void MissionOneHelicopterMatchesRetailRigidBodyTrace()
     {
         VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));

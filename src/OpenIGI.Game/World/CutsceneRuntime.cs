@@ -587,12 +587,36 @@ public sealed class CutsceneRuntime
         // accumulator with the engine's 21.362831 factor and emits BladeSamples copies, separated by
         // PhaseStep * collective. The repeated blur meshes are why the main and tail rotors look like
         // discs in retail instead of the single frozen blade that the initial renderer produced.
-        float accumulatedPhase = state.RotorPhase * rotor.PhasePerCollectiveTick;
-        float firstAngle = accumulatedPhase * 21.362831f;
-        float sampleStep = rotor.PhaseStep * state.Thrust;
+        // A terminal landing parks the physical airframe and clears its live thrust/phase. The
+        // authored helicopter still has its visible rotor presentation in retail/editor previews,
+        // though: keep a draw-only phase running from the original collective while the body remains
+        // stationary. This does not feed lift or torque back into the landed physics state.
+        bool previewOnly = !state.IsDynamic || state.TerminalLandingLatched;
+        float visualCollective = previewOnly && state.OriginalThrust > 0f
+            ? Math.Clamp(state.OriginalThrust, 0f, 1f)
+            : state.Thrust;
+        float firstAngle;
+        if (previewOnly && visualCollective > 0f)
+        {
+            // The editor preview advances at the visible retail rates (15 rad/s for the main disc,
+            // 25 rad/s in the opposite direction for a tail disc). A parked/terminal Heli has no
+            // live physics phase to consume, so use the runtime tick as the presentation clock.
+            float angularSpeed = rotor.IsTailRotor ? -25f : 15f;
+            firstAngle = (SimulationTick / 30f) * angularSpeed * visualCollective;
+        }
+        else
+        {
+            float phase = state.TerminalLandingLatched
+                ? state.PhysicsTicks * visualCollective
+                : state.RotorPhase;
+            float accumulatedPhase = phase * rotor.PhasePerCollectiveTick;
+            firstAngle = accumulatedPhase * 21.362831f;
+        }
+        float sampleStep = rotor.PhaseStep * visualCollective;
 
         float maximumTilt = rotor.MaximumTilt;
-        float tilt = -Math.Clamp(1f - state.Thrust, -0.1f, 1f) * maximumTilt;
+        float tiltCollective = previewOnly ? visualCollective : state.Thrust;
+        float tilt = -Math.Clamp(1f - tiltCollective, -0.1f, 1f) * maximumTilt;
         float originalCollective = state.OriginalThrust;
         if (maximumTilt != 0f && originalCollective != 0f)
         {
