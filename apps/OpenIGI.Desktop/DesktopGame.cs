@@ -786,6 +786,8 @@ internal sealed partial class DesktopGame : IDisposable
             ? Math.Max(0, configuredCaptureTick)
             : 90;
         int cutsceneCaptureCount = 0;
+        int cutsceneCaptureStartTick = cutsceneCaptureTick;
+        CutSceneTask? previousCapturedScene = null;
         int cutsceneCaptureLimit = int.TryParse(
             Environment.GetEnvironmentVariable("OPENIGI_CUTSCENE_CAPTURE_COUNT"),
             out int configuredCaptureCount) && configuredCaptureCount > 0
@@ -5638,6 +5640,14 @@ internal sealed partial class DesktopGame : IDisposable
 
             // Authored-scene capture: write numbered stills of the requested scene every 90 logic ticks
             // (3 s) up to the still budget. Test-only; driven by environment variables.
+            // A chained intro resets its scene-local clock. Do not carry the previous scene's next
+            // capture threshold into the next scene and silently miss its early/short shots.
+            if (captureCutscene && _cutscenes?.ActiveScene is { } observedScene
+                && !ReferenceEquals(previousCapturedScene, observedScene))
+            {
+                previousCapturedScene = observedScene;
+                cutsceneCaptureTick = cutsceneCaptureStartTick;
+            }
             if (captureCutscene
                 && cutsceneCaptureCount < cutsceneCaptureLimit
                 && _cutscenes?.ActiveScene is { } activeCutscene
