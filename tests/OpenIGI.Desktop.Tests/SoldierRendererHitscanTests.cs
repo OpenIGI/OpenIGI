@@ -48,6 +48,41 @@ public sealed class SoldierRendererHitscanTests
     private const double PresentationOffsetMetres = 8.0;
 
     [RequiresGameDataFact]
+    public void MissionThreeDisembarkRootTrackConsumesOnlyItsAuthoredDisplacement()
+    {
+        using Scenario scenario = CreateScenario(missionNumber: 3);
+        SoldierView jones = Assert.Single(RendererSoldiers(scenario.Renderer),
+            view => view.Soldier.Id == 3341);
+        Assert.True(jones.PlayStateAnimation(244, loops: false));
+        BoneClip clip = jones.Bones.SourceOf(0)!;
+        Vector3f start = clip.SampleRoot();
+        Vector3d accumulated = default;
+        for (int tick = 1; tick <= 270; tick++)
+        {
+            jones.Tick();
+            Vector3f delta = jones.RootMotion();
+            accumulated += new Vector3d(delta.X, delta.Y, delta.Z);
+            Vector3f sample = clip.SampleRoot();
+            Vector3d expected = new(sample.X - start.X, sample.Y - start.Y, sample.Z - start.Z);
+            Assert.True((accumulated - expected).Length < 0.1,
+                $"tick={tick} sum={accumulated} sampleDelta={expected}");
+            if (tick <= 181)
+            {
+                Assert.Equal(Vector3d.Zero, accumulated);
+            }
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void MissionThreeDisembarkActorUsesAuthoredStagingDespiteMisspelledContainerLabel()
+    {
+        using Scenario scenario = CreateScenario(prepareContainers: true, missionNumber: 3);
+        HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(scenario.Root.Tree.FromId(3341));
+        Assert.True(CinematicActor.IsStaged(jones),
+            "Scene-702 Jones is script-gated cinematic content even though retail labels his ancestor 'Intro cutscnee'.");
+    }
+
+    [RequiresGameDataFact]
     public void StagedAnyaKeepsHerAuthoredModelOrigin()
     {
         using Scenario scenario = CreateScenario(prepareContainers: true);
@@ -1148,7 +1183,7 @@ public sealed class SoldierRendererHitscanTests
             && point.Z >= Minimum.Z && point.Z <= Maximum.Z;
     }
 
-    private static Scenario CreateScenario(bool prepareContainers = false)
+    private static Scenario CreateScenario(bool prepareContainers = false, int missionNumber = 4)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -1167,7 +1202,7 @@ public sealed class SoldierRendererHitscanTests
             missions,
             fileSystem,
             resources,
-            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(4);
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(missionNumber);
 
         CutsceneRuntime? cutscenes = null;
         MissionObjectiveRuntime? objectives = null;
@@ -1195,7 +1230,7 @@ public sealed class SoldierRendererHitscanTests
             mission.Terrain is { IsUsable: true } terrain ? terrain : null,
             solids.Caster()) > 0);
         Dictionary<int, GraphFile> graphs = [];
-        string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", "level4", "graphs");
+        string graphDirectory = Path.Combine(GameData.RequireRoot(), "missions", "location0", $"level{missionNumber}", "graphs");
         foreach (string path in Directory.EnumerateFiles(graphDirectory)
             .Where(path => string.Equals(Path.GetExtension(path), ".dat", StringComparison.OrdinalIgnoreCase)))
         {

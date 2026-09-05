@@ -1,9 +1,10 @@
+using System.Text.RegularExpressions;
 using OpenIGI.Engine.Tasks;
 
 namespace OpenIGI.Game.World;
 
 /// <summary>Classifies humans staged by an authored cutscene rather than gameplay AI.</summary>
-public static class CinematicActor
+public static partial class CinematicActor
 {
     /// <summary>Returns whether a task belongs to an authored intro/outro cutscene subtree.</summary>
     public static bool IsStaged(GameTask task)
@@ -23,7 +24,9 @@ public static class CinematicActor
                 return true;
             }
 
-            if (ancestor is ConditionalContainerTask container && IsCutsceneContainer(container.Label))
+            if (ancestor is ConditionalContainerTask container
+                && (IsCutsceneContainer(container.Label)
+                    || ActiveCutsceneCondition().IsMatch(container.Condition)))
             {
                 return true;
             }
@@ -43,4 +46,10 @@ public static class CinematicActor
         || label.Contains("Friendly Forces", StringComparison.OrdinalIgnoreCase)
         || label.Contains("Guys running for heli", StringComparison.OrdinalIgnoreCase)
         || label.Contains("Harrison & Men in Heli", StringComparison.OrdinalIgnoreCase);
+
+    // OBJECTS.QVM is authoritative; editor labels are not. Level 3 spells its parent
+    // "Intro cutscnee", while the child explicitly requires CutScene_702.isRun.
+    // A completion-only gate does not make ordinary post-intro gameplay cinematic.
+    [GeneratedRegex(@"(?:^|[(&|])\s*CutScene_[0-9]+\.(?:isRun|nTick)\b|!\s*CutScene_[0-9]+\.isFinished\b", RegexOptions.CultureInvariant)]
+    private static partial Regex ActiveCutsceneCondition();
 }
