@@ -68,7 +68,8 @@ public sealed class SoldierRendererHitscanTests
                 $"tick={tick} sum={accumulated} sampleDelta={expected}");
             if (tick <= 181)
             {
-                Assert.Equal(Vector3d.Zero, accumulated);
+                // Interpolating equal float keys can leave sub-unit roundoff.
+                Assert.InRange(accumulated.Length, 0d, 0.001d);
             }
         }
     }
