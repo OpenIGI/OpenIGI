@@ -1,22 +1,22 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Formats.Ai;
-using OpenIGI.Scripting.Qvm;
-using OpenIGI.Scripting.Runtime;
 using OpenIGI.Formats.Animation;
-using OpenIGI.Game.Ai;
 using OpenIGI.Formats.Textures;
 using OpenIGI.Formats.World;
 using OpenIGI.Game;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Physics;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Rendering;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
 
 namespace OpenIGI.Desktop;
 

@@ -1,4 +1,4 @@
-﻿using OpenIGI.Core.Numerics;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.Weapons;
@@ -1519,11 +1519,13 @@ public sealed class AiSoldier
     /// Reads the respawned brain's weapon state. The owner is supplied so renderer callbacks cannot retain
     /// the dead brain while querying mounted-gun state.
     /// </param>
-    /// <returns>A new brain with the same level wiring and no state carried from the dead instance.</returns>
+    /// <returns>A new brain with the same level wiring and reset AI execution state.</returns>
     /// <remarks>
     /// IGI1's <c>0x488000</c>/<c>0x488040</c> path constructs the whole stored child subtree again. A new
     /// <see cref="AiSoldier"/> is the managed equivalent: CREATE will run again on its first tick, while
     /// immutable level services (graph, scripts, collision queries and combat row) are reattached here.
+    /// The caller must assign a unique <see cref="RuntimeId"/> before registering the new brain alongside
+    /// retained corpses, and rebind view-tracking callbacks to its new rendered body.
     /// </remarks>
     public AiSoldier Respawned(
         Vector3d position,
@@ -3437,10 +3439,10 @@ public sealed class AiSoldier
         // Orientation column 0 is the body's right vector. At heading zero forward is +Y and right +X.
         double rightX = Math.Cos(Facing);
         double rightY = Math.Sin(Facing);
-        const double probe = 3.0 * GraphNode.MetreInUnits;
+        const double Probe = 3.0 * GraphNode.MetreInUnits;
         AiRollSpace space = AiRollSpace.None;
         if (IsInsideNodeBox(
-            new Vector3d(Position.X - (rightX * probe), Position.Y - (rightY * probe), Position.Z),
+            new Vector3d(Position.X - (rightX * Probe), Position.Y - (rightY * Probe), Position.Z),
             node,
             devianceMetres: 0.0))
         {
@@ -3448,7 +3450,7 @@ public sealed class AiSoldier
         }
 
         if (IsInsideNodeBox(
-            new Vector3d(Position.X + (rightX * probe), Position.Y + (rightY * probe), Position.Z),
+            new Vector3d(Position.X + (rightX * Probe), Position.Y + (rightY * Probe), Position.Z),
             node,
             devianceMetres: 0.0))
         {

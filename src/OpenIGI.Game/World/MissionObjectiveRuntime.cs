@@ -319,12 +319,8 @@ public sealed class MissionObjectiveRuntime
     /// <param name="playerPosition">The player's primary world projection, when one exists.</param>
     /// <param name="playerTeam">The player's team, for criteria that name a team (CRITERIA_HUMAN0).</param>
     /// <param name="extraPlayerPosition">
-    /// An alternate projection of the same player. The desktop host passes the player body here while a
-    /// cutscene camera drives <paramref name="playerPosition"/>: retail queries humans rather than
-    /// cameras, so the stationary body must keep occupying its volume through a cinematic. The two
-    /// positions still contribute at most one player to any individual area. Mission 4's latch-less gate
-    /// (<c>AreaActivate_156.nActive</c>) drops the moment the outro camera leaves the extraction volume
-    /// otherwise, aborting <c>CutScene_2222</c> and refiring it every other tick.
+    /// An alternate projection of the same logical player in world units. The two positions contribute
+    /// at most one player to each area. The host chooses projections according to its camera/body policy.
     /// </param>
     /// <param name="playerAlive">
     /// Whether the logical player can occupy authored areas. A dead player contributes no occupancy,

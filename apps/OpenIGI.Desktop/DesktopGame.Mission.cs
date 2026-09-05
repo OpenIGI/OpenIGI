@@ -1,13 +1,13 @@
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Engine.Audio;
-using OpenIGI.Formats.Ai;
-using OpenIGI.Formats.World;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Engine.Audio;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Level;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Formats.Ai;
+using OpenIGI.Formats.World;
 using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Menus;
@@ -183,6 +183,7 @@ internal sealed partial class DesktopGame
             AreaActivationExtraOccupant(playerUnits, cutsceneViewMetres),
             playerAlive);
 
+    /// <summary>Builds everything a loaded level needs in order to be played, and stands the player in it.</summary>
     /// <param name="loaded">The mission's descriptor, packs and terrain.</param>
     /// <param name="levelRoot">The level's task tree, already loaded and gated.</param>
     /// <param name="id">The mission id, for the colour grade and the log.</param>
@@ -1131,8 +1132,8 @@ internal sealed partial class DesktopGame
             _gunPickupRenderer?.Dispose();
             _gunPickupRenderer = null;
             _heldWeapon?.Dispose();
-    _hud?.Dispose();
-    _marks?.Dispose();
+            _hud?.Dispose();
+            _marks?.Dispose();
             _tracers?.Dispose();
             _tracers = null;
             _impactParticles?.Dispose();

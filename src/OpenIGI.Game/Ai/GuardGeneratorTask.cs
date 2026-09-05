@@ -35,7 +35,7 @@ public partial class GuardGeneratorTask : ContainerTask
     /// <summary>Advances the native generator state after its expression and child state have been sampled.</summary>
     /// <param name="isOn">The evaluated <c>Generate guards</c> expression.</param>
     /// <param name="childIsDead">Whether the currently spawned authored child has died.</param>
-    /// <returns>Whether the caller must expose the first instance or reinitialize a dead one.</returns>
+    /// <returns>Whether the update records the first instance or a replacement; see <see cref="GuardSpawnDecision"/>.</returns>
     public GuardSpawnDecision Advance(bool isOn, bool childIsDead)
     {
         IsOn = isOn;
@@ -80,6 +80,6 @@ public enum GuardSpawnDecision
     /// <summary>The authored template became its first live instance.</summary>
     FirstSpawn,
 
-    /// <summary>The dead live instance must be rebuilt from the authored template.</summary>
+    /// <summary>A fresh instance replaces the dead guard; the previous corpse remains in the world.</summary>
     Respawn,
 }

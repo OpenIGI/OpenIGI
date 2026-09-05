@@ -1,34 +1,34 @@
 using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
-using OpenIGI.Desktop.Audio;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
-using OpenIGI.Frontend;
-using OpenIGI.Frontend.Saves;
-using OpenIGI.Game.Profiles;
-using OpenIGI.Rendering.Presets;
-using OpenIGI.UI;
-using OpenIGI.UI.Animation;
-using OpenIGI.UI.Layout;
-using OpenIGI.UI.Text;
-using OpenIGI.UI.Widgets;
 using OpenIGI.Core.Numerics;
+using OpenIGI.Desktop.Audio;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Frontend;
+using OpenIGI.Frontend.Saves;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
 using OpenIGI.Game.Player;
+using OpenIGI.Game.Profiles;
 using OpenIGI.Game.Weapons;
 using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
 using OpenIGI.Rendering.OpenGL;
+using OpenIGI.Rendering.Presets;
+using OpenIGI.UI;
+using OpenIGI.UI.Animation;
+using OpenIGI.UI.Layout;
+using OpenIGI.UI.Text;
+using OpenIGI.UI.Widgets;
 
 namespace OpenIGI.Desktop;
 
@@ -2952,11 +2952,11 @@ internal sealed partial class DesktopGame : IDisposable
                         eye.Position.X * WorldScene.UnitsPerMetre,
                         eye.Position.Y * WorldScene.UnitsPerMetre,
                         eye.Position.Z * WorldScene.UnitsPerMetre);
-                    const double rangeSpanUnits = 1000d * WorldScene.UnitsPerMetre;
+                    const double RangeSpanUnits = 1000d * WorldScene.UnitsPerMetre;
                     Vector3d rangeEnd = new(
-                        rangeOrigin.X + (forward.X * rangeSpanUnits),
-                        rangeOrigin.Y + (forward.Y * rangeSpanUnits),
-                        rangeOrigin.Z + (forward.Z * rangeSpanUnits));
+                        rangeOrigin.X + (forward.X * RangeSpanUnits),
+                        rangeOrigin.Y + (forward.Y * RangeSpanUnits),
+                        rangeOrigin.Z + (forward.Z * RangeSpanUnits));
                     WorldTraceCast rangeTrace = _playerTerrain is { } rangeGround
                         ? WorldTrace.Nearest(rangeSolids.Tracer(), TerrainRayTrace.Caster(rangeGround))
                         : rangeSolids.Tracer();
@@ -3462,9 +3462,9 @@ internal sealed partial class DesktopGame : IDisposable
                         eye.Position.Z * WorldScene.UnitsPerMetre);
                     Matrix3f orient = eye.Orientation;
                     Vector3d fwd = new(orient.M31, orient.M32, orient.M33);
-                    const double reachU = 300.0 * WorldScene.UnitsPerMetre;
+                    const double ReachU = 300.0 * WorldScene.UnitsPerMetre;
                     Vector3d endU = new(
-                        originU.X + (fwd.X * reachU), originU.Y + (fwd.Y * reachU), originU.Z + (fwd.Z * reachU));
+                        originU.X + (fwd.X * ReachU), originU.Y + (fwd.Y * ReachU), originU.Z + (fwd.Z * ReachU));
 
                     string target = "target: (nothing / terrain / sky)";
                     string? detect = null;
@@ -3477,7 +3477,7 @@ internal sealed partial class DesktopGame : IDisposable
                     }
 
                     if (_soldiers is not null
-                        && _soldiers.TryPick(originU, fwd, reachU, out string botName, out double botT, out Vector3d feetU, out int botZone)
+                        && _soldiers.TryPick(originU, fwd, ReachU, out string botName, out double botT, out Vector3d feetU, out int botZone)
                         && botT < bestT)
                     {
                         // The floor the game's collision puts under this soldier's feet — so a sunk guard shows
@@ -3504,7 +3504,7 @@ internal sealed partial class DesktopGame : IDisposable
                         ? _player.Body.Eye
                         : _camera.Position;
                     if (_soldiers is not null
-                        && _soldiers.TryDetectionInfo(originU, fwd, reachU, watchedEye, out string detectInfo))
+                        && _soldiers.TryDetectionInfo(originU, fwd, ReachU, watchedEye, out string detectInfo))
                     {
                         detect = detectInfo;
                     }
@@ -3549,8 +3549,8 @@ internal sealed partial class DesktopGame : IDisposable
                     // A centre reticle so the target readout can be aimed — the crosshair the free camera lacks.
                     float cx = _window.Width * 0.5f;
                     float cy = _window.Height * 0.5f;
-                    const float len = 9f;
-                    const float th = 1f;
+                    const float Len = 9f;
+                    const float Th = 1f;
                     static Bgra32 White() => new(255, 255, 255, 220);
                     void Bar(float x0, float y0, float x1, float y1) => batch.DrawQuad(
                         TextureHandle.None,
@@ -3558,8 +3558,8 @@ internal sealed partial class DesktopGame : IDisposable
                         new Vertex2D(x1, y0, 1f, 0f, White()),
                         new Vertex2D(x1, y1, 1f, 1f, White()),
                         new Vertex2D(x0, y1, 0f, 1f, White()));
-                    Bar(cx - len, cy - th, cx + len, cy + th);
-                    Bar(cx - th, cy - len, cx + th, cy + len);
+                    Bar(cx - Len, cy - Th, cx + Len, cy + Th);
+                    Bar(cx - Th, cy - Len, cx + Th, cy + Len);
 
                     batch.End();
                     _device.EndStageTiming();

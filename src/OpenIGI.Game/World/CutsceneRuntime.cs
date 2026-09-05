@@ -1675,15 +1675,15 @@ public sealed class CutsceneRuntime
     private static Vector3d ResolveEditCameraPosition(
         Vector3d authored, Vector3d sceneOrigin, ref Vector3d lastWorld)
     {
-        const double localRadius = 1_000.0 * WorldScene.UnitsPerMetre;
+        const double LocalRadius = 1_000.0 * WorldScene.UnitsPerMetre;
         double authoredSquared = authored.LengthSquared;
-        if (authoredSquared < localRadius * localRadius
-            && sceneOrigin.LengthSquared > localRadius * localRadius)
+        if (authoredSquared < LocalRadius * LocalRadius
+            && sceneOrigin.LengthSquared > LocalRadius * LocalRadius)
         {
             return lastWorld + authored;
         }
 
-        if (authoredSquared >= localRadius * localRadius)
+        if (authoredSquared >= LocalRadius * LocalRadius)
         {
             lastWorld = authored;
         }
@@ -1884,9 +1884,9 @@ public sealed class CutsceneRuntime
         // body to just under it, and take the first (highest) surface.
         if (allowDeepRecovery && !found && _terrain is { IsUsable: true } deepTerrain)
         {
-            const double step = 4.0 * WorldScene.UnitsPerMetre;
-            const double high = 2_000.0 * WorldScene.UnitsPerMetre;
-            for (double probeZ = position.Z + high; probeZ >= position.Z - step; probeZ -= step)
+            const double Step = 4.0 * WorldScene.UnitsPerMetre;
+            const double High = 2_000.0 * WorldScene.UnitsPerMetre;
+            for (double probeZ = position.Z + High; probeZ >= position.Z - Step; probeZ -= Step)
             {
                 if (!TerrainHeightQuery.TryGetGround(
                         deepTerrain, position.X, position.Y, probeZ, out TerrainGround deep)
@@ -2284,8 +2284,8 @@ public sealed class CutsceneRuntime
         TransformState transform,
         HelicopterPhysicsDefinition physics)
     {
-        const float gravity = 44.600887f;
-        const float angularDamping = 0.92000002f;
+        const float Gravity = 44.600887f;
+        const float AngularDamping = 0.92000002f;
         Matrix3f attitude = transform.Orientation;
 
         // The airborne stabilizer right-multiplies a small local-X correction before forces are
@@ -2365,7 +2365,7 @@ public sealed class CutsceneRuntime
         Vector3f worldAcceleration = new(
             Vector3f.Dot(attitude.Row1, localAcceleration),
             Vector3f.Dot(attitude.Row2, localAcceleration),
-            Vector3f.Dot(attitude.Row3, localAcceleration) - gravity);
+            Vector3f.Dot(attitude.Row3, localAcceleration) - Gravity);
         // The rigid accumulator stores world velocity as three Real32 values at +264. Position is
         // Real64, but each step adds the already-rounded velocity. Keeping velocity as an unrounded
         // Vector3d slowly pushes linked cameras metres away over a long cutscene even when every force
@@ -2394,7 +2394,7 @@ public sealed class CutsceneRuntime
         {
             transform.Orientation = attitude;
         }
-        transform.AngularMomentum *= angularDamping;
+        transform.AngularMomentum *= AngularDamping;
 
         // Child rotor tasks now observe the post-integration attitude and queue local force records for
         // the next Heli::Tick, matching the retail task traversal order.
@@ -2412,8 +2412,8 @@ public sealed class CutsceneRuntime
         Matrix3f attitude,
         HelicopterPhysicsDefinition physics)
     {
-        const float gravity = 44.600887f;
-        float lift = physics.Mass * transform.Thrust * gravity;
+        const float Gravity = 44.600887f;
+        float lift = physics.Mass * transform.Thrust * Gravity;
         if (lift != 0f)
         {
             // Rotor::Tick (0x42D440) takes the angle between the horizontal projection of column two

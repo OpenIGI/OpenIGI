@@ -7,10 +7,11 @@ using Xunit;
 namespace OpenIGI.Scripting.Tests;
 
 /// <summary>
-/// Verifies the loader, the disassembler and the interpreter against the retail scripts.
+/// Verifies the loader, the disassembler and the interpreter using controlled config programs and retail scripts.
 /// </summary>
 /// <remarks>
-/// Skipped unless <c>IGI_GAME_PATH</c> points at an original installation. No game file is committed.
+/// Only retail-script checks require <c>IGI_GAME_PATH</c> to point at an original installation;
+/// controlled-config checks run without game data. No game file is committed.
 /// </remarks>
 public sealed class ConfigQvmGoldenTests
 {
