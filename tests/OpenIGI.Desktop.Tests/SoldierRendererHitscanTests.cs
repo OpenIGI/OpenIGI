@@ -48,6 +48,27 @@ public sealed class SoldierRendererHitscanTests
     private const double PresentationOffsetMetres = 8.0;
 
     [RequiresGameDataFact]
+    public void StagedAnyaKeepsHerAuthoredModelOrigin()
+    {
+        using Scenario scenario = CreateScenario(prepareContainers: true);
+        SoldierView anya = Assert.Single(RendererSoldiers(scenario.Renderer),
+            view => view.Soldier.Model == "015_01_1");
+        object member = MemberFor(scenario.Renderer, anya);
+        Assert.True(Get<bool>(member, "IsCutsceneActor"));
+        Assert.Equal(6, anya.Soldier.BoneHierarchy);
+        Assert.Equal(5, anya.StandAnimation);
+
+        MethodInfo placement = typeof(SoldierRenderer).GetMethod(
+            "TickPlacementOf", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var actual = ((Vector3d Where, Matrix3f Orientation))placement.Invoke(
+            scenario.Renderer, [member])!;
+        Vector3d expected = anya.Soldier.Position / Metre;
+        Assert.True((actual.Where - expected).Length < 1e-6,
+            $"staged Anya authored={expected}, rendered={actual.Where}, root={anya.RootSample}; "
+            + "the model origin must not receive the absolute root height twice");
+    }
+
+    [RequiresGameDataFact]
     public void DefaultPlayerHitscanPathRegistersTheMeshItAimsAt()
     {
         // Tactical ballistics is opt-in, so a normal player shot resolves synchronously through this

@@ -817,16 +817,12 @@ public sealed class SoldierRenderer : IDisposable
                             return new CutsceneTargetPose(member.View.Position, member.View.Orientation);
                         }
 
-                        // The task position is the Human's planted feet. Human's ground pass writes
-                        // Human+32 at ground + Human+1300, so even a dormant cinematic performer has
-                        // its playing clip's root height above the authored floor. Keeping the bare task
-                        // Z is what buried the garage guard to his waist during Mission 1's briefing.
+                        // A stationary staged task retains its authored model origin. Native
+                        // 0x462390 derives feet by subtracting the bone/root offset from that origin;
+                        // it does not treat the authored origin itself as a floor height.
                         HumanSoldierTask staged = member.View.Soldier;
                         return new CutsceneTargetPose(
-                            new Vector3d(
-                                staged.Position.X,
-                                staged.Position.Y,
-                                staged.Position.Z + member.View.RootSample.Z),
+                            staged.Position,
                             Matrix3f.FromEngineEulerAngles(0f, 0f, staged.Gamma));
                     }
                     return new CutsceneTargetPose(member.View.Position, member.View.Orientation);
@@ -3921,10 +3917,9 @@ public sealed class SoldierRenderer : IDisposable
             {
                 return (soldier.Position / WorldScene.UnitsPerMetre, soldier.Orientation);
             }
-            return (new Vector3d(
-                member.Position.X,
-                member.Position.Y,
-                member.Position.Z + (soldier.RootSample.Z / WorldScene.UnitsPerMetre)), soldier.Orientation);
+            // The authored model origin is already staged (Anya HQ, vehicle briefing sets).
+            // Adding an absolute root sample here lifts the whole set-relative performance.
+            return (member.Position, soldier.Orientation);
         }
 
         // A soldier with a brain is drawn where its AI put it, lifted by the CLIP'S OWN ROOT HEIGHT.
