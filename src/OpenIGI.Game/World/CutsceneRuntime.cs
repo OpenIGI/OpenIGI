@@ -181,6 +181,11 @@ public sealed class CutsceneRuntime
             }
         }
 
+        // Capture the whole authored hierarchy before parking a vehicle. Moving a
+        // parent first makes its still-authored child positions acquire the parking
+        // displacement as a permanent local offset (Level 3's pilot floats above it).
+        RestCollisionHelisOnSupport();
+
         // EditCamera caches every Link task's initial world transform during retail
         // UpdateInternalData.  Build those keys only after all task transforms exist: Train tasks do
         // not author a world Position at all, and their initial frame must first be evaluated from the
@@ -1142,10 +1147,6 @@ public sealed class CutsceneRuntime
             // the contact solver below uses it only to prevent terrain penetration. The QVM
             // collective and cyclic controls remain free to lift and steer the airframe.
             state.CollisionEnabled = Bool(declared, "Collision detection");
-            if (state.CollisionEnabled)
-            {
-                RestHeliOnSupport(task, state);
-            }
         }
         bool attached = CaptureAttachment(task, state);
         if (task.Id != GameTask.NoId || attached)

@@ -30,6 +30,22 @@ namespace OpenIGI.Game.Tests;
 public sealed class RetailMissionFourPlaneRideTests
 {
     [RequiresGameDataFact]
+    public void MissionThreePilotKeepsItsAuthoredCabinOffsetWhenHelicopterParks()
+    {
+        (CutsceneRuntime runtime, LevelTask root, _, _) = LoadMission(3);
+        DeclaredTask heli = Assert.IsType<DeclaredTask>(root.Tree.FromId(603));
+        DeclaredTask pilot = Assert.Single(heli.Children.OfType<DeclaredTask>(),
+            child => child.TryGetValue("Model", out object? model) && Equals(model, "715_01_1"));
+        Assert.True(heli.TryGetValue("Position", out object? heliPosition));
+        Assert.True(pilot.TryGetValue("Position", out object? pilotPosition));
+        double authoredDistance = (Assert.IsType<Vector3d>(pilotPosition)
+            - Assert.IsType<Vector3d>(heliPosition)).Length / WorldScene.UnitsPerMetre;
+        Assert.True(runtime.TryGetDrawTransform(heli, out Vector3d heliDraw, out _));
+        Assert.True(runtime.TryGetDrawTransform(pilot, out Vector3d pilotDraw, out _));
+        Assert.InRange(Math.Abs((pilotDraw - heliDraw).Length - authoredDistance), 0d, 0.00001d);
+    }
+
+    [RequiresGameDataFact]
     public void MissionThreePlanesMoveAlongAuthoredForwardAfterTickZero()
     {
         (CutsceneRuntime runtime, LevelTask root, _, _) = LoadMission(3);
