@@ -14,7 +14,7 @@ function-by-function transliteration.
 
 ## What runs today
 
-A mission is playable end to end, without sound.
+A mission is playable end to end.
 
 **Engine.** A fixed 30 Hz schedule built on absolute per-tick deadlines rather than a delta
 accumulator, with the original's catch-up cap, one-render-per-tick latch and excluded-time stopwatch.
@@ -36,9 +36,9 @@ profiles — drawn over a live mission backdrop, which is promoted into the miss
 Play rather than being thrown away and reloaded. The C-key map computer is there in both forms: the
 retail handheld panel, and a full-screen tactical interface.
 
-**Not yet.** There is **no audio** — the OpenAL backend is an empty project. Global illumination was
-removed for a clean-slate reimplementation, so interiors light from the game's own baked lightmaps and
-a flat ambient term. Only the desktop platforms are wired up; the mobile and web backends are planned
+**Audio.** The desktop host plays mission sounds and music through the OpenAL backend.
+
+**Not yet.** Only the desktop platforms are wired up; the mobile and web backends are planned
 but not started. On macOS the hardware ray-tracing tier is unavailable — see **Platforms** below.
 
 ## Quick start

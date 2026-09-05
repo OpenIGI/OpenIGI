@@ -30,7 +30,7 @@ public sealed class SoldierView
     /// <remarks>Every shipped set starts its ids at 2, so the fallback resolves in all six.</remarks>
     public const int FallbackStandAnimation = 2;
 
-    private readonly BoneObject _bones;
+    private BoneObject _bones;
     private BonePose? _pose;
     private BonePose? _unrotatedPose;
 
@@ -325,6 +325,26 @@ public sealed class SoldierView
             _pose = null;
             _unrotatedPose = null;
         }
+    }
+
+    /// <summary>Rebuilds this body at its authored spawn, as a GuardGenerator clone does.</summary>
+    /// <remarks>
+    /// The native generator recursively clones the stored task template rather than reviving the corpse
+    /// object in place. Replacing the bone object clears every animation channel and event cursor while
+    /// retaining this managed view's identity, which is important because renderer registries key on it.
+    /// </remarks>
+    public void Respawn()
+    {
+        BoneAnimationSet set = _bones.Set;
+        _bones = new BoneObject(set);
+        _bones.Play(0, StandAnimation, loops: true);
+
+        IsDead = false;
+        CurrentAnimation = StandAnimation;
+        Position = Soldier.Position;
+        Orientation = Matrix3f.FromEngineEulerAngles(0f, 0f, Soldier.Gamma);
+        _pose = null;
+        _unrotatedPose = null;
     }
 
     /// <summary>Gets the current pose, in the object's own space with the facing baked in.</summary>

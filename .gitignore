@@ -42,6 +42,11 @@ Thumbs.db
 .cursor/
 .copilot/
 .continue/
+.pi/
+.pi/extensions/
+.mcp.json
+# Local-only reverse-engineering tooling (installed, not committed)
+ghidra-headless-mcp/
 *.har
 ~/
 
@@ -91,6 +96,7 @@ a probe of the running original
 
 # Reference captures and generated format notes kept beside the code but not carried here.
 /docs/
+
 
 # Scratch space for local build/run scripts and throwaway work.
 /scratch/

@@ -41,6 +41,17 @@ public static class TerrainHeightQuery
     /// </remarks>
     public const double SearchDepthUnits = 16385.0;
 
+    /// <summary>How far above a query point a surface is still accepted, in world units.</summary>
+    /// <remarks>
+    /// <c>65536</c> — sixteen metres. The near-ground query's four-metre reach below the body is the
+    /// right window for a body already supported from underneath, but it goes permanently blind the
+    /// moment a fast-moving body crosses below the surface: the surface is then <i>above</i> it, and a
+    /// downward-only search can never see it again. The helicopter and plane anti-sink clamp widens its
+    /// search upward by this much so a body that dips under a ridge or a valley slope still finds the
+    /// surface it just crossed and rides it back up instead of diving to the bottom of the level.
+    /// </remarks>
+    public const double AboveRecoveryUnits = 65536.0;
+
     /// <summary>Finds the ground under a point.</summary>
     /// <param name="terrain">The level's terrain.</param>
     /// <param name="x">The point's X, in world units biased by the level origin.</param>
@@ -50,18 +61,44 @@ public static class TerrainHeightQuery
     /// <returns><see langword="false"/> when nothing is under the point within the search depth.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
     public static bool TryGetGround(TerrainData terrain, double x, double y, double z, out TerrainGround ground)
+        => TryGetGround(terrain, x, y, z, aboveUnits: 0.0, out ground);
+
+    /// <summary>Finds the ground under — or just above — a point.</summary>
+    /// <param name="terrain">The level's terrain.</param>
+    /// <param name="x">The point's X, in world units biased by the level origin.</param>
+    /// <param name="y">The point's Y, likewise.</param>
+    /// <param name="z">The point's Z — the middle of the search window.</param>
+    /// <param name="aboveUnits">
+    /// How far above <paramref name="z"/> a surface is still accepted. Zero keeps the classic
+    /// near-ground semantics: only a surface at or below the point answers.
+    /// </param>
+    /// <param name="ground">Receives the surface when one is found.</param>
+    /// <returns>
+    /// <see langword="false"/> when no surface lies in the window — from
+    /// <paramref name="z"/> + <paramref name="aboveUnits"/> down to
+    /// <paramref name="z"/> − <see cref="SearchDepthUnits"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="terrain"/> is <see langword="null"/>.</exception>
+    public static bool TryGetGround(
+        TerrainData terrain,
+        double x,
+        double y,
+        double z,
+        double aboveUnits,
+        out TerrainGround ground)
     {
         ArgumentNullException.ThrowIfNull(terrain);
         ground = default;
 
         // The descent is three-dimensional, so a query from well above the ground lands in an empty
         // node with nothing in it. That is what the original's Z walk exists for: it descends, tests,
-        // and on a miss steps to the Z-adjacent node and tries again. The search depth spans less than
-        // one leaf, so the column is at most two of them.
+        // and on a miss steps to the Z-adjacent node and tries again. The widened window starts above
+        // the body and reaches down past the near-ground depth, so its column spans a few leaves.
         double bottom = z - SearchDepthUnits;
+        double top = z + aboveUnits;
 
         int leafHeight = 2 * (TerrainOctree.RootExtent >> TerrainLeafQuery.SurfaceDepth);
-        double probeZ = z;
+        double probeZ = top;
 
         while (true)
         {
@@ -80,7 +117,7 @@ public static class TerrainHeightQuery
                         leaf, localX, localY, limitZ, downward: true, out TerrainSurfaceHit hit))
                 {
                     double height = hit.Height + leaf.Origin.Z;
-                    if (height <= z)
+                    if (height <= top)
                     {
                         ground = new TerrainGround(height, hit.NormalX, hit.NormalY, hit.NormalZ);
                         return true;

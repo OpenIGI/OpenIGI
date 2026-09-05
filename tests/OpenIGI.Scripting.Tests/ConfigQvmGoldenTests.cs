@@ -7,42 +7,28 @@ using Xunit;
 namespace OpenIGI.Scripting.Tests;
 
 /// <summary>
-/// Verifies the loader, the disassembler and the interpreter against the retail scripts.
+/// Verifies the loader, the disassembler and the interpreter using controlled config programs and retail scripts.
 /// </summary>
 /// <remarks>
-/// Skipped unless <c>IGI_GAME_PATH</c> points at an original installation. No game file is committed.
+/// Only retail-script checks require <c>IGI_GAME_PATH</c> to point at an original installation;
+/// controlled-config checks run without game data. No game file is committed.
 /// </remarks>
 public sealed class ConfigQvmGoldenTests
 {
-    [RequiresGameDataFact]
-    public void ConfigQvm_HasTheHeaderTheAnalysisRecorded()
+    [Fact]
+    public void ConfigPreambleHasTheKnownHeaderAndStatementEncoding()
     {
-        QvmProgram program = Load("config.qvm");
-
+        // Golden bytes belong to a controlled program, not config.qvm: the game rewrites that
+        // file whenever profiles, passwords, bindings or display settings change.
+        QvmProgram program = Preamble(activeIndex: 6, password: string.Empty);
         Assert.Equal(QvmProgram.IgiVersion, program.Version);
-        Assert.Equal(78, program.SymbolNames.Count);
-        Assert.Equal(9, program.Strings.Count);
-
-        // NOT pinned to an exact length. config.qvm is the one retail script the game REWRITES: it stores
-        // the player's settings as a program of assignments, so its code length is a function of those
-        // settings and moves when they change. It was 0x21B3 when this test was written and 0x21BE after a
-        // single instrumented run of the original changed the display mode. The symbol and string tables
-        // above are what actually pin the format; the length only has to be sane.
-        Assert.InRange(program.Code.Length, 0x2000, 0x2400);
+        Assert.Equal(2, program.SymbolNames.Count);
+        Assert.Single(program.Strings);
         Assert.Equal("GOStart", program.SymbolNames[0]);
         Assert.Equal("GOContentControlPW", program.SymbolNames[1]);
         Assert.Equal(string.Empty, program.Strings[0]);
         Assert.Equal(QvmProgram.DefaultStackSizeBytes, program.StackSizeBytes);
         Assert.Equal(QvmProgram.DefaultMaxLocals, program.MaxLocals);
-    }
-
-    [RequiresGameDataFact]
-    public void ConfigQvm_StartsWithTheStatementsTheAnalysisRecorded()
-    {
-        QvmProgram program = Load("config.qvm");
-
-        string[] listing = [.. QvmDisassembler.Disassemble(program).Take(7)];
-
         Assert.Equal(
             [
                 "     0: PUSHIIB #0                    ; symbol \"GOStart\"",
@@ -53,32 +39,80 @@ public sealed class ConfigQvmGoldenTests
                 "    19: POP",
                 "    20: PUSHIIB #1                    ; symbol \"GOContentControlPW\"",
             ],
-            listing);
+            QvmDisassembler.Disassemble(program).Take(7).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0, "")]
+    [InlineData(1, "custom-password")]
+    [InlineData(6, "")]
+    public void ConfigPreambleExecutesTheAuthoredValues(int activeIndex, string password)
+    {
+        List<RecordedCall> log = Execute(Preamble(activeIndex, password));
+        Assert.Equal(2, log.Count);
+        Assert.Equal("GOStart", log[0].Name);
+        Assert.Equal([activeIndex.ToString(CultureInfo.InvariantCulture)], log[0].Arguments);
+        Assert.Equal("GOContentControlPW", log[1].Name);
+        Assert.Equal([password], log[1].Arguments);
     }
 
     [RequiresGameDataFact]
-    public void ConfigQvm_ExecutesTheNativeCallSequenceItsCodeDescribes()
+    public void RetailConfigExecutesEveryAuthoredCall()
     {
         QvmProgram program = Load("config.qvm");
+        List<RecordedCall> log = Execute(program);
+        Assert.Equal("GOStart", log[0].Name);
+        Assert.Single(log[0].Arguments);
+        Assert.Equal("GOContentControlPW", log[1].Name);
+        Assert.Single(log[1].Arguments);
+        int profiles = log.Count(call => call.Name == "GOPlayer");
+        Assert.True(profiles > 0);
+        Assert.InRange(int.Parse(log[0].Arguments[0], CultureInfo.InvariantCulture), 0, profiles - 1);
+    }
+
+    private static List<RecordedCall> Execute(QvmProgram program)
+    {
         List<RecordedCall> log = [];
         NativeRegistry natives = BuildRecordingNamespace(program, log);
         QvmInterpreter interpreter = new(program, natives);
-
-        QvmError error = interpreter.Run();
-
+        Assert.Equal(QvmError.None, interpreter.Run());
         Assert.Equal(QvmError.None, interpreter.Error);
-        Assert.Equal(QvmError.None, error);
         Assert.Equal(0, interpreter.StackDepth);
-
-        Assert.Equal("GOStart", log[0].Name);
-        Assert.Equal(["6"], log[0].Arguments);
-        Assert.Equal("GOContentControlPW", log[1].Name);
-        Assert.Equal([string.Empty], log[1].Arguments);
-
-        // Every statement in this script is one native call, so the call count is the statement count.
         Assert.Equal(
             QvmDisassembler.Decode(program).Count(instruction => instruction.Opcode == QvmOpcode.Call),
             log.Count);
+        return log;
+    }
+
+    private static QvmProgram Preamble(int activeIndex, string password)
+    {
+        QvmWriter writer = new();
+        QvmCodeWriter code = writer.Code;
+        QvmLabel index = code.CreateLabel();
+        QvmLabel afterIndex = code.CreateLabel();
+        writer.PushSymbol("GOStart");
+        code.Call(index).Branch(QvmOpcode.Bra, afterIndex).MarkLabel(index);
+        if (activeIndex == 0)
+        {
+            code.Emit(QvmOpcode.Push0);
+        }
+        else if (activeIndex == 1)
+        {
+            code.Emit(QvmOpcode.Push1);
+        }
+        else
+        {
+            code.PushB(checked((sbyte)activeIndex));
+        }
+        code.Emit(QvmOpcode.Brk).MarkLabel(afterIndex).Emit(QvmOpcode.Pop);
+
+        QvmLabel text = code.CreateLabel();
+        QvmLabel afterText = code.CreateLabel();
+        writer.PushSymbol("GOContentControlPW");
+        code.Call(text).Branch(QvmOpcode.Bra, afterText).MarkLabel(text);
+        writer.PushString(password);
+        code.Emit(QvmOpcode.Brk).MarkLabel(afterText).Emit(QvmOpcode.Pop).Emit(QvmOpcode.Brk);
+        return QvmProgram.Read(writer.Build());
     }
 
     [RequiresGameDataFact]

@@ -890,12 +890,30 @@ public sealed class RagdollBody
             double reach =
                 _radius[bone] + _halfLength[bone] + PenetrationSlop + _velocity[bone].Length;
             Vector3d outward = _position[bone] - middle;
-            for (int probe = 0; probe < WallProbes; probe++)
+
+            // The two wall probes have distinct jobs: travel catches a body thrown INTO a wall while
+            // outward catches one already resting AGAINST it. They become the exact same ray only when
+            // they are positively parallel: TrySurface normalizes direction, and both probes start at
+            // this bone with the same reach. In that case a second world traversal cannot find a
+            // different surface, so retain both contact slots but share the one result. This deliberately
+            // uses exact parallelism, not an angular tolerance: nearly parallel rays can cross different
+            // geometry and must remain independently safe.
+            int travelSlot = bone * WallProbes;
+            Vector3d travel = _velocity[bone];
+            _walled[travelSlot] = world.TrySurface(
+                _position[bone], travel, reach, out _wallPoint[travelSlot], out _wallNormal[travelSlot]);
+
+            int outwardSlot = travelSlot + 1;
+            if (SameRayDirection(travel, outward))
             {
-                int slot = (bone * WallProbes) + probe;
-                Vector3d towards = probe == 0 ? _velocity[bone] : outward;
-                _walled[slot] = world.TrySurface(
-                    _position[bone], towards, reach, out _wallPoint[slot], out _wallNormal[slot]);
+                _walled[outwardSlot] = _walled[travelSlot];
+                _wallPoint[outwardSlot] = _wallPoint[travelSlot];
+                _wallNormal[outwardSlot] = _wallNormal[travelSlot];
+            }
+            else
+            {
+                _walled[outwardSlot] = world.TrySurface(
+                    _position[bone], outward, reach, out _wallPoint[outwardSlot], out _wallNormal[outwardSlot]);
             }
 
             Vector3d along = Turned(bone, _aim[bone]) * _halfLength[bone];
@@ -923,6 +941,15 @@ public sealed class RagdollBody
             }
         }
     }
+
+    // TrySurface casts from the same origin to the same distance after it normalizes its direction.
+    // Sharing is therefore exact only for non-zero, co-directed vectors with a zero cross product; an
+    // opposite vector is a different ray, and an approximate comparison could miss a thin wall.
+    private static bool SameRayDirection(Vector3d first, Vector3d second) =>
+        first.LengthSquared > 0.0
+        && second.LengthSquared > 0.0
+        && Vector3d.Cross(first, second) == Vector3d.Zero
+        && Vector3d.Dot(first, second) > 0.0;
 
     // Every bone is a capsule, and it is tested along its whole length rather than at its centre -- which
     // is the difference between a corpse lying ON a floor and a corpse buried to its waist in one.

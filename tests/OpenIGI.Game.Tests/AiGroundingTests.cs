@@ -6,6 +6,7 @@ using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Formats.World;
+using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -22,6 +23,25 @@ namespace OpenIGI.Game.Tests;
 /// </summary>
 public sealed class AiGroundingTests
 {
+    [Fact]
+    public void DeadBodyRetainsItsLastSupportedHeightWhenAnUpperFloorHasNoCollision()
+    {
+        Vector3d initial = new(100.0, 200.0, 300.0);
+        AiSoldier soldier = new(graph: null, initial, facing: 0f, phase: 0, seed: 1);
+        soldier.SetGroundQuery((double _, double _, double _, out double groundZ) =>
+        {
+            groundZ = 0.0;
+            return false;
+        });
+        soldier.Kill();
+
+        soldier.TickDeadBody(new Vector3f(20f, 30f, -80f));
+
+        Assert.Equal(initial.Z, soldier.Position.Z);
+        Assert.Equal(initial.X + 20.0, soldier.Position.X);
+        Assert.Equal(initial.Y + 30.0, soldier.Position.Y);
+    }
+
     [RequiresGameDataTheory]
     [InlineData(1)]
     [InlineData(2)]

@@ -20,25 +20,37 @@ public sealed class ConfigTests
     {
         GameConfig config = LoadRetail();
 
-        // The first profile is always the default "Joe", and GOStart names which one is in play.
+        // The retail game rewrites this file; names and bindings belong to the player.
         Assert.NotEmpty(config.Profiles);
-        Assert.Equal("Joe", config.Profiles[0].Name);
+        Assert.All(config.Profiles, profile => Assert.False(string.IsNullOrWhiteSpace(profile.Name)));
         Assert.InRange(config.ActiveIndex, 0, config.Profiles.Count - 1);
     }
 
-    [RequiresGameDataFact]
+    [Fact]
     public void EveryProfileCarriesItsOwnSettingsAndBindings()
     {
-        GameConfig config = LoadRetail();
+        GameConfig input = GameConfig.CreateDefault();
+        input.Active!.Name = "First";
+        input.Active.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_LEFT");
+        input.Active.MouseSensitivity = 0.25f;
+        Assert.True(input.CreateProfile("Second", 2));
+        input.Active!.Bindings[0] = new("MoveLeft", "INPUTPORT_DEVICE_KEYBOARD", "KEY_A");
+        input.Active.MouseSensitivity = 0.75f;
+        input.Active.DeviceGuid = "custom-device";
 
-        foreach (PlayerProfile profile in config.Profiles)
-        {
-            // Twenty-seven bindings, stored by name so they survive a renumbering.
-            Assert.Equal(PlayerProfile.BindingCount, profile.Bindings.Count);
-            Assert.Contains(profile.Bindings, b => b.Action == "MoveLeft" && b.Key == "KEY_LEFT");
-            Assert.Contains(profile.Bindings, b => b.Device == "INPUTPORT_DEVICE_MOUSE");
-            Assert.Equal(PlayerProfile.DefaultDeviceGuid, profile.DeviceGuid);
-        }
+        GameConfig config = ConfigScript.Load(ConfigScriptWriter.Write(input));
+
+        Assert.Equal(2, config.Profiles.Count);
+        Assert.Equal(1, config.ActiveIndex);
+        Assert.Equal("First", config.Profiles[0].Name);
+        Assert.Equal("Second", config.Profiles[1].Name);
+        Assert.Equal("KEY_LEFT", config.Profiles[0].Bindings[0].Key);
+        Assert.Equal("KEY_A", config.Profiles[1].Bindings[0].Key);
+        Assert.Equal(0.25f, config.Profiles[0].MouseSensitivity);
+        Assert.Equal(0.75f, config.Profiles[1].MouseSensitivity);
+        Assert.Equal(PlayerProfile.DefaultDeviceGuid, config.Profiles[0].DeviceGuid);
+        Assert.Equal("custom-device", config.Profiles[1].DeviceGuid);
+        Assert.All(config.Profiles, profile => Assert.Equal(PlayerProfile.BindingCount, profile.Bindings.Count));
     }
 
     [RequiresGameDataFact]

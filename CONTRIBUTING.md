@@ -58,15 +58,14 @@ default — no rebasing needed. The section layout tells you what kind of thing 
 | `.data` | `0x00536000`–`0x00C32558` | globals |
 | `.rsrc` | `0x00C33000`–`0x00C34E40` | resources |
 
-Every address currently cited in the codebase resolves inside this build: 721 functions, 59 globals
-and 4 constants. If your copy hashes differently, expect the addresses to land in the wrong place —
-say so in the PR rather than silently correcting them against a build nobody else has.
+Unless a reference note explicitly identifies another executable fingerprint, addresses refer to the
+build above. If your copy hashes differently, document that fingerprint rather than silently
+correcting addresses against a build nobody else has.
 
-Working notes, design documents and reverse-engineering write-ups are deliberately **not** kept in this
-repository — they are a running notebook that goes stale faster than the code it describes, and the
-reference captures that go with them are screenshots of a game we cannot redistribute. Keep yours
-locally; put the findings that matter into code comments and commit messages, where they stay next to
-what they explain.
+Keep local working notebooks and copyrighted reference captures outside the repository. Durable
+reverse-engineering evidence belongs in the existing the code comments references; non-obvious local
+implementation constraints belong in code comments. Link to the authoritative location instead of
+copying its findings.
 
 ## Tests
 
