@@ -455,6 +455,61 @@ public sealed class AiSoldierCombatWiringTests
         Assert.NotEqual(-2, pressed);
     }
 
+    /// <summary>A scripted gunner keeps the emplacement claimed when its activation walk arrives.</summary>
+    [RequiresGameDataFact]
+    public void AStationaryGunnerMountsAfterItsScriptedActivation()
+    {
+        GraphFile graph = Graph();
+        Vector3d start = graph.Nodes[0].Position;
+        Vector3d emplacement = graph.Nodes[1].Position;
+        AiStationaryGun gun = new(500, emplacement, Matrix3f.Identity);
+        AiActivationClaims claims = new();
+        AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: 1)
+        {
+            GunnerId = 500,
+        };
+        soldier.SetCombat(
+            AiType.Gunner,
+            new AiCombatParameters(new HumanAiConfigItemTask
+            {
+                AiTypeName = "AITYPE_GUNNER",
+                DifficultyName = "GD_2",
+                TargetingTimeoutSeconds = 15f,
+                MinimumClipFraction = 0.8f,
+                MaximumRoundsPerSequence = 30,
+            }),
+            () => new AiCombatWeaponState(30, 30, 30, WeaponCategory.Gun));
+        soldier.SetStationaryGunResolver(id => id == 500 ? gun : null);
+        soldier.SetActivateSupport(
+            claims,
+            (int id, out Vector3d position) =>
+            {
+                position = emplacement;
+                return id == 500;
+            },
+            _ => { });
+
+        soldier.ApplyActions([
+            new AiProducedAction("AIAction_Activate", [500, 1, 0], 0),
+            new AiProducedAction("AIAction_Combat", [], 0),
+        ]);
+        Vector3d farEnemy = new(start.X, start.Y + (500 * Metre), start.Z);
+        soldier.Tick(1, farEnemy, rootMotionThisTick: 200.0);
+
+        Assert.False(soldier.IsMounted, "combat must not discard the live activation route");
+
+        for (int tick = 2; tick <= 5000 && !soldier.IsMounted; tick++)
+        {
+            soldier.Tick(tick, farEnemy, rootMotionThisTick: 200.0);
+        }
+
+        Assert.True(soldier.IsMounted, "the gunner reached its task but never claimed the emplacement");
+        Assert.Same(gun, soldier.MountedGun);
+        Assert.Equal(gun.MountPosition, soldier.Position);
+        Assert.True(gun.IsOccupied);
+        Assert.False(claims.Contains(500));
+    }
+
     /// <summary>
     /// A walker whose hop is a <b>door hop</b> stops, opens the door itself, waits for it, and only
     /// then walks through — <c>sub_451540</c>'s door branch.

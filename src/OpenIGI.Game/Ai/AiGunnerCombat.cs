@@ -30,6 +30,33 @@ public sealed class AiGunnerCombat
         _coneTicks = ConeGraceTicks;
     }
 
+    /// <summary>Claims the authored emplacement when the AI activation script reaches it.</summary>
+    /// <remarks>
+    /// The gunner QVM enters the stationary-gun action after its combat event, so this path does not pass
+    /// through the ordinary 30-tick target-cone grace used by <see cref="Update"/>. The native activation
+    /// state owns the same occupant slot and leaves the soldier in the mounted combat arm.
+    /// </remarks>
+    public bool MountImmediately(AiStationaryGun gun)
+    {
+        ArgumentNullException.ThrowIfNull(gun);
+
+        if (_mounted is not null && !ReferenceEquals(_mounted, gun))
+        {
+            _mounted.Dismount(_owner);
+            _mounted = null;
+        }
+
+        if (!gun.TryMount(_owner))
+        {
+            _coneTicks = ConeGraceTicks;
+            return false;
+        }
+
+        _mounted = gun;
+        _coneTicks = ConeGraceTicks;
+        return true;
+    }
+
     public AiGunnerCommand Update(AiStationaryGun? gun, Vector3d target, bool hasDetectionSlot)
     {
         if (!hasDetectionSlot)

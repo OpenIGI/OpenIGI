@@ -242,6 +242,23 @@ internal sealed partial class DesktopGame
             vehiclePhysics: _vehiclePhysics,
             terrain: loaded.Terrain,
             logger: _logger);
+        bool collectDiagnostics = _logger.IsEnabled(LogLevel.Information);
+        if (collectDiagnostics && levelRoot.Tree.FromId(1608) is DeclaredTask levelTimer)
+        {
+            string parameters = string.Join(
+                ", ",
+                levelTimer.Type.Parameters.Select(
+                    (parameter, index) => $"{parameter.Name}={levelTimer.GetValue(index) ?? "<null>"}"));
+            _logger.Information("Mission", $"[timer] LevelTimer_1608 {parameters}");
+        }
+        if (collectDiagnostics && levelRoot.Tree.FromId(161) is DeclaredTask activation)
+        {
+            string parameters = string.Join(
+                ", ",
+                activation.Type.Parameters.Select(
+                    (parameter, index) => $"{parameter.Name}={activation.GetValue(index) ?? "<null>"}"));
+            _logger.Information("Mission", $"[timer] AreaActivate_161 {parameters}");
+        }
         _missionObjectives = new MissionObjectiveRuntime(
             levelRoot,
             _loop.Variables,
@@ -975,6 +992,7 @@ internal sealed partial class DesktopGame
             {
                 candidate.UseInteractions(interactions);
                 candidate.TaskActivated += id => _soldiers?.ActivateTask(id);
+                candidate.ElectrifiedFenceTouched += fence => ResolvePlayerElectricFence(candidate, fence);
                 _logger.Information("Player", $"{interactions.Items.Count} direct world interaction(s).");
             }
             if (_genericPickups is { } genericPickups)
@@ -1076,6 +1094,11 @@ internal sealed partial class DesktopGame
                     // Argument 7 is the player's maximum health (Human+600, 0x410370's overwrite) --
                     // 3.0 in retail, and the single number that sets the player's time-to-kill.
                     _playerMaximumHealth = tuning.MaximumHealth;
+
+                    // Argument 8 is the dose one powered fence contact adds (0x412F80's fmul against
+                    // the human's damage scale) -- 0.5 in retail. Read it for the same reason argument
+                    // 7 is read: a retuned humanplayer.qvm owns its own shock, not the shipped number.
+                    _electricFenceDose = tuning.ElectricFenceDose;
                     _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
                     {
                         DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
@@ -1686,6 +1709,49 @@ internal sealed partial class DesktopGame
                 HumanDamage.FrontZone,
                 bone: -1,
                 WeaponCategory.Gun);
+        }
+    }
+
+    /// <summary>Applies one native electric-fence shock after the player's 45-tick guard permits it.</summary>
+    private void ResolvePlayerElectricFence(PlayerCamera player, WorldInteraction fence)
+    {
+        if (_playerHealth.IsDead)
+        {
+            return;
+        }
+
+        float healthBefore = _playerHealth.RemainingFraction;
+        _logger.Information(
+            "Player",
+            $"[fence] contact task={fence.Task.Id} powered={(fence.IsElectrified ? "true" : "false")} "
+                + $"healthBefore={healthBefore:P0} position=({player.Body.Position.X:F0},"
+                + $"{player.Body.Position.Y:F0},{player.Body.Position.Z:F0})");
+
+        ElectricFenceShock shock = ElectricFenceContact.Shock(_playerHealth, _electricFenceDose);
+        float dealt = shock.Damage;
+        if (dealt <= 0f)
+        {
+            _logger.Warning(
+                "Player",
+                $"[fence] contact produced no damage task={fence.Task.Id} "
+                    + $"health={_playerHealth.RemainingFraction:P0} hits={_playerHealth.Hits}.");
+            return;
+        }
+
+        _damageFlash.Hit(Vector3f.Zero, _soundRandom.NextSingle());
+        if (!shock.IsLethal)
+        {
+            // 0x412F80 selects this fence-specific cue after it has added the direct zone-13 dose.
+            _sounds?.PlayDefinition("elfence_spark1", priority: 250);
+        }
+
+        _logger.Information(
+            "Player",
+            $"Electric fence shock dealt {dealt:F3} ({_playerHealth.RemainingFraction:P0} left).");
+
+        if (shock.IsLethal)
+        {
+            BeginPlayerDeath(fence.Anchor, ElectricFenceContact.Zone, bone: -1, WeaponCategory.Gun);
         }
     }
 

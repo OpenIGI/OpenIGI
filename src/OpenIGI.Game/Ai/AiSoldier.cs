@@ -1900,7 +1900,10 @@ public sealed class AiSoldier
             SetTarget(null);
         }
 
-        if (Activity == AiSoldierActivity.Engaging)
+        // A scripted gunner can receive AIAction_Activate and AIAction_Combat in the same dispatch.
+        // The activation walk owns the tick until it reaches the emplacement; letting the combat
+        // branch return first strands the gunner beside an empty stand forever.
+        if (Activity == AiSoldierActivity.Engaging && _activate is null)
         {
             Fight(tick, _lastSeenFeet, rootMotionThisTick);
             return;
@@ -1976,9 +1979,29 @@ public sealed class AiSoldier
                 return;
             }
 
-            _activateTask?.Invoke(pressing.TaskId);
+            bool mountedGun = false;
+            if (pressing.TaskId == GunnerId
+                && _gunnerCombat is not null
+                && _stationaryGun?.Invoke(pressing.TaskId) is { } gun)
+            {
+                // StationaryGun's player interaction is a temporary input state. Calling its generic
+                // BeginUse/CompleteUse pair here would mount a private player sentinel and immediately
+                // release it, leaving the scripted gunner visibly beside an empty M2HB. The AI arm owns
+                // the real occupant and stays in Engaging after the activation walk arrives.
+                _activateTask?.Invoke(pressing.TaskId);
+                mountedGun = _gunnerCombat.MountImmediately(gun);
+                if (mountedGun)
+                {
+                    Position = gun.MountPosition;
+                    Facing = gun.MountFacing;
+                }
+            }
+            else
+            {
+                _activateTask?.Invoke(pressing.TaskId);
+            }
             ReleaseActivateClaims();
-            Activity = AiSoldierActivity.Idle;
+            Activity = mountedGun ? AiSoldierActivity.Engaging : AiSoldierActivity.Idle;
             return;
         }
 
@@ -2956,8 +2979,11 @@ public sealed class AiSoldier
         Activity = AiSoldierActivity.Engaging;
         Route = null;
         RequestedAnimation = -1;
-        _route.Clear();
-        DestinationNode = -1;
+        if (_activate is null)
+        {
+            _route.Clear();
+            DestinationNode = -1;
+        }
     }
 
     /// <summary>Runs one tick of the combat behaviour and applies what it asks for.</summary>

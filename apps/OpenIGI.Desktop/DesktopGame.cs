@@ -100,6 +100,7 @@ internal sealed partial class DesktopGame : IDisposable
     // --- The player's own life, damage and death ---
     private int _playerDifficulty;
     private float _playerMaximumHealth;
+    private float _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
     private HumanHealth _playerHealth = null!;
     private bool _playerDead;
     private HumanDamageFlash _damageFlash = null!;
@@ -517,6 +518,7 @@ internal sealed partial class DesktopGame : IDisposable
         // from humanplayer.qvm, just as HumanPlayer's constructor overwrites Human+600 at 0x4104E1. Do
         // not bake in the shipped script's 3.0: an externally retuned humanplayer.qvm owns this range.
         _playerMaximumHealth = HumanHitZoneTable.MaximumHealth;
+        _electricFenceDose = ElectricFenceContact.DefaultDamageFactor;
         _playerHealth = new(HumanHitZoneTable.Player, _playerMaximumHealth)
         {
             DamageScale = HumanHealth.DifficultyDamageScale(_playerDifficulty),
@@ -1703,6 +1705,7 @@ internal sealed partial class DesktopGame : IDisposable
                     : null;
             }
 
+            bool interactionsTickedByPlayer = false;
             if (outcome is FrameOutcome.Tick
                 && _cutscenes?.IsPlaying != true
                 && _playerMode && _player is not null)
@@ -1720,6 +1723,9 @@ internal sealed partial class DesktopGame : IDisposable
                     else
                     {
                         _player.Tick(_window.Input, _playerTerrain);
+                        // PlayerCamera advances its interaction registry before it resolves this
+                        // tick's activate target. Do not advance the same registry again below.
+                        interactionsTickedByPlayer = true;
                     }
 
                     PlayBinocularTransitionSound();
@@ -1847,6 +1853,14 @@ internal sealed partial class DesktopGame : IDisposable
                         $"Hit a guard in zone {_player.LastHumanZone} "
                             + $"({reportedHumanHits} hit(s), {_soldiers?.Killed ?? 0} killed).");
                 }
+            }
+
+            // PlayerCamera owns the normal player tick, including interaction pulses. Other fixed-tick
+            // modes (free camera, cutscenes, map computer and a dead player) still need their level
+            // interactions to advance, but never more than once per simulation tick.
+            if (outcome is FrameOutcome.Tick && !interactionsTickedByPlayer)
+            {
+                _interactions?.Tick();
             }
 
             // Lifts advance before perception and AI consume this tick's player position. A passenger

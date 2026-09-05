@@ -44,7 +44,7 @@ public sealed class RetailHumanPlayerConfigTests
         Assert.Equal(7, parameters.Duration6Ticks);
 
         Assert.Equal(3f, parameters.MaximumHealth);
-        Assert.Equal(0.5f, parameters.Value8);
+        Assert.Equal(0.5f, parameters.ElectricFenceDose);
     }
 
     [RequiresGameDataFact]
