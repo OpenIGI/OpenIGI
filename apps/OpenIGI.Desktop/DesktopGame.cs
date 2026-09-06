@@ -1265,11 +1265,7 @@ internal sealed partial class DesktopGame : IDisposable
                 }
                 else
                 {
-                    // Enter restarts and Escape leaves: nothing on this screen is clicked, and nothing
-                    // draws a cursor over it. Revealing the system arrow put the desktop pointer on top
-                    // of the level, which is not what the retail failure screen shows. The lock is still
-                    // released, so the pointer is not held captive while the screen waits for its key.
-                    _window.CursorVisible = false;
+                    _window.CursorVisible = true;
                     _window.CursorLocked = false;
                 }
                 _window.Input.Captured = true;
