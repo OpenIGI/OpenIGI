@@ -55,6 +55,33 @@ public sealed class GraphicsPresetRegistryTests
     }
 
     /// <summary>
+    /// Only vanilla is drawn the original's rain; every preset above it gets the remastered storm.
+    /// </summary>
+    /// <remarks>
+    /// The two rain renderers are chosen between by <c>r_storm</c> alone, so this one variable is the
+    /// whole of "which rain does this player see". Vanilla means the shipped band of thin vertical
+    /// streaks -- it is the regression gate, and it has to stay that -- and every tier above it means
+    /// the particle storm: wind, shelter, splashes and wet ground. A tier that quietly lost the storm
+    /// would show 1998's rain in the middle of an otherwise modern picture, in the three retail missions
+    /// that rain, and nothing would report it.
+    /// </remarks>
+    [Fact]
+    public void OnlyVanillaDrawsTheOriginalsRain()
+    {
+        _ = RenderCVars.Storm;
+
+        GraphicsPresetRegistry.Default.Apply(GraphicsPreset.Vanilla);
+        Assert.False(RenderCVars.Storm.Value, "vanilla has to keep the original's rain band");
+
+        foreach (GraphicsPreset preset in (ReadOnlySpan<GraphicsPreset>)
+            [GraphicsPreset.Enhanced, GraphicsPreset.High, GraphicsPreset.Ultra])
+        {
+            GraphicsPresetRegistry.Default.Apply(preset);
+            Assert.True(RenderCVars.Storm.Value, $"{preset} draws the original's rain band, not the storm");
+        }
+    }
+
+    /// <summary>
     /// Every archived render setting has to be named by the presets, so that choosing one fully
     /// determines the picture.
     /// </summary>

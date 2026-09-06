@@ -4574,8 +4574,15 @@ internal sealed partial class DesktopGame : IDisposable
                         SkyFillColour() + (stormSunLight * 0.2f),
                         _loop.TimeSource.Milliseconds / 1000f);
                 }
-                else if (_rain is { IsWeatherEnabled: true } rain)
+                else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
                 {
+                    // The original's band, drawn only where the storm is not the renderer in charge.
+                    // Enabled is the question, not IsActive: Enabled says which of the two owns the
+                    // weather -- the preset's r_storm, which only vanilla turns off -- while IsActive
+                    // says whether that owner has anything to draw this frame. Falling back on IsActive
+                    // made every reason the storm draws nothing into a reason to draw 1998's rain
+                    // instead, so dialling r_storm_intensity to zero on an ultra preset did not stop the
+                    // rain, it replaced it with the vanilla band.
                     rain.Indoors = cameraIndoors;
                     rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
                 }
