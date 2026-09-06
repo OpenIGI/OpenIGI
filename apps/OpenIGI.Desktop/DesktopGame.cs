@@ -3094,9 +3094,25 @@ internal sealed partial class DesktopGame : IDisposable
                     && _cutscenes?.IsPlaying != true
                     && !_options.Lockstep
                     && RenderCVars.SmoothPresentation.Value;
+                double pacingWall = _loop.TimeSource.PreciseMilliseconds;
                 float tickBlend = smoothPresentation
-                    ? _loop.Clock.TickFraction(_loop.TimeSource.PreciseMilliseconds)
+                    ? _loop.Clock.TickFraction(pacingWall)
                     : 1f;
+
+                // Whether the picture's own clock keeps step with the wall clock, behind
+                // OPENIGI_PACING_DEBUG=1. Sampled here because this pair -- the tick and the blend --
+                // is exactly the moment in the simulation the frame is about to be drawn at.
+                Diagnostics.PresentationPacingProbe.Sample(
+                    pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
+                Diagnostics.PresentationPacingProbe.SampleGate(
+                    pauseMenu,
+                    _cutscenes?.IsPlaying == true,
+                    _options.Lockstep,
+                    RenderCVars.SmoothPresentation.Value);
+                if (_loop.Clock.FrameCount % 600 == 0)
+                {
+                    Diagnostics.PresentationPacingProbe.Report("vulkan");
+                }
                 SightZoomFrame sight = _playerMode && _player is not null
                     ? _player.SmoothedSightZoom(tickBlend)
                     : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);

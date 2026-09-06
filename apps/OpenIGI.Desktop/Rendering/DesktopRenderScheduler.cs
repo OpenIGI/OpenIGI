@@ -38,7 +38,22 @@ public sealed class DesktopRenderScheduler : IRenderScheduler
     public Bgra32 ClearColour { get; set; } = Bgra32.Black;
 
     /// <inheritdoc/>
-    public void Flush() => _device.SwapBuffers();
+    public void Flush()
+    {
+        // Timed only when the pacing probe is listening: this is the hot path, and the present block
+        // is exactly what the probe needs to separate a slow frame from a badly scheduled one.
+        if (!Diagnostics.PresentationPacingProbe.IsEnabled)
+        {
+            _device.SwapBuffers();
+            return;
+        }
+
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
+        _device.SwapBuffers();
+        Diagnostics.PresentationPacingProbe.RecordPresentBlock(
+            (System.Diagnostics.Stopwatch.GetTimestamp() - started) * 1000.0
+                / System.Diagnostics.Stopwatch.Frequency);
+    }
 
     /// <inheritdoc/>
     public void Reset() => _device.Clear(ClearColour);
