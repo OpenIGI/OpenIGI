@@ -29,6 +29,16 @@ namespace OpenIGI.Game.World;
 /// port and the reference agree about what a lamp is.
 /// </para>
 /// <para>
+/// <b>And that shape test is not, on its own, nearly enough.</b> Measured over the fourteen retail
+/// levels it proposed 423 sub-meshes of which 263 were not lamps — soldiers, chairs, toilets, filing
+/// cabinets, security cameras, dropped weapons — because "small, pale, flat and above head height"
+/// describes a mounting bracket as exactly as it describes a batten. So it is now a second opinion
+/// rather than the whole answer: a sub-mesh is admitted only when it is also SKINNED like a fitting,
+/// with one of the texture pages this level's own catalogued lamps draw from. See
+/// <c>FixtureTextures</c> for why that is the fact that separates them, and why it is the texture and
+/// not the model name that has to be asked.
+/// </para>
+/// <para>
 /// <b>The bake is not used as a second source, and that was measured rather than assumed.</b> Letting a
 /// high survey score make a texture emissive on its own is what the exporter does, and here it is
 /// wrong twice over. It says yes to surfaces that are bright because they are LIT — level 1's
@@ -38,11 +48,11 @@ namespace OpenIGI.Game.World;
 /// not glow faintly, it turns into a flat shadeless slab.
 /// </para>
 /// <para>
-/// Using the bake the other way round — as a veto over the shape test — fails on the same level for
-/// the opposite reason: four of the fixtures this test confirms, <c>373_01_1</c> among them, score
-/// exactly nought in the survey, because the artists lit those rooms without painting the fittings
-/// bright. The two signals genuinely disagree about real lamps, and the geometric one is the one that
-/// is right, so it decides alone.
+/// Using the bake the other way round — as a veto — fails on the same level for the opposite reason:
+/// <c>316_01_1</c> and <c>316_02_1</c>, two pages of level 1's <c>LIGHT</c> model itself, score exactly
+/// nought in the survey across all twenty-seven of their uses, because the artists lit those rooms
+/// without painting the fittings bright. The two signals genuinely disagree about real lamps, and the
+/// bake is the one that is wrong about them, so it decides nothing here.
 /// </para>
 /// <para>
 /// <b>Confirm once, then trust the SUB-MESH — not the texture.</b> A texture is shared: the page that
@@ -274,6 +284,10 @@ public static class LampDetector
             byModel[entry.Model] = entry;
         }
 
+        // The texture pages this level's own light fittings are skinned with. Nothing the shape test
+        // proposes for itself is admitted unless it draws one of these; see FixtureTextures.
+        HashSet<string> fixtureTextures = FixtureTextures(scene);
+
         foreach (WorldPlacement placement in scene.Placements)
         {
             // A spline segment carries its own bent mesh, unique to the placement; everything else is the
@@ -346,6 +360,14 @@ public static class LampDetector
                     continue;
                 }
 
+                // Nothing is inferred to be a lamp unless it is skinned like one. This is the test that
+                // separates a fitting from every other pale, flat, high-up thing in the game, and no
+                // measurement of the geometry can do it -- see FixtureTextures.
+                if (!fixtureTextures.Contains(texture))
+                {
+                    continue;
+                }
+
                 // The cheap half of the test first: a texture that is dark or coloured is not a lamp
                 // whatever shape it is in, and deciding that costs one cached texture decode rather than a
                 // walk over every triangle of every instance in the level.
@@ -379,6 +401,94 @@ public static class LampDetector
                     + (named.Count > 0 ? $" ({named.Count} named by hand)." : ".")
                 : "Nothing in this level is a light fixture.");
     }
+
+    /// <summary>The texture pages a level's own light fittings are skinned with.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The shape test alone cannot do this, and that was measured rather than feared.</b> Across the
+    /// fourteen retail levels it proposed 423 sub-meshes and 263 of them were not lamps: soldiers,
+    /// chairs, toilets, sinks, filing cabinets, security cameras, telephones, computer monitors, dropped
+    /// weapons and ammunition boxes. A <c>HOLDER</c> — the bracket the user's report named — is a pale
+    /// grey plate 1.2 m across and 15 cm thick, hanging 6 m up with its faces summing straight down. So
+    /// is a fluorescent batten. No measurement of that geometry separates them, because there is nothing
+    /// left in the geometry to measure.
+    /// </para>
+    /// <para>
+    /// <b>What does separate them is that the artists SKINNED lamps as lamps.</b> This game's own model
+    /// catalogue names its fittings — <c>LIGHT</c>, <c>LAMP_CIELING</c>, <c>FLOODLIGHT</c>,
+    /// <c>STREETLAMP</c>, <c>HANGER_LIGHTS</c> and the rest — and those models draw from a small set of
+    /// texture pages. A holder is skinned with a holder's page, a camera with a camera's; neither shares
+    /// one with anything the artists called a light. Gathering the pages the level's OWN named fittings
+    /// use, and admitting nothing else, drops all 263 and keeps every one of the 146 real fittings.
+    /// </para>
+    /// <para>
+    /// <b>Textures rather than the names themselves, because a lamp is not always its own model.</b> A
+    /// garage's ceiling strip is a sub-mesh of the garage shell — model <c>GARAGE_INTERIOR</c>, which is
+    /// no more a lamp than a wall is — and the same is true of an elevator car's ceiling light. Judging
+    /// by the model's name would lose both. They are skinned with the fitting's page, so judging by the
+    /// page finds them: the six garage strips and the elevator light survive with nothing named by hand.
+    /// </para>
+    /// <para>
+    /// A page is shared, so this is a gate and not a verdict — the shape test still has to agree, and
+    /// what passes both is still keyed by sub-mesh rather than by texture. One family survives that
+    /// should not: an office cabinet skinned with the ceiling lamp's own page, seven sub-meshes across
+    /// the fourteen levels. That is what <see cref="LampManifest"/>'s <c>lamp: false</c> is for.
+    /// </para>
+    /// <para>
+    /// The catalogue is not complete — it names 523 of the game's models — and a fitting it does not
+    /// name contributes no page, so a level lit entirely by uncatalogued fittings would come out dark
+    /// rather than wrong. None of the fourteen is: every level carries between eight and thirteen named
+    /// fittings. Naming the model in the manifest is how such a level would be corrected, and the
+    /// manifest is read before this gate rather than through it.
+    /// </para>
+    /// </remarks>
+    private static HashSet<string> FixtureTextures(WorldScene scene)
+    {
+        HashSet<string> textures = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!IsNamedLightFixture(placement.Instance.Name))
+            {
+                continue;
+            }
+
+            // Every slot the instance binds, not only the slots its own sub-meshes draw: a fitting's
+            // page is the fitting's page wherever it is used, and the point of this set is to recognise
+            // it somewhere else.
+            for (int slot = 0; slot < placement.Instance.SlotCount; slot++)
+            {
+                if (placement.Pack.TryGetTextureName(placement.Instance, slot, out string texture)
+                    && texture.Length > 0)
+                {
+                    textures.Add(texture);
+                }
+            }
+        }
+
+        return textures;
+    }
+
+    /// <summary>Whether the game's own catalogue calls a model a light fitting.</summary>
+    /// <param name="instance">The drawing instance's name, such as <c>316_01_1</c>.</param>
+    /// <returns><see langword="true"/> when the artists named this model a light or a lamp.</returns>
+    /// <remarks>
+    /// The catalogue holds 523 distinct names and exactly fourteen of them contain <c>LIGHT</c> or
+    /// <c>LAMP</c> — <c>LIGHT</c>, <c>LIGHTS_FLAT</c>, <c>LIGHTS_ROUND</c>, <c>LAMP</c>,
+    /// <c>LAMP_CIELING</c>, <c>LARGE_LIGHTS</c>, <c>MEDIUM_LIGHTS</c>, <c>HANGER_LIGHTS</c>,
+    /// <c>FLOODLIGHT</c>, <c>STREETLAMP</c>, <c>COMM_TOWER_LIGHT</c>, <c>ALARM_LIGHT</c> and its two
+    /// destroyed variants — and every one of them is a light fitting. Nothing else in the catalogue
+    /// contains either word, so the substring test needs no list of its own to maintain.
+    /// <para>
+    /// The destroyed variants count. A shot-out alarm light is not a light any more, but it is skinned
+    /// with the same page as the working one, and it is the PAGE this is gathering.
+    /// </para>
+    /// </remarks>
+    public static bool IsNamedLightFixture(string? instance) =>
+        !string.IsNullOrEmpty(instance)
+        && ModelNameRegistry.TryGetModelName(instance, out string name)
+        && (name.Contains("LIGHT", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("LAMP", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Whether one sub-mesh, where it stands, is shaped and placed like a ceiling lamp.</summary>
     /// <remarks>

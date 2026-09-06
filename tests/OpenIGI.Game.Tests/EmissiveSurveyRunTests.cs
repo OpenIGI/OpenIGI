@@ -49,14 +49,13 @@ public sealed class EmissiveSurveyRunTests
     }
 
     /// <summary>
-    /// Level 1's ceiling lamps are found by their shape, including the one the exporter had to name by hand.
+    /// Level 1's ceiling lamps are found without a list, and the things shaped like them are not.
     /// </summary>
     /// <remarks>
-    /// <c>373_01_1</c> is the small bright tube the reference exporter carries a hand-written list for,
-    /// because the lightmap survey loses it -- and it still does: it scores exactly nought here, since
-    /// the artists lit that room without painting the fitting bright. Reading the geometry instead finds
-    /// it with no list, and finding it is what says the detection reaches a real fixture rather than
-    /// only the obvious panels.
+    /// <c>316_01_1</c> is level 1's <c>LIGHT</c> fitting, and the lightmap survey loses it outright --
+    /// it scores exactly nought across all twenty-four of its uses, since the artists lit those rooms
+    /// without painting the fitting bright. Finding it anyway is what says the detection reaches a real
+    /// fixture rather than only the obvious panels.
     /// </remarks>
     [RequiresGameDataFact]
     public void LevelOnesCeilingLampsAreFoundByTheirShape()
@@ -66,17 +65,17 @@ public sealed class EmissiveSurveyRunTests
 
         LampDetector.Lamps lamps = LampDetector.Detect(scene, resources);
 
-        Assert.Contains("373_01_1", lamps.Textures);
+        Assert.Contains("316_01_1", lamps.Textures);
 
         // Every lamp is normalised to the same emitted radiance rather than to the same multiple, so
         // that how dark the artist drew a housing stops deciding how brightly it burns. What has to hold
         // is the product, not the multiplier.
         Assert.True(
-            lamps.TryGetStrength("373_01_1", 0, out float strength),
-            "373_01_1's own model does not draw it as a lamp.");
+            lamps.TryGetStrength("316_01_1", 0, out float strength),
+            "316_01_1's own model does not draw it as a lamp.");
         Assert.Equal(
             LampDetector.LampRadiance,
-            strength * LampDetector.Brightness("373_01_1", resources),
+            strength * LampDetector.Brightness("316_01_1", resources),
             2);
 
         // And 236_01_1 is NOT one, though it tops the lightmap ranking with a pure-white bake across all
@@ -100,5 +99,58 @@ public sealed class EmissiveSurveyRunTests
         // At least one lamp has to actually face downward, or the facing is being carried but never
         // derived and every fixture is silently a point light again.
         Assert.Contains(fixtures, fixture => fixture.Direction.Z < -0.5f);
+    }
+
+    /// <summary>Things merely SHAPED like a ceiling lamp are not lit as one.</summary>
+    /// <remarks>
+    /// <para>
+    /// Every model here passes the shape test and none of them is a lamp. <c>373_01_1</c> is a
+    /// <c>HOLDER</c> — a pale grey mounting plate 1.2 m across and 15 cm thick, hanging six metres up
+    /// with its faces summing straight down, which is a fluorescent batten in every measurable respect.
+    /// <c>313_02_1</c> is a security camera, <c>490_02_1</c> an antenna, <c>204_01_1</c> a radio. What
+    /// keeps them dark is that none of them is SKINNED like a fitting: their pages are their own, and
+    /// no model the artists called a light draws from any of them.
+    /// </para>
+    /// <para>
+    /// This is the whole of what the shape test could not do. Before the texture gate it proposed 423
+    /// sub-meshes across the fourteen retail levels and 263 were wrong — these four among them, along
+    /// with soldiers, chairs, toilets and dropped weapons.
+    /// </para>
+    /// </remarks>
+    [RequiresGameDataFact]
+    public void LevelOnesFittingShapedFurnitureIsNotALamp()
+    {
+        WorldScene scene = RetailLevelOneGround.Scene();
+        ResourceRegistry resources = RetailLevelOneGround.Resources();
+
+        LampDetector.Lamps lamps = LampDetector.Detect(scene, resources);
+
+        Assert.NotEmpty(lamps.Textures);
+
+        foreach ((string model, string what) in new[]
+        {
+            ("373_01_1", "HOLDER, a mounting plate"),
+            ("313_02_1", "CAMERA"),
+            ("490_02_1", "ANTENA"),
+            ("204_01_1", "RADIO"),
+        })
+        {
+            Assert.False(
+                LampDetector.IsNamedLightFixture(model),
+                $"{model} ({what}) is being read as a light fitting by name.");
+
+            for (int slot = 0; slot < 16; slot++)
+            {
+                Assert.False(
+                    lamps.Contains(model, slot),
+                    $"{model} slot {slot} ({what}) is lit as a lamp.");
+            }
+        }
+
+        // And the gate has not simply switched detection off: level 1's own fittings, and the garage's
+        // ceiling strip that is a sub-mesh of the garage shell rather than a lamp model of its own, are
+        // still found with nothing named by hand.
+        Assert.True(lamps.Contains("316_01_1", 0), "the LIGHT fitting is no longer found.");
+        Assert.True(lamps.Contains("410_02_1", 8), "the garage ceiling strip is no longer found.");
     }
 }
