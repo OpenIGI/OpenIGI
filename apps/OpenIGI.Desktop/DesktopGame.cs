@@ -1243,34 +1243,7 @@ internal sealed partial class DesktopGame : IDisposable
 
             // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
             // freezes player/camera input while the world continues its fixed-tick simulation.
-            if (_missionFailedMenu && !menuMode && !console.IsOpen && _activeMission is { } failedMission)
-            {
-                if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Return)
-                    || _window.Input.Keyboard.WasPressed(Input.KeyCode.NumpadEnter))
-                {
-                    StartMission(failedMission.Id);
-                    _window.CursorVisible = false;
-                }
-                else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
-                {
-                    ReleasePlayedMission();
-                    if (shell is not null)
-                    {
-                        shell.OpenOn("campaign");
-                        menuMode = true;
-                        showcasePending = true;
-                        ApplyMenuDepthOfField();
-                    }
-                    _window.CursorVisible = true;
-                }
-                else
-                {
-                    _window.CursorVisible = true;
-                    _window.CursorLocked = false;
-                }
-                _window.Input.Captured = true;
-            }
-            else if (!menuMode && !console.IsOpen && _player is not null
+            if (!menuMode && !console.IsOpen && _player is not null
                 && (TacticalComputer is not null || _mapComputer is { IsReady: true }))
             {
                 // -computercam presses C on a named frame, so the transition can be captured from a
@@ -1543,13 +1516,21 @@ internal sealed partial class DesktopGame : IDisposable
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (pauseMenu)
+                else if (MenuOwnsPointer(pauseMenu, _missionFailedMenu))
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
                     // release is repeated every pass rather than done once on the way in, so nothing can
                     // quietly take the pointer back while the menu is up; it also re-arms the look's
                     // settling frame, so the warp that re-capturing the cursor produces on resume is not
                     // read as a movement the player made.
+                    //
+                    // The mission-failed screen belongs here for the same reason. It arrives while the
+                    // player is dead and the death camera is orbiting, and EVERY branch below this one
+                    // takes the pointer: the orbit, and then -- because _playerMode outlives the player --
+                    // the look, whose Look() sets IsCapturingMouse and locks. The screen released the
+                    // cursor each frame and the branch below re-took it, which is the pointer that
+                    // flashed and would not move. Standing every camera branch down is what actually
+                    // settles it; excluding them one at a time only moves the fight further down.
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
@@ -2223,13 +2204,26 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
                     // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
-                    if (!_missionFailedMenu && ++_missionFailureTicks > 151)
+                    if (!_missionFailedMenu && ++_missionFailureTicks > 151 && shell is not null)
                     {
                         _missionFailedMenu = true;
                         _computerOpen = false;
                         _computerFlight.Reset();
                         _player?.SetMapComputerOpen(false);
-                        _window.CursorVisible = true;
+
+                        // The result is a shell page, not a drawn card, so its two choices can be clicked
+                        // and navigated like every other page and the shell's own cursor is the one on
+                        // screen. menuMode hands it the frame's input and draw; pauseMenu holds the
+                        // showcase off, because the level this is drawn over is still loaded -- the same
+                        // pair the pause menu sets.
+                        menuMode = true;
+                        pauseMenu = true;
+                        shell.OpenMissionFailed();
+
+                        // The platform cursor stays hidden: the shell draws its own, so revealing this one
+                        // would put a second, unrelated pointer beside it.
+                        _window.CursorVisible = false;
+                        _player?.HoldStill();
                         _window.CursorLocked = false;
                     }
                 }
@@ -3348,22 +3342,6 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
-                if (_missionFailedMenu)
-                {
-                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    if (TacticalComputer is { } tacticalFailed)
-                    {
-                        tacticalFailed.DrawMissionFailed(batch, _window.Width, _window.Height);
-                    }
-                    else if (_mapComputer is { IsReady: true } failedComputer)
-                    {
-                        failedComputer.DrawMissionFailed(batch, _window.Width, _window.Height);
-                    }
-
-                    batch.End();
-                }
-
                 // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
                 // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
                 // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
@@ -4004,6 +3982,16 @@ internal sealed partial class DesktopGame : IDisposable
 
         return false;
     }
+
+    /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
+    /// <remarks>
+    /// Both of these screens release the cursor every frame so it can be used, and every camera branch
+    /// below them takes it back: the death orbit, the ladder camera, the look. Whichever runs last in
+    /// the frame wins, so a menu that does not stop the chain here ends up fighting one of them and the
+    /// pointer flashes between locked and free without ever moving.
+    /// </remarks>
+    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu) =>
+        pauseMenu || missionFailedMenu;
 
     /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
     internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
