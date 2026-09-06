@@ -3739,8 +3739,7 @@ public sealed class SoldierRenderer : IDisposable
         Vector3d probePosition,
         Vector3d? attachmentPosition = null,
         WorldTraceMask mask = WorldTraceMask.DynamicObjects,
-        bool includeInactiveOwners = false,
-        bool preferExistingBodyContact = false)
+        bool includeInactiveOwners = false)
     {
         if (_solids is null || Cutscenes is null)
         {
@@ -3752,25 +3751,6 @@ public sealed class SoldierRenderer : IDisposable
             // Retail 0x4626E8 only calls Human_SetParent when Human+1900 is null. Once attached,
             // the parent owns movement until a separate detach path clears it; another ground ray
             // must not silently recapture or switch the local frame.
-            return;
-        }
-
-        // Retail actor 1666 reaches Human_GroundCollision with BoneDynCubeObj's train-1888 contact
-        // already populated. That branch calls Human_SetParent directly and never executes GetNextZ.
-        // Staged actors use the collision index's corresponding dynamic broad-phase contact first;
-        // live actors below retain the fallback animated-foot query.
-        if (preferExistingBodyContact
-            && _solids.TryFindContainingDynamicOwner(
-                attachmentPosition ?? probePosition,
-                includeInactiveOwners,
-                out GameTask? existingParent)
-            && existingParent is not null)
-        {
-            Cutscenes.TryAttachActorToTask(
-                view.Soldier,
-                existingParent,
-                attachmentPosition ?? probePosition,
-                view.Orientation);
             return;
         }
 
@@ -3819,8 +3799,7 @@ public sealed class SoldierRenderer : IDisposable
                         member.Position * WorldScene.UnitsPerMetre,
                         attachmentPosition: null,
                         mask: WorldTraceMask.DynamicObjects,
-                        includeInactiveOwners: false,
-                        preferExistingBodyContact: true);
+                        includeInactiveOwners: false);
                 }
             }
         }
