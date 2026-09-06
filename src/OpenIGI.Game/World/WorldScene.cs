@@ -1104,6 +1104,15 @@ public sealed class WorldScene
                         destroyed.Model);
                 }
             }
+            // Some retail rotor attachments have no magic-object entry in the level registry.  The
+            // verified Bell/Mil attachment families remain rotor presentation objects even when that
+            // lookup misses; keep this fallback alongside the develop-side destructible metadata.
+            if (!isRotor
+                && owner is DeclaredTask { Type.Name: "Heli" }
+                && HelicopterRotorCatalog.IsKnownRotorModel(child.Name))
+            {
+                isRotor = true;
+            }
             // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation

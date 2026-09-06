@@ -587,23 +587,63 @@ public sealed class CutsceneRuntime
         // accumulator with the engine's 21.362831 factor and emits BladeSamples copies, separated by
         // PhaseStep * collective. The repeated blur meshes are why the main and tail rotors look like
         // discs in retail instead of the single frozen blade that the initial renderer produced.
-        float accumulatedPhase = state.RotorPhase * rotor.PhasePerCollectiveTick;
-        float firstAngle = accumulatedPhase * 21.362831f;
-        float sampleStep = rotor.PhaseStep * state.Thrust;
+        // A terminal landing parks the physical airframe and clears its live thrust/phase. The
+        // authored helicopter still has its visible rotor presentation in retail/editor previews,
+        // though: keep a draw-only phase running from the original collective while the body remains
+        // stationary. This does not feed lift or torque back into the landed physics state.
+        bool previewOnly = !state.IsDynamic || state.TerminalLandingLatched;
+        float visualCollective = previewOnly && state.OriginalThrust > 0f
+            ? Math.Clamp(state.OriginalThrust, 0f, 1f)
+            : state.Thrust;
+        float firstAngle;
+        if (previewOnly && visualCollective > 0f)
+        {
+            // The editor preview advances at the visible retail rates (15 rad/s for the main disc,
+            // 25 rad/s in the opposite direction for a tail disc). A parked/terminal Heli has no
+            // live physics phase to consume, so use the runtime tick as the presentation clock.
+            float angularSpeed = rotor.IsTailRotor ? -25f : 15f;
+            firstAngle = (SimulationTick / 30f) * angularSpeed * visualCollective;
+        }
+        else
+        {
+            // Rotor tasks keep ticking when the body's AnimTask stops emitting channels.
+            // Extend the last physics phase through those idle ticks without moving the body.
+            float phase = state.TerminalLandingLatched
+                ? state.PhysicsTicks * visualCollective
+                : state.RotorPhase + (Math.Max(0, SimulationTick - state.RotorPhaseTick) * visualCollective);
+            float accumulatedPhase = phase * rotor.PhasePerCollectiveTick;
+            firstAngle = accumulatedPhase * 21.362831f;
+        }
+        float sampleStep = rotor.PhaseStep * visualCollective;
 
         float maximumTilt = rotor.MaximumTilt;
-        float tilt = -Math.Clamp(1f - state.Thrust, -0.1f, 1f) * maximumTilt;
-        float originalCollective = state.OriginalThrust;
-        if (maximumTilt != 0f && originalCollective != 0f)
+        float tiltCollective = previewOnly ? visualCollective : state.Thrust;
+        float tilt = -Math.Clamp(1f - tiltCollective, -0.1f, 1f) * maximumTilt;
+
+        // The second half of the flap is the airframe's AXIAL speed: the component of the body
+        // velocity along its own vertical. 0x42C630 reads that vertical out of the Heli's live
+        // matrix at config +120/+132/+144 — the third column of the +112 basis, the same body-up
+        // vector Rotor::Tick already uses for lift. Column1 is the body's sideways axis, so the
+        // flap followed lateral drift instead of climb and descent.
+        //
+        // 0.026367188 is 108/4096: it turns the velocity's units-per-tick into km/h, the unit the
+        // record's maximum speed is authored in. Retail divides by that speed times 0.4 (80 km/h
+        // for both shipped families), so the blade needs a sustained climb to reach the authored
+        // five degrees. Dividing by the live collective instead made the term hundreds of times
+        // too large: any movement pinned the disc at the full deflection and flipped its sign with
+        // the drift, which is what turned the blur samples into an umbrella and then inverted it.
+        float referenceSpeed = state.HelicopterPhysics?.MaximumSpeed ?? 0f;
+        if (maximumTilt != 0f && referenceSpeed != 0f)
         {
-            Vector3f vertical = state.Orientation.Column1;
+            Vector3f vertical = state.Orientation.Column3;
             float axialVelocity =
                 (vertical.X * (float)state.Velocity.X)
                 + (vertical.Y * (float)state.Velocity.Y)
                 + (vertical.Z * (float)state.Velocity.Z);
-            tilt -= axialVelocity * 0.026367188f * maximumTilt / (originalCollective * 0.4f);
-            tilt = Math.Clamp(tilt, -maximumTilt, maximumTilt);
+            tilt -= axialVelocity * 0.026367188f * maximumTilt / (referenceSpeed * 0.4f);
         }
+
+        tilt = Math.Clamp(tilt, -maximumTilt, maximumTilt);
 
         draw = new RotorDrawState(
             position,
@@ -1300,6 +1340,7 @@ public sealed class CutsceneRuntime
                     new Vector3f(0.4f, 0.4f, 0.4f),
                     0.027f,
                     0.003f,
+                    200f,
                     [
                         new(20f, Vector3f.UnitX, Vector3f.Zero),
                         new(3f, Vector3f.UnitY, Vector3f.Zero),
@@ -1318,6 +1359,7 @@ public sealed class CutsceneRuntime
                 transform.Control = default;
                 transform.Heading = 0f;
                 transform.RotorPhase = 0f;
+                transform.RotorPhaseTick = SimulationTick;
                 transform.AngularMomentum = default;
                 transform.QueuedRotorForce = default;
                 transform.QueuedRotorTorque = default;
@@ -1414,6 +1456,7 @@ public sealed class CutsceneRuntime
                 transform.Thrust = 0f;
             }
             transform.RotorPhase += transform.Thrust;
+            transform.RotorPhaseTick = SimulationTick;
             if (target is DeclaredTask liveHeli)
             {
                 transform.CollisionEnabled = Bool(liveHeli, "Collision detection");
@@ -2636,6 +2679,7 @@ public sealed class CutsceneRuntime
         public bool TerminalLandingEventLogged { get; set; }
         public Vector3d TerminalLandingPosition { get; set; }
         public float RotorPhase { get; set; }
+        public int RotorPhaseTick { get; set; }
         public Vector3f AngularMomentum { get; set; }
         public int PhysicsTicks { get; set; }
         public float RotorAxialCoefficient { get; set; }
