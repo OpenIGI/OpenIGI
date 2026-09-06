@@ -3746,6 +3746,15 @@ public sealed class SoldierRenderer : IDisposable
             return;
         }
 
+        // A moving owner that leaves its conditional container is the native
+        // Human_GroundCollision inactive-owner branch (0x463550): clear the parent slot first. An
+        // empty query is intentionally different and leaves an existing parent in place, so this
+        // check is based only on the owner's live registration state.
+        if (Cutscenes.TryDetachInactiveAttachment(view.Soldier))
+        {
+            return;
+        }
+
         if (Cutscenes.TryGetAttachedDrawTransform(view.Soldier, out _, out _))
         {
             // Retail 0x4626E8 only calls Human_SetParent when Human+1900 is null. Once attached,

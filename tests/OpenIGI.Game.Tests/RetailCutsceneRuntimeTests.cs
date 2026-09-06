@@ -91,6 +91,41 @@ public sealed class RetailCutsceneRuntimeTests
     }
 
     [RequiresGameDataFact]
+    public void MissionOneHumanDetachesWhenItsMovingOwnerIsUnregistered()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        _ = new MissionLoader(missions, fs, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables);
+        HumanSoldierTask passenger = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1505));
+        GameTask helicopter = Assert.IsType<DeclaredTask>(root.Tree.FromId(1502));
+
+        runtime.Tick();
+        Assert.True(ConditionalContainerGate.IsTaskActive(helicopter));
+        Assert.True(runtime.TryAttachActorToTask(
+            passenger,
+            helicopter,
+            passenger.Position,
+            Matrix3f.FromEngineEulerAngles(0f, 0f, passenger.Gamma)));
+        Assert.True(runtime.TryGetAttachedDrawTransform(passenger, out _, out _));
+
+        // ConditionalContainer_RunHandler unregisters the moving subtree before the next Human ground
+        // pass. The native 0x463550 helper clears the parent only for this inactive-owner case.
+        Assert.True(loop.Variables.TryWrite(
+            "ConditionalContainer_4002.isRun",
+            QvmValue.Zero));
+        Assert.False(ConditionalContainerGate.IsTaskActive(helicopter));
+        Assert.True(runtime.TryDetachInactiveAttachment(passenger));
+        Assert.False(runtime.TryGetAttachedDrawTransform(passenger, out _, out _));
+        Assert.False(runtime.TryDetachInactiveAttachment(passenger));
+    }
+
+    [RequiresGameDataFact]
     public void MissionOneVehicleAttachmentsKeepTheirAuthoredOffsetsWhileMoving()
     {
         VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));

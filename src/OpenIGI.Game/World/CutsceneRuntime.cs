@@ -737,6 +737,29 @@ public sealed class CutsceneRuntime
         return CaptureAttachment(task, state, parent, parentTransform);
     }
 
+    /// <summary>
+    /// Clears a cinematic Human's moving-parent slot when its contacted owner has been unregistered.
+    /// </summary>
+    /// <remarks>
+    /// Native <c>Human_GroundCollision</c> calls the aligned detach helper at <c>0x463550</c> when a
+    /// candidate owner is no longer active; an empty query only clears support fields and deliberately
+    /// retains an existing parent. The latter distinction matters during the Level 1 helicopter-to-train
+    /// handoff, so this method checks only the parent's registration state and never guesses a replacement.
+    /// </remarks>
+    public bool TryDetachInactiveAttachment(GameTask task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        if (!_attachments.TryGetValue(task, out AttachmentState? attachment)
+            || ConditionalContainerGate.IsTaskActive(attachment.ParentTask))
+        {
+            return false;
+        }
+
+        _attachments.Remove(task);
+        return true;
+    }
+
     /// <summary>Consumes one Human root-motion delta while the Human is standing on a moving parent.</summary>
     /// <remarks>
     /// Every retail Human state first rotates <c>Human+1312</c> through the Human orientation (for
@@ -1187,6 +1210,7 @@ public sealed class CutsceneRuntime
     {
         UpdateDerivedPose(parentTransform);
         AttachmentState attachment = new(
+            parent,
             parentTransform,
             DynamicRevision(parentTransform),
             parentTransform.Position,
@@ -2726,6 +2750,7 @@ public sealed class CutsceneRuntime
     }
     private sealed record TimedShot(EditCameraShot Shot, double Start);
     private sealed class AttachmentState(
+        GameTask parentTask,
         TransformState parent,
         int parentRevisionAtCapture,
         Vector3d parentOriginPosition,
@@ -2733,6 +2758,7 @@ public sealed class CutsceneRuntime
         Vector3d position,
         Matrix3f orientation)
     {
+        public GameTask ParentTask { get; } = parentTask;
         public TransformState Parent { get; } = parent;
         public int ParentRevisionAtCapture { get; } = parentRevisionAtCapture;
         public Vector3d ParentOriginPosition { get; } = parentOriginPosition;
