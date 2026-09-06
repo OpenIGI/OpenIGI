@@ -7,6 +7,7 @@ namespace OpenIGI.Rendering.Tests;
 /// <summary>
 /// Pins how a graphics preset is applied, detected, and lost when the player takes over.
 /// </summary>
+[Collection(SharedPresetRegistry.Name)]
 public sealed class GraphicsPresetRegistryTests
 {
     /// <summary>

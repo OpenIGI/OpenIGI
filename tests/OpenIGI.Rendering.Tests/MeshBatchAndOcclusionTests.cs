@@ -5,6 +5,7 @@ using Xunit;
 
 namespace OpenIGI.Rendering.Tests;
 
+[Collection(SharedPresetRegistry.Name)]
 public sealed class MeshBatchAndOcclusionTests
 {
     [Fact]
