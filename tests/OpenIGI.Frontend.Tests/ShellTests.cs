@@ -8,6 +8,7 @@ using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Input;
+using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
@@ -40,10 +41,20 @@ public sealed class ShellTests
 
         public int AbandonCalls { get; private set; }
 
+        public MissionConditions Conditions { get; private set; } = MissionConditions.Default;
+
+        public int ConditionCalls { get; private set; }
+
         public void StartMission(int missionId, int difficulty)
         {
             StartedMission = missionId;
             StartedDifficulty = difficulty;
+        }
+
+        public void SetMissionConditions(MissionConditions conditions)
+        {
+            Conditions = conditions;
+            ConditionCalls++;
         }
 
         public void ResumeMission() => ResumeCalls++;
@@ -297,6 +308,62 @@ public sealed class ShellTests
 
             Assert.Equal(1, host.StartedMission); // first mission selected by default
             Assert.True(host.StartedDifficulty >= 0);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The campaign's hour and weather are a way to play the run, so they are told to the app as they are
+    /// chosen and they survive the screen being rebuilt.
+    /// </summary>
+    /// <remarks>
+    /// The second half is the half that would break silently. This panel is built fresh every time the
+    /// section is opened, so a choice held on the screen rather than in the context would show "Default"
+    /// back to a player three missions into a night run -- and the run would carry on at night while the
+    /// menu said it would not, which is worse than either behaviour on its own.
+    /// </remarks>
+    [Fact]
+    public void The_campaign_chooses_the_hour_and_the_weather_the_run_is_played_in()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            var campaign = (CampaignScreen)shell.Stack.Top!;
+            Dropdown time = Find<Dropdown>(campaign, d => d.Label == "Time of day")!;
+            Dropdown weather = Find<Dropdown>(campaign, d => d.Label == "Weather")!;
+
+            Assert.Equal(MissionTimeOfDay.Default, (MissionTimeOfDay)time.SelectedIndex);
+            Assert.Equal(MissionWeather.Default, (MissionWeather)weather.SelectedIndex);
+
+            time.SelectedIndex = (int)MissionTimeOfDay.Night;
+            weather.SelectedIndex = (int)MissionWeather.Rain;
+
+            Assert.Equal(new MissionConditions(MissionTimeOfDay.Night, MissionWeather.Rain), host.Conditions);
+
+            // Away and back: the section is rebuilt from scratch and still shows the run being played.
+            shell.OpenOn("settings");
+            Pump(shell, 0.6f);
+            shell.OpenOn("campaign");
+            Pump(shell, 0.6f);
+
+            var reopened = (CampaignScreen)shell.Stack.Top!;
+            Assert.Equal(
+                MissionTimeOfDay.Night,
+                (MissionTimeOfDay)Find<Dropdown>(reopened, d => d.Label == "Time of day")!.SelectedIndex);
+            Assert.Equal(
+                MissionWeather.Rain,
+                (MissionWeather)Find<Dropdown>(reopened, d => d.Label == "Weather")!.SelectedIndex);
         }
         finally
         {

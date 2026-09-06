@@ -1,3 +1,5 @@
+using OpenIGI.Rendering;
+
 namespace OpenIGI.Frontend;
 
 /// <summary>
@@ -15,6 +17,16 @@ public interface IShellHost
     /// <param name="missionId">The mission to start.</param>
     /// <param name="difficulty">The difficulty index to start at.</param>
     void StartMission(int missionId, int difficulty);
+
+    /// <summary>Sets the conditions the campaign is played under, from this mission onwards.</summary>
+    /// <param name="conditions">The hour missions open at and the weather they are played in.</param>
+    /// <remarks>
+    /// Separate from <see cref="StartMission"/> because the choice outlives the mission it was made
+    /// beside: it is the campaign's, and the app holds it until the player changes it again. Told as it
+    /// is chosen rather than on the way into a level so that the mission previewed behind the menu can
+    /// show the hour the player has just asked for.
+    /// </remarks>
+    void SetMissionConditions(MissionConditions conditions);
 
     /// <summary>Closes the pause menu and lets the mission underneath run on.</summary>
     /// <remarks>

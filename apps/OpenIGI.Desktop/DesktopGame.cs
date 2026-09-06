@@ -307,6 +307,11 @@ internal sealed partial class DesktopGame : IDisposable
     // radiance cache, the sky fill) lights from in place of the raw authored one. Recomputed each rendered
     // frame; scrubbed on real elapsed time so holding a key sweeps smoothly whatever the frame rate.
     private readonly DayNightCycle _dayNight = new();
+
+    // Chosen on the campaign screen beside the difficulty and held from there on, so a run started at
+    // night stays at night through every mission after it. Session state, never archived -- see
+    // MissionConditions.
+    private MissionConditions _conditions = MissionConditions.Default;
     private readonly SunGizmo _sunGizmo = new();
     private DirectionalLightSettings? _effectiveSun;
     private int _dayNightMilliseconds;
@@ -1205,6 +1210,32 @@ internal sealed partial class DesktopGame : IDisposable
                     else
                     {
                         LoadCold();
+                    }
+                },
+                setMissionConditions: conditions =>
+                {
+                    _conditions = conditions;
+
+                    // One variable carries the hour, because one already means exactly this:
+                    // r_time_of_day is "the hour a level opens at, or negative for the level's own", and
+                    // both the mission loader and the menu's backdrop already reset the cycle from it. It
+                    // is deliberately not archived, which is what makes a campaign choice safe to put in
+                    // it -- a night run lasts the session and does not become a preference.
+                    RenderCVars.TimeOfDay.Value = conditions.StartHour;
+
+                    // The weather gets no variable of its own. Forcing rain everywhere through
+                    // r_weather_force WOULD be archived, so a campaign choice would outlive the campaign
+                    // and rain on every mission of the next run; ApplyWeatherSettings reads the choice
+                    // straight off _conditions instead.
+                    ApplyWeatherSettings();
+
+                    // The level behind the menu is re-lit at once, so choosing night shows night while
+                    // the briefing is still being read. Never over a mission being played: the sky is not
+                    // to change under a player halfway through a level, and the hour they chose is picked
+                    // up by the next level they load.
+                    if (menuMode && !pauseMenu)
+                    {
+                        _dayNight.ResetForLevel(_sun, RenderCVars.TimeOfDay.Value);
                     }
                 },
                 resumeMission: () =>
@@ -5728,16 +5759,23 @@ internal sealed partial class DesktopGame : IDisposable
 
     private void ApplyWeatherSettings()
     {
+        // The campaign screen's choice overrides both the level's own data and the player's
+        // r_weather_kind, and it has to FORCE: eleven of the fourteen retail missions author no weather
+        // at all, so a choice that only asked politely would do nothing in most of the campaign and read
+        // as a broken setting. Default forces nothing and leaves every answer where it was.
+        WeatherKind weatherKind = _conditions.WeatherStyle(RenderCVars.WeatherStyle.Value);
+        bool forceWeather = RenderCVars.WeatherForce.Value || _conditions.ForcesWeather;
+
         _rain?.ApplySettings(
             RenderCVars.WeatherEnabled.Value,
-            RenderCVars.WeatherStyle.Value,
+            weatherKind,
             RenderCVars.WeatherSpeed.Value,
-            RenderCVars.WeatherForce.Value);
+            forceWeather);
         _snow?.ApplySettings(
             RenderCVars.WeatherEnabled.Value,
-            RenderCVars.WeatherStyle.Value,
+            weatherKind,
             RenderCVars.WeatherSpeed.Value,
-            RenderCVars.WeatherForce.Value);
+            forceWeather);
 
         if (_storm is { } storm)
         {
@@ -5759,7 +5797,7 @@ internal sealed partial class DesktopGame : IDisposable
             _logger.Information(
                 "Storm",
                 FormattableString.Invariant(
-                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={RenderCVars.Storm.Value} r_weather_enabled={RenderCVars.WeatherEnabled.Value} r_weather_kind={RenderCVars.WeatherStyle.Value} r_weather_force={RenderCVars.WeatherForce.Value} intensity={RenderCVars.StormIntensity.Value}"));
+                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={RenderCVars.Storm.Value} r_weather_enabled={RenderCVars.WeatherEnabled.Value} kind={weatherKind} force={forceWeather} campaign={_conditions.Weather}/{_conditions.TimeOfDay} intensity={RenderCVars.StormIntensity.Value}"));
         }
     }
 
