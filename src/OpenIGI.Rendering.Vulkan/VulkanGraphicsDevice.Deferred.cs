@@ -558,6 +558,7 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.ThinRelaxedRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        Mark(VulkanPassMarker.ThinGeometry);
         _deferred.ThinGeometry.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -591,6 +592,7 @@ public sealed partial class VulkanGraphicsDevice
                 cmd, target.GuideImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
                 PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+            Mark(VulkanPassMarker.RejectShading);
             _deferred.RejectShading.Record(
                 cmd,
                 _frameLoop.CurrentFrame,
@@ -620,6 +622,7 @@ public sealed partial class VulkanGraphicsDevice
                 cmd, target.RejectionBlendImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
                 PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+            Mark(VulkanPassMarker.RejectionDilate);
             _deferred.RejectionDilate.Record(
                 cmd,
                 _frameLoop.CurrentFrame,
@@ -642,6 +645,7 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.SpatialAaImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        Mark(VulkanPassMarker.SpatialAntiAliasing);
         _deferred.SpatialAntiAliasing.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -657,6 +661,7 @@ public sealed partial class VulkanGraphicsDevice
             cmd, target.SpatialAaImage, AccessFlags.ShaderWriteBit, AccessFlags.ShaderReadBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        Mark(VulkanPassMarker.UpdateHistory);
         _deferred.UpdateHistory.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -694,6 +699,7 @@ public sealed partial class VulkanGraphicsDevice
             PipelineStageFlags.FragmentShaderBit | PipelineStageFlags.ComputeShaderBit,
             PipelineStageFlags.ComputeShaderBit);
 
+        Mark(VulkanPassMarker.ResolveHistory);
         _deferred.ResolveHistory.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -1003,6 +1009,7 @@ public sealed partial class VulkanGraphicsDevice
             cmd, velocity, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
             PipelineStageFlags.FragmentShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+        Mark(VulkanPassMarker.CameraVelocity);
         _deferred.Velocity.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -1027,6 +1034,7 @@ public sealed partial class VulkanGraphicsDevice
         // were the wall behind him, and the temporal accumulation smears him along his own path.
         if (_objectVelocityDraws.Count > 0)
         {
+            Mark(VulkanPassMarker.ObjectVelocity);
             _deferred.ObjectVelocity.Record(
                 cmd,
                 target.VelocityView,
@@ -1058,11 +1066,13 @@ public sealed partial class VulkanGraphicsDevice
         OcclusionBarrier(
             cmd, target.OccluderImage, AccessFlags.ShaderReadBit, AccessFlags.TransferWriteBit,
             PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.TransferBit);
+        Mark(VulkanPassMarker.OccluderClear);
         ClearOccluderScatter(cmd, target.OccluderImage);
         OcclusionBarrier(
             cmd, target.OccluderImage, AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit | AccessFlags.ShaderWriteBit,
             PipelineStageFlags.TransferBit, PipelineStageFlags.ComputeShaderBit);
 
+        Mark(VulkanPassMarker.DilateVelocity);
         _deferred.DilateVelocity.Record(
             cmd,
             _frameLoop.CurrentFrame,
@@ -1106,6 +1116,7 @@ public sealed partial class VulkanGraphicsDevice
                 cmd, target.HistoryRejectionImage, AccessFlags.ShaderReadBit, AccessFlags.ShaderWriteBit,
                 PipelineStageFlags.ComputeShaderBit, PipelineStageFlags.ComputeShaderBit);
 
+            Mark(VulkanPassMarker.DecimateHistory);
             _deferred.DecimateHistory.Record(
                 cmd,
                 _frameLoop.CurrentFrame,
@@ -1139,6 +1150,15 @@ public sealed partial class VulkanGraphicsDevice
     // Whether this frame ran the dilation. The first captured frame has no motion to dilate, and the
     // history update must then read the cleared raw velocity rather than a stale dilation.
     private bool _velocityDilated;
+
+    /// <summary>Records which pass the GPU is about to run, for a device lost inside it.</summary>
+    /// <remarks>
+    /// The stage brackets are too coarse to place a fault: the velocity pass and the temporal resolve both
+    /// open <c>TemporalResolve</c>, so a lost device could only say it was somewhere in one of them. This
+    /// names the individual pass, and costs a marker write on a path that already writes one per stage.
+    /// </remarks>
+    private void Mark(VulkanPassMarker pass) =>
+        _device.Checkpoint(_frameCommandBuffer, VulkanCheckpointMarkers.Pass(pass));
 
     /// <summary>Resets the closest-occluder scatter to "nothing landed here", which is all-ones.</summary>
     private unsafe void ClearOccluderScatter(CommandBuffer cmd, Image occluder)

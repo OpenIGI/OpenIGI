@@ -23,6 +23,7 @@ internal static class VulkanCheckpointMarkers
 {
     private const int StageBeginBase = 1;
     private const int StageEndBase = 101;
+    private const int PassBase = 301;
 
     /// <summary>A stage ended whose identity the profiler did not have.</summary>
     public const nint StageEndUnknown = 200;
@@ -39,6 +40,14 @@ internal static class VulkanCheckpointMarkers
     /// <summary>The marker recorded as <paramref name="stage"/> ends.</summary>
     public static nint StageEnd(RenderStage stage) => StageEndBase + (int)stage;
 
+    /// <summary>The marker recorded as <paramref name="pass"/> is about to be submitted.</summary>
+    /// <remarks>
+    /// Finer than a stage on purpose. Two bodies of work open the same <c>TemporalResolve</c> range -- the
+    /// velocity pass and the temporal resolve proper -- so a stage marker cannot say which of them the GPU
+    /// stopped in, nor which of the dozen dispatches between them. A pass marker can.
+    /// </remarks>
+    public static nint Pass(VulkanPassMarker pass) => PassBase + (int)pass;
+
     /// <summary>Names a marker read back from the queue.</summary>
     public static string Describe(nint marker)
     {
@@ -48,6 +57,7 @@ internal static class VulkanCheckpointMarkers
             (int)FrameBegin => "frame begin",
             (int)OneOffBatch => "one-off batch (upload, capture or build)",
             (int)StageEndUnknown => "end of an untimed stage",
+            >= PassBase => $"pass {(VulkanPassMarker)(value - PassBase)}",
             >= StageEndBase and < StageEndBase + 99 => $"end of {(RenderStage)(value - StageEndBase)}",
             >= StageBeginBase and < StageEndBase => $"start of {(RenderStage)(value - StageBeginBase)}",
             _ => $"unknown marker {value}",
