@@ -541,11 +541,13 @@ public sealed class RetailCutsceneRuntimeTests
             }
         }
 
-        Assert.True(solids.TryFindContainingDynamicOwner(
+        // The live renderer must not bind a staged actor to dormant geometry. The exact
+        // scene-1200 mesh has no active dynamic owner at Jones's authored point; searching
+        // inactive owners would select landing car1888 and mask the live attachment bug.
+        Assert.False(solids.TryFindContainingDynamicOwner(
             new Vector3d(22_205_644.0, -57_659_132.0, 174_528_880.0),
-            includeInactiveOwners: true,
-            out GameTask? stagedParent));
-        Assert.Equal(1888, stagedParent?.Id);
+            includeInactiveOwners: false,
+            out _));
 
         GameTask freightCar = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
         Assert.True(runtime.TryGetDrawTransform(freightCar, out Vector3d initialFreightPosition, out _));
