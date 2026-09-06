@@ -23,6 +23,13 @@ namespace OpenIGI.Game.World;
 /// lookup with no traversal, which matters when every ray of every probe does one.
 /// </para>
 /// <para>
+/// <b>Its cells are hashed rather than laid out in a box</b>, which is what lets the cell be a fixed
+/// eight metres whatever the level is shaped like. A box grid has to divide the level's own extent, so
+/// its cell is decided by the geometry furthest out — and a mission is not one compact box: level 8 is
+/// three bases with open ground between them, and most missions leave a handful of props parked
+/// kilometres away from all of it. See <see cref="CellMetres"/> for what that cost.
+/// </para>
+/// <para>
 /// Cells hold page indices rather than placements. A placement's pages face different ways and sit in
 /// different parts of its bounding box, so going through the placement would mean testing every card
 /// of a large object to find the one facing the ray — whereas a page's own bounds are tight enough
@@ -33,15 +40,51 @@ public sealed class SurfaceCacheLookup : IDisposable
 {
     private const string LogCategory = "SurfaceCache";
 
-    /// <summary>How many cells the grid gets along each axis.</summary>
+    /// <summary>How many buckets the grid's cells are hashed into.</summary>
     /// <remarks>
-    /// A hundred and twenty-eight cubed is two million cells and sixteen megabytes of ranges, built
-    /// once and never rebuilt. It started at sixty-four, which put a cell at twelve metres and left the
-    /// busiest holding 196 pages — and the lookup walks every page in a cell, so that figure multiplied
-    /// by eight rays by a million texels is what the gather actually costs. Halving the cell is the
-    /// cheapest thing that moves it.
+    /// Two million, which is sixteen megabytes of ranges, built once and never rebuilt — the same table
+    /// the grid had when it was a hundred and twenty-eight cells cubed and addressed directly. A power
+    /// of two, so the hash is masked rather than divided.
     /// </remarks>
-    public const int Resolution = 128;
+    public const int Buckets = 1 << 21;
+
+    /// <summary>How large one cell is, in metres, on every axis of every level.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Fixed, which is the whole point.</b> The cell used to be the level's longest span divided by a
+    /// hundred and twenty-eight, so a level's own shape decided how finely it was indexed — and what
+    /// actually decided it was the geometry FURTHEST from the level. Level 4 leaves twenty-seven objects
+    /// at the world origin, thirty kilometres from the base; level 1 keeps twenty-seven buildings three
+    /// kilometres underground; level 8 keeps a room of props a hundred kilometres straight up. Level 8 is
+    /// also the first mission built as three separate bases with open ground between them, so its span
+    /// was large before the strays even counted. Measured to those, its cell came out at 795 metres: the
+    /// entire playable level fell into six cells of the two million, and the busiest held 4932 of the
+    /// 6042 page references. A lookup walks its cell, so every ray that hit anything walked most of the
+    /// level — 29 ms a frame of global illumination on level 8 against 4 ms on level 1, whose cache is
+    /// only a third smaller. That was the one mission-specific frame-rate cliff in the game.
+    /// </para>
+    /// <para>
+    /// Hashing the cells instead of laying them out in a box is what lets the size be fixed: a level can
+    /// be any size, in any number of pieces, anywhere, and the cost of a lookup follows how densely the
+    /// geometry is packed rather than how far apart its far corners are. Nothing has to be judged as
+    /// belonging to the level or not, which matters for a game whose missions really do have several
+    /// bases kilometres apart.
+    /// </para>
+    /// <para>
+    /// Eight metres because that is the scale of what a card is: a wall, a hut, a container. Measured
+    /// across the fourteen missions it leaves the busiest bucket between 60 and 250 pages, where the
+    /// spread used to run from 72 to 4932.
+    /// </para>
+    /// </remarks>
+    public const float CellMetres = 8f;
+
+    /// <summary>The most cells one card page may be filed under before it is left out as malformed.</summary>
+    /// <remarks>
+    /// Forty cells cubed, or a card three hundred metres across. The widest card in the retail missions
+    /// reaches a hundred and twenty-two metres from its model's origin, so this leaves about a factor of
+    /// two in hand. It exists because hashing removed the bound the box grid used to impose for free.
+    /// </remarks>
+    private const long MaximumCellsPerPage = 64L * 1024L;
 
     private readonly IGraphicsDevice _device;
     private bool _disposed;
@@ -51,14 +94,12 @@ public sealed class SurfaceCacheLookup : IDisposable
         StorageBufferHandle cells,
         StorageBufferHandle pages,
         Vector3f minimum,
-        float cellSize,
         int references)
     {
         _device = device;
         Cells = cells;
         Pages = pages;
         Minimum = minimum;
-        CellSize = cellSize;
         References = references;
     }
 
@@ -68,11 +109,14 @@ public sealed class SurfaceCacheLookup : IDisposable
     /// <summary>Gets the buffer holding the page indices the cells point into.</summary>
     public StorageBufferHandle Pages { get; }
 
-    /// <summary>Gets the grid's minimum corner, relative to the cache's origin.</summary>
+    /// <summary>Gets the point cell indices are measured from, relative to the cache's origin.</summary>
+    /// <remarks>
+    /// The hash does not need an origin -- a cell index may be negative -- but the subtraction keeps the
+    /// numbers small enough that a float divides them exactly, and the levels sit kilometres from the
+    /// cache's own origin. The shader is given this same value, so a query point and the page whose box
+    /// contains it land on the same cell.
+    /// </remarks>
     public Vector3f Minimum { get; }
-
-    /// <summary>Gets the size of one cell, in metres.</summary>
-    public float CellSize { get; }
 
     /// <summary>Gets how many page references the cells hold in total.</summary>
     public int References { get; }
@@ -145,18 +189,16 @@ public sealed class SurfaceCacheLookup : IDisposable
             return null;
         }
 
-        // A margin, so a hit that lands a touch outside the outermost card -- which the trace's own
-        // error makes routine -- still falls in a cell rather than off the grid entirely.
-        float span = MathF.Max(
-            MathF.Max(worldHigh.X - worldLow.X, worldHigh.Y - worldLow.Y),
-            MathF.Max(worldHigh.Z - worldLow.Z, 1f));
-
-        float cellSize = span * 1.02f / Resolution;
+        // Snapped to a whole cell, so the grid's phase does not shift with the outermost card and the
+        // cells a page is filed under are the cells a lookup at the same point computes.
         Vector3f minimum = new(
-            worldLow.X - cellSize, worldLow.Y - cellSize, worldLow.Z - cellSize);
+            MathF.Floor(worldLow.X / CellMetres) * CellMetres,
+            MathF.Floor(worldLow.Y / CellMetres) * CellMetres,
+            MathF.Floor(worldLow.Z / CellMetres) * CellMetres);
 
-        int cells = Resolution * Resolution * Resolution;
+        int cells = Buckets;
         int[] counts = new int[cells];
+        int oversized = 0;
 
         // Counted first, then filled. Two passes over the pages costs a few milliseconds once and saves
         // holding a quarter of a million growable lists, which is the part that would actually hurt.
@@ -185,8 +227,24 @@ public sealed class SurfaceCacheLookup : IDisposable
                     continue;
                 }
 
-                CellRange(lows[page], highs[page], minimum, cellSize,
+                CellRange(lows[page], highs[page], minimum,
                     out int x0, out int y0, out int z0, out int x1, out int y1, out int z1);
+
+                // A card whose box is larger than any card can be. Nothing in the retail missions comes
+                // near this -- the widest is about a quarter of the limit -- but the cells a page is
+                // filed under used to be bounded by the grid being a box, and without that bound a
+                // single malformed card in a mod could ask the loader for gigabytes. Left out and
+                // counted rather than clamped: a page filed in the wrong cells is worse than one the
+                // bounce cannot find.
+                if ((long)(x1 - x0 + 1) * (y1 - y0 + 1) * (z1 - z0 + 1) > MaximumCellsPerPage)
+                {
+                    if (pass == 0)
+                    {
+                        oversized++;
+                    }
+
+                    continue;
+                }
 
                 for (int z = z0; z <= z1; z++)
                 {
@@ -194,7 +252,7 @@ public sealed class SurfaceCacheLookup : IDisposable
                     {
                         for (int x = x0; x <= x1; x++)
                         {
-                            int cell = (((z * Resolution) + y) * Resolution) + x;
+                            int cell = Bucket(x, y, z);
 
                             if (pass == 0)
                             {
@@ -211,7 +269,15 @@ public sealed class SurfaceCacheLookup : IDisposable
 
             if (pass == 1)
             {
-                return Upload(device, log, offsets!, counts, references!, minimum, cellSize);
+                if (oversized > 0)
+                {
+                    log.Warning(
+                        LogCategory,
+                        $"{oversized} card page(s) claim a box too large to index and were left out; "
+                        + "a ray that hits one takes no bounce off it.");
+                }
+
+                return Upload(device, log, offsets!, counts, references!, minimum);
             }
         }
 
@@ -237,8 +303,7 @@ public sealed class SurfaceCacheLookup : IDisposable
         int[] offsets,
         int[] counts,
         int[] references,
-        Vector3f minimum,
-        float cellSize)
+        Vector3f minimum)
     {
         int cells = counts.Length;
         int[] ranges = new int[cells * 2];
@@ -273,11 +338,11 @@ public sealed class SurfaceCacheLookup : IDisposable
 
             log.Information(
                 LogCategory,
-                $"Card lookup: {references.Length} reference(s) over {occupied} occupied cell(s) of "
-                + $"{cells}, busiest {busiest}, cell {cellSize:0.##} m.");
+                $"Card lookup: {references.Length} reference(s) over {occupied} occupied bucket(s) of "
+                + $"{cells}, busiest {busiest}, cell {CellMetres:0.##} m.");
 
             return new SurfaceCacheLookup(
-                device, cellBuffer, pageBuffer, minimum, cellSize, references.Length);
+                device, cellBuffer, pageBuffer, minimum, references.Length);
         }
         catch (GraphicsDeviceException error)
         {
@@ -338,24 +403,40 @@ public sealed class SurfaceCacheLookup : IDisposable
         return float.IsFinite(low.X) && float.IsFinite(high.X);
     }
 
+    /// <summary>The span of cells a page's box covers, as signed indices off <paramref name="minimum"/>.</summary>
     private static void CellRange(
         Vector3f low,
         Vector3f high,
         Vector3f minimum,
-        float cellSize,
         out int x0, out int y0, out int z0,
         out int x1, out int y1, out int z1)
     {
-        x0 = Clamp((low.X - minimum.X) / cellSize);
-        y0 = Clamp((low.Y - minimum.Y) / cellSize);
-        z0 = Clamp((low.Z - minimum.Z) / cellSize);
-        x1 = Clamp((high.X - minimum.X) / cellSize);
-        y1 = Clamp((high.Y - minimum.Y) / cellSize);
-        z1 = Clamp((high.Z - minimum.Z) / cellSize);
+        x0 = CellAt(low.X - minimum.X);
+        y0 = CellAt(low.Y - minimum.Y);
+        z0 = CellAt(low.Z - minimum.Z);
+        x1 = CellAt(high.X - minimum.X);
+        y1 = CellAt(high.Y - minimum.Y);
+        z1 = CellAt(high.Z - minimum.Z);
     }
 
-    private static int Clamp(float at) =>
-        Math.Clamp((int)MathF.Floor(at), 0, Resolution - 1);
+    private static int CellAt(float at) => (int)MathF.Floor(at / CellMetres);
+
+    /// <summary>Which bucket a cell is filed under. Must match the shader's hash exactly.</summary>
+    /// <remarks>
+    /// Teschner's three large primes, one per axis, exclusive-ored and masked down to the table. Chosen
+    /// because it is short enough to be written twice -- once here and once in GLSL -- with no doubt that
+    /// the two agree, which is the only property that matters: a page filed under a bucket the lookup
+    /// does not compute is a page the bounce cannot find. Unsigned multiplication wraps identically in
+    /// both languages, and a negative index converts to the same bit pattern in both.
+    /// </remarks>
+    private static int Bucket(int x, int y, int z)
+    {
+        unchecked
+        {
+            uint hash = ((uint)x * 0x8DA6B343u) ^ ((uint)y * 0xD8163841u) ^ ((uint)z * 0xCB1AB31Fu);
+            return (int)(hash & (Buckets - 1));
+        }
+    }
 
     private static Vector3f Lower(Vector3f a, Vector3f b) =>
         new(MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y), MathF.Min(a.Z, b.Z));
