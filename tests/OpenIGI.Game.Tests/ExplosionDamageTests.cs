@@ -10,24 +10,22 @@ namespace OpenIGI.Game.Tests;
 public sealed class ExplosionDamageTests
 {
     [Fact]
-    public void TheShippedGrenadeIsBinaryBecauseItsFalloffIsZero()
+    public void TheShippedGrenadeUsesTheAuthoredFourMetreFalloff()
     {
-        // The single most consequential number here: the retail default falloff is 0, so a grenade does
-        // its full damage anywhere inside five metres and nothing at all just outside. There is no
-        // gradient in the shipped game.
+        // These values come from the Hand Grenade child tags in weaponconfig.qvm.
         float radius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);
         float falloff = ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeFalloffMetres);
         const float body = 0f;
         const float factor = ExplosionDamage.DefaultGrenadeDamageFactor;
 
-        Assert.Equal(0f, falloff);
+        Assert.Equal(4f * ExplosionDamage.UnitsPerMetre, falloff);
 
         Assert.Equal(factor, ExplosionDamage.Dose(0f, body, radius, falloff, factor));
         Assert.Equal(factor, ExplosionDamage.Dose(radius - 1f, body, radius, falloff, factor));
 
-        // A millimetre outside and it is nothing.
-        Assert.Equal(0f, ExplosionDamage.Dose(radius, body, radius, falloff, factor));
-        Assert.Equal(0f, ExplosionDamage.Dose(radius + 4f, body, radius, falloff, factor));
+        Assert.Equal(factor, ExplosionDamage.Dose(radius, body, radius, falloff, factor));
+        Assert.Equal(factor * 0.5f, ExplosionDamage.Dose(radius + (falloff * 0.5f), body, radius, falloff, factor));
+        Assert.Equal(0f, ExplosionDamage.Dose(radius + falloff, body, radius, falloff, factor));
     }
 
     [Fact]
@@ -131,8 +129,8 @@ public sealed class ExplosionDamageTests
         // When a grenade has no parameter block the update passes literals instead. They are the same
         // numbers as the tag defaults, which is worth pinning: a mismatch would mean the two paths
         // disagreed about how big a grenade is.
-        Assert.Equal(20480f, ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres));
-        Assert.Equal(1f, ExplosionDamage.DefaultGrenadeDamageFactor);
-        Assert.Equal(0f, ExplosionDamage.DefaultGrenadeFalloffMetres);
+        Assert.Equal(28672f, ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres));
+        Assert.Equal(1.3f, ExplosionDamage.DefaultGrenadeDamageFactor);
+        Assert.Equal(4f, ExplosionDamage.DefaultGrenadeFalloffMetres);
     }
 }

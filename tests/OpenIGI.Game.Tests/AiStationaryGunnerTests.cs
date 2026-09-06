@@ -58,6 +58,20 @@ public sealed class AiStationaryGunnerTests
     }
 
     [Fact]
+    public void ScriptedActivationMountsWithoutTheConeGracePeriod()
+    {
+        object owner = new();
+        AiGunnerCombat combat = new(owner);
+        AiStationaryGun gun = Gun();
+
+        Assert.True(combat.MountImmediately(gun));
+        Assert.True(combat.IsMounted);
+        Assert.Same(gun, combat.MountedGun);
+        Assert.True(gun.IsOccupiedBy(owner));
+        Assert.Equal(AiGunnerCombat.ConeGraceTicks, combat.ConeTicks);
+    }
+
+    [Fact]
     public void ThirtyOutsideTicksPrecedeTheDismountWrite()
     {
         object owner = new();

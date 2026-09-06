@@ -64,6 +64,8 @@ public sealed class PlayerCamera
     private readonly List<GunImpact> _impacts = [];
     private readonly BallisticSimulation _ballistics = new();
     private readonly GrenadeSimulation _grenades = new();
+    private readonly MissileSimulation _missiles = new();
+    private readonly M203Simulation _m203 = new();
     private readonly HumanLadderClimb _climb = new();
     private HumanLocomotionAnimator? _animator;
     private ObjectCollisionIndex? _walls;
@@ -85,6 +87,7 @@ public sealed class PlayerCamera
     private int _interactionTick;
     private bool _interactionUseArmed;
     private Vector3d _fenceExitPosition;
+    private int _electricFenceCooldown;
     private float _interactionFacing;
     private Vector3d _wireDirection;
     private double _wireSpeed;
@@ -117,6 +120,11 @@ public sealed class PlayerCamera
     private Matrix3f _prevTickWeaponBoneRotation = Matrix3f.Identity;
     private Matrix3f _tickWeaponBoneRotation = Matrix3f.Identity;
     private bool _hasWeaponBonePair;
+    private Vector3f _prevTickSecondaryWeaponBonePosition;
+    private Vector3f _tickSecondaryWeaponBonePosition;
+    private Matrix3f _prevTickSecondaryWeaponBoneRotation = Matrix3f.Identity;
+    private Matrix3f _tickSecondaryWeaponBoneRotation = Matrix3f.Identity;
+    private bool _hasSecondaryWeaponBonePair;
     private float _prevTickSwayPitch;
     private float _tickSwayPitch;
     private float _prevTickSwayYaw;
@@ -212,6 +220,12 @@ public sealed class PlayerCamera
     /// </remarks>
     public GrenadeSimulation Grenades => _grenades;
 
+    /// <summary>Gets the launcher missiles currently in flight.</summary>
+    public MissileSimulation Missiles => _missiles;
+
+    /// <summary>Gets the M203 rounds currently in flight.</summary>
+    public M203Simulation M203 => _m203;
+
     /// <summary>Gets or sets what a grenade bounces off — the world <b>including the terrain</b>.</summary>
     /// <remarks>
     /// Deliberately not <see cref="PlayerBody.Walls"/>: that is the object index alone, because the
@@ -220,12 +234,26 @@ public sealed class PlayerCamera
     /// </remarks>
     public WorldRayCast? GrenadeWalls { get; set; }
 
+    /// <summary>
+    /// Gets or sets the rich world trace used by proximity mines to distinguish an object from terrain.
+    /// </summary>
+    public WorldTraceCast? GrenadeTrace { get; set; }
+
+    /// <summary>Gets or sets the world cast used by launcher missiles.</summary>
+    public WorldRayCast? MissileWalls { get; set; }
+
     /// <summary>Gets or sets what offers this player's rounds to the humans in the world.</summary>
     /// <remarks>
     /// Without it rounds stop at walls and hit nobody. A round takes whichever of the two is
     /// <b>nearer</b>, so a guard standing in front of a wall is hit and the wall is not marked.
     /// </remarks>
     public HumanShot? Humans { get; set; }
+
+    /// <summary>Gets or sets a non-mutating human intersection used by launcher missiles.</summary>
+    public HumanRayCast? HumanProbes { get; set; }
+
+    /// <summary>Gets or sets the living-human query used by armed proximity mines.</summary>
+    public HumanProximityCast? HumanProximityTargets { get; set; }
 
     /// <summary>Gets or sets where actual projectile contacts are offered to the AI event broadcaster.</summary>
     /// <remarks>
@@ -265,6 +293,16 @@ public sealed class PlayerCamera
 
     /// <summary>Gets whether the weapon in hand fired on the last tick.</summary>
     public bool FiredThisTick => _weapons?.FiredThisTick ?? false;
+
+    /// <summary>Gets whether the M16A2 launched an M203 round on the last tick.</summary>
+    /// <remarks>
+    /// The alternate callback is a separate native weapon task. Keeping this bit visible to the host
+    /// prevents the rifle's ordinary automatic sound from replacing the launch report.
+    /// </remarks>
+    public bool M203LaunchedThisTick => _weapons is not null && _weapons.M203Shots.Count > 0;
+
+    /// <summary>Gets whether a grenade throw is being charged — the hand cooking it.</summary>
+    public bool IsChargingThrow => _weapons?.IsChargingThrow ?? false;
 
     /// <summary>Gets the serial of the last round fired.</summary>
     public int ShotSequence => _weapons?.ShotSequence ?? 0;
@@ -395,6 +433,15 @@ public sealed class PlayerCamera
     /// <summary>Gets where the held weapon's model goes, in engine units, or <see langword="null"/>.</summary>
     public BoneAttachment? HeldWeapon => _view is null ? null : _view.HeldWeapon;
 
+    /// <summary>
+    /// Gets where the second held weapon's model goes, in engine units, or <see langword="null"/>.
+    /// </summary>
+    /// <remarks>
+    /// Retail's <c>TASKTYPE_GUNX2</c> child asks the first-person human for attachment 2, which is
+    /// palette bone 52 (<c>0x4601A0</c>), rather than reusing the primary gun attachment at bone 3.
+    /// </remarks>
+    public BoneAttachment? HeldWeaponSecondary => _view is null ? null : _view.HeldWeaponSecondary;
+
     /// <summary>Gets whether the rig's pose has advanced since it was last acknowledged.</summary>
     /// <remarks>
     /// Only an advancing clip moves the bones — turning to look does not, because the object's own
@@ -506,6 +553,7 @@ public sealed class PlayerCamera
         ReleaseLook();
         HasViewTickPair = false;
         _hasWeaponBonePair = false;
+        _hasSecondaryWeaponBonePair = false;
     }
 
     /// <summary>Gives the pointer up without disturbing the presentation, and re-arms the settling frame.</summary>
@@ -700,6 +748,9 @@ public sealed class PlayerCamera
 
     /// <summary>Raised when a task is pressed or a held interaction completes.</summary>
     public event Action<int>? TaskActivated;
+
+    /// <summary>Raised when a powered electric fence contact passes the retail 45-tick guard.</summary>
+    public event Action<WorldInteraction>? ElectrifiedFenceTouched;
 
     /// <summary>Gets whether a non-ladder interaction currently owns locomotion.</summary>
     public bool IsInWorldInteraction => _activeInteraction is not null;
@@ -975,6 +1026,8 @@ public sealed class PlayerCamera
 
         PlayerCommand command = new(forward, strafe, 0f, 0f, _running, crouch, jump);
 
+        Vector3d previousPosition = _body.Position;
+
         // The weapon machine, before the clips advance: 0x4EC1E0 over the weapon table runs in
         // HumanPlayer_Update ahead of 0x464800, so its clip-end flag is last tick's.
         TickWeapons();
@@ -988,6 +1041,14 @@ public sealed class PlayerCamera
         else
         {
             _body.TickAnimated(command, terrain, _animator);
+        }
+
+        WorldInteraction? electricFence = _interactions?.FindElectrifiedFenceContact(
+            previousPosition,
+            _body.Position);
+        if (ElectricFenceContact.Advance(ref _electricFenceCooldown, electricFence) is { } touchedFence)
+        {
+            ElectrifiedFenceTouched?.Invoke(touchedFence);
         }
 
         // Diagnostic: name whatever the wall sweep stopped the body against, so a doorway you cannot walk
@@ -1089,6 +1150,12 @@ public sealed class PlayerCamera
             case InteractionAction.ClimbFence:
             case InteractionAction.PickLock:
             case InteractionAction.EnterState:
+                if (interaction.Type == InteractionActivateType.StationaryGun && !interaction.BeginUse())
+                {
+                    _nearInteraction = null;
+                    return;
+                }
+
                 _activeInteraction = interaction;
                 _interactionTick = 0;
                 _interactionUseArmed = false;
@@ -1100,7 +1167,17 @@ public sealed class PlayerCamera
                 _fenceExitPosition = interaction.Type == InteractionActivateType.Fence
                     ? interaction.FenceExitPoint(position)
                     : position;
-                interaction.BeginUse();
+                if (interaction.Type != InteractionActivateType.StationaryGun)
+                {
+                    interaction.BeginUse();
+                }
+                if (interaction.Type == InteractionActivateType.Fence && interaction.IsElectrified)
+                {
+                    if (ElectricFenceContact.TryShock(ref _electricFenceCooldown, interaction) is { } touchedFence)
+                    {
+                        ElectrifiedFenceTouched?.Invoke(touchedFence);
+                    }
+                }
                 break;
         }
 
@@ -1349,6 +1426,23 @@ public sealed class PlayerCamera
             _hasWeaponBonePair = true;
         }
 
+        if (HumanAttachPoints.FirstPersonSecondary < unrotated.BoneCount)
+        {
+            Vector3f position = unrotated.Positions[HumanAttachPoints.FirstPersonSecondary];
+            Matrix3f rotation = unrotated.Rotations[HumanAttachPoints.FirstPersonSecondary];
+            _prevTickSecondaryWeaponBonePosition =
+                _hasSecondaryWeaponBonePair ? _tickSecondaryWeaponBonePosition : position;
+            _prevTickSecondaryWeaponBoneRotation =
+                _hasSecondaryWeaponBonePair ? _tickSecondaryWeaponBoneRotation : rotation;
+            _tickSecondaryWeaponBonePosition = position;
+            _tickSecondaryWeaponBoneRotation = rotation;
+            _hasSecondaryWeaponBonePair = true;
+        }
+        else
+        {
+            _hasSecondaryWeaponBonePair = false;
+        }
+
         HasViewTickPair = true;
     }
 
@@ -1412,11 +1506,11 @@ public sealed class PlayerCamera
             _prevTickViewModelTanX + ((_tickViewModelTanX - _prevTickViewModelTanX) * t));
     }
 
-    /// <summary>The rig's transform and held-weapon attachment for a frame between two ticks.</summary>
+    /// <summary>The rig's transform and held-weapon attachments for a frame between two ticks.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
     /// <returns>
-    /// The rig origin in engine units, its orientation, and the weapon attachment when the bone
-    /// exists.
+    /// The rig origin in engine units, its orientation, and the primary and secondary weapon
+    /// attachments when those bones exist.
     /// </returns>
     /// <remarks>
     /// The tick-stepped halves — the eye the body carried, the wall pullback, the clip's hold offset,
@@ -1424,11 +1518,19 @@ public sealed class PlayerCamera
     /// the LOOK is this frame's own, because the mouse already runs per frame and the arms must stay
     /// welded to it. At <paramref name="alpha"/> 1 this is the rig's un-smoothed transform exactly.
     /// </remarks>
-    public (Vector3d OriginUnits, Matrix3f Orientation, BoneAttachment? HeldWeapon) SmoothedRig(float alpha)
+    public (
+        Vector3d OriginUnits,
+        Matrix3f Orientation,
+        BoneAttachment? HeldWeapon,
+        BoneAttachment? SecondaryWeapon) SmoothedRig(float alpha)
     {
         if (_view is not { } view || !HasViewTickPair)
         {
-            return (_view?.Position ?? default, _view?.Orientation ?? Matrix3f.Identity, _view?.HeldWeapon);
+            return (
+                _view?.Position ?? default,
+                _view?.Orientation ?? Matrix3f.Identity,
+                _view?.HeldWeapon,
+                _view?.HeldWeaponSecondary);
         }
 
         // The same composition SyncView commits — eye orientation times sway — with the tick-stepped
@@ -1459,10 +1561,26 @@ public sealed class PlayerCamera
             weapon = new BoneAttachment(
                 new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
                 look * PresentationBlend.InterpolateRotation(
-                    _prevTickWeaponBoneRotation, _tickWeaponBoneRotation, alpha));
+                _prevTickWeaponBoneRotation, _tickWeaponBoneRotation, alpha));
         }
 
-        return (origin, look, weapon);
+        BoneAttachment? secondaryWeapon = null;
+        if (_hasSecondaryWeaponBonePair)
+        {
+            Vector3f bone = look.Transposed().Transform(
+                PresentationBlend.Lerp(
+                    _prevTickSecondaryWeaponBonePosition,
+                    _tickSecondaryWeaponBonePosition,
+                    alpha));
+            secondaryWeapon = new BoneAttachment(
+                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
+                look * PresentationBlend.InterpolateRotation(
+                    _prevTickSecondaryWeaponBoneRotation,
+                    _tickSecondaryWeaponBoneRotation,
+                    alpha));
+        }
+
+        return (origin, look, weapon, secondaryWeapon);
     }
 
     private WorldRayCast ViewModelWalls(TerrainData? terrain)
@@ -1542,6 +1660,16 @@ public sealed class PlayerCamera
             $"BLOCKED by {label} at ({nearest.Position.X:F0}, {nearest.Position.Y:F0}, {nearest.Position.Z:F0}) — probe {probeMetres:F2}m, {aheadMetres:F2}m ahead; player ({_body.Position.X:F0}, {_body.Position.Y:F0}, {_body.Position.Z:F0}) yaw {_body.Yaw:F2}");
 
         _logger.Information("Player", line);
+        if (label.Contains("Fence", StringComparison.OrdinalIgnoreCase))
+        {
+            WorldInteraction? fence = _interactions?.FindElectrifiedFenceNear(nearest.Position);
+            _logger.Information(
+                "Player",
+                $"[fence] wall contact task={(fence is null ? "-" : fence.Task.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                    + $"powered={(fence?.IsElectrified == true ? "true" : "false")} "
+                    + $"contact={(fence is null ? "miss" : "candidate")} "
+                    + $"player=({_body.Position.X:F0},{_body.Position.Y:F0},{_body.Position.Z:F0})");
+        }
     }
 
     // The nearest ladder that is close enough, faced and within height to mount.
@@ -1787,6 +1915,22 @@ public sealed class PlayerCamera
             return;
         }
 
+        if (_weapons.M203Shots.Count > 0)
+        {
+            bool rejected = false;
+            foreach (M203Projectile shot in _weapons.M203Shots)
+            {
+                rejected |= !_m203.Spawn(shot);
+            }
+
+            if (rejected)
+            {
+                _weapons.RefundRejectedSimulationShot();
+            }
+
+            return;
+        }
+
         float damageFactor = _weapons.InHand?.Weapon.DamageFactor ?? 0f;
 
         // The category travels with the round because it decides how a body this round kills falls:
@@ -1797,6 +1941,31 @@ public sealed class PlayerCamera
         // A thrown round is a GRENADE, and a grenade was never hit-scan in the original either --
         // it is a physics object with a four-second fuse. It flies the same on every profile.
         WeaponType? thrownWeapon = _weapons.InHand?.Weapon;
+        if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.ProximityMine)
+        {
+            WorldTraceCast? mineTrace = GrenadeTrace;
+            if (mineTrace is null && GrenadeWalls is { } mineWalls)
+            {
+                mineTrace = WorldTrace.FromRayCast(mineWalls);
+            }
+
+            foreach (GunProjectile shot in _weapons.Shots)
+            {
+                // The mine task is placed at the first surface under the crosshair. It is not a
+                // thrown grenade: starting it at the muzzle with zero velocity made it drop through
+                // the level until the physics solver happened to find a floor, which is visibly
+                // different from retail and makes wall/prop placement impossible.
+                _grenades.PlaceMine(
+                    shot.Origin,
+                    _body.Position,
+                    shot.Direction,
+                    shot.RangeInUnits,
+                    mineTrace);
+            }
+
+            return;
+        }
+
         if (thrownWeapon is not null && thrownWeapon.Category == WeaponCategory.Grenade)
         {
             // The physics table keys the explosion type by MODEL: 135_01_1 is the frag, 137_01_1
@@ -1810,9 +1979,74 @@ public sealed class PlayerCamera
             float throwSpeed = PlayerWeapons.ChargedThrowSpeed(
                 thrownWeapon.MuzzleVelocity, _weapons.ThrowChargeTicks);
 
+            float radius = ExplosionDamage.DefaultGrenadeRadiusMetres;
+            float falloff = ExplosionDamage.DefaultGrenadeFalloffMetres;
+            float damage = ExplosionDamage.DefaultGrenadeDamageFactor;
+            if (thrownWeapon.RetailConfig is { } config)
+            {
+                if (WeaponConfigRegistry.TryGetRealTag(config, "Grenade - Explosion radius (meters)", out float configured))
+                {
+                    radius = configured;
+                }
+                if (WeaponConfigRegistry.TryGetRealTag(config, "Grenade - Explosion falloff (meters)", out configured))
+                {
+                    falloff = configured;
+                }
+                if (WeaponConfigRegistry.TryGetRealTag(config, "Grenade - Explosion damage factor", out configured))
+                {
+                    damage = configured;
+                }
+            }
+
             foreach (GunProjectile shot in _weapons.Shots)
             {
-                _grenades.Spawn(shot.Origin, shot.Direction, throwSpeed, explosion);
+                _grenades.Spawn(
+                    shot.Origin,
+                    shot.Direction,
+                    throwSpeed,
+                    explosion,
+                    radiusMetres: radius,
+                    falloffMetres: falloff,
+                    damageFactor: damage);
+            }
+
+            return;
+        }
+
+        // A missile task is a physics object, not a gun ray. The launcher binding selects this path
+        // for every missile carrier; no weapon id or model name is special-cased here.
+        WeaponType? missileWeapon = _weapons.InHand?.Weapon;
+        if (missileWeapon is not null
+            && string.Equals(missileWeapon.Projectile.TypeName, "TASKTYPE_MISSILE", StringComparison.Ordinal))
+        {
+            bool rejected = false;
+            foreach (GunProjectile shot in _weapons.Shots)
+            {
+                MissileType missileType = MissileFlight.TypeForLauncher(missileWeapon);
+                // Direct / keyboard rockets fly along the barrel. Using hit-scan EffectiveRange as
+                // the aim point lofted anti-tank shots 25 m above a phantom far point.
+                Vector3d target = missileType is MissileType.MissileDirect or MissileType.MissileKeyboard
+                    ? shot.Origin + new Vector3d(
+                        shot.Direction.X * MissileFlight.UnitsPerMetre,
+                        shot.Direction.Y * MissileFlight.UnitsPerMetre,
+                        shot.Direction.Z * MissileFlight.UnitsPerMetre)
+                    : shot.Origin + new Vector3d(
+                        shot.Direction.X * shot.RangeInUnits,
+                        shot.Direction.Y * shot.RangeInUnits,
+                        shot.Direction.Z * shot.RangeInUnits);
+
+                rejected |= !_missiles.Spawn(
+                    shot.Origin,
+                    target,
+                    missileType,
+                    MissileFlight.LaunchSpeedMetresPerSecond(missileWeapon),
+                    shot.Direction,
+                    string.IsNullOrWhiteSpace(missileWeapon.Projectile.Text) ? "110_02_1" : missileWeapon.Projectile.Text);
+            }
+
+            if (rejected)
+            {
+                _weapons.RefundRejectedSimulationShot();
             }
 
             return;
@@ -1869,7 +2103,9 @@ public sealed class PlayerCamera
         // The grenades fly every tick regardless of the tracer option -- they are the retail
         // behaviour, not a remaster one. Detonations are drained by the game, which owns the
         // effects and the blast's victims.
-        _grenades.Tick(GrenadeWalls ?? _body.Walls);
+        _grenades.Tick(GrenadeWalls ?? _body.Walls, HumanProximityTargets, GrenadeTrace);
+        _missiles.Tick(MissileWalls ?? GrenadeWalls ?? _body.Walls, HumanProbes);
+        _m203.Tick(GrenadeWalls ?? _body.Walls, HumanProbes);
 
         if (_ballistics.Rounds.Count == 0)
         {
@@ -1948,7 +2184,7 @@ public sealed class PlayerCamera
                 Marks.TryAdd(hit, materials);
             }
 
-            return new GunImpact(hit.Position, true, shot.RangeInUnits, richHit.Owner);
+            return new GunImpact(hit.Position, true, shot.RangeInUnits, richHit.Owner, richHit.Placement);
         }
 
         return new GunImpact(end, false, shot.RangeInUnits);

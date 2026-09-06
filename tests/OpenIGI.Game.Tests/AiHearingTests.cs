@@ -56,6 +56,225 @@ public sealed class AiHearingTests
         Assert.False(Soldier(out Vector3d b).HearGunshot(Away(b, 5 * Metre), 4 * Metre));
     }
 
+    [Fact]
+    public void AZeroDistanceShotIsHeardAndANegativeRangeIsClampedToZero()
+    {
+        AiSoldier atSource = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.True(atSource.HearGunshot(default, 0.0));
+
+        AiSoldier negativeRange = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.True(negativeRange.HearGunshot(default, -1.0));
+        Assert.Equal(1, negativeRange.Events.PendingCount(AiEvent.Gunshot));
+    }
+
+    [Fact]
+    public void DisabledGunshotAndAlertEventsAreNotReportedOrLatched()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.Events.SetEnabled(AiEvent.Gunshot, false);
+        Assert.False(soldier.HearGunshot(default, 1.0));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Gunshot));
+
+        soldier.Events.SetEnabled(AiEvent.Alert, false);
+        Assert.False(soldier.ReceiveAlert(default, source: 4));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Alert));
+
+        soldier.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.False(soldier.Alerted);
+    }
+
+    [Fact]
+    public void AHeardGunshotRaisesTheCombatPerceptionAlertOnTheNextTick()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+
+        Assert.True(soldier.HearGunshot(new Vector3d(2 * Metre, 0, 0), 4 * Metre));
+        Assert.False(soldier.Alerted);
+        soldier.Tick(0, default, rootMotionThisTick: 0.0);
+
+        Assert.True(soldier.Alerted);
+    }
+
+    [Fact]
+    public void ACombatAlertRaisesTheCombatPerceptionAlertOnTheNextTick()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+
+        Assert.True(soldier.ReceiveAlert(new Vector3d(2 * Metre, 0, 0), source: 7));
+        Assert.False(soldier.Alerted);
+        soldier.Tick(0, default, rootMotionThisTick: 0.0);
+
+        Assert.True(soldier.Alerted);
+    }
+
+    [Fact]
+    public void DamageQueuesTakingDamageAndRaisesCombatOnTheNextTick()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d attacker = new(3 * Metre, 0, 0);
+
+        Assert.True(soldier.ReceiveDamage(attacker));
+
+        Assert.Equal(1, soldier.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(3 * Metre, soldier.LastEventDistance);
+        Assert.False(soldier.Alerted);
+        soldier.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.True(soldier.Alerted);
+    }
+
+    [Fact]
+    public void BulletDamagePublishesOnlyAcceptedDamageToANearbySquadmate()
+    {
+        AiSoldier struck = new(graph: null, default, facing: 0f, phase: 0, seed: 1)
+        {
+            RuntimeId = 1,
+        };
+        AiSoldier recipient = new(graph: null, new Vector3d(Metre, 0, 0), facing: 0f, phase: 0, seed: 2);
+
+        bool accepted = struck.ReceiveDamage(new Vector3d(-2 * Metre, 0, 0));
+        Assert.True(accepted);
+        Assert.True(recipient.ReceiveAlert(struck.Position, struck.RuntimeId));
+        Assert.Equal(1, recipient.Events.PendingCount(AiEvent.Alert));
+        Assert.False(recipient.Alerted);
+
+        recipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.True(recipient.Alerted);
+
+        AiSoldier rejected = new(graph: null, default, facing: 0f, phase: 0, seed: 3)
+        {
+            RuntimeId = 3,
+        };
+        rejected.Events.SetEnabled(AiEvent.TakingDamage, false);
+        AiSoldier rejectedRecipient = new(
+            graph: null,
+            new Vector3d(Metre, 0, 0),
+            facing: 0f,
+            phase: 0,
+            seed: 4);
+
+        accepted = rejected.ReceiveDamage(new Vector3d(-2 * Metre, 0, 0));
+        Assert.False(accepted);
+        Assert.Equal(0, rejectedRecipient.Events.PendingCount(AiEvent.Alert));
+        rejectedRecipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.False(rejectedRecipient.Alerted);
+    }
+
+    [Fact]
+    public void ExplosionDamagePublishesOnlyAcceptedDamageToANearbySquadmate()
+    {
+        AiSoldier struck = new(graph: null, default, facing: 0f, phase: 0, seed: 1)
+        {
+            RuntimeId = 1,
+        };
+        AiSoldier recipient = new(graph: null, new Vector3d(Metre, 0, 0), facing: 0f, phase: 0, seed: 2);
+
+        bool accepted = struck.ReceiveDamage(new Vector3d(2 * Metre, 0, 0));
+        Assert.True(accepted);
+        Assert.True(recipient.ReceiveAlert(struck.Position, struck.RuntimeId));
+        Assert.Equal(1, recipient.Events.PendingCount(AiEvent.Alert));
+        Assert.False(recipient.Alerted);
+
+        recipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.True(recipient.Alerted);
+
+        AiSoldier rejected = new(graph: null, default, facing: 0f, phase: 0, seed: 3)
+        {
+            RuntimeId = 3,
+        };
+        rejected.Events.SetEnabled(AiEvent.TakingDamage, false);
+        AiSoldier rejectedRecipient = new(
+            graph: null,
+            new Vector3d(Metre, 0, 0),
+            facing: 0f,
+            phase: 0,
+            seed: 4);
+
+        accepted = rejected.ReceiveDamage(new Vector3d(2 * Metre, 0, 0));
+        Assert.False(accepted);
+        Assert.Equal(0, rejectedRecipient.Events.PendingCount(AiEvent.Alert));
+        rejectedRecipient.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.False(rejectedRecipient.Alerted);
+    }
+
+    [Fact]
+    public void RejectedDamageDoesNotLatchPerceptionOrPropagateAnAlert()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.Events.SetEnabled(AiEvent.TakingDamage, false);
+        Vector3d attacker = new(3 * Metre, 0, 0);
+
+        Assert.False(soldier.ReceiveDamage(attacker));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Alert));
+        Assert.Equal(0.0, soldier.LastEventDistance);
+
+        soldier.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.False(soldier.Alerted);
+    }
+
+    [Fact]
+    public void ARejectedLethalBulletDamageDoesNotQueueDamageOrSquadAlert()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.Events.SetEnabled(AiEvent.TakingDamage, false);
+
+        Assert.False(soldier.ReceiveDamage(new Vector3d(4 * Metre, 0, 0)));
+        soldier.Kill();
+
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Alert));
+    }
+
+    [Fact]
+    public void AnAcceptedLethalExplosionDamageQueuesDamageBeforeDeath()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+
+        Assert.True(soldier.ReceiveDamage(new Vector3d(2 * Metre, 0, 0)));
+        Assert.Equal(1, soldier.Events.PendingCount(AiEvent.TakingDamage));
+        soldier.Kill();
+
+        Assert.Equal(1, soldier.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Alert));
+    }
+
+    [Fact]
+    public void ADeadSoldierDoesNotReceiveDamageOrSquadAlerts()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.Kill();
+
+        Assert.False(soldier.ReceiveDamage(default));
+
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.TakingDamage));
+        Assert.False(soldier.ReceiveAlert(default, source: 9));
+        Assert.Equal(0, soldier.Events.PendingCount(AiEvent.Alert));
+    }
+
+    [Fact]
+    public void SquadAlertsHonorRangeDeadAndDuplicateEventSemantics()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+
+        Assert.True(soldier.ReceiveAlert(new Vector3d(Metre, 0, 0), source: 3));
+        Assert.False(soldier.ReceiveAlert(new Vector3d(Metre, 0, 0), source: 4));
+        Assert.Equal(1, soldier.Events.PendingCount(AiEvent.Alert));
+
+        AiSoldier boundary = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.True(boundary.ReceiveAlert(new Vector3d(AiSoldier.AlertPingRadiusInUnits, 0, 0)));
+
+        soldier.Tick(0, default, rootMotionThisTick: 0.0);
+        Assert.True(soldier.Alerted);
+        Assert.False(soldier.ReceiveAlert(default, source: 5));
+
+        AiSoldier outOfRange = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outOfRange.ReceiveAlert(new Vector3d(AiSoldier.AlertPingRadiusInUnits + 1, 0, 0)));
+
+        AiSoldier dead = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        dead.Kill();
+        Assert.False(dead.ReceiveAlert(default));
+    }
+
     /// <summary>A dead soldier hears nothing.</summary>
     [RequiresGameDataFact]
     public void ADeadSoldierHearsNothing()
@@ -64,6 +283,40 @@ public sealed class AiHearingTests
         soldier.Kill();
 
         Assert.False(soldier.HearGunshot(Away(position, 1 * Metre), silenced: false));
+    }
+
+    [Fact]
+    public void ExplosionUsesTheNativeTypeTwentyOneAndAuthoredEnvelope()
+    {
+        Vector3d position = new(10_000, 20_000, 30_000);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        double range = 5 * Metre;
+        Vector3d centre = Away(position, range);
+
+        Assert.True(soldier.ReceiveExplosion(centre, range));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Explosion);
+        Assert.NotNull(queued);
+        Assert.Equal(AiEvent.Explosion, queued.Value.Type);
+        Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal((float)range, queued.Value.Radius);
+        Assert.Equal(centre, queued.Value.Position);
+        Assert.Equal(-1, queued.Value.Source);
+    }
+
+    [Fact]
+    public void ExplosionDoesNotCrossItsAuthoredRangeOrReachDeadSoldiers()
+    {
+        Vector3d position = new(10_000, 20_000, 30_000);
+        double range = 5 * Metre;
+        AiSoldier outside = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        AiSoldier dead = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        dead.Kill();
+
+        Assert.False(outside.ReceiveExplosion(Away(position, range + 1), range));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.Explosion));
+        Assert.False(dead.ReceiveExplosion(position, range));
+        Assert.Equal(0, dead.Events.PendingCount(AiEvent.Explosion));
     }
 
     [Fact]
@@ -135,6 +388,86 @@ public sealed class AiHearingTests
 
         Assert.False(soldier.ReceiveGroundImpact(default, default));
         Assert.Equal(0, soldier.Events.PendingCount(AiEvent.GroundImpact));
+    }
+
+    [Fact]
+    public void GrenadeThrownUsesTheRetailInViewEvent()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d eye = soldier.EyePosition();
+        Vector3d visible = new(0, 4 * Metre, eye.Z);
+
+        Assert.True(soldier.ReceiveGrenadeThrown(visible));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.GrenadeThrown);
+        Assert.NotNull(queued);
+        Assert.Equal(visible, queued.Value.Position);
+        Assert.Equal(AiEventFilter.InView, queued.Value.Filter);
+        Assert.Equal(-1f, queued.Value.Radius);
+        Assert.Equal(0, queued.Value.Source);
+        Assert.Equal(0, queued.Value.Subject);
+
+        AiSoldier behind = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(behind.ReceiveGrenadeThrown(new Vector3d(0, -Metre, behind.EyePosition().Z)));
+        Assert.Equal(0, behind.Events.PendingCount(AiEvent.GrenadeThrown));
+    }
+
+    [Fact]
+    public void GrenadeLandUsesTheNativeFiveMetreInRangeEvent()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d contact = new(5 * Metre, 0, 0);
+
+        Assert.True(soldier.ReceiveGrenadeLand(contact));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.GrenadeLand);
+        Assert.NotNull(queued);
+        Assert.Equal(contact, queued.Value.Position);
+        Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal(AiSoldier.GrenadeLandRadiusInUnits, queued.Value.Radius);
+        Assert.Equal(0, queued.Value.Source);
+        Assert.Equal(0, queued.Value.Subject);
+
+        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveGrenadeLand(new Vector3d((5 * Metre) + 1, 0, 0)));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.GrenadeLand));
+    }
+
+    [Fact]
+    public void FlashbangUsesTheNativeTenMetreViewAndRangeEvent()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d flash = new(0, 9 * Metre, soldier.EyePosition().Z);
+
+        Assert.True(soldier.ReceiveFlashbang(flash));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Flashbang);
+        Assert.NotNull(queued);
+        Assert.Equal(flash, queued.Value.Position);
+        Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal(AiSoldier.FlashbangEventRadiusInUnits, queued.Value.Radius);
+
+        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveFlashbang(new Vector3d(0, 11 * Metre, outside.EyePosition().Z)));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.Flashbang));
+    }
+
+    [Fact]
+    public void ExplosionUsesTheNativeFiveMetreEnvelope()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d explosion = new(5 * Metre, 0, 0);
+
+        Assert.True(soldier.ReceiveExplosion(explosion));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Explosion);
+        Assert.NotNull(queued);
+        Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal(AiSoldier.GrenadeLandRadiusInUnits, queued.Value.Radius);
+
+        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveExplosion(new Vector3d((5 * Metre) + 1, 0, 0)));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.Explosion));
     }
 
     [Fact]

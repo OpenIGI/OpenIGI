@@ -61,6 +61,9 @@ public sealed class WorldScene
     /// <summary>The security-camera task type, whose models are engine-supplied rather than declared.</summary>
     public const string SecurityCameraType = "SCamera";
 
+    /// <summary>The stationary-gun task type, whose holder is engine-created outside lightmap enumeration.</summary>
+    public const string StationaryGunType = "StationaryGun";
+
     /// <summary>The interactive switch task type, whose model a task declares in <see cref="SwitchModelParameter"/>.</summary>
     public const string SwitchType = "Switch";
 
@@ -135,6 +138,28 @@ public sealed class WorldScene
             yield return genericAmmoModel;
         }
 
+        // StationaryGun carries its visible holder in "Holder model", not Model.
+        // The native task still owns the world transform, so this is a normal placement rather than an
+        // attachment to the enemy's animated gunner.
+        if (declaredModelName is null
+            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && task.TryGetValue("Holder model", out object? rawHolderModel)
+            && rawHolderModel is string holderModel
+            && holderModel.Length > 0)
+        {
+            yield return holderModel;
+        }
+
+        // Keep a drawable default for older or hand-authored StationaryGun tasks that omit both model fields.
+        if (declaredModelName is null
+            && string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal)
+            && (!task.TryGetValue("Holder model", out object? rawFallbackHolderModel)
+                || rawFallbackHolderModel is not string fallbackHolderModel
+                || fallbackHolderModel.Length == 0))
+        {
+            yield return "456_13_1";
+        }
+
         if (string.Equals(task.Type.Name, SecurityCameraType, StringComparison.Ordinal))
         {
             for (int i = 0; i < SecurityCameraModelParameters.Count; i++)
@@ -186,6 +211,21 @@ public sealed class WorldScene
         task.TryGetValue(SwitchModelParameter, out object? model) && model is string name && name.Length > 0
             ? name
             : "switch";
+
+    /// <summary>Lists the models the retail lightmap walker enumerates for a task.</summary>
+    /// <remarks>StationaryGun's holder is created by the engine after the lightmap list is built.</remarks>
+    private static IEnumerable<string> LightmapModelNames(DeclaredTask task)
+    {
+        if (string.Equals(task.Type.Name, StationaryGunType, StringComparison.Ordinal))
+        {
+            yield break;
+        }
+
+        foreach (string name in PlacedModelNames(task))
+        {
+            yield return name;
+        }
+    }
 
     /// <summary>Tells whether a waypoint has a waypoint sibling before it under the same parent.</summary>
     private static bool HasEarlierWaypointSibling(DeclaredTask waypoint)
@@ -577,6 +617,25 @@ public sealed class WorldScene
                     };
                 }
 
+                // ExplodeObject carries the same authored replacement convention as the camera head,
+                // but under the generic "Destroyed model" parameter. Keep the live placement in the
+                // scene so collision and lightmap identity remain stable; the renderer selects this
+                // binding only after the exact task has reached retail's destroyed state.
+                if (placement.DestroyedReplacement is null
+                    && declared.TryGetValue("Destroyed model", out object? rawGenericDestroyed)
+                    && rawGenericDestroyed is string genericDestroyedName
+                    && genericDestroyedName.Length > 0
+                    && byName.TryGetValue(genericDestroyedName, out var genericDestroyed))
+                {
+                    placement = placement with
+                    {
+                        DestroyedReplacement = new WorldModelBinding(
+                            genericDestroyed.Instance,
+                            genericDestroyed.Pack,
+                            genericDestroyed.Model),
+                    };
+                }
+
                 // Empty render geometry does not make this placement disposable. Attachment holders
                 // can carry HSMC collision of their own (Mission 14's room floors do), while the world
                 // renderer already ignores the null mesh MefMeshBuilder returns for them.
@@ -948,7 +1007,7 @@ public sealed class WorldScene
                     continue;
                 }
 
-                foreach (string name in PlacedModelNames(declared))
+                foreach (string name in LightmapModelNames(declared))
                 {
                     placing.Add(task);
                     models.Add(name);
@@ -1017,12 +1076,40 @@ public sealed class WorldScene
         int added = 0;
         foreach (WorldObject child in node.Children)
         {
-            bool isRotor = magic is not null
-                && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition)
-                && string.Equals(
-                    magic.TaskTypeName(childDefinition.TaskType),
-                    "TASKTYPE_ROTOR",
-                    StringComparison.Ordinal);
+            string magicTaskTypeName = string.Empty;
+            bool isRotor = false;
+            float magicExplosionFireballs = 0f;
+            int magicExplosionFragments = 0;
+            string magicExplosionSound = string.Empty;
+            string magicDestroyedModel = string.Empty;
+            int magicExplosionDelayTicks = 0;
+            float magicExplosionDamageFactor = 0f;
+            float magicExplosionFalloffMetres = 0f;
+            float magicExplosionRadiusMetres = 0f;
+            float magicExplosionDamageThreshold = 0f;
+            WorldModelBinding? magicDestroyedReplacement = null;
+            if (magic is not null && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition))
+            {
+                magicTaskTypeName = magic.TaskTypeName(childDefinition.TaskType);
+                isRotor = string.Equals(magicTaskTypeName, "TASKTYPE_ROTOR", StringComparison.Ordinal);
+                magicExplosionFireballs = childDefinition.ExplosionFireballs;
+                magicExplosionFragments = childDefinition.ExplosionFragments;
+                magicExplosionSound = childDefinition.ExplosionSound;
+                magicDestroyedModel = childDefinition.DestroyedModel;
+                magicExplosionDelayTicks = childDefinition.ExplosionDelayTicks;
+                magicExplosionDamageFactor = childDefinition.ExplosionDamageFactor;
+                magicExplosionFalloffMetres = childDefinition.ExplosionFalloffMetres;
+                magicExplosionRadiusMetres = childDefinition.ExplosionRadiusMetres;
+                magicExplosionDamageThreshold = childDefinition.ExplosionDamageThreshold;
+                if (childDefinition.DestroyedModel.Length > 0
+                    && byName.TryGetValue(childDefinition.DestroyedModel, out var destroyed))
+                {
+                    magicDestroyedReplacement = new WorldModelBinding(
+                        destroyed.Instance,
+                        destroyed.Pack,
+                        destroyed.Model);
+                }
+            }
             // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
@@ -1076,6 +1163,17 @@ public sealed class WorldScene
                 {
                     IsRotor = isRotor,
                     IsAttached = true,
+                    MagicTaskTypeName = magicTaskTypeName,
+                    MagicExplosionFireballs = magicExplosionFireballs,
+                    MagicExplosionFragments = magicExplosionFragments,
+                    MagicExplosionSound = magicExplosionSound,
+                    MagicDestroyedModel = magicDestroyedModel,
+                    MagicExplosionDelayTicks = magicExplosionDelayTicks,
+                    MagicExplosionDamageFactor = magicExplosionDamageFactor,
+                    MagicExplosionFalloffMetres = magicExplosionFalloffMetres,
+                    MagicExplosionRadiusMetres = magicExplosionRadiusMetres,
+                    MagicExplosionDamageThreshold = magicExplosionDamageThreshold,
+                    DestroyedReplacement = magicDestroyedReplacement,
                 });
                 LogDerivedPlacement(
                     log,

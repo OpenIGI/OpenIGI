@@ -175,6 +175,9 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
     public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
 
+    /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
+    public DestructibleObjectRegistry? Destructibles { get; set; }
+
     /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
     public SecurityCameraRegistry? SecurityCameras { get; set; }
 
@@ -426,6 +429,7 @@ public sealed class WorldRenderer : IDisposable
                     }
                 }
             }
+
         }
 
         if (occlusionCulling)
@@ -552,6 +556,14 @@ public sealed class WorldRenderer : IDisposable
 
             if (GenericPickups?.IsCollected(authored.Owner) == true
                 || !ConditionalContainerGate.IsTaskActive(authored.Owner))
+            {
+                entry.Skip = true;
+                continue;
+            }
+
+            // Blown up with nothing authored to stand in its place: there is no rubble model to
+            // swap to, so the placement leaves the frame entirely rather than drawing intact.
+            if (Destructibles?.IsDestroyed(authored) == true && authored.DestroyedReplacement is null)
             {
                 entry.Skip = true;
                 continue;
@@ -851,7 +863,8 @@ public sealed class WorldRenderer : IDisposable
     {
         WorldPlacement displayed = placement;
         if (placement.DestroyedReplacement is { } replacement
-            && AlarmSpeakers?.IsDestroyed(placement.Owner) == true)
+            && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
+                || Destructibles?.IsDestroyed(placement) == true))
         {
             displayed = placement with
             {

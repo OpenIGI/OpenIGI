@@ -67,6 +67,42 @@ public sealed record WorldPlacement(
     /// </remarks>
     public bool IsAttached { get; init; }
 
+    /// <summary>Gets the native magic-object task type for an attached placement, when one was declared.</summary>
+    /// <remarks>
+    /// Retail gives attached windows and explosive barrels their behaviour through <c>magicobj.qvm</c>,
+    /// not through the parent task's type. Keeping the type on the expanded placement preserves the
+    /// identity needed by destruction and collision code; using <see cref="Owner"/> alone would destroy
+    /// every attachment owned by the same building.
+    /// </remarks>
+    public string MagicTaskTypeName { get; init; } = string.Empty;
+
+    /// <summary>Gets the attached magic object's authored FireBall count, when it has one.</summary>
+    public float MagicExplosionFireballs { get; init; }
+
+    /// <summary>Gets the attached magic object's authored Fragment count, when it has one.</summary>
+    public int MagicExplosionFragments { get; init; }
+
+    /// <summary>Gets the attached magic object's authored explosion sound, when it has one.</summary>
+    public string MagicExplosionSound { get; init; } = string.Empty;
+
+    /// <summary>Gets the attached magic object's authored damaged model, when it has one.</summary>
+    public string MagicDestroyedModel { get; init; } = string.Empty;
+
+    /// <summary>Gets the attached magic object's authored explosion delay, in simulation ticks.</summary>
+    public int MagicExplosionDelayTicks { get; init; }
+
+    /// <summary>Gets the attached magic object's authored explosion damage scale.</summary>
+    public float MagicExplosionDamageFactor { get; init; }
+
+    /// <summary>Gets the attached magic object's authored explosion falloff radius, in metres.</summary>
+    public float MagicExplosionFalloffMetres { get; init; }
+
+    /// <summary>Gets the attached magic object's authored full-damage radius, in metres.</summary>
+    public float MagicExplosionRadiusMetres { get; init; }
+
+    /// <summary>Gets the attached magic object's authored damage threshold.</summary>
+    public float MagicExplosionDamageThreshold { get; init; }
+
     /// <summary>Gets a value indicating whether a baked lightmap covers this object.</summary>
     public bool HasLightmap => LightmapIndex >= 0 && LightmapSet.Length > 0;
 

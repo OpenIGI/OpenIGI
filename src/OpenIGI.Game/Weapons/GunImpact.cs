@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Game.World;
 
 namespace OpenIGI.Game.Weapons;
 
@@ -10,6 +11,7 @@ namespace OpenIGI.Game.Weapons;
 /// <param name="HitSomething">Whether a surface stopped it.</param>
 /// <param name="RangeInUnits">How far it was allowed to travel, from the weapon's effective range.</param>
 /// <param name="Owner">The exact placed task struck by a rich world trace, when available.</param>
+/// <param name="Placement">The exact rendered placement struck, including an attached magic object.</param>
 /// <remarks>
 /// <para>
 /// <b>This is one cast, not the original's loop.</b> <c>0x47B750</c> keeps casting while range is left,
@@ -24,4 +26,5 @@ public readonly record struct GunImpact(
     Vector3d Position,
     bool HitSomething,
     float RangeInUnits,
-    GameTask? Owner = null);
+    GameTask? Owner = null,
+    WorldPlacement? Placement = null);

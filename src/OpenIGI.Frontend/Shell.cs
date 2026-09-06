@@ -73,6 +73,19 @@ public sealed class Shell
         Stack.Reset(new PauseScreen(_context));
     }
 
+    /// <summary>Opens the shell over a mission the player did not survive, as the failure page.</summary>
+    /// <remarks>
+    /// The same door as <see cref="OpenPauseMenu"/>, and for the same reason: the page is a front end in
+    /// its own right, drawn over the level the body is lying in. It is a page rather than a drawn card so
+    /// that its choices can be clicked and navigated like every other page, and so the shell's own cursor
+    /// is the one on screen.
+    /// </remarks>
+    public void OpenMissionFailed()
+    {
+        _context.InGame = true;
+        Stack.Reset(new MissionFailedScreen(_context));
+    }
+
     /// <summary>Tells the shell it is no longer over a live mission.</summary>
     /// <remarks>
     /// Called when the pause menu is left by any door — resuming, restarting, abandoning, or starting

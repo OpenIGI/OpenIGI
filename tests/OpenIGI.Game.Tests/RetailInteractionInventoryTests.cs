@@ -29,6 +29,87 @@ public sealed class RetailInteractionInventoryTests
     }
 
     [RequiresGameDataFact]
+    public void SwitchPressPulseConsumesOneRegistryTickAtATime()
+    {
+        (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(1);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, DoorRegistry.Build(root), variables);
+        WorldInteraction button = interactions.Items.First(
+            static item => item.Type == InteractionActivateType.Switch);
+
+        button.Press();
+        interactions.Tick();
+        Assert.True(button.Pressed.Value);
+        interactions.Tick();
+        Assert.True(button.Pressed.Value);
+        interactions.Tick();
+        Assert.False(button.Pressed.Value);
+        Assert.True(button.Pressed.IsFallingEdge);
+    }
+
+    [RequiresGameDataFact]
+    public void PlayerStationaryGunUseKeepsTheGunOccupiedByTheInteraction()
+    {
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (LevelTask root, _, LoadedMission mission, ScriptVarRegistry variables) = Load(missionId);
+            WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+                root, mission, DoorRegistry.Build(root), variables);
+            WorldInteraction? gun = interactions.Items.FirstOrDefault(
+                static item => item.Type == InteractionActivateType.StationaryGun);
+            if (gun is null)
+            {
+                continue;
+            }
+
+            gun.BeginUse();
+
+            Assert.True(gun.StationaryGun!.IsOccupied);
+            Assert.True(gun.IsPlayerUsingStationaryGun);
+
+            gun.CancelUse();
+
+            Assert.False(gun.StationaryGun.IsOccupied);
+            Assert.False(gun.IsPlayerUsingStationaryGun);
+            return;
+        }
+
+        Assert.Fail("No shipped StationaryGun task was loaded.");
+    }
+
+    [Fact]
+    public void AiOccupiedStationaryGunRejectsPlayerUseWithoutSettingInUse()
+    {
+        AiStationaryGun stationaryGun = new(
+            taskId: 17,
+            position: default,
+            orientation: Matrix3f.Identity);
+        WorldInteraction interaction = new(
+            new DeclaredTask(),
+            InteractionActivateType.StationaryGun,
+            anchor: default,
+            end: default,
+            orientation: Matrix3f.Identity,
+            facing: 0f,
+            durationTicks: 0,
+            actionSprite: "stationary.spr",
+            door: null,
+            isPickable: false,
+            stationaryGun: stationaryGun,
+            localBoundsMinimum: default,
+            localBoundsMaximum: default,
+            hasLocalBounds: false);
+        object aiOwner = new();
+        Assert.True(stationaryGun.TryMount(aiOwner));
+
+        Assert.False(interaction.BeginUse());
+        Assert.False(interaction.InUse.Value);
+        Assert.False(interaction.IsPlayerUsingStationaryGun);
+
+        stationaryGun.Dismount(aiOwner);
+    }
+
+    [RequiresGameDataFact]
     public void MissionThreeAmmoDoorCanOnlyBeOpenedFromItsPoweredTerminal()
     {
         (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
@@ -322,6 +403,57 @@ public sealed class RetailInteractionInventoryTests
             Assert.True(totals[type] > 0, $"No shipped {type} task was loaded.");
         }
         Assert.True(genericPickupTotal > 0, "No shipped GenericPickup task was loaded.");
+    }
+
+    [RequiresGameDataFact]
+    public void EveryRetailStationaryGunHasItsDrawableHolderPlacement()
+    {
+        int stationaryGunCount = 0;
+
+        for (int missionId = 1; missionId <= 14; missionId++)
+        {
+            (LevelTask root, MagicObjectRegistry magic, LoadedMission mission, ScriptVarRegistry variables) =
+                Load(missionId);
+            DoorRegistry doors = DoorRegistry.Build(root);
+            WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(root, mission, doors, variables);
+            WorldScene scene = WorldScene.Build(mission, root, magic);
+
+            foreach (WorldInteraction gun in interactions.Items.Where(
+                         static item => item.Type == InteractionActivateType.StationaryGun))
+            {
+                stationaryGunCount++;
+                DeclaredTask declared = Assert.IsType<DeclaredTask>(gun.Task);
+                string parameters = string.Join(
+                    "; ",
+                    declared.Type.Parameters.Select(
+                        (parameter, index) => $"{parameter.Name}={declared.GetValue(index)}"));
+                Assert.True(
+                    scene.Placements.Any(candidate => ReferenceEquals(candidate.Owner, gun.Task)),
+                    $"Mission {missionId} task {declared.Name} produced no placement; "
+                    + $"models=[{string.Join(",", WorldScene.PlacedModelNames(declared))}], "
+                    + $"parameters=[{parameters}], unresolved={scene.UnresolvedCount}");
+                WorldPlacement placement = Assert.Single(
+                    scene.Placements,
+                    candidate => ReferenceEquals(candidate.Owner, gun.Task));
+
+                string expectedModel = declared.TryGetValue("Holder model", out object? rawHolderModel)
+                    && rawHolderModel is string holderModel
+                    && holderModel.Length > 0
+                    ? holderModel
+                    : "456_13_1";
+                Assert.Equal(expectedModel, placement.Instance.Name);
+                Assert.Equal(
+                    new Vector3d(
+                        gun.Anchor.X / WorldScene.UnitsPerMetre,
+                        gun.Anchor.Y / WorldScene.UnitsPerMetre,
+                        gun.Anchor.Z / WorldScene.UnitsPerMetre),
+                    placement.Position);
+                Assert.Equal(gun.Orientation, placement.Orientation);
+                Assert.False(placement.Model.IsEmpty);
+            }
+        }
+
+        Assert.True(stationaryGunCount > 0, "The campaign did not expose any StationaryGun tasks.");
     }
 
     private static (LevelTask Root, MagicObjectRegistry Magic, LoadedMission Mission, ScriptVarRegistry Variables) Load(

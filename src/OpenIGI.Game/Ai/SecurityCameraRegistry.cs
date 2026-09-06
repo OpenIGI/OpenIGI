@@ -365,7 +365,8 @@ public sealed class SecurityCamera
                 origin,
                 target,
                 WorldTraceMask.World,
-                IgnoredOwner: Task),
+                IgnoredOwner: Task,
+                TracePortals: true),
             out _);
     }
 

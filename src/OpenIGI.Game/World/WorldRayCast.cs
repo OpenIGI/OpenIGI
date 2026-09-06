@@ -92,13 +92,21 @@ public enum WorldTraceHitKind
 /// Whether collision owned by a dormant conditional container participates. Retail uses this during
 /// Human registration so staged actors can acquire their moving parent before the scene is activated.
 /// </param>
+/// <param name="TracePortals">
+/// Whether doorway and window portal faces are solid. Human movement leaves this clear so a body
+/// walks through an opening; AI sight sets it so a closed room or an unwound door is cover. An
+/// open door registers a sight opening on the collision index so its portal becomes a hole again.
+/// </param>
+/// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
     WorldTraceMask Mask = WorldTraceMask.World,
     GameTask? IgnoredOwner = null,
     GameTask? IgnoredSubject = null,
-    bool IncludeInactiveOwners = false)
+    bool IncludeInactiveOwners = false,
+    bool TracePortals = false,
+    WorldPlacement? IgnoredPlacement = null)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length
@@ -122,6 +130,7 @@ public readonly record struct WorldTraceRequest(
 /// <param name="Kind">The collision category that answered.</param>
 /// <param name="Owner">The exact task owning a placed collision mesh, when applicable.</param>
 /// <param name="Label">A stable diagnostic name for the blocker.</param>
+/// <param name="Placement">The exact rendered placement hit, including an attached magic object.</param>
 public readonly record struct WorldTraceHit(
     Vector3d Position,
     Vector3f Normal,
@@ -130,7 +139,8 @@ public readonly record struct WorldTraceHit(
     int Material,
     WorldTraceHitKind Kind,
     GameTask? Owner = null,
-    string Label = "")
+    string Label = "",
+    WorldPlacement? Placement = null)
 {
     /// <summary>Projects this rich contact into the legacy cast result.</summary>
     public WorldRayHit RayHit => new(Position, Normal, Distance, Material);
@@ -141,12 +151,13 @@ public readonly record struct WorldTraceHit(
         in WorldRayHit hit,
         WorldTraceHitKind kind,
         GameTask? owner = null,
-        string label = "")
+        string label = "",
+        WorldPlacement? placement = null)
     {
         double length = request.Length;
         double fraction = length > 0.0 ? Math.Clamp(hit.Distance / length, 0.0, 1.0) : 0.0;
         return new WorldTraceHit(
-            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label);
+            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label, placement);
     }
 }
 
@@ -205,12 +216,17 @@ public static class WorldTrace
     }
 
     /// <summary>Returns the legacy adapter used by movement and camera callers.</summary>
-    public static WorldRayCast AsRayCast(WorldTraceCast cast, WorldTraceMask mask = WorldTraceMask.World)
+    public static WorldRayCast AsRayCast(
+        WorldTraceCast cast,
+        WorldTraceMask mask = WorldTraceMask.World,
+        bool tracePortals = false)
     {
         ArgumentNullException.ThrowIfNull(cast);
         return (Vector3d origin, Vector3d end, out WorldRayHit hit) =>
         {
-            bool found = cast(new WorldTraceRequest(origin, end, mask), out WorldTraceHit rich);
+            bool found = cast(
+                new WorldTraceRequest(origin, end, mask, TracePortals: tracePortals),
+                out WorldTraceHit rich);
             hit = found ? rich.RayHit : default;
             return found;
         };

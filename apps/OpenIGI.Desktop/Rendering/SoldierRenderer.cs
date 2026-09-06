@@ -96,6 +96,10 @@ public sealed class SoldierRenderer : IDisposable
     private readonly Dictionary<int, AiSoldier> _brainsByRuntimeId = [];
     private readonly Dictionary<GuardGeneratorTask, SoldierView> _guardGenerators = [];
     private LevelExpressionRuntime? _guardExpressions;
+    private readonly Dictionary<AiStationaryGun, HeldWeapon?> _stationaryWeaponVisuals = [];
+    private readonly Dictionary<int, string> _lastGunnerRuntimeReports = [];
+    private readonly HashSet<int> _reportedStationaryVisuals = [];
+    private ScriptVarRegistry? _scriptVariables;
     private readonly EnemyDetectorOverlay _binocularOverlay = new();
 
     // The soldiers the last binocular scan drew a contact for, and the team colour their marker uses.
@@ -762,7 +766,8 @@ public sealed class SoldierRenderer : IDisposable
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (ConditionalContainerGate.IsTaskActive(view.Soldier)
-                && _health.TryGetValue(view, out HumanHealth? health) && !health.IsDead)
+                && !view.IsDead
+                && (!_health.TryGetValue(view, out HumanHealth? health) || health is not { IsDead: true }))
             {
                 contacts.Add(brain.Position);
             }
@@ -770,6 +775,9 @@ public sealed class SoldierRenderer : IDisposable
 
         return contacts;
     }
+
+    /// <summary>Gets the live AI brains for focused renderer-path tests.</summary>
+    internal IReadOnlyList<AiSoldier> BrainsForTesting => [.. _brains.Values];
 
     /// <summary>Resolves a human task's live pose for an EditCamera link or target.</summary>
     public CutsceneTargetPose? CutscenePose(int taskId)
@@ -1331,6 +1339,7 @@ public sealed class SoldierRenderer : IDisposable
         _guardGenerators.Clear();
         _npcTargetByBrain.Clear();
         _guardExpressions = variables is null ? null : new LevelExpressionRuntime(variables);
+        _scriptVariables = variables;
         _lastDetectionShoutTick = -1;
         _combat.Clear();
         _health.Clear();
@@ -1459,6 +1468,14 @@ public sealed class SoldierRenderer : IDisposable
                         id =>
                         {
                             _activatedTasks.Add(id);
+                            if (brain.Arm == AiCombatArm.Gunner
+                                || _interactions?.FindStationaryGun(id) is not null)
+                            {
+                                _logger.Information(
+                                    LogCategory,
+                                    $"[gunner] runtime={brain.RuntimeId} activation reached task={id} "
+                                        + $"gunnerId={brain.GunnerId}");
+                            }
                             _aiTaskActivator?.Invoke(id);
                         });
                 }
@@ -1468,8 +1485,8 @@ public sealed class SoldierRenderer : IDisposable
                 }
                 if (sight is not null)
                 {
-                    // 0x489B20: the target is seen when the cast is clear, OR when whatever blocked it sits at
-                    // or past 0.79 of the way there - so clipping a corner near the target does not hide it.
+                    // A world hit before the target is cover. In particular, a wall enclosing the player
+                    // must not be treated as a late corner clip that leaves the player visible.
                     brain.SetLineOfSight((from, to) =>
                     {
                         if (!sight(from, to, out WorldRayHit blocked))
@@ -1478,8 +1495,7 @@ public sealed class SoldierRenderer : IDisposable
                         }
 
                         double total = Length(from, to);
-                        return total <= 0.0
-                            || Length(from, blocked.Position) / total >= AiSoldier.SightObstructionTolerance;
+                        return AiSoldier.WorldBlockerAllowsSight(total, blocked.Distance);
                     });
                 }
 
@@ -1581,18 +1597,42 @@ public sealed class SoldierRenderer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         _heldWeaponsByModel.Clear();
 
+        Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
+        _stationaryWeaponVisuals.Clear();
+        _reportedStationaryVisuals.Clear();
         if (_interactions is { } interactions)
         {
             foreach (AiStationaryGun gun in interactions.Items
                 .Select(static item => item.StationaryGun)
                 .OfType<AiStationaryGun>())
             {
-                gun.BindWeapon(roster.TryGetByScriptId(gun.WeaponId, out WeaponType weapon) ? weapon : null);
+                if (!roster.TryGetByScriptId(gun.WeaponId, out WeaponType weapon))
+                {
+                    gun.BindWeapon(null);
+                    _stationaryWeaponVisuals[gun] = null;
+                    _logger.Warning(
+                        LogCategory,
+                        $"[gunner] task={gun.TaskId} weapon={gun.WeaponId} is not in the weapon table.");
+                    continue;
+                }
+
+                gun.BindWeapon(weapon);
+                if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
+                {
+                    held = BuildWeapon(mission, weapon.GunModel);
+                    cache[weapon.GunModel] = held;
+                }
+
+                _stationaryWeaponVisuals[gun] = held;
+                _logger.Information(
+                    LogCategory,
+                    $"[gunner] task={gun.TaskId} weapon={weapon.ScriptId} model={weapon.GunModel} "
+                        + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) "
+                        + $"visual={(held is null ? "missing" : "ready")}");
             }
         }
 
         int armed = 0;
-        Dictionary<string, HeldWeapon?> cache = new(StringComparer.OrdinalIgnoreCase);
 
         foreach (Group group in _groups)
         {
@@ -1627,6 +1667,7 @@ public sealed class SoldierRenderer : IDisposable
                 // reads that task directly (IGI1 0x48D8E0; IGI2 HumanAIContent_RunFire), so a missing or
                 // unrenderable model must not turn an armed guard into an unarmed AI that only stares.
                 member.WeaponType = weapon;
+                member.CarriedWeaponType = weapon;
                 member.AmmoInClip = weapon.RoundsPerClip;
 
                 if (!cache.TryGetValue(weapon.GunModel, out HeldWeapon? held))
@@ -1642,6 +1683,7 @@ public sealed class SoldierRenderer : IDisposable
 
                 member.Weapon = held;
                 _heldWeaponsByModel[weapon.GunModel] = held;
+                member.CarriedWeapon = held;
                 armed++;
             }
         }
@@ -1859,6 +1901,30 @@ public sealed class SoldierRenderer : IDisposable
             held.WeaponType?.Category ?? WeaponCategory.Knife);
     }
 
+    /// <summary>Swaps the rendered held model to the live stationary gun while a gunner is mounted.</summary>
+    private void UpdateMountedWeapon(Member member, AiSoldier brain)
+    {
+        if (brain.MountedGun is { } mounted
+            && mounted.Weapon is not null
+            && _stationaryWeaponVisuals.TryGetValue(mounted, out HeldWeapon? visual)
+            && visual is not null)
+        {
+            member.Weapon = visual;
+            member.RenderedMountedGun = mounted;
+            return;
+        }
+
+        if (member.RenderedMountedGun is not null)
+        {
+            member.Weapon = member.CarriedWeapon;
+            member.RenderedMountedGun = null;
+        }
+    }
+
+    /// <summary>Chooses the simulation weapon that a dead soldier drops, independent of its drawn model.</summary>
+    internal static WeaponType? WeaponForDrop(WeaponType? carriedWeaponType, WeaponType? _renderedWeaponType) =>
+        carriedWeaponType;
+
     /// <summary>Turns a raised trigger into a round, at the weapon's own cadence.</summary>
     /// <remarks>
     /// <para>
@@ -2018,6 +2084,7 @@ public sealed class SoldierRenderer : IDisposable
     public void NotifyGunshot(Vector3d origin, double range, SoldierView? except = null)
     {
         int heard = 0;
+        List<AiSoldier> listeners = [];
         foreach ((SoldierView view, AiSoldier brain) in _brains)
         {
             if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
@@ -2035,10 +2102,63 @@ public sealed class SoldierRenderer : IDisposable
             if (brain.HearGunshot(origin, range, fromPlayer: fromPlayerTeam))
             {
                 heard++;
+                listeners.Add(brain);
             }
         }
 
+        HashSet<AiSoldier> directlyHeard = [.. listeners];
+        foreach (AiSoldier listener in listeners)
+        {
+            NotifySquadmates(listener, directlyHeard);
+        }
+
         ReportNoise("gunshot", heard, range);
+    }
+
+    /// <summary>Propagates a combat stimulus through the existing nearby-guard alert event.</summary>
+    private void NotifySquadmates(AiSoldier source, HashSet<AiSoldier>? alreadyNotified = null)
+    {
+        foreach ((SoldierView view, AiSoldier neighbour) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier)
+                || ReferenceEquals(neighbour, source)
+                || alreadyNotified?.Contains(neighbour) == true
+                || neighbour.Alerted
+                || neighbour.Events.PendingCount(AiEvent.Alert) > 0)
+            {
+                continue;
+            }
+
+            neighbour.ReceiveAlert(source.Position, source.RuntimeId);
+        }
+    }
+
+    /// <summary>Delivers IGI1's type-21 explosion alert to every active soldier in the blast envelope.</summary>
+    /// <param name="origin">The explosion centre in engine units.</param>
+    /// <param name="rangeUnits">The authored full-radius plus falloff envelope.</param>
+    /// <remarks>
+    /// This is intentionally separate from <see cref="NotifyGunshot(Vector3d, double, SoldierView?)"/>. Retail registers and queues
+    /// <c>AIEVENT_EXPLOSION</c> (21), so an explosive object must not masquerade as a rifle shot.
+    /// </remarks>
+    public void NotifyExplosion(
+        Vector3d origin,
+        double rangeUnits = AiSoldier.FlashbangEventRadiusInUnits)
+    {
+        int heard = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveExplosion(origin, rangeUnits))
+            {
+                heard++;
+            }
+        }
+
+        ReportNoise("explosion", heard, rangeUnits);
     }
 
     /// <summary>Delivers a player's world-impact event to every guard inside its authored radius.</summary>
@@ -2086,6 +2206,70 @@ public sealed class SoldierRenderer : IDisposable
         }
 
         ReportNoise("walk", heard, radiusUnits);
+    }
+
+    /// <summary>Delivers IGI1's visible grenade-takeoff event (type 17).</summary>
+    public void NotifyGrenadeThrown(Vector3d origin)
+    {
+        int seen = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveGrenadeThrown(origin))
+            {
+                seen++;
+            }
+        }
+
+        ReportNoise("grenade-thrown", seen, AiSoldier.GrenadeLandRadiusInUnits);
+    }
+
+    /// <summary>Delivers IGI1's five-metre grenade-land event (type 18).</summary>
+    public void NotifyGrenadeLand(
+        Vector3d origin,
+        double radiusUnits = AiSoldier.GrenadeLandRadiusInUnits)
+    {
+        int heard = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveGrenadeLand(origin, radiusUnits))
+            {
+                heard++;
+            }
+        }
+
+        ReportNoise("grenade-land", heard, radiusUnits);
+    }
+
+    /// <summary>Delivers IGI1's ten-metre in-view flashbang event (type 19).</summary>
+    public void NotifyFlashbang(
+        Vector3d origin,
+        double radiusUnits = AiSoldier.FlashbangEventRadiusInUnits)
+    {
+        int affected = 0;
+        foreach ((SoldierView view, AiSoldier brain) in _brains)
+        {
+            if (!ConditionalContainerGate.IsTaskActive(view.Soldier))
+            {
+                continue;
+            }
+
+            if (brain.ReceiveFlashbang(origin, radiusUnits))
+            {
+                affected++;
+            }
+        }
+
+        ReportNoise("flashbang", affected, radiusUnits);
     }
 
     /// <summary>
@@ -2981,6 +3165,10 @@ public sealed class SoldierRenderer : IDisposable
                         solids.UpdateTransform(
                             door.Task, door.DrawPosition + elevatorOffset, door.DrawOrientation);
                     }
+
+                    // Sight treats building portals as solid. Once this leaf is off its shut pose,
+                    // open the portal it filled so a guard in the doorway can see through.
+                    solids.SetSightOpening(door.Task, !door.State.IsFullyClosed, elevatorOffset);
                 }
             }
         }
@@ -3202,6 +3390,35 @@ public sealed class SoldierRenderer : IDisposable
             }
             SeparateFromOtherSoldiers(brain, before);
 
+            if (member is not null)
+            {
+                UpdateMountedWeapon(member, brain);
+                if (collectDiagnostics && brain.Arm == AiCombatArm.Gunner)
+                {
+                    string report = $"runtime={brain.RuntimeId} gunnerId={brain.GunnerId} "
+                        + $"mounted={(brain.IsMounted ? "true" : "false")} "
+                        + $"task={(brain.MountedGun is null ? "-" : brain.MountedGun.TaskId.ToString(System.Globalization.CultureInfo.InvariantCulture))} "
+                        + $"activity={brain.Activity}";
+                    if (_lastGunnerRuntimeReports.GetValueOrDefault(brain.RuntimeId) != report)
+                    {
+                        _lastGunnerRuntimeReports[brain.RuntimeId] = report;
+                        _logger.Information(LogCategory, $"[gunner] {report}");
+                    }
+
+                    if (_tick % 300 == 1)
+                    {
+                        string timer = _scriptVariables?.TryRead("LevelTimer_1608.nTick", out QvmValue timerValue) == true
+                            ? timerValue.ToString()
+                            : "missing";
+                        string dispatched = brain.LastDispatchedEvent?.ToString() ?? "-";
+                        _logger.Information(
+                            LogCategory,
+                            $"[gunner] diagnostic runtime={brain.RuntimeId} lastEvent={dispatched} "
+                            + $"timer1608={timer}");
+                    }
+                }
+            }
+
             // The pump half of the [aiflow] diff: an event that was QUEUED shows up here the tick it is
             // drained, whether or not any script acted on it. Noise delivered but never drained points at
             // the pump; drained but never acted on points at the script/actions.
@@ -3210,14 +3427,20 @@ public sealed class SoldierRenderer : IDisposable
                 int gunshot = brain.Events.DrainedCount(AiEvent.Gunshot);
                 int miss = brain.Events.DrainedCount(AiEvent.GunshotMiss);
                 int impact = brain.Events.DrainedCount(AiEvent.GroundImpact);
+                int explosion = brain.Events.DrainedCount(AiEvent.Explosion);
+                int grenadeThrown = brain.Events.DrainedCount(AiEvent.GrenadeThrown);
+                int grenadeLand = brain.Events.DrainedCount(AiEvent.GrenadeLand);
+                int flashbang = brain.Events.DrainedCount(AiEvent.Flashbang);
                 int walk = brain.Events.DrainedCount(AiEvent.Walk);
                 int damage = brain.Events.DrainedCount(AiEvent.TakingDamage);
-                if (gunshot + miss + impact + walk + damage > 0)
+                if (gunshot + miss + impact + explosion + grenadeThrown + grenadeLand + flashbang + walk + damage > 0)
                 {
                     _lastDrainLogTick = _tick;
                     _logger.Information(
                         LogCategory,
                         $"[aiflow] #{brain.RuntimeId} drained gunshot={gunshot} miss={miss} "
+                            + $"explosion={explosion} grenadeThrown={grenadeThrown} "
+                            + $"grenadeLand={grenadeLand} flashbang={flashbang} "
                             + $"impact={impact} walk={walk} dmg={damage} act={brain.Activity}");
                 }
             }
@@ -3859,7 +4082,7 @@ public sealed class SoldierRenderer : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_groups.Count == 0)
+        if (_groups.Count == 0 && _stationaryWeaponVisuals.Count == 0)
         {
             return;
         }
@@ -3867,6 +4090,11 @@ public sealed class SoldierRenderer : IDisposable
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
         _device.SetDepthState(DepthState.TestAndWrite);
+
+        // StationaryGun's holder is a separate authored model. An AI gunner replaces it with the
+        // mounted soldier's hand attachment, but the first-person player has no equivalent world
+        // attachment, so the holder stays visible while the player owns the task.
+        DrawStationaryGuns(camera, projection);
 
         // Motion is a geometry-pass concern: only the G-buffer records it, and the previous pose is
         // built against the scene camera, which the shadow cascades' light cameras are not.
@@ -3938,6 +4166,48 @@ public sealed class SoldierRenderer : IDisposable
                 _device.ClearPoseInterpolation();
             }
         }
+    }
+
+    private void DrawStationaryGuns(in Camera3D camera, in Matrix4f projection)
+    {
+        foreach ((AiStationaryGun gun, HeldWeapon? visual) in _stationaryWeaponVisuals)
+        {
+            bool playerUsing = gun.IsOccupied && _interactions?.Items.Any(item =>
+                ReferenceEquals(item.StationaryGun, gun) && item.IsPlayerUsingStationaryGun) == true;
+            if (!ShouldDrawStaticStationaryGun(gun, playerUsing)
+                || visual?.Presentation is not { } presentation)
+            {
+                continue;
+            }
+
+            if (_reportedStationaryVisuals.Add(gun.TaskId))
+            {
+                _logger.Information(
+                    LogCategory,
+                    $"[gunner] static visual task={gun.TaskId} weapon={gun.WeaponId} "
+                    + $"position=({gun.Position.X:0.##},{gun.Position.Y:0.##},{gun.Position.Z:0.##}) drawn");
+            }
+
+            presentation.Draw(
+                // The retail M2HB mesh's barrel is authored on local +Y while StationaryGun's
+                // orientation and cone are defined from the local -Y barrel axis. Rotate the
+                // presentation around the stand pivot so the visible gun points where the task aims.
+                new BoneAttachment(
+                    gun.Position,
+                    gun.Orientation * Matrix3f.RotationZ(MathF.PI)),
+                camera,
+                projection,
+                firedThisTick: false,
+                shotSequence: 0,
+                WeaponDrawParts.BodyOnly);
+        }
+    }
+
+    /// <summary>Gets whether the holder model remains the visible gun for this ownership state.</summary>
+    internal static bool ShouldDrawStaticStationaryGun(AiStationaryGun gun, bool playerUsing)
+    {
+        ArgumentNullException.ThrowIfNull(gun);
+        return !gun.IsOccupied || playerUsing;
     }
 
     /// <summary>Gets a value indicating whether the player's third-person body is posed and drawing.</summary>
@@ -4763,11 +5033,18 @@ public sealed class SoldierRenderer : IDisposable
                 if (health.IsDead)
                 {
                     HumanHit hit = new(feet, distance, ExplosionDamage.Zone, 0f, 0f);
+                    if (brain?.ReceiveDamage(position) == true)
+                    {
+                        NotifySquadmates(brain);
+                    }
                     Die(soldier, hit, position, feet, WeaponCategory.Grenade);
                 }
                 else
                 {
-                    brain?.ReceiveDamage(position);
+                    if (brain?.ReceiveDamage(position) == true)
+                    {
+                        NotifySquadmates(brain);
+                    }
                     ReportHitSound(soldier);
                 }
             }
@@ -5102,11 +5379,18 @@ public sealed class SoldierRenderer : IDisposable
 
             if (struck.IsDead && struckView is not null)
             {
+                if (brain?.ReceiveDamage(origin) == true)
+                {
+                    NotifySquadmates(brain);
+                }
                 Die(struckView, hit, origin, end, category);
             }
             else
             {
-                brain?.ReceiveDamage(origin);
+                if (brain?.ReceiveDamage(origin) == true)
+                {
+                    NotifySquadmates(brain);
+                }
 
                 // The grunt. 0x4553E0 plays it on the branch where the hit was NOT fatal -- a killing
                 // round goes to the death state, which has its own cry -- and 0x4637C0 rate-limits it
@@ -5223,7 +5507,8 @@ public sealed class SoldierRenderer : IDisposable
             Vector3d ragdollOrigin = new(view.Position.X, view.Position.Y, grounded + view.RootSample.Z);
             Vector3d dropPosition = view.Position;
             Matrix3f dropRotation = view.Orientation;
-            if (member.WeaponType is not null)
+            WeaponType? droppedWeapon = WeaponForDrop(member.CarriedWeaponType, member.WeaponType);
+            if (droppedWeapon is not null)
             {
                 BonePose pose = view.UnrotatedPose();
                 if (HumanAttachPoints.ThirdPersonWeapon < pose.BoneCount)
@@ -5249,7 +5534,7 @@ public sealed class SoldierRenderer : IDisposable
                 FindModel(view),
                 weapon: null);
 
-            if (member.WeaponType is { } dropped)
+            if (droppedWeapon is { } dropped)
             {
                 member.Weapon = null;
                 _weaponDrop?.Invoke(dropped, dropPosition, dropRotation);
@@ -5488,6 +5773,88 @@ public sealed class SoldierRenderer : IDisposable
                 view.IsDead);
         }
         return occupants;
+    }
+
+    /// <summary>A nearest-human intersection that does not apply damage or AI events.</summary>
+    public HumanRayCast Probe() => TryIntersect;
+
+    /// <summary>A living-human proximity query for armed mines.</summary>
+    public HumanProximityCast ProximityProbe() => TryProximity;
+
+    /// <summary>Finds the nearest living soldier inside a mine's activation radius.</summary>
+    public bool TryProximity(Vector3d center, float radiusUnits, out HumanProximityTarget target)
+    {
+        target = default;
+        double radiusSquared = radiusUnits * radiusUnits;
+        bool found = false;
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
+                    || soldier.IsDead
+                    || (_health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
+                {
+                    continue;
+                }
+
+                Vector3d position = soldier.Position;
+                double distanceSquared = Vector3d.DistanceSquared(center, position);
+                if (distanceSquared > radiusSquared)
+                {
+                    continue;
+                }
+
+                double distance = Math.Sqrt(distanceSquared);
+                if (!found || distance < target.Distance)
+                {
+                    target = new HumanProximityTarget(position, distance);
+                    found = true;
+                }
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>Finds the nearest living soldier on a segment without scoring the hit.</summary>
+    public bool TryIntersect(Vector3d origin, Vector3d end, out HumanHit hit)
+    {
+        hit = default;
+        bool found = false;
+
+        foreach (Group group in _groups)
+        {
+            foreach (Member member in group.Soldiers)
+            {
+                SoldierView soldier = member.View;
+                if (!ConditionalContainerGate.IsTaskActive(soldier.Soldier)
+                    || soldier.IsDead
+                    || (_health.TryGetValue(soldier, out HumanHealth? health) && health is { IsDead: true }))
+                {
+                    continue;
+                }
+
+                Matrix3f m = soldier.Orientation;
+                Vector3f facing = new(m.M12, m.M22, m.M32);
+                double snappedZ = SnapToGround(soldier.Position.X, soldier.Position.Y, soldier.Position.Z);
+                Vector3d feet = new(soldier.Position.X, soldier.Position.Y, snappedZ);
+                bool met = group.CollisionMesh is { } collision
+                    ? HumanHitTest.TryCastMesh(
+                        origin, end, feet, facing, collision, soldier.Pose(), soldier.RootSample.Z, out HumanHit candidate)
+                    : HumanHitTest.TryCast(
+                        origin, end, feet, facing, soldier.Pose(), out candidate, soldier.RootSample.Z);
+                if (met && (!found || candidate.Distance < hit.Distance))
+                {
+                    hit = candidate;
+                    found = true;
+                }
+            }
+        }
+
+        return found;
     }
 
     /// <summary>Gets how many soldiers have been killed.</summary>
@@ -5776,6 +6143,15 @@ public sealed class SoldierRenderer : IDisposable
 
         /// <summary>What this soldier holds, or <see langword="null"/> when the level armed it with nothing.</summary>
         public HeldWeapon? Weapon { get; set; }
+
+        /// <summary>The carried weapon restored after a temporary stationary-gun mount ends.</summary>
+        public HeldWeapon? CarriedWeapon { get; set; }
+
+        /// <summary>The carried weapon table row restored after a temporary stationary-gun mount ends.</summary>
+        public WeaponType? CarriedWeaponType { get; set; }
+
+        /// <summary>The stationary gun whose model currently replaces the carried weapon.</summary>
+        public AiStationaryGun? RenderedMountedGun { get; set; }
 
         /// <summary>Whether a round left this soldier's barrel on the current simulation tick.</summary>
         public bool FiredThisTick { get; set; }

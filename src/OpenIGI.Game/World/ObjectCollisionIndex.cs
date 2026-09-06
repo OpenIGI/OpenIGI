@@ -53,6 +53,12 @@ public sealed class ObjectCollisionIndex
     // the live task transform through UpdateTransform, including every half-open pose.
     private readonly HashSet<GameTask> _passable = [];
 
+    // Closed-pose bounds of doors that are no longer fully shut. Sight traces that include portal
+    // faces skip a portal whose centroid sits in one of these boxes, so an open doorway is a hole
+    // again while a closed room stays opaque.
+    private readonly Dictionary<GameTask, (Vector3d Min, Vector3d Max)> _sightOpenings = new(
+        ReferenceEqualityComparer.Instance);
+
     private ObjectCollisionIndex(Entry[] entries, Entry[] playerEntries)
     {
         _entries = entries;
@@ -136,6 +142,66 @@ public sealed class ObjectCollisionIndex
         {
             _passable.Remove(owner);
         }
+    }
+
+    /// <summary>
+    /// Opens or closes the authored doorway a door occupies for AI sight.
+    /// </summary>
+    /// <param name="owner">The exact <c>Door</c> task.</param>
+    /// <param name="open">Whether the door is no longer fully closed.</param>
+    /// <param name="displacementMetres">World translation of a carrier such as an elevator.</param>
+    /// <remarks>
+    /// Walking always skips portal faces. Sight does not, so a closed room is cover. Once the door
+    /// leaves its shut pose the portal has to become a hole again or a guard standing in an open
+    /// doorway cannot see through it.
+    /// </remarks>
+    public void SetSightOpening(GameTask owner, bool open, Vector3d displacementMetres = default)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (!open)
+        {
+            _sightOpenings.Remove(owner);
+            return;
+        }
+
+        if (!_entriesByOwner.TryGetValue(owner, out Entry[]? entries) || entries.Length == 0)
+        {
+            return;
+        }
+
+        Vector3d min = new(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
+        Vector3d max = new(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity);
+        Vector3d displacementUnits = displacementMetres * WorldScene.UnitsPerMetre;
+        foreach (Entry entry in entries)
+        {
+            (Vector3d lo, Vector3d hi) = entry.ClosedBounds;
+            lo += displacementUnits;
+            hi += displacementUnits;
+            min = new(Math.Min(min.X, lo.X), Math.Min(min.Y, lo.Y), Math.Min(min.Z, lo.Z));
+            max = new(Math.Max(max.X, hi.X), Math.Max(max.Y, hi.Y), Math.Max(max.Z, hi.Z));
+        }
+
+        // A personnel door is thinner than the building portal it fills. Grow the hole so the
+        // portal triangles around the slab are skipped once the leaf is open.
+        const double pad = 0.75 * WorldScene.UnitsPerMetre;
+        _sightOpenings[owner] = (
+            new Vector3d(min.X - pad, min.Y - pad, min.Z - pad),
+            new Vector3d(max.X + pad, max.Y + pad, max.Z + pad));
+    }
+
+    private bool PortalIsSightOpening(Vector3d point)
+    {
+        foreach ((Vector3d min, Vector3d max) in _sightOpenings.Values)
+        {
+            if (point.X >= min.X && point.X <= max.X
+                && point.Y >= min.Y && point.Y <= max.Y
+                && point.Z >= min.Z && point.Z <= max.Z)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Updates the live transform of a moving placed object.</summary>
@@ -229,6 +295,7 @@ public sealed class ObjectCollisionIndex
             foreach (Entry entry in set)
             {
                 if (!IsSelfOrDescendant(entry.Owner, ancestor)
+                    || Destructibles?.IsDestroyed(entry.Placement) == true
                     || _passable.Contains(entry.Owner)
                     || !ConditionalContainerGate.IsTaskActive(entry.Owner)
                     || entry.Radius <= 0.0)
@@ -345,6 +412,7 @@ public sealed class ObjectCollisionIndex
         foreach (Entry entry in _entries)
         {
             if (!entry.IsDynamic
+                || Destructibles?.IsDestroyed(entry.Placement) == true
                 || _passable.Contains(entry.Owner)
                 || (!includeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner))
                 || entry.Radius <= 0.0)
@@ -477,7 +545,11 @@ public sealed class ObjectCollisionIndex
                 ? describedModel
                 : $"{describedModel} [{placement.TaskName}]";
 
-            if (meshes.Default is { Faces.Count: > 0 } defaultMesh)
+            // Character HSMC meshes stay at the authored spawn. World traces (AI sight, bullets)
+            // would hit that leftover hull before the live detection mark and treat the player as
+            // cover. Live humans are not static world; skip them on the world index.
+            if (meshes.Default is { Faces.Count: > 0 } defaultMesh
+                && !IsCharacterPlacement(placement))
             {
                 entries.Add(Entry.Create(
                     defaultMesh, origin, placement.Orientation, placement.Instance.Name, label, placement.TaskName,
@@ -494,6 +566,14 @@ public sealed class ObjectCollisionIndex
         }
 
         return new ObjectCollisionIndex([.. entries], [.. playerEntries]);
+    }
+
+    private static bool IsCharacterPlacement(WorldPlacement placement)
+    {
+        string? type = placement.Owner.Type.Name;
+        return string.Equals(type, "HumanPlayer", StringComparison.Ordinal)
+            || string.Equals(type, "HumanSoldier", StringComparison.Ordinal)
+            || string.Equals(type, "HumanSoldierFemale", StringComparison.Ordinal);
     }
 
     /// <summary>Casts a ray at the placed objects.</summary>
@@ -815,7 +895,9 @@ public sealed class ObjectCollisionIndex
         {
             if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
                 || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
+                || (request.IgnoredPlacement is not null && ReferenceEquals(entry.Placement, request.IgnoredPlacement))
                 || index.GenericPickups?.IsCollected(entry.Owner) == true
+                || index.Destructibles?.IsDestroyed(entry.Placement) == true
                 || index._passable.Contains(entry.Owner)
                 || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
             {
@@ -830,12 +912,19 @@ public sealed class ObjectCollisionIndex
                 : WorldTraceMask.StaticObjects;
             if ((request.Mask & category) == 0
                 || !MeetsSphere(origin, direction, entry.Centre, entry.Radius)
-                || !entry.TryCast(origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
+                || !entry.TryCast(
+                    origin,
+                    direction,
+                    ref nearest,
+                    useClosedTransform: false,
+                    includePortals: request.TracePortals,
+                    portalIsOpening: request.TracePortals ? index.PortalIsSightOpening : null,
+                    out WorldRayHit candidate))
             {
                 return false;
             }
 
-            Hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label);
+            Hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label, entry.Placement);
             return true;
         }
     }
@@ -849,6 +938,7 @@ public sealed class ObjectCollisionIndex
         ref WorldRayHit hit)
     {
         if (GenericPickups?.IsCollected(entry.Owner) == true
+            || Destructibles?.IsDestroyed(entry.Placement) == true
             || _passable.Contains(entry.Owner)
             || !ConditionalContainerGate.IsTaskActive(entry.Owner))
         {
@@ -860,7 +950,14 @@ public sealed class ObjectCollisionIndex
             return false;
         }
 
-        if (!entry.TryCast(origin, direction, ref nearest, useClosedTransform: false, out WorldRayHit candidate))
+        if (!entry.TryCast(
+            origin,
+            direction,
+            ref nearest,
+            useClosedTransform: false,
+            includePortals: false,
+            portalIsOpening: null,
+            out WorldRayHit candidate))
         {
             return false;
         }
@@ -887,6 +984,7 @@ public sealed class ObjectCollisionIndex
         foreach (Entry entry in entries)
         {
             if (GenericPickups?.IsCollected(entry.Owner) == true
+                || Destructibles?.IsDestroyed(entry.Placement) == true
                 || (honourPassable
                     && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
             {
@@ -906,6 +1004,8 @@ public sealed class ObjectCollisionIndex
                 direction,
                 ref nearest,
                 useClosedTransform: !honourPassable,
+                includePortals: false,
+                portalIsOpening: null,
                 out WorldRayHit candidate))
             {
                 hit = candidate;
@@ -970,6 +1070,9 @@ public sealed class ObjectCollisionIndex
 
     /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
+
+    /// <summary>Gets or sets the live destructible placement states removed after retail destruction.</summary>
+    public DestructibleObjectRegistry? Destructibles { get; set; }
     /// <summary>Gets the rich trace delegate bound to this index.</summary>
     public WorldTraceCast Tracer() => TryTrace;
 
@@ -1005,7 +1108,8 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (!ConditionalContainerGate.IsTaskActive(entry.Owner))
+            if (Destructibles?.IsDestroyed(entry.Placement) == true
+                || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
                 continue;
             }
@@ -1020,6 +1124,8 @@ public sealed class ObjectCollisionIndex
                 direction,
                 ref nearest,
                 useClosedTransform: false,
+                includePortals: false,
+                portalIsOpening: null,
                 out WorldRayHit candidate))
             {
                 hit = candidate;
@@ -1061,7 +1167,9 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _playerEntries)
         {
-            if (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))
+            if (Destructibles?.IsDestroyed(entry.Placement) == true
+                || _passable.Contains(entry.Owner)
+                || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
                 continue;
             }
@@ -1076,6 +1184,8 @@ public sealed class ObjectCollisionIndex
                 direction,
                 ref nearest,
                 useClosedTransform: false,
+                includePortals: false,
+                portalIsOpening: null,
                 out WorldRayHit candidate))
             {
                 hit = candidate;
@@ -1251,6 +1361,7 @@ public sealed class ObjectCollisionIndex
             TaskName = taskName;
             Owner = owner;
             Placement = placement;
+            ClosedBounds = BoundsOf(vertices);
         }
 
         public MefCollisionMesh Mesh { get; }
@@ -1272,6 +1383,8 @@ public sealed class ObjectCollisionIndex
         public WorldPlacement Placement { get; }
 
         public bool IsDynamic { get; private set; }
+
+        public (Vector3d Min, Vector3d Max) ClosedBounds { get; }
 
         /// <summary>Gets whether this entry belongs to the human (level-one) trace set.</summary>
         public bool IsPlayerSet { get; init; }
@@ -1376,11 +1489,26 @@ public sealed class ObjectCollisionIndex
             IsDynamic = true;
         }
 
+        private static (Vector3d Min, Vector3d Max) BoundsOf(Vector3d[] vertices)
+        {
+            Vector3d min = new(double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity);
+            Vector3d max = new(double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity);
+            foreach (Vector3d vertex in vertices)
+            {
+                min = new(Math.Min(min.X, vertex.X), Math.Min(min.Y, vertex.Y), Math.Min(min.Z, vertex.Z));
+                max = new(Math.Max(max.X, vertex.X), Math.Max(max.Y, vertex.Y), Math.Max(max.Z, vertex.Z));
+            }
+
+            return (min, max);
+        }
+
         public bool TryCast(
             Vector3d origin,
             Vector3d direction,
             ref double nearest,
             bool useClosedTransform,
+            bool includePortals,
+            Func<Vector3d, bool>? portalIsOpening,
             out WorldRayHit hit)
         {
             hit = default;
@@ -1389,11 +1517,28 @@ public sealed class ObjectCollisionIndex
 
             foreach (MefCollisionFace face in Mesh.Faces)
             {
-                // Portal polygons are visibility boundaries, not solid geometry. IGI1's human trace
-                // selects mesh level one but still leaves isTracePortals clear.
+                // Portal polygons are visibility boundaries, not solid geometry. IGI1's human
+                // movement trace leaves them clear so a body walks through a doorway. AI sight
+                // includes them (0x489B00 → 0x4C4630) so a closed room is cover; an open door
+                // punches a hole through the portal it occupied.
                 if (Mesh.IsPortal(face.Material))
                 {
-                    continue;
+                    if (!includePortals)
+                    {
+                        continue;
+                    }
+
+                    Vector3d a0 = vertices[face.I0];
+                    Vector3d b0 = vertices[face.I1];
+                    Vector3d c0 = vertices[face.I2];
+                    Vector3d mid = new(
+                        (a0.X + b0.X + c0.X) / 3.0,
+                        (a0.Y + b0.Y + c0.Y) / 3.0,
+                        (a0.Z + b0.Z + c0.Z) / 3.0);
+                    if (portalIsOpening?.Invoke(mid) == true)
+                    {
+                        continue;
+                    }
                 }
 
                 Vector3d a = vertices[face.I0];
