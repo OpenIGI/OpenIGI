@@ -1329,17 +1329,28 @@ public sealed class CutsceneRuntime
             }
             transform.ParkingBrake = channels[3] != -1f;
 
-            // The two response coefficients are physics-object data in retail (+24 steering, +32
-            // throttle), rather than level parameters.  Keep the same first-order state shape here;
-            // the probe records the exact per-model response and pose so these defaults can be
-            // replaced without changing the timeline contract.
-            // Retail smooths steer/throttle with data-driven factors from the model's CAR.QVM
-            // physics blob (cutscene_truck/TRUCK: retention 0.95, response 0.05 per channel;
-            // ANIMTASK-RE.md §4b) — x += (target - x) * response.
-            float steeringResponse = transform.CarPhysics?.SteeringResponse ?? 0.05f;
-            float throttleResponse = transform.CarPhysics?.ThrottleResponse ?? 0.05f;
-            transform.Steering += (transform.TargetSteering - transform.Steering) * steeringResponse;
-            transform.Thrust += (transform.TargetThrust - transform.Thrust) * throttleResponse;
+            // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
+            //     current = current * retention + target * (1 - retention)
+            // Prefer these native retention fields. The QVM header also publishes the complementary
+            // response value, which remains a defensive fallback for malformed legacy records.
+            CarPhysicsDefinition? carPhysics = transform.CarPhysics;
+            float steeringRetention = carPhysics?.SteeringRetention ?? 0.95f;
+            float throttleRetention = carPhysics?.ThrottleRetention ?? 0.95f;
+            if (carPhysics is { } car)
+            {
+                if (!float.IsFinite(steeringRetention) || steeringRetention is < 0f or > 1f)
+                {
+                    steeringRetention = 1f - Math.Clamp(car.SteeringResponse, 0f, 1f);
+                }
+                if (!float.IsFinite(throttleRetention) || throttleRetention is < 0f or > 1f)
+                {
+                    throttleRetention = 1f - Math.Clamp(car.ThrottleResponse, 0f, 1f);
+                }
+            }
+            transform.Steering = (transform.Steering * steeringRetention)
+                + (transform.TargetSteering * (1f - steeringRetention));
+            transform.Thrust = (transform.Thrust * throttleRetention)
+                + (transform.TargetThrust * (1f - throttleRetention));
             float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
             transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
 
