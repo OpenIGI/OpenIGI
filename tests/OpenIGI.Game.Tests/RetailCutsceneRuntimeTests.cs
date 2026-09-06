@@ -31,6 +31,7 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(new Vector3f(0.4f, 0.4f, 0.4f), helicopter.Smoothing);
         Assert.Equal(0.027f, helicopter.HighCollectiveStep);
         Assert.Equal(0.003f, helicopter.LowCollectiveStep);
+        Assert.Equal(200f, helicopter.MaximumSpeed);
         Assert.Equal(3, helicopter.Aerodynamics.Count);
         Assert.Equal(new AerodynamicSurfaceDefinition(20f, Vector3f.UnitX, Vector3f.Zero),
             helicopter.Aerodynamics[0]);
@@ -129,6 +130,93 @@ public sealed class RetailCutsceneRuntimeTests
             double dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
             return Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz));
         }
+    }
+
+    [RequiresGameDataFact]
+    public void ParkedMissionThreeHelicopterKeepsItsAuthoredRotorPresentationMoving()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(3);
+        WorldScene world = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+        WorldPlacement[] rotors = world.Placements.Where(
+            placement => placement.Owner.Id == 3339
+                && placement.Instance.Name == "711_02_1").ToArray();
+        Assert.Equal(2, rotors.Length);
+
+        runtime.Tick();
+        RotorDrawState[] before = rotors.Select(rotor =>
+        {
+            Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState state));
+            return state;
+        }).ToArray();
+        runtime.Tick();
+        for (int i = 0; i < rotors.Length; i++)
+        {
+            Assert.True(runtime.TryGetRotorDrawState(rotors[i], out RotorDrawState after));
+            Assert.NotEqual(before[i].GetOrientation(0), after.GetOrientation(0));
+            Assert.Equal(before[i].Position, after.Position);
+            Assert.Equal(before[i].SampleCount, after.SampleCount);
+            Assert.True(after.SampleCount >= 2);
+        }
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneRotorDiscKeepsItsFlapInsideTheAuthoredRange()
+    {
+        VirtualFileSystem fs = new(); fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fs); GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new(); missions.Register(loop.Natives); missions.Scan(fs, resources, loop.Natives);
+        MagicObjectRegistry magic = new(); magic.Register(loop.Natives); magic.Load(resources, loop.Natives);
+        LoadedMission mission = new MissionLoader(
+            missions, fs, resources, new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        WorldScene world = WorldScene.Build(mission, root, magic);
+        VehiclePhysicsRegistry physics = new(); physics.Load(resources);
+        Assert.True(physics.TryGetRotor("711_02_1", out RotorPhysicsDefinition mainBlade));
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, vehiclePhysics: physics, terrain: mission.Terrain);
+        WorldPlacement[] rotors = world.Placements.Where(
+            placement => placement.Owner.Id == 1502 && placement.Instance.Name == "711_02_1").ToArray();
+        Assert.NotEmpty(rotors);
+
+        // RotorPrimitive::Draw flaps the blade with the airframe's AXIAL speed measured against
+        // 0.4 of the model's maximum speed, so a flying Bell stays inside the collective's own
+        // -(1 - collective) .. +0.1 band: the flap is a trim, not a switch. Reading the sideways
+        // axis, or dividing by the live collective, saturated it at the authored five degrees on
+        // any movement and inverted it whenever the drift changed sign -- the blur samples then
+        // read as an umbrella and a reversed umbrella instead of a flat disc.
+        float lowest = float.PositiveInfinity;
+        float highest = float.NegativeInfinity;
+        for (int tick = 0; tick < 600; tick++)
+        {
+            runtime.Tick();
+            foreach (WorldPlacement rotor in rotors)
+            {
+                Assert.True(runtime.TryGetRotorDrawState(rotor, out RotorDrawState state));
+                lowest = Math.Min(lowest, state.Tilt);
+                highest = Math.Max(highest, state.Tilt);
+            }
+        }
+
+        Assert.True(
+            lowest > -mainBlade.MaximumTilt,
+            $"the rotor disc saturated its downward flap at {lowest:F5} rad");
+        // The collective band tops out at +0.1 * MaximumTilt. The axial trim is allowed a further
+        // hundredth of the authored deflection on top of it, which this flight uses less than a
+        // tenth of; the broken term reached the whole +MaximumTilt.
+        Assert.True(
+            highest <= 0.11f * mainBlade.MaximumTilt,
+            $"the rotor disc flapped upward to {highest:F5} rad, past the collective band");
     }
 
     [RequiresGameDataFact]

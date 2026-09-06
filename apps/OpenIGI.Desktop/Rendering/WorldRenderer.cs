@@ -275,12 +275,20 @@ public sealed class WorldRenderer : IDisposable
     /// camera is the light's, and a query answered from the eye's depth says nothing about it.
     /// </param>
     /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <param name="rotorsOnly">
+    /// Draws the translucent rotor attachments in place of the opaque world. The two are separate
+    /// passes over the same placements: a rotor blends against what is already in the frame, so it
+    /// has to follow every opaque draw and test depth without writing it. Its tallies accumulate
+    /// onto the opaque pass's rather than replacing them, so the overlay still reads one frame.
+    /// </param>
+    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
     public void Draw(
         WorldScene scene,
         in Camera3D camera,
         in Matrix4f projection,
         float minimumRadius = 0f,
-        bool occlusionCulling = false)
+        bool occlusionCulling = false,
+        bool rotorsOnly = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -291,7 +299,7 @@ public sealed class WorldRenderer : IDisposable
         }
 
         _device.SetProjection(projection);
-        _device.SetDepthState(DepthState.TestAndWrite);
+        _device.SetDepthState(rotorsOnly ? DepthState.TestOnly : DepthState.TestAndWrite);
 
         // Back faces are culled once the mesh builder has repaired winding (r_world_cull): every triangle
         // is rewound to agree with its outward vertex normals there, so CCW is reliably the front and
@@ -323,6 +331,13 @@ public sealed class WorldRenderer : IDisposable
         {
             ref FrameEntry entry = ref _frame[index];
             if (entry.Skip || entry.Model is not { } model)
+            {
+                continue;
+            }
+
+            // Each pass takes only the half of the placements it is for: the rotors blend against the
+            // opaque world, so they cannot be drawn in the middle of building it.
+            if (entry.IsRotor != rotorsOnly)
             {
                 continue;
             }
@@ -419,7 +434,7 @@ public sealed class WorldRenderer : IDisposable
                         modelView,
                         subset.Diffuse,
                         subset.Lightmap,
-                        BlendMode.Opaque);
+                        rotorsOnly ? BlendMode.AlphaBlend : BlendMode.Opaque);
 
                     draws++;
                     triangles += subset.TriangleCount;
@@ -438,10 +453,12 @@ public sealed class WorldRenderer : IDisposable
             _hasPreviousCamera = true;
         }
 
-        LastDrawCount = draws;
-        LastTriangleCount = triangles;
-        LastLightmappedCount = lit;
-        LastOccludedCount = occluded;
+        // The rotor pass adds to the opaque pass's tallies rather than replacing them: the two are
+        // halves of one frame's world draw, and the overlay is reading the frame.
+        LastDrawCount = (rotorsOnly ? LastDrawCount : 0) + draws;
+        LastTriangleCount = (rotorsOnly ? LastTriangleCount : 0) + triangles;
+        LastLightmappedCount = (rotorsOnly ? LastLightmappedCount : 0) + lit;
+        LastOccludedCount = (rotorsOnly ? LastOccludedCount : 0) + occluded;
 
         // Back to one for whatever draws next -- the terrain keeps its shipped LDR lightmaps.
         if (_lightmapScale != 1f)
@@ -570,6 +587,7 @@ public sealed class WorldRenderer : IDisposable
             }
 
             entry.Skip = false;
+            entry.IsRotor = authored.IsRotor;
 
             bool destroyed = authored.DestroyedReplacement is not null
                 && AlarmSpeakers?.IsDestroyed(authored.Owner) == true;
@@ -809,6 +827,7 @@ public sealed class WorldRenderer : IDisposable
         public bool Skip;
         public bool WasDestroyed;
         public bool HasRotor;
+        public bool IsRotor;
         public ResolvedModel? Model;
         public WorldPlacement? Displayed;
         public Vector3d Position;

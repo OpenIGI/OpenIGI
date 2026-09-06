@@ -4509,6 +4509,25 @@ internal sealed partial class DesktopGame : IDisposable
                     _device.BeginPass(ScenePass.Forward);
                 }
 
+                // Retail rotor blades carry graded alpha (Bell: 72/255). The opaque pass's
+                // alpha test discards them entirely; blend their phase samples over the lit world.
+                if (mapScene is { } rotorMap)
+                {
+                    float renderScale = captured ? RenderCVars.RenderScale.Value : 1f;
+                    _device.SetViewport(new Viewport(
+                        (int)(rotorMap.Viewport.X * renderScale),
+                        (int)((_window.Height - rotorMap.Viewport.Y - rotorMap.Viewport.Height) * renderScale),
+                        Math.Max(1, (int)(rotorMap.Viewport.Width * renderScale)),
+                        Math.Max(1, (int)(rotorMap.Viewport.Height * renderScale))));
+                }
+                _world.Draw(_scene, eye, projection, rotorsOnly: true);
+                if (mapScene is not null)
+                {
+                    _device.SetViewport(new Viewport(0, 0,
+                        captured ? sceneTarget.Width : _window.Width,
+                        captured ? sceneTarget.Height : _window.Height));
+                }
+
                 // The ballistic streaks are LIGHT, and light belongs to the forward pass -- drawn in
                 // the geometry pass they are written into the g-buffer as scenery and come out lit
                 // and fogged (a dim grey square was exactly what that looked like). Here they draw

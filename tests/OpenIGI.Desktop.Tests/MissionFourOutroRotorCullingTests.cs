@@ -63,12 +63,12 @@ public sealed class MissionFourOutroRotorCullingTests
             Camera3D.LookRotation(0f, 0f));
         Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI / 3f, 16f / 9f, 0.01f, 200f);
 
-        scenario.Renderer.Draw(scenario.Scene, behindHelicopter, projection);
+        scenario.Renderer.Draw(scenario.Scene, behindHelicopter, projection, rotorsOnly: true);
         int offCameraDraws = RotorDrawCount();
         Assert.Equal(0, offCameraDraws);
 
         scenario.Device.MeshDraws.Clear();
-        scenario.Renderer.Draw(scenario.Scene, facingHelicopter, projection);
+        scenario.Renderer.Draw(scenario.Scene, facingHelicopter, projection, rotorsOnly: true);
         int inViewDraws = RotorDrawCount();
         Assert.Equal(expectedInViewDraws, inViewDraws);
 

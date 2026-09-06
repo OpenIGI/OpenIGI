@@ -134,8 +134,11 @@ public sealed class VehiclePhysicsRegistry
         }
         else if (taskType == _heliType && call.ArgumentCount >= 22)
         {
-            // Bell/Mil use the same Heli-specific prefix. These indexes are the fields read at
-            // config +4..+36 by 0x431E30, after the common physics-object header.
+            // Bell/Mil use the same Heli-specific prefix. Argument 12 is the record's first float
+            // (config +0); the nine after it are the fields read at config +4..+36 by 0x431E30,
+            // after the common physics-object header. The tail is exact: 0x5031F0 reads ten floats
+            // (args 12..21), the surface count (22) and its seven-value samples, so the record's
+            // +0 can only be argument 12.
             int surfaceCount = Math.Min(call.GetInt32(22), (call.ArgumentCount - 23) / 7);
             AerodynamicSurfaceDefinition[] surfaces = new AerodynamicSurfaceDefinition[surfaceCount];
             for (int i = 0; i < surfaceCount; i++)
@@ -153,6 +156,7 @@ public sealed class VehiclePhysicsRegistry
                 new(call.GetSingle(14), call.GetSingle(16), call.GetSingle(18)),
                 call.GetSingle(20),
                 call.GetSingle(21),
+                call.GetSingle(12),
                 surfaces));
         }
 
@@ -161,6 +165,18 @@ public sealed class VehiclePhysicsRegistry
 }
 
 /// <summary>The Heli control constants consumed once per 30 Hz physics step.</summary>
+/// <param name="Mass">The airframe mass.</param>
+/// <param name="Dimensions">The body extents in metres, used for the inertia box.</param>
+/// <param name="Torque">The per-axis control torque.</param>
+/// <param name="Smoothing">The per-axis control smoothing.</param>
+/// <param name="HighCollectiveStep">The collective step used at or above 0.8.</param>
+/// <param name="LowCollectiveStep">The collective step used below 0.8.</param>
+/// <param name="MaximumSpeed">
+/// The record's first float (config <c>+0</c>), in km/h — 200 for both shipped families.
+/// <c>RotorPrimitive::Draw</c> (<c>0x42C630</c>) measures the airframe's axial speed against
+/// <c>MaximumSpeed * 0.4</c> when it flaps the blade.
+/// </param>
+/// <param name="Aerodynamics">The authored quadratic-drag samples.</param>
 public readonly record struct HelicopterPhysicsDefinition(
     float Mass,
     OpenIGI.Core.Numerics.Vector3f Dimensions,
@@ -168,6 +184,7 @@ public readonly record struct HelicopterPhysicsDefinition(
     OpenIGI.Core.Numerics.Vector3f Smoothing,
     float HighCollectiveStep,
     float LowCollectiveStep,
+    float MaximumSpeed,
     IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics);
 
 /// <summary>One local quadratic-drag sample from the Heli physics-object record.</summary>

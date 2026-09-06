@@ -56,11 +56,11 @@ public sealed class WorldRendererRotorCullingTests
 
         // The authoritatively recognised rotor state must not bypass the same frustum rule as rigid
         // geometry: an off-camera helicopter otherwise submits every blur sample each frame.
-        scenario.Renderer.Draw(scenario.Scene, new Camera3D(eye, Camera3D.LookRotation(MathF.PI, 0f)), projection);
+        scenario.Renderer.Draw(scenario.Scene, new Camera3D(eye, Camera3D.LookRotation(MathF.PI, 0f)), projection, rotorsOnly: true);
         Assert.Equal(0, RotorDraws());
 
         scenario.Device.MeshDraws.Clear();
-        scenario.Renderer.Draw(scenario.Scene, new Camera3D(eye, Camera3D.LookRotation(0f, 0f)), projection);
+        scenario.Renderer.Draw(scenario.Scene, new Camera3D(eye, Camera3D.LookRotation(0f, 0f)), projection, rotorsOnly: true);
         Assert.Equal(expectedSamples, RotorDraws());
 
         int RotorDraws() => scenario.Device.MeshDraws.Count(draw => rotorMeshes.Contains(draw.Mesh.Id));
@@ -108,14 +108,47 @@ public sealed class WorldRendererRotorCullingTests
             phaseZeroModelView);
         Assert.True(expectedPhaseZeroDraws >= edge.Geometry.Subsets.Count(subset => subset.IndexCount > 0));
 
-        scenario.Renderer.Draw(scenario.Scene, edge.Camera, edge.Projection);
+        scenario.Renderer.Draw(scenario.Scene, edge.Camera, edge.Projection, rotorsOnly: true);
 
         int actualPhaseZeroDraws = scenario.Device.MeshDraws.Count(draw =>
             draw.Mesh.Id == rotorMesh && draw.ModelView == phaseZeroModelView);
         Assert.Equal(expectedPhaseZeroDraws, actualPhaseZeroDraws);
     }
 
-    private static Scenario CreateMissionOneHelicopter()
+    [RequiresGameDataTheory]
+    [InlineData(1, 1502)]
+    [InlineData(3, 3339)]
+    public void HelicopterRotorsBlendInForwardPassAndMoveBetweenTicks(int missionId, int ownerId)
+    {
+        using Scenario scenario = CreateMissionOneHelicopter(missionId);
+        WorldPlacement[] rotors = scenario.Scene.Placements.Where(p => p.Owner.Id == ownerId && p.IsRotor).ToArray();
+        Assert.NotEmpty(rotors);
+        foreach (WorldPlacement rotor in rotors)
+        {
+            int index = scenario.Scene.Placements.ToList().IndexOf(rotor);
+            Assert.True(scenario.Renderer.MakeResident(scenario.Scene, index));
+        }
+        HashSet<uint> meshes = scenario.Device.Meshes.Keys.ToHashSet();
+        Assert.True(scenario.Cutscenes.TryGetRotorDrawState(rotors[0], out RotorDrawState state));
+        Camera3D camera = new(state.Position - new Vector3d(0, 30, -8), Camera3D.LookRotation(0, -0.25f));
+        Matrix4f projection = Matrix4f.CreatePerspective(MathF.PI / 3, 16f / 9, 0.01f, 200f);
+        scenario.Renderer.Draw(scenario.Scene, camera, projection);
+        Assert.DoesNotContain(scenario.Device.MeshDraws, d => meshes.Contains(d.Mesh.Id));
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.Draw(scenario.Scene, camera, projection, rotorsOnly: true);
+        var before = scenario.Device.MeshDraws.Where(d => meshes.Contains(d.Mesh.Id)).ToArray();
+        Assert.NotEmpty(before);
+        Assert.All(before, d => Assert.Equal(BlendMode.AlphaBlend, d.Blend));
+        Assert.All(before, d => Assert.Equal(DepthState.TestOnly, d.DepthState));
+        scenario.Cutscenes.Tick();
+        scenario.Device.MeshDraws.Clear();
+        scenario.Renderer.Draw(scenario.Scene, camera, projection, rotorsOnly: true);
+        var after = scenario.Device.MeshDraws.Where(d => meshes.Contains(d.Mesh.Id)).ToArray();
+        Assert.Equal(before.Length, after.Length);
+        Assert.Contains(before.Zip(after), pair => pair.First.ModelView != pair.Second.ModelView);
+    }
+
+    private static Scenario CreateMissionOneHelicopter(int missionId = 1)
     {
         VirtualFileSystem fileSystem = new();
         fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -136,7 +169,7 @@ public sealed class WorldRendererRotorCullingTests
             missions,
             fileSystem,
             resources,
-            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(missionId);
         WorldScene scene = WorldScene.Build(mission, root, magic);
         VehiclePhysicsRegistry physics = new();
         physics.Load(resources);
