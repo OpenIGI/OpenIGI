@@ -8,6 +8,7 @@ using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Vulkan.Extensions.KHR;
+using System.Reflection;
 
 namespace OpenIGI.Rendering.Vulkan;
 
@@ -305,7 +306,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
         // with no VkResult to report and no chance to log afterwards. Written out first, the log names the
         // adapter, the exact extension list and every structure in the chain, which is the whole of what
         // the call was given and enough to see the mismatch without the machine that has it.
-        LogDeviceCreation(selection, chain);
+        LogDeviceCreation(selection, chain, features);
 
         nint extensionNames = SilkMarshal.StringArrayToPtr(selection.DeviceExtensions);
         try
@@ -336,8 +337,9 @@ internal sealed unsafe class VulkanDevice : IDisposable
 
     /// <summary>Writes everything vkCreateDevice is about to be given.</summary>
     /// <param name="selection">The adapter and the extensions it will be created with.</param>
-    /// <param name="chain">The feature chain, walked for the structure types it carries.</param>
-    private void LogDeviceCreation(PhysicalDeviceSelection selection, VulkanStructChain chain)
+    /// <param name="chain">The feature chain, walked for the structure types and the flags it carries.</param>
+    /// <param name="features">The core features, which travel outside the chain.</param>
+    private void LogDeviceCreation(PhysicalDeviceSelection selection, VulkanStructChain chain, in PhysicalDeviceFeatures features)
     {
         if (!_logger.IsEnabled(LogLevel.Information))
         {
@@ -366,5 +368,47 @@ internal sealed unsafe class VulkanDevice : IDisposable
         }
 
         _logger.Information("Vulkan", $"Feature chain ({linked.Count}): {string.Join(", ", linked)}.");
+
+        // And every flag set in each, because VK_ERROR_FEATURE_NOT_PRESENT names no feature: it says one
+        // of the bits was not there, and the list below is the whole set of bits it could have been. The
+        // core structure travels through pEnabledFeatures rather than the chain, so it is written first.
+        _logger.Information("Vulkan", $"Requested core features: {RequestedFlags(features)}.");
+        for (void* link = chain.Head; link is not null; link = ((void**)link)[1])
+        {
+            string? flags = *(StructureType*)link switch
+            {
+                StructureType.PhysicalDeviceVulkan11Features => RequestedFlags(*(PhysicalDeviceVulkan11Features*)link),
+                StructureType.PhysicalDeviceVulkan12Features => RequestedFlags(*(PhysicalDeviceVulkan12Features*)link),
+                StructureType.PhysicalDeviceVulkan13Features => RequestedFlags(*(PhysicalDeviceVulkan13Features*)link),
+                _ => null,
+            };
+
+            if (flags is not null)
+            {
+                _logger.Information("Vulkan", $"Requested {*(StructureType*)link}: {flags}.");
+            }
+        }
+    }
+
+    /// <summary>Names every <see cref="Bool32"/> field of a feature structure that is set.</summary>
+    /// <typeparam name="T">The Vulkan feature structure type.</typeparam>
+    /// <param name="value">The structure as it will be handed to the driver.</param>
+    /// <returns>The set field names, comma-separated, or a note that none is set.</returns>
+    private static string RequestedFlags<T>(in T value)
+        where T : unmanaged
+    {
+        // Reflection over a blittable struct, once per process, on the way into a call that may not
+        // return: the cost is nothing and the field names are the ones the specification uses.
+        object boxed = value;
+        List<string> set = [];
+        foreach (FieldInfo field in typeof(T).GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (field.FieldType == typeof(Bool32) && (Bool32)field.GetValue(boxed)!)
+            {
+                set.Add(field.Name);
+            }
+        }
+
+        return set.Count == 0 ? "none" : string.Join(", ", set);
     }
 }

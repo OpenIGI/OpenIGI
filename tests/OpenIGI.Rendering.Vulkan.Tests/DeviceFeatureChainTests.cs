@@ -112,6 +112,69 @@ public sealed unsafe class DeviceFeatureChainTests
         }
     }
 
+    /// <summary>
+    /// A GTX 1060: it reports the seven descriptor-indexing bits the heap depends on and not
+    /// uniform-buffer update-after-bind. Asking for that bit anyway fails the whole device with
+    /// VK_ERROR_FEATURE_NOT_PRESENT, so it must be asked for only where it was reported.
+    /// </summary>
+    [Fact]
+    public void DescriptorIndexingOptions_AreRequestedOnlyWhereReported()
+    {
+        VulkanDeviceCapabilities capabilities = Capabilities(
+            enabled: [KhrSwapchain.ExtensionName],
+            mutableDescriptorType: true,
+            descriptorBuffer: false);
+        capabilities = new()
+        {
+            EnabledExtensions = capabilities.EnabledExtensions,
+            DescriptorIndexing = true,
+            DescriptorIndexingOptions = DescriptorIndexingOptions.All with { UniformBufferUpdateAfterBind = false },
+        };
+
+        PhysicalDeviceVulkan12Features v12 = Vulkan12(capabilities);
+
+        Assert.True(v12.DescriptorIndexing);
+        Assert.True(v12.RuntimeDescriptorArray);
+        Assert.True(v12.DescriptorBindingSampledImageUpdateAfterBind);
+        Assert.True(v12.ShaderUniformBufferArrayNonUniformIndexing);
+        Assert.False(v12.DescriptorBindingUniformBufferUpdateAfterBind);
+    }
+
+    /// <summary>Without the seven core bits, none of the six optional ones is asked for either.</summary>
+    [Fact]
+    public void DescriptorIndexingAbsent_RequestsNoOptionalBit()
+    {
+        VulkanDeviceCapabilities capabilities = new()
+        {
+            EnabledExtensions = [KhrSwapchain.ExtensionName],
+            DescriptorIndexing = false,
+            DescriptorIndexingOptions = DescriptorIndexingOptions.All,
+        };
+
+        PhysicalDeviceVulkan12Features v12 = Vulkan12(capabilities);
+
+        Assert.False(v12.DescriptorIndexing);
+        Assert.False(v12.DescriptorBindingUniformBufferUpdateAfterBind);
+        Assert.False(v12.ShaderStorageImageArrayNonUniformIndexing);
+    }
+
+    /// <summary>Builds the chain and reads back the Vulkan 1.2 feature structure it carries.</summary>
+    private static PhysicalDeviceVulkan12Features Vulkan12(VulkanDeviceCapabilities capabilities)
+    {
+        using VulkanStructChain chain = new();
+        VulkanCapabilityProbe.BuildEnabledFeatures(capabilities, chain, Vk.Version13);
+
+        for (void* link = chain.Head; link is not null; link = ((void**)link)[1])
+        {
+            if (*(StructureType*)link == StructureType.PhysicalDeviceVulkan12Features)
+            {
+                return *(PhysicalDeviceVulkan12Features*)link;
+            }
+        }
+
+        throw new Xunit.Sdk.XunitException("The chain carries no Vulkan 1.2 feature structure.");
+    }
+
     /// <summary>Builds the chain for these capabilities and reads back every structure type in it.</summary>
     private static List<StructureType> ChainedTypes(VulkanDeviceCapabilities capabilities)
     {

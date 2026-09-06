@@ -191,7 +191,12 @@ internal static unsafe class VulkanCapabilityProbe
             positionFetchUsable = false;
         }
         bool localReadUsable = localRead is not null && localRead->DynamicRenderingLocalRead && dynamicRendering;
-        bool robustness2Usable = robustness2 is not null && robustness2->RobustBufferAccess2;
+        // Asked for as three bits, so judged as three bits: an adapter that has the buffer half without
+        // the image half or the null descriptor would otherwise be asked for what it just said it lacks.
+        bool robustness2Usable = robustness2 is not null
+            && robustness2->RobustBufferAccess2
+            && robustness2->RobustImageAccess2
+            && robustness2->NullDescriptor;
         // A single heap holding every resource kind needs a descriptor slot whose type is decided per
         // write, and the per-draw uniform buffers are pushed rather than allocated, which needs the
         // maintenance-5 push-descriptor path. Without either, the bindless model does not hold together,
@@ -266,6 +271,13 @@ internal static unsafe class VulkanCapabilityProbe
             TimelineSemaphore = timelineSemaphore,
             BufferDeviceAddress = bufferDeviceAddress,
             DescriptorIndexing = descriptorIndexing,
+            DescriptorIndexingOptions = new DescriptorIndexingOptions(
+                v12->ShaderStorageImageArrayNonUniformIndexing,
+                v12->ShaderUniformBufferArrayNonUniformIndexing,
+                v12->DescriptorBindingSampledImageUpdateAfterBind,
+                v12->DescriptorBindingStorageImageUpdateAfterBind,
+                v12->DescriptorBindingStorageBufferUpdateAfterBind,
+                v12->DescriptorBindingUniformBufferUpdateAfterBind),
             AccelerationStructureUpdateAfterBind =
                 asFeatures is not null && asFeatures->DescriptorBindingAccelerationStructureUpdateAfterBind,
             ScalarBlockLayout = v12->ScalarBlockLayout,
@@ -437,6 +449,14 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
+        // The seven descriptor-indexing bits the heap depends on were judged together, so they are asked
+        // for together. The other six are asked for exactly as the adapter answered, never derived from
+        // those seven: an adapter is free to implement the seven and not one of the six, and Pascal does
+        // precisely that, missing uniform-buffer update-after-bind. The reference takes the same line -- it checks
+        // the bits it needs, then hands the queried structure itself back to vkCreateDevice.
+        DescriptorIndexingOptions optional = capabilities.DescriptorIndexing
+            ? capabilities.DescriptorIndexingOptions
+            : default;
         chain.Add(new PhysicalDeviceVulkan12Features
         {
             SType = StructureType.PhysicalDeviceVulkan12Features,
@@ -453,12 +473,12 @@ internal static unsafe class VulkanCapabilityProbe
             DescriptorBindingVariableDescriptorCount = capabilities.DescriptorIndexing,
             ShaderSampledImageArrayNonUniformIndexing = capabilities.DescriptorIndexing,
             ShaderStorageBufferArrayNonUniformIndexing = capabilities.DescriptorIndexing,
-            ShaderStorageImageArrayNonUniformIndexing = capabilities.DescriptorIndexing,
-            ShaderUniformBufferArrayNonUniformIndexing = capabilities.DescriptorIndexing,
-            DescriptorBindingSampledImageUpdateAfterBind = capabilities.DescriptorIndexing,
-            DescriptorBindingStorageImageUpdateAfterBind = capabilities.DescriptorIndexing,
-            DescriptorBindingStorageBufferUpdateAfterBind = capabilities.DescriptorIndexing,
-            DescriptorBindingUniformBufferUpdateAfterBind = capabilities.DescriptorIndexing,
+            ShaderStorageImageArrayNonUniformIndexing = optional.StorageImageArrayNonUniformIndexing,
+            ShaderUniformBufferArrayNonUniformIndexing = optional.UniformBufferArrayNonUniformIndexing,
+            DescriptorBindingSampledImageUpdateAfterBind = optional.SampledImageUpdateAfterBind,
+            DescriptorBindingStorageImageUpdateAfterBind = optional.StorageImageUpdateAfterBind,
+            DescriptorBindingStorageBufferUpdateAfterBind = optional.StorageBufferUpdateAfterBind,
+            DescriptorBindingUniformBufferUpdateAfterBind = optional.UniformBufferUpdateAfterBind,
         });
 
         if (capabilities.PortabilitySubset && Enabled(VulkanExtensionNames.PortabilitySubset))

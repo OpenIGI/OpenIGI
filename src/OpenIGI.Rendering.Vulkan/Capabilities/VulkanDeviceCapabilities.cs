@@ -49,6 +49,13 @@ internal sealed class VulkanDeviceCapabilities
     /// <summary>Gets a value indicating whether descriptor arrays can be indexed by a shader-computed value.</summary>
     public bool DescriptorIndexing { get; init; }
 
+    /// <summary>Gets the descriptor-indexing features that are optional on top of <see cref="DescriptorIndexing"/>.</summary>
+    /// <remarks>
+    /// Each is requested only where the adapter reported it, because an adapter may have the seven the
+    /// backend needs and lack one of these -- see <see cref="Capabilities.DescriptorIndexingOptions"/>.
+    /// </remarks>
+    public DescriptorIndexingOptions DescriptorIndexingOptions { get; init; }
+
     /// <summary>Gets a value indicating whether an acceleration structure descriptor can be updated after binding.</summary>
     /// <remarks>
     /// Required for a bindless model that holds the scene's acceleration structure: the top-level
