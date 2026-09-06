@@ -288,6 +288,18 @@ public sealed class AiSoldier
     public int RequestedAnimation { get; private set; } = -1;
 
     private bool _animationFinished;
+
+    /// <summary>Whether a finished scripted one-shot stays retained instead of releasing.</summary>
+    /// <remarks>
+    /// Retail's <c>AIAction_PlayAnimation</c> runner (<c>IGI.EXE 0x48DEC0</c>) retains the action
+    /// while animation channel 3 holds the requested clip (<c>"In progress"</c>) and completes it
+    /// only through the <c>0x450FF0</c> finisher once the channel advances. A staged cutscene actor
+    /// has no activity fallback, so its channel holds the ended clip: retaining keeps re-requests
+    /// on the renderer's same-clip preserve path instead of restarting from zero. Gameplay actors
+    /// keep clear-on-end so combat re-arms exactly as before. Set by the renderer for staged members.
+    /// </remarks>
+    public bool RetainScriptedAnimation { get; set; }
+
     private AiPatrolPathRegistry? _paths;
 
     /// <summary>Gives the soldier the level's patrol paths, so <c>AIAction_Patrol</c> can resolve an id.</summary>
@@ -1866,12 +1878,20 @@ public sealed class AiSoldier
         _scriptedReactionDispatchedThisTick = false;
 
         // A scripted one-shot clip releases the animation slot the moment the renderer says it ended,
-        // so the soldier goes back to whatever its activity plays.
+        // so the soldier goes back to whatever its activity plays. Staged cutscene actors are exempt:
+        // clearing here let Level 1's still-true idle condition (CutScene_1200.nTick > 547, frozen past
+        // scene 1200) reinstall clip 242 from zero every cycle, re-applying its root motion each time
+        // (about 50 m of drift plus a 21 m sink through scene 1202). Retaining holds the ended clip's
+        // last frame like the native channel; the finished edge is still consumed so patrol Animation
+        // commands observe it exactly once.
         if (_scriptedAnimation && _animationFinished)
         {
-            RequestedAnimation = -1;
-            _scriptedAnimation = false;
             _animationFinished = false;
+            if (!RetainScriptedAnimation)
+            {
+                RequestedAnimation = -1;
+                _scriptedAnimation = false;
+            }
         }
 
         // The idle-animation deadline (ai+15200): passing it posts AIEVENT_ANIMATION and re-arms.

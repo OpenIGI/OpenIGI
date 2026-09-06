@@ -777,6 +777,25 @@ public sealed class CutsceneRuntime
         return CaptureAttachment(task, state, parent, parentTransform);
     }
 
+    /// <summary>Reads the moving parent a cinematic Human is currently attached to, if any.</summary>
+    /// <remarks>
+    /// Observation only: it never selects or changes the parent. Regressions use it to assert
+    /// the live contact selection without supplying an expected owner first.
+    /// </remarks>
+    public bool TryGetAttachmentParent(GameTask task, out GameTask? parent)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+
+        if (_attachments.TryGetValue(task, out AttachmentState? attachment))
+        {
+            parent = attachment.ParentTask;
+            return true;
+        }
+
+        parent = null;
+        return false;
+    }
+
     /// <summary>
     /// Clears a cinematic Human's moving-parent slot when its contacted owner has been unregistered.
     /// </summary>

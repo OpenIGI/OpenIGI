@@ -3212,6 +3212,9 @@ public sealed class SoldierRenderer : IDisposable
             Member? member = FindMember(view);
             if (member is { IsCutsceneActor: true })
             {
+                // Staged actors hold finished one-shots like the native animation channel instead
+                // of releasing them to an activity fallback they do not have.
+                brain.RetainScriptedAnimation = true;
                 AiPatrolCommandKind? patrolCommand = brain.Route?.Current?.Kind;
                 bool authoredAnimation = brain.RequestedAnimation >= 0
                     || patrolCommand == AiPatrolCommandKind.Animation;
@@ -3766,8 +3769,9 @@ public sealed class SoldierRenderer : IDisposable
         // Retail IGI.exe 0x4623C3 samples BoneDynCubeObj's animated root, then 0x462403 forms the
         // standing ground-check Z as Human.Position.Z + 1638.4 - RootSample.Z. Querying from the task origin
         // instead hits geometry above the feet (Mission 1's helicopter underside) and parents Jones
-        // to the wrong vehicle. DynamicObject is this port's equivalent of the moving-platform flag
-        // tested at 0x4626E1; its Owner is the exact task passed to Human_SetParent at 0x463310.
+        // to the wrong vehicle. DynamicObject membership alone is NOT the moving-platform flag
+        // tested at 0x4626E1: a hovering airframe is dynamic but never captures (its riders are
+        // direct QVM children); only a platform contact reaches Human_SetParent at 0x463310.
         double checkZ = probePosition.Z + HumanGroundCheckLiftInUnits - view.RootSample.Z;
         WorldTraceRequest request = new(
             new Vector3d(probePosition.X, probePosition.Y, checkZ),
@@ -3775,7 +3779,9 @@ public sealed class SoldierRenderer : IDisposable
             mask,
             IgnoredOwner: view.Soldier,
             IncludeInactiveOwners: includeInactiveOwners);
-        if (_solids.TryTrace(request, out WorldTraceHit hit) && hit.Owner is { } parent)
+        if (_solids.TryTrace(request, out WorldTraceHit hit)
+            && hit.Owner is { } parent
+            && CinematicActor.IsMovingPlatform(parent))
         {
             // The retail probe selects the supporting task from the live foot query, but the first
             // Human_SetParent packet still contains the staged Human+32. Our actor mover may have

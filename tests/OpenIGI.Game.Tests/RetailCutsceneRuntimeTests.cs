@@ -11,11 +11,19 @@ using OpenIGI.TestSupport;
 using OpenIGI.Formats.World;
 using OpenIGI.Scripting.Runtime;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenIGI.Game.Tests;
 
 public sealed class RetailCutsceneRuntimeTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public RetailCutsceneRuntimeTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [RequiresGameDataFact]
     public void RetailHelicopterScriptsPublishControlAndRotorRecords()
     {
@@ -680,6 +688,254 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True((wagonJonesPosition - retailWagonJones).Length <= 0.01d,
             $"retail wagon Jones={retailWagonJones}, runtime={wagonJonesPosition}, delta={(wagonJonesPosition - retailWagonJones).Length:R}");
 
+    }
+
+    [RequiresGameDataFact]
+    public void MissionOneIntroFollowsLiveContactParentsToScene1203()
+    {
+        VirtualFileSystem fileSystem = new();
+        fileSystem.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
+        ResourceRegistry resources = new(fileSystem);
+        GameLoop loop = new(new ManualTimeSource());
+        RegisterCutsceneTypes(loop.Types);
+        LevelTask root = (LevelTask)loop.Tasks.New(loop.Tasks.Root, loop.Types.Get(EngineTaskTypes.Level));
+        MissionRegistry missions = new();
+        missions.Register(loop.Natives);
+        missions.Scan(fileSystem, resources, loop.Natives);
+        MagicObjectRegistry magic = new();
+        magic.Register(loop.Natives);
+        magic.Load(resources, loop.Natives);
+        LoadedMission loaded = new MissionLoader(missions, fileSystem, resources,
+            new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
+        WorldScene world = WorldScene.Build(loaded, root, magic);
+        new ConditionalContainerGate(loop.Variables).Prepare(root);
+        CutsceneRuntime runtime = new(root, loop.Variables, modelLength: Length, modelPivot: Pivot);
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+        ObjectCollisionIndex solids = ObjectCollisionIndex.Build(world.Placements);
+        RefreshCutsceneCollision(solids, world, runtime);
+
+        float Length(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingDistance(model)
+            : 0f;
+        float Pivot(string name) => loaded.TryGetModel(name, out MefModel? model) && model is not null
+            ? WorldScene.TrainCouplingPivotFraction(model)
+            : 0f;
+
+        HumanSoldierTask jones = Assert.IsType<HumanSoldierTask>(root.Tree.FromId(1666));
+        DeclaredTask heli = Assert.IsType<DeclaredTask>(root.Tree.FromId(1508));
+        Assert.Contains("Heli", heli.Label, StringComparison.Ordinal);
+        DeclaredTask train = Assert.IsType<DeclaredTask>(root.Tree.FromId(1507));
+        Assert.Contains("Train", train.Label, StringComparison.Ordinal);
+        GameTask? introContainerOrNull = root.Tree.FromId(4001);
+        Assert.NotNull(introContainerOrNull);
+        GameTask introContainer = introContainerOrNull;
+        GameTask car1888 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1888));
+        GameTask train1999 = Assert.IsType<DeclaredTask>(root.Tree.FromId(1999));
+        GameTask wagon2333 = Assert.IsType<DeclaredTask>(root.Tree.FromId(2333));
+
+        // The renderer probes from the actor's current drawn base, attaches only to a
+        // moving-platform contact (retail task+0x64), and never supplies an expected owner.
+        // Reproduce that order here so the test observes the selection instead of assuming it.
+        // The jump ballistics themselves (clip 242 root motion steered by AiSoldier through
+        // SoldierView, a Desktop-side sampler) cannot run in this harness: once the authored
+        // landing tick arrives, the probe is placed over the passing wagon exactly where the
+        // jump delivers Jones, and from there the ride is fully simulated.
+        Vector3d probeBase = jones.Position;
+        List<string> timeline = new();
+        int scene1200Ticks = 0;
+        int scene1200AttachedTicks = 0;
+        int heliAttachedTicks = 0;
+        int wrongParentTicks = 0;
+        bool sawScene1203 = false;
+        bool landingSimulated = false;
+        Vector3d? frozenBase = null;
+        double maxFrozenDeviationMetres = 0d;
+        Vector3d? wagonOffset = null;
+        double maxOffsetDeviationMetres = 0d;
+        int wagonRidingTicks = 0;
+        int tick = 0;
+        while (tick++ < 6_000 && ConditionalContainerGate.IsTaskActive(introContainer))
+        {
+            objectives.TickLevelState();
+            runtime.Tick();
+            RefreshCutsceneCollision(solids, world, runtime);
+            objectives.TickAfterLevelState();
+            runtime.FinishExpressionTick();
+
+            int scene = runtime.ActiveScene?.Id ?? -1;
+            int sceneTicks = runtime.ActiveScene?.Ticks ?? -1;
+
+            // Authored landing: land_ground_2 at CutScene_1201.nTick > 0.25*GAME_FREQUENCY.
+            // From that tick the jump has delivered Jones above the passing wagon roof.
+            if (!landingSimulated && scene == 1201 && sceneTicks > 0.25d * CutsceneRuntime.Frequency
+                && runtime.TryGetDrawTransform(car1888, out Vector3d wagonAbove, out _))
+            {
+                probeBase = (wagonAbove * WorldScene.UnitsPerMetre)
+                    + new Vector3d(0d, 0d, 3d * WorldScene.UnitsPerMetre);
+                landingSimulated = true;
+            }
+
+            if (!runtime.TryDetachInactiveAttachment(jones))
+            {
+                if (!runtime.TryGetAttachedDrawTransform(jones, out Vector3d attachedMetres, out _))
+                {
+                    Vector3d origin = new(
+                        probeBase.X,
+                        probeBase.Y,
+                        probeBase.Z + (5d * WorldScene.UnitsPerMetre));
+                    Vector3d end = new(
+                        probeBase.X,
+                        probeBase.Y,
+                        probeBase.Z - (10d * WorldScene.UnitsPerMetre));
+                    WorldTraceRequest request = new(
+                        origin,
+                        end,
+                        WorldTraceMask.DynamicObjects,
+                        IgnoredOwner: jones,
+                        IncludeInactiveOwners: false);
+                    if (solids.TryTrace(request, out WorldTraceHit hit)
+                        && hit.Owner is not null
+                        && CinematicActor.IsMovingPlatform(hit.Owner))
+                    {
+                        runtime.TryAttachActorToTask(
+                            jones,
+                            hit.Owner,
+                            probeBase,
+                            Matrix3f.FromEngineEulerAngles(0f, 0f, jones.Gamma));
+                    }
+                }
+                else
+                {
+                    probeBase = attachedMetres * WorldScene.UnitsPerMetre;
+                }
+            }
+
+            bool attached = runtime.TryGetAttachmentParent(jones, out GameTask? parent);
+            if ((scene == 1201 || scene == 1202) && timeline.Count < 400)
+            {
+                runtime.TryGetDrawTransform(train, out Vector3d trainPos, out _);
+                runtime.TryGetDrawTransform(heli, out Vector3d heliPos, out _);
+                runtime.TryGetDrawTransform(jones, out Vector3d jonesPos, out _);
+                runtime.TryGetDrawTransform(car1888, out Vector3d car1888Pos, out _);
+                runtime.TryGetDrawTransform(train1999, out Vector3d train1999Pos, out _);
+                runtime.TryGetDrawTransform(wagon2333, out Vector3d wagon2333Pos, out _);
+                timeline.Add(
+                    $"t={tick} scene={scene} ntick={runtime.ActiveScene?.Ticks} "
+                    + $"parent={(attached && parent is not null ? parent.Id.ToString(System.Globalization.CultureInfo.InvariantCulture) : "none")} "
+                    + $"jones=({jonesPos.X:F2},{jonesPos.Y:F2},{jonesPos.Z:F2}) "
+                    + $"t1507=({trainPos.X:F2},{trainPos.Y:F2},{trainPos.Z:F2}) "
+                    + $"c1888=({car1888Pos.X:F2},{car1888Pos.Y:F2},{car1888Pos.Z:F2}) "
+                    + $"t1999=({train1999Pos.X:F2},{train1999Pos.Y:F2},{train1999Pos.Z:F2}) "
+                    + $"w2333=({wagon2333Pos.X:F2},{wagon2333Pos.Y:F2},{wagon2333Pos.Z:F2}) "
+                    + $"heli=({heliPos.X:F2},{heliPos.Y:F2},{heliPos.Z:F2}) "
+                    + $"heliActive={ConditionalContainerGate.IsTaskActive(heli)} "
+                    + $"trainActive={ConditionalContainerGate.IsTaskActive(train)} "
+                    + $"c1888Active={ConditionalContainerGate.IsTaskActive(car1888)} "
+                    + $"t1999Active={ConditionalContainerGate.IsTaskActive(train1999)} "
+                    + $"w2333Active={ConditionalContainerGate.IsTaskActive(wagon2333)}");
+            }
+
+            if (scene == 1200)
+            {
+                scene1200Ticks++;
+                if (attached)
+                {
+                    scene1200AttachedTicks++;
+                }
+            }
+
+            if (attached && parent is not null && parent.Id == 1508)
+            {
+                heliAttachedTicks++;
+            }
+
+            if (attached && (parent is null || parent.Id != 1888))
+            {
+                wrongParentTicks++;
+            }
+
+            if (scene == 1202 && !attached
+                && runtime.TryGetDrawTransform(jones, out Vector3d frozenNow, out _))
+            {
+                if (frozenBase is null)
+                {
+                    frozenBase = frozenNow;
+                }
+                else
+                {
+                    double deviation = (frozenNow - frozenBase.Value).Length;
+                    if (deviation > maxFrozenDeviationMetres)
+                    {
+                        maxFrozenDeviationMetres = deviation;
+                    }
+                }
+            }
+
+            if (attached && parent is not null && parent.Id == 1888
+                && runtime.TryGetDrawTransform(jones, out Vector3d jonesMetres, out _)
+                && runtime.TryGetDrawTransform(car1888, out Vector3d wagonMetres, out _))
+            {
+                Vector3d offset = jonesMetres - wagonMetres;
+                if (wagonOffset is null)
+                {
+                    wagonOffset = offset;
+                }
+                else
+                {
+                    double deviation = (offset - wagonOffset.Value).Length;
+                    if (deviation > maxOffsetDeviationMetres)
+                    {
+                        maxOffsetDeviationMetres = deviation;
+                    }
+                }
+
+                wagonRidingTicks++;
+            }
+
+            if (scene == 1203)
+            {
+                sawScene1203 = true;
+            }
+        }
+
+        // Jones waits unattached through the opening-heli scene: the eager
+        // containing-sphere guess used to latch the opening train here and carry him
+        // ~349 m before the jump.
+        foreach (string row in timeline)
+        {
+            _output.WriteLine(row);
+        }
+
+        Assert.True(scene1200Ticks > 0, "scene 1200 was never observed");
+        Assert.Equal(0, scene1200AttachedTicks);
+
+        // The hovering insertion heli is not a moving platform (retail task+0x64): ground
+        // contact with it must never capture Jones. Capturing it rode him 90 m past the
+        // landing wagon and stranded him when scene 1201 ended.
+        Assert.Equal(0, heliAttachedTicks);
+
+        // Riding the landing wagon means a stable local offset: the world position may
+        // travel with the consist, but Jones must not drift relative to it. The 1201 ride
+        // only spans the landing tick to the scene boundary, so a few dozen stable ticks
+        // here plus the desktop no-drift trace cover it; the 200-tick FlakTower-style ride
+        // belongs to sequences whose vehicle stays registered.
+        Assert.True(landingSimulated, "the authored landing tick was never reached");
+        Assert.True(wagonRidingTicks >= 30,
+            $"Jones rode wagon1888 for only {wagonRidingTicks} ticks");
+        Assert.True(maxOffsetDeviationMetres <= 0.5d,
+            $"Jones drifted {maxOffsetDeviationMetres:F3} m relative to wagon1888");
+
+        // Past the 1201 boundary the landing consist unregisters: Jones must never latch a
+        // wrong vehicle (the opening train, the jump heli, the far driveby consist), and his
+        // world position must stay where the ride left it. Root-motion drift after the
+        // boundary is covered by the desktop trace (retained clip 242 yields zero delta).
+        Assert.Equal(0, wrongParentTicks);
+        Assert.True(maxFrozenDeviationMetres <= 2d,
+            $"Jones moved {maxFrozenDeviationMetres:F3} m after the landing consist unregistered");
+
+        // The full chain plays through the jump-off scene and closes the container.
+        Assert.True(sawScene1203, "scene 1203 was never reached");
+        Assert.False(ConditionalContainerGate.IsTaskActive(introContainer));
     }
 
     [RequiresGameDataFact]
