@@ -1243,34 +1243,7 @@ internal sealed partial class DesktopGame : IDisposable
 
             // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
             // freezes player/camera input while the world continues its fixed-tick simulation.
-            if (_missionFailedMenu && !menuMode && !console.IsOpen && _activeMission is { } failedMission)
-            {
-                if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Return)
-                    || _window.Input.Keyboard.WasPressed(Input.KeyCode.NumpadEnter))
-                {
-                    StartMission(failedMission.Id);
-                    _window.CursorVisible = false;
-                }
-                else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
-                {
-                    ReleasePlayedMission();
-                    if (shell is not null)
-                    {
-                        shell.OpenOn("campaign");
-                        menuMode = true;
-                        showcasePending = true;
-                        ApplyMenuDepthOfField();
-                    }
-                    _window.CursorVisible = true;
-                }
-                else
-                {
-                    _window.CursorVisible = true;
-                    _window.CursorLocked = false;
-                }
-                _window.Input.Captured = true;
-            }
-            else if (!menuMode && !console.IsOpen && _player is not null
+            if (!menuMode && !console.IsOpen && _player is not null
                 && (TacticalComputer is not null || _mapComputer is { IsReady: true }))
             {
                 // -computercam presses C on a named frame, so the transition can be captured from a
@@ -2231,13 +2204,26 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
                     // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
-                    if (!_missionFailedMenu && ++_missionFailureTicks > 151)
+                    if (!_missionFailedMenu && ++_missionFailureTicks > 151 && shell is not null)
                     {
                         _missionFailedMenu = true;
                         _computerOpen = false;
                         _computerFlight.Reset();
                         _player?.SetMapComputerOpen(false);
-                        _window.CursorVisible = true;
+
+                        // The result is a shell page, not a drawn card, so its two choices can be clicked
+                        // and navigated like every other page and the shell's own cursor is the one on
+                        // screen. menuMode hands it the frame's input and draw; pauseMenu holds the
+                        // showcase off, because the level this is drawn over is still loaded -- the same
+                        // pair the pause menu sets.
+                        menuMode = true;
+                        pauseMenu = true;
+                        shell.OpenMissionFailed();
+
+                        // The platform cursor stays hidden: the shell draws its own, so revealing this one
+                        // would put a second, unrelated pointer beside it.
+                        _window.CursorVisible = false;
+                        _player?.HoldStill();
                         _window.CursorLocked = false;
                     }
                 }
@@ -3351,22 +3337,6 @@ internal sealed partial class DesktopGame : IDisposable
                             _computerHighlights?.Visible() ?? [],
                             _window.Width,
                             _window.Height);
-                    }
-
-                    batch.End();
-                }
-
-                if (_missionFailedMenu)
-                {
-                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    if (TacticalComputer is { } tacticalFailed)
-                    {
-                        tacticalFailed.DrawMissionFailed(batch, _window.Width, _window.Height);
-                    }
-                    else if (_mapComputer is { IsReady: true } failedComputer)
-                    {
-                        failedComputer.DrawMissionFailed(batch, _window.Width, _window.Height);
                     }
 
                     batch.End();
