@@ -358,9 +358,10 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
                 // The whole remaster track off in one word: the retail menus instead of the cinematic
-                // shell, the original's renderer and one-render-per-tick 30 Hz presentation, its mix --
-                // 32 voices at 22 kHz with the flat hand-computed pan instead of positioning -- and its
-                // canned death animations instead of simulated bodies.
+                // shell, the original's renderer, its mix -- 32 voices at 22 kHz with the flat
+                // hand-computed pan instead of positioning -- and its canned death animations instead
+                // of simulated bodies. The one-render-per-tick 30 Hz presentation is NOT among them:
+                // that is a frame-rate cap rather than part of the picture, and only -lockstep keeps it.
                 vanillaMenu = true;
                 startupCommands.Add("gfx_preset vanilla");
                 startupCommands.Add("snd_preset vanilla");
@@ -754,8 +755,9 @@ public readonly record struct DesktopOptions(
                            every soldier reads its combat numbers from. Default normal.
           -vanilla         The whole remaster track off: the retail menu system and the original's
                            picture, pacing and mix (implies -vanillamenu, +gfx_preset vanilla and
-                           +snd_preset vanilla, including the original's 30 Hz between-tick
-                           presentation and its 32-voice flat-panned audio).
+                           +snd_preset vanilla, including its 32-voice flat-panned audio). The
+                           simulation stays at 30 Hz but the display is not held to it; -lockstep
+                           is what restores the original's one-render-per-tick schedule.
           -vanillamenu     The byte-for-byte retail menu system instead of the cinematic shell,
                            over the modern renderer.
           -shelltab <s>    Open the cinematic shell on a section instead of its landing page:
