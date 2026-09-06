@@ -97,6 +97,7 @@ public enum WorldTraceHitKind
 /// walks through an opening; AI sight sets it so a closed room or an unwound door is cover. An
 /// open door registers a sight opening on the collision index so its portal becomes a hole again.
 /// </param>
+/// <param name="IgnoredPlacement">One exact placed mesh to skip, without skipping its sibling attachments.</param>
 public readonly record struct WorldTraceRequest(
     Vector3d Origin,
     Vector3d End,
@@ -104,7 +105,8 @@ public readonly record struct WorldTraceRequest(
     GameTask? IgnoredOwner = null,
     GameTask? IgnoredSubject = null,
     bool IncludeInactiveOwners = false,
-    bool TracePortals = false)
+    bool TracePortals = false,
+    WorldPlacement? IgnoredPlacement = null)
 {
     /// <summary>Gets the segment length in world units.</summary>
     public double Length
@@ -128,6 +130,7 @@ public readonly record struct WorldTraceRequest(
 /// <param name="Kind">The collision category that answered.</param>
 /// <param name="Owner">The exact task owning a placed collision mesh, when applicable.</param>
 /// <param name="Label">A stable diagnostic name for the blocker.</param>
+/// <param name="Placement">The exact rendered placement hit, including an attached magic object.</param>
 public readonly record struct WorldTraceHit(
     Vector3d Position,
     Vector3f Normal,
@@ -136,7 +139,8 @@ public readonly record struct WorldTraceHit(
     int Material,
     WorldTraceHitKind Kind,
     GameTask? Owner = null,
-    string Label = "")
+    string Label = "",
+    WorldPlacement? Placement = null)
 {
     /// <summary>Projects this rich contact into the legacy cast result.</summary>
     public WorldRayHit RayHit => new(Position, Normal, Distance, Material);
@@ -147,12 +151,13 @@ public readonly record struct WorldTraceHit(
         in WorldRayHit hit,
         WorldTraceHitKind kind,
         GameTask? owner = null,
-        string label = "")
+        string label = "",
+        WorldPlacement? placement = null)
     {
         double length = request.Length;
         double fraction = length > 0.0 ? Math.Clamp(hit.Distance / length, 0.0, 1.0) : 0.0;
         return new WorldTraceHit(
-            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label);
+            hit.Position, hit.Normal, hit.Distance, fraction, hit.Material, kind, owner, label, placement);
     }
 }
 

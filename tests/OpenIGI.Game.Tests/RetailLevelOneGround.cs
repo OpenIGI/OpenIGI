@@ -70,6 +70,14 @@ internal static class RetailLevelOneGround
         return _levelRoot;
     }
 
+    /// <summary>Level 1's loaded packs, for tests that verify authored common assets.</summary>
+    public static LoadedMission Mission()
+    {
+        Find();
+        Assert.NotNull(_mission);
+        return _mission;
+    }
+
     /// <summary>Level 1's built scene, for tests that need its placements.</summary>
     public static WorldScene Scene()
     {

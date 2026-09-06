@@ -9,9 +9,9 @@ namespace OpenIGI.Game.Tests;
 public sealed class FlashbangTests
 {
     [Fact]
-    public void TheFlashIsSeenTwentyFiveMetresOut()
+    public void TheFlashUsesTheRetailHundredThousandUnitRange()
     {
-        Assert.Equal(25f, Flashbang.VisibleRangeUnits / 4096f);
+        Assert.Equal(100000f, Flashbang.VisibleRangeUnits);
 
         Assert.True(Flashbang.IsVisible(0f));
         Assert.True(Flashbang.IsVisible(Flashbang.VisibleRangeUnits - 1f));
@@ -24,33 +24,89 @@ public sealed class FlashbangTests
     [Fact]
     public void TheVisibleRangeIsIndependentOfTheGrenadesRadius()
     {
-        // 25 m is hardcoded and has nothing to do with the explosion radius, so at the default tuning
-        // the flash reaches five times further than the blast does.
-        float grenadeRadius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);
+        // 100000 units is hardcoded and has nothing to do with the weaponconfig blast radius.
+        float grenadeRadius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultFlashbangRadiusMetres);
 
-        Assert.Equal(20480f, grenadeRadius);
-        Assert.True(Flashbang.VisibleRangeUnits > grenadeRadius * 4f);
+        Assert.Equal(40960f, grenadeRadius);
+        Assert.True(Flashbang.VisibleRangeUnits > grenadeRadius * 2f);
     }
 
     [Fact]
     public void TheTwoEffectsAreIndependentAndBothCanApply()
     {
-        float radius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);
+        float radius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultFlashbangRadiusMetres);
 
         // Right on top of it: both.
         (float visible, float close) = Flashbang.Effect(0f, radius);
         Assert.Equal(Flashbang.VisibleStrength, visible);
         Assert.Equal(Flashbang.CloseStrength, close);
 
-        // Between the radius and 25 m: the first only. That band is most of the flash's reach.
+        // Between the radius and 100000 units: the first only. That band is most of the flash's reach.
         (visible, close) = Flashbang.Effect(radius + 1f, radius);
         Assert.Equal(Flashbang.VisibleStrength, visible);
         Assert.Equal(0f, close);
 
-        // Past 25 m: neither.
+        // At/past 100000 units: neither.
         (visible, close) = Flashbang.Effect(Flashbang.VisibleRangeUnits, radius);
         Assert.Equal(0f, visible);
         Assert.Equal(0f, close);
+    }
+
+    [Fact]
+    public void OutsideTheNativeFlashRangeThePlayerGetsNoWhiteoutWhileWorldSmokeStillBelongsToTheEvent()
+    {
+        float radius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultFlashbangRadiusMetres);
+        FlashbangScreenFlash whiteout = new();
+
+        (float visible, float close) = Flashbang.Effect(Flashbang.VisibleRangeUnits + 1f, radius);
+        whiteout.Apply(visible, close);
+
+        // DesktopGame resolves the world smoke before this player-only callback. The native callback
+        // writes neither whiteout field outside its two distance tests; smoke is not gated on either.
+        Assert.False(whiteout.IsActive);
+    }
+
+    [Fact]
+    public void TheWhiteoutKeepsTheTwoNativeFieldsAndFadesThemIndependently()
+    {
+        FlashbangScreenFlash flash = new();
+        flash.Apply(Flashbang.VisibleStrength, Flashbang.CloseStrength);
+
+        Assert.Equal(Flashbang.VisibleStrength, flash.VisibleStrength);
+        Assert.Equal(Flashbang.CloseStrength, flash.CloseStrength);
+        Assert.Equal(Flashbang.CloseStrength, flash.Strength);
+
+        for (int tick = 0; tick < 45; tick++)
+        {
+            flash.Tick();
+        }
+
+        Assert.Equal(
+            Flashbang.VisibleStrength - (45 * FlashbangScreenFlash.VisibleFadePerTick),
+            flash.VisibleStrength,
+            5);
+        Assert.Equal(
+            Flashbang.CloseStrength - (45 * FlashbangScreenFlash.CloseFadeAboveOnePerTick),
+            flash.CloseStrength,
+            5);
+        Assert.Equal(flash.CloseStrength, flash.Strength, 5);
+
+        // A weaker event must not shorten a stronger field that is already on screen.
+        flash.Apply(0.5f, 0f);
+        Assert.Equal(Flashbang.VisibleStrength - (45 * FlashbangScreenFlash.VisibleFadePerTick), flash.VisibleStrength, 5);
+        Assert.Equal(
+            Flashbang.CloseStrength - (45 * FlashbangScreenFlash.CloseFadeAboveOnePerTick),
+            flash.CloseStrength,
+            5);
+
+        // The close field crosses one after sixty ticks above one, then uses the slower native
+        // 0.011111112 subtraction. Both fields are fully gone after 150 ticks from strength 1/2.
+        for (int tick = 0; tick < 105; tick++)
+        {
+            flash.Tick();
+        }
+
+        Assert.False(flash.IsActive);
     }
 
     [Fact]

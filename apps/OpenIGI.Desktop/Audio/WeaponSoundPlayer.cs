@@ -75,7 +75,19 @@ internal sealed class WeaponSoundPlayer
             if (_looping is null)
             {
                 _loop = Play(weapon.FireSound, looping: true);
-                _looping = weapon;
+                // A full voice pool (or an audio device that is recovering) returns no handle. Do
+                // not remember a failed start as a live loop: doing so makes every later round only
+                // update handle zero and leaves an automatic weapon permanently silent. The next
+                // fired tick must be allowed to retry; this matters most for the MIL, whose retail
+                // loop is opened while a mission can still be filling the effects pool.
+                if (_loop.IsValidHandle)
+                {
+                    _looping = weapon;
+                }
+                else
+                {
+                    _looping = null;
+                }
             }
             else
             {
@@ -129,10 +141,33 @@ internal sealed class WeaponSoundPlayer
         }
     }
 
-    private AudioVoiceHandle Play(string name, bool looping = false) =>
-        string.IsNullOrEmpty(name)
-            ? AudioVoiceHandle.None
-            : _sounds.Play(BankKey(name), Parameters(name, looping));
+    private AudioVoiceHandle Play(string name, bool looping = false)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return AudioVoiceHandle.None;
+        }
+
+        // Weapon rows carry definition names, not guaranteed raw bank keys. This matters for the
+        // MIL: IGI1 defines mil_loop in COMMON/SOUNDS/SOUNDS.QVM, and bypassing that definition can
+        // hand the backend a non-playable/missing bank key and leave the weapon completely silent.
+        if (_sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true
+            && definition is { IsPlayable: true })
+        {
+            AudioVoiceHandle voice = _sounds.PlayDefinition(
+                name,
+                _positionInUnits,
+                priority: 200,
+                looping: looping);
+            if (voice.IsValidHandle)
+            {
+                return voice;
+            }
+        }
+
+        // Keep the raw-bank fallback for weapon records that are authored without a sound definition.
+        return _sounds.Play(BankKey(name), Parameters(name, looping));
+    }
 
     private string BankKey(string name) =>
         _sounds.Definitions?.TryResolve(name, out SoundDefinition? definition) == true

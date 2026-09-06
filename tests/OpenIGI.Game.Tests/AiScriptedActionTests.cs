@@ -2,6 +2,8 @@ using OpenIGI.Core.Numerics;
 using OpenIGI.Formats.Ai;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Weapons;
+using OpenIGI.Scripting.Qvm;
+using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -170,6 +172,152 @@ public sealed class AiScriptedActionTests
         soldier.Tick(32, irrelevantEnemy, 0.0, enemyAlive: false);
         Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
         Assert.Equal(-1, soldier.RequestedAnimation);
+    }
+
+    [Fact]
+    public void FlashbangAnimationInterruptsAnActiveCombatAction()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask()),
+            () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
+
+        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [], 0)]);
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+
+        soldier.ApplyActions([
+            new AiProducedAction("AIAction_PlayAnimation", [39, 0], 0),
+        ]);
+
+        Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+        Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);
+        Assert.Equal(39, soldier.RequestedAnimation);
+        Assert.False(soldier.Combat.PullTrigger);
+
+    }
+
+    [RequiresGameDataFact]
+    public void RetailGuardFlashbangBranchStopsAnActiveEngagement()
+    {
+        string guardPath = Path.Combine(GameData.RequireRoot(), "common", "ai", "guard.qvm");
+        QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(guardPath));
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask()),
+            () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
+        soldier.SetScript(new AiScriptHost(new NativeRegistry()), guard);
+        soldier.ApplyActions([new AiProducedAction("AIAction_Combat", [], 0)]);
+
+        Vector3d flash = new(0, 4 * 4096, soldier.EyePosition().Z);
+        Assert.True(soldier.ReceiveFlashbang(flash));
+
+        soldier.Tick(1, new Vector3d(0, -100_000, 0), 0.0, enemyAlive: false);
+
+        Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+        Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);
+        Assert.Equal(39, soldier.RequestedAnimation);
+        Assert.False(soldier.Combat.PullTrigger);
+
+    }
+
+    [RequiresGameDataFact]
+    public void RetailGuardFlashbangInterruptsCombatWhileDetectionContinues()
+    {
+        string guardPath = Path.Combine(GameData.RequireRoot(), "common", "ai", "guard.qvm");
+        QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(guardPath));
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        soldier.SetCombat(
+            AiType.GuardAk,
+            new AiCombatParameters(new HumanAiConfigItemTask()),
+            () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
+        soldier.SetScript(new AiScriptHost(new NativeRegistry()), guard);
+
+        Vector3d feet = new(0, 5 * 4096, 0);
+        Vector3d enemy = new(feet.X, feet.Y, feet.Z + (5 * 4096 / 4));
+        for (int tick = 1; tick <= 30 && soldier.Activity != AiSoldierActivity.Engaging; tick++)
+        {
+            soldier.Tick(tick, enemy, 0.0, enemyFeet: feet);
+        }
+
+        Assert.Equal(AiSoldierActivity.Engaging, soldier.Activity);
+
+        Vector3d flash = new(0, 4 * 4096, soldier.EyePosition().Z);
+        Assert.True(soldier.ReceiveFlashbang(flash));
+        Assert.Equal(1, soldier.Events.PendingCount(AiEvent.Flashbang));
+
+        soldier.Tick(31, enemy, 0.0, enemyFeet: feet);
+
+        Assert.True(
+            soldier.Activity == AiSoldierActivity.Idle,
+            $"flashbang drained={soldier.Events.DrainedCount(AiEvent.Flashbang)} "
+                + $"pending={soldier.Events.PendingCount(AiEvent.Flashbang)} "
+                + $"phase={soldier.CombatPhase} anim={soldier.RequestedAnimation} "
+                + $"activity={soldier.Activity}");
+        Assert.Equal(AiCombatPhase.Ended, soldier.CombatPhase);
+        Assert.Equal(39, soldier.RequestedAnimation);
+        Assert.False(soldier.Combat.PullTrigger);
+
+        // The reaction owns more than the one dispatch tick. A guard that can still see Bond must
+        // remain unable to recreate its combat arm until the renderer reports clip 39 complete.
+        for (int tick = 32; tick <= 40; tick++)
+        {
+            soldier.Tick(tick, enemy, 0.0, enemyFeet: feet);
+            Assert.Equal(AiSoldierActivity.Idle, soldier.Activity);
+            Assert.Equal(39, soldier.RequestedAnimation);
+            Assert.False(soldier.Combat.PullTrigger);
+        }
+
+        soldier.ReportAnimationFinished();
+        soldier.Tick(41, enemy, 0.0, enemyFeet: feet);
+        Assert.Equal(-1, soldier.RequestedAnimation);
+    }
+
+    [RequiresGameDataFact]
+    public void RetailGuardGrenadeLandDispatchesThePanicBranchWhileDetectionContinues()
+    {
+        string root = GameData.RequireRoot();
+        QvmProgram guard = QvmProgram.Read(File.ReadAllBytes(Path.Combine(root, "common", "ai", "guard.qvm")));
+        GraphFile graph = GraphFile.Read(File.ReadAllBytes(Path.Combine(
+            root, "missions", "location0", "level1", "graphs", "graph4019.dat")));
+        Vector3d start = graph.Nodes[0].Position;
+        bool sawPanic = false;
+
+        // guard.qvm follows the retail random gate: grenade-land panics are not unconditional. Try
+        // independent IGI streams until the authored branch is selected, while requiring every
+        // successful attempt to have gone through the real event queue and combat-visible tick.
+        for (uint seed = 1; seed <= 128 && !sawPanic; seed++)
+        {
+            AiSoldier soldier = new(graph, start, facing: 0f, phase: 0, seed: (int)seed);
+            soldier.SetCombat(
+                AiType.GuardAk,
+                new AiCombatParameters(new HumanAiConfigItemTask()),
+                () => new AiCombatWeaponState(30, 30, 1, WeaponCategory.Gun));
+            soldier.SetScript(
+                new AiScriptHost(new NativeRegistry(), random: new IgiRandom(seed)),
+                guard);
+
+            Vector3d feet = new(start.X, start.Y + (5 * 4096), start.Z);
+            for (int tick = 1; tick <= 30 && soldier.Activity != AiSoldierActivity.Engaging; tick++)
+            {
+                soldier.Tick(tick, feet, 0.0, enemyFeet: feet);
+            }
+
+            if (soldier.Activity != AiSoldierActivity.Engaging)
+            {
+                continue;
+            }
+
+            Assert.True(soldier.ReceiveGrenadeLand(start));
+            soldier.Tick(31, feet, 0.0, enemyFeet: feet);
+
+            sawPanic = soldier.Events.DrainedCount(AiEvent.GrenadeLand) == 1
+                && soldier.Activity == AiSoldierActivity.Panicking
+                && !soldier.Combat.PullTrigger;
+        }
+
+        Assert.True(sawPanic, "The retail grenade-land branch never produced a running panic reaction.");
     }
 
     [RequiresGameDataFact]

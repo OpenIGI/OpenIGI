@@ -47,18 +47,21 @@ public static class ExplosionDamage
     /// <summary>World units in a metre, since the tags are written in metres.</summary>
     public const float UnitsPerMetre = 4096f;
 
-    /// <summary>The default <c>Grenade - Explosion damage factor</c>.</summary>
-    public const float DefaultGrenadeDamageFactor = 1f;
+    /// <summary>The retail <c>Grenade - Explosion damage factor</c>.</summary>
+    public const float DefaultGrenadeDamageFactor = 1.3f;
 
-    /// <summary>The default <c>Grenade - Explosion radius (meters)</c>.</summary>
-    public const float DefaultGrenadeRadiusMetres = 5f;
+    /// <summary>The retail <c>Grenade - Explosion radius (meters)</c>.</summary>
+    public const float DefaultGrenadeRadiusMetres = 7f;
 
-    /// <summary>The default <c>Grenade - Explosion falloff (meters)</c>.</summary>
-    /// <remarks>
-    /// <b>Zero</b>, which makes the shipped grenade's damage a step rather than a gradient — see
-    /// <see cref="Dose"/>.
-    /// </remarks>
-    public const float DefaultGrenadeFalloffMetres = 0f;
+    /// <summary>The retail <c>Grenade - Explosion falloff (meters)</c>.</summary>
+    public const float DefaultGrenadeFalloffMetres = 4f;
+
+    /// <summary>Fallback radius matching the FlashBang child tags in weaponconfig.qvm.</summary>
+    public const float DefaultFlashbangRadiusMetres = 10f;
+    /// <summary>Fallback falloff matching the FlashBang child tags in weaponconfig.qvm.</summary>
+    public const float DefaultFlashbangFalloffMetres = 15f;
+    /// <summary>Fallback damage factor matching the FlashBang child tags in weaponconfig.qvm.</summary>
+    public const float DefaultFlashbangDamageFactor = 1f;
 
     /// <summary>How much damage an explosion delivers to a target.</summary>
     /// <param name="distanceInUnits">Centre-to-centre distance from the blast to the target.</param>

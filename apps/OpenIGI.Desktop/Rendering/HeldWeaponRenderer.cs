@@ -62,6 +62,7 @@ public sealed class HeldWeaponRenderer : IDisposable
 {
     private const string LogCategory = "Weapon";
     private const string GunFlameTaskType = "TASKTYPE_GUNFLAME";
+    private const string GunX2TaskType = "TASKTYPE_GUNX2";
 
     private static readonly float[] GunFlameRolls = [0f, 4f, 7f];
     private static readonly SurfaceMaterial GunFlameMaterial = new(
@@ -182,7 +183,7 @@ public sealed class HeldWeaponRenderer : IDisposable
             return false;
         }
 
-        AddParts(mission, root, Vector3f.Zero, Matrix3f.Identity);
+        AddParts(mission, root, Vector3f.Zero, Matrix3f.Identity, Matrix3f.Identity, false);
         if (_parts.Count == 0)
         {
             _logger.Warning(LogCategory, $"Gun model '{gunModel}' has nothing to draw.");
@@ -200,24 +201,24 @@ public sealed class HeldWeaponRenderer : IDisposable
     /// <param name="firedThisTick">Whether the held gun fired on the current simulation tick.</param>
     /// <param name="shotSequence">The serial of the last round fired.</param>
     /// <param name="parts">Which parts this call draws; see <see cref="WeaponDrawParts"/>.</param>
+    /// <param name="secondaryAttachment">
+    /// The first-person secondary hand attachment for a <c>TASKTYPE_GUNX2</c> child. When omitted,
+    /// secondary parts use the primary attachment, which keeps world/pickup callers compatible.
+    /// </param>
     public void Draw(
         BoneAttachment attachment,
         in Camera3D camera,
         in Matrix4f projection,
         bool firedThisTick,
         int shotSequence,
-        WeaponDrawParts parts = WeaponDrawParts.All)
+        WeaponDrawParts parts = WeaponDrawParts.All,
+        BoneAttachment? secondaryAttachment = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_parts.Count == 0)
         {
             return;
         }
-
-        Vector3d attachmentMetres = new(
-            attachment.Position.X / WorldScene.UnitsPerMetre,
-            attachment.Position.Y / WorldScene.UnitsPerMetre,
-            attachment.Position.Z / WorldScene.UnitsPerMetre);
 
         _device.SetProjection(projection);
         _device.SetCullMode(CullMode.None);
@@ -276,7 +277,14 @@ public sealed class HeldWeaponRenderer : IDisposable
                 }
             }
 
-            Vector3f offset = attachment.Rotation.Transposed().Transform(part.PositionMetres);
+            BoneAttachment partAttachment = part.UseSecondaryAttachment && secondaryAttachment is { } secondary
+                ? secondary
+                : attachment;
+            Vector3d attachmentMetres = new(
+                partAttachment.Position.X / WorldScene.UnitsPerMetre,
+                partAttachment.Position.Y / WorldScene.UnitsPerMetre,
+                partAttachment.Position.Z / WorldScene.UnitsPerMetre);
+            Vector3f offset = partAttachment.Rotation.Transposed().Transform(part.PositionMetres);
             Vector3d position = new(
                 attachmentMetres.X + offset.X,
                 attachmentMetres.Y + offset.Y,
@@ -284,7 +292,7 @@ public sealed class HeldWeaponRenderer : IDisposable
             Matrix3f partOrientation = part.IsGunFlame
                 ? _gunFlameRotation * part.Orientation
                 : part.Orientation;
-            Matrix4f modelView = camera.CreateModelView(position, attachment.Rotation * partOrientation);
+            Matrix4f modelView = camera.CreateModelView(position, partAttachment.Rotation * partOrientation);
 
             _device.SetDepthState(part.IsGunFlame ? DepthState.TestOnly : DepthState.TestAndWrite);
 
@@ -342,8 +350,28 @@ public sealed class HeldWeaponRenderer : IDisposable
         _textures.Clear();
     }
 
-    private void AddParts(LoadedMission mission, WorldObject node, Vector3f position, Matrix3f orientation)
+    private void AddParts(
+        LoadedMission mission,
+        WorldObject node,
+        Vector3f position,
+        Matrix3f drawOrientation,
+        Matrix3f taskOrientation,
+        bool secondaryAttachment)
     {
+        bool isGunX2 = IsGunX2(node.Name);
+        bool useSecondaryAttachment = secondaryAttachment || isGunX2;
+
+        // The native Gunx2 task is a second held-gun task, not a normal static ATTA child. Its model
+        // transform starts at the secondary hand attachment (0x4601A0 / bone 52); retaining the ATTA
+        // offset here would leave the second Uzi under the primary hand. Descendants, such as the
+        // second muzzle flame, continue in this reset local frame.
+        if (isGunX2 && !secondaryAttachment)
+        {
+            position = Vector3f.Zero;
+            drawOrientation = Matrix3f.Identity;
+            taskOrientation = Matrix3f.Identity;
+        }
+
         bool isGunFlame = IsGunFlame(node.Name);
         if (FindInstance(mission, node.Name) is { } bound
             && MefMeshBuilder.Build(node.Models.Highest, (float)(1.0 / WorldScene.UnitsPerMetre)) is { } geometry)
@@ -354,14 +382,25 @@ public sealed class HeldWeaponRenderer : IDisposable
                 bound.Pack,
                 bound.Instance,
                 position / (float)WorldScene.UnitsPerMetre,
-                orientation,
-                isGunFlame));
+                taskOrientation,
+                isGunFlame,
+                useSecondaryAttachment));
         }
 
         foreach (WorldObject child in node.Children)
         {
-            Vector3f offset = orientation.Transposed().Transform(child.Position);
-            AddParts(mission, child, position + offset, orientation * child.Orientation);
+            // ATTA positions are transformed in the raw parent draw frame, but the model's right-handed
+            // attachment basis is the transpose of that row-vector matrix. This is the same split used
+            // by WorldScene.AddAttached; keeping both frames matters for the UZIX2 child that carries the
+            // second Uzi, otherwise it is mirrored/rotated away from the other hand.
+            Vector3f offset = drawOrientation.Transposed().Transform(child.Position);
+            AddParts(
+                mission,
+                child,
+                position + offset,
+                drawOrientation * child.Orientation,
+                taskOrientation * child.Orientation.Transposed(),
+                useSecondaryAttachment);
         }
     }
 
@@ -370,6 +409,13 @@ public sealed class HeldWeaponRenderer : IDisposable
         && string.Equals(
             _magic.TaskTypeName(definition.TaskType),
             GunFlameTaskType,
+            StringComparison.Ordinal);
+
+    private bool IsGunX2(string modelName) =>
+        _magic.TryGet(modelName, out MagicObjectDefinition definition)
+        && string.Equals(
+            _magic.TaskTypeName(definition.TaskType),
+            GunX2TaskType,
             StringComparison.Ordinal);
 
     private static (LoadedPack Pack, MtpInstance Instance)? FindInstance(LoadedMission mission, string modelName)
@@ -444,7 +490,8 @@ public sealed class HeldWeaponRenderer : IDisposable
         MtpInstance instance,
         Vector3f positionMetres,
         Matrix3f orientation,
-        bool isGunFlame)
+        bool isGunFlame,
+        bool useSecondaryAttachment)
     {
         public string Name { get; } = name;
         public MeshGeometry Geometry { get; } = geometry;
@@ -453,6 +500,7 @@ public sealed class HeldWeaponRenderer : IDisposable
         public Vector3f PositionMetres { get; } = positionMetres;
         public Matrix3f Orientation { get; } = orientation;
         public bool IsGunFlame { get; } = isGunFlame;
+        public bool UseSecondaryAttachment { get; } = useSecondaryAttachment;
         public MeshHandle Mesh { get; set; } = MeshHandle.None;
         public float FlameStrength { get; set; } = 1f;
     }

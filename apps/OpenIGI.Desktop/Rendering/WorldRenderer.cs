@@ -82,6 +82,9 @@ public sealed class WorldRenderer : IDisposable
     /// <summary>Gets or sets the live destructible alarm objects that select destroyed model variants.</summary>
     public AlarmSpeakerRegistry? AlarmSpeakers { get; set; }
 
+    /// <summary>Gets or sets the live retail glass and explosive-object presentation state.</summary>
+    public DestructibleObjectRegistry? Destructibles { get; set; }
+
     /// <summary>Gets or sets the live articulated security-camera transforms.</summary>
     public SecurityCameraRegistry? SecurityCameras { get; set; }
 
@@ -183,6 +186,12 @@ public sealed class WorldRenderer : IDisposable
         foreach (WorldPlacement authoredPlacement in scene.Placements)
         {
             if (GenericPickups?.IsCollected(authoredPlacement.Owner) == true)
+            {
+                continue;
+            }
+
+            if (Destructibles?.IsDestroyed(authoredPlacement) == true
+                && authoredPlacement.DestroyedReplacement is null)
             {
                 continue;
             }
@@ -296,7 +305,8 @@ public sealed class WorldRenderer : IDisposable
     {
         WorldPlacement displayed = placement;
         if (placement.DestroyedReplacement is { } replacement
-            && AlarmSpeakers?.IsDestroyed(placement.Owner) == true)
+            && (AlarmSpeakers?.IsDestroyed(placement.Owner) == true
+                || Destructibles?.IsDestroyed(placement) == true))
         {
             displayed = placement with
             {

@@ -1,5 +1,6 @@
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
+using OpenIGI.Formats.World;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
 using OpenIGI.TestSupport;
@@ -92,6 +93,24 @@ public sealed class RetailObjectCollisionTests
         // And far above everything, nothing is hit.
         Vector3d high = new(centre.X, centre.Y, centre.Z + (1000.0 * UnitsPerMetre));
         Assert.False(index.TryCast(high, new Vector3d(high.X + reach, high.Y, high.Z), out _));
+    }
+
+    [RequiresGameDataFact]
+    public void RichTraceCanIgnoreOneExplosionSourcePlacementWithoutIgnoringItsSiblings()
+    {
+        WorldPlacement placement = RetailLevelOneGround.Scene().Placements.First(candidate =>
+            ObjectCollisionIndex.Build([candidate]).Count != 0);
+        ObjectCollisionIndex index = ObjectCollisionIndex.Build([placement]);
+        (Vector3d centre, double radius) = index.Bounds(0);
+        double reach = (radius * 2.0) + UnitsPerMetre;
+        WorldTraceRequest request = new(
+            new Vector3d(centre.X - reach, centre.Y, centre.Z),
+            new Vector3d(centre.X + reach, centre.Y, centre.Z),
+            WorldTraceMask.World);
+
+        Assert.True(index.TryTrace(request, out WorldTraceHit hit));
+        Assert.Same(placement, hit.Placement);
+        Assert.False(index.TryTrace(request with { IgnoredPlacement = placement }, out _));
     }
 
     [RequiresGameDataFact]
