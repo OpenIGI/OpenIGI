@@ -4030,6 +4030,14 @@ internal sealed partial class DesktopGame : IDisposable
                     // must not wear it.
                     _device.SetMaterialOverride(SurfaceMaterial.Default);
                 }
+
+                if (_terrain is not null)
+                {
+                    // Read per frame rather than latched at load, so changing the setting from the
+                    // console takes effect on the next frame the way every other render CVar does.
+                    _terrain.CacheLimit = RenderCVars.TerrainCache.Value;
+                }
+
                 _terrain?.Draw(
                     eye,
                     projection,

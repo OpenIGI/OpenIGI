@@ -79,8 +79,12 @@ public sealed class TerrainRenderer : IDisposable
     private int _positionWindowNext;
     private bool _positionWindowFilled;
 
-    /// <summary>How many uploaded chunks to keep before dropping the ones no recent frame used.</summary>
-    /// <remarks>The original bounds the same cache and aborts with "Out of terrain renderchunks".</remarks>
+    /// <summary>The default <see cref="CacheLimit"/>: how many uploaded chunks are kept.</summary>
+    /// <remarks>
+    /// The original bounds the same cache at this figure and aborts with "Out of terrain renderchunks".
+    /// It is the retail bound and the floor here, not the ceiling: retail draws a fraction of the ground
+    /// this does, and <see cref="CacheLimit"/> is what the level of detail setting raises.
+    /// </remarks>
     public const int CacheCapacity = 4096;
 
     /// <summary>How far under <see cref="CacheCapacity"/> an over-capacity trim drops the cache.</summary>
@@ -90,43 +94,6 @@ public sealed class TerrainRenderer : IDisposable
     /// frame for as long as the player keeps moving. The margin buys a few hundred chunks of quiet.
     /// </remarks>
     private const int EvictionMargin = 256;
-
-    /// <summary>How many chunks a frame may build and upload before the rest wait for the next one.</summary>
-    /// <remarks>
-    /// <para>
-    /// Chunks are built the frame they first come into view, and a frame's worth of them is however many
-    /// the view swept over -- which is the camera's angular step, which is the frame's own duration times
-    /// the rate the player is turning at. That is a loop, and with a real mouse it closes: a mouse
-    /// delivers a fixed number of counts per SECOND, so a frame that took longer turns the camera
-    /// further, which brings more chunks into view, which builds more geometry, which makes the frame
-    /// longer again. A scripted look that adds a fixed step per frame never enters it, which is why the
-    /// runaway only ever showed under a hand on the mouse.
-    /// </para>
-    /// <para>
-    /// The budget breaks the loop by making a frame's streaming cost bounded rather than proportional to
-    /// how far the view moved: a whip-round fills in over a handful of frames instead of building
-    /// thousands of chunks, overrunning the cache and rebuilding every batch page, on one of them. It is
-    /// high enough that ordinary walking and looking never reach it.
-    /// </para>
-    /// </remarks>
-    public const int DefaultMaximumBuildsPerFrame = 192;
-
-    /// <summary>How long a frame may spend building chunks before the rest wait, in milliseconds.</summary>
-    /// <remarks>
-    /// The count above is the ceiling; this is what usually decides, because it is what the loop actually
-    /// cares about. What has to be bounded is the MILLISECONDS a frame adds for having turned further, not
-    /// the chunks -- a count tuned on one machine is either a stall on a slower one or a needless hole on
-    /// a faster one, and a chunk's cost varies with how much geometry its block holds. Measuring the
-    /// budget out in time makes the bound the same on every machine.
-    /// </remarks>
-    public const double DefaultBuildBudgetMilliseconds = 2.0;
-
-    /// <summary>How many chunks a frame always builds, whatever the budgets say.</summary>
-    /// <remarks>
-    /// So a machine slow enough to spend the whole budget on its first chunk still makes progress: without
-    /// a floor the view could stop filling in entirely rather than filling in slowly.
-    /// </remarks>
-    public const int MinimumBuildsPerFrame = 8;
 
     /// <summary>How many frames an unused chunk is kept for before it becomes a candidate for eviction.</summary>
     /// <remarks>
@@ -177,7 +144,7 @@ public sealed class TerrainRenderer : IDisposable
     private int _rebuiltPages;
     private int _trims;
     private int _buildsThisFrame;
-    private long _buildDeadline;
+    private int _cacheLimit = CacheCapacity;
     private Camera3D _previousCamera;
     private bool _hasPreviousCamera;
     private int _occlusionSettle;
@@ -263,20 +230,36 @@ public sealed class TerrainRenderer : IDisposable
     /// <summary>Gets how many uploaded chunks are held.</summary>
     public int CachedCount => _cache.Count;
 
-    /// <summary>Gets or sets how many chunks one frame may build, or <see cref="int.MaxValue"/> for no bound.</summary>
+    /// <summary>Gets how many chunks the last <see cref="Draw"/> had to build before it could draw them.</summary>
     /// <remarks>
-    /// <see cref="DefaultMaximumBuildsPerFrame"/> says why there is a bound at all. Deterministic runs --
-    /// <c>-lockstep</c> and the benchmark captures -- lift it, because what they compare is one named
-    /// frame's image and terrain arriving a frame later would change it.
+    /// The streaming signal: it spikes when the view sweeps over ground the cache does not hold and falls
+    /// to zero the moment the view stops finding new ground. A steady non-zero figure while the camera
+    /// turns and turns back means the cache is evicting chunks the camera still wants -- see
+    /// <see cref="CacheLimit"/> -- and every one of those is a chunk rebuilt for nothing.
     /// </remarks>
-    public int MaximumBuildsPerFrame { get; set; } = DefaultMaximumBuildsPerFrame;
+    public int LastBuildCount => _buildsThisFrame;
 
-    /// <summary>Gets or sets how long one frame may spend building chunks, in milliseconds.</summary>
-    /// <remarks>Ignored while <see cref="MaximumBuildsPerFrame"/> is <see cref="int.MaxValue"/>.</remarks>
-    public double BuildBudgetMilliseconds { get; set; } = DefaultBuildBudgetMilliseconds;
-
-    /// <summary>Gets how many chunks the last <see cref="Draw"/> could not build within its budget.</summary>
-    public int LastDeferredBuildCount { get; private set; }
+    /// <summary>Gets or sets how many uploaded chunks are kept before the oldest are evicted.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="CacheCapacity"/> is the default and the floor of what is sensible; the level of detail
+    /// setting raises it, because how much ground is in view is exactly what decides how much of it has
+    /// to be held. A cache smaller than one frame's descent could ask for would evict chunks the very
+    /// next frame wants, so the setter will not go below <see cref="TerrainTraversal.MaximumChunks"/>.
+    /// </para>
+    /// <para>
+    /// Sized so that turning right round and back does not evict: a frustum holds a quarter or so of the
+    /// panorama, so a cache that only fits the frustum drops the ground behind the player and rebuilds
+    /// it as they turn back -- measured at a hundred chunks rebuilt every frame, for ever, on level 1 at
+    /// the ultra view distance. <see cref="LastBuildCount"/> is what that looks like from outside: a
+    /// steady non-zero figure while the camera sweeps ground it has already seen.
+    /// </para>
+    /// </remarks>
+    public int CacheLimit
+    {
+        get => _cacheLimit;
+        set => _cacheLimit = Math.Max(TerrainTraversal.MaximumChunks, value);
+    }
 
     /// <summary>Gets how many page meshes have been created since the level loaded.</summary>
     /// <remarks>
@@ -300,6 +283,34 @@ public sealed class TerrainRenderer : IDisposable
 
     /// <summary>Gets how many spare pages are held for re-use.</summary>
     public int SparePageCount => _sparePages.Count;
+
+    /// <summary>Gets the live batch pages, the vertices they hold and the vertices they have room for.</summary>
+    /// <remarks>
+    /// The page sizing in one reading: held against capacity is what the floor in
+    /// <c>BatchPage.MinimumVertexCapacity</c> costs, and a capacity many times the vertices held means
+    /// the batch keys are splitting the ground finer than the pages can fill. Walked on demand, for the
+    /// inspector panel; nothing in a frame reads it.
+    /// </remarks>
+    public (int Pages, long Vertices, long Capacity) PageOccupancy
+    {
+        get
+        {
+            int pages = 0;
+            long vertices = 0;
+            long capacity = 0;
+            foreach (List<BatchPage> list in _batchPages.Values)
+            {
+                foreach (BatchPage page in list)
+                {
+                    pages++;
+                    vertices += page.VertexCount;
+                    capacity += page.VertexCapacity;
+                }
+            }
+
+            return (pages, vertices, capacity);
+        }
+    }
 
     /// <summary>Descends the octree from a camera and draws what it selects.</summary>
     /// <param name="camera">The camera, positioned in metres.</param>
@@ -343,11 +354,6 @@ public sealed class TerrainRenderer : IDisposable
 
         _frame++;
         _buildsThisFrame = 0;
-        LastDeferredBuildCount = 0;
-        _buildDeadline = MaximumBuildsPerFrame == int.MaxValue
-            ? long.MaxValue
-            : System.Diagnostics.Stopwatch.GetTimestamp()
-                + (long)(Math.Max(0.1, BuildBudgetMilliseconds) * System.Diagnostics.Stopwatch.Frequency / 1000.0);
         _device.SetProjection(projection);
 
         // Terrain culls back faces: the .cmd triples are uniformly wound (measured — see
@@ -792,6 +798,18 @@ public sealed class TerrainRenderer : IDisposable
     private TextureHandle TileTexture(int index) =>
         (uint)index < (uint)_tiles.Length ? _tiles[index] : TextureHandle.None;
 
+    /// <summary>The record for a chunk the descent emitted, building and uploading it if it is new.</summary>
+    /// <remarks>
+    /// Every chunk the descent emitted is built on the frame it is emitted, however many that is. There
+    /// was briefly a per-frame ceiling here, on the reasoning that a frame's streaming cost should not
+    /// grow with how far the view had swept; it was measured to withhold hundreds of chunks a frame on
+    /// an ordinary mouse sweep -- a fifth to a half of the visible ground, blinking out and back as the
+    /// budget came round -- and it went. A chunk the descent emitted is a chunk the player is looking
+    /// at, so the only honest answer is to build it: a hole in the ground is not a cheaper frame, it is
+    /// a wrong one. What the ceiling was really rationing was the rebuild of chunks the cache had
+    /// evicted while the camera still wanted them; that is a cache-size question, and
+    /// <see cref="LastBuildCount"/> is the counter that shows it.
+    /// </remarks>
     private bool TryGetEntry(in TerrainChunk chunk, [NotNullWhen(true)] out Entry? entry)
     {
         // The key is the chunk's integer position and its level of detail — the geometry a record holds
@@ -806,15 +824,6 @@ public sealed class TerrainRenderer : IDisposable
         {
             entry.LastUsedFrame = _frame;
             return true;
-        }
-
-        // This frame has built as much as it may; the chunk is simply not drawn until a later one has
-        // room for it. Everything downstream already copes with a chunk that has no entry -- it is the
-        // same answer a chunk whose block has not streamed in yet gives.
-        if (!CanBuildThisFrame())
-        {
-            LastDeferredBuildCount++;
-            return false;
         }
 
         if (!_terrain.TryGetBlock(chunk, out TerrainCommandBlock block))
@@ -841,22 +850,6 @@ public sealed class TerrainRenderer : IDisposable
         entry.OcclusionPage = entry.Layers[0].Page;
         _cache[key] = entry;
         return true;
-    }
-
-    /// <summary>Whether this frame still has room to build a chunk it has not seen before.</summary>
-    private bool CanBuildThisFrame()
-    {
-        if (_buildsThisFrame < MinimumBuildsPerFrame)
-        {
-            return true;
-        }
-
-        if (_buildsThisFrame >= MaximumBuildsPerFrame)
-        {
-            return false;
-        }
-
-        return System.Diagnostics.Stopwatch.GetTimestamp() < _buildDeadline;
     }
 
     /// <summary>Adds one chunk's material layers to spatially local, state-compatible mesh pages.</summary>
@@ -976,7 +969,7 @@ public sealed class TerrainRenderer : IDisposable
     /// </remarks>
     private void Trim()
     {
-        if (_cache.Count <= CacheCapacity)
+        if (_cache.Count <= CacheLimit)
         {
             return;
         }
@@ -1001,7 +994,7 @@ public sealed class TerrainRenderer : IDisposable
         // from. A margin comes with them so the next frame is not straight back here.
         if (_evictions.Count == 0)
         {
-            int excess = _cache.Count - CacheCapacity + EvictionMargin;
+            int excess = _cache.Count - CacheLimit + EvictionMargin;
 
             _evictionOrder.Clear();
             _evictionOrder.EnsureCapacity(_cache.Count);
@@ -1185,10 +1178,28 @@ public sealed class TerrainRenderer : IDisposable
     private sealed class BatchPage
     {
         /// <summary>The smallest vertex capacity a page's mesh is created with.</summary>
-        private const int MinimumVertexCapacity = 4096;
+        /// <remarks>
+        /// <para>
+        /// Headroom, so that appending a chunk to a page does not recreate its mesh every time; the
+        /// capacity doubles from here as the page fills, so a page reaching a thousand vertices is
+        /// recreated four times over its whole life rather than once per chunk.
+        /// </para>
+        /// <para>
+        /// It is small because pages are: the batch key separates every level of detail, ground tile,
+        /// layer slot and base-or-detail pass, and there are only so many chunks in a 2048 m cell that
+        /// share all four. Measured over a level 1 panorama, the median page holds ELEVEN vertices and
+        /// three quarters of them hold under twenty; the top percent reach a thousand or so. A floor of
+        /// 4096 was charging 192 KB of device memory for a median page holding 528 bytes of geometry --
+        /// 2306 live pages, 105 412 vertices held against 9 445 376 allocated, some 486 MB of buffers
+        /// for 5 MB of ground. The doubling is what handles the rare large page; the floor only has to
+        /// cover the common tiny one.
+        /// </para>
+        /// </remarks>
+        private const int MinimumVertexCapacity = 64;
 
         /// <summary>The smallest index capacity a page's mesh is created with.</summary>
-        private const int MinimumIndexCapacity = 12288;
+        /// <remarks>Three per vertex, which is what the ground's triangles measure at (2.72 over a panorama).</remarks>
+        private const int MinimumIndexCapacity = MinimumVertexCapacity * 3;
 
         private readonly List<Vertex3D> _vertices = [];
 
@@ -1238,6 +1249,9 @@ public sealed class TerrainRenderer : IDisposable
         /// <summary>Gets how many vertices the page holds, dead ranges included.</summary>
         public int VertexCount => _vertices.Count;
 
+        /// <summary>Gets how many vertices the page's mesh was created with room for.</summary>
+        public int VertexCapacity => _vertexCapacity;
+
         /// <summary>Gets how many of those vertices belong to evicted chunks.</summary>
         public int DeadVertexCount => _deadVertices;
 
@@ -1273,15 +1287,22 @@ public sealed class TerrainRenderer : IDisposable
                 key.CellY * BatchCellMetres,
                 key.CellZ * BatchCellMetres);
 
-            // Only base pages are occlusion-queried, so the query follows the key.
-            if (key.IsBase && !OcclusionQuery.IsValid)
-            {
-                OcclusionQuery = device.CreateOcclusionQuery();
-            }
-            else if (!key.IsBase && OcclusionQuery.IsValid)
+            // Only base pages are occlusion-queried, so the query follows the key -- and a recycled page
+            // never inherits one. A query handle carries the last verdict the device recorded for it, and
+            // that verdict was measured against the geometry and the position of the page this one used
+            // to be: a spare that emptied while hidden behind a hill comes back as a page somewhere else
+            // entirely, and would be culled on the old page's "hidden" until its retest landed several
+            // frames later. A fresh query is conservatively visible, which is the only safe answer for a
+            // page nothing has probed yet.
+            if (OcclusionQuery.IsValid)
             {
                 device.DestroyOcclusionQuery(OcclusionQuery);
                 OcclusionQuery = OcclusionQueryHandle.None;
+            }
+
+            if (key.IsBase)
+            {
+                OcclusionQuery = device.CreateOcclusionQuery();
             }
 
             Reset();

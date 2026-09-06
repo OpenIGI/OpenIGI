@@ -560,6 +560,8 @@ public static class GraphicsMenu
         "r_world_cull",
         "r_world_occlusion",
         "r_terrain_occlusion",
+        "r_terrain_cache",  // how much streamed ground stays resident; the detail row is the player's version
+
         "r_camera_taps",
 
         // Off at every preset by design: a first-person camera has no business deciding what the player

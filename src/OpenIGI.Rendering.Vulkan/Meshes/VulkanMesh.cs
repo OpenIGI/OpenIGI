@@ -277,6 +277,7 @@ internal sealed unsafe class VulkanMesh : IDisposable
 
     /// <summary>Replaces an animated mesh's vertices.</summary>
     /// <param name="vertices">The new pose. Must be as many vertices as the mesh was created with.</param>
+    /// <param name="frameCounter">The device's current frame counter, which decides the ring slot.</param>
     /// <exception cref="GraphicsDeviceException">The mesh is not animated or the count differs.</exception>
     public void UpdateVertices(ReadOnlySpan<Vertex3D> vertices, ulong frameCounter)
     {

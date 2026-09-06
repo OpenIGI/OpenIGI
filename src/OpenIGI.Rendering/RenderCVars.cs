@@ -1525,6 +1525,46 @@ public static class RenderCVars
         high: "320",
         ultra: "450");
 
+    /// <summary>How many uploaded terrain chunks the renderer keeps before evicting the oldest.</summary>
+    /// <remarks>
+    /// <para>
+    /// Paired with <see cref="TerrainDetail"/>, because how far the ground resolves is what decides how
+    /// much of it there is to hold. The number that matters is not what one frustum holds but what a
+    /// PANORAMA holds: a frustum is a quarter or so of the circle a player turns through, so a cache
+    /// sized to the view drops the ground behind them and rebuilds it as they turn back. Measured on
+    /// level 1 at the ultra distance, a frame draws about 2500 chunks and a full turn from one spot
+    /// touches about 9000; at 4096 that is a hundred chunks rebuilt every frame for as long as the
+    /// player keeps turning, and at 16384 or more the turn evicts nothing at all and settles at zero.
+    /// </para>
+    /// <para>
+    /// A whole turn from one spot on level 1 touches 2363 chunks at 220, 4681 at 320 and 8979 at 450,
+    /// costing 6.5, 12.5 and 23.0 MB of page buffers. Each tier is set to between two and three times
+    /// its own figure, so
+    /// that a player who walks while they turn keeps the headroom the fixed-spot measurement does not
+    /// show. Vanilla keeps retail's own 4096 — it also draws retail's much shorter view, which fits.
+    /// </para>
+    /// <para>
+    /// The cost of raising it is the geometry held, and that is only affordable because a batch page is
+    /// now created with room for what a page actually holds rather than for 4096 vertices apiece: the
+    /// same ultra panorama that would have charged 918 MB of buffers charges 23 MB.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> TerrainCache = Presets.Define(
+        CVar.Int(
+            "r_terrain_cache",
+            TerrainCacheDefault,
+            TerrainCacheDefault,
+            65536,
+            CVarOptions.Archive,
+            "How many terrain chunks stay uploaded. Sized to a whole turn, so turning back rebuilds nothing."),
+        vanilla: "4096",
+        enhanced: "8192",
+        high: "12288",
+        ultra: "24576");
+
+    /// <summary>Retail's own chunk bound, which is the smallest this cache is allowed to be.</summary>
+    private const int TerrainCacheDefault = 4096;
+
     /// <summary>Whether terrain batch pages use asynchronous visibility queries.</summary>
     /// <remarks>
     /// The query result is consumed only after OpenGL reports it ready, so this never stalls the CPU.
