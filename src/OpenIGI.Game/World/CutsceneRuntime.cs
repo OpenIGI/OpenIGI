@@ -619,17 +619,31 @@ public sealed class CutsceneRuntime
         float maximumTilt = rotor.MaximumTilt;
         float tiltCollective = previewOnly ? visualCollective : state.Thrust;
         float tilt = -Math.Clamp(1f - tiltCollective, -0.1f, 1f) * maximumTilt;
-        float originalCollective = state.OriginalThrust;
-        if (maximumTilt != 0f && originalCollective != 0f)
+
+        // The second half of the flap is the airframe's AXIAL speed: the component of the body
+        // velocity along its own vertical. 0x42C630 reads that vertical out of the Heli's live
+        // matrix at config +120/+132/+144 — the third column of the +112 basis, the same body-up
+        // vector Rotor::Tick already uses for lift. Column1 is the body's sideways axis, so the
+        // flap followed lateral drift instead of climb and descent.
+        //
+        // 0.026367188 is 108/4096: it turns the velocity's units-per-tick into km/h, the unit the
+        // record's maximum speed is authored in. Retail divides by that speed times 0.4 (80 km/h
+        // for both shipped families), so the blade needs a sustained climb to reach the authored
+        // five degrees. Dividing by the live collective instead made the term hundreds of times
+        // too large: any movement pinned the disc at the full deflection and flipped its sign with
+        // the drift, which is what turned the blur samples into an umbrella and then inverted it.
+        float referenceSpeed = state.HelicopterPhysics?.MaximumSpeed ?? 0f;
+        if (maximumTilt != 0f && referenceSpeed != 0f)
         {
-            Vector3f vertical = state.Orientation.Column1;
+            Vector3f vertical = state.Orientation.Column3;
             float axialVelocity =
                 (vertical.X * (float)state.Velocity.X)
                 + (vertical.Y * (float)state.Velocity.Y)
                 + (vertical.Z * (float)state.Velocity.Z);
-            tilt -= axialVelocity * 0.026367188f * maximumTilt / (originalCollective * 0.4f);
-            tilt = Math.Clamp(tilt, -maximumTilt, maximumTilt);
+            tilt -= axialVelocity * 0.026367188f * maximumTilt / (referenceSpeed * 0.4f);
         }
+
+        tilt = Math.Clamp(tilt, -maximumTilt, maximumTilt);
 
         draw = new RotorDrawState(
             position,
@@ -1326,6 +1340,7 @@ public sealed class CutsceneRuntime
                     new Vector3f(0.4f, 0.4f, 0.4f),
                     0.027f,
                     0.003f,
+                    200f,
                     [
                         new(20f, Vector3f.UnitX, Vector3f.Zero),
                         new(3f, Vector3f.UnitY, Vector3f.Zero),
