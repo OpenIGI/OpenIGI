@@ -367,6 +367,13 @@ internal sealed partial class DesktopGame
         }
 
         _cutscenes.CollisionIndex = id == 4 ? solids : null;
+
+        _destructibles = DestructibleObjectRegistry.Build(
+            levelRoot,
+            scene.Placements,
+            _loop.Variables);
+        world.Destructibles = _destructibles;
+        solids.Destructibles = _destructibles;
         world.Cutscenes = _cutscenes;
 
         // Rain is a gameplay effect, not part of the backdrop picture: it is configured fresh for every
@@ -708,7 +715,10 @@ internal sealed partial class DesktopGame
 
                         // A guard's stray round pops a speaker exactly as the player's does -- the
                         // retail damage message never asked who fired.
-                        DamageAlarmSpeakers(worldHit.Position, owner: blocker.Owner);
+                        DamageAlarmSpeakers(
+                            worldHit.Position,
+                            owner: blocker.Owner,
+                            placement: blocker.Placement);
 
                         // A guard's round kicks the same burst a player's does -- misses landing
                         // around you are half of what sells incoming fire.
@@ -935,6 +945,11 @@ internal sealed partial class DesktopGame
         // optional: Mission 14 is entirely inside placed building/tunnel models, whose collision floors
         // are enough for placement and movement even though its terrain files are not live data.
         _playerTerrain = loaded.Terrain is { IsUsable: true } standable ? standable : null;
+        _worldTrace = _worldSolids is { } liveSolids
+            ? _playerTerrain is { } liveTerrain
+                ? WorldTrace.Nearest(liveSolids.Tracer(), TerrainRayTrace.Caster(liveTerrain))
+                : liveSolids.Tracer()
+            : null;
         _player = null;
         _playerMode = false;
 
@@ -946,6 +961,7 @@ internal sealed partial class DesktopGame
         };
         _playerDead = false;
         _damageFlash = new();
+        _flashbangScreenFlash = new();
         _deathCamera.Reset();
 
         EndStage("the terrain, sky, sun, grade and camera");
@@ -980,6 +996,9 @@ internal sealed partial class DesktopGame
             candidate.GrenadeWalls = _playerTerrain is { } grenadeGround
                 ? WorldTrace.AsRayCast(WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeGround)))
                 : solids.Caster();
+            candidate.GrenadeTrace = _playerTerrain is { } grenadeTraceGround
+                ? WorldTrace.Nearest(solids.Tracer(), TerrainRayTrace.Caster(grenadeTraceGround))
+                : solids.Tracer();
 
             // The ladders the level attaches to its buildings, so the player can climb them (E to mount,
             // W/S up and down, E held to slide).
@@ -1013,6 +1032,10 @@ internal sealed partial class DesktopGame
             {
                 weaponRoster.Register(_loop.Natives);
                 weaponRoster.Load(_fileSystem, _resources, _loop.Natives);
+                WeaponConfigRegistry.RegisterTypes(_loop.Types);
+                WeaponConfigRegistry weaponConfig = new(_logger);
+                weaponConfig.Load(_resources, _loop.Natives, _loop.Tasks);
+                weaponConfig.AttachTo(weaponRoster);
                 ammoTable.Register(_loop.Natives);
                 ammoTable.Load(_fileSystem, _resources, _loop.Natives);
 
@@ -1164,6 +1187,10 @@ internal sealed partial class DesktopGame
             _tracers = null;
             _impactParticles?.Dispose();
             _impactParticles = null;
+            _explosions?.Dispose();
+            _explosions = null;
+            _missileSmoke?.Dispose();
+            _missileSmoke = null;
             _heldWeapon = null;
 
             if (PlayerLoadout.TryRead(levelRoot, out PlayerLoadout? loadout) && loadout is not null)
@@ -1176,6 +1203,23 @@ internal sealed partial class DesktopGame
                 if (_soldiers is { } guards)
                 {
                     candidate.Humans = guards.Shooter();
+                    candidate.HumanProbes = guards.Probe();
+                    HumanProximityCast soldierProximity = guards.ProximityProbe();
+                    candidate.HumanProximityTargets = (Vector3d center, float radiusUnits, out HumanProximityTarget target) =>
+                    {
+                        bool found = soldierProximity(center, radiusUnits, out target);
+                        if (!_playerHealth.IsDead)
+                        {
+                            double distance = Vector3d.Distance(center, candidate.Body.Position);
+                            if (distance <= radiusUnits && (!found || distance < target.Distance))
+                            {
+                                target = new HumanProximityTarget(candidate.Body.Position, distance);
+                                found = true;
+                            }
+                        }
+
+                        return found;
+                    };
                     candidate.GroundImpact = impact => guards.NotifyGroundImpact(impact, candidate.Body.Position);
 
                     // One grenade pool for both throwers: the player's own and every guard's lob fly,
@@ -1195,7 +1239,20 @@ internal sealed partial class DesktopGame
                 // And the bursts where rounds land. Also cheap when off: r_impact_particles 0
                 // spawns nothing, and an empty pool returns at the count check.
                 _impactParticles?.Dispose();
-                _impactParticles = new ImpactParticleRenderer(_device);
+                _impactParticles = new ImpactParticleRenderer(_device, _resources, _fileSystem);
+                if (!_impactParticles.Load(loaded))
+                {
+                    _logger.Warning("Impact", "The retail IGI1 explosion model '1009_01_1' was not bound; using the sprite fallback.");
+                }
+
+                // The retail 1009_01_1 fireball, shared by every blast in the level. Loads its real
+                // texture lazily on first blast; falls back to the procedural burst without it.
+                _explosions?.Dispose();
+                _explosions = new ExplosionEffectRenderer(_device, _fileSystem, _logger);
+
+                // The retail smoke2.spr trail behind rockets and the grey column a blast leaves.
+                _missileSmoke?.Dispose();
+                _missileSmoke = new SmokeSpriteRenderer(_device, _fileSystem, _logger);
 
                 _hud?.Dispose();
                 _hud = new StatusScreenRenderer(_device, _logger);
@@ -1236,6 +1293,9 @@ internal sealed partial class DesktopGame
             _grenadeRenderer?.Dispose();
             _grenadeRenderer = new GrenadeRenderer(_device, _resources, _magic, _logger);
             _grenadeRenderer.Load(loaded);
+            _missileRenderer?.Dispose();
+            _missileRenderer = new MissileRenderer(_device, _resources, _magic, _logger);
+            _missileRenderer.Load(loaded);
 
             EndStage("the loadout, the bullet marks and the HUD");
 
@@ -1439,29 +1499,6 @@ internal sealed partial class DesktopGame
         return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
-    /// <summary>Stops the level and presents the retail mission-failed result.</summary>
-    /// <param name="reason">A diagnostic reason recorded once with the result.</param>
-    /// <remarks>
-    /// Player death uses this immediately, while an authored LevelFlow failure reaches it after the
-    /// original 151-tick grace period. Keeping the presentation transition in one place prevents a
-    /// death path from being overwritten by the completion path on the same tick.
-    /// </remarks>
-    private void OpenMissionFailedMenu(string reason)
-    {
-        if (_missionFailedMenu)
-        {
-            return;
-        }
-
-        _missionFailedMenu = true;
-        _computerOpen = false;
-        _computerFlight.Reset();
-        _player?.SetMapComputerOpen(false);
-        _window.CursorVisible = true;
-        _window.CursorLocked = false;
-        _logger.Information("Mission", reason);
-    }
-
     private void ReleasePlayedMission()
     {
         _computerOpen = false;
@@ -1499,8 +1536,11 @@ internal sealed partial class DesktopGame
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _explosions?.Dispose();
+        _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
+        _missileRenderer?.Dispose();
         _arms?.Dispose();
         _sky = null;
         _rain?.Dispose();
@@ -1520,14 +1560,18 @@ internal sealed partial class DesktopGame
         _marks = null;
         _tracers = null;
         _impactParticles = null;
+        _explosions = null;
+        _missileSmoke = null;
         _cameraStatusLights = null;
         _grenadeRenderer = null;
+        _missileRenderer = null;
         _arms = null;
         _player = null;
         _playerMode = false;
         _scene = null;
         _playerTerrain = null;
         _worldSolids = null;
+        _destructibles = null;
         _worldMaterials = null;
         _doors = null;
         _elevators = null;
@@ -1589,6 +1633,10 @@ internal sealed partial class DesktopGame
             if (pool is not null)
             {
                 candidate.Weapons?.Ammunition.Add(pool.AmmoId, declared.Count);
+                if (string.Equals(declared.AmmoId, "AMMO_ID_M203", StringComparison.Ordinal))
+                {
+                    candidate.Weapons?.SetM203Ammunition(pool);
+                }
             }
         }
 
@@ -1778,63 +1826,3 @@ internal sealed partial class DesktopGame
         }
     }
 }
-
-/// <summary>Chooses the one mission result that may advance presentation on a level tick.</summary>
-internal static class MissionResultArbitration
-{
-    /// <summary>
-    /// Gives player death precedence over authored LevelFlow results, while preserving the retail failure
-    /// grace period and preventing an already-resolved result from completing twice.
-    /// </summary>
-    internal static MissionResultDecision Evaluate(
-        bool playerDead,
-        bool objectivesFailed,
-        bool objectivesComplete,
-        bool failureMenuOpen,
-        bool resultHandled,
-        int failureTicks)
-    {
-        if (playerDead)
-        {
-            return new MissionResultDecision(MissionResult.PlayerDeathFailure, failureTicks, false);
-        }
-
-        if (objectivesFailed)
-        {
-            if (failureMenuOpen)
-            {
-                return new MissionResultDecision(MissionResult.None, failureTicks, false);
-            }
-
-            int nextFailureTicks = failureTicks + 1;
-            return new MissionResultDecision(
-                nextFailureTicks > 151 ? MissionResult.AuthoredFailure : MissionResult.None,
-                nextFailureTicks,
-                false);
-        }
-
-        return new MissionResultDecision(
-            MissionResult.None,
-            0,
-            !failureMenuOpen && !resultHandled && objectivesComplete);
-    }
-}
-
-/// <summary>The result that owns this level tick's mission presentation.</summary>
-internal enum MissionResult
-{
-    /// <summary>No failure presentation is due this tick.</summary>
-    None,
-
-    /// <summary>The player died and the mission must fail immediately.</summary>
-    PlayerDeathFailure,
-
-    /// <summary>An authored LevelFlow failure outlasted its retail grace period.</summary>
-    AuthoredFailure,
-}
-
-/// <summary>Contains the mission-result action and the failure counter for the next level tick.</summary>
-internal readonly record struct MissionResultDecision(
-    MissionResult Result,
-    int FailureTicks,
-    bool ShouldHandleCompletion);

@@ -265,6 +265,7 @@ public sealed class ObjectCollisionIndex
             foreach (Entry entry in set)
             {
                 if (!IsSelfOrDescendant(entry.Owner, ancestor)
+                    || Destructibles?.IsDestroyed(entry.Placement) == true
                     || _passable.Contains(entry.Owner)
                     || !ConditionalContainerGate.IsTaskActive(entry.Owner)
                     || entry.Radius <= 0.0)
@@ -379,6 +380,7 @@ public sealed class ObjectCollisionIndex
         foreach (Entry entry in _entries)
         {
             if (!entry.IsDynamic
+                || Destructibles?.IsDestroyed(entry.Placement) == true
                 || _passable.Contains(entry.Owner)
                 || (!includeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner))
                 || entry.Radius <= 0.0)
@@ -685,7 +687,9 @@ public sealed class ObjectCollisionIndex
         {
             if ((request.IgnoredOwner is not null && ReferenceEquals(entry.Owner, request.IgnoredOwner))
                 || (request.IgnoredSubject is not null && ReferenceEquals(entry.Owner, request.IgnoredSubject))
+                || (request.IgnoredPlacement is not null && ReferenceEquals(entry.Placement, request.IgnoredPlacement))
                 || GenericPickups?.IsCollected(entry.Owner) == true
+                || Destructibles?.IsDestroyed(entry.Placement) == true
                 || _passable.Contains(entry.Owner)
                 || (!request.IncludeInactiveOwners && !ConditionalContainerGate.IsTaskActive(entry.Owner)))
             {
@@ -712,7 +716,7 @@ public sealed class ObjectCollisionIndex
                 continue;
             }
 
-            hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label);
+            hit = WorldTraceHit.FromRayHit(request, candidate, kind, entry.Owner, entry.Label, entry.Placement);
             found = true;
         }
 
@@ -759,6 +763,7 @@ public sealed class ObjectCollisionIndex
         foreach (Entry entry in entries)
         {
             if (GenericPickups?.IsCollected(entry.Owner) == true
+                || Destructibles?.IsDestroyed(entry.Placement) == true
                 || (honourPassable
                     && (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))))
             {
@@ -844,6 +849,9 @@ public sealed class ObjectCollisionIndex
 
     /// <summary>Gets or sets the live generic pickups removed from the collision world after collection.</summary>
     public GenericPickupRegistry? GenericPickups { get; set; }
+
+    /// <summary>Gets or sets the live destructible placement states removed after retail destruction.</summary>
+    public DestructibleObjectRegistry? Destructibles { get; set; }
     /// <summary>Gets the rich trace delegate bound to this index.</summary>
     public WorldTraceCast Tracer() => TryTrace;
 
@@ -879,7 +887,8 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _entries)
         {
-            if (!ConditionalContainerGate.IsTaskActive(entry.Owner))
+            if (Destructibles?.IsDestroyed(entry.Placement) == true
+                || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
                 continue;
             }
@@ -937,7 +946,9 @@ public sealed class ObjectCollisionIndex
 
         foreach (Entry entry in _playerEntries)
         {
-            if (_passable.Contains(entry.Owner) || !ConditionalContainerGate.IsTaskActive(entry.Owner))
+            if (Destructibles?.IsDestroyed(entry.Placement) == true
+                || _passable.Contains(entry.Owner)
+                || !ConditionalContainerGate.IsTaskActive(entry.Owner))
             {
                 continue;
             }

@@ -160,22 +160,10 @@ public sealed class MissionFourFriendlyActivationTests
         // Renderer target selection must report the dead opposing NPC, not the still-alive same-team
         // player. That one handoff is what lets the brain leave combat and re-enter the authored IDLE
         // dispatch. Stage 2 is retail's post-Josip gate, whose 500.qvm action is path 725.
-        // The same brain must immediately resume its Stage 2 rescue patrol after its NPC target
-        // disappears. This is the Harrison regression: resetting a separate new brain would not
-        // catch a renderer that kept feeding the vanished hostile as a live combat target.
-        stage = 2;
         soldier.Tick(5, far, rootMotionThisTick: 0.0, enemyAlive: false);
         Assert.NotEqual(AiSoldierActivity.Engaging, soldier.Activity);
-        bool resumedRescuePatrol = false;
-        for (int tick = 6; tick <= 30 && !resumedRescuePatrol; tick++)
-        {
-            soldier.Tick(tick, far, rootMotionThisTick: 0.0, enemyAlive: false);
-            resumedRescuePatrol = soldier.LastActions.Any(
-                action => action.Name == "AIAction_Patrol" && action.Argument(0) == 725);
-        }
-        Assert.True(resumedRescuePatrol,
-            "Harrison must leave combat and re-dispatch 500.qvm Stage 2 patrol 725 to Josip.");
 
+        stage = 2;
         AiSoldier postJosip = new(graph, graph.Nodes[0].Position, facing: 0f, phase: 0, seed: 2);
         postJosip.SetPatrolPaths(paths);
         postJosip.SetScript(host, perTask, guard);

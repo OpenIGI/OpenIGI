@@ -247,6 +247,31 @@ public sealed class RetailWeaponFiringTests
     }
 
     [RequiresGameDataFact]
+    public void NextWeaponAdvancesFromTheWeaponChosenByCategoryTwo()
+    {
+        HumanPlayerConfig config = RetailHumanPlayerConfig.Value;
+        WeaponType glock = Weapon("WEAPON_ID_GLOCK");
+        WeaponType mp5 = Weapon("WEAPON_ID_MP5SD");
+        int category = CategoryOf(config, glock.WeaponId);
+
+        PlayerWeapons weapons = new(config.WeaponCycle);
+        weapons.UseCategories(config.Categories);
+        weapons.Carry(Weapon("WEAPON_ID_KNIFE"));
+        weapons.Carry(glock);
+        weapons.Carry(mp5);
+
+        PlayerInputState input = new();
+        Settle(weapons, input);
+        Assert.Equal("WEAPON_ID_KNIFE", weapons.InHand?.Weapon.ScriptId);
+
+        Assert.Equal("WEAPON_ID_GLOCK", Press(
+            weapons,
+            input,
+            PlayerInputSlot.WeaponCategory1 + category));
+        Assert.Equal("WEAPON_ID_MP5SD", Next(weapons, input));
+    }
+
+    [RequiresGameDataFact]
     public void OneCategoryPressIsOneSwitch()
     {
         // A key held for several ticks is ONE rising edge and must not walk the category. The original

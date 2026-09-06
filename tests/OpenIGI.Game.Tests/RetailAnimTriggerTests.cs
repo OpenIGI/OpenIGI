@@ -55,6 +55,16 @@ public sealed class RetailAnimTriggerTests
     }
 
     [RequiresGameDataFact]
+    public void TheM16A2ReloadEventsResolveToTheThreeRetailSounds()
+    {
+        AnimTriggerRegistry registry = Load();
+
+        Assert.Equal("m16_reload_1", registry.Definitions[1003].Resource);
+        Assert.Equal("m16_reload_2", registry.Definitions[1004].Resource);
+        Assert.Equal("m16_reload_3", registry.Definitions[1005].Resource);
+    }
+
+    [RequiresGameDataFact]
     public void TheFlagIsSetExceptOnTheSurfaceSounds()
     {
         AnimTriggerRegistry registry = Load();

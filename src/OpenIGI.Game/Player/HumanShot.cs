@@ -2,6 +2,25 @@ using OpenIGI.Core.Numerics;
 
 namespace OpenIGI.Game.Player;
 
+/// <summary>Reports the nearest human on a segment without applying damage.</summary>
+public delegate bool HumanRayCast(
+    Vector3d origin,
+    Vector3d end,
+    out HumanHit hit);
+
+/// <summary>Reports a living human inside a circular proximity trigger.</summary>
+/// <param name="center">The trigger centre, in world units.</param>
+/// <param name="radiusUnits">The trigger radius, in world units.</param>
+/// <param name="target">The nearest human found inside the trigger.</param>
+/// <returns><see langword="true"/> when a living human is inside the trigger.</returns>
+public delegate bool HumanProximityCast(
+    Vector3d center,
+    float radiusUnits,
+    out HumanProximityTarget target);
+
+/// <summary>The position of a human found by a proximity trigger.</summary>
+public readonly record struct HumanProximityTarget(Vector3d Position, double Distance);
+
 /// <summary>Offers a round to whatever humans are in the world.</summary>
 /// <param name="origin">Where the round starts, in world units.</param>
 /// <param name="end">Where it stops.</param>

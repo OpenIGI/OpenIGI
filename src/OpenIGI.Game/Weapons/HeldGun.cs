@@ -7,7 +7,17 @@ namespace OpenIGI.Game.Weapons;
 /// <param name="Origin">The muzzle, in engine units — the eye, as <c>0x462E50</c> supplies it.</param>
 /// <param name="Direction">A unit vector, the barrel rotated by this projectile's cone sample.</param>
 /// <param name="RangeInUnits">How far it may travel, from <see cref="WeaponType.EffectiveRange"/>.</param>
-public readonly record struct GunProjectile(Vector3d Origin, Vector3f Direction, float RangeInUnits);
+/// <param name="SpeedMetresPerSecond">The launch speed in metres per second.</param>
+public readonly record struct GunProjectile(
+    Vector3d Origin,
+    Vector3f Direction,
+    float RangeInUnits,
+    float SpeedMetresPerSecond = 0f)
+{
+    /// <summary>Gets the launch velocity in engine units per simulation tick.</summary>
+    public Vector3f VelocityUnitsPerTick =>
+        Direction * (SpeedMetresPerSecond * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond);
+}
 
 /// <summary>What one trigger message did.</summary>
 /// <param name="Fired">Whether a round went off.</param>
@@ -156,6 +166,7 @@ public sealed class HeldGun
     /// <param name="right">The view's <c>+X</c> axis, which the cone is opened across.</param>
     /// <param name="up">The view's <c>+Z</c> axis, the cone's other axis.</param>
     /// <param name="random">The stream every sample is drawn from, in order.</param>
+    /// <param name="speedOverrideMetresPerSecond">Optional charged-throw speed; otherwise the weapon speed is used.</param>
     /// <returns>What happened.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="random"/> is <see langword="null"/>.</exception>
     /// <remarks>
@@ -176,7 +187,8 @@ public sealed class HeldGun
         Vector3f forward,
         Vector3f right,
         Vector3f up,
-        IgiRandom random)
+        IgiRandom random,
+        float? speedOverrideMetresPerSecond = null)
     {
         ArgumentNullException.ThrowIfNull(random);
 
@@ -222,7 +234,11 @@ public sealed class HeldGun
                 direction = Offset(forward, right, up, radius, bearing);
             }
 
-            _projectiles.Add(new GunProjectile(origin, direction, range));
+            _projectiles.Add(new GunProjectile(
+                origin,
+                direction,
+                range,
+                speedOverrideMetresPerSecond ?? Weapon.MuzzleVelocity));
         }
 
         State.OnRoundFired(Weapon, ConsumesAmmunition);

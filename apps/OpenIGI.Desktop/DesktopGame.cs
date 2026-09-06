@@ -12,6 +12,7 @@ using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
 using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
+using OpenIGI.Game;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Menus;
@@ -104,6 +105,7 @@ internal sealed partial class DesktopGame : IDisposable
     private HumanHealth _playerHealth = null!;
     private bool _playerDead;
     private HumanDamageFlash _damageFlash = null!;
+    private FlashbangScreenFlash _flashbangScreenFlash = null!;
     private DeathCamera _deathCamera = null!;
     private int _guardRounds;
     private int _guardHits;
@@ -118,22 +120,12 @@ internal sealed partial class DesktopGame : IDisposable
     private int _tracerSkipsLogged;
 
     private AlarmSpeakerRegistry? _alarmSpeakers;
+    private DestructibleObjectRegistry? _destructibles;
     private readonly Dictionary<AlarmSpeaker, AudioVoiceHandle> _sirenVoices = [];
     private readonly HashSet<AlarmSpeaker> _reportedSirenFailures = [];
     private SecurityCameraRegistry? _securityCameras;
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
-
-    /// <summary>The flashbang's whiteout, 0–2, decaying towards zero every tick.</summary>
-    /// <remarks>
-    /// The retail handler writes the two strengths (<see cref="Flashbang"/>) into fields whose decay
-    /// is unread; a 45-tick fall per unit of strength — a second and a half seen, three blinded — is
-    /// this port's chosen curve.
-    /// </remarks>
-    private float _flashbangStrength;
-
-    private const float FlashbangDecayPerTick = 1f / 45f;
-
 
     // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
     // incoming one. Sized to the window and re-made when that changes.
@@ -212,8 +204,11 @@ internal sealed partial class DesktopGame : IDisposable
     private BulletMarkRenderer? _marks;
     private TracerTrailRenderer? _tracers;
     private ImpactParticleRenderer? _impactParticles;
+    private ExplosionEffectRenderer? _explosions;
+    private SmokeSpriteRenderer? _missileSmoke;
     private CameraStatusLightRenderer? _cameraStatusLights;
     private GrenadeRenderer? _grenadeRenderer;
+    private MissileRenderer? _missileRenderer;
     private LoadedMission? _loadedMissionForWeapon;
     private ViewModelRenderer? _arms;
     private SoldierRenderer? _soldiers;
@@ -222,6 +217,7 @@ internal sealed partial class DesktopGame : IDisposable
     private AmmoTypeRegistry? _ammoTypes;
     private bool _playerMode;
     private ObjectCollisionIndex? _worldSolids;
+    private WorldTraceCast? _worldTrace;
     private DoorRegistry? _doors;
     private ElevatorRegistry? _elevators;
     private WorldInteractionRegistry? _interactions;
@@ -529,6 +525,7 @@ internal sealed partial class DesktopGame : IDisposable
         // (sub_411300) and paint a screen-filling red quad (HumanPlayer_DrawDamageFlash). It survives the
         // player's death, so the corpse's-eye view stays red rather than snapping back to a clean picture.
         _damageFlash = new();
+        _flashbangScreenFlash = new();
 
         // The camera the game hands the view to when the player dies -- it pulls back off the first-person eye
         // to a third-person shot of the body (HumanCamera death mode). The body it looks at is the player's
@@ -612,8 +609,11 @@ internal sealed partial class DesktopGame : IDisposable
         _marks = null;
         _tracers = null;
         _impactParticles = null;
+        _explosions = null;
+        _missileSmoke = null;
         _cameraStatusLights = null;
         _grenadeRenderer = null;
+        _missileRenderer = null;
         _loadedMissionForWeapon = null;
         _arms = null;
         _soldiers = null;
@@ -624,12 +624,14 @@ internal sealed partial class DesktopGame : IDisposable
         _worldMaterials = null;
         _ammoTypes = null;
         _alarmSpeakers = null;
+        _destructibles = null;
         _sirenVoices.Clear();
         _playerMode = false;
 
         // The debug overlay (F3): the player's state and a crosshair "what am I looking at" readout. The
         // collision index is kept here so the overlay can name the object under the crosshair.
         _worldSolids = null;
+        _worldTrace = null;
         bool showDebug = false;
 
         menuHost.StartGame = () => StartMission(missionState.PendingMissionId);
@@ -1241,34 +1243,7 @@ internal sealed partial class DesktopGame : IDisposable
 
             // IGI1's handheld is a game mode, entered by the retail C binding. It owns the pointer and
             // freezes player/camera input while the world continues its fixed-tick simulation.
-            if (_missionFailedMenu && !menuMode && !console.IsOpen && _activeMission is { } failedMission)
-            {
-                if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Return)
-                    || _window.Input.Keyboard.WasPressed(Input.KeyCode.NumpadEnter))
-                {
-                    StartMission(failedMission.Id);
-                    _window.CursorVisible = false;
-                }
-                else if (_window.Input.Keyboard.WasPressed(Input.KeyCode.Escape))
-                {
-                    ReleasePlayedMission();
-                    if (shell is not null)
-                    {
-                        shell.OpenOn("campaign");
-                        menuMode = true;
-                        showcasePending = true;
-                        ApplyMenuDepthOfField();
-                    }
-                    _window.CursorVisible = true;
-                }
-                else
-                {
-                    _window.CursorVisible = true;
-                    _window.CursorLocked = false;
-                }
-                _window.Input.Captured = true;
-            }
-            else if (!menuMode && !console.IsOpen && _player is not null
+            if (!menuMode && !console.IsOpen && _player is not null
                 && (TacticalComputer is not null || _mapComputer is { IsReady: true }))
             {
                 // -computercam presses C on a named frame, so the transition can be captured from a
@@ -1541,13 +1516,21 @@ internal sealed partial class DesktopGame : IDisposable
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (pauseMenu)
+                else if (MenuOwnsPointer(pauseMenu, _missionFailedMenu))
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
                     // release is repeated every pass rather than done once on the way in, so nothing can
                     // quietly take the pointer back while the menu is up; it also re-arms the look's
                     // settling frame, so the warp that re-capturing the cursor produces on resume is not
                     // read as a movement the player made.
+                    //
+                    // The mission-failed screen belongs here for the same reason. It arrives while the
+                    // player is dead and the death camera is orbiting, and EVERY branch below this one
+                    // takes the pointer: the orbit, and then -- because _playerMode outlives the player --
+                    // the look, whose Look() sets IsCapturingMouse and locks. The screen released the
+                    // cursor each frame and the branch below re-took it, which is the pointer that
+                    // flashed and would not move. Standing every camera branch down is what actually
+                    // settles it; excluding them one at a time only moves the fight further down.
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
@@ -1728,6 +1711,12 @@ internal sealed partial class DesktopGame : IDisposable
                         interactionsTickedByPlayer = true;
                     }
 
+                    // Grenade physics runs inside PlayerCamera.Tick. IGI1 broadcasts the grenade task's
+                    // AI events before the HumanAI pass, so deliver the queued records here rather than
+                    // after SoldierRenderer.Tick (where they would be delayed and a guard could fire
+                    // one extra burst). Effects and sounds are still resolved below, after the AI pass.
+                    NotifyGrenadeAiEvents();
+
                     PlayBinocularTransitionSound();
                     PlayMedipackSound();
 
@@ -1750,7 +1739,27 @@ internal sealed partial class DesktopGame : IDisposable
                     WeaponType? weaponForSound = _player.HeldWeaponType?.Category == WeaponCategory.Medipack
                         ? null
                         : _player.HeldWeaponType;
-                    _weaponSounds?.Tick(_player.FiredThisTick && weaponForSound is not null, weaponForSound);
+                    bool m203Launched = _player.M203LaunchedThisTick;
+                    _weaponSounds?.Tick(
+                        _player.FiredThisTick && !m203Launched && weaponForSound is not null,
+                        weaponForSound);
+                    if (m203Launched)
+                    {
+                        // GunM16A2's native callback (0x473510) plays this launch report itself; it is
+                        // not the M16A2's primary rifle loop and must remain audible on an alternate shot.
+                        // The native call attaches it to the launcher task position, not to the listener.
+                        Vector3d launchPosition = _player.Body.Eye;
+                        if (_player.Weapons?.M203Shots is { Count: > 0 } m203Shots)
+                        {
+                            launchPosition = m203Shots[0].Origin;
+                        }
+
+                        _sounds?.PlayDefinition("m203_launch_1", launchPosition, priority: 250);
+                    }
+
+                    // The grenade's cook tick: a looping sound held while the throw charges, stopped the
+                    // moment it is released (0x40F590 starts it, 0x40F640 stops it).
+                    TickGrenadeCook();
 
                     // Reloads and a few other weapon actions name their sounds through BOED animation
                     // events rather than through the weapon record. The rig advanced inside Player.Tick,
@@ -1794,15 +1803,31 @@ internal sealed partial class DesktopGame : IDisposable
                     // The same impacts, seen: sparks and dust composed from the struck material.
                     // Ticked before spawning so a new burst draws its birth frame unmoved.
                     _impactParticles?.Tick();
+                    _explosions?.Tick();
+                    _missileSmoke?.Tick();
                     SpawnBallisticImpactParticles();
+
+                    // The launcher rockets in the air lay their smoke trail, one column of puffs per
+                    // segment they crossed this tick.
+                    SpawnMissileSmoke();
 
                     // Whatever grenades ran out of fuse this tick -- the blast, the flash, the noise
                     // and the casualties.
                     ResolveGrenadeDetonations();
-                    _flashbangStrength = Math.Max(0f, _flashbangStrength - FlashbangDecayPerTick);
+                    ResolveMissileDetonations();
+                    ResolveM203Detonations();
+                    PlayGrenadeBounces();
 
                     // The alarm speakers, following their own level expressions -- the siren the
                     // room hears when a guard reaches a switch.
+                    if (_destructibles is { } destructibles)
+                    {
+                        destructibles.Tick();
+                        foreach (DestructibleObject ready in destructibles.ConsumeReadyExplosions())
+                        {
+                            HandleDestructibleImpact(ready);
+                        }
+                    }
                     TickAlarmSpeakers();
                     TickSecurityCameraSounds();
 
@@ -1813,7 +1838,10 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         if (playerImpact.HitSomething)
                         {
-                            DamageAlarmSpeakers(playerImpact.Position, owner: playerImpact.Owner);
+                            DamageAlarmSpeakers(
+                                playerImpact.Position,
+                                owner: playerImpact.Owner,
+                                placement: playerImpact.Placement);
                         }
                     }
 
@@ -1877,6 +1905,7 @@ internal sealed partial class DesktopGame : IDisposable
                 // The damage wash fades a forty-fifth a tick whatever the frame rate -- decayed here, on the
                 // fixed tick, for the same determinism reason the bodies are.
                 _damageFlash.Tick();
+                _flashbangScreenFlash.Tick();
                 _hud?.Tick();
 
                 // The player's eye is what the guards' view cones are tested against -- and in the
@@ -1921,6 +1950,7 @@ internal sealed partial class DesktopGame : IDisposable
                 if (_securityCameras is { } cameras)
                 {
                     bool crouching = _playerMode && _player is not null && _player.IsCrouched;
+
                     cameras.Tick(watchedFeet, crouching, targetAlive: !_playerDead);
                     if (_worldSolids is { } cameraSolids)
                     {
@@ -2170,24 +2200,39 @@ internal sealed partial class DesktopGame : IDisposable
                 }
 
                 _missionObjectives?.TickAfterLevelState();
-                MissionResultDecision missionResult = MissionResultArbitration.Evaluate(
-                    _playerDead,
-                    _missionObjectives is { IsFailed: true },
-                    _missionObjectives is { IsComplete: true },
-                    _missionFailedMenu,
-                    _missionResultHandled,
-                    _missionFailureTicks);
-                _missionFailureTicks = missionResult.FailureTicks;
+                if (_missionObjectives is { IsFailed: true })
+                {
+                    // MainMenu state 9 polls LevelFlow_LevelFailed and opens the in-game menu after
+                    // the counter passes 150 (0x4181E5..0x41821A). Keep that exact grace period.
+                    if (!_missionFailedMenu && ++_missionFailureTicks > 151 && shell is not null)
+                    {
+                        _missionFailedMenu = true;
+                        _computerOpen = false;
+                        _computerFlight.Reset();
+                        _player?.SetMapComputerOpen(false);
 
-                if (missionResult.Result == MissionResult.PlayerDeathFailure)
-                {
-                    OpenMissionFailedMenu("Mission failed: the player died.");
+                        // The result is a shell page, not a drawn card, so its two choices can be clicked
+                        // and navigated like every other page and the shell's own cursor is the one on
+                        // screen. menuMode hands it the frame's input and draw; pauseMenu holds the
+                        // showcase off, because the level this is drawn over is still loaded -- the same
+                        // pair the pause menu sets.
+                        menuMode = true;
+                        pauseMenu = true;
+                        shell.OpenMissionFailed();
+
+                        // The platform cursor stays hidden: the shell draws its own, so revealing this one
+                        // would put a second, unrelated pointer beside it.
+                        _window.CursorVisible = false;
+                        _player?.HoldStill();
+                        _window.CursorLocked = false;
+                    }
                 }
-                else if (missionResult.Result == MissionResult.AuthoredFailure)
+                else
                 {
-                    OpenMissionFailedMenu("Mission failed: the LevelFlow failure expression fired.");
+                    _missionFailureTicks = 0;
                 }
-                if (missionResult.ShouldHandleCompletion
+                if (!_missionResultHandled
+                    && _missionObjectives is { IsComplete: true }
                     && _activeMission is { } completedMission)
                 {
                     _missionResultHandled = true;
@@ -2763,6 +2808,11 @@ internal sealed partial class DesktopGame : IDisposable
                         projection,
                         smoothPresentation ? tickBlend : 1f);
                 }
+                if (_missileRenderer is not null && _player is not null)
+                {
+                    _missileRenderer.Draw(_player.Missiles, eye, projection, smoothPresentation ? tickBlend : 1f);
+                    _missileRenderer.Draw(_player.M203, eye, projection, smoothPresentation ? tickBlend : 1f);
+                }
 
                 // The remastered-optics decisions and the binocular detector are resolved here, before
                 // the soldiers are drawn, for two reasons: the detector is stateful and must be scanned
@@ -2908,6 +2958,13 @@ internal sealed partial class DesktopGame : IDisposable
                 // The impact bursts: dust hazes over the scene, spark light over the haze.
                 _impactParticles?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
 
+                // The rocket's smoke trail and the blast's grey column, under the fireball.
+                _missileSmoke?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
+
+                // The retail fireball, over the scene as light: grenade, missile and shot-out-device
+                // blasts drawn from the real fireball.spr sprite.
+                _explosions?.Draw(eye, projection, smoothPresentation ? tickBlend : 1f);
+
                 // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
                 // While the camera is inside a building's shell the rain is suppressed, exactly as the
                 // reference editor does per frame — buildings keep the weather outside.
@@ -3045,14 +3102,20 @@ internal sealed partial class DesktopGame : IDisposable
                     Vector3d? rigOriginUnits = null;
                     Matrix3f? rigOrientation = null;
                     BoneAttachment? weaponAttachment = _player.HeldWeapon;
+                    BoneAttachment? secondaryWeaponAttachment = _player.HeldWeaponSecondary;
                     float previousPoseShare = 0f;
                     if (smoothPresentation && _player.HasViewTickPair)
                     {
-                        (Vector3d smoothedOrigin, Matrix3f smoothedOrientation, BoneAttachment? smoothedWeapon) =
+                        (
+                            Vector3d smoothedOrigin,
+                            Matrix3f smoothedOrientation,
+                            BoneAttachment? smoothedWeapon,
+                            BoneAttachment? smoothedSecondaryWeapon) =
                             _player.SmoothedRig(tickBlend);
                         rigOriginUnits = smoothedOrigin;
                         rigOrientation = smoothedOrientation;
                         weaponAttachment = smoothedWeapon ?? weaponAttachment;
+                        secondaryWeaponAttachment = smoothedSecondaryWeapon ?? secondaryWeaponAttachment;
                         previousPoseShare = 1f - tickBlend;
                     }
 
@@ -3069,14 +3132,21 @@ internal sealed partial class DesktopGame : IDisposable
                         FollowHeldWeapon(_player, _heldWeapon, missionForWeapon);
                     }
 
-                    if (weaponAttachment is { } attachment && _heldWeapon is { IsReady: true })
+                    if (_player.Weapons?.HideFirstPersonWeapon != true
+                        && weaponAttachment is { } attachment
+                        && _heldWeapon is { IsReady: true })
                     {
                         _heldWeapon.Draw(
                             attachment,
                             eye,
                             viewModelProjection,
-                            _player.FiredThisTick,
-                            _player.ShotSequence);
+                            // 0x473510 is a separate GunM16A2 task: it does not pass through the
+                            // ordinary Gun_Fire/GUNFLAME path. Do not show the rifle muzzle flame on
+                            // an M203 launch; the launcher task owns its own launch report/effect.
+                            _player.FiredThisTick && !_player.M203LaunchedThisTick,
+                            _player.ShotSequence,
+                            WeaponDrawParts.All,
+                            secondaryWeaponAttachment);
                     }
                 }
 
@@ -3291,22 +3361,6 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
-                if (_missionFailedMenu)
-                {
-                    _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
-                    batch.Begin();
-                    if (TacticalComputer is { } tacticalFailed)
-                    {
-                        tacticalFailed.DrawMissionFailed(batch, _window.Width, _window.Height);
-                    }
-                    else if (_mapComputer is { IsReady: true } failedComputer)
-                    {
-                        failedComputer.DrawMissionFailed(batch, _window.Width, _window.Height);
-                    }
-
-                    batch.End();
-                }
-
                 // The damage wash goes over everything, in its own 2D pass: a screen-filling red quad whose
                 // four vertex alphas are the four corners sub_411300 fades (HumanPlayer_DrawDamageFlash,
                 // 0x4bb770). Outside the player-mode block on purpose -- it has to survive the player's death,
@@ -3335,12 +3389,16 @@ internal sealed partial class DesktopGame : IDisposable
                     batch.End();
                 }
 
-                // The flashbang's whiteout, over even the damage wash: at strength 2 the screen is
-                // solid white until the fall brings it under one; a merely-seen flash starts at one
-                // and thins from the first frame. Uniform, unlike the wash -- light has no corner.
-                if (_flashbangStrength > 0f)
+                // The native player flash handler writes a uniform white screen field. It is stronger
+                // when the eye is inside the grenade radius (2) and still fully white at the first
+                // frame of the 25 m visible effect (1); the close field simply keeps the quad opaque
+                // for longer. This pass follows the red damage wash so the retail flash wins.
+                if (_flashbangScreenFlash.IsActive)
                 {
-                    byte whiteAlpha = (byte)Math.Clamp((int)(Math.Min(_flashbangStrength, 1f) * 255f), 0, 255);
+                    byte whiteAlpha = (byte)Math.Clamp(
+                        (int)(Math.Min(_flashbangScreenFlash.Strength, 1f) * 255f),
+                        0,
+                        255);
                     Bgra32 white = new(255, 255, 255, whiteAlpha);
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
@@ -3944,6 +4002,16 @@ internal sealed partial class DesktopGame : IDisposable
         return false;
     }
 
+    /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
+    /// <remarks>
+    /// Both of these screens release the cursor every frame so it can be used, and every camera branch
+    /// below them takes it back: the death orbit, the ladder camera, the look. Whichever runs last in
+    /// the frame wins, so a menu that does not stop the chain here ends up fighting one of them and the
+    /// pointer flashes between locked and free without ever moving.
+    /// </remarks>
+    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu) =>
+        pauseMenu || missionFailedMenu;
+
     /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
     internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
         VerticalFieldOfView(4f / 3f, horizontalTangent);
@@ -3972,8 +4040,11 @@ internal sealed partial class DesktopGame : IDisposable
         _marks?.Dispose();
         _tracers?.Dispose();
         _impactParticles?.Dispose();
+        _explosions?.Dispose();
+        _missileSmoke?.Dispose();
         _cameraStatusLights?.Dispose();
         _grenadeRenderer?.Dispose();
+        _missileRenderer?.Dispose();
         _renderer?.Dispose();
         _arms?.Dispose();
         _detailMaps?.Dispose();

@@ -128,6 +128,32 @@ public sealed class BulletMarks
         return true;
     }
 
+    /// <summary>Records a decal directly, for an effect that names its own texture rather than a material's.</summary>
+    /// <param name="position">Where it sits, in world units, already lifted off the surface.</param>
+    /// <param name="normal">The surface normal it faces along.</param>
+    /// <param name="texture">The decal texture name.</param>
+    /// <param name="sizeInUnits">How wide it is, in world units.</param>
+    /// <remarks>
+    /// The retail missile impact projects <c>burn1.tex</c> (<c>dword_5C1164</c>) onto the object it hits.
+    /// A body's zone material decides nothing here — the effect carries its own scorch — so this bypasses
+    /// the material lookup <see cref="TryAdd"/> does for a bullet.
+    /// </remarks>
+    public void AddMark(Vector3d position, Vector3f normal, string texture, float sizeInUnits)
+    {
+        if (string.IsNullOrEmpty(texture))
+        {
+            return;
+        }
+
+        if (_marks.Count >= _capacity)
+        {
+            _marks.RemoveAt(0);
+        }
+
+        _marks.Add(new BulletMark(position, normal, texture, sizeInUnits));
+        TotalAdded++;
+    }
+
     // The face's material index is carried and would be used directly if the mapping from it to a game
     // material row were read. It is not, so the fallback stands in -- see FallbackMaterial.
     private static bool TryResolve(in WorldRayHit hit, GameMaterialRegistry materials, out GameMaterial material)

@@ -309,6 +309,14 @@ public sealed class HumanView
     /// </remarks>
     public BoneAttachment HeldWeapon => Attachment(HumanAttachPoints.FirstPersonWeapon);
 
+    /// <summary>Gets the second first-person weapon attachment used by retail <c>Gunx2</c>.</summary>
+    /// <remarks>
+    /// The native <c>0x4601A0</c> handler reads palette offset <c>+6888</c>, which is bone 52. The
+    /// dual-Uzi model's <c>TASKTYPE_GUNX2</c> child is placed here so the two weapons occupy opposite
+    /// hands rather than sharing bone 3.
+    /// </remarks>
+    public BoneAttachment HeldWeaponSecondary => Attachment(HumanAttachPoints.FirstPersonSecondary);
+
     /// <summary>Resolves an attachment out of any posed rig.</summary>
     /// <param name="pose">The posed skeleton, in its object's space.</param>
     /// <param name="origin">The object's world position, in engine units.</param>

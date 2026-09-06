@@ -286,6 +286,40 @@ public sealed class AiHearingTests
     }
 
     [Fact]
+    public void ExplosionUsesTheNativeTypeTwentyOneAndAuthoredEnvelope()
+    {
+        Vector3d position = new(10_000, 20_000, 30_000);
+        AiSoldier soldier = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        double range = 5 * Metre;
+        Vector3d centre = Away(position, range);
+
+        Assert.True(soldier.ReceiveExplosion(centre, range));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Explosion);
+        Assert.NotNull(queued);
+        Assert.Equal(AiEvent.Explosion, queued.Value.Type);
+        Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal((float)range, queued.Value.Radius);
+        Assert.Equal(centre, queued.Value.Position);
+        Assert.Equal(-1, queued.Value.Source);
+    }
+
+    [Fact]
+    public void ExplosionDoesNotCrossItsAuthoredRangeOrReachDeadSoldiers()
+    {
+        Vector3d position = new(10_000, 20_000, 30_000);
+        double range = 5 * Metre;
+        AiSoldier outside = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        AiSoldier dead = new(graph: null, position, facing: 0f, phase: 0, seed: 1);
+        dead.Kill();
+
+        Assert.False(outside.ReceiveExplosion(Away(position, range + 1), range));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.Explosion));
+        Assert.False(dead.ReceiveExplosion(position, range));
+        Assert.Equal(0, dead.Events.PendingCount(AiEvent.Explosion));
+    }
+
+    [Fact]
     public void ABulletPassingInsideTwoMetresPostsGunshotMissAtItsClosestPoint()
     {
         Vector3d feet = new(10_000, 20_000, 30_000);
@@ -354,6 +388,86 @@ public sealed class AiHearingTests
 
         Assert.False(soldier.ReceiveGroundImpact(default, default));
         Assert.Equal(0, soldier.Events.PendingCount(AiEvent.GroundImpact));
+    }
+
+    [Fact]
+    public void GrenadeThrownUsesTheRetailInViewEvent()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d eye = soldier.EyePosition();
+        Vector3d visible = new(0, 4 * Metre, eye.Z);
+
+        Assert.True(soldier.ReceiveGrenadeThrown(visible));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.GrenadeThrown);
+        Assert.NotNull(queued);
+        Assert.Equal(visible, queued.Value.Position);
+        Assert.Equal(AiEventFilter.InView, queued.Value.Filter);
+        Assert.Equal(-1f, queued.Value.Radius);
+        Assert.Equal(0, queued.Value.Source);
+        Assert.Equal(0, queued.Value.Subject);
+
+        AiSoldier behind = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(behind.ReceiveGrenadeThrown(new Vector3d(0, -Metre, behind.EyePosition().Z)));
+        Assert.Equal(0, behind.Events.PendingCount(AiEvent.GrenadeThrown));
+    }
+
+    [Fact]
+    public void GrenadeLandUsesTheNativeFiveMetreInRangeEvent()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d contact = new(5 * Metre, 0, 0);
+
+        Assert.True(soldier.ReceiveGrenadeLand(contact));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.GrenadeLand);
+        Assert.NotNull(queued);
+        Assert.Equal(contact, queued.Value.Position);
+        Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal(AiSoldier.GrenadeLandRadiusInUnits, queued.Value.Radius);
+        Assert.Equal(0, queued.Value.Source);
+        Assert.Equal(0, queued.Value.Subject);
+
+        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveGrenadeLand(new Vector3d((5 * Metre) + 1, 0, 0)));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.GrenadeLand));
+    }
+
+    [Fact]
+    public void FlashbangUsesTheNativeTenMetreViewAndRangeEvent()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d flash = new(0, 9 * Metre, soldier.EyePosition().Z);
+
+        Assert.True(soldier.ReceiveFlashbang(flash));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Flashbang);
+        Assert.NotNull(queued);
+        Assert.Equal(flash, queued.Value.Position);
+        Assert.Equal(AiEventFilter.InView | AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal(AiSoldier.FlashbangEventRadiusInUnits, queued.Value.Radius);
+
+        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveFlashbang(new Vector3d(0, 11 * Metre, outside.EyePosition().Z)));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.Flashbang));
+    }
+
+    [Fact]
+    public void ExplosionUsesTheNativeFiveMetreEnvelope()
+    {
+        AiSoldier soldier = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Vector3d explosion = new(5 * Metre, 0, 0);
+
+        Assert.True(soldier.ReceiveExplosion(explosion));
+
+        AiEventRecord? queued = soldier.Events.HeadOf(AiEvent.Explosion);
+        Assert.NotNull(queued);
+        Assert.Equal(AiEventFilter.InRange, queued.Value.Filter);
+        Assert.Equal(AiSoldier.GrenadeLandRadiusInUnits, queued.Value.Radius);
+
+        AiSoldier outside = new(graph: null, default, facing: 0f, phase: 0, seed: 1);
+        Assert.False(outside.ReceiveExplosion(new Vector3d((5 * Metre) + 1, 0, 0)));
+        Assert.Equal(0, outside.Events.PendingCount(AiEvent.Explosion));
     }
 
     [Fact]

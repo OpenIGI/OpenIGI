@@ -137,6 +137,39 @@ public sealed class BallisticSimulationTests
         Assert.True(round.TravelledUnits > 80f * UnitsPerMetre);
     }
 
+    [Fact]
+    public void AProjectileSpeedOverrideControlsItsSpawnVelocity()
+    {
+        BallisticSimulation simulation = new();
+        WeaponType weapon = Weapon(rangeMetres: 300f);
+        GunProjectile shot = new(
+            default,
+            new Vector3f(0f, 1f, 0f),
+            300f * UnitsPerMetre,
+            SpeedMetresPerSecond: 123f);
+
+        Assert.True(simulation.Spawn(shot, weapon, null, 1f, weapon.Category, null, 0f));
+        Assert.Equal(123f * UnitsPerMetre, simulation.Rounds[0].Velocity.Y, 0.01f);
+    }
+
+    [Fact]
+    public void AProjectileSpeedOverrideControlsMinimumFlightRange()
+    {
+        BallisticSimulation simulation = new();
+        WeaponType weapon = Weapon(rangeMetres: 300f);
+        GunProjectile shot = new(
+            default,
+            new Vector3f(0f, 1f, 0f),
+            300f * UnitsPerMetre,
+            SpeedMetresPerSecond: 123f);
+
+        Assert.True(simulation.Spawn(shot, weapon, null, 1f, weapon.Category, null, 3f));
+
+        // 123 m/s for three seconds is longer than the authored 300 m range, so the selected
+        // launch speed—not the profile's 300 m/s—is observable in the minimum-flight extension.
+        Assert.Equal(123f * UnitsPerMetre * 3f, simulation.Rounds[0].RemainingRange, 0.01f);
+    }
+
     /// <summary>One second of flight drops very nearly ½g — the substepped integrator's small excess.</summary>
     [Fact]
     public void GravityDropsTheRound()

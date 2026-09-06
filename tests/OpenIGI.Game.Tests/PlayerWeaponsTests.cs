@@ -887,6 +887,29 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void NextWeaponContinuesFromARecentlySelectedCategory()
+    {
+        PlayerWeapons weapons = new(Cycle);
+        weapons.UseCategories(
+        [
+            new HumanPlayerWeaponCategory([20]),
+            new HumanPlayerWeaponCategory([1]),
+            new HumanPlayerWeaponCategory([7]),
+        ]);
+        weapons.Carry(Knife);
+        weapons.Carry(Glock, NineMillimetre);
+        weapons.Carry(Mp5Sd, NineMillimetre);
+
+        Equip(weapons);
+        PlayerInputState input = new();
+        Press(weapons, input, PlayerInputSlot.WeaponCategory2);
+        Assert.Equal("WEAPON_ID_GLOCK", weapons.InHand?.Weapon.ScriptId);
+
+        Press(weapons, input, PlayerInputSlot.NextWeapon);
+        Assert.Equal("WEAPON_ID_MP5SD", weapons.InHand?.Weapon.ScriptId);
+    }
+
+    [Fact]
     public void BothSwayAnglesArriveOnTheSameTick()
     {
         // 35 degrees at 0.0581776 and 20 degrees at 0.0332444 are both 10.5 ticks. The rates were
@@ -1118,6 +1141,32 @@ public sealed class PlayerWeaponsTests
     }
 
     [Fact]
+    public void DeathClearsPendingM203FireAndTheLastM203Shot()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(M203Ammo.AmmoId, 2);
+        weapons.SetM203Ammunition(M203Ammo);
+        Equip(weapons);
+
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.AlternateFire));
+        Assert.Single(weapons.M203Shots);
+
+        weapons.StopForDeath();
+
+        Assert.Empty(weapons.M203Shots);
+        Assert.False(weapons.Flags.HasFlag(HumanWeaponFlagWord.AlternateFire));
+        Assert.False(weapons.ResolveFire(
+            default,
+            new Vector3f(0f, 1f, 0f),
+            new Vector3f(1f, 0f, 0f),
+            new Vector3f(0f, 0f, 1f)));
+        Assert.Empty(weapons.M203Shots);
+    }
+
+    [Fact]
     public void TheMp5SdsBurstCapAndItsMagazineRunOutTogether()
     {
         // Maximum Rounds/Burst equals Rounds/Clip on every automatic weapon in the roster, which is
@@ -1141,11 +1190,47 @@ public sealed class PlayerWeaponsTests
         // is why the rounds have not moved yet.
         Tick(weapons, new PlayerInputState(), Frame());
         Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+        Assert.False(weapons.HideFirstPersonWeapon);
         Assert.Equal(0, held.Gun.RoundsInClip);
 
         Tick(weapons, new PlayerInputState(), Frame(), clipEnded: true);
+        Assert.False(weapons.HideFirstPersonWeapon);
         Assert.Equal(17, held.Gun.RoundsInClip);
         Assert.Equal(50 - 17, weapons.Ammunition.Count(NineMillimetre.AmmoId));
+    }
+
+    [Fact]
+    public void M16A2ReloadLeavesTheGunAttachedWhileTheRetailViewClipPlays()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(primaryAmmo.AmmoId, 60);
+        Equip(weapons, clipEnded: false);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        held.Gun.State.RoundsInClip = 0;
+        Tick(weapons, new PlayerInputState(), Frame());
+
+        Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+        Assert.Equal(WeaponAction.Reload, weapons.RequestedAction);
+        Assert.False(weapons.HideFirstPersonWeapon);
+    }
+
+    [Fact]
+    public void DualUziReloadUsesTheNoGunFirstPersonPresentation()
+    {
+        PlayerWeapons weapons = new([40]);
+        weapons.Carry(DualUzi, NineMillimetre);
+        weapons.Ammunition.Add(NineMillimetre.AmmoId, 64);
+        Equip(weapons, clipEnded: false);
+
+        CarriedWeapon held = weapons.InHand!.Value;
+        held.Gun.State.RoundsInClip = 0;
+        Tick(weapons, new PlayerInputState(), Frame());
+
+        Assert.Equal(HumanWeaponState.Reloading, weapons.State);
+        Assert.True(weapons.HideFirstPersonWeapon);
     }
 
     [Fact]
@@ -1287,6 +1372,83 @@ public sealed class PlayerWeaponsTests
 
     private static AmmoType GrenadeAmmo => new() { AmmoId = 8, ScriptId = "AMMO_ID_GRENADE", CalibreId = 10000 };
 
+    private static WeaponType M16A2 => new()
+    {
+        WeaponId = 14,
+        ScriptId = "WEAPON_ID_M16A2",
+        Category = WeaponCategory.Gun,
+        CalibreId = 556,
+        MuzzleVelocity = 900f,
+        RoundsPerMinute = 700,
+        RoundsPerClip = 30,
+        MaximumRoundsPerBurst = 30,
+        BulletsPerRound = 1,
+        EffectiveRange = 200f,
+        Weapon = new WeaponTaskBinding("TASKTYPE_GUNM16A2", 0, [85f, 3f, 1f], string.Empty, 0),
+        Projectile = new WeaponTaskBinding("TASKTYPE_M203", 0, [], "108_01_1", 0),
+    };
+
+    private static WeaponType DualUzi => new()
+    {
+        WeaponId = 40,
+        ScriptId = "WEAPON_ID_UZIX2",
+        Category = WeaponCategory.Gun,
+        CalibreId = 919,
+        RoundsPerMinute = 900,
+        RoundsPerClip = 64,
+        MaximumRoundsPerBurst = 64,
+        BulletsPerRound = 2,
+        EffectiveRange = 80f,
+        Weapon = new WeaponTaskBinding("TASKTYPE_GUN", 0, [], string.Empty, 0),
+    };
+
+    private static AmmoType M203Ammo => new() { AmmoId = 10, ScriptId = "AMMO_ID_M203", CalibreId = 10002 };
+
+    [Fact]
+    public void M16A2AlternateFireConsumesM203AmmoWithoutConsumingTheRifleMagazine()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(M203Ammo.AmmoId, 2);
+        weapons.SetM203Ammunition(M203Ammo);
+        Equip(weapons);
+
+        int rifleRounds = weapons.InHand!.Value.Gun.RoundsInClip;
+        PlayerInputState input = new();
+        Tick(weapons, input, Frame(PlayerInputSlot.AlternateFire));
+
+        Assert.True(weapons.FiredThisTick);
+        Assert.Equal(WeaponAction.Fire, weapons.RequestedAction);
+        Assert.Equal(1, weapons.RequestedFireVariant);
+        M203Projectile shot = Assert.Single(weapons.M203Shots);
+        Assert.Equal(270f, shot.MuzzleVelocityKilometresPerHour);
+        Assert.Equal(5f, shot.ExplosionRadiusMetres);
+        Assert.Equal(1f, shot.ActivateRadiusMetres);
+        Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
+        Assert.Equal(rifleRounds, weapons.InHand!.Value.Gun.RoundsInClip);
+        Assert.Empty(weapons.Shots);
+    }
+
+    [Fact]
+    public void RejectedM203SimulationShotRefundsItsConsumedRoundThroughTheWeaponContract()
+    {
+        PlayerWeapons weapons = new([14]);
+        AmmoType primaryAmmo = new() { AmmoId = 0, ScriptId = "AMMO_ID_556", CalibreId = 556 };
+        weapons.Carry(M16A2, primaryAmmo);
+        weapons.Ammunition.Add(M203Ammo.AmmoId, 1);
+        weapons.SetM203Ammunition(M203Ammo);
+        Equip(weapons);
+
+        Tick(weapons, new PlayerInputState(), Frame(PlayerInputSlot.AlternateFire));
+
+        Assert.Equal(0, weapons.Ammunition.Count(M203Ammo.AmmoId));
+        Assert.True(weapons.RefundRejectedSimulationShot());
+        Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
+        Assert.False(weapons.RefundRejectedSimulationShot());
+        Assert.Equal(1, weapons.Ammunition.Count(M203Ammo.AmmoId));
+    }
+
     /// <summary>The throw charges while fire is held and releases the round when it is let go.</summary>
     /// <remarks>The 0x40F590/0x40F640 charge-and-release, with <c>Human+1248</c> as the charge.</remarks>
     [Fact]
@@ -1311,8 +1473,20 @@ public sealed class PlayerWeaponsTests
         // The release is the throw: one round leaves on that very tick.
         Tick(weapons, input, Frame());
         Assert.True(weapons.FiredThisTick);
-        Assert.Single(weapons.Shots);
+        GunProjectile shot = Assert.Single(weapons.Shots);
         Assert.Equal(2, weapons.InHand?.Gun.RoundsInClip);
+        float held = 12f;
+        float curve = MathF.Pow(held * 50f, 0.7f) + (held * 0.1f);
+        float tap = MathF.Pow(3f * 50f, 0.7f) + 0.3f;
+        float fullCharge = MathF.Pow(60f * 50f, 0.7f) + 6f;
+        float expectedShare = (curve - tap) / (fullCharge - tap);
+        float expectedSpeed = 15f * (PlayerWeapons.MinimumThrowShare
+            + ((PlayerWeapons.MaximumThrowShare - PlayerWeapons.MinimumThrowShare) * expectedShare));
+        Assert.Equal(expectedSpeed, shot.SpeedMetresPerSecond, 0.001f);
+        Assert.Equal(
+            shot.SpeedMetresPerSecond * MissileFlight.UnitsPerMetre / MissileFlight.TicksPerSecond,
+            shot.VelocityUnitsPerTick.Length,
+            0.01f);
 
         // The retail power curve: longer charges throw harder, between the tap's short toss and the
         // full wind-up's hurl, and the charge caps at retail's sixty ticks.

@@ -617,6 +617,25 @@ public sealed class WorldScene
                     };
                 }
 
+                // ExplodeObject carries the same authored replacement convention as the camera head,
+                // but under the generic "Destroyed model" parameter. Keep the live placement in the
+                // scene so collision and lightmap identity remain stable; the renderer selects this
+                // binding only after the exact task has reached retail's destroyed state.
+                if (placement.DestroyedReplacement is null
+                    && declared.TryGetValue("Destroyed model", out object? rawGenericDestroyed)
+                    && rawGenericDestroyed is string genericDestroyedName
+                    && genericDestroyedName.Length > 0
+                    && byName.TryGetValue(genericDestroyedName, out var genericDestroyed))
+                {
+                    placement = placement with
+                    {
+                        DestroyedReplacement = new WorldModelBinding(
+                            genericDestroyed.Instance,
+                            genericDestroyed.Pack,
+                            genericDestroyed.Model),
+                    };
+                }
+
                 // Empty render geometry does not make this placement disposable. Attachment holders
                 // can carry HSMC collision of their own (Mission 14's room floors do), while the world
                 // renderer already ignores the null mesh MefMeshBuilder returns for them.
@@ -1051,14 +1070,49 @@ public sealed class WorldScene
         int added = 0;
         foreach (WorldObject child in node.Children)
         {
-            bool isHelicopter = owner is DeclaredTask { Type.Name: "Heli" };
-            bool isRotor = (magic is not null
-                && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition)
-                && string.Equals(
-                    magic.TaskTypeName(childDefinition.TaskType),
-                    "TASKTYPE_ROTOR",
-                    StringComparison.Ordinal))
-                || (isHelicopter && HelicopterRotorCatalog.IsKnownRotorModel(child.Name));
+            string magicTaskTypeName = string.Empty;
+            bool isRotor = false;
+            float magicExplosionFireballs = 0f;
+            int magicExplosionFragments = 0;
+            string magicExplosionSound = string.Empty;
+            string magicDestroyedModel = string.Empty;
+            int magicExplosionDelayTicks = 0;
+            float magicExplosionDamageFactor = 0f;
+            float magicExplosionFalloffMetres = 0f;
+            float magicExplosionRadiusMetres = 0f;
+            float magicExplosionDamageThreshold = 0f;
+            WorldModelBinding? magicDestroyedReplacement = null;
+            if (magic is not null && magic.TryGet(child.Name, out MagicObjectDefinition childDefinition))
+            {
+                magicTaskTypeName = magic.TaskTypeName(childDefinition.TaskType);
+                isRotor = string.Equals(magicTaskTypeName, "TASKTYPE_ROTOR", StringComparison.Ordinal);
+                magicExplosionFireballs = childDefinition.ExplosionFireballs;
+                magicExplosionFragments = childDefinition.ExplosionFragments;
+                magicExplosionSound = childDefinition.ExplosionSound;
+                magicDestroyedModel = childDefinition.DestroyedModel;
+                magicExplosionDelayTicks = childDefinition.ExplosionDelayTicks;
+                magicExplosionDamageFactor = childDefinition.ExplosionDamageFactor;
+                magicExplosionFalloffMetres = childDefinition.ExplosionFalloffMetres;
+                magicExplosionRadiusMetres = childDefinition.ExplosionRadiusMetres;
+                magicExplosionDamageThreshold = childDefinition.ExplosionDamageThreshold;
+                if (childDefinition.DestroyedModel.Length > 0
+                    && byName.TryGetValue(childDefinition.DestroyedModel, out var destroyed))
+                {
+                    magicDestroyedReplacement = new WorldModelBinding(
+                        destroyed.Instance,
+                        destroyed.Pack,
+                        destroyed.Model);
+                }
+            }
+            // Some retail rotor attachments have no magic-object entry in the level registry.  The
+            // verified Bell/Mil attachment families remain rotor presentation objects even when that
+            // lookup misses; keep this fallback alongside the develop-side destructible metadata.
+            if (!isRotor
+                && owner is DeclaredTask { Type.Name: "Heli" }
+                && HelicopterRotorCatalog.IsKnownRotorModel(child.Name))
+            {
+                isRotor = true;
+            }
             // Parent-to-world is the column-vector product M·v, matching how the renderer applies the
             // parent's own orientation (`uModelView * v`); Transform is the row-vector v·M, its
             // inverse, which placed a rotated parent's contents on the wrong side of it. The rotation
@@ -1112,6 +1166,17 @@ public sealed class WorldScene
                 {
                     IsRotor = isRotor,
                     IsAttached = true,
+                    MagicTaskTypeName = magicTaskTypeName,
+                    MagicExplosionFireballs = magicExplosionFireballs,
+                    MagicExplosionFragments = magicExplosionFragments,
+                    MagicExplosionSound = magicExplosionSound,
+                    MagicDestroyedModel = magicDestroyedModel,
+                    MagicExplosionDelayTicks = magicExplosionDelayTicks,
+                    MagicExplosionDamageFactor = magicExplosionDamageFactor,
+                    MagicExplosionFalloffMetres = magicExplosionFalloffMetres,
+                    MagicExplosionRadiusMetres = magicExplosionRadiusMetres,
+                    MagicExplosionDamageThreshold = magicExplosionDamageThreshold,
+                    DestroyedReplacement = magicDestroyedReplacement,
                 });
                 LogDerivedPlacement(
                     log,
