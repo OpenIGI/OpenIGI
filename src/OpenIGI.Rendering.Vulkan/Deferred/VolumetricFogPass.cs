@@ -107,10 +107,10 @@ internal sealed class VolumetricFogPass : IDisposable
     /// </remarks>
     private const float ShadowBias = 0.0008f;
 
-    // The parameter block both shaders declare. Two rotations and four cascades of matrix, thirteen
+    // The parameter block both shaders declare. Two rotations and four cascades of matrix, seventeen
     // vectors of scalars, then the volumes and the lamps.
     private const int MatrixFloats = 16 * (2 + 4);
-    private const int VectorFloats = 13 * 4;
+    private const int VectorFloats = 17 * 4;
     private const int VolumeFloats = LocalFogVolume.MaxPerLevel * 4 * 2;
     private const int LampFloats = DeferredLocalLight.Maximum * 4 * 2;
     private const int ParamFloats = MatrixFloats + VectorFloats + VolumeFloats + LampFloats;
@@ -128,6 +128,11 @@ internal sealed class VolumetricFogPass : IDisposable
         ComputeBindingKind.SampledStorageImage,   // the sky's harmonics
         ComputeBindingKind.SampledStorageImage,   // the previous frame's scattering, as history
         ComputeBindingKind.StorageVolume,         // this frame's scattering, written
+
+        // The level's roofs, seen from above. What makes the medium stop at a wall instead of the whole
+        // march being switched off indoors -- which took the yard's fog with it, so a compound seen
+        // from a doorway was drawn in clear air.
+        ComputeBindingKind.SampledImage,
     ];
 
     private static readonly ComputeBindingKind[] IntegrateBindings =
@@ -260,6 +265,9 @@ internal sealed class VolumetricFogPass : IDisposable
     /// <param name="cascadeMatrices">Each cascade's camera-relative world to light clip.</param>
     /// <param name="cascadeSplits">The view depth each cascade stops at.</param>
     /// <param name="cascadeCount">How many cascades are live.</param>
+    /// <param name="shelterMap">The level's roofs seen from above; no fog stands under one.</param>
+    /// <param name="shelter">How to read that map, or <see cref="ShelterMapTransform.None"/> for none.</param>
+    /// <param name="cameraWorld">Where the camera stands in the world, which the map is addressed in.</param>
     public unsafe void Record(
         CommandBuffer cmd,
         int frame,
@@ -273,7 +281,10 @@ internal sealed class VolumetricFogPass : IDisposable
         DepthUnprojection previousUnprojection,
         Matrix4f[] cascadeMatrices,
         float[] cascadeSplits,
-        int cascadeCount)
+        int cascadeCount,
+        ImageView shelterMap,
+        in ShelterMapTransform shelter,
+        Vector3f cameraWorld)
     {
         if (_integrated is null || _scattering[0] is null || _scattering[1] is null)
         {
@@ -293,7 +304,8 @@ internal sealed class VolumetricFogPass : IDisposable
         Span<float> data = stackalloc float[ParamFloats];
         WriteParameters(
             data, fog, viewToWorld, previousViewToWorld, cameraDelta,
-            unprojection, previousUnprojection, cascadeMatrices, cascadeSplits, cascadeCount);
+            unprojection, previousUnprojection, cascadeMatrices, cascadeSplits, cascadeCount,
+            shelter, cameraWorld);
 
         ReadOnlySpan<ComputeResource> scatterResources =
         [
@@ -301,6 +313,7 @@ internal sealed class VolumetricFogPass : IDisposable
             new ComputeResource(skyIrradiance),
             new ComputeResource(history.View),
             new ComputeResource(target.View),
+            new ComputeResource(shelterMap),
         ];
 
         _scatter.Record(
@@ -414,7 +427,9 @@ internal sealed class VolumetricFogPass : IDisposable
         in DepthUnprojection previousUnprojection,
         Matrix4f[] cascadeMatrices,
         float[] cascadeSplits,
-        int cascadeCount)
+        int cascadeCount,
+        in ShelterMapTransform shelter,
+        in Vector3f cameraWorld)
     {
         data.Clear();
 
@@ -512,7 +527,32 @@ internal sealed class VolumetricFogPass : IDisposable
         data[at + 2] = jitter.Z;
         data[at + 3] = _hasHistory ? 1f : 0f;
 
-        int centres = 148;
+        // Where the camera stands in the world, and the roof map's own transform. In world metres and
+        // not camera-relative, unlike everything around it: the map is a fixed thing in the level, and
+        // a froxel has to put the camera back on to address it.
+        at = 148;
+        data[at + 0] = cameraWorld.X;
+        data[at + 1] = cameraWorld.Y;
+        data[at + 2] = cameraWorld.Z;
+        data[at + 3] = 0f;
+
+        at = 152;
+        data[at + 0] = shelter.OriginX;
+        data[at + 1] = shelter.OriginY;
+        data[at + 2] = shelter.CellMetres > 0f ? 1f / shelter.CellMetres : 0f;
+        data[at + 3] = shelter.LowestZ;
+
+        at = 156;
+        data[at + 0] = shelter.HeightScale;
+        data[at + 1] = shelter.HeadroomMetres;
+        data[at + 2] = shelter.ReachMetres;
+        data[at + 3] = shelter.IsPresent ? 1f : 0f;
+
+        at = 160;
+        data[at + 0] = shelter.Width;
+        data[at + 1] = shelter.Height;
+
+        int centres = 164;
         int extents = centres + (LocalFogVolume.MaxPerLevel * 4);
         ReadOnlySpan<LocalFogVolume> volumes = fog.Volumes.Span;
         for (int i = 0; i < LocalFogVolume.MaxPerLevel && i < volumes.Length; i++)

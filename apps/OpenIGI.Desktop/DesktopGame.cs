@@ -3556,16 +3556,17 @@ internal sealed partial class DesktopGame : IDisposable
                     ? 0.002f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.010f)
                     : 0.006f;
 
-                // Fog is an outdoor medium. A sealed room has no haze source, so the froxel march is turned
-                // off whenever the camera is inside a building -- which is also what clears the exterior seen
-                // through a window from indoors, since the haze that washed the distant yard was the fog
-                // sitting between the eye and it, marched right through the wall.
-                bool fogIndoors = IsCameraInsideBuilding(eye.Position);
-
+                // Fog is an outdoor medium, and where it is outdoors is decided a froxel at a time inside
+                // the march itself -- see the shelter lookup in VolumetricFogShaderSource. It used to be
+                // decided once for the whole frame, standing the march down while the camera was inside a
+                // building, because the haze sitting between the eye and a window washed out the yard
+                // beyond it: fog marched straight through the wall. Switching the march off answers that
+                // by deleting the yard's fog too, so a compound seen from a doorway came up in clear air.
+                // The room is now dry and the yard beyond the window is not, which is what is actually
+                // out there.
                 bool wantsFog = RenderCVars.FogQuality.Value > 0
                     && RenderCVars.OffscreenScene.Value
-                    && RenderCVars.Deferred.Value
-                    && !fogIndoors;
+                    && RenderCVars.Deferred.Value;
 
                 VolumetricFogSettings medium = VolumetricFogSettings.Off;
                 if (wantsFog)

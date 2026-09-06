@@ -5,14 +5,14 @@ using Xunit;
 namespace OpenIGI.Rendering.Vulkan.Tests;
 
 /// <summary>
-/// Compiles the shader sources that carry standing water, so a syntax error in them is a failing test
-/// rather than a black frame.
+/// Compiles the shader sources that read the level's shelter map, so a syntax error in them is a
+/// failing test rather than a black frame.
 /// </summary>
 /// <remarks>
 /// These strings are assembled at runtime out of several files — the wetness description is shared by
-/// the pass that draws the water and the pass that reflects in it, and each splices it into its own
-/// uniform layout — so nothing at build time reads them at all. Handing them to <c>glslc</c> is the
-/// only way a broken splice is caught before a level is loaded.
+/// the pass that draws the water and the pass that reflects in it, the fog reads the same map from a
+/// third, and each splices it into its own uniform layout — so nothing at build time reads them at all.
+/// Handing them to <c>glslc</c> is the only way a broken splice is caught before a level is loaded.
 /// </remarks>
 public sealed class ShaderCompilationTests
 {
@@ -20,7 +20,9 @@ public sealed class ShaderCompilationTests
     [InlineData("shading.frag", "frag")]
     [InlineData("shading-rayquery.frag", "frag")]
     [InlineData("reflect.comp", "comp")]
-    public void TheWetnessShadersCompile(string name, string stage)
+    [InlineData("fog.scatter.comp", "comp")]
+    [InlineData("fog.integrate.comp", "comp")]
+    public void TheShadersThatReadTheShelterMapCompile(string name, string stage)
     {
         string compiler = Glslc.Path;
 
@@ -28,6 +30,8 @@ public sealed class ShaderCompilationTests
         {
             "shading.frag" => DeferredShaderSource.LightingFragment(rayQuery: false),
             "shading-rayquery.frag" => DeferredShaderSource.LightingFragment(rayQuery: true),
+            "fog.scatter.comp" => VolumetricFogShaderSource.Scatter,
+            "fog.integrate.comp" => VolumetricFogShaderSource.Integrate,
             _ => ReflectionShaderSource.Reflect,
         };
 

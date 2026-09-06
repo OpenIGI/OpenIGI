@@ -1788,7 +1788,10 @@ public sealed partial class VulkanGraphicsDevice
             _hasPreviousFrame ? _previousUnprojection : _unprojection,
             _cascadeMatrices,
             _cascadeSplits,
-            cascades ? _shadowCascadeCount : 0);
+            cascades ? _shadowCascadeCount : 0,
+            ShelterMapView(),
+            HasShelterMap() ? _shelterTransform : ShelterMapTransform.None,
+            _cameraPosition);
 
         _fogActive = true;
     }
