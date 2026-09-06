@@ -308,7 +308,17 @@ internal static unsafe class VulkanCapabilityProbe
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(chain);
 
-        if (capabilities.Robustness2)
+        // A structure may be linked only when the extension that DEFINES it is one the device is being
+        // created with. The capability flags are not that question: a capability says the adapter can do
+        // something, while the extension list says what is being switched on, and the two part company
+        // whenever a capability is reported on its own but only ever enabled alongside another. Linking a
+        // structure whose extension is not enabled is undefined -- drivers that do not recognise it walk
+        // into it anyway, and vkCreateDevice faults inside the driver rather than returning an error.
+        // Asking the enabled list, which is the very array handed to vkCreateDevice, is what keeps the
+        // chain and the extensions from being able to disagree at all.
+        bool Enabled(string extension) => capabilities.EnabledExtensions.Contains(extension);
+
+        if (capabilities.Robustness2 && Enabled(VulkanExtensionNames.Robustness2))
         {
             chain.Add(new PhysicalDeviceRobustness2FeaturesEXT
             {
@@ -323,7 +333,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.EnabledExtensions.Contains("VK_EXT_device_fault"))
+        if (Enabled("VK_EXT_device_fault"))
         {
             chain.Add(new PhysicalDeviceFaultFeaturesEXT
             {
@@ -332,7 +342,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.DynamicRenderingLocalRead)
+        if (capabilities.DynamicRenderingLocalRead && Enabled(VulkanExtensionNames.DynamicRenderingLocalRead))
         {
             chain.Add(new PhysicalDeviceDynamicRenderingLocalReadFeaturesKHR
             {
@@ -341,7 +351,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.MutableDescriptorType)
+        if (capabilities.MutableDescriptorType && Enabled(VulkanExtensionNames.MutableDescriptorType))
         {
             chain.Add(new PhysicalDeviceMutableDescriptorTypeFeaturesEXT
             {
@@ -350,7 +360,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.DescriptorBuffer)
+        if (capabilities.DescriptorBuffer && Enabled(VulkanExtensionNames.DescriptorBuffer))
         {
             chain.Add(new PhysicalDeviceDescriptorBufferFeaturesEXT
             {
@@ -359,7 +369,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.RayTracingPositionFetch)
+        if (capabilities.RayTracingPositionFetch && Enabled(VulkanExtensionNames.RayTracingPositionFetch))
         {
             chain.Add(new PhysicalDeviceRayTracingPositionFetchFeaturesKHR
             {
@@ -368,7 +378,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.RayTracingPipeline)
+        if (capabilities.RayTracingPipeline && Enabled(KhrRayTracingPipeline.ExtensionName))
         {
             chain.Add(new PhysicalDeviceRayTracingPipelineFeaturesKHR
             {
@@ -379,7 +389,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.RayQuery)
+        if (capabilities.RayQuery && Enabled(VulkanExtensionNames.RayQuery))
         {
             chain.Add(new PhysicalDeviceRayQueryFeaturesKHR
             {
@@ -388,7 +398,7 @@ internal static unsafe class VulkanCapabilityProbe
             });
         }
 
-        if (capabilities.AccelerationStructure)
+        if (capabilities.AccelerationStructure && Enabled(KhrAccelerationStructure.ExtensionName))
         {
             chain.Add(new PhysicalDeviceAccelerationStructureFeaturesKHR
             {
@@ -434,7 +444,7 @@ internal static unsafe class VulkanCapabilityProbe
             DescriptorBindingUniformBufferUpdateAfterBind = capabilities.DescriptorIndexing,
         });
 
-        if (capabilities.PortabilitySubset)
+        if (capabilities.PortabilitySubset && Enabled(VulkanExtensionNames.PortabilitySubset))
         {
             // Handed straight back rather than filtered. Each field is a capability the adapter has
             // already said whether it has, so echoing the answer enables everything it can do and asks
