@@ -1265,7 +1265,11 @@ internal sealed partial class DesktopGame : IDisposable
                 }
                 else
                 {
-                    _window.CursorVisible = true;
+                    // Enter restarts and Escape leaves: nothing on this screen is clicked, and nothing
+                    // draws a cursor over it. Revealing the system arrow put the desktop pointer on top
+                    // of the level, which is not what the retail failure screen shows. The lock is still
+                    // released, so the pointer is not held captive while the screen waits for its key.
+                    _window.CursorVisible = false;
                     _window.CursorLocked = false;
                 }
                 _window.Input.Captured = true;
@@ -1553,11 +1557,17 @@ internal sealed partial class DesktopGame : IDisposable
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (_playerDead && _deathCamera.IsActive)
+                else if (DeathCameraOwnsPointer(_playerDead, _deathCamera.IsActive, _missionFailedMenu))
                 {
                     // Dead: the mouse orbits the death camera around the body rather than turning a head that
                     // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                     // so the orbit keeps turning however far the mouse is moved.
+                    //
+                    // The orbit stands down once the mission-failed screen is up. That screen releases the
+                    // pointer every frame, and this branch used to re-take it in the same frame, so the two
+                    // wrote opposite lock states for as long as the screen was open -- the rapidly flashing
+                    // pointer that could not be moved. The failure screen owns the pointer, exactly as the
+                    // pause menu above does.
                     _deathCamera.Control(rawX, rawY);
                     _window.CursorLocked = !captureMode;
 
@@ -4004,6 +4014,18 @@ internal sealed partial class DesktopGame : IDisposable
 
         return false;
     }
+
+    /// <summary>Determines whether the death-camera orbit may hold the pointer this frame.</summary>
+    /// <remarks>
+    /// The orbit locks the cursor so the camera keeps turning however far the mouse is moved, while the
+    /// retail mission-failed screen releases it every frame. Both run in the same frame, so they cannot
+    /// both be live: the screen owns the pointer and the orbit stands down while it is up.
+    /// </remarks>
+    internal static bool DeathCameraOwnsPointer(
+        bool playerDead,
+        bool deathCameraActive,
+        bool missionFailedMenu) =>
+        playerDead && deathCameraActive && !missionFailedMenu;
 
     /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
     internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
