@@ -206,6 +206,11 @@ internal sealed unsafe class DeferredRenderer : IDisposable
                 vk, device, allocator, commands,
                 _renderPass.Geometry, _renderPass.Shading,
                 _lightingLayout, _resolveLayout, _pool, _sampler);
+
+            // The object-velocity framebuffers are keyed on the velocity and depth view handles, so they
+            // are dropped the moment any target destroys its views -- on every rebuild, for every reason,
+            // rather than on the one condition a caller happened to think of.
+            _targets[i].Rebuilt += _objectVelocity.InvalidateFramebuffers;
         }
     }
 

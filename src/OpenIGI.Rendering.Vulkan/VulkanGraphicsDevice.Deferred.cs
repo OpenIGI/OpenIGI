@@ -122,8 +122,6 @@ public sealed partial class VulkanGraphicsDevice
     private int _captureHeight;
     private int _presentWidth;
     private int _presentHeight;
-    private int _lastCaptureWidth;
-    private int _lastCaptureHeight;
     private Viewport _sceneViewport;
     private ScenePass _currentScenePass = ScenePass.None;
     private SceneTarget? _sceneTarget;
@@ -170,14 +168,11 @@ public sealed partial class VulkanGraphicsDevice
         _presentWidth = Math.Max(1, description.PresentWidth);
         _presentHeight = Math.Max(1, description.PresentHeight);
 
-        // A resize recreates the views the object-velocity framebuffers point at; a stale framebuffer
-        // over a destroyed view must never be found by a later lookup that got a recycled handle value.
-        if (_captureWidth != _lastCaptureWidth || _captureHeight != _lastCaptureHeight)
-        {
-            _deferred.ObjectVelocity.InvalidateFramebuffers();
-            _lastCaptureWidth = _captureWidth;
-            _lastCaptureHeight = _captureHeight;
-        }
+        // The object-velocity framebuffers over a target's views are dropped by the target itself when it
+        // rebuilds (SceneTarget.Rebuilt). Deciding it here, from the capture size alone, missed the rebuild
+        // a change of OUTPUT size causes: under a resolution scale a one-pixel window change can leave the
+        // capture size as it was, the target still rebuilt, and a framebuffer over destroyed views was
+        // found again through a recycled handle value.
 
         _sceneTarget = _deferred.Target(
             _frameLoop.CurrentFrame, _captureWidth, _captureHeight, _presentWidth, _presentHeight);
