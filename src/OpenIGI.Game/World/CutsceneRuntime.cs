@@ -63,6 +63,7 @@ public sealed class CutsceneRuntime
     private readonly Func<GameTask, bool>? _vehicleObstacleReleased;
     private Func<int, CutsceneTargetPose?>? _targetPoseResolver;
     private bool _breakRequested;
+    private CutSceneTask? _sceneExpressionOwner;
     private readonly List<string> _diagnostics = [];
 
     /// <summary>Gets or sets the solid-object index used to find a supporting surface for vehicles.</summary>
@@ -215,7 +216,7 @@ public sealed class CutsceneRuntime
             state.Task.IsRun = run;
             if (run)
             {
-                _expressions.Execute(state.Task.StartExpression);
+                ExecuteSceneExpression(state.Task, state.Task.StartExpression);
             }
         }
 
@@ -281,6 +282,32 @@ public sealed class CutsceneRuntime
     /// <summary>Queues the retail break-cutscene key for the next logic tick.</summary>
     public void RequestBreak() => _breakRequested = true;
 
+    /// <summary>
+    /// Deletes every running cutscene except the one currently owning the frame.
+    /// </summary>
+    /// <remarks>
+    /// <c>Game_CutsceneDelete</c> walks the global cutscene registry and destroys stale scenes before
+    /// a newly admitted scene takes ownership.  Keeping the active scene is important because the
+    /// native is normally called from that scene's start expression; deleting it here would make the
+    /// start expression immediately self-cancel.
+    /// </remarks>
+    public void DeleteCutscenes()
+    {
+        CutSceneTask? keep = _sceneExpressionOwner ?? ActiveScene;
+        foreach (SceneState state in _scenes)
+        {
+            if (ReferenceEquals(state.Task, keep) || !state.Task.IsRun)
+            {
+                continue;
+            }
+
+            state.Task.IsRun = false;
+            state.Task.IsFinished = true;
+        }
+
+        UpdateFrame();
+    }
+
     /// <summary>Advances all cutscene-owned tasks by one fixed logic tick.</summary>
     public void Tick()
     {
@@ -337,7 +364,7 @@ public sealed class CutsceneRuntime
                 scene.IsRun = false;
                 if (wasRun)
                 {
-                    _expressions.Execute(scene.StopExpression);
+                    ExecuteSceneExpression(scene, scene.StopExpression);
                 }
                 continue;
             }
@@ -354,7 +381,7 @@ public sealed class CutsceneRuntime
 
             if (!wasRun && scene.IsRun)
             {
-                _expressions.Execute(scene.StartExpression);
+                ExecuteSceneExpression(scene, scene.StartExpression);
             }
 
             if (scene.IsRun)
@@ -384,7 +411,7 @@ public sealed class CutsceneRuntime
 
             if (wasRun && !scene.IsRun)
             {
-                _expressions.Execute(scene.StopExpression);
+                    ExecuteSceneExpression(scene, scene.StopExpression);
             }
         }
 
@@ -497,6 +524,19 @@ public sealed class CutsceneRuntime
 
         position = default;
         orientation = Matrix3f.Identity;
+        return false;
+    }
+
+    /// <summary>Reads the latest integrated velocity of a dynamic cutscene vehicle.</summary>
+    public bool TryGetDynamicVelocity(GameTask task, out Vector3d velocity)
+    {
+        if (_taskTransforms.TryGetValue(task, out TransformState? state) && state.IsDynamic)
+        {
+            velocity = state.Velocity / WorldScene.UnitsPerMetre;
+            return true;
+        }
+
+        velocity = default;
         return false;
     }
 
@@ -894,6 +934,25 @@ public sealed class CutsceneRuntime
         }
 
         return false;
+    }
+
+    private void ExecuteSceneExpression(CutSceneTask scene, string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            return;
+        }
+
+        CutSceneTask? previous = _sceneExpressionOwner;
+        _sceneExpressionOwner = scene;
+        try
+        {
+            _expressions.Execute(expression);
+        }
+        finally
+        {
+            _sceneExpressionOwner = previous;
+        }
     }
 
     private QvmValue? InvokeNative(string name, ScriptArguments arguments)
@@ -1468,12 +1527,14 @@ public sealed class CutsceneRuntime
             if (blocked)
             {
                 transform.Speed = 0f;
+                transform.Velocity = default;
                 transform.Heading = previousHeading;
                 transform.Orientation = previousOrientation;
             }
             else
             {
                 transform.Position = proposedPosition;
+                transform.Velocity = transform.Position - transform.PreviousPosition;
             }
             transform.IsDynamic = true;
             return;
@@ -1639,6 +1700,8 @@ public sealed class CutsceneRuntime
                 transform.Control = default;
                 transform.Heading = 0f;
                 transform.Speed = 0f;
+                transform.Thrust = 0f;
+                transform.TargetThrust = 0f;
                 transform.GroundContact = false;
                 transform.GroundContactEventLogged = false;
                 transform.GroundContactLogged = false;
@@ -1662,6 +1725,10 @@ public sealed class CutsceneRuntime
             {
                 transform.CollisionEnabled = Bool(livePlane, "Collision detection");
             }
+            // The native plane callback keeps thrust as live body state.  Preserve that state in
+            // addition to the speed envelope so downstream consumers (attachments, diagnostics and
+            // collision) observe the same non-zero motion that the authored flight produces.
+            transform.Thrust = MoveTowards(transform.Thrust, transform.TargetThrust, 0.001f);
             transform.Heading += transform.Control.Z * 0.004f;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Control.X * 0.10f,
@@ -1673,8 +1740,10 @@ public sealed class CutsceneRuntime
             Vector3f planeForward = transform.Orientation.Row2;
             float desiredSpeed = Math.Max(0f, transform.TargetThrust) * 1_500f;
             transform.Speed += (desiredSpeed - transform.Speed) * 0.025f;
+            Vector3d previousPosition = transform.Position;
             transform.Position += new Vector3d(planeForward.X, planeForward.Y, planeForward.Z)
                 * transform.Speed;
+            transform.Velocity = transform.Position - previousPosition;
             KeepHelicopterAboveGround(target, transform);
             transform.IsDynamic = true;
             LogAirframePath(targetId, "Plane", target, transform);

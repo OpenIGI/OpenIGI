@@ -80,6 +80,9 @@ public sealed class RetailMissionFourPlaneRideTests
             Assert.True(
                 along > 1.0 && along > against,
                 $"plane #{task.Id} did not travel authored +Y (Row2). along={along:R} delta=({delta.X:R},{delta.Y:R},{delta.Z:R}) fwd=({forward.X:R},{forward.Y:R},{forward.Z:R})");
+            Assert.True(
+                runtime.TryGetDynamicVelocity(task, out Vector3d velocity) && velocity.Length > 0.01d,
+                $"plane #{task.Id} must publish its integrated velocity while moving; velocity={velocity}");
             planes++;
         }
 

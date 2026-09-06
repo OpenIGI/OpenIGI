@@ -257,9 +257,27 @@ internal sealed partial class DesktopGame
                     }
                     return QvmValue.FromInt32(1);
                 }
-                return name is "MenuManager_SetEnabled" or "Game_CutsceneDelete"
-                    ? QvmValue.FromInt32(1)
-                    : null;
+                if (name == "MenuManager_SetEnabled")
+                {
+                    // Cutscene start/stop expressions own this native in retail.  The menu manager
+                    // lives in the shared loop task tree, so update its live script context rather
+                    // than returning success while leaving input enabled during cinematics.
+                    MenuManagerTask? manager = FindMenuManager();
+                    if (manager?.ScriptContext is { } context && arguments.Count >= 1)
+                    {
+                        context.IsEnabled = arguments.GetBoolean(0);
+                    }
+
+                    return QvmValue.FromInt32(1);
+                }
+
+                if (name == "Game_CutsceneDelete")
+                {
+                    _cutscenes?.DeleteCutscenes();
+                    return QvmValue.FromInt32(1);
+                }
+
+                return null;
             },
             SetCutsceneSound,
             modelLength: name => CutsceneModelLength(loaded, name),
@@ -2454,6 +2472,31 @@ internal sealed partial class DesktopGame
         {
             _logger.Information("Weapon", $"Holding {weapon.ScriptId} ('{weapon.GunModel}') on view bone "
                 + $"{HumanAttachPoints.FirstPersonWeapon}.");
+        }
+    }
+
+    private MenuManagerTask? FindMenuManager()
+    {
+        foreach (GameTask task in WalkTasks(_loop.Tasks.Root))
+        {
+            if (task is MenuManagerTask manager)
+            {
+                return manager;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<GameTask> WalkTasks(GameTask task)
+    {
+        foreach (GameTask child in task.Children)
+        {
+            yield return child;
+            foreach (GameTask nested in WalkTasks(child))
+            {
+                yield return nested;
+            }
         }
     }
 
