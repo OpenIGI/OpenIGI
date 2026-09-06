@@ -173,6 +173,23 @@ internal static unsafe class VulkanCapabilityProbe
         bool rayTracingPipeline = rtPipeline is not null && rtPipeline->RayTracingPipeline && accelerationStructure;
         bool positionFetchUsable =
             positionFetch is not null && positionFetch->RayTracingPositionFetch && accelerationStructure;
+
+        // The stack is taken whole or not at all, and ray query is what decides it. Everything the port
+        // traces, it traces inline (see HardwareRayTracing); a ray-tracing pipeline is an extra on top of
+        // that, and an acceleration structure with nothing to query it is a structure nobody reads.
+        //
+        // Taken piecemeal it is worse than useless. NVIDIA advertises acceleration structures and the
+        // ray-tracing pipeline on Pascal, where there are no ray-tracing cores and the implementation is a
+        // software one, but not ray query -- so a GTX 1060 enabled the extensions and linked their feature
+        // structures for a tracing path the port can never reach, and the driver faulted inside
+        // vkCreateDevice while standing that implementation up. Asking for nothing is what an adapter that
+        // cannot serve the feature should be asked for.
+        if (!rayQueryUsable)
+        {
+            accelerationStructure = false;
+            rayTracingPipeline = false;
+            positionFetchUsable = false;
+        }
         bool localReadUsable = localRead is not null && localRead->DynamicRenderingLocalRead && dynamicRendering;
         bool robustness2Usable = robustness2 is not null && robustness2->RobustBufferAccess2;
         // A single heap holding every resource kind needs a descriptor slot whose type is decided per
