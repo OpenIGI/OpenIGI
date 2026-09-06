@@ -1439,29 +1439,6 @@ internal sealed partial class DesktopGame
         return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
-    /// <summary>Stops the level and presents the retail mission-failed result.</summary>
-    /// <param name="reason">A diagnostic reason recorded once with the result.</param>
-    /// <remarks>
-    /// Player death uses this immediately, while an authored LevelFlow failure reaches it after the
-    /// original 151-tick grace period. Keeping the presentation transition in one place prevents a
-    /// death path from being overwritten by the completion path on the same tick.
-    /// </remarks>
-    private void OpenMissionFailedMenu(string reason)
-    {
-        if (_missionFailedMenu)
-        {
-            return;
-        }
-
-        _missionFailedMenu = true;
-        _computerOpen = false;
-        _computerFlight.Reset();
-        _player?.SetMapComputerOpen(false);
-        _window.CursorVisible = true;
-        _window.CursorLocked = false;
-        _logger.Information("Mission", reason);
-    }
-
     private void ReleasePlayedMission()
     {
         _computerOpen = false;
@@ -1778,63 +1755,3 @@ internal sealed partial class DesktopGame
         }
     }
 }
-
-/// <summary>Chooses the one mission result that may advance presentation on a level tick.</summary>
-internal static class MissionResultArbitration
-{
-    /// <summary>
-    /// Gives player death precedence over authored LevelFlow results, while preserving the retail failure
-    /// grace period and preventing an already-resolved result from completing twice.
-    /// </summary>
-    internal static MissionResultDecision Evaluate(
-        bool playerDead,
-        bool objectivesFailed,
-        bool objectivesComplete,
-        bool failureMenuOpen,
-        bool resultHandled,
-        int failureTicks)
-    {
-        if (playerDead)
-        {
-            return new MissionResultDecision(MissionResult.PlayerDeathFailure, failureTicks, false);
-        }
-
-        if (objectivesFailed)
-        {
-            if (failureMenuOpen)
-            {
-                return new MissionResultDecision(MissionResult.None, failureTicks, false);
-            }
-
-            int nextFailureTicks = failureTicks + 1;
-            return new MissionResultDecision(
-                nextFailureTicks > 151 ? MissionResult.AuthoredFailure : MissionResult.None,
-                nextFailureTicks,
-                false);
-        }
-
-        return new MissionResultDecision(
-            MissionResult.None,
-            0,
-            !failureMenuOpen && !resultHandled && objectivesComplete);
-    }
-}
-
-/// <summary>The result that owns this level tick's mission presentation.</summary>
-internal enum MissionResult
-{
-    /// <summary>No failure presentation is due this tick.</summary>
-    None,
-
-    /// <summary>The player died and the mission must fail immediately.</summary>
-    PlayerDeathFailure,
-
-    /// <summary>An authored LevelFlow failure outlasted its retail grace period.</summary>
-    AuthoredFailure,
-}
-
-/// <summary>Contains the mission-result action and the failure counter for the next level tick.</summary>
-internal readonly record struct MissionResultDecision(
-    MissionResult Result,
-    int FailureTicks,
-    bool ShouldHandleCompletion);
