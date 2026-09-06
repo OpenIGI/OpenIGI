@@ -561,6 +561,7 @@ internal static unsafe class VulkanCapabilityProbe
         }
 
         Take("VK_EXT_device_fault");
+        Take(VulkanDevice.DiagnosticCheckpointsExtension);
         Take(VulkanExtensionNames.MemoryBudget);
         Take(VulkanExtensionNames.MemoryPriority);
         Take(KhrMaintenance4.ExtensionName);

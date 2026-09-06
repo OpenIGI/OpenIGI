@@ -29,6 +29,8 @@ internal sealed unsafe class VulkanDevice : IDisposable
     private readonly IIgiLogger _logger;
     private readonly Pipelines.VulkanPipelineCache _pipelineCache;
     private readonly bool _deviceFaultEnabled;
+    private nint _cmdSetCheckpoint;
+    private nint _getQueueCheckpointData;
     private readonly List<VulkanQueue> _queues = [];
     private bool _disposed;
 
@@ -54,6 +56,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
         SamplerMipLodBias = Capabilities.SamplerMipLodBias;
 
         Device = CreateDevice(selection);
+        LoadDiagnosticCheckpoints();
 
         VulkanQueuePlan plan = selection.Queues;
         GraphicsQueue = CreateQueue(plan.Graphics, VulkanQueueKind.Graphics);
@@ -230,9 +233,84 @@ internal sealed unsafe class VulkanDevice : IDisposable
         }
     }
 
+    /// <summary>The NVIDIA diagnostic-checkpoints extension, taken wherever it is offered.</summary>
+    public const string DiagnosticCheckpointsExtension = "VK_NV_device_diagnostic_checkpoints";
+
+    /// <summary>Records a marker the queue can be asked for if the device is lost.</summary>
+    /// <param name="commandBuffer">The command buffer being recorded.</param>
+    /// <param name="marker">One of <see cref="VulkanCheckpointMarkers"/>.</param>
+    /// <remarks>
+    /// Nothing at all on an adapter without the extension; with it, a few bytes of command stream. Legal
+    /// inside and outside a render pass, on every queue type.
+    /// </remarks>
+    public unsafe void Checkpoint(CommandBuffer commandBuffer, nint marker)
+    {
+        if (_cmdSetCheckpoint != 0)
+        {
+            ((delegate* unmanaged<CommandBuffer, void*, void>)_cmdSetCheckpoint)(commandBuffer, (void*)marker);
+        }
+    }
+
+    private unsafe void LoadDiagnosticCheckpoints()
+    {
+        if (!Capabilities.EnabledExtensions.Contains(DiagnosticCheckpointsExtension))
+        {
+            return;
+        }
+
+        _cmdSetCheckpoint = (nint)_vk.GetDeviceProcAddr(Device, "vkCmdSetCheckpointNV").Handle;
+        _getQueueCheckpointData = (nint)_vk.GetDeviceProcAddr(Device, "vkGetQueueCheckpointDataNV").Handle;
+        if (_cmdSetCheckpoint == 0 || _getQueueCheckpointData == 0)
+        {
+            _cmdSetCheckpoint = 0;
+            _getQueueCheckpointData = 0;
+        }
+    }
+
+    /// <summary>Asks the graphics queue which markers it last passed, and logs them oldest first.</summary>
+    /// <remarks>
+    /// The one report that names a pass. The fault address says what the GPU touched; this says which
+    /// stage of which kind of command buffer it was running when it did, which is what turns a remote
+    /// log into something that can be bisected.
+    /// </remarks>
+    private unsafe void ReportCheckpoints()
+    {
+        if (_getQueueCheckpointData == 0)
+        {
+            return;
+        }
+
+        var read = (delegate* unmanaged<Queue, uint*, VkCheckpointDataNV*, void>)_getQueueCheckpointData;
+        uint count = 0;
+        read(Graphics, &count, null);
+        if (count == 0)
+        {
+            _logger.Error("Vulkan", "The graphics queue reports no diagnostic checkpoints.");
+            return;
+        }
+
+        count = Math.Min(count, 64u);
+        VkCheckpointDataNV* data = stackalloc VkCheckpointDataNV[(int)count];
+        for (int i = 0; i < (int)count; i++)
+        {
+            data[i] = new VkCheckpointDataNV { SType = StructureType.CheckpointDataNV };
+        }
+
+        read(Graphics, &count, data);
+        _logger.Error("Vulkan", $"Last {count} diagnostic checkpoint(s) the graphics queue passed:");
+        for (int i = 0; i < (int)count; i++)
+        {
+            VkCheckpointDataNV c = data[i];
+            _logger.Error(
+                "Vulkan",
+                $"  checkpoint: {VulkanCheckpointMarkers.Describe((nint)c.PCheckpointMarker)} (stage {c.Stage}).");
+        }
+    }
+
     public unsafe void ReportDeviceFault()
     {
         LogMemoryBudget("when the device was lost");
+        ReportCheckpoints();
 
         if (!_deviceFaultEnabled)
         {

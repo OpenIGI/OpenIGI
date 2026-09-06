@@ -229,6 +229,7 @@ internal sealed unsafe class VulkanCommands : IDisposable
             Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
         };
         VkCheck.Ok(_vk.BeginCommandBuffer(commandBuffer, &beginInfo), "vkBeginCommandBuffer");
+        _device.Checkpoint(commandBuffer, VulkanCheckpointMarkers.OneOffBatch);
         return commandBuffer;
     }
 

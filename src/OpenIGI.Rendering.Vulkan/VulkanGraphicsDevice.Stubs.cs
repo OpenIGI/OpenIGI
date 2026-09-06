@@ -363,6 +363,7 @@ public sealed partial class VulkanGraphicsDevice
         if (_frameOpen)
         {
             _stageProfiler?.Begin(stage, _frameCommandBuffer, _frameLoop.CurrentFrame);
+            _device.Checkpoint(_frameCommandBuffer, VulkanCheckpointMarkers.StageBegin(stage));
         }
     }
 
@@ -376,7 +377,11 @@ public sealed partial class VulkanGraphicsDevice
         ThrowIfDisposed();
         if (_frameOpen)
         {
+            RenderStage? open = _stageProfiler?.OpenStage(_frameLoop.CurrentFrame);
             _stageProfiler?.End(_frameCommandBuffer, _frameLoop.CurrentFrame);
+            _device.Checkpoint(
+                _frameCommandBuffer,
+                open is { } stage ? VulkanCheckpointMarkers.StageEnd(stage) : VulkanCheckpointMarkers.StageEndUnknown);
         }
     }
 

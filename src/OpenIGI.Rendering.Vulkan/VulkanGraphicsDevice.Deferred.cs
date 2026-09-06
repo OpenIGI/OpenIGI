@@ -1330,7 +1330,7 @@ public sealed partial class VulkanGraphicsDevice
         // declares is never left unwritten -- reading one that is, is undefined even where nothing does.
         bool graded = _colourLut.Ready && post.ColourLookup > 0f && !maskViewPending;
         _sceneTarget.WriteColourLut(
-            graded ? _colourLut.View : default, _colourLut.Sampler, _sceneTarget.LitView);
+            graded ? _colourLut.View : default, _colourLut.Sampler, _colourLut.StandIn, _sceneTarget.LitView);
 
         DescriptorSet set = motionBlurred
             ? _sceneTarget.ResolveSetMotionBlur

@@ -697,6 +697,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
 
         // Read back the timestamps this slot last carried and reset its block for the frame about to record.
         // Outside any render pass, which is exactly where a fresh frame's command buffer is here.
+        _device.Checkpoint(_frameCommandBuffer, VulkanCheckpointMarkers.FrameBegin);
         _stageProfiler?.BeginFrame(_frameCommandBuffer, _frameLoop.CurrentFrame);
 
         // The occlusion queries reset and read back the same way, and for the same reason must be outside

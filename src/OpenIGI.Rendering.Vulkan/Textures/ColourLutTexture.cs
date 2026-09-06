@@ -40,6 +40,9 @@ internal sealed unsafe class ColourLutTexture : IDisposable
     private Image _image;
     private DeviceMemory _memory;
     private ImageView _view;
+    private Image _standInImage;
+    private DeviceMemory _standInMemory;
+    private ImageView _standInView;
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="ColourLutTexture"/> class.</summary>
@@ -55,10 +58,20 @@ internal sealed unsafe class ColourLutTexture : IDisposable
         _allocator = allocator;
         _commands = commands;
         _sampler = CreateSampler();
+        CreateStandIn();
     }
 
     /// <summary>Gets the cube's view, or a zero handle before a table has been set.</summary>
     public ImageView View => _view;
+
+    /// <summary>Gets a one-texel cube to bind when no grade is loaded.</summary>
+    /// <remarks>
+    /// The resolve declares a <c>sampler3D</c>, and a descriptor bound to a view of another
+    /// dimensionality is undefined however carefully the shader avoids sampling it -- the 2D lit view
+    /// that used to stand in here was exactly that. Ampere shrugged; the validation layer did not, and an
+    /// older adapter is entitled to fault. A cube of the right shape costs one texel.
+    /// </remarks>
+    public ImageView StandIn => _standInView;
 
     /// <summary>Gets the sampler the cube is read through.</summary>
     public Sampler Sampler => _sampler;
@@ -111,7 +124,35 @@ internal sealed unsafe class ColourLutTexture : IDisposable
 
         _disposed = true;
         Release(retire: null);
+        new RetiredCube(_vk, _device.Device, _allocator, _standInImage, _standInView, _standInMemory).Dispose();
         _vk.DestroySampler(_device.Device, _sampler, null);
+    }
+
+    /// <summary>Builds the one-texel stand-in and leaves it in the layout the resolve samples from.</summary>
+    private void CreateStandIn()
+    {
+        (_standInImage, _standInMemory, _standInView) = CreateCube(1);
+        Image image = _standInImage;
+        _commands.SingleTime(cmd =>
+        {
+            Transition(
+                cmd, image, ImageLayout.Undefined, ImageLayout.TransferDstOptimal,
+                PipelineStageFlags.TopOfPipeBit, PipelineStageFlags.TransferBit, 0, AccessFlags.TransferWriteBit);
+
+            ClearColorValue black = new(0f, 0f, 0f, 1f);
+            ImageSubresourceRange range = new()
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                LevelCount = 1,
+                LayerCount = 1,
+            };
+            _vk.CmdClearColorImage(cmd, image, ImageLayout.TransferDstOptimal, &black, 1, &range);
+
+            Transition(
+                cmd, image, ImageLayout.TransferDstOptimal, ImageLayout.ShaderReadOnlyOptimal,
+                PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit,
+                AccessFlags.TransferWriteBit, AccessFlags.ShaderReadBit);
+        });
     }
 
     /// <summary>A cube that has been replaced, holding its handles until it is safe to free them.</summary>
@@ -170,7 +211,9 @@ internal sealed unsafe class ColourLutTexture : IDisposable
         return sampler;
     }
 
-    private void Create(int size)
+    private void Create(int size) => (_image, _memory, _view) = CreateCube(size);
+
+    private (Image Image, DeviceMemory Memory, ImageView View) CreateCube(int size)
     {
         ImageCreateInfo imageInfo = new()
         {
@@ -189,11 +232,10 @@ internal sealed unsafe class ColourLutTexture : IDisposable
 
         Image image;
         VkCheck.Ok(_vk.CreateImage(_device.Device, &imageInfo, null, &image), "vkCreateImage (lut)");
-        _image = image;
 
         _vk.GetImageMemoryRequirements(_device.Device, image, out MemoryRequirements requirements);
-        _memory = _allocator.Allocate(requirements, MemoryPropertyFlags.DeviceLocalBit);
-        VkCheck.Ok(_vk.BindImageMemory(_device.Device, image, _memory, 0), "vkBindImageMemory (lut)");
+        DeviceMemory memory = _allocator.Allocate(requirements, MemoryPropertyFlags.DeviceLocalBit);
+        VkCheck.Ok(_vk.BindImageMemory(_device.Device, image, memory, 0), "vkBindImageMemory (lut)");
 
         ImageViewCreateInfo viewInfo = new()
         {
@@ -213,7 +255,7 @@ internal sealed unsafe class ColourLutTexture : IDisposable
 
         ImageView view;
         VkCheck.Ok(_vk.CreateImageView(_device.Device, &viewInfo, null, &view), "vkCreateImageView (lut)");
-        _view = view;
+        return (image, memory, view);
     }
 
     private void Upload(ColourLookupTable table)
