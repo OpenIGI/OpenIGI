@@ -188,9 +188,43 @@ internal sealed unsafe class PhysicalDeviceSelector
         }
     }
 
+    /// <summary>Extension names to treat as absent, from the environment.</summary>
+    /// <remarks>
+    /// <para>
+    /// A comma-separated list of extension names, or <c>optional</c> for every extension that is not
+    /// required. It exists for the failure that cannot be reproduced: device creation faulting inside a
+    /// driver on an adapter nobody working on the port owns. Bisecting it otherwise means a build, a
+    /// download and a report for every candidate, where this asks the person in front of the machine to
+    /// run the same executable again with one variable set.
+    /// </para>
+    /// <para>
+    /// Applied here, to the available set, rather than at either of the places that read it. Everything
+    /// downstream -- which capabilities are reported, which extensions are enabled, which structures are
+    /// linked -- is derived from this one set, so removing a name here removes it from all of them at
+    /// once and they cannot be made to disagree by using it.
+    /// </para>
+    /// </remarks>
+    internal const string DisableEnvironmentVariable = "OPENIGI_VK_DISABLE";
+
     private PhysicalDeviceSelection? Evaluate(PhysicalDevice device)
     {
-        HashSet<string> available = ReadDeviceExtensions(device);
+        HashSet<string> available = WithdrawDisabled(ReadDeviceExtensions(device));
+
+        // What the adapter offers, before anything decides what to do with it. The enabled list and the
+        // feature chain are both derived from this, so a report that carries all three says which of the
+        // two derivations went wrong -- and it is the only one of the three that cannot be worked out
+        // from the source, because it is the driver's answer rather than the port's decision.
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _vk.GetPhysicalDeviceProperties(device, out PhysicalDeviceProperties reported);
+            Version32 reportedApi = (Version32)reported.ApiVersion;
+            _logger.Information(
+                "Vulkan",
+                $"'{VkString.Read(reported.DeviceName)}' (Vulkan {reportedApi.Major}.{reportedApi.Minor}."
+                + $"{reportedApi.Patch}) offers {available.Count} device extensions: "
+                + string.Join(", ", available.Order(StringComparer.Ordinal)));
+        }
+
         foreach (string required in RequiredExtensions)
         {
             if (!available.Contains(required))
@@ -211,6 +245,38 @@ internal sealed unsafe class PhysicalDeviceSelector
 
         string name = VkString.Read(properties.DeviceName);
         return new PhysicalDeviceSelection(device, queues, properties, name, capabilities);
+    }
+
+    /// <summary>Removes whatever <see cref="DisableEnvironmentVariable"/> names from the available set.</summary>
+    /// <param name="available">Everything the adapter reports.</param>
+    /// <returns>The set with the named extensions withdrawn.</returns>
+    private HashSet<string> WithdrawDisabled(HashSet<string> available)
+    {
+        string? request = Environment.GetEnvironmentVariable(DisableEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(request))
+        {
+            return available;
+        }
+
+        // The required ones are never withdrawn: without them the adapter is rejected outright, and an
+        // adapter rejected for a reason the person asked for is a confusing way to answer.
+        HashSet<string> withdrawn = request.Trim().Equals("optional", StringComparison.OrdinalIgnoreCase)
+            ? [.. available.Except(RequiredExtensions)]
+            : [.. request.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(name => available.Contains(name) && !RequiredExtensions.Contains(name))];
+
+        if (withdrawn.Count == 0)
+        {
+            return available;
+        }
+
+        _logger.Warning(
+            "Vulkan",
+            $"{DisableEnvironmentVariable} is withdrawing {withdrawn.Count} extension(s) the adapter "
+            + $"does offer: {string.Join(", ", withdrawn.Order(StringComparer.Ordinal))}. "
+            + "The device is created as though this adapter did not have them.");
+
+        return [.. available.Except(withdrawn)];
     }
 
     /// <summary>Works out which queue of which family each kind of work will be submitted to.</summary>

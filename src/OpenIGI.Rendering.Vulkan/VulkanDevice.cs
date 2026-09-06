@@ -3,6 +3,7 @@ using OpenIGI.Rendering;
 using OpenIGI.Rendering.Vulkan.Capabilities;
 using OpenIGI.Rendering.Vulkan.Interop;
 using OpenIGI.Rendering.Vulkan.Queues;
+using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
@@ -298,6 +299,14 @@ internal sealed unsafe class VulkanDevice : IDisposable
         PhysicalDeviceFeatures features =
             VulkanCapabilityProbe.BuildEnabledFeatures(selection.Capabilities, chain, selection.ApiVersion);
 
+        // Said BEFORE the call, in full, because of how this one fails. Handing vkCreateDevice a pNext
+        // structure whose extension is not among the enabled names is undefined, and a driver that does
+        // not recognise it faults rather than returning an error -- so the process dies inside the driver
+        // with no VkResult to report and no chance to log afterwards. Written out first, the log names the
+        // adapter, the exact extension list and every structure in the chain, which is the whole of what
+        // the call was given and enough to see the mismatch without the machine that has it.
+        LogDeviceCreation(selection, chain);
+
         nint extensionNames = SilkMarshal.StringArrayToPtr(selection.DeviceExtensions);
         try
         {
@@ -323,5 +332,39 @@ internal sealed unsafe class VulkanDevice : IDisposable
         {
             SilkMarshal.Free(extensionNames);
         }
+    }
+
+    /// <summary>Writes everything vkCreateDevice is about to be given.</summary>
+    /// <param name="selection">The adapter and the extensions it will be created with.</param>
+    /// <param name="chain">The feature chain, walked for the structure types it carries.</param>
+    private void LogDeviceCreation(PhysicalDeviceSelection selection, VulkanStructChain chain)
+    {
+        if (!_logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        Version32 api = (Version32)selection.ApiVersion;
+        Version32 driver = (Version32)selection.Properties.DriverVersion;
+        _logger.Information(
+            "Vulkan",
+            $"Creating device on '{selection.Name}' (vendor 0x{selection.Properties.VendorID:X4}, "
+            + $"device 0x{selection.Properties.DeviceID:X4}, type {selection.Properties.DeviceType}, "
+            + $"Vulkan {api.Major}.{api.Minor}.{api.Patch}, driver {driver.Major}.{driver.Minor}.{driver.Patch}).");
+
+        _logger.Information(
+            "Vulkan",
+            $"Enabling {selection.DeviceExtensions.Count} device extensions: "
+            + string.Join(", ", selection.DeviceExtensions));
+
+        // Every Vulkan extension structure opens with a 32-bit type and then, a pointer-slot along, its
+        // own pNext, so the chain can be read back without knowing what was put in it.
+        List<string> linked = [];
+        for (void* link = chain.Head; link is not null; link = ((void**)link)[1])
+        {
+            linked.Add((*(StructureType*)link).ToString());
+        }
+
+        _logger.Information("Vulkan", $"Feature chain ({linked.Count}): {string.Join(", ", linked)}.");
     }
 }
