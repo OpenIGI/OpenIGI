@@ -122,6 +122,23 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
     private int _projectionWidth = 1;
     private int _projectionHeight = 1;
     private bool _vsync = true;
+
+    /// <summary>Whether a swapchain rebuild was asked for while a frame was still recording.</summary>
+    /// <remarks>
+    /// A rebuild destroys the swapchain, its image views and every framebuffer the present pass draws
+    /// into. Doing that in the middle of a frame leaves the open command buffer recording against freed
+    /// handles and <see cref="_frameImageIndex"/> naming an image that no longer exists, and the submit
+    /// and present at the end of that frame walk into both -- an access violation inside the driver
+    /// rather than a Vulkan error, so nothing is reported and the process simply dies.
+    /// <para>
+    /// It is reachable from the settings menu, which is drawn INSIDE the frame: the v-sync row writes its
+    /// console variable, the change event fires synchronously on the render thread, and the setter used
+    /// to rebuild there and then. So the rebuild is recorded here and taken at the top of the next frame,
+    /// where <see cref="EnsureFrame"/> already rebuilds for an out-of-date swapchain and nothing holds a
+    /// reference to what is about to be freed.
+    /// </para>
+    /// </remarks>
+    private bool _swapchainOutOfDate;
     private bool _disposed;
 
     // Godot's and the reference's rule: a resource is never freed by stalling the GPU to be sure it is idle.
@@ -311,7 +328,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
             }
 
             _vsync = value;
-            RecreateSwapchain();
+            RequestSwapchainRebuild();
         }
     }
 
@@ -325,7 +342,7 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         }
 
         CurrentMode = mode;
-        RecreateSwapchain();
+        RequestSwapchainRebuild();
         _viewport = new Viewport(0, 0, mode.Width, mode.Height);
         Set2DProjection(mode.Width, mode.Height);
     }
@@ -667,6 +684,14 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         // be waited on.
         ReleaseWorldIfAsked();
 
+        // A rebuild the last frame asked for while it was recording. Taken here, where the frame it would
+        // have torn down has been submitted and presented, and the one that will use the new swapchain has
+        // not begun.
+        if (_swapchainOutOfDate)
+        {
+            RecreateSwapchain();
+        }
+
         while (!_frameLoop.BeginFrame(out _frameCommandBuffer, out _frameImageIndex))
         {
             RecreateSwapchain();
@@ -852,8 +877,28 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         vk.CmdSetScissor(commandBuffer, 0, 1, &scissor);
     }
 
+    /// <summary>Rebuilds the swapchain, or records that it must be rebuilt if a frame is open.</summary>
+    /// <remarks>
+    /// Every caller that can be reached from the game -- a v-sync change, a mode change -- comes through
+    /// here rather than calling <see cref="RecreateSwapchain"/>, because none of them can know whether a
+    /// frame is recording: the settings menu that reaches both is itself drawn inside one. The two
+    /// callers that rebuild directly are the two that already know there is no open frame, at the start
+    /// and the end of <see cref="EnsureFrame"/> and <see cref="SwapBuffers"/>.
+    /// </remarks>
+    private void RequestSwapchainRebuild()
+    {
+        if (_frameOpen)
+        {
+            _swapchainOutOfDate = true;
+            return;
+        }
+
+        RecreateSwapchain();
+    }
+
     private void RecreateSwapchain()
     {
+        _swapchainOutOfDate = false;
         _device.WaitIdle();
         int width = Math.Max(1, CurrentMode.Width);
         int height = Math.Max(1, CurrentMode.Height);
