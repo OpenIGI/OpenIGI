@@ -3225,8 +3225,19 @@ public sealed class SoldierRenderer : IDisposable
                         brain.Position,
                         member.Position * WorldScene.UnitsPerMetre);
                     Vector3f rootDelta = view.RootMotion();
-                    if (Cutscenes?.AdvanceAttachedActor(view.Soldier, rootDelta) != true
-                        && (rootDelta.X != 0f || rootDelta.Y != 0f || rootDelta.Z != 0f))
+                    if (Cutscenes?.AdvanceAttachedActor(view.Soldier, rootDelta) == true)
+                    {
+                        // Native attached movement carries Human+32 with the parent while the local
+                        // frame keeps the relative pose. Track the ride on the brain so a later
+                        // detach (Level 1's 1201 consist unregisters at the scene boundary) continues
+                        // from the wagon instead of the stale pre-attach spawn 10 m behind it.
+                        if (Cutscenes.TryGetAttachedDrawTransform(
+                            view.Soldier, out Vector3d attachedNow, out _))
+                        {
+                            brain.SeparateTo(attachedNow * WorldScene.UnitsPerMetre);
+                        }
+                    }
+                    else if (rootDelta.X != 0f || rootDelta.Y != 0f || rootDelta.Z != 0f)
                     {
                         // The ordinary Human mover consumes the clip's root delta into Human+32 even
                         // when the AI action itself is a non-locomotion PlayAnimation. Cutscene jumps
