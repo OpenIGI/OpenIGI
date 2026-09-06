@@ -56,6 +56,9 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(0.05f, truck.SteeringResponse);
         Assert.Equal(0.95f, truck.ThrottleRetention);
         Assert.Equal(0.05f, truck.ThrottleResponse);
+        Assert.Equal(4, truck.Wheels.Count);
+        Assert.Equal(new CarWheelDefinition(0, 0, 5, 0f, 0.95f, 0.05f), truck.Wheels[0]);
+        Assert.Equal(new CarWheelDefinition(1, 0, 5, 0f, 0.95f, 0.05f), truck.Wheels[1]);
 
         // The native Car parser receives the complete 95-value cutscene-truck record.  Keep the
         // unassigned tail available by index while its wheel/contact layout is being translated;

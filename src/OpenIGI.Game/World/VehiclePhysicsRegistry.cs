@@ -190,15 +190,36 @@ public sealed class VehiclePhysicsRegistry
                 arguments[i] = call.GetValue(i);
             }
 
+            // DefinePhysicsObjType's native parser reads exactly six values per wheel after the
+            // wheel-count argument: three integer slots followed by three floating-point slots. Keep
+            // those records separate from the opaque task-specific tail. The slot names are
+            // intentionally positional: 0x42D1D0 consumes this structure, but its field semantics
+            // have not yet passed the paired native CFG/type-validation loop.
+            int declaredWheelCount = call.GetInt32(9);
+            int parsedWheelCount = Math.Clamp(declaredWheelCount, 0, (call.ArgumentCount - 10) / 6);
+            CarWheelDefinition[] wheels = new CarWheelDefinition[parsedWheelCount];
+            for (int wheel = 0; wheel < parsedWheelCount; wheel++)
+            {
+                int field = 10 + (wheel * 6);
+                wheels[wheel] = new CarWheelDefinition(
+                    call.GetInt32(field),
+                    call.GetInt32(field + 1),
+                    call.GetInt32(field + 2),
+                    call.GetSingle(field + 3),
+                    call.GetSingle(field + 4),
+                    call.GetSingle(field + 5));
+            }
+
             _cars.TryAdd(model, new CarPhysicsDefinition(
                 call.GetSingle(2),
                 new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
-                call.GetInt32(9),
+                declaredWheelCount,
                 call.GetSingle(14),
                 call.GetSingle(15),
                 call.GetSingle(20),
                 call.GetSingle(21),
-                arguments));
+                arguments,
+                wheels));
         }
 
         return QvmValue.FromInt32(1);
@@ -237,7 +258,8 @@ public readonly record struct CarPhysicsDefinition(
     float SteeringResponse,
     float ThrottleRetention,
     float ThrottleResponse,
-    IReadOnlyList<QvmValue> Arguments)
+    IReadOnlyList<QvmValue> Arguments,
+    IReadOnlyList<CarWheelDefinition> Wheels)
 {
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
     public int ArgumentCount => Arguments.Count;
@@ -246,6 +268,22 @@ public readonly record struct CarPhysicsDefinition(
     public QvmValue ArgumentAt(int index) =>
         (uint)index < (uint)Arguments.Count ? Arguments[index] : QvmValue.Zero;
 }
+
+/// <summary>
+/// One six-value wheel record as stored by IGI1's <c>DefinePhysicsObjType</c> parser.
+/// </summary>
+/// <remarks>
+/// The native parser's storage shape is established, but the three integer and three floating-point
+/// slots are still positional until the CAR task callback has completed the native translation audit.
+/// Keeping the names positional prevents a guessed meaning from becoming a gameplay contract.
+/// </remarks>
+public readonly record struct CarWheelDefinition(
+    int Integer0,
+    int Integer1,
+    int Integer2,
+    float Float0,
+    float Float1,
+    float Float2);
 
 /// <summary>One local quadratic-drag sample from the Heli physics-object record.</summary>
 public readonly record struct AerodynamicSurfaceDefinition(
