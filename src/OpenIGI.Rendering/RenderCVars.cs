@@ -341,31 +341,34 @@ public static class RenderCVars
     public static readonly NumericCVar<float> Exposure = Presets.Define(
         CVar.Float(
             "r_exposure",
-            1.0f,
+            1.414f,
             MinimumExposure,
             16.0f,
             CVarOptions.Archive,
-            "Scene brightness before tone mapping. 1 leaves the level's own lighting alone."),
+            "Scene brightness before tone mapping. Half a stop over the level's own lighting."),
 
-        // One on every preset, and one is the identity: the frame is exposed at the brightness its
-        // lighting model produces, and the slider starts from a picture nobody has already graded.
+        // Half a stop over unity on every modern preset, which is where this number started life: it is
+        // the reference renderer's own auto-exposure compensation, and it was matched when the point of
+        // the number was to land this port's frame on that reference's channel for channel.
         //
-        // The three modern presets used to sit at 1.414 -- the reference renderer's half-stop
-        // auto-exposure compensation, matched when the whole point of the number was to land this port's
-        // frame on that reference's channel for channel. That is a calibration against another engine,
-        // not a default a player should inherit, and it is what made "brightness" read as 1.4 before the
-        // player had touched anything: the slider's own neutral was not neutral. Anyone reproducing the
-        // reference comparison sets r_exposure 1.414 for the shot.
+        // It was moved to a flat one on the argument that a calibration against another engine is not a
+        // default a player should inherit, and that a brightness slider reading 1.4 before anyone has
+        // touched it has a neutral that is not neutral. Played rather than compared, one is too dark --
+        // the dynamic model's own output does not fill the tone curve on its own -- so the argument loses
+        // to the picture, and the slider's neutral is simply not where its scale happens to read one.
         //
-        // It still belongs to a cluster that moves together -- r_sun_scale and r_atmosphere_sun_scale are
-        // read ONLY by the dynamic model, r_white_point and r_bloom_threshold were shaped against its
-        // curve, and r_screen_gi_max bounds its feedback loop. Change the lighting model on a preset
-        // without bringing all of them and the frame is mis-exposed, not merely cheaper. Vanilla never
-        // tone maps, so its value is ignored either way.
+        // It belongs to a cluster that moves together -- r_sun_scale and r_atmosphere_sun_scale are read
+        // ONLY by the dynamic model, r_white_point and r_bloom_threshold were shaped against its curve,
+        // and r_screen_gi_max bounds its feedback loop. Change the lighting model on a preset without
+        // bringing all of them and the frame is mis-exposed, not merely cheaper.
+        //
+        // Vanilla stays at one, and not because it would be ignored: vanilla never tone maps, so the
+        // value genuinely does nothing there, and the preset that has to stay pixel-identical to the
+        // retail build is the last place to carry a number that says the picture was graded.
         vanilla: "1",
-        enhanced: "1",
-        high: "1",
-        ultra: "1");
+        enhanced: "1.414",
+        high: "1.414",
+        ultra: "1.414");
 
     /// <summary>The least exposure the frame may be shown at, which is the floor on <see cref="Exposure"/>.</summary>
     /// <remarks>
@@ -2420,9 +2423,9 @@ public static class RenderCVars
         // into shadow) into visible steps, and a dither at this depth is what breaks them up. Off at
         // vanilla, which has neither the gradients nor the resolve.
         vanilla: "0",
-        enhanced: "0.04",
-        high: "0.04",
-        ultra: "0.04");
+        enhanced: "0.03",
+        high: "0.03",
+        ultra: "0.03");
 
     /// <summary>How far the red and blue channels separate towards the corners.</summary>
     public static readonly NumericCVar<float> ChromaticAberration = Presets.Define(
