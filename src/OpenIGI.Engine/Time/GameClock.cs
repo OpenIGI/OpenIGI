@@ -120,6 +120,32 @@ public sealed class GameClock
     /// <summary>Gets the current wall-clock reading.</summary>
     public int Now => _time.Milliseconds;
 
+    /// <summary>Gets the precise clock reading this frame was arbitrated at.</summary>
+    /// <remarks>
+    /// <para>
+    /// The instant <see cref="Decide"/> was answered for, kept so the picture can be drawn at the same
+    /// moment the arbiter judged. Rendering used to take its own reading, several milliseconds later --
+    /// long enough for the next tick's deadline to pass in between. The frame then asked
+    /// <see cref="TickFraction(double)"/> about a moment the arbiter had already decided held no tick,
+    /// got back a blend of exactly one because the deadline was behind it, and drew a picture standing
+    /// still until the tick it was waiting for ran on the following pass.
+    /// </para>
+    /// <para>
+    /// Sampling here instead costs the picture that same handful of milliseconds of freshness, and buys
+    /// a blend that always agrees with the decision that produced the frame. Nothing about the schedule
+    /// moves: the ticks run when they always did, in the order they always did.
+    /// </para>
+    /// </remarks>
+    public double FrameInstantMilliseconds { get; private set; }
+
+    /// <summary>Takes the one clock reading a frame is both arbitrated and drawn at.</summary>
+    /// <returns>The reading, also left on <see cref="FrameInstantMilliseconds"/>.</returns>
+    public double MarkFrameInstant()
+    {
+        FrameInstantMilliseconds = _time.PreciseMilliseconds;
+        return FrameInstantMilliseconds;
+    }
+
     /// <summary>Gets the deadline for the next tick, in the time source's milliseconds.</summary>
     /// <remarks>
     /// <para>

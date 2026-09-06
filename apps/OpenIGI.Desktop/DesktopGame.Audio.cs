@@ -403,7 +403,7 @@ internal sealed partial class DesktopGame
 
         // The same blend the presentation uses, so the ear and the eye agree about where the head is.
         float alpha = RenderCVars.SmoothPresentation.Value
-            ? _loop.Clock.TickFraction(_loop.TimeSource.PreciseMilliseconds)
+            ? _loop.Clock.TickFraction(_loop.Clock.FrameInstantMilliseconds)
             : 1f;
 
         // The EYE, not the feet: an ear 1.8 m below the head is a metre and a half of error against

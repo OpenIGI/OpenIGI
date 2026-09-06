@@ -3094,7 +3094,7 @@ internal sealed partial class DesktopGame : IDisposable
                     && _cutscenes?.IsPlaying != true
                     && !_options.Lockstep
                     && RenderCVars.SmoothPresentation.Value;
-                double pacingWall = _loop.TimeSource.PreciseMilliseconds;
+                double pacingWall = _loop.Clock.FrameInstantMilliseconds;
                 float tickBlend = smoothPresentation
                     ? _loop.Clock.TickFraction(pacingWall)
                     : 1f;
