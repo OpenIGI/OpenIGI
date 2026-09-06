@@ -184,6 +184,12 @@ public sealed class VehiclePhysicsRegistry
             // retention/response pairs are 14..15 and 20..21. Keep the record limited
             // to fields proven by native 0x42ECA0; contact-tail semantics are still
             // being mapped in the separate vehicle audit.
+            QvmValue[] arguments = new QvmValue[call.ArgumentCount];
+            for (int i = 0; i < arguments.Length; i++)
+            {
+                arguments[i] = call.GetValue(i);
+            }
+
             _cars.TryAdd(model, new CarPhysicsDefinition(
                 call.GetSingle(2),
                 new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
@@ -191,7 +197,8 @@ public sealed class VehiclePhysicsRegistry
                 call.GetSingle(14),
                 call.GetSingle(15),
                 call.GetSingle(20),
-                call.GetSingle(21)));
+                call.GetSingle(21),
+                arguments));
         }
 
         return QvmValue.FromInt32(1);
@@ -229,7 +236,16 @@ public readonly record struct CarPhysicsDefinition(
     float SteeringRetention,
     float SteeringResponse,
     float ThrottleRetention,
-    float ThrottleResponse);
+    float ThrottleResponse,
+    IReadOnlyList<QvmValue> Arguments)
+{
+    /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
+    public int ArgumentCount => Arguments.Count;
+
+    /// <summary>Returns an untouched definition value by its retail argument index.</summary>
+    public QvmValue ArgumentAt(int index) =>
+        (uint)index < (uint)Arguments.Count ? Arguments[index] : QvmValue.Zero;
+}
 
 /// <summary>One local quadratic-drag sample from the Heli physics-object record.</summary>
 public readonly record struct AerodynamicSurfaceDefinition(

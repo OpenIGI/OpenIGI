@@ -56,6 +56,18 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(0.05f, truck.SteeringResponse);
         Assert.Equal(0.95f, truck.ThrottleRetention);
         Assert.Equal(0.05f, truck.ThrottleResponse);
+
+        // The native Car parser receives the complete 95-value cutscene-truck record.  Keep the
+        // unassigned tail available by index while its wheel/contact layout is being translated;
+        // reducing it to the seven header fields would silently discard the data used by 0x42D1D0.
+        Assert.Equal(95, truck.ArgumentCount);
+        Assert.Equal(QvmValueKind.Integer, truck.ArgumentAt(0).Kind);
+        Assert.Equal(1, truck.ArgumentAt(0).Integer); // TASKTYPE_CAR
+        Assert.Equal("622_01_1", truck.ArgumentAt(8).Text);
+        Assert.Equal(30, truck.ArgumentAt(34).Integer); // cutscene truck steering-point count
+        Assert.Equal(0.001f, truck.ArgumentAt(35).ToSingle());
+        Assert.Equal(90, truck.ArgumentAt(36).Integer);
+        Assert.Equal(45f, truck.ArgumentAt(41).ToSingle());
     }
 
     [RequiresGameDataFact]
