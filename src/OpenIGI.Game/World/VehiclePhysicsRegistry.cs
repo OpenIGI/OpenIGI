@@ -19,6 +19,7 @@ public sealed class VehiclePhysicsRegistry
     private const string RotorType = "TASKTYPE_ROTOR";
     private const string HeliType = "TASKTYPE_HELI";
     private const string CarType = "TASKTYPE_CAR";
+    private const string PlaneType = "TASKTYPE_PLANE";
 
     private static readonly string[] Scripts =
     [
@@ -30,15 +31,20 @@ public sealed class VehiclePhysicsRegistry
         "LOCAL:physicsobj/cars/cutscene_truck/car.qvm",
         "LOCAL:physicsobj/helis/bell/heli.qvm",
         "LOCAL:physicsobj/helis/mil/heli.qvm",
+        "LOCAL:physicsobj/planes/su27/plane.qvm",
+        "LOCAL:physicsobj/planes/jsf/plane.qvm",
+        "LOCAL:physicsobj/planes/cutscenemissile/plane.qvm",
     ];
 
     private readonly Dictionary<string, RotorPhysicsDefinition> _rotors = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HelicopterPhysicsDefinition> _helicopters = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CarPhysicsDefinition> _cars = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, PlanePhysicsDefinition> _planes = new(StringComparer.OrdinalIgnoreCase);
     private readonly IIgiLogger _logger;
     private int _rotorType;
     private int _heliType;
     private int _carType;
+    private int _planeType;
 
     /// <summary>Creates an empty registry.</summary>
     public VehiclePhysicsRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
@@ -50,6 +56,7 @@ public sealed class VehiclePhysicsRegistry
         _rotors.Clear();
         _helicopters.Clear();
         _cars.Clear();
+        _planes.Clear();
 
         NativeRegistry natives = new();
         natives.RegisterFunction(DefineNative, Define);
@@ -96,6 +103,10 @@ public sealed class VehiclePhysicsRegistry
                     {
                         _carType = registered.Read().Integer;
                     }
+                    if (symbol == PlaneType)
+                    {
+                        _planeType = registered.Read().Integer;
+                    }
                 }
             }
 
@@ -109,8 +120,8 @@ public sealed class VehiclePhysicsRegistry
         }
 
         _logger.Information(LogCategory,
-            $"Vehicle physics: {_helicopters.Count} helicopter(s), {_cars.Count} car(s), {_rotors.Count} rotor model(s).");
-        return _helicopters.Count + _rotors.Count;
+            $"Vehicle physics: {_helicopters.Count} helicopter(s), {_cars.Count} car(s), {_planes.Count} plane(s), {_rotors.Count} rotor model(s).");
+        return _helicopters.Count + _rotors.Count + _planes.Count;
     }
 
     /// <summary>Looks up the Heli control record bound to a body model.</summary>
@@ -124,6 +135,16 @@ public sealed class VehiclePhysicsRegistry
     /// <summary>Looks up the proven common CAR physics header for a body model.</summary>
     public bool TryGetCar(string model, out CarPhysicsDefinition definition) =>
         _cars.TryGetValue(model, out definition);
+
+    /// <summary>Looks up the retained PLANE physics record for a body model.</summary>
+    /// <remarks>
+    /// The record is intentionally indexed, not schematized: the SU27/JSF/CutSceneMissile
+    /// definitions share a scalar tail (mass 10000, body 5/16/2.5, thrust 0.7/0.001,
+    /// max-speed 700, response 1.7, smoothing 0.9, limiter 40) plus aerodynamic surface
+    /// records whose native field mapping awaits the 0x433B50 translation loop.
+    /// </remarks>
+    public bool TryGetPlane(string model, out PlanePhysicsDefinition definition) =>
+        _planes.TryGetValue(model, out definition);
 
     private QvmValue Define(QvmCallContext call)
     {
@@ -221,6 +242,20 @@ public sealed class VehiclePhysicsRegistry
                 arguments,
                 wheels));
         }
+        else if (taskType == _planeType && call.ArgumentCount >= 9)
+        {
+            // SU27/JSF/CutSceneMissile share the indexed scalar tail documented above.
+            // Retain every definition value untouched; the 0x433B50 motion-path field
+            // mapping is an explicit follow-up in the native translation loop, so no
+            // smoothing/thrust semantics are assigned here.
+            QvmValue[] arguments = new QvmValue[call.ArgumentCount];
+            for (int i = 0; i < arguments.Length; i++)
+            {
+                arguments[i] = call.GetValue(i);
+            }
+
+            _planes.TryAdd(model, new PlanePhysicsDefinition(arguments));
+        }
 
         return QvmValue.FromInt32(1);
     }
@@ -290,6 +325,18 @@ public readonly record struct AerodynamicSurfaceDefinition(
     float Coefficient,
     OpenIGI.Core.Numerics.Vector3f Direction,
     OpenIGI.Core.Numerics.Vector3f Point);
+
+/// <summary>The retained PLANE physics record (indexed retail arguments).</summary>
+public readonly record struct PlanePhysicsDefinition(
+    IReadOnlyList<QvmValue> Arguments)
+{
+    /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
+    public int ArgumentCount => Arguments.Count;
+
+    /// <summary>Returns an untouched definition value by its retail argument index.</summary>
+    public QvmValue ArgumentAt(int index) =>
+        (uint)index < (uint)Arguments.Count ? Arguments[index] : QvmValue.Zero;
+}
 
 /// <summary>The Rotor record parsed by retail function <c>0x42D9F0</c>.</summary>
 public readonly record struct RotorPhysicsDefinition(

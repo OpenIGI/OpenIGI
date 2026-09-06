@@ -1222,6 +1222,11 @@ public sealed class CutsceneRuntime
             state.Thrust = 0f;
             state.TargetThrust = 0f;
         }
+        if (string.Equals(task.Type.Name, "Plane", StringComparison.Ordinal)
+            && _vehiclePhysics?.TryGetPlane(Text(declared, WorldScene.ModelParameter), out PlanePhysicsDefinition plane) == true)
+        {
+            state.PlanePhysics = plane;
+        }
         if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
         {
             // Heli::ReadChannels restores both live and target collective from this authored value on
@@ -2858,6 +2863,7 @@ public sealed class CutsceneRuntime
         public bool ParkingBrake { get; set; }
         public CarRouteProfile? CarRoute { get; set; }
         public CarPhysicsDefinition? CarPhysics { get; set; }
+        public PlanePhysicsDefinition? PlanePhysics { get; set; }
         public GameTask? VehicleLatchedObstacle { get; set; }
         public bool VehicleGateReleased { get; set; }
         public float Heading { get; set; }

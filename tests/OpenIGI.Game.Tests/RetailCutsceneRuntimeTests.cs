@@ -71,6 +71,19 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(0.001f, truck.ArgumentAt(35).ToSingle());
         Assert.Equal(90, truck.ArgumentAt(36).Integer);
         Assert.Equal(45f, truck.ArgumentAt(41).ToSingle());
+
+        // The Level 3 outro plane (702_02_1) is backed by the SU27 definition with the
+        // same indexed scalar tail (mass/dims/thrust/speed/response). Retain it untouched
+        // while the 0x433B50 motion-path field mapping is translated; assigning smoothing
+        // semantics now would repeat the invented-constant substitute.
+        Assert.True(physics.TryGetPlane("702_02_1", out PlanePhysicsDefinition su27));
+        Assert.Equal(68, su27.ArgumentCount);
+        Assert.Equal(QvmValueKind.Integer, su27.ArgumentAt(0).Kind);
+        Assert.Equal(10_000f, su27.ArgumentAt(2).ToSingle());
+        Assert.Equal(5f, su27.ArgumentAt(3).ToSingle());
+        Assert.Equal(16f, su27.ArgumentAt(4).ToSingle());
+        Assert.Equal(2.5f, su27.ArgumentAt(5).ToSingle());
+        Assert.Equal("702_02_1", su27.ArgumentAt(8).Text);
     }
 
     [RequiresGameDataFact]
