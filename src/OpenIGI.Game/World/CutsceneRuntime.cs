@@ -1445,25 +1445,16 @@ public sealed class CutsceneRuntime
             // different inbound route. Keep the authored identity and its probe dimensions together
             // instead of applying an ID- or model-wide exception to every Car.
             CarRouteProfile? route = transform.CarRoute;
-            if (!transform.VehicleGateReleased
-                && route is not null
-                && _vehicleObstacleReleased is not null
-                && _root.Tree.FromId(route.GateTaskId) is { } routeGate
-                && ConditionalContainerGate.IsTaskActive(routeGate)
-                && ActiveScene?.Ticks >= route.GateOpenTick
-                && _vehicleObstacleReleased(routeGate))
-            {
-                // The Level 1 gate is scripted to open on the cutscene clock. Once the truck reaches
-                // that doorway, use the gate's live state rather than waiting for a blocking collision:
-                // a fully open door is deliberately absent from the collision index.
-                transform.VehicleGateReleased = true;
-            }
+            // Retail stops on the actual closed-door contact and resumes when the door's
+            // collision volume disappears (Door_401 is a normal Door task; the CAR tick
+            // 0x42ECA0 dispatches 0x42EF00 contact processing then the shared collision
+            // step). The latched-contact block below owns that transition. A cutscene-clock
+            // release here would free the truck ~13 m before Door401 without contact, so
+            // no tick-based gate release is applied.
             float previousHeading = transform.Heading;
             Matrix3f previousOrientation = transform.Orientation;
             float headingDelta = transform.Steering * transform.Speed / (4_096f * 4.5f);
-            transform.Heading += transform.VehicleGateReleased && route is not null
-                ? headingDelta
-                : -headingDelta;
+            transform.Heading += -headingDelta;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Euler.X,
                 transform.Euler.Y,
