@@ -1091,6 +1091,8 @@ public sealed class RetailCutsceneRuntimeTests
         MagicObjectRegistry magic = new();
         magic.Register(loop.Natives);
         magic.Load(resources, loop.Natives);
+        VehiclePhysicsRegistry physics = new();
+        physics.Load(resources);
         LoadedMission mission = new MissionLoader(missions, fs, resources,
             new LevelLoader(root, loop.TaskCommands, loop.Natives, resources)).Load(1);
         WorldScene world = WorldScene.Build(mission, root, magic);
@@ -1120,6 +1122,7 @@ public sealed class RetailCutsceneRuntimeTests
         CutsceneRuntime runtime = new(
             root,
             loop.Variables,
+            vehiclePhysics: physics,
             vehicleObstacleHit: (task, origin, end) =>
                 Contact(solids, task, origin, end),
             vehicleObstacleReleased: obstacle => doors.Doors
