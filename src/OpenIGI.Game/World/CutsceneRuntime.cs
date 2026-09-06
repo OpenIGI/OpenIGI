@@ -283,17 +283,17 @@ public sealed class CutsceneRuntime
     public void RequestBreak() => _breakRequested = true;
 
     /// <summary>
-    /// Deletes every running cutscene except the one currently owning the frame.
+    /// Deletes every running cutscene except the one whose expression is currently executing.
     /// </summary>
     /// <remarks>
     /// <c>Game_CutsceneDelete</c> walks the global cutscene registry and destroys stale scenes before
-    /// a newly admitted scene takes ownership.  Keeping the active scene is important because the
-    /// native is normally called from that scene's start expression; deleting it here would make the
-    /// start expression immediately self-cancel.
+    /// a newly admitted scene takes ownership.  A scene start expression may call the native itself,
+    /// so that scene is protected for the duration of its expression.  Container expressions have no
+    /// such owner and therefore clear every running scene, matching the global native walk.
     /// </remarks>
     public void DeleteCutscenes()
     {
-        CutSceneTask? keep = _sceneExpressionOwner ?? ActiveScene;
+        CutSceneTask? keep = _sceneExpressionOwner;
         foreach (SceneState state in _scenes)
         {
             if (ReferenceEquals(state.Task, keep) || !state.Task.IsRun)
