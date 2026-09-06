@@ -1129,6 +1129,15 @@ public sealed class CutsceneRuntime
             Heading = angles.Z,
             CarRoute = CarRouteProfile.For(declared),
         };
+        if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
+            && _vehiclePhysics?.TryGetCar(Text(declared, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true)
+        {
+            state.CarPhysics = car;
+            state.Steering = 0f;
+            state.TargetSteering = 0f;
+            state.Thrust = 0f;
+            state.TargetThrust = 0f;
+        }
         if (string.Equals(task.Type.Name, "Heli", StringComparison.Ordinal))
         {
             // Heli::ReadChannels restores both live and target collective from this authored value on
@@ -1303,8 +1312,10 @@ public sealed class CutsceneRuntime
             // Retail smooths steer/throttle with data-driven factors from the model's CAR.QVM
             // physics blob (cutscene_truck/TRUCK: retention 0.95, response 0.05 per channel;
             // ANIMTASK-RE.md §4b) — x += (target - x) * response.
-            transform.Steering += (transform.TargetSteering - transform.Steering) * 0.05f;
-            transform.Thrust += (transform.TargetThrust - transform.Thrust) * 0.05f;
+            float steeringResponse = transform.CarPhysics?.SteeringResponse ?? 0.05f;
+            float throttleResponse = transform.CarPhysics?.ThrottleResponse ?? 0.05f;
+            transform.Steering += (transform.TargetSteering - transform.Steering) * steeringResponse;
+            transform.Thrust += (transform.TargetThrust - transform.Thrust) * throttleResponse;
             float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
             transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
 
@@ -2723,6 +2734,7 @@ public sealed class CutsceneRuntime
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
         public CarRouteProfile? CarRoute { get; set; }
+        public CarPhysicsDefinition? CarPhysics { get; set; }
         public GameTask? VehicleLatchedObstacle { get; set; }
         public bool VehicleGateReleased { get; set; }
         public float Heading { get; set; }

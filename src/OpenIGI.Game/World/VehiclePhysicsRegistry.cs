@@ -18,18 +18,27 @@ public sealed class VehiclePhysicsRegistry
     private const string DefineNative = "DefinePhysicsObjType";
     private const string RotorType = "TASKTYPE_ROTOR";
     private const string HeliType = "TASKTYPE_HELI";
+    private const string CarType = "TASKTYPE_CAR";
 
     private static readonly string[] Scripts =
     [
+        "LOCAL:physicsobj/cars/apc/car.qvm",
+        "LOCAL:physicsobj/cars/buggy/car.qvm",
+        "LOCAL:physicsobj/cars/limo/car.qvm",
+        "LOCAL:physicsobj/cars/t80/car.qvm",
+        "LOCAL:physicsobj/cars/truck/car.qvm",
+        "LOCAL:physicsobj/cars/cutscene_truck/car.qvm",
         "LOCAL:physicsobj/helis/bell/heli.qvm",
         "LOCAL:physicsobj/helis/mil/heli.qvm",
     ];
 
     private readonly Dictionary<string, RotorPhysicsDefinition> _rotors = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HelicopterPhysicsDefinition> _helicopters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CarPhysicsDefinition> _cars = new(StringComparer.OrdinalIgnoreCase);
     private readonly IIgiLogger _logger;
     private int _rotorType;
     private int _heliType;
+    private int _carType;
 
     /// <summary>Creates an empty registry.</summary>
     public VehiclePhysicsRegistry(IIgiLogger? logger = null) => _logger = logger ?? NullLogger.Instance;
@@ -40,6 +49,7 @@ public sealed class VehiclePhysicsRegistry
         ArgumentNullException.ThrowIfNull(resources);
         _rotors.Clear();
         _helicopters.Clear();
+        _cars.Clear();
 
         NativeRegistry natives = new();
         natives.RegisterFunction(DefineNative, Define);
@@ -82,6 +92,10 @@ public sealed class VehiclePhysicsRegistry
                     {
                         _heliType = registered.Read().Integer;
                     }
+                    if (symbol == CarType)
+                    {
+                        _carType = registered.Read().Integer;
+                    }
                 }
             }
 
@@ -95,7 +109,7 @@ public sealed class VehiclePhysicsRegistry
         }
 
         _logger.Information(LogCategory,
-            $"Vehicle physics: {_helicopters.Count} helicopter(s), {_rotors.Count} rotor model(s).");
+            $"Vehicle physics: {_helicopters.Count} helicopter(s), {_cars.Count} car(s), {_rotors.Count} rotor model(s).");
         return _helicopters.Count + _rotors.Count;
     }
 
@@ -106,6 +120,10 @@ public sealed class VehiclePhysicsRegistry
     /// <summary>Looks up the Rotor record bound to a rotor model.</summary>
     public bool TryGetRotor(string model, out RotorPhysicsDefinition definition) =>
         _rotors.TryGetValue(model, out definition);
+
+    /// <summary>Looks up the proven common CAR physics header for a body model.</summary>
+    public bool TryGetCar(string model, out CarPhysicsDefinition definition) =>
+        _cars.TryGetValue(model, out definition);
 
     private QvmValue Define(QvmCallContext call)
     {
@@ -159,6 +177,22 @@ public sealed class VehiclePhysicsRegistry
                 call.GetSingle(12),
                 surfaces));
         }
+        else if (taskType == _carType && call.ArgumentCount >= 20)
+        {
+            // Every shipped CAR QVM uses this common header: mass and dimensions are
+            // arguments 2..5, wheel count is argument 9, and the steering/throttle
+            // retention/response pairs are 14..15 and 20..21. Keep the record limited
+            // to fields proven by native 0x42ECA0; contact-tail semantics are still
+            // being mapped in the separate vehicle audit.
+            _cars.TryAdd(model, new CarPhysicsDefinition(
+                call.GetSingle(2),
+                new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
+                call.GetInt32(9),
+                call.GetSingle(14),
+                call.GetSingle(15),
+                call.GetSingle(20),
+                call.GetSingle(21)));
+        }
 
         return QvmValue.FromInt32(1);
     }
@@ -186,6 +220,16 @@ public readonly record struct HelicopterPhysicsDefinition(
     float LowCollectiveStep,
     float MaximumSpeed,
     IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics);
+
+/// <summary>The common CAR header consumed by the native smoothing path.</summary>
+public readonly record struct CarPhysicsDefinition(
+    float Mass,
+    OpenIGI.Core.Numerics.Vector3f Dimensions,
+    int WheelCount,
+    float SteeringRetention,
+    float SteeringResponse,
+    float ThrottleRetention,
+    float ThrottleResponse);
 
 /// <summary>One local quadratic-drag sample from the Heli physics-object record.</summary>
 public readonly record struct AerodynamicSurfaceDefinition(

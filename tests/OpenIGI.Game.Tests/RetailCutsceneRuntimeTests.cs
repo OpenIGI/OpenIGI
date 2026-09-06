@@ -48,6 +48,14 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.Equal(1.19f, mainBlade.PhasePerCollectiveTick, precision: 5);
         Assert.True(physics.TryGetRotor("712_01_1", out RotorPhysicsDefinition tailRotor));
         Assert.True(tailRotor.IsTailRotor);
+        Assert.True(physics.TryGetCar("622_01_1", out CarPhysicsDefinition truck));
+        Assert.Equal(3_000f, truck.Mass);
+        Assert.Equal(new Vector3f(2.2f, 7.8f, 3f), truck.Dimensions);
+        Assert.Equal(4, truck.WheelCount);
+        Assert.Equal(0.95f, truck.SteeringRetention);
+        Assert.Equal(0.05f, truck.SteeringResponse);
+        Assert.Equal(0.95f, truck.ThrottleRetention);
+        Assert.Equal(0.05f, truck.ThrottleResponse);
     }
 
     [RequiresGameDataFact]
