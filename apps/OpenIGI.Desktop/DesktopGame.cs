@@ -1543,27 +1543,29 @@ internal sealed partial class DesktopGame : IDisposable
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (pauseMenu)
+                else if (MenuOwnsPointer(pauseMenu, _missionFailedMenu))
                 {
                     // A paused view does not turn, and the cursor has to be free to reach the menu. The
                     // release is repeated every pass rather than done once on the way in, so nothing can
                     // quietly take the pointer back while the menu is up; it also re-arms the look's
                     // settling frame, so the warp that re-capturing the cursor produces on resume is not
                     // read as a movement the player made.
+                    //
+                    // The mission-failed screen belongs here for the same reason. It arrives while the
+                    // player is dead and the death camera is orbiting, and EVERY branch below this one
+                    // takes the pointer: the orbit, and then -- because _playerMode outlives the player --
+                    // the look, whose Look() sets IsCapturingMouse and locks. The screen released the
+                    // cursor each frame and the branch below re-took it, which is the pointer that
+                    // flashed and would not move. Standing every camera branch down is what actually
+                    // settles it; excluding them one at a time only moves the fight further down.
                     _player?.HoldStill();
                     _window.CursorLocked = false;
                 }
-                else if (DeathCameraOwnsPointer(_playerDead, _deathCamera.IsActive, _missionFailedMenu))
+                else if (_playerDead && _deathCamera.IsActive)
                 {
                     // Dead: the mouse orbits the death camera around the body rather than turning a head that
                     // is no longer taking input -- HumanCamera_DeathCameraControlInput. The cursor stays locked
                     // so the orbit keeps turning however far the mouse is moved.
-                    //
-                    // The orbit stands down once the mission-failed screen is up. That screen releases the
-                    // pointer every frame, and this branch used to re-take it in the same frame, so the two
-                    // wrote opposite lock states for as long as the screen was open -- the rapidly flashing
-                    // pointer that could not be moved. The failure screen owns the pointer, exactly as the
-                    // pause menu above does.
                     _deathCamera.Control(rawX, rawY);
                     _window.CursorLocked = !captureMode;
 
@@ -4011,17 +4013,15 @@ internal sealed partial class DesktopGame : IDisposable
         return false;
     }
 
-    /// <summary>Determines whether the death-camera orbit may hold the pointer this frame.</summary>
+    /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
     /// <remarks>
-    /// The orbit locks the cursor so the camera keeps turning however far the mouse is moved, while the
-    /// retail mission-failed screen releases it every frame. Both run in the same frame, so they cannot
-    /// both be live: the screen owns the pointer and the orbit stands down while it is up.
+    /// Both of these screens release the cursor every frame so it can be used, and every camera branch
+    /// below them takes it back: the death orbit, the ladder camera, the look. Whichever runs last in
+    /// the frame wins, so a menu that does not stop the chain here ends up fighting one of them and the
+    /// pointer flashes between locked and free without ever moving.
     /// </remarks>
-    internal static bool DeathCameraOwnsPointer(
-        bool playerDead,
-        bool deathCameraActive,
-        bool missionFailedMenu) =>
-        playerDead && deathCameraActive && !missionFailedMenu;
+    internal static bool MenuOwnsPointer(bool pauseMenu, bool missionFailedMenu) =>
+        pauseMenu || missionFailedMenu;
 
     /// <summary>Converts an authored EditCamera lens through the retail 4:3 composition aperture.</summary>
     internal static float CutsceneVerticalFieldOfView(float horizontalTangent) =>
