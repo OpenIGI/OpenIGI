@@ -1289,10 +1289,34 @@ public sealed class CutsceneRuntime
         float yaw = MathF.Atan2(transform.Orientation.M21, transform.Orientation.M11);
         if (string.Equals(type, "Car", StringComparison.Ordinal))
         {
-            if (program.Tick > 0)
+            // Car::ReadChannels (IGI.exe 0x42EA10) treats the first packet as receiver setup,
+            // not a physics step. Restore the authored body and install the channel hold
+            // sentinels before the positive-tick callback starts smoothing controls. Running the
+            // generic integration on tick zero advances a truck before its cutscene clock has
+            // elapsed and leaves the receiver's channel-two state live for the next packet.
+            if (program.Tick == 0)
             {
-                SnapshotDynamicPose(transform, simulationOrder);
+                transform.Position = transform.OriginPosition;
+                transform.Orientation = transform.AuthoredOrientation;
+                transform.PreviousPosition = transform.Position;
+                transform.PreviousOrientation = transform.Orientation;
+                transform.Velocity = default;
+                transform.Speed = 0f;
+                transform.Steering = 0f;
+                transform.TargetSteering = 0f;
+                transform.Thrust = 0f;
+                transform.TargetThrust = 0f;
+                transform.ParkingBrake = false;
+                transform.Heading = transform.Euler.Z;
+                transform.VehicleLatchedObstacle = null;
+                transform.VehicleGateReleased = false;
+                program.WriteChannel(1, -1f);
+                program.WriteChannel(2, -2f);
+                transform.IsDynamic = true;
+                return;
             }
+
+            SnapshotDynamicPose(transform, simulationOrder);
 
             // Car::ReadChannels (0x42EA10) copies ch0 to the steering target and latches ch1 as
             // throttle only when it is not -1.  ch3 is the parking-brake pulse.  The former generic
