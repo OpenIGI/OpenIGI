@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -220,8 +220,17 @@ internal sealed partial class DesktopGame
     private float _gameplayFocalDistance;
     private float _gameplayFocalRange;
     private float _gameplayFocalBlur;
-    private float _gameplayMotionBlur;
     private bool _gameplayDepthOfFieldSaved;
+
+    // The motion blur is stashed SEPARATELY, and by the entry shot rather than by the menu, because the
+    // menu does not touch it -- only the shot does. Stashed with the three above, it was read at boot and
+    // written back on every Play, which silently overwrote every change the player made in between: set
+    // Motion Blur in the settings screen, press Play, and the value the menu had found at start-up landed
+    // back on top of it. Since the default is nought, that also erased it from settings.cfg -- "the
+    // setting resets to nothing every time the game is relaunched". A value is stashed where it is
+    // displaced, not where some other value is.
+    private float _shotMotionBlur;
+    private bool _shotMotionBlurSaved;
 
     /// <summary>The shell's framing: a close focal plane and full blur, so the level reads as a backdrop.</summary>
     /// <remarks>
@@ -236,7 +245,6 @@ internal sealed partial class DesktopGame
             _gameplayFocalDistance = RenderCVars.FocalDistance.Value;
             _gameplayFocalRange = RenderCVars.FocalRange.Value;
             _gameplayFocalBlur = RenderCVars.FocalBlur.Value;
-            _gameplayMotionBlur = RenderCVars.MotionBlur.Value;
             _gameplayDepthOfFieldSaved = true;
         }
 
@@ -246,8 +254,20 @@ internal sealed partial class DesktopGame
     }
 
     /// <summary>Puts back whatever depth of field was configured before the menu framed its backdrop.</summary>
+    /// <remarks>
+    /// The two stashes are given back independently because they are taken independently: the menu holds
+    /// the focus for as long as it is up, while the motion blur is held only for the length of an entry
+    /// shot and is usually not held at all. Returning a value nobody took is how the player's own setting
+    /// gets overwritten with a stale one.
+    /// </remarks>
     private void ApplyGameplayDepthOfField()
     {
+        if (_shotMotionBlurSaved)
+        {
+            RenderCVars.MotionBlur.Value = _shotMotionBlur;
+            _shotMotionBlurSaved = false;
+        }
+
         if (!_gameplayDepthOfFieldSaved)
         {
             return;
@@ -256,7 +276,11 @@ internal sealed partial class DesktopGame
         RenderCVars.FocalDistance.Value = _gameplayFocalDistance;
         RenderCVars.FocalRange.Value = _gameplayFocalRange;
         RenderCVars.FocalBlur.Value = _gameplayFocalBlur;
-        RenderCVars.MotionBlur.Value = _gameplayMotionBlur;
+
+        // The focus stash is deliberately NOT cleared here. This is called twice on the way into a
+        // mission -- once when the menu leaves and again when the entry shot hands over -- and the shot
+        // re-frames the focus in between, so a stash cleared on the first call would leave the shot's own
+        // framing standing on the second. It is held for the session instead; see ApplyMenuDepthOfField.
     }
 
     /// <summary>Applies the shot's own framing: what it is focused on, and how much its movement smears.</summary>
@@ -285,7 +309,17 @@ internal sealed partial class DesktopGame
             RenderCVars.FocalBlur.Value = _gameplayFocalBlur;
         }
 
-        RenderCVars.MotionBlur.Value = Math.Max(_gameplayMotionBlur, _entry.MotionBlur);
+        // Taken on the shot's first frame, which is the frame before it is displaced -- and taken from the
+        // variable rather than from any earlier snapshot, so whatever the player last chose is what they
+        // get back. Guarded because this runs every frame of the shot, and an unguarded stash would save
+        // the shot's own blur on the second frame and hand that back as the player's.
+        if (!_shotMotionBlurSaved)
+        {
+            _shotMotionBlur = RenderCVars.MotionBlur.Value;
+            _shotMotionBlurSaved = true;
+        }
+
+        RenderCVars.MotionBlur.Value = Math.Max(_shotMotionBlur, _entry.MotionBlur);
     }
 
     /// <summary>Interpolates between two settings, for easing the menu's framing off across a shot.</summary>
