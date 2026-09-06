@@ -17,6 +17,12 @@
     <None Include="..\..\apps\OpenIGI.Desktop\Assets\weather\*.png"
           Link="Assets\weather\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- The lamps named by hand, for the same reason: the test has to read the file the game ships, or
+         it pins a copy that is free to drift away from it. -->
+    <None Include="..\..\apps\OpenIGI.Desktop\Assets\lamps.json"
+          Link="Assets\lamps.json"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

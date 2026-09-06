@@ -4,7 +4,7 @@ using OpenIGI.Core.Diagnostics;
 namespace OpenIGI.Game.World;
 
 /// <summary>
-/// The lights a level has, named by hand rather than inferred.
+/// The lights the game has, named by hand rather than inferred.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -15,10 +15,19 @@ namespace OpenIGI.Game.World;
 /// the answer outright, and this is where they write it down.
 /// </para>
 /// <para>
+/// <b>One list for the whole game, not one per level.</b> A model is a global asset: <c>226_01_1</c> is
+/// the same ceiling fitting in all fourteen missions, and it binds the same textures in every one of
+/// them — verified for every model the game names a light, across all fourteen. Nothing about a lamp
+/// changes between missions, so keying this by mission only meant re-stating the same answer up to
+/// fourteen times and, in practice, forgetting it thirteen: the file named ten models for mission 1 and
+/// left every other level to the detector alone.
+/// </para>
+/// <para>
 /// <b>Additive, not exclusive.</b> Naming a model here makes it a lamp; it does not switch the detector
-/// off for everything else. A level is large and a hand-written list will be partial for a long time,
-/// so the two run together — and <c>lamp: false</c> is how a detection that fires on the wrong thing is
-/// struck out without touching any code.
+/// off for everything else. A fitting modelled INTO a building shell — a garage's ceiling strip, an
+/// elevator car's light — has no model of its own to name and is still found by shape, so the two run
+/// together. <c>lamp: false</c> is how a detection that fires on the wrong thing is struck out without
+/// touching any code.
 /// </para>
 /// <para>
 /// <b>A model is not all lamp.</b> A vending machine is a cabinet with one lit panel and a monitor is a
@@ -35,7 +44,7 @@ public sealed class LampManifest
 {
     private const string LogCategory = "Emissive";
 
-    private readonly Dictionary<int, List<Entry>> _byMission = [];
+    private readonly List<Entry> _entries = [];
 
     private LampManifest()
     {
@@ -43,6 +52,9 @@ public sealed class LampManifest
 
     /// <summary>Gets a manifest that names nothing, leaving every level to the detector alone.</summary>
     public static LampManifest Empty { get; } = new();
+
+    /// <summary>Gets what a person has named, which applies to every mission.</summary>
+    public IReadOnlyList<Entry> Entries => _entries;
 
     /// <summary>One model a person has judged, and what they judged about it.</summary>
     /// <param name="Model">The instance name, as the target readout prints it.</param>
@@ -91,36 +103,21 @@ public sealed class LampManifest
 
             LampManifest manifest = new();
 
-            if (document.RootElement.TryGetProperty("missions", out JsonElement missions)
-                && missions.ValueKind == JsonValueKind.Object)
+            if (document.RootElement.TryGetProperty("lamps", out JsonElement lamps)
+                && lamps.ValueKind == JsonValueKind.Array)
             {
-                foreach (JsonProperty mission in missions.EnumerateObject())
+                foreach (JsonElement element in lamps.EnumerateArray())
                 {
-                    if (!int.TryParse(mission.Name, out int id) || mission.Value.ValueKind != JsonValueKind.Array)
+                    if (ReadEntry(element) is { } entry)
                     {
-                        continue;
-                    }
-
-                    List<Entry> entries = [];
-
-                    foreach (JsonElement element in mission.Value.EnumerateArray())
-                    {
-                        if (ReadEntry(element) is { } entry)
-                        {
-                            entries.Add(entry);
-                        }
-                    }
-
-                    if (entries.Count > 0)
-                    {
-                        manifest._byMission[id] = entries;
+                        manifest._entries.Add(entry);
                     }
                 }
             }
 
             log.Information(
                 LogCategory,
-                $"Lamp manifest: {manifest._byMission.Count} mission(s) named by hand.");
+                $"Lamp manifest: {manifest._entries.Count} model(s) named by hand.");
 
             return manifest;
         }
@@ -130,12 +127,6 @@ public sealed class LampManifest
             return Empty;
         }
     }
-
-    /// <summary>Gets what a person named for one mission.</summary>
-    /// <param name="missionId">The mission.</param>
-    /// <returns>Its entries, which may be empty.</returns>
-    public IReadOnlyList<Entry> For(int missionId) =>
-        _byMission.TryGetValue(missionId, out List<Entry>? entries) ? entries : [];
 
     private static Entry? ReadEntry(JsonElement element)
     {

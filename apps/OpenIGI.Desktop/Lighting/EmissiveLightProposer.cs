@@ -65,7 +65,7 @@ public static class EmissiveLightProposer
 
         try
         {
-            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, manifest.For(missionId), logger);
+            LampDetector.Lamps lamps = LampDetector.Detect(scene, resources, manifest.Entries, logger);
 
             if (lamps.Count == 0)
             {

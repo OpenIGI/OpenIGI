@@ -37,16 +37,17 @@ public static partial class LightFixtureStore
     /// leave it alone for a change that would not, and every edit anyone has made is kept.
     /// </para>
     /// <para>
-    /// 5: nothing is inferred to be a lamp unless it is skinned with one of the texture pages the
-    /// level's own catalogued fittings draw from, which drops 263 of the 423 sub-meshes the shape test
-    /// had been proposing across the fourteen levels — every soldier, chair, camera and bracket among
-    /// them. 4 gave each lamp sub-mesh its own emissive strength, so one texture can be a floodlight on
-    /// one model and a reading lamp on another. 3 moved emission from the texture to the sub-mesh, 2
-    /// added the direction a fixture faces, and version 1 was a bare array — which is what an absent
-    /// version reads as.
+    /// 6: the hand-written manifest covers the whole game rather than mission 1 alone, so every level
+    /// gets the fittings and the lit panels only mission 1 had been given. 5: nothing is inferred to be
+    /// a lamp unless it is skinned with one of the texture pages the level's own catalogued fittings
+    /// draw from, which drops 263 of the 423 sub-meshes the shape test had been proposing across the
+    /// fourteen levels — every soldier, chair, camera and bracket among them. 4 gave each lamp sub-mesh
+    /// its own emissive strength, so one texture can be a floodlight on one model and a reading lamp on
+    /// another. 3 moved emission from the texture to the sub-mesh, 2 added the direction a fixture
+    /// faces, and version 1 was a bare array — which is what an absent version reads as.
     /// </para>
     /// </remarks>
-    public const int Version = 5;
+    public const int Version = 6;
 
     /// <summary>Writes a mission's fixtures and emitters to a file, creating the directory if needed.</summary>
     /// <param name="path">Where to write.</param>

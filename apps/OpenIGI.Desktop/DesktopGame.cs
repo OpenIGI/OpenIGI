@@ -873,9 +873,9 @@ internal sealed partial class DesktopGame : IDisposable
             Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
             _logger);
 
-        // The lamps somebody has named by hand, for every mission at once. Read here rather than per
-        // level because it is one small file and the levels share it, and because a level that names
-        // none still has to know that.
+        // The lamps somebody has named by hand. One list for the whole game -- a model is a global
+        // asset and binds the same textures in every mission it appears in -- so this is read once for
+        // the session rather than per level.
         _lampManifest = LampManifest.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "lamps.json"),
             _logger);
