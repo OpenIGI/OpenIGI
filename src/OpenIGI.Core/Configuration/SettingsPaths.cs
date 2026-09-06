@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace OpenIGI.Core.Configuration;
 
 /// <summary>
@@ -24,7 +26,43 @@ public static class SettingsPaths
     public const string ProductFolder = "OpenIGI";
 
     /// <summary>Gets the directory beside the running executable.</summary>
-    public static string PortableDirectory => AppContext.BaseDirectory;
+    /// <remarks>
+    /// Not <see cref="AppContext.BaseDirectory"/>, which is where the app's own files are rather than
+    /// where its executable is. Published as a single file those are different places: the bundle
+    /// unpacks itself into a temporary folder and runs from there, so BaseDirectory names a directory
+    /// the player has never seen and cannot drop a <c>settings.cfg</c> into. The process path is the
+    /// bundle itself, which is the file they actually double-clicked.
+    /// </remarks>
+    public static string PortableDirectory => ExecutableDirectory;
+
+    /// <summary>Gets the directory holding the executable that started this process.</summary>
+    /// <remarks>
+    /// Falls back to <see cref="AppContext.BaseDirectory"/> when the process is not the app's own
+    /// executable — running through the shared host as <c>dotnet OpenIGI.Desktop.dll</c> makes the
+    /// process <c>dotnet</c> itself, whose folder is the SDK's and has nothing to do with the game.
+    /// The two agree for an ordinary published app, so this only ever differs where it must.
+    /// </remarks>
+    public static string ExecutableDirectory
+    {
+        get
+        {
+            string? processPath = Environment.ProcessPath;
+            string? entryName = Assembly.GetEntryAssembly()?.GetName().Name;
+
+            if (processPath is not null
+                && entryName is not null
+                && string.Equals(
+                    Path.GetFileNameWithoutExtension(processPath),
+                    entryName,
+                    StringComparison.OrdinalIgnoreCase)
+                && Path.GetDirectoryName(processPath) is { Length: > 0 } directory)
+            {
+                return directory;
+            }
+
+            return AppContext.BaseDirectory;
+        }
+    }
 
     /// <summary>Gets the per-user configuration directory, creating it when necessary.</summary>
     /// <returns>The directory path.</returns>

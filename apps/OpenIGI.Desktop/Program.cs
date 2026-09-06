@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
 using OpenIGI.Desktop.Infrastructure;
 using OpenIGI.Engine.Vfs;
@@ -59,7 +60,13 @@ IIgiLogger logger = persistentLogger;
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
 // is then the whole of the installation procedure, which is how somebody expects to install an add-on
 // for a game of this age -- and it is the only route that works with no environment to set up.
-string[] searched = [AppContext.BaseDirectory, Environment.CurrentDirectory];
+// The executable's folder is asked for by process path rather than AppContext.BaseDirectory, because
+// a single-file build runs from a temporary folder it unpacked itself into: BaseDirectory would name
+// that, the installation procedure would stop working, and the error below would list a path nobody
+// recognises. BaseDirectory is still searched after it, for the app's own shipped data.
+string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDirectory, Environment.CurrentDirectory }
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
 
 // -game, then IGI_GAME_PATH, then whatever is lying around the executable.
 string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched);
