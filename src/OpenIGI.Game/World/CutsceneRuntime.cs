@@ -695,10 +695,12 @@ public sealed class CutsceneRuntime
     /// <returns><see langword="true"/> when the parent has a live cutscene transform.</returns>
     /// <remarks>
     /// Retail's Human ground pass tests the struck collision task's moving-platform flag and parents
-    /// the Human to that exact task. <c>0x463310</c> is a mid-instruction false start (AGENTS.md);
-    /// r2's real prologues are Human ground <c>0x462390</c> and <c>Human_AttachedMovement</c>
-    /// <c>0x462CF0</c>. The task-tree ancestry of the Human is unrelated: Mission 1 actor 1666 is a
-    /// sibling of train car 1888, not its child.
+    /// the Human to that exact task. The aligned native helper at <c>0x463310</c> writes the parent
+    /// pointer and the Human's local position/orientation frame; its real one-block boundary is
+    /// confirmed in both Ghidra and r2.
+    /// The paired detach helper at <c>0x463550</c> clears <c>Human+0x76c</c> when the ground pass has
+    /// no valid moving contact. The task-tree ancestry of the Human is unrelated: Mission 1 actor
+    /// 1666 is a sibling of train car 1888, not its child.
     /// </remarks>
     public bool TryAttachActorToTask(
         GameTask task,
