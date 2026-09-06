@@ -1460,6 +1460,15 @@ public sealed class CutsceneRuntime
                 + (transform.TargetSteering * (1f - steeringRetention));
             transform.Thrust = (transform.Thrust * throttleRetention)
                 + (transform.TargetThrust * (1f - throttleRetention));
+            // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
+            // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0; constants 0x5333EC/0x533714 read live
+            // from IGI.EXE). Without it a commanded stop decays asymptotically and the truck
+            // freezes mid-route holding residual thrust (Level 2 held 29.88 engine units).
+            if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
+            {
+                transform.Thrust = 0f;
+            }
+
             float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
             transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
 
