@@ -681,6 +681,16 @@ public sealed partial class VulkanGraphicsDevice : IGraphicsDevice
         _frameCounter++;
         ProcessDeletions();
 
+        // Pose-ring health, behind OPENIGI_VK_POSE_DEBUG=1. A hazard is a pose written into a slot a
+        // frame in flight could still be fetching -- the defect that made an animated body judder on
+        // this backend while OpenGL, which orphaned the buffer instead, stayed smooth. Expect zero.
+        if (_frameCounter % 300 == 0 && Environment.GetEnvironmentVariable("OPENIGI_VK_POSE_DEBUG") == "1")
+        {
+            long hazards = System.Threading.Interlocked.Read(ref Meshes.VulkanMesh.PoseWriteHazards);
+            System.Console.WriteLine(FormattableString.Invariant(
+                $"[pose] frame {_frameCounter} ring {Meshes.VulkanMesh.PoseRingLength} hazards {hazards}"));
+        }
+
         _frameOpen = true;
         _presentPassActive = false;
         _presentPassResumes = false;

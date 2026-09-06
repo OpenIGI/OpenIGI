@@ -30,10 +30,46 @@ internal sealed unsafe class VulkanMesh : IDisposable
     private readonly VulkanAllocator _allocator;
     private readonly VulkanCommands _commands;
     private readonly VulkanBuffer _vertexBuffer;
-    private readonly VulkanBuffer? _secondVertexBuffer;
     private readonly VulkanBuffer _indexBuffer;
-    private bool _frontIsFirst = true;
+
+    // An animated mesh's poses live in a ring rather than a pair. A pose write must never land on
+    // memory a frame still in flight is reading: the GPU is up to MaxFramesInFlight frames behind the
+    // CPU, and a body's two streams stay bound for every frame between two ticks. OpenGL got this for
+    // free -- it re-specified the buffer with glBufferData, which orphans the old storage and lets the
+    // driver retire it once the GPU is done -- and the port dropped that, memcpying the new pose over
+    // vertices an unretired frame was still fetching. The ring is the explicit form of the same idea:
+    // a slot is written only once every frame that bound it has retired, so the previous pose a frame
+    // reads stays the pose it was recorded with. Null for a static or storage mesh, whose vertices are
+    // either immutable or appended under their own versioning.
+    private readonly VulkanBuffer[]? _poseRing;
+    private readonly ulong[]? _poseSlotLastBoundFrame;
+    private int _frontSlot;
+    private int _previousSlot;
     private bool _disposed;
+
+    /// <summary>How many pose buffers an animated mesh rings through.</summary>
+    /// <remarks>
+    /// Two more than the frames in flight. A frame binds one (current, previous) pair, so the frames
+    /// that have not retired hold at most three distinct slots between them; a fourth is always free
+    /// for the next tick to write. Overridable for the A/B that proves the hazard: at two the ring
+    /// aliases exactly as the old pair did.
+    /// </remarks>
+    internal static readonly int PoseRingLength = ResolvePoseRingLength();
+
+    private static int ResolvePoseRingLength()
+    {
+        string? configured = Environment.GetEnvironmentVariable("OPENIGI_VK_POSE_RING");
+        return int.TryParse(configured, out int length) && length >= 2 && length <= 8
+            ? length
+            : VulkanFrameLoop.MaxFramesInFlight + 2;
+    }
+
+    /// <summary>Counts pose writes that had to land on a slot a frame in flight could still read.</summary>
+    /// <remarks>
+    /// Zero on a correct run. It rises only when the ring cannot offer a retired slot, which needs the
+    /// frame rate to fall far enough that several ticks pass inside one unretired frame.
+    /// </remarks>
+    internal static long PoseWriteHazards;
 
     private VulkanMesh(
         Vk vk,
@@ -78,15 +114,27 @@ internal sealed unsafe class VulkanMesh : IDisposable
             (ulong)(vertexCapacity * Vertex3D.Size),
             BufferUsageFlags.VertexBufferBit | rayTracing,
             vertexHostVisible);
-        _secondVertexBuffer = animated
-            ? CreateBuffer(
-                vk,
-                device,
-                allocator,
-                (ulong)(vertexCapacity * Vertex3D.Size),
-                BufferUsageFlags.VertexBufferBit | rayTracing,
-                hostVisible: true)
-            : null;
+        if (animated)
+        {
+            // Slot zero is the mesh's own vertex buffer, so everything that addresses a mesh by that
+            // buffer keeps working; the rest of the ring is allocated beside it.
+            _poseRing = new VulkanBuffer[PoseRingLength];
+            _poseRing[0] = _vertexBuffer;
+            for (int slot = 1; slot < _poseRing.Length; slot++)
+            {
+                _poseRing[slot] = CreateBuffer(
+                    vk,
+                    device,
+                    allocator,
+                    (ulong)(vertexCapacity * Vertex3D.Size),
+                    BufferUsageFlags.VertexBufferBit | rayTracing,
+                    hostVisible: true);
+            }
+
+            _poseSlotLastBoundFrame = new ulong[_poseRing.Length];
+            _frontSlot = 0;
+            _previousSlot = _poseRing.Length - 1;
+        }
         _indexBuffer = CreateBuffer(
             vk,
             device,
@@ -122,7 +170,7 @@ internal sealed unsafe class VulkanMesh : IDisposable
     public Buffer VertexBuffer => CurrentVertexBuffer.Handle;
 
     /// <summary>Gets the preceding pose's vertex buffer, or the current buffer for a static mesh.</summary>
-    public Buffer PreviousVertexBuffer => (_secondVertexBuffer is null ? _vertexBuffer : PreviousPoseVertexBuffer).Handle;
+    public Buffer PreviousVertexBuffer => PreviousPoseVertexBuffer.Handle;
 
     /// <summary>Gets the index buffer handle, to bind before drawing.</summary>
     public Buffer IndexBuffer => _indexBuffer.Handle;
@@ -197,8 +245,12 @@ internal sealed unsafe class VulkanMesh : IDisposable
         ReadOnlySpan<ushort> indices)
     {
         VulkanMesh mesh = new(vk, device, allocator, commands, Math.Max(1, vertices.Length), Math.Max(1, indices.Length), animated: true, storage: false);
-        mesh._vertexBuffer.Write(vertices);
-        mesh._secondVertexBuffer!.Write(vertices);
+        // Every slot starts at the rest pose, so the first ticks blend between two real poses rather
+        // than out of uninitialised memory.
+        foreach (VulkanBuffer slot in mesh._poseRing!)
+        {
+            slot.Write(vertices);
+        }
         mesh.StageInto(mesh._indexBuffer.Handle, 0, indices);
         mesh.DrawableIndexCount = indices.Length;
         return mesh;
@@ -226,7 +278,7 @@ internal sealed unsafe class VulkanMesh : IDisposable
     /// <summary>Replaces an animated mesh's vertices.</summary>
     /// <param name="vertices">The new pose. Must be as many vertices as the mesh was created with.</param>
     /// <exception cref="GraphicsDeviceException">The mesh is not animated or the count differs.</exception>
-    public void UpdateVertices(ReadOnlySpan<Vertex3D> vertices)
+    public void UpdateVertices(ReadOnlySpan<Vertex3D> vertices, ulong frameCounter)
     {
         if (!Animated)
         {
@@ -239,12 +291,54 @@ internal sealed unsafe class VulkanMesh : IDisposable
                 $"An animated mesh takes exactly {VertexCapacity} vertices but got {vertices.Length}.");
         }
 
-        // Write the buffer holding the stale pose, then flip it to the front. The buffer that was drawn
-        // before the flip becomes the previous-pose stream without copying it, matching the OpenGL path
-        // and giving the velocity raster the actual old vertices for skinned motion.
-        VulkanBuffer stale = _frontIsFirst ? _secondVertexBuffer! : _vertexBuffer;
-        stale.Write(vertices);
-        _frontIsFirst = !_frontIsFirst;
+        // Into a slot no unretired frame can still be fetching, then forward the ring: what was drawn
+        // as the current pose becomes the previous-pose stream without a copy, which is what gives the
+        // velocity raster the real old vertices for skinned motion. The slot the ring leaves behind is
+        // not reused until the frames that bound it have retired -- the whole point of the ring, and
+        // what the OpenGL path got from orphaning its buffer on every re-specification.
+        int chosen = ChoosePoseSlot(frameCounter);
+        _poseRing![chosen].Write(vertices);
+        _previousSlot = _frontSlot;
+        _frontSlot = chosen;
+    }
+
+    /// <summary>Picks the ring slot this pose may be written into.</summary>
+    /// <param name="frameCounter">The device's current frame counter.</param>
+    /// <returns>A slot that is neither live pose and that no unretired frame bound.</returns>
+    /// <remarks>
+    /// The current pose is never a candidate: the flip is about to make it the previous stream. Of the
+    /// rest, a slot is free once every frame that bound it has retired, which the device expresses
+    /// everywhere else as being <see cref="VulkanFrameLoop.MaxFramesInFlight"/> frames behind. If the
+    /// frame rate has fallen far enough that several ticks pass inside one unretired frame, no slot is
+    /// free; the least recently bound one is taken and the write is counted, because tearing one pose
+    /// is a better failure than refusing to animate.
+    /// </remarks>
+    private int ChoosePoseSlot(ulong frameCounter)
+    {
+        VulkanBuffer[] ring = _poseRing!;
+        ulong[] lastBound = _poseSlotLastBoundFrame!;
+        int oldest = -1;
+        for (int step = 1; step <= ring.Length; step++)
+        {
+            int slot = (_frontSlot + step) % ring.Length;
+            if (slot == _frontSlot)
+            {
+                continue;
+            }
+
+            if (lastBound[slot] + VulkanFrameLoop.MaxFramesInFlight <= frameCounter)
+            {
+                return slot;
+            }
+
+            if (oldest < 0 || lastBound[slot] < lastBound[oldest])
+            {
+                oldest = slot;
+            }
+        }
+
+        Interlocked.Increment(ref PoseWriteHazards);
+        return oldest;
     }
 
     /// <summary>Writes a range of vertices and indices into a storage mesh.</summary>
@@ -287,13 +381,40 @@ internal sealed unsafe class VulkanMesh : IDisposable
 
         _disposed = true;
         _indexBuffer.Dispose();
-        _secondVertexBuffer?.Dispose();
+        if (_poseRing is not null)
+        {
+            // Slot zero is _vertexBuffer, disposed below with every other mesh's.
+            for (int slot = 1; slot < _poseRing.Length; slot++)
+            {
+                _poseRing[slot].Dispose();
+            }
+        }
+
         _vertexBuffer.Dispose();
     }
 
-    private VulkanBuffer CurrentVertexBuffer => _frontIsFirst ? _vertexBuffer : _secondVertexBuffer!;
+    private VulkanBuffer CurrentVertexBuffer => _poseRing is null ? _vertexBuffer : _poseRing[_frontSlot];
 
-    private VulkanBuffer PreviousPoseVertexBuffer => _frontIsFirst ? _secondVertexBuffer! : _vertexBuffer;
+    private VulkanBuffer PreviousPoseVertexBuffer =>
+        _poseRing is null ? _vertexBuffer : _poseRing[_previousSlot];
+
+    /// <summary>Records that the frame being built has bound this mesh's two pose streams.</summary>
+    /// <param name="frameCounter">The device's frame counter for the frame doing the binding.</param>
+    /// <remarks>
+    /// What keeps a pose write off memory the GPU is still reading. Stamped on both live slots, since a
+    /// frame fetches from both, and read back by <see cref="UpdateVertices"/> to tell a retired slot
+    /// from one an unretired frame still refers to.
+    /// </remarks>
+    public void MarkPoseSlotsBound(ulong frameCounter)
+    {
+        if (_poseSlotLastBoundFrame is null)
+        {
+            return;
+        }
+
+        _poseSlotLastBoundFrame[_frontSlot] = frameCounter;
+        _poseSlotLastBoundFrame[_previousSlot] = frameCounter;
+    }
 
     private void StageInto<T>(Buffer destination, ulong destinationOffset, ReadOnlySpan<T> data)
         where T : unmanaged

@@ -236,7 +236,7 @@ public sealed partial class VulkanGraphicsDevice
     public void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices)
     {
         ThrowIfDisposed();
-        Resolve(mesh).UpdateVertices(vertices);
+        Resolve(mesh).UpdateVertices(vertices, _frameCounter);
     }
 
     /// <inheritdoc/>
@@ -768,6 +768,12 @@ public sealed partial class VulkanGraphicsDevice
     private unsafe void BindMeshBuffers(VulkanMesh mesh)
     {
         Vk vk = _instance.Vk;
+
+        // Before the already-bound test below, not after it: a mesh drawn twice in a row skips the
+        // rebind, and a slot that went unstamped would read as retired and be overwritten under the
+        // frame that is still fetching it.
+        mesh.MarkPoseSlotsBound(_frameCounter);
+
         Buffer vertexBuffer = mesh.VertexBuffer;
         Buffer previousVertexBuffer = mesh.PreviousVertexBuffer;
         Buffer indexBuffer = mesh.IndexBuffer;
