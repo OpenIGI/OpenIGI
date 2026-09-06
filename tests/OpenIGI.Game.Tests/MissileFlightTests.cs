@@ -177,9 +177,9 @@ public sealed class MissileFlightTests
     [Fact]
     public void AMissileBlastIsSmallerThanAGrenadesButFarStronger()
     {
-        // Five times the damage over half the radius - a missile is a precise, powerful blast where a
-        // grenade is a wide, weak one.
-        Assert.Equal(5f, MissileExplosion.DamageFactor);
+        // A missile is a precise, powerful blast where a grenade is a wide, weak one. The damage is
+        // fixed by the missile impact callback; the grenade's now comes from its weapon config, so the
+        // two are no longer stated as a ratio of one another.
         Assert.Equal(5f, MissileExplosion.DamageFactor);
 
         float grenadeRadius = ExplosionDamage.ToUnits(ExplosionDamage.DefaultGrenadeRadiusMetres);

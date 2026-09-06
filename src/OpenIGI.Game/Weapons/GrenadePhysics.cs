@@ -78,10 +78,6 @@ public static class GrenadePhysics
     /// <remarks>The debounce window from <c>0x00476CC0</c>: the flag clears once the tick gap exceeds ten.</remarks>
     public const int BounceQuietTicks = 10;
 
-    /// <summary>How far a grenade's bounce is heard by the AI, in world units.</summary>
-    /// <remarks><c>20000</c> — the radius <c>0x00476CC0</c> posts with the bounce noise, about five metres.</remarks>
-    public const float BounceHearingRadiusUnits = 20000f;
-
     /// <summary>Returns the support distance of the grenade box along a collision normal.</summary>
     /// <param name="normal">The surface normal reported by the world cast.</param>
     /// <returns>The half-extent needed to keep the physics object outside the face.</returns>
