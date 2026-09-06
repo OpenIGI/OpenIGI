@@ -92,6 +92,7 @@ internal sealed unsafe class VulkanDevice : IDisposable
         _pipelineCache = new Pipelines.VulkanPipelineCache(_vk, Device, selection.Properties, logger);
 
         logger.Information("Vulkan", $"Created logical device on '{selection.Name}'.");
+        LogMemoryBudget("at start-up");
     }
 
     /// <summary>Gets the cache every pipeline creation is built through.</summary>
@@ -178,8 +179,61 @@ internal sealed unsafe class VulkanDevice : IDisposable
     /// address it read, wrote or executed at, and whether it was invalid -- which is what tells a timeout
     /// apart from an out-of-bounds and points at the resource behind it.
     /// </remarks>
+    /// <summary>Writes how much of each device-local heap is spoken for.</summary>
+    /// <param name="when">What moment this reading describes, for the message.</param>
+    /// <remarks>
+    /// Read through VK_EXT_memory_budget, which reports the driver's own view rather than the sum of what
+    /// the port asked for -- so it counts what other applications and the desktop are holding too. Logged
+    /// at start-up and again on a device loss, because those two readings together answer a question a
+    /// stack trace cannot: whether the device died because it ran out of memory or for some other reason.
+    /// A card with a third of the memory the port was developed against is the case this exists for.
+    /// </remarks>
+    public unsafe void LogMemoryBudget(string when)
+    {
+        if (!_logger.IsEnabled(LogLevel.Information)
+            || !Capabilities.EnabledExtensions.Contains(VulkanExtensionNames.MemoryBudget))
+        {
+            return;
+        }
+
+        PhysicalDeviceMemoryBudgetPropertiesEXT budget = new()
+        {
+            SType = StructureType.PhysicalDeviceMemoryBudgetPropertiesExt,
+        };
+
+        PhysicalDeviceMemoryProperties2 properties = new()
+        {
+            SType = StructureType.PhysicalDeviceMemoryProperties2,
+            PNext = &budget,
+        };
+
+        _vk.GetPhysicalDeviceMemoryProperties2(Selection.Device, &properties);
+
+        List<string> heaps = [];
+        for (uint i = 0; i < properties.MemoryProperties.MemoryHeapCount; i++)
+        {
+            if ((properties.MemoryProperties.MemoryHeaps[(int)i].Flags & MemoryHeapFlags.DeviceLocalBit) == 0)
+            {
+                continue;
+            }
+
+            double used = budget.HeapUsage[(int)i] / (1024.0 * 1024.0);
+            double allowed = budget.HeapBudget[(int)i] / (1024.0 * 1024.0);
+            double size = properties.MemoryProperties.MemoryHeaps[(int)i].Size / (1024.0 * 1024.0);
+            heaps.Add(FormattableString.Invariant(
+                $"heap {i}: {used:F0} MiB used of {allowed:F0} MiB available ({size:F0} MiB total)"));
+        }
+
+        if (heaps.Count > 0)
+        {
+            _logger.Information("Vulkan", $"Device memory {when} -- {string.Join("; ", heaps)}.");
+        }
+    }
+
     public unsafe void ReportDeviceFault()
     {
+        LogMemoryBudget("when the device was lost");
+
         if (!_deviceFaultEnabled)
         {
             _logger.Warning("Vulkan", "Device lost; VK_EXT_device_fault is not enabled, so no fault detail is available.");

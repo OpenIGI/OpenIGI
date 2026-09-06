@@ -260,8 +260,26 @@ internal sealed unsafe class VulkanCommands : IDisposable
 
         try
         {
-            VkCheck.Ok(_vk.QueueSubmit(_device.Graphics, 1, &submitInfo, fence), "vkQueueSubmit");
-            VkCheck.Ok(_vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue), "vkWaitForFences");
+            // The fault is asked for here as well as on the frame queue's submit. VK_EXT_device_fault can
+            // only be read from a device that has just been lost, and only before the exception unwinds
+            // past it -- so a path that throws without asking throws away the one description of what the
+            // GPU was doing. This path carries the uploads and the card captures, which is exactly the
+            // work a device loss during a level's build lands in, and it reported nothing at all.
+            Result submitResult = _vk.QueueSubmit(_device.Graphics, 1, &submitInfo, fence);
+            if (submitResult == Result.ErrorDeviceLost)
+            {
+                _device.ReportDeviceFault();
+            }
+
+            VkCheck.Ok(submitResult, "vkQueueSubmit");
+
+            Result waitResult = _vk.WaitForFences(_device.Device, 1, &fence, true, ulong.MaxValue);
+            if (waitResult == Result.ErrorDeviceLost)
+            {
+                _device.ReportDeviceFault();
+            }
+
+            VkCheck.Ok(waitResult, "vkWaitForFences");
         }
         finally
         {
