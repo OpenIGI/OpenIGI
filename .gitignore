@@ -102,5 +102,8 @@ a probe of the running original
 /scratch/
 /scratch/macos/*.sh
 /scratch/macos/*.bash
+
+# Isolated local worktrees for feature code and macOS playtests.
+/.worktrees/
 NuGetPackages.config
 NuGet.config
