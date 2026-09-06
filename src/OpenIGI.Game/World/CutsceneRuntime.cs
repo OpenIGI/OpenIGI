@@ -411,7 +411,7 @@ public sealed class CutsceneRuntime
 
             if (wasRun && !scene.IsRun)
             {
-                    ExecuteSceneExpression(scene, scene.StopExpression);
+                ExecuteSceneExpression(scene, scene.StopExpression);
             }
         }
 
