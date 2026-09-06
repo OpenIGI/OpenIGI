@@ -425,12 +425,24 @@ public interface IGraphicsDevice : IDisposable
     /// so through <see cref="GraphicsCapabilities.UnimplementedSettings"/> where the shell can report it.
     /// </para>
     /// </remarks>
-    /// <param name="shelters">
-    /// Boxes the rain does not reach into, camera-relative, at most <see cref="WetShelter.Capacity"/> of
-    /// them. Ground under one of these stays dry however hard it is raining outside — without them the
-    /// floor of every building in the level pools with water while the roof keeps the rain off it.
+    void SetWetness(in WetnessSettings wetness);
+
+    /// <summary>Sets the top-down map of the level's roofs, which decides what the rain reaches.</summary>
+    /// <param name="map">
+    /// The raster, packed as <see cref="ShelterMapTransform"/> describes, or
+    /// <see cref="TextureHandle.None"/> for a level with no map.
     /// </param>
-    void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters);
+    /// <param name="transform">
+    /// How to read it, or <see cref="ShelterMapTransform.None"/> when nothing is sheltered. Set once
+    /// when a mission loads: the map is a property of the level rather than of the frame.
+    /// </param>
+    /// <remarks>
+    /// Ground under a roof stays dry however hard it is raining outside — without this the floor of
+    /// every building in the level pools with water while its own roof keeps the rain off it. Both the
+    /// shading and the reflection march read it, and they must read the same one: a reflection that
+    /// disagreed with the shading about where the water is would land beside it.
+    /// </remarks>
+    void SetShelterMap(TextureHandle map, in ShelterMapTransform transform);
 
     /// <summary>Sets what surfaces reflect and how far the frame is searched to find it.</summary>
     /// <param name="settings">The search, or <see cref="ReflectionSettings.Off"/> for none.</param>

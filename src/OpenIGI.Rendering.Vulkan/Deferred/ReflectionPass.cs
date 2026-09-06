@@ -20,13 +20,13 @@ namespace OpenIGI.Rendering.Vulkan.Deferred;
 /// </remarks>
 internal sealed class ReflectionPass : IDisposable
 {
-    // mat4 + eight vec4s + the shelter boxes: the view-to-world rotation, the unprojection, the
-    // resolution, the SSR knobs, the wetness/frame block, two blocks of puddle and ripple, the shelter
-    // count, and then two vec4s per shelter. The layout matches the shader's Params exactly.
-    private const int ReflectParamSize = (16 + (8 * 4) + (WetShelter.Capacity * 8)) * sizeof(float);
+    // mat4 + ten vec4s: the view-to-world rotation, the unprojection, the resolution, the SSR knobs,
+    // the wetness/frame block, two blocks of puddle and ripple, and then three of the shelter map's own
+    // transform. The layout matches the shader's Params exactly.
+    private const int ReflectParamSize = (16 + (10 * 4)) * sizeof(float);
 
-    // Where the shelter boxes start, in floats: past the mat4 and the eight vec4s above them.
-    private const int ShelterOffset = 16 + (8 * 4);
+    // Where the shelter map's transform starts, in floats: past the mat4 and the seven vec4s above it.
+    private const int ShelterOffset = 16 + (7 * 4);
 
     // One vec4 of resolution.
     private const int CompositeParamSize = 4 * sizeof(float);
@@ -42,6 +42,11 @@ internal sealed class ReflectionPass : IDisposable
         // reflection can take the place of the sky the shading already laid in the water rather than
         // being piled on top of it.
         ComputeBindingKind.SampledStorageImage,
+
+        // The level's roofs, seen from above. Read for exactly the reason the shading reads it: no water
+        // stands under a roof, so none reflects, and the march has to agree about that with the pass
+        // that decided where the water was.
+        ComputeBindingKind.SampledImage,
 
         ComputeBindingKind.StorageImage,   // the reflection, written
     ];
@@ -94,9 +99,11 @@ internal sealed class ReflectionPass : IDisposable
     /// shading drew — the same puddles, rippled the same way at the same instant — which takes the ripple
     /// lattice and its clock as much as it takes the coverage.
     /// </param>
-    /// <param name="shelters">The roofs, camera-relative: no water stands under one, so none reflects.</param>
+    /// <param name="shelterMap">The level's roofs, seen from above: no water stands under one.</param>
+    /// <param name="shelter">How to read that map, or <see cref="ShelterMapTransform.None"/> for none.</param>
     /// <param name="cameraX">The camera's world X, which the puddle lattice is anchored to.</param>
     /// <param name="cameraY">The camera's world Y, which the puddle lattice is anchored to.</param>
+    /// <param name="cameraZ">The camera's world Z, which the shelter map is addressed in.</param>
     /// <param name="viewHeightKm">The camera's height, for reading the sky table the same way.</param>
     /// <param name="frameIndex">Which frame this is, so the march's dither moves.</param>
     /// <param name="reach">How far, in metres, a reflected ray is marched.</param>
@@ -115,9 +122,11 @@ internal sealed class ReflectionPass : IDisposable
         in DepthUnprojection unprojection,
         in ReflectionSettings settings,
         in WetnessSettings wetness,
-        ReadOnlySpan<WetShelter> shelters,
+        ImageView shelterMap,
+        in ShelterMapTransform shelter,
         float cameraX,
         float cameraY,
+        float cameraZ,
         float viewHeightKm,
         int frameIndex,
         float reach)
@@ -166,20 +175,23 @@ internal sealed class ReflectionPass : IDisposable
         data[38] = cameraX;
         data[39] = cameraY;
 
-        int shelterCount = Math.Min(shelters.Length, WetShelter.Capacity);
-        data[40] = shelterCount;
+        // The shelter map's transform, in world metres. The camera's own Z rides along with it because
+        // this pass has the surface only as a camera-relative vector and the map is addressed in the
+        // world; the shading pass gets the same number from its uCamera.
+        data[40] = shelter.IsPresent ? 1f : 0f;
+        data[41] = cameraZ;
 
-        for (int i = 0; i < shelterCount; i++)
-        {
-            WetShelter shelter = shelters[i];
-            int at = ShelterOffset + (i * 8);
-            data[at] = shelter.Minimum.X;
-            data[at + 1] = shelter.Minimum.Y;
-            data[at + 2] = shelter.Minimum.Z;
-            data[at + 4] = shelter.Maximum.X;
-            data[at + 5] = shelter.Maximum.Y;
-            data[at + 6] = shelter.Maximum.Z;
-        }
+        data[ShelterOffset] = shelter.OriginX;
+        data[ShelterOffset + 1] = shelter.OriginY;
+        data[ShelterOffset + 2] = shelter.CellMetres > 0f ? 1f / shelter.CellMetres : 0f;
+        data[ShelterOffset + 3] = shelter.LowestZ;
+
+        data[ShelterOffset + 4] = shelter.HeightScale;
+        data[ShelterOffset + 5] = shelter.HeadroomMetres;
+        data[ShelterOffset + 6] = shelter.ReachMetres;
+
+        data[ShelterOffset + 8] = shelter.Width;
+        data[ShelterOffset + 9] = shelter.Height;
 
         ReadOnlySpan<ComputeResource> resources =
         [
@@ -188,6 +200,7 @@ internal sealed class ReflectionPass : IDisposable
             new ComputeResource(normal),
             new ComputeResource(material),
             new ComputeResource(skyView),
+            new ComputeResource(shelterMap),
             new ComputeResource(reflection),
         ];
 

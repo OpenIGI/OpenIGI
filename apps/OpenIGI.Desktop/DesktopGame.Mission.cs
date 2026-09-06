@@ -393,7 +393,7 @@ internal sealed partial class DesktopGame
         // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
         // enabled by its Is Rain and Is Active flags), and whatever rain the previous mission left is
         // dropped first, exactly as the reference resets its rain at every level load. The same scene's
-        // building placements also provide the shells the rain is suppressed inside.
+        // geometry also provides the roofs the rain is suppressed under.
         _rain?.Dispose();
         _rain = new RainRenderer(_device, _logger);
         _rain.ReadParams(levelRoot);
@@ -402,12 +402,12 @@ internal sealed partial class DesktopGame
         _snow.ReadParams(levelRoot);
         _storm?.Dispose();
         _storm = new StormRenderer(_device, _logger);
-        _rainBuildingVolumes = RainRenderer.BuildBuildingVolumes(scene.Placements);
+        BuildShelterField(scene);
 
         // The storm falls where the level says rain falls -- it is the same weather, drawn better -- so
         // it inherits the vanilla renderer's reading of the RainEffect task rather than parsing it a
-        // second time, and shelters under the same shells.
-        _storm.SetShelters(_rainBuildingVolumes);
+        // second time, and shelters under the same roofs.
+        _storm.SetShelter(_shelterField);
         ApplyWeatherSettings();
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
@@ -1861,6 +1861,75 @@ internal sealed partial class DesktopGame
         return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
+    /// <summary>Builds the level's top-down map of what the solid world stands over, and binds it.</summary>
+    /// <param name="scene">The mission's placed objects.</param>
+    /// <remarks>
+    /// <para>
+    /// The one answer to "can the sky reach this point", for the fog, the falling rain, its splashes and
+    /// the standing water alike. It is a raster of the collision geometry seen from above rather than a
+    /// list of building bounding boxes, because the boxes were wrong both ways round: on mission one a
+    /// quarter of the ground inside them has open sky over it — a building at an angle to the world axes
+    /// fills barely a third of its own box — while two fifths of the ground genuinely under a roof lay
+    /// outside every box, its shelter never having been labelled a building.
+    /// </para>
+    /// <para>
+    /// The CPU keeps the raster for its own questions and the GPU is handed a packed copy, so the puddle
+    /// a pixel draws and the drop the storm culls are decided by the same numbers.
+    /// </para>
+    /// </remarks>
+    private void BuildShelterField(WorldScene scene)
+    {
+        ReleaseShelterField();
+
+        long started = _loop.TimeSource.Milliseconds;
+        _shelterField = ShelterHeightField.Build(scene.Placements);
+        if (_shelterField.IsEmpty)
+        {
+            _logger.Information("Shelter", "the level places nothing solid; nothing is sheltered");
+            return;
+        }
+
+        Bgra32[] texels = _shelterField.Encode(out float scale);
+        _shelterMap = _device.CreateTexture(
+            new TextureDescription(
+                _shelterField.Width,
+                _shelterField.Depth,
+                MipLevels: 1,
+                TextureFilter.Point,
+                TextureAddressMode.Clamp),
+            texels);
+
+        _device.SetShelterMap(
+            _shelterMap,
+            new ShelterMapTransform(
+                (float)_shelterField.OriginX,
+                (float)_shelterField.OriginY,
+                (float)_shelterField.CellMetres,
+                _shelterField.Width,
+                _shelterField.Depth,
+                _shelterField.LowestZ,
+                scale,
+                (float)ShelterHeightField.SurfaceHeadroomMetres,
+                (float)ShelterHeightField.MaxOverheadMetres));
+
+        _logger.Information(
+            "Shelter",
+            FormattableString.Invariant(
+                $"{_shelterField.Width}x{_shelterField.Depth} at {_shelterField.CellMetres:0.00} m, z {_shelterField.LowestZ:0.0}..{_shelterField.HighestZ:0.0}, built in {_loop.TimeSource.Milliseconds - started} ms"));
+    }
+
+    /// <summary>Drops the level's shelter map, and tells the device there is none.</summary>
+    private void ReleaseShelterField()
+    {
+        _shelterField = ShelterHeightField.Empty;
+        _device.SetShelterMap(TextureHandle.None, ShelterMapTransform.None);
+        if (_shelterMap.IsValid)
+        {
+            _device.DestroyTexture(_shelterMap);
+            _shelterMap = TextureHandle.None;
+        }
+    }
+
     private void ReleasePlayedMission()
     {
         // First, because both are worker threads tracing the level that is going and they hold the whole
@@ -1938,7 +2007,7 @@ internal sealed partial class DesktopGame
         _storm = null;
         _snow?.Dispose();
         _snow = null;
-        _rainBuildingVolumes = [];
+        ReleaseShelterField();
         _terrain = null;
         _world = null;
         _soldiers = null;

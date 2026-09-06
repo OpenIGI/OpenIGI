@@ -267,10 +267,14 @@ internal sealed partial class DesktopGame : IDisposable
     private SkyRenderer? _sky;
     private RainRenderer? _rain;
     private StormRenderer? _storm;
-    private readonly WetShelter[] _wetShelters = new WetShelter[WetShelter.Capacity];
-    private readonly double[] _wetShelterGap = new double[WetShelter.Capacity];
     private SnowRenderer? _snow;
-    private IReadOnlyList<RainRenderer.BuildingVolume> _rainBuildingVolumes = [];
+
+    // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
+    // -- the fog, the falling rain, its splashes and the standing water all ask this -- and it is built
+    // once when the mission loads, out of the geometry itself rather than out of which tasks happen to
+    // be named after buildings.
+    private ShelterHeightField _shelterField = ShelterHeightField.Empty;
+    private TextureHandle _shelterMap = TextureHandle.None;
     private Vector3d _stormEyeMetres;
     private ShadowCasterPass? _shadowPass;
 
@@ -3853,10 +3857,7 @@ internal sealed partial class DesktopGame : IDisposable
                         ? WetnessSettings.Storm.AtIntensity(
                             _storm!.Settings.Intensity,
                             _loop.TimeSource.Milliseconds / 1000f)
-                        : WetnessSettings.Dry,
-                    wetGround
-                        ? _wetShelters.AsSpan(0, NearestShelters(eye.Position))
-                        : []);
+                        : WetnessSettings.Dry);
 
                 // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
                 // stop as a second, smaller event -- which is the thing this exists to remove.
@@ -5763,98 +5764,6 @@ internal sealed partial class DesktopGame : IDisposable
     // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
     // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
     // vertical one follows from the window's aspect, rather than the other way round.
-    /// <summary>Fills <c>_wetShelters</c> with the building shells nearest the camera.</summary>
-    /// <param name="eye">Where the camera stands, in world metres.</param>
-    /// <returns>How many entries are valid.</returns>
-    /// <remarks>
-    /// <para>
-    /// The same shells the rain is culled against, rebased to the camera and handed to the lighting pass
-    /// so the ground under a roof stays dry. Without it every warehouse floor in the level pools with
-    /// water while its own roof keeps the rain off, which is the sort of wrong that is invisible from
-    /// outside and unmissable the moment the player walks in.
-    /// </para>
-    /// <para>
-    /// Nearest by the horizontal gap to the box rather than to its centre, because what matters is
-    /// whether the shell can be over ground the player can see, and a long hangar's centre can be far
-    /// away while its near wall is underfoot. The rebase is a double-precision subtract on this side:
-    /// the level sits tens of kilometres out and the shader only ever sees camera-relative metres.
-    /// </para>
-    /// </remarks>
-    private int NearestShelters(Vector3d eye)
-    {
-        const double Reach = 90.0;
-
-        int kept = 0;
-        double worst = 0.0;
-        int worstAt = 0;
-
-        for (int i = 0; i < _rainBuildingVolumes.Count; i++)
-        {
-            RainRenderer.BuildingVolume volume = _rainBuildingVolumes[i];
-
-            double dx = Math.Max(Math.Max(volume.Minimum.X - eye.X, 0.0), eye.X - volume.Maximum.X);
-            double dy = Math.Max(Math.Max(volume.Minimum.Y - eye.Y, 0.0), eye.Y - volume.Maximum.Y);
-            double gap = (dx * dx) + (dy * dy);
-            if (gap > Reach * Reach)
-            {
-                continue;
-            }
-
-            WetShelter shelter = new(
-                new Vector3f(
-                    (float)(volume.Minimum.X - eye.X),
-                    (float)(volume.Minimum.Y - eye.Y),
-                    (float)(volume.Minimum.Z - eye.Z)),
-                new Vector3f(
-                    (float)(volume.Maximum.X - eye.X),
-                    (float)(volume.Maximum.Y - eye.Y),
-                    (float)(volume.Maximum.Z - eye.Z)));
-
-            if (kept < _wetShelters.Length)
-            {
-                _wetShelters[kept] = shelter;
-                _wetShelterGap[kept] = gap;
-                kept++;
-                if (kept == _wetShelters.Length)
-                {
-                    worst = Rescan(out worstAt);
-                }
-
-                continue;
-            }
-
-            // Full: this one only earns a place by displacing the furthest held, and doing so means
-            // finding the next furthest. A rescan of sixteen is cheaper than keeping them sorted, and it
-            // only happens when a shell actually displaces one.
-            if (gap >= worst)
-            {
-                continue;
-            }
-
-            _wetShelters[worstAt] = shelter;
-            _wetShelterGap[worstAt] = gap;
-            worst = Rescan(out worstAt);
-        }
-
-        return kept;
-
-        double Rescan(out int at)
-        {
-            double furthest = -1.0;
-            at = 0;
-            for (int i = 0; i < _wetShelters.Length; i++)
-            {
-                if (_wetShelterGap[i] > furthest)
-                {
-                    furthest = _wetShelterGap[i];
-                    at = i;
-                }
-            }
-
-            return furthest;
-        }
-    }
-
     /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
     /// <param name="eye">Where the camera stands, in world metres.</param>
     /// <param name="range">Unused by the ranking; see the remarks on why it must not scale it.</param>
@@ -6037,18 +5946,17 @@ internal sealed partial class DesktopGame : IDisposable
             $"ray query, sun disc {RenderCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
     }
 
-    private bool IsCameraInsideBuilding(Vector3d position)
-    {
-        foreach (RainRenderer.BuildingVolume volume in _rainBuildingVolumes)
-        {
-            if (volume.Contains(position))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    /// <summary>Reports whether the camera has a roof over it, so the frame is drawn as an interior.</summary>
+    /// <param name="position">Where the camera stands, in world metres.</param>
+    /// <remarks>
+    /// This used to be "inside the bounding box of a task named <c>Building_</c>", and that box is not
+    /// the building: one standing at an angle to the world axes fills barely a third of it, so a quarter
+    /// of the ground the test called indoors on mission one has open sky over it. That is what stood the
+    /// fog down and stopped the rain over the middle of an open apron. What decides it now is whether
+    /// anything solid is actually overhead — see <see cref="ShelterHeightField.IsUnderCover"/>, which
+    /// takes a small vote around the eye so a pipe passing over does not read as a ceiling.
+    /// </remarks>
+    private bool IsCameraInsideBuilding(Vector3d position) => _shelterField.IsUnderCover(position);
 
     /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
     /// <remarks>

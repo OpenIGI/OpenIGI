@@ -1,4 +1,4 @@
-using OpenIGI.Core.Graphics;
+﻿using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Rendering;
 
@@ -485,11 +485,17 @@ public sealed class RecordingGraphicsDevice : IGraphicsDevice
     public List<VolumetricFogSettings> Fogs { get; } = [];
 
     /// <summary>The wetness settings applied, in order, with the shelter count each carried.</summary>
-    public List<(WetnessSettings Wetness, int Shelters)> Wetness { get; } = [];
+    public List<WetnessSettings> Wetness { get; } = [];
+
+    /// <summary>Every shelter map handed over, newest last.</summary>
+    public List<(TextureHandle Map, ShelterMapTransform Transform)> ShelterMaps { get; } = [];
 
     /// <inheritdoc/>
-    public void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters) =>
-        Wetness.Add((wetness, shelters.Length));
+    public void SetWetness(in WetnessSettings wetness) => Wetness.Add(wetness);
+
+    /// <inheritdoc/>
+    public void SetShelterMap(TextureHandle map, in ShelterMapTransform transform) =>
+        ShelterMaps.Add((map, transform));
 
     /// <summary>What <see cref="GpuMeasuredTiming"/> reports. Zero unless a test sets it.</summary>
     public GpuFrameTiming MeasuredTiming { get; set; }

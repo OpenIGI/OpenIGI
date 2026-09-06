@@ -95,8 +95,11 @@ public sealed partial class VulkanGraphicsDevice
     private int _fogVolumeCount;
     private bool _fogActive;
     private ReflectionSettings _reflectionSettings = ReflectionSettings.Off;
-    private readonly WetShelter[] _wetShelters = new WetShelter[WetShelter.Capacity];
-    private int _wetShelterCount;
+
+    // The level's roofs, seen from above, and how to read them. Set once when a mission loads and held
+    // until the next one replaces it: where the rain reaches is a property of the level, not the frame.
+    private TextureHandle _shelterMap = TextureHandle.None;
+    private ShelterMapTransform _shelterTransform = ShelterMapTransform.None;
 
     /// <summary>Gets a value indicating whether a shadow cascade is currently being rendered.</summary>
     internal bool InShadowPass => _inShadowPass;
@@ -832,9 +835,11 @@ public sealed partial class VulkanGraphicsDevice
             _unprojection,
             _reflectionSettings,
             _wetness,
-            _wetShelters.AsSpan(0, _wetShelterCount),
+            ShelterMapView(),
+            HasShelterMap() ? _shelterTransform : ShelterMapTransform.None,
             _cameraPosition.X,
             _cameraPosition.Y,
+            _cameraPosition.Z,
             Sky.SkyAtmosphere.ViewHeightKm(2f),
             (int)(_frameCounter % 64UL),
             ReflectionReachMetres);
@@ -1636,14 +1641,47 @@ public sealed partial class VulkanGraphicsDevice
     /// Held rather than acted on here: it is two vectors in the lighting pass's own uniform, so the whole
     /// of it arrives with the frame's GI parameters and costs no binding, no pass and no extra upload.
     /// </remarks>
-    public void SetWetness(in WetnessSettings wetness, ReadOnlySpan<WetShelter> shelters)
+    public void SetWetness(in WetnessSettings wetness)
     {
         ThrowIfDisposed();
         _wetness = wetness;
-
-        _wetShelterCount = Math.Min(shelters.Length, WetShelter.Capacity);
-        shelters[.._wetShelterCount].CopyTo(_wetShelters);
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Held rather than bound here: the descriptor sets are written as part of the frame, and the map is
+    /// a texture like any other until then. A handle that no longer names a live texture -- a mission
+    /// that has unloaded -- falls back to the placeholder, so a stale map cannot outlive its level.
+    /// </remarks>
+    public void SetShelterMap(TextureHandle map, in ShelterMapTransform transform)
+    {
+        ThrowIfDisposed();
+        _shelterMap = map;
+        _shelterTransform = transform;
+    }
+
+    // The view the shading and the reflection fetch their roofs from: the level's map where one is
+    // loaded, and a one-texel placeholder otherwise. A binding the layout declares has to be written
+    // whether or not there is anything to say, and the transform's own "present" flag is what stops the
+    // shader believing the placeholder.
+    private ImageView ShelterMapView()
+    {
+        if (_shelterTransform.IsPresent
+            && _shelterMap.IsValid
+            && _textures.TryGetValue(_shelterMap.Id, out Textures.VulkanTexture? map))
+        {
+            return map.View;
+        }
+
+        // The device's own one-texel white, which every other optional binding falls back to. What it
+        // decodes to does not matter: the shader is told the map is absent and never fetches from it.
+        return _textures[_whiteTexture.Id].View;
+    }
+
+    // Whether what ShelterMapView is about to hand over is the level's own map rather than the
+    // placeholder. The shader is told this and nothing else about the map's validity.
+    private bool HasShelterMap() =>
+        _shelterTransform.IsPresent && _shelterMap.IsValid && _textures.ContainsKey(_shelterMap.Id);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -2393,27 +2431,38 @@ public sealed partial class VulkanGraphicsDevice
         u[120] = MathF.Max(_wetness.PuddleSizeMetres, 0.05f);
         u[121] = MathF.Max(_wetness.RippleSizeMetres, 0.02f);
         u[122] = Math.Clamp(_wetness.WindRippleStrength, 0f, 1f);
-        u[123] = _wetShelterCount;
 
-        // uShelter[]: a low corner and a high corner each, camera-relative. Written past the count so a
-        // frame that submits fewer than last time leaves stale boxes behind the count, where the shader
-        // never reads them.
-        for (int i = 0; i < _wetShelterCount; i++)
-        {
-            WetShelter shelter = _wetShelters[i];
-            int at = 124 + (i * 8);
-            u[at] = shelter.Minimum.X; u[at + 1] = shelter.Minimum.Y; u[at + 2] = shelter.Minimum.Z; u[at + 3] = 0f;
-            u[at + 4] = shelter.Maximum.X; u[at + 5] = shelter.Maximum.Y; u[at + 6] = shelter.Maximum.Z; u[at + 7] = 0f;
-        }
+        // uShelterMap*: where the level's top-down roof raster sits in the world and how a texel of it
+        // decodes. In world metres and not camera-relative, unlike everything around it: the map does
+        // not move with the eye, and a level's coordinates still resolve to a millimetre in a float,
+        // which is hundreds of times finer than one of its texels.
+        bool roofs = HasShelterMap();
+        ShelterMapTransform shelter = roofs ? _shelterTransform : ShelterMapTransform.None;
+        u[123] = roofs ? 1f : 0f;
+
+        u[124] = shelter.OriginX;
+        u[125] = shelter.OriginY;
+        u[126] = shelter.CellMetres > 0f ? 1f / shelter.CellMetres : 0f;
+        u[127] = shelter.LowestZ;
+
+        u[128] = shelter.HeightScale;
+        u[129] = shelter.HeadroomMetres;
+        u[130] = shelter.ReachMetres;
+        u[131] = 0f;
+
+        u[132] = shelter.Width;
+        u[133] = shelter.Height;
+        u[134] = 0f;
+        u[135] = 0f;
 
         // uFog: the slice distribution the shading looks a pixel up with. A scale of zero says there is
         // no volume this frame, which is how the shader knows to leave the colour alone rather than
         // sample whatever was bound in the volume's place.
         Deferred.FogSliceParams fogZ = _deferred.Fog.ZParams;
-        u[252] = _fogActive ? fogZ.B : 0f;
-        u[253] = _fogActive ? fogZ.O : 0f;
-        u[254] = _fogActive ? fogZ.Scale : 0f;
-        u[255] = _fogActive ? fogZ.InverseSlices : 0f;
+        u[136] = _fogActive ? fogZ.B : 0f;
+        u[137] = _fogActive ? fogZ.O : 0f;
+        u[138] = _fogActive ? fogZ.Scale : 0f;
+        u[139] = _fogActive ? fogZ.InverseSlices : 0f;
 
         gi.Write<float>(new ReadOnlySpan<float>(u, DeferredRenderer.GiUniformSize / sizeof(float)));
 
@@ -2450,7 +2499,8 @@ public sealed partial class VulkanGraphicsDevice
             TracedWorld(),
             _fogActive ? _deferred.Fog.Integrated?.View ?? default : default,
             _fogActive ? _deferred.Fog.Integrated?.Sampler ?? default : default,
-            probeViews);
+            probeViews,
+            ShelterMapView());
     }
 
     /// <summary>The world the lamps shadow against, or nothing when there is none to trace.</summary>

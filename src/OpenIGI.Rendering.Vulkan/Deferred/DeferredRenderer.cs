@@ -61,7 +61,7 @@ internal sealed unsafe class DeferredRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>The size in bytes of the lighting pass's GI uniform block.</summary>
-    public const int GiUniformSize = 1024;
+    public const int GiUniformSize = 576;
 
     /// <summary>The size in bytes of the geometry pass's per-frame surface block.</summary>
     /// <remarks>
@@ -440,8 +440,8 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         // cascaded shadow map, 12 the ambient-occlusion image, 13-15 the atmosphere's tables: the sky's
         // luminance by direction, the sun's transmittance, and the sky's light as harmonics, 16 the
         // traced sun-shadow mask.
-        // 21 the integrated fog volume the shading pass looks up.
-        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[22];
+        // 21 the integrated fog volume the shading pass looks up, 22 the level's top-down roof map.
+        DescriptorSetLayoutBinding* bindings = stackalloc DescriptorSetLayoutBinding[23];
         for (uint i = 0; i < 5; i++)
         {
             bindings[i] = new DescriptorSetLayoutBinding
@@ -571,6 +571,17 @@ internal sealed unsafe class DeferredRenderer : IDisposable
         bindings[next++] = new DescriptorSetLayoutBinding
         {
             Binding = 21,
+            DescriptorType = DescriptorType.CombinedImageSampler,
+            DescriptorCount = 1,
+            StageFlags = ShaderStageFlags.FragmentBit,
+        };
+
+        // 22 the level's roofs seen from above, which decides what the rain reaches. Always present for
+        // the same reason as the fog volume: a level with none binds a placeholder and the shading is
+        // told to ignore it, rather than the shader needing two pipelines for the two cases.
+        bindings[next++] = new DescriptorSetLayoutBinding
+        {
+            Binding = 22,
             DescriptorType = DescriptorType.CombinedImageSampler,
             DescriptorCount = 1,
             StageFlags = ShaderStageFlags.FragmentBit,
