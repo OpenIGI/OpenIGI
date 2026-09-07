@@ -4765,7 +4765,8 @@ internal sealed partial class DesktopGame : IDisposable
                     Vector3d? rigOriginUnits = null;
                     Matrix3f? rigOrientation = null;
                     BoneAttachment? weaponAttachment = _player.HeldWeapon;
-                    BoneAttachment? secondaryWeaponAttachment = _player.HeldWeaponSecondary;
+                    BoneAttachment? magazineAttachment = _player.HeldWeaponSecondary;
+                    BoneAttachment? movingPartAttachment = _player.HeldWeaponTertiary;
                     float previousPoseShare = 0f;
                     if (smoothPresentation && _player.HasViewTickPair)
                     {
@@ -4773,12 +4774,14 @@ internal sealed partial class DesktopGame : IDisposable
                             Vector3d smoothedOrigin,
                             Matrix3f smoothedOrientation,
                             BoneAttachment? smoothedWeapon,
-                            BoneAttachment? smoothedSecondaryWeapon) =
+                            BoneAttachment? smoothedMagazine,
+                            BoneAttachment? smoothedMovingPart) =
                             _player.SmoothedRig(tickBlend);
                         rigOriginUnits = smoothedOrigin;
                         rigOrientation = smoothedOrientation;
                         weaponAttachment = smoothedWeapon ?? weaponAttachment;
-                        secondaryWeaponAttachment = smoothedSecondaryWeapon ?? secondaryWeaponAttachment;
+                        magazineAttachment = smoothedMagazine ?? magazineAttachment;
+                        movingPartAttachment = smoothedMovingPart ?? movingPartAttachment;
                         previousPoseShare = 1f - tickBlend;
                     }
 
@@ -4813,7 +4816,8 @@ internal sealed partial class DesktopGame : IDisposable
                             _player.FiredThisTick && !_player.M203LaunchedThisTick,
                             _player.ShotSequence,
                             WeaponDrawParts.All,
-                            secondaryWeaponAttachment);
+                            magazineAttachment,
+                            movingPartAttachment);
                     }
 
                     _device.SetFirstPersonGeometry(false);

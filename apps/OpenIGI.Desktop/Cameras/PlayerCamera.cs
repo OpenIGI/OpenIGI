@@ -115,16 +115,9 @@ public sealed class PlayerCamera
     private double _tickWallPullback;
     private Vector3f _prevTickRootMotion;
     private Vector3f _tickRootMotion;
-    private Vector3f _prevTickWeaponBonePosition;
-    private Vector3f _tickWeaponBonePosition;
-    private Matrix3f _prevTickWeaponBoneRotation = Matrix3f.Identity;
-    private Matrix3f _tickWeaponBoneRotation = Matrix3f.Identity;
-    private bool _hasWeaponBonePair;
-    private Vector3f _prevTickSecondaryWeaponBonePosition;
-    private Vector3f _tickSecondaryWeaponBonePosition;
-    private Matrix3f _prevTickSecondaryWeaponBoneRotation = Matrix3f.Identity;
-    private Matrix3f _tickSecondaryWeaponBoneRotation = Matrix3f.Identity;
-    private bool _hasSecondaryWeaponBonePair;
+    private ViewBonePair _weaponBone;
+    private ViewBonePair _magazineBone;
+    private ViewBonePair _movingPartBone;
     private float _prevTickSwayPitch;
     private float _tickSwayPitch;
     private float _prevTickSwayYaw;
@@ -433,14 +426,20 @@ public sealed class PlayerCamera
     /// <summary>Gets where the held weapon's model goes, in engine units, or <see langword="null"/>.</summary>
     public BoneAttachment? HeldWeapon => _view is null ? null : _view.HeldWeapon;
 
-    /// <summary>
-    /// Gets where the second held weapon's model goes, in engine units, or <see langword="null"/>.
-    /// </summary>
+    /// <summary>Gets where the held weapon's magazine goes, in engine units, or <see langword="null"/>.</summary>
     /// <remarks>
-    /// Retail's <c>TASKTYPE_GUNX2</c> child asks the first-person human for attachment 2, which is
-    /// palette bone 52 (<c>0x4601A0</c>), rather than reusing the primary gun attachment at bone 3.
+    /// Retail's <c>TASKTYPE_GUNCLIP</c>, <c>TASKTYPE_CABARREL</c> and <c>TASKTYPE_GUNX2</c> children all
+    /// ask the first-person human for attachment 2, which is palette bone 52 (<c>0x4601A0</c>), rather
+    /// than reusing the gun attachment at bone 3.
     /// </remarks>
     public BoneAttachment? HeldWeaponSecondary => _view is null ? null : _view.HeldWeaponSecondary;
+
+    /// <summary>Gets where the held weapon's slide or bolt goes, in engine units, or <see langword="null"/>.</summary>
+    /// <remarks>
+    /// <c>TASKTYPE_GUNMOVINGPART</c> and <c>TASKTYPE_CACLIP</c> ask for attachment 3 — palette bone 55
+    /// (<c>0x460210</c>).
+    /// </remarks>
+    public BoneAttachment? HeldWeaponTertiary => _view is null ? null : _view.HeldWeaponTertiary;
 
     /// <summary>Gets whether the rig's pose has advanced since it was last acknowledged.</summary>
     /// <remarks>
@@ -552,8 +551,9 @@ public sealed class PlayerCamera
     {
         ReleaseLook();
         HasViewTickPair = false;
-        _hasWeaponBonePair = false;
-        _hasSecondaryWeaponBonePair = false;
+        _weaponBone.Forget();
+        _magazineBone.Forget();
+        _movingPartBone.Forget();
     }
 
     /// <summary>Gives the pointer up without disturbing the presentation, and re-arms the settling frame.</summary>
@@ -1415,33 +1415,13 @@ public sealed class PlayerCamera
         // applied per frame at draw. Equivalent by the same argument the third-person draw leans on:
         // the root rotation only ever left-multiplies every bone.
         BonePose unrotated = view.Bones.Pose();
-        if (HumanAttachPoints.FirstPersonWeapon < unrotated.BoneCount)
-        {
-            Vector3f position = unrotated.Positions[HumanAttachPoints.FirstPersonWeapon];
-            Matrix3f rotation = unrotated.Rotations[HumanAttachPoints.FirstPersonWeapon];
-            _prevTickWeaponBonePosition = _hasWeaponBonePair ? _tickWeaponBonePosition : position;
-            _prevTickWeaponBoneRotation = _hasWeaponBonePair ? _tickWeaponBoneRotation : rotation;
-            _tickWeaponBonePosition = position;
-            _tickWeaponBoneRotation = rotation;
-            _hasWeaponBonePair = true;
-        }
+        _weaponBone.Capture(unrotated, HumanAttachPoints.FirstPersonWeapon);
 
-        if (HumanAttachPoints.FirstPersonSecondary < unrotated.BoneCount)
-        {
-            Vector3f position = unrotated.Positions[HumanAttachPoints.FirstPersonSecondary];
-            Matrix3f rotation = unrotated.Rotations[HumanAttachPoints.FirstPersonSecondary];
-            _prevTickSecondaryWeaponBonePosition =
-                _hasSecondaryWeaponBonePair ? _tickSecondaryWeaponBonePosition : position;
-            _prevTickSecondaryWeaponBoneRotation =
-                _hasSecondaryWeaponBonePair ? _tickSecondaryWeaponBoneRotation : rotation;
-            _tickSecondaryWeaponBonePosition = position;
-            _tickSecondaryWeaponBoneRotation = rotation;
-            _hasSecondaryWeaponBonePair = true;
-        }
-        else
-        {
-            _hasSecondaryWeaponBonePair = false;
-        }
+        // The magazine and the moving part ride bones of their own, and a reload clip moves all three
+        // independently -- so all three need the pair an uncapped presentation interpolates between, or
+        // a slide would step at 30 Hz against a gun body that glides.
+        _magazineBone.Capture(unrotated, HumanAttachPoints.FirstPersonSecondary);
+        _movingPartBone.Capture(unrotated, HumanAttachPoints.FirstPersonTertiary);
 
         HasViewTickPair = true;
     }
@@ -1509,8 +1489,8 @@ public sealed class PlayerCamera
     /// <summary>The rig's transform and held-weapon attachments for a frame between two ticks.</summary>
     /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
     /// <returns>
-    /// The rig origin in engine units, its orientation, and the primary and secondary weapon
-    /// attachments when those bones exist.
+    /// The rig origin in engine units, its orientation, and the three weapon attachments — the body's
+    /// bone, the magazine's and the moving part's — when those bones exist.
     /// </returns>
     /// <remarks>
     /// The tick-stepped halves — the eye the body carried, the wall pullback, the clip's hold offset,
@@ -1522,7 +1502,8 @@ public sealed class PlayerCamera
         Vector3d OriginUnits,
         Matrix3f Orientation,
         BoneAttachment? HeldWeapon,
-        BoneAttachment? SecondaryWeapon) SmoothedRig(float alpha)
+        BoneAttachment? Magazine,
+        BoneAttachment? MovingPart) SmoothedRig(float alpha)
     {
         if (_view is not { } view || !HasViewTickPair)
         {
@@ -1530,7 +1511,8 @@ public sealed class PlayerCamera
                 _view?.Position ?? default,
                 _view?.Orientation ?? Matrix3f.Identity,
                 _view?.HeldWeapon,
-                _view?.HeldWeaponSecondary);
+                _view?.HeldWeaponSecondary,
+                _view?.HeldWeaponTertiary);
         }
 
         // The same composition SyncView commits — eye orientation times sway — with the tick-stepped
@@ -1553,34 +1535,70 @@ public sealed class PlayerCamera
             eye.Y + held.Y + (eyeLook.M22 * wallPullback),
             eye.Z + held.Z + (eyeLook.M32 * wallPullback));
 
-        BoneAttachment? weapon = null;
-        if (_hasWeaponBonePair)
+        return (
+            origin,
+            look,
+            _weaponBone.Smoothed(origin, look, alpha),
+            _magazineBone.Smoothed(origin, look, alpha),
+            _movingPartBone.Smoothed(origin, look, alpha));
+    }
+
+    /// <summary>One view-rig attachment bone over the last two ticks, ready to interpolate.</summary>
+    /// <remarks>
+    /// The bone is taken from the UNROTATED pose — the identity-root one — so the look can be applied
+    /// per frame at draw. Equivalent by the argument the third-person draw leans on: the root rotation
+    /// only ever left-multiplies every bone.
+    /// </remarks>
+    private struct ViewBonePair()
+    {
+        private Vector3f _previousPosition;
+        private Vector3f _position;
+        private Matrix3f _previousRotation = Matrix3f.Identity;
+        private Matrix3f _rotation = Matrix3f.Identity;
+        private bool _hasPair;
+
+        /// <summary>Reads this tick's value, keeping the previous one, when the rig has the bone.</summary>
+        /// <param name="pose">The rig's unrotated pose.</param>
+        /// <param name="bone">The bone index, from <see cref="HumanAttachPoints"/>.</param>
+        public void Capture(BonePose pose, int bone)
         {
-            Vector3f bone = look.Transposed().Transform(
-                PresentationBlend.Lerp(_prevTickWeaponBonePosition, _tickWeaponBonePosition, alpha));
-            weapon = new BoneAttachment(
-                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
-                look * PresentationBlend.InterpolateRotation(
-                _prevTickWeaponBoneRotation, _tickWeaponBoneRotation, alpha));
+            if (bone >= pose.BoneCount)
+            {
+                _hasPair = false;
+                return;
+            }
+
+            Vector3f position = pose.Positions[bone];
+            Matrix3f rotation = pose.Rotations[bone];
+            _previousPosition = _hasPair ? _position : position;
+            _previousRotation = _hasPair ? _rotation : rotation;
+            _position = position;
+            _rotation = rotation;
+            _hasPair = true;
         }
 
-        BoneAttachment? secondaryWeapon = null;
-        if (_hasSecondaryWeaponBonePair)
-        {
-            Vector3f bone = look.Transposed().Transform(
-                PresentationBlend.Lerp(
-                    _prevTickSecondaryWeaponBonePosition,
-                    _tickSecondaryWeaponBonePosition,
-                    alpha));
-            secondaryWeapon = new BoneAttachment(
-                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
-                look * PresentationBlend.InterpolateRotation(
-                    _prevTickSecondaryWeaponBoneRotation,
-                    _tickSecondaryWeaponBoneRotation,
-                    alpha));
-        }
+        /// <summary>Drops the pair, so the next capture starts a fresh one from where the rig now is.</summary>
+        public void Forget() => _hasPair = false;
 
-        return (origin, look, weapon, secondaryWeapon);
+        /// <summary>Resolves the attachment for a frame between the two ticks.</summary>
+        /// <param name="origin">The rig origin the frame drew at, in engine units.</param>
+        /// <param name="look">The rig's orientation this frame.</param>
+        /// <param name="alpha">How far the frame sits between the last two ticks, 0 to 1.</param>
+        /// <returns>The attachment, or <see langword="null"/> when the rig has no such bone.</returns>
+        public readonly BoneAttachment? Smoothed(Vector3d origin, Matrix3f look, float alpha)
+        {
+            if (!_hasPair)
+            {
+                return null;
+            }
+
+            // M . v -- the palette's own convention -- is the transpose of the row-vector Transform.
+            Vector3f bone = look.Transposed().Transform(
+                PresentationBlend.Lerp(_previousPosition, _position, alpha));
+            return new BoneAttachment(
+                new Vector3d(origin.X + bone.X, origin.Y + bone.Y, origin.Z + bone.Z),
+                look * PresentationBlend.InterpolateRotation(_previousRotation, _rotation, alpha));
+        }
     }
 
     private WorldRayCast ViewModelWalls(TerrainData? terrain)

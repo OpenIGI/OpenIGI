@@ -33,6 +33,37 @@ public enum WeaponDrawParts
     FlameOnly,
 }
 
+/// <summary>Which bone of the first-person view rig one of a weapon's parts hangs off.</summary>
+/// <remarks>
+/// <para>
+/// A weapon is not one rigid model on one bone. <c>0x477220</c>, <c>0x472670</c> and <c>0x46DD00</c>
+/// register five part classes, and each one's render handler asks the human holding the gun for a
+/// <b>different</b> attachment and then overwrites its own position and 3×3 with the answer — the ATTA
+/// offset it was spawned with is not added back. Two handlers cover all five classes:
+/// </para>
+/// <code>
+/// 0x472880  GunClip / GunCABarrel / Gunx2      Gun message 4 (0x477C30)  ->  0x4601A0  bone 52
+/// 0x477B10  GunMovingPart / GunCAClip          Gun message 5 (0x477C40)  ->  0x460210  bone 55
+/// </code>
+/// <para>
+/// That is the whole mechanism behind an animated reload: the magazine and the slide are driven by bones
+/// the reload clip moves independently of bone 3, which carries the gun body. Measured in the gun's own
+/// frame over the Glock's reload, the magazine swings 0.22 m clear of the body and back while the slide
+/// racks about 0.01 m; the slide racks again on the firing clip, where bone 3 barely moves.
+/// </para>
+/// </remarks>
+public enum WeaponAttachSlot
+{
+    /// <summary>The gun body — bone 3, <c>0x4600C0</c>. Everything without a part class of its own.</summary>
+    Primary,
+
+    /// <summary>The magazine — bone 52, <c>0x4601A0</c>.</summary>
+    Magazine,
+
+    /// <summary>The slide, bolt or lever — bone 55, <c>0x460210</c>.</summary>
+    MovingPart,
+}
+
 /// <summary>Draws the weapon the player is holding, at the bone the player's own rig puts it on.</summary>
 /// <remarks>
 /// <para>
@@ -45,9 +76,22 @@ public enum WeaponDrawParts
 /// <c>005_01_1</c>, then asks the human for the weapon's transform (<c>0x4600C0</c>) and hands it to the
 /// weapon's own <c>RigidDynCubeObj</c> render (<c>0x4A01B0</c>). That render walks the object's child
 /// list, so a weapon is not necessarily one mesh: the Glock's body attaches a transient gun-flame
-/// effect, its slide and its magazine, while the MP5 attaches two further parts. Persistent children
-/// keep the position, orientation and material slots from the same magic-object tree used by placed
-/// world objects. Effect tasks are driven separately by the weapon state and are not rigid parts.
+/// effect, its slide and its magazine, while the MP5 attaches two further parts. Effect tasks are driven
+/// separately by the weapon state and are not rigid parts.
+/// </para>
+/// <para>
+/// A child is <b>not</b> necessarily fixed to the body. Five of the part classes have a render handler
+/// that asks the human for an attachment of its own and replaces its transform with the answer, so the
+/// magazine rides bone 52 and the slide bone 55 while the body rides bone 3 — see
+/// <see cref="WeaponAttachSlot"/>. That is what animates a reload: those bones are moved by the reload
+/// clip independently of the one carrying the gun. Children that name no such class keep the position,
+/// orientation and material slots from the same magic-object tree used by placed world objects.
+/// </para>
+/// <para>
+/// A caller that has no view rig to ask — a dropped pickup, a soldier's weapon, a missile — supplies no
+/// bone-driven attachments, and every part then falls back to its authored magic-object placement on the
+/// primary attachment. That is the whole difference between the two paths: retail gates the same three
+/// handlers on the first-person view being the one drawing (<c>0x4E81F0</c> + 92).
 /// </para>
 /// <para>
 /// It remains in the ordinary depth buffer, but not in the world's depth range. The retail view-model
@@ -62,7 +106,17 @@ public sealed class HeldWeaponRenderer : IDisposable
 {
     private const string LogCategory = "Weapon";
     private const string GunFlameTaskType = "TASKTYPE_GUNFLAME";
-    private const string GunX2TaskType = "TASKTYPE_GUNX2";
+
+    // The five part classes of 0x477220 / 0x472670 / 0x46DD00, grouped by the attachment their render
+    // handler asks the human for. See WeaponAttachSlot.
+    private static readonly Dictionary<string, WeaponAttachSlot> SlotByTaskType = new(StringComparer.Ordinal)
+    {
+        ["TASKTYPE_GUNCLIP"] = WeaponAttachSlot.Magazine,
+        ["TASKTYPE_CABARREL"] = WeaponAttachSlot.Magazine,
+        ["TASKTYPE_GUNX2"] = WeaponAttachSlot.Magazine,
+        ["TASKTYPE_GUNMOVINGPART"] = WeaponAttachSlot.MovingPart,
+        ["TASKTYPE_CACLIP"] = WeaponAttachSlot.MovingPart,
+    };
 
     private static readonly float[] GunFlameRolls = [0f, 4f, 7f];
     private static readonly SurfaceMaterial GunFlameMaterial = new(
@@ -183,7 +237,7 @@ public sealed class HeldWeaponRenderer : IDisposable
             return false;
         }
 
-        AddParts(mission, root, Vector3f.Zero, Matrix3f.Identity, Matrix3f.Identity, false);
+        AddParts(mission, root, PartFrame.Root, PartFrame.Root, WeaponAttachSlot.Primary);
         if (_parts.Count == 0)
         {
             _logger.Warning(LogCategory, $"Gun model '{gunModel}' has nothing to draw.");
@@ -201,9 +255,14 @@ public sealed class HeldWeaponRenderer : IDisposable
     /// <param name="firedThisTick">Whether the held gun fired on the current simulation tick.</param>
     /// <param name="shotSequence">The serial of the last round fired.</param>
     /// <param name="parts">Which parts this call draws; see <see cref="WeaponDrawParts"/>.</param>
-    /// <param name="secondaryAttachment">
-    /// The first-person secondary hand attachment for a <c>TASKTYPE_GUNX2</c> child. When omitted,
-    /// secondary parts use the primary attachment, which keeps world/pickup callers compatible.
+    /// <param name="magazineAttachment">
+    /// The view rig's bone-52 attachment (<c>0x4601A0</c>), which drives the magazine and the second
+    /// Uzi. When omitted, those parts keep their authored placement on <paramref name="attachment"/>,
+    /// which is what a world pickup, a soldier's weapon or a missile wants.
+    /// </param>
+    /// <param name="movingPartAttachment">
+    /// The view rig's bone-55 attachment (<c>0x460210</c>), which drives the slide, bolt or lever.
+    /// Omitted by the same callers and with the same fallback.
     /// </param>
     public void Draw(
         BoneAttachment attachment,
@@ -212,7 +271,8 @@ public sealed class HeldWeaponRenderer : IDisposable
         bool firedThisTick,
         int shotSequence,
         WeaponDrawParts parts = WeaponDrawParts.All,
-        BoneAttachment? secondaryAttachment = null)
+        BoneAttachment? magazineAttachment = null,
+        BoneAttachment? movingPartAttachment = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_parts.Count == 0)
@@ -277,21 +337,40 @@ public sealed class HeldWeaponRenderer : IDisposable
                 }
             }
 
-            BoneAttachment partAttachment = part.UseSecondaryAttachment && secondaryAttachment is { } secondary
-                ? secondary
-                : attachment;
+            // The bone this part's class asks for, when the caller had one to give. A part driven by a
+            // bone drops the offset the magic-object tree gave it -- that is what the retail handler's
+            // wholesale overwrite of position and 3x3 amounts to -- and only what hangs BELOW it keeps
+            // an offset. Without the bone the whole tree stays as authored, on the primary attachment.
+            BoneAttachment partAttachment = attachment;
+            Vector3f partPosition = part.PositionMetres;
+            Matrix3f partOrientation = part.Orientation;
+            BoneAttachment? slotAttachment = part.Slot switch
+            {
+                WeaponAttachSlot.Magazine => magazineAttachment,
+                WeaponAttachSlot.MovingPart => movingPartAttachment,
+                _ => null,
+            };
+
+            if (slotAttachment is { } anchored)
+            {
+                partAttachment = anchored;
+                partPosition = part.AnchoredPositionMetres;
+                partOrientation = part.AnchoredOrientation;
+            }
+
             Vector3d attachmentMetres = new(
                 partAttachment.Position.X / WorldScene.UnitsPerMetre,
                 partAttachment.Position.Y / WorldScene.UnitsPerMetre,
                 partAttachment.Position.Z / WorldScene.UnitsPerMetre);
-            Vector3f offset = partAttachment.Rotation.Transposed().Transform(part.PositionMetres);
+            Vector3f offset = partAttachment.Rotation.Transposed().Transform(partPosition);
             Vector3d position = new(
                 attachmentMetres.X + offset.X,
                 attachmentMetres.Y + offset.Y,
                 attachmentMetres.Z + offset.Z);
-            Matrix3f partOrientation = part.IsGunFlame
-                ? _gunFlameRotation * part.Orientation
-                : part.Orientation;
+            if (part.IsGunFlame)
+            {
+                partOrientation = _gunFlameRotation * partOrientation;
+            }
             Matrix4f modelView = camera.CreateModelView(position, partAttachment.Rotation * partOrientation);
 
             _device.SetDepthState(part.IsGunFlame ? DepthState.TestOnly : DepthState.TestAndWrite);
@@ -353,26 +432,21 @@ public sealed class HeldWeaponRenderer : IDisposable
     private void AddParts(
         LoadedMission mission,
         WorldObject node,
-        Vector3f position,
-        Matrix3f drawOrientation,
-        Matrix3f taskOrientation,
-        bool secondaryAttachment)
+        PartFrame model,
+        PartFrame anchored,
+        WeaponAttachSlot slot)
     {
-        bool isGunX2 = IsGunX2(node.Name);
-        bool useSecondaryAttachment = secondaryAttachment || isGunX2;
-
-        // The native Gunx2 task is a second held-gun task, not a normal static ATTA child. Its model
-        // transform starts at the secondary hand attachment (0x4601A0 / bone 52); retaining the ATTA
-        // offset here would leave the second Uzi under the primary hand. Descendants, such as the
-        // second muzzle flame, continue in this reset local frame.
-        if (isGunX2 && !secondaryAttachment)
+        // A part class with an attachment of its own is not a static ATTA child: its handler overwrites
+        // the whole transform with the bone's, so the offset accumulated down to here is dropped and its
+        // own descendants -- the second Uzi's muzzle flame, say -- continue in this reset local frame.
+        // Both frames are carried on: the model one is what a caller with no view rig falls back to.
+        if (SlotOf(node.Name) is { } ownSlot)
         {
-            position = Vector3f.Zero;
-            drawOrientation = Matrix3f.Identity;
-            taskOrientation = Matrix3f.Identity;
+            slot = ownSlot;
+            anchored = PartFrame.Root;
         }
 
-        bool isGunFlame = IsGunFlame(node.Name);
+        bool isGunFlame = string.Equals(TaskTypeOf(node.Name), GunFlameTaskType, StringComparison.Ordinal);
         if (FindInstance(mission, node.Name) is { } bound
             && MefMeshBuilder.Build(node.Models.Highest, (float)(1.0 / WorldScene.UnitsPerMetre)) is { } geometry)
         {
@@ -381,42 +455,27 @@ public sealed class HeldWeaponRenderer : IDisposable
                 geometry,
                 bound.Pack,
                 bound.Instance,
-                position / (float)WorldScene.UnitsPerMetre,
-                taskOrientation,
+                model.PositionMetres,
+                model.Task,
+                anchored.PositionMetres,
+                anchored.Task,
                 isGunFlame,
-                useSecondaryAttachment));
+                slot));
         }
 
         foreach (WorldObject child in node.Children)
         {
-            // ATTA positions are transformed in the raw parent draw frame, but the model's right-handed
-            // attachment basis is the transpose of that row-vector matrix. This is the same split used
-            // by WorldScene.AddAttached; keeping both frames matters for the UZIX2 child that carries the
-            // second Uzi, otherwise it is mirrored/rotated away from the other hand.
-            Vector3f offset = drawOrientation.Transposed().Transform(child.Position);
-            AddParts(
-                mission,
-                child,
-                position + offset,
-                drawOrientation * child.Orientation,
-                taskOrientation * child.Orientation.Transposed(),
-                useSecondaryAttachment);
+            AddParts(mission, child, model.Descend(child), anchored.Descend(child), slot);
         }
     }
 
-    private bool IsGunFlame(string modelName) =>
+    private string TaskTypeOf(string modelName) =>
         _magic.TryGet(modelName, out MagicObjectDefinition definition)
-        && string.Equals(
-            _magic.TaskTypeName(definition.TaskType),
-            GunFlameTaskType,
-            StringComparison.Ordinal);
+            ? _magic.TaskTypeName(definition.TaskType)
+            : string.Empty;
 
-    private bool IsGunX2(string modelName) =>
-        _magic.TryGet(modelName, out MagicObjectDefinition definition)
-        && string.Equals(
-            _magic.TaskTypeName(definition.TaskType),
-            GunX2TaskType,
-            StringComparison.Ordinal);
+    private WeaponAttachSlot? SlotOf(string modelName) =>
+        SlotByTaskType.TryGetValue(TaskTypeOf(modelName), out WeaponAttachSlot slot) ? slot : null;
 
     private static (LoadedPack Pack, MtpInstance Instance)? FindInstance(LoadedMission mission, string modelName)
     {
@@ -483,6 +542,30 @@ public sealed class HeldWeaponRenderer : IDisposable
         return handle;
     }
 
+    /// <summary>One node's place in the attachment tree, accumulated on the way down.</summary>
+    /// <remarks>
+    /// ATTA positions are transformed in the raw parent DRAW frame, but the model's right-handed
+    /// attachment basis is the transpose of that row-vector matrix, so both are carried. This is the
+    /// same split <see cref="WorldScene"/>'s attachment walk uses; keeping both frames matters for the
+    /// UZIX2 child that carries the second Uzi, otherwise it comes out mirrored away from the hand.
+    /// </remarks>
+    private readonly record struct PartFrame(Vector3f Position, Matrix3f Draw, Matrix3f Task)
+    {
+        /// <summary>The frame an attachment tree is walked from.</summary>
+        public static PartFrame Root { get; } = new(Vector3f.Zero, Matrix3f.Identity, Matrix3f.Identity);
+
+        /// <summary>Gets the accumulated position in metres, which is what a draw wants.</summary>
+        public Vector3f PositionMetres => Position / (float)WorldScene.UnitsPerMetre;
+
+        /// <summary>Composes this frame with one attachment step.</summary>
+        /// <param name="child">The attached node.</param>
+        /// <returns>The child's frame.</returns>
+        public PartFrame Descend(WorldObject child) => new(
+            Position + Draw.Transposed().Transform(child.Position),
+            Draw * child.Orientation,
+            Task * child.Orientation.Transposed());
+    }
+
     private sealed class Part(
         string name,
         MeshGeometry geometry,
@@ -490,17 +573,37 @@ public sealed class HeldWeaponRenderer : IDisposable
         MtpInstance instance,
         Vector3f positionMetres,
         Matrix3f orientation,
+        Vector3f anchoredPositionMetres,
+        Matrix3f anchoredOrientation,
         bool isGunFlame,
-        bool useSecondaryAttachment)
+        WeaponAttachSlot slot)
     {
         public string Name { get; } = name;
         public MeshGeometry Geometry { get; } = geometry;
         public LoadedPack Pack { get; } = pack;
         public MtpInstance Instance { get; } = instance;
+
+        /// <summary>Where the magic-object tree puts this part, relative to the gun body.</summary>
         public Vector3f PositionMetres { get; } = positionMetres;
+
+        /// <summary>The magic-object tree's orientation for this part, relative to the gun body.</summary>
         public Matrix3f Orientation { get; } = orientation;
+
+        /// <summary>Where this part sits relative to the bone its <see cref="Slot"/> names.</summary>
+        /// <remarks>
+        /// Zero for the part that owns the slot, because its handler drops the accumulated offset; a
+        /// descendant of one keeps whatever the tree gives it below that reset.
+        /// </remarks>
+        public Vector3f AnchoredPositionMetres { get; } = anchoredPositionMetres;
+
+        /// <summary>This part's orientation relative to the bone its <see cref="Slot"/> names.</summary>
+        public Matrix3f AnchoredOrientation { get; } = anchoredOrientation;
+
         public bool IsGunFlame { get; } = isGunFlame;
-        public bool UseSecondaryAttachment { get; } = useSecondaryAttachment;
+
+        /// <summary>Which view-rig bone drives this part when the caller has one to offer.</summary>
+        public WeaponAttachSlot Slot { get; } = slot;
+
         public MeshHandle Mesh { get; set; } = MeshHandle.None;
         public float FlameStrength { get; set; } = 1f;
     }
