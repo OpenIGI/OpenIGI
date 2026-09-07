@@ -12,7 +12,7 @@
     <Project Path="src/OpenIGI.Modding/OpenIGI.Modding.csproj" />
     <Project Path="src/OpenIGI.Platform.Desktop/OpenIGI.Platform.Desktop.csproj" />
     <Project Path="src/OpenIGI.Platform/OpenIGI.Platform.csproj" />
-    <Project Path="src/OpenIGI.Rendering.OpenGL/OpenIGI.Rendering.OpenGL.csproj" />
+    <Project Path="src/OpenIGI.Rendering.Vulkan/OpenIGI.Rendering.Vulkan.csproj" />
     <Project Path="src/OpenIGI.Rendering/OpenIGI.Rendering.csproj" />
     <Project Path="src/OpenIGI.Scripting/OpenIGI.Scripting.csproj" />
     <Project Path="src/OpenIGI.UI/OpenIGI.UI.csproj" />
@@ -20,6 +20,7 @@
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/tests/">
+    <Project Path="tests/OpenIGI.Benchmarks/OpenIGI.Benchmarks.csproj" />
     <Project Path="tests/OpenIGI.TestSupport/OpenIGI.TestSupport.csproj" />
     <Project Path="tests/OpenIGI.Core.Tests/OpenIGI.Core.Tests.csproj" />
     <Project Path="tests/OpenIGI.Audio.Tests/OpenIGI.Audio.Tests.csproj" />
@@ -28,6 +29,7 @@
     <Project Path="tests/OpenIGI.Game.Tests/OpenIGI.Game.Tests.csproj" />
     <Project Path="tests/OpenIGI.Input.Tests/OpenIGI.Input.Tests.csproj" />
     <Project Path="tests/OpenIGI.Rendering.Tests/OpenIGI.Rendering.Tests.csproj" />
+    <Project Path="tests/OpenIGI.Rendering.Vulkan.Tests/OpenIGI.Rendering.Vulkan.Tests.csproj" />
     <Project Path="tests/OpenIGI.Scripting.Tests/OpenIGI.Scripting.Tests.csproj" />
     <Project Path="tests/OpenIGI.UI.Tests/OpenIGI.UI.Tests.csproj" />
     <Project Path="tests/OpenIGI.Frontend.Tests/OpenIGI.Frontend.Tests.csproj" />

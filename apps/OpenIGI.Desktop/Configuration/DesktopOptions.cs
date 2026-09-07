@@ -1,4 +1,4 @@
-﻿using OpenIGI.Game.Ai;
+using OpenIGI.Game.Ai;
 using OpenIGI.Platform;
 using OpenIGI.Rendering;
 
@@ -77,6 +77,7 @@ public readonly record struct DesktopOptions(
         int height = 0;
         string? screenshot = null;
         (double X, double Y, double Z)? cameraPosition = null;
+        (float X, float Y, float Z)? sunDirection = null;
 
         // Null until a flight end pose is named. When any of the three is set the free camera is flown
         // from its opening pose to this one over the frame budget, and -screenshot writes one numbered
@@ -85,6 +86,8 @@ public readonly record struct DesktopOptions(
         (double X, double Y, double Z)? cameraEnd = null;
         float? cameraYawEnd = null;
         float? cameraPitchEnd = null;
+        int? flightFrames = null;
+        float cameraShake = 0f;
         int exitAfterFrames = 0;
         int uiScale = Core.Graphics.UiScale.Automatic;
         bool logCamera = false;
@@ -95,14 +98,18 @@ public readonly record struct DesktopOptions(
         float cameraPitch = -0.12f;
         float cameraHeight = 0f;
         int terrainViewDistance = 0;
+        float? fieldOfView = null;
         int startScreen = 0;
         int startMission = 0;
         bool vanillaMenu = false;
         string? shellTab = null;
         int entryCamMission = 0;
         int computerCamFrame = 0;
+        int missionCycleFrames = 0;
+        int backdropCycleFrames = 0;
         string? showcasePointDump = null;
         string? benchmarkPath = null;
+        bool bakeAll = false;
 
         List<string> startupCommands = [];
 
@@ -241,6 +248,20 @@ public readonly record struct DesktopOptions(
 
                 cameraPosition = (px, py, pz);
             }
+            else if (arg.Equals("sundir", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "sundir");
+                string[] parts = value.Split(',');
+                if (parts.Length != 3
+                    || !float.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sx)
+                    || !float.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sy)
+                    || !float.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float sz))
+                {
+                    throw new ArgumentException($"-sundir expects X,Y,Z pointing towards the sun, got '{value}'.", nameof(args));
+                }
+
+                sunDirection = (sx, sy, sz);
+            }
             else if (arg.Equals("camend", StringComparison.OrdinalIgnoreCase))
             {
                 string value = Next(args, ref i, "camend");
@@ -262,6 +283,41 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("pitchend", StringComparison.OrdinalIgnoreCase))
             {
                 cameraPitchEnd = ParseNumber(Next(args, ref i, "pitchend"), "pitchend", args);
+            }
+            else if (arg.Equals("camshake", StringComparison.OrdinalIgnoreCase))
+            {
+                cameraShake = ParseNumber(Next(args, ref i, "camshake"), "camshake", args);
+                if (cameraShake < 0f)
+                {
+                    throw new ArgumentException($"-camshake expects a non-negative amplitude in degrees, got '{cameraShake}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("flightframes", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "flightframes");
+                if (!int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int ff)
+                    || ff <= 0)
+                {
+                    throw new ArgumentException($"-flightframes expects a positive frame count, got '{value}'.", nameof(args));
+                }
+
+                flightFrames = ff;
+            }
+            else if (arg.Equals("fov", StringComparison.OrdinalIgnoreCase))
+            {
+                string value = Next(args, ref i, "fov");
+                if (!float.TryParse(
+                        value,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float parsedFov)
+                    || parsedFov <= 1f
+                    || parsedFov >= 179f)
+                {
+                    throw new ArgumentException($"-fov expects horizontal degrees between 1 and 179, got '{value}'.", nameof(args));
+                }
+
+                fieldOfView = parsedFov;
             }
             else if (arg.Equals("viewdist", StringComparison.OrdinalIgnoreCase))
             {
@@ -302,9 +358,10 @@ public readonly record struct DesktopOptions(
             else if (arg.Equals("vanilla", StringComparison.OrdinalIgnoreCase))
             {
                 // The whole remaster track off in one word: the retail menus instead of the cinematic
-                // shell, the original's renderer and one-render-per-tick 30 Hz presentation, its mix --
-                // 32 voices at 22 kHz with the flat hand-computed pan instead of positioning -- and its
-                // canned death animations instead of simulated bodies.
+                // shell, the original's renderer, its mix -- 32 voices at 22 kHz with the flat
+                // hand-computed pan instead of positioning -- and its canned death animations instead
+                // of simulated bodies. The one-render-per-tick 30 Hz presentation is NOT among them:
+                // that is a frame-rate cap rather than part of the picture, and only -lockstep keeps it.
                 vanillaMenu = true;
                 startupCommands.Add("gfx_preset vanilla");
                 startupCommands.Add("snd_preset vanilla");
@@ -350,10 +407,44 @@ public readonly record struct DesktopOptions(
                     throw new ArgumentException($"-computercam expects a frame number, got '{value}'.", nameof(args));
                 }
             }
+            else if (arg.Equals("missioncycle", StringComparison.OrdinalIgnoreCase))
+            {
+                // Abandon to the campaign and play again, every n frames, for as long as the run lasts.
+                // Leaving a mission tears down every renderer the level owns and every structure the
+                // traced world accumulated, and doing that by hand is the one path a capture could not
+                // reach -- so the cost of it, and whether it survives being done repeatedly, could not
+                // be measured. A development flag, like -entrycam and -computercam.
+                string value = Next(args, ref i, "missioncycle");
+                if (!int.TryParse(value, out missionCycleFrames) || missionCycleFrames <= 0)
+                {
+                    throw new ArgumentException(
+                        $"-missioncycle expects a frame count, got '{value}'.", nameof(args));
+                }
+            }
+            else if (arg.Equals("backdropcycle", StringComparison.OrdinalIgnoreCase))
+            {
+                // Walk the campaign's rows in the menu, every n frames, for as long as the run lasts.
+                // -missioncycle's counterpart on the other side of Play: swapping a backdrop replaces a
+                // whole level's worth of renderers, meshes and traced structures WITHOUT leaving the menu,
+                // and that path had no capture at all -- it could only be reached by clicking down the
+                // list by hand, which is exactly how it was found to lose the device. A development flag.
+                string value = Next(args, ref i, "backdropcycle");
+                if (!int.TryParse(value, out backdropCycleFrames) || backdropCycleFrames <= 0)
+                {
+                    throw new ArgumentException(
+                        $"-backdropcycle expects a frame count, got '{value}'.", nameof(args));
+                }
+            }
             else if (arg.Equals("vanillarender", StringComparison.OrdinalIgnoreCase))
             {
                 // Just the renderer: the cinematic shell over the original's render path.
                 startupCommands.Add("gfx_preset vanilla");
+            }
+            else if (arg.Equals("bakeall", StringComparison.OrdinalIgnoreCase))
+            {
+                // Trace every mission's global-illumination probe field and write it to the cache, then
+                // quit. Run once; the .giv files can then be shipped so no player traces a level.
+                bakeAll = true;
             }
             else if (arg.Equals("player", StringComparison.OrdinalIgnoreCase))
             {
@@ -391,7 +482,7 @@ public readonly record struct DesktopOptions(
 
         // A flight is a free-camera move: the walking player never takes an authored path, so naming an
         // end pose is by itself a request to fly, the same way -size is a request for a window.
-        if (cameraEnd is not null || cameraYawEnd is not null || cameraPitchEnd is not null)
+        if (cameraEnd is not null || cameraYawEnd is not null || cameraPitchEnd is not null || cameraShake > 0f)
         {
             startFlying = true;
         }
@@ -416,18 +507,25 @@ public readonly record struct DesktopOptions(
             uiScale)
         {
             CameraPosition = cameraPosition,
+            SunDirection = sunDirection,
+            FieldOfView = fieldOfView,
             CameraEnd = cameraEnd,
             CameraYawEnd = cameraYawEnd,
             CameraPitchEnd = cameraPitchEnd,
+            FlightFrames = flightFrames,
+            CameraShake = cameraShake,
             Difficulty = difficulty,
             StartupCommands = startupCommands,
             VanillaMenu = vanillaMenu,
             ShellTab = shellTab,
             EntryCamMission = entryCamMission,
             ComputerCamFrame = computerCamFrame,
+            MissionCycleFrames = missionCycleFrames,
+            BackdropCycleFrames = backdropCycleFrames,
             ShowcasePointDump = showcasePointDump,
             PlayCutscenes = playCutscenes,
             BenchmarkPath = benchmarkPath,
+            BakeAll = bakeAll,
         };
     }
 
@@ -455,6 +553,27 @@ public readonly record struct DesktopOptions(
     public int ComputerCamFrame { get; init; }
 
     /// <summary>
+    /// Gets how many frames each leg of an abandon/replay cycle lasts, or <c>0</c> for never. Set by
+    /// <c>-missioncycle</c>.
+    /// </summary>
+    /// <remarks>
+    /// A development shortcut in the same family as <see cref="EntryCamMission"/>: leaving a mission is a
+    /// teardown of every renderer and every accelerator the level built, and entering one is all of it
+    /// again. Repeating the pair on a known cadence is what makes the cost of the transition, and
+    /// anything it fails to release, something a run can measure rather than something a player reports.
+    /// </remarks>
+    public int MissionCycleFrames { get; init; }
+
+    /// <summary>Gets how many frames a menu backdrop is shown for before the next mission is selected.</summary>
+    /// <remarks>
+    /// <see cref="MissionCycleFrames"/> on the menu's side of Play, set by <c>-backdropcycle</c>. A
+    /// backdrop swap tears down and rebuilds every renderer, every mesh and every traced structure a level
+    /// owns while the loop keeps presenting, which is a harder case than leaving a mission and had no way
+    /// to be run other than clicking down the campaign list.
+    /// </remarks>
+    public int BackdropCycleFrames { get; init; }
+
+    /// <summary>
     /// Gets the cinematic shell's section to open on — <c>campaign</c>, <c>settings</c>, <c>profile</c> or
     /// <c>extras</c> — or <see langword="null"/> for the landing page. Set by <c>-shelltab</c>.
     /// </summary>
@@ -474,6 +593,15 @@ public readonly record struct DesktopOptions(
     /// <summary>Gets the world position in metres the fly-through camera opens at, or <see langword="null"/> for the level's centre.</summary>
     public (double X, double Y, double Z)? CameraPosition { get; init; }
 
+    /// <summary>Gets a fixed sun direction (pointing towards the sun) that overrides the level's, or <see langword="null"/> to use the level's own. For matching an external reference render.</summary>
+    public (float X, float Y, float Z)? SunDirection { get; init; }
+
+    /// <summary>
+    /// Gets a fixed horizontal field of view in degrees, or null for the game's own ninety. For lining a
+    /// capture up against a reference render whose camera lens differs.
+    /// </summary>
+    public float? FieldOfView { get; init; }
+
     /// <summary>
     /// Gets the world position in metres the fly-through camera ends a flight at, or <see langword="null"/>
     /// for no flight. Set by <c>-camend</c>; see <see cref="HasFlight"/>.
@@ -487,12 +615,39 @@ public readonly record struct DesktopOptions(
     public float? CameraPitchEnd { get; init; }
 
     /// <summary>
+    /// Gets how many frames the flight itself takes, or <see langword="null"/> to spread it over the whole
+    /// capture. Set by <c>-flightframes</c>.
+    /// </summary>
+    /// <remarks>
+    /// The frames after it hold the end pose, which is what makes a flight able to come to a stop. That
+    /// matters for ghosting: a temporal filter drags a trail behind moving content, and a trail is only
+    /// measurable once the motion has stopped and the picture is expected to have settled. Comparing a
+    /// held frame against the same pose reached standing still measures exactly the smear and nothing else.
+    /// </remarks>
+    public int? FlightFrames { get; init; }
+
+    /// <summary>
+    /// Gets the amplitude in degrees of a per-frame camera shake laid over whatever else the camera is
+    /// doing, or zero for none. Set by <c>-camshake</c>.
+    /// </summary>
+    /// <remarks>
+    /// A smooth flight is not what a temporal filter actually has to survive. A player's view is never
+    /// still and never moves evenly: it jitters by a pixel or two at a time and changes direction
+    /// constantly, which is the case that breaks reprojection — a smooth pan gives every pixel the same
+    /// velocity for many frames, so a history that reprojects badly still reprojects consistently. This
+    /// lays a deterministic pseudo-random angular offset over the pose, so a run stays reproducible under
+    /// <c>-lockstep</c> while the motion is no longer something the filter can settle into.
+    /// </remarks>
+    public float CameraShake { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether a scripted free-camera flight is asked for — an end pose the opening
     /// camera is flown to over the frame budget. When set, <c>-screenshot</c> writes one numbered frame per
     /// rendered frame rather than a single still, so the in-motion behaviour of the temporal filters is
     /// visible in the sequence.
     /// </summary>
-    public bool HasFlight => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null;
+    public bool HasFlight
+        => CameraEnd is not null || CameraYawEnd is not null || CameraPitchEnd is not null || CameraShake > 0f;
 
     /// <summary>
     /// Gets the difficulty override from <c>-difficulty</c>, or <see langword="null"/> to use the active
@@ -535,6 +690,12 @@ public readonly record struct DesktopOptions(
     /// <summary>Gets a value indicating whether deterministic performance capture is active.</summary>
     public bool IsBenchmark => BenchmarkPath is not null;
 
+    /// <summary>
+    /// Gets a value indicating whether every mission's global-illumination probe field is traced and
+    /// written to the cache and the game then quits, set by <c>-bakeall</c>.
+    /// </summary>
+    public bool BakeAll { get; init; }
+
     /// <summary>Gets the usage text.</summary>
     /// <returns>A short description of every option.</returns>
     public static string Usage =>
@@ -558,6 +719,9 @@ public readonly record struct DesktopOptions(
           -size WxH        Client size when windowed or exclusive.
                            Default 640x480 windowed, the monitor's own fullscreen.
           -novsync         Do not wait for the vertical blank.
+          -opengl          Draw with the legacy OpenGL backend. Vulkan is the default,
+                           and -vulkan asks for it explicitly. OPENIGI_BACKEND=opengl
+                           does the same as -opengl for a whole shell.
           -screenshot <f>  Write a BMP of the rendered frame and quit. Implies -frames 5.
           -frames <n>      Quit after n rendered frames. 0 runs until closed.
           -lockstep        Drive the simulation from a synthetic clock, one tick per loop pass,
@@ -581,12 +745,19 @@ public readonly record struct DesktopOptions(
                            to judge the temporal filters (GI, TAA) in motion. Pair with -frames.
           -yawend <rad>    Yaw the flight ends on. Defaults to the opening yaw (-yaw).
           -pitchend <rad>  Pitch the flight ends on. Defaults to the opening pitch (-pitch).
+          -flightframes N  Finish the flight in N frames and hold the end pose for the rest of the
+                           capture. Defaults to spreading the flight over every frame.
+          -camshake <deg>  Lay a handheld-camera shake of this peak amplitude over the pose, drifting
+                           the way a hand does rather than jittering randomly. Implies a flight, so it
+                           can be used on its own to shake a fixed viewpoint. Try 0.15 for a steady
+                           hold, 0.5 for a walk, 1.5 for a run.
           -difficulty <d>  easy, normal or hard - the settings.qsc rows GD_1, GD_2 and GD_3
                            every soldier reads its combat numbers from. Default normal.
           -vanilla         The whole remaster track off: the retail menu system and the original's
                            picture, pacing and mix (implies -vanillamenu, +gfx_preset vanilla and
-                           +snd_preset vanilla, including the original's 30 Hz between-tick
-                           presentation and its 32-voice flat-panned audio).
+                           +snd_preset vanilla, including its 32-voice flat-panned audio). The
+                           simulation stays at 30 Hz but the display is not held to it; -lockstep
+                           is what restores the original's one-render-per-tick schedule.
           -vanillamenu     The byte-for-byte retail menu system instead of the cinematic shell,
                            over the modern renderer.
           -shelltab <s>    Open the cinematic shell on a section instead of its landing page:
@@ -594,6 +765,12 @@ public readonly record struct DesktopOptions(
           -entrycam <n>    Boot the shell on mission <n>, wait for its backdrop, then press Play by
                            itself, so the menu-to-mission entry can be measured and captured from a
                            known frame rather than from whenever somebody clicked.
+          -missioncycle N  Abandon the mission to the campaign and play it again every N frames, so the
+                           cost of leaving a level -- and whether it releases what it built -- can be
+                           measured over many cycles instead of clicked through by hand.
+          -backdropcycle N Select the next mission in the menu every N frames, so the backdrop swap --
+                           a whole level replaced while the loop keeps presenting -- can be run for as
+                           long as it takes instead of clicked down the list by hand.
           -computercam <n> Open the map computer by itself on frame <n> of a mission, so its camera
                            move and display boot can be captured from a known frame. Pair with
                            -frames and -screenshot for the whole transition as a sequence.
@@ -602,6 +779,8 @@ public readonly record struct DesktopOptions(
                            then edited by hand. Without it the places are found at load instead.
           -vanillarender   The cinematic shell over the original's render path
                            (shorthand for +gfx_preset vanilla).
+          -bakeall         Trace every mission's global-illumination probe field, write it to the
+                           cache and quit. Run once; ship the .giv files so no player traces a level.
           +<command>       Run a console statement at start-up, after settings.cfg has loaded.
                            Arguments run to the next + or -, so
                              +gfx_preset ultra +r_scale 0.8

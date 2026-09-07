@@ -126,9 +126,7 @@ public sealed class ResourceRegistry
             byte[] bytes;
             using (stream)
             {
-                using var buffer = new MemoryStream();
-                stream.CopyTo(buffer);
-                bytes = buffer.ToArray();
+                bytes = VirtualFileSystem.ReadToEnd(stream);
             }
 
             _logger.Debug(LogCategory, $"Loaded '{candidate}' from disk ({bytes.Length} bytes).");

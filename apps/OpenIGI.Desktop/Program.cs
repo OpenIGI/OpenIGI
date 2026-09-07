@@ -1,4 +1,5 @@
-﻿using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Configuration;
+using OpenIGI.Core.Diagnostics;
 using OpenIGI.Desktop;
 using OpenIGI.Desktop.Infrastructure;
 using OpenIGI.Engine.Vfs;
@@ -6,13 +7,15 @@ using OpenIGI.Game.Profiles;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.OpenGL;
-using Silk.NET.OpenGL;
+using OpenIGI.Rendering.Vulkan;
 
 DesktopOptions options;
 try
 {
-    options = DesktopOptions.Parse(args);
+    // -vulkan is still swallowed rather than rejected. It names the only backend there is, so it does
+    // nothing, but a shortcut or a script that has carried it since there were two should keep working.
+    options = DesktopOptions.Parse(
+        args.Where(a => !a.Equals("-vulkan", StringComparison.OrdinalIgnoreCase)).ToArray());
 }
 catch (ArgumentException ex)
 {
@@ -27,7 +30,24 @@ try
 {
     persistentLogger = new(RuntimePaths.GetLogPath());
 }
-catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+catch (IOException)
+{
+    // Another instance already owns the log — a second copy for a capture or a comparison is a normal
+    // thing to run, and it should not die over a file name. It logs beside the first, named by process.
+    try
+    {
+        string sidecar = Path.Combine(
+            Path.GetDirectoryName(RuntimePaths.GetLogPath()) ?? ".",
+            FormattableString.Invariant($"runtime.{Environment.ProcessId}.log"));
+        persistentLogger = new(sidecar);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+    {
+        Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
+        return 2;
+    }
+}
+catch (Exception ex) when (ex is UnauthorizedAccessException or ArgumentException or NotSupportedException)
 {
     Console.Error.WriteLine($"Could not initialize the runtime log: {ex.Message}");
     return 2;
@@ -40,7 +60,13 @@ IIgiLogger logger = persistentLogger;
 // Where the executable is, then where it was run from. Dropping the port into the game's own folder
 // is then the whole of the installation procedure, which is how somebody expects to install an add-on
 // for a game of this age -- and it is the only route that works with no environment to set up.
-string[] searched = [AppContext.BaseDirectory, Environment.CurrentDirectory];
+// The executable's folder is asked for by process path rather than AppContext.BaseDirectory, because
+// a single-file build runs from a temporary folder it unpacked itself into: BaseDirectory would name
+// that, the installation procedure would stop working, and the error below would list a path nobody
+// recognises. BaseDirectory is still searched after it, for the app's own shipped data.
+string[] searched = new[] { SettingsPaths.ExecutableDirectory, AppContext.BaseDirectory, Environment.CurrentDirectory }
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
 
 // -game, then IGI_GAME_PATH, then whatever is lying around the executable.
 string? gamePath = options.GamePath ?? GameProfileResolver.DiscoverDataRoot(searched);
@@ -100,9 +126,9 @@ catch (PlatformException ex)
     return 3;
 }
 
-// macOS reports a zero drawable for a hidden OpenGL window. Show it before the graphics device reads
-// the drawable dimensions. Other platforms keep the window hidden until DesktopGame.Run so boot does
-// not present a blank focused surface.
+// macOS reports a zero drawable for a window that has never been shown, and the swapchain is sized from
+// it. Show it before the graphics device reads those dimensions. Other platforms keep the window hidden
+// until DesktopGame.Run so boot does not present a blank focused surface.
 if (OperatingSystem.IsMacOS())
 {
     window.Show();
@@ -112,14 +138,30 @@ using (window)
 {
     DisplayReport.Report(window, options, logger);
 
-    GL gl = GL.GetApi(window.GLContext);
-
     int width = window.Width > 0 ? window.Width : options.Width > 0 ? options.Width : 640;
     int height = window.Height > 0 ? window.Height : options.Height > 0 ? options.Height : 480;
-    using GLGraphicsDevice device = new(
-        gl,
-        new DisplayMode(width, height, 32, window.RefreshRate),
-        window.SwapBuffers,
+    DisplayMode displayMode = new(width, height, 32, window.RefreshRate);
+
+    // The device presents through its own swapchain, so it takes the window's surface rather than a
+    // context and a present callback.
+    bool vulkanValidation = string.Equals(
+        Environment.GetEnvironmentVariable("OPENIGI_VK_VALIDATION"),
+        "1",
+        StringComparison.Ordinal);
+    // The deferred, HDR renderer -- the G-buffer, cascaded shadows and the GI passes -- is the modern
+    // path; the direct renderer is the vanilla fallback. It is on by default and chosen per preset by the
+    // r_hdr/r_deferred cvars (BeginSceneCapture declines it where a preset does not ask for it), so vanilla
+    // still draws direct. OPENIGI_VK_DEFERRED=0 forces the direct path for debugging.
+    bool vulkanDeferred = !string.Equals(
+        Environment.GetEnvironmentVariable("OPENIGI_VK_DEFERRED"),
+        "0",
+        StringComparison.Ordinal);
+    using IGraphicsDevice device = new VulkanGraphicsDevice(
+        new VulkanSurfaceProvider(window.VkSurface!),
+        displayMode,
+        vulkanValidation,
+        vulkanDeferred,
+        options.ScreenshotPath is not null,
         logger);
 
     using DesktopGame game = new(platform, window, device, fileSystem, options, gamePath, logger);

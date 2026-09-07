@@ -17,11 +17,43 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public enum RenderStage
 {
-    /// <summary>Framebuffer binds, viewport changes and clears before scene rasterisation.</summary>
+    /// <summary>
+    /// Framebuffer binds, viewport changes and clears before scene rasterisation, and the compute that
+    /// has to happen before any render pass opens: the sky atmosphere's lookup tables and the probe
+    /// field's upload.
+    /// </summary>
+    /// <remarks>
+    /// The sky tables and the probe upload are here because a render pass is the one place a dispatch
+    /// cannot be recorded, so they run at the very top of the frame -- where, until they earned a stage,
+    /// nothing timed them.
+    /// </remarks>
     Setup,
+
+    /// <summary>
+    /// Building and refitting the ray-tracing acceleration structures the traced shadow and the traced
+    /// indirect are cast against.
+    /// </summary>
+    /// <remarks>
+    /// Its own line rather than part of <see cref="Setup"/> because it is the one stage whose cost is
+    /// driven by how much of the world moved rather than by any setting, so a budget for it would mean
+    /// something quite different from a budget for the rest of the frame's preamble.
+    /// </remarks>
+    AccelerationStructure,
 
     /// <summary>Every shadow cascade's depth render, together.</summary>
     Shadows,
+
+    /// <summary>
+    /// The real-time global-illumination update: the distance-field clipmap refresh, the surface-cache
+    /// relight and the per-frame radiosity bounce, and the screen-space probe gather and filter.
+    /// </summary>
+    /// <remarks>
+    /// This is compute work that runs before the G-buffer fill and was, until it earned a stage, timed by
+    /// nothing at all -- the reason a frame could read six milliseconds on the overlay while taking
+    /// thirty-five. It is here so the bounce that dominates a real-time-GI frame is a line on the budget
+    /// like every other pass.
+    /// </remarks>
+    GlobalIllumination,
 
     /// <summary>Opaque world rasterisation, including Vanilla's direct forward path.</summary>
     Geometry,

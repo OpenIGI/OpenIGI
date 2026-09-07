@@ -89,6 +89,9 @@ a probe of the running original
 !/GPU-PERFORMANCE.md
 !src/OpenIGI.Generators/AnalyzerReleases.*.md
 !.github/**/*.md
+# An added asset's provenance, licence and preparation recipe are not working notes: they have to
+# ship with the binary they describe, or nobody downstream can tell what they are allowed to do with it.
+!apps/OpenIGI.Desktop/Assets/**/README.md
 
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
@@ -107,3 +110,11 @@ a probe of the running original
 /.worktrees/
 NuGetPackages.config
 NuGet.config
+
+# BenchmarkDotNet writes its reports and generated harness projects here.
+BenchmarkDotNet.Artifacts/
+
+# Vendor SDKs and runtimes fetched onto a developer's machine rather than carried here. They are
+# proprietary redistributables and this repository is GPL-3.0, so an accidental `git add -A` must not
+# be able to pull one in.
+third-party/

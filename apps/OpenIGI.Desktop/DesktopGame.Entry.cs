@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
@@ -20,7 +20,23 @@ internal sealed partial class DesktopGame
     private BoneAnimationSet? _viewRigAnimations;
     private bool _sharedAnimationsRead;
 
-    /// <summary>Reads the two shared animation sets, once for the whole session.</summary>
+    // The read, in flight on a worker. Started at start-up and waited for at the first mission, which is
+    // seconds later and usually long finished.
+    private Task<(BoneAnimationSet? Body, BoneAnimationSet? Rig)>? _sharedAnimationsTask;
+
+    /// <summary>Starts reading the two shared animation sets on a worker.</summary>
+    /// <remarks>
+    /// Two and a half megabytes of IFF, parsed into quaternion tracks. It reads files and allocates and
+    /// touches nothing else in the session, so there is no reason for it to be between the player and
+    /// the first frame — and at start-up the render thread is otherwise waiting on the driver to build a
+    /// device, which is exactly the moment a worker is free.
+    /// </remarks>
+    private void BeginReadingSharedAnimations() =>
+        _sharedAnimationsTask ??= Task.Run(() =>
+            (ReadAnimationSet("000.iff", "the player cannot walk"),
+             ReadAnimationSet("005.iff", "no weapon can be held")));
+
+    /// <summary>Makes the two shared animation sets available, waiting for the read if it is still going.</summary>
     /// <remarks>
     /// Failure is not fatal and is not retried: without skeleton 0 the player can stand and fall but not
     /// walk, and without skeleton 5 nothing can be held — both of which the callers already report. A
@@ -34,8 +50,8 @@ internal sealed partial class DesktopGame
         }
 
         _sharedAnimationsRead = true;
-        _playerBodyAnimations = ReadAnimationSet("000.iff", "the player cannot walk");
-        _viewRigAnimations = ReadAnimationSet("005.iff", "no weapon can be held");
+        BeginReadingSharedAnimations();
+        (_playerBodyAnimations, _viewRigAnimations) = _sharedAnimationsTask!.GetAwaiter().GetResult();
     }
 
     private BoneAnimationSet? ReadAnimationSet(string name, string consequence)
@@ -157,6 +173,10 @@ internal sealed partial class DesktopGame
                 FormattableString.Invariant($"  {what}: {milliseconds:F1} ms."));
         }
 
+        // One more share of the loading bar, and a frame to show it on: the load is the one stretch
+        // where nothing else presents. See DesktopGame.MissionWarmUp.cs.
+        ReportLoadStage();
+
         _stageStartedAt = Stopwatch.GetTimestamp();
     }
 
@@ -200,8 +220,17 @@ internal sealed partial class DesktopGame
     private float _gameplayFocalDistance;
     private float _gameplayFocalRange;
     private float _gameplayFocalBlur;
-    private float _gameplayMotionBlur;
     private bool _gameplayDepthOfFieldSaved;
+
+    // The motion blur is stashed SEPARATELY, and by the entry shot rather than by the menu, because the
+    // menu does not touch it -- only the shot does. Stashed with the three above, it was read at boot and
+    // written back on every Play, which silently overwrote every change the player made in between: set
+    // Motion Blur in the settings screen, press Play, and the value the menu had found at start-up landed
+    // back on top of it. Since the default is nought, that also erased it from settings.cfg -- "the
+    // setting resets to nothing every time the game is relaunched". A value is stashed where it is
+    // displaced, not where some other value is.
+    private float _shotMotionBlur;
+    private bool _shotMotionBlurSaved;
 
     /// <summary>The shell's framing: a close focal plane and full blur, so the level reads as a backdrop.</summary>
     /// <remarks>
@@ -216,7 +245,6 @@ internal sealed partial class DesktopGame
             _gameplayFocalDistance = RenderCVars.FocalDistance.Value;
             _gameplayFocalRange = RenderCVars.FocalRange.Value;
             _gameplayFocalBlur = RenderCVars.FocalBlur.Value;
-            _gameplayMotionBlur = RenderCVars.MotionBlur.Value;
             _gameplayDepthOfFieldSaved = true;
         }
 
@@ -226,8 +254,20 @@ internal sealed partial class DesktopGame
     }
 
     /// <summary>Puts back whatever depth of field was configured before the menu framed its backdrop.</summary>
+    /// <remarks>
+    /// The two stashes are given back independently because they are taken independently: the menu holds
+    /// the focus for as long as it is up, while the motion blur is held only for the length of an entry
+    /// shot and is usually not held at all. Returning a value nobody took is how the player's own setting
+    /// gets overwritten with a stale one.
+    /// </remarks>
     private void ApplyGameplayDepthOfField()
     {
+        if (_shotMotionBlurSaved)
+        {
+            RenderCVars.MotionBlur.Value = _shotMotionBlur;
+            _shotMotionBlurSaved = false;
+        }
+
         if (!_gameplayDepthOfFieldSaved)
         {
             return;
@@ -236,7 +276,11 @@ internal sealed partial class DesktopGame
         RenderCVars.FocalDistance.Value = _gameplayFocalDistance;
         RenderCVars.FocalRange.Value = _gameplayFocalRange;
         RenderCVars.FocalBlur.Value = _gameplayFocalBlur;
-        RenderCVars.MotionBlur.Value = _gameplayMotionBlur;
+
+        // The focus stash is deliberately NOT cleared here. This is called twice on the way into a
+        // mission -- once when the menu leaves and again when the entry shot hands over -- and the shot
+        // re-frames the focus in between, so a stash cleared on the first call would leave the shot's own
+        // framing standing on the second. It is held for the session instead; see ApplyMenuDepthOfField.
     }
 
     /// <summary>Applies the shot's own framing: what it is focused on, and how much its movement smears.</summary>
@@ -265,7 +309,17 @@ internal sealed partial class DesktopGame
             RenderCVars.FocalBlur.Value = _gameplayFocalBlur;
         }
 
-        RenderCVars.MotionBlur.Value = Math.Max(_gameplayMotionBlur, _entry.MotionBlur);
+        // Taken on the shot's first frame, which is the frame before it is displaced -- and taken from the
+        // variable rather than from any earlier snapshot, so whatever the player last chose is what they
+        // get back. Guarded because this runs every frame of the shot, and an unguarded stash would save
+        // the shot's own blur on the second frame and hand that back as the player's.
+        if (!_shotMotionBlurSaved)
+        {
+            _shotMotionBlur = RenderCVars.MotionBlur.Value;
+            _shotMotionBlurSaved = true;
+        }
+
+        RenderCVars.MotionBlur.Value = Math.Max(_shotMotionBlur, _entry.MotionBlur);
     }
 
     /// <summary>Interpolates between two settings, for easing the menu's framing off across a shot.</summary>
@@ -284,11 +338,13 @@ internal sealed partial class DesktopGame
     private UiFont? _shellBodyFont;
     private UiFont? _shellHeadingFont;
 
-    /// <summary>Draws the shot's own chrome: the bars, and the mission's name over the vantage.</summary>
+    /// <summary>Draws the shot's own chrome: the cinematic bars.</summary>
     /// <param name="painter">The shell's painter, drawing on the back buffer over everything else.</param>
-    /// <param name="title">The mission's number and name.</param>
-    /// <param name="subtitle">The difficulty, or whatever else belongs under the title.</param>
-    private void DrawEntryFraming(UiPainter painter, string title, string subtitle)
+    /// <remarks>
+    /// The mission's name used to be set here, over the vantage. It stands in the level now -- see
+    /// <see cref="WorldTitleRenderer"/> -- so the frame's chrome is the bars alone.
+    /// </remarks>
+    private void DrawEntryFraming(UiPainter painter)
     {
         float width = _window.Width;
         float height = _window.Height;
@@ -300,39 +356,6 @@ internal sealed partial class DesktopGame
             painter.FillRect(new UiRect(0f, 0f, width, bars), black);
             painter.FillRect(new UiRect(0f, height - bars, width, bars), black);
         }
-
-        float titleOpacity = Math.Clamp(_entry.TitleOpacity, 0f, 1f);
-        if (titleOpacity <= 0.004f || _shellHeadingFont is null || _shellBodyFont is null)
-        {
-            return;
-        }
-
-        // Set against the lower bar rather than centred: the vantage is looking down at the level, and
-        // putting a caption through the middle of it would cover the thing it is captioning.
-        float scale = Math.Max(1f, height / 1080f);
-        float baseline = height - bars - (72f * scale);
-        float left = width * 0.08f;
-
-        float titleSize = 44f * scale;
-        float subtitleSize = 20f * scale;
-
-        // The subtitle hangs a small fixed gap under the TITLE'S BASELINE, not under an arbitrary offset
-        // from its top. The title is set in the condensed heading face and the subtitle in the body one,
-        // at less than half the size, so the two line boxes have nothing to do with each other and a
-        // constant measured from the top of the first lands wherever the heading font's leading happens
-        // to put it. Measuring from the baseline is what a typesetter would do, and it keeps the pair
-        // reading as one block at every window size rather than only at the one it was eyeballed on.
-        float titleBaseline = _shellHeadingFont.Ascent(titleSize);
-
-        painter.PushOpacity(titleOpacity);
-        painter.DrawText(_shellHeadingFont, title, new UiVec2(left, baseline), titleSize, Bgra32.White);
-        painter.DrawText(
-            _shellBodyFont,
-            subtitle,
-            new UiVec2(left, baseline + titleBaseline + (2f * scale)),
-            subtitleSize,
-            Bgra32.FromRgb(170, 178, 190));
-        painter.PopOpacity();
     }
 
     /// <summary>The focal distance the menu frames its backdrop at, in metres.</summary>

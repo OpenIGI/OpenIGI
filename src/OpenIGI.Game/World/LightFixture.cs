@@ -9,7 +9,7 @@ namespace OpenIGI.Game.World;
 /// <para>
 /// <b>This is a proposal, not a declaration.</b> I.G.I. declares no point lights at all, so nothing in
 /// the level data corresponds to this type — it is the conclusion of two inferences stacked on each
-/// other. An emissive-texture survey infers which <em>textures</em> the artists treated as
+/// other. <see cref="EmissiveTextureSurvey"/> infers which <em>textures</em> the artists treated as
 /// sources, from how bright they painted the lightmaps around them; <see cref="LightFixtureExtractor"/>
 /// then infers a <em>light</em> from every place such a texture is drawn. Both steps produce a list for
 /// someone to look at rather than an answer to be trusted, and a fixture that turns out to be a
@@ -54,6 +54,23 @@ namespace OpenIGI.Game.World;
 /// How many emitter triangles were merged into this fixture. Carried for review: a fixture built from
 /// one stray triangle deserves more suspicion than one built from a whole lamp housing.
 /// </param>
+/// <param name="Direction">
+/// The way the fixture faces, as a unit vector in world space, or zero when it does not face anywhere
+/// in particular.
+/// <para>
+/// A lamp is not a bare bulb hanging in a void: it is a housing with an opening, and it throws its
+/// light out of that opening and nowhere else. A ceiling tube lights the floor under it and leaves the
+/// slab it is bolted to dark. Treating every fixture as an omnidirectional point is what puts a bright
+/// disc on the ceiling above every lamp in the level — light appearing on the one surface that is
+/// physically behind the emitter — and it is visible from anywhere in the room.
+/// </para>
+/// <para>
+/// So this is the area-weighted average of the fixture's own face normals, flipped downward: it is
+/// where the geometry looks, measured from the geometry. Zero is honest and not a failure — a lamp
+/// modelled as a closed box has normals that cancel, and a fixture that cannot say which way it faces
+/// is better lit as a point than as a spot pointing at a guess.
+/// </para>
+/// </param>
 public readonly record struct LightFixture(
     string Texture,
     Vector3d Position,
@@ -61,11 +78,20 @@ public readonly record struct LightFixture(
     Vector3f Colour,
     float Area,
     float Extent,
-    int TriangleCount)
+    int TriangleCount,
+    Vector3f Direction = default)
 {
+    /// <summary>Gets a value indicating whether this fixture throws its light one way.</summary>
+    /// <remarks>
+    /// A direction of no length is the extractor saying it could not tell, which is a normal outcome;
+    /// the renderer reads that as an omnidirectional source rather than as a spot aimed at nothing.
+    /// </remarks>
+    public bool IsDirectional =>
+        (Direction.X * Direction.X) + (Direction.Y * Direction.Y) + (Direction.Z * Direction.Z) > 0.25f;
+
     /// <summary>Gets the colour's luminance, on the same scale as its brightest channel.</summary>
     /// <remarks>
-    /// Rec. 709 weights, the same ones an emissive-texture survey measures lightmap pages
+    /// Rec. 709 weights, the same ones <see cref="EmissiveTextureSurvey"/> measures lightmap pages
     /// with, so that a colour called bright here and a lightmap called bright there mean the same
     /// thing.
     /// </remarks>

@@ -102,6 +102,16 @@ public abstract class CVar<T> : ICVar
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// Parsed and coerced exactly as <see cref="TrySetText"/> would, then compared as a value, because
+    /// that is the only comparison that agrees with what assigning the text would actually produce.
+    /// Comparing rendered text instead fails on every value whose spelling is not its own round trip.
+    /// </remarks>
+    public bool MatchesText(string text) =>
+        TryParse(text ?? string.Empty, out T parsed)
+        && EqualityComparer<T>.Default.Equals(Coerce(parsed), _value);
+
+    /// <inheritdoc/>
     public void Reset() => Assign(DefaultValue);
 
     /// <summary>Returns the variable's name and current value, as the console prints it.</summary>

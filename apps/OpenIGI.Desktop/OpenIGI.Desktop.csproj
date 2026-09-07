@@ -3,6 +3,9 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <ApplicationIcon>Assets\openigi.ico</ApplicationIcon>
+    <!-- The Vulkan surface bridge reads the window's required-extension list and creates the surface
+         through raw handles, both of which are pointer operations. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,7 +16,7 @@
     <ProjectReference Include="..\..\src\OpenIGI.Formats\OpenIGI.Formats.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Scripting\OpenIGI.Scripting.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Rendering\OpenIGI.Rendering.csproj" />
-    <ProjectReference Include="..\..\src\OpenIGI.Rendering.OpenGL\OpenIGI.Rendering.OpenGL.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Rendering.Vulkan\OpenIGI.Rendering.Vulkan.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.UI\OpenIGI.UI.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Frontend\OpenIGI.Frontend.csproj" />
     <ProjectReference Include="..\..\src\OpenIGI.Audio\OpenIGI.Audio.csproj" />

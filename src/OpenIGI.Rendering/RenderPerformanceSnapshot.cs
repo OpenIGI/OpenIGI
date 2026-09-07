@@ -13,6 +13,10 @@ namespace OpenIGI.Rendering;
 /// <param name="FrameSampleCount">Number of wall-frame intervals in the distribution.</param>
 /// <param name="GpuTotalMilliseconds">Sum of active average GPU stages.</param>
 /// <param name="GpuP95Milliseconds">95th percentile of total timed GPU work per frame.</param>
+/// <param name="GpuMeasuredMilliseconds">
+/// The whole GPU frame measured end to end. Above <c>GpuTotalMilliseconds</c> by however much work the
+/// frame does outside every stage bracket; zero on a backend that does not measure it.
+/// </param>
 /// <param name="GpuStages">Detailed GPU-stage statistics.</param>
 public sealed record RenderPerformanceSnapshot(
     string Preset,
@@ -27,4 +31,5 @@ public sealed record RenderPerformanceSnapshot(
     int FrameSampleCount,
     double GpuTotalMilliseconds,
     double GpuP95Milliseconds,
+    double GpuMeasuredMilliseconds,
     IReadOnlyList<RenderStageTiming> GpuStages);

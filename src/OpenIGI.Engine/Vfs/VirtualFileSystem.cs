@@ -228,10 +228,30 @@ public sealed class VirtualFileSystem
 
         using (stream)
         {
-            using var buffer = new MemoryStream();
-            stream.CopyTo(buffer);
-            return buffer.ToArray();
+            return ReadToEnd(stream);
         }
+    }
+
+    /// <summary>Reads a stream in full with as little copying as its kind allows.</summary>
+    /// <remarks>
+    /// A seekable stream reads once into an exact-size buffer. Draining through a
+    /// <see cref="MemoryStream"/> instead allocates roughly three times the file — the growth doublings
+    /// plus the final <c>ToArray</c> copy — and mission loads read enough bytes for that to show up as
+    /// collection pauses.
+    /// </remarks>
+    internal static byte[] ReadToEnd(Stream stream)
+    {
+        if (stream.CanSeek)
+        {
+            long remaining = stream.Length - stream.Position;
+            byte[] exact = new byte[remaining];
+            stream.ReadExactly(exact);
+            return exact;
+        }
+
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     /// <summary>Enumerates the files of a directory, across every alias variant.</summary>

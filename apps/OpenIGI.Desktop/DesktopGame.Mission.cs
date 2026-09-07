@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Audio;
@@ -28,6 +28,14 @@ internal sealed partial class DesktopGame
             _logger.Warning("Mission", $"Asked to start mission {id}, which is not registered.");
             return;
         }
+
+        // The hold starts before anything blocks, and so does the panel. Everything below this line
+        // runs on the render thread without presenting, so without a frame pushed out here the window
+        // simply freezes on whatever it was last showing for the half second it takes -- and the warm-up
+        // panel cannot cover that, being drawn by the loop this is blocking. One frame now, holding the
+        // picture the player was looking at, and the panel is already up when the load blocks.
+        BeginMissionWarmUp(chosen);
+        PresentLoadingFrame();
 
         ReleasePlayedMission();
 
@@ -353,7 +361,12 @@ internal sealed partial class DesktopGame
         {
             scene = WorldScene.Build(loaded, levelRoot, _magic, _logger);
             _scene = scene;
-            world = new WorldRenderer(_device, _resources, _logger) { Materials = _materials, DetailMaps = _detailMaps };
+            world = new WorldRenderer(_device, _resources, _logger)
+            {
+                Materials = _materials,
+                DetailMaps = _detailMaps,
+                Lamps = _lamps,
+            };
             _world = world;
             solids = ObjectCollisionIndex.Build(scene.Placements);
             _worldSolids = solids;
@@ -380,15 +393,22 @@ internal sealed partial class DesktopGame
         // mission — cold start or promoted — straight from the level's own objects.qvm (a RainEffect task
         // enabled by its Is Rain and Is Active flags), and whatever rain the previous mission left is
         // dropped first, exactly as the reference resets its rain at every level load. The same scene's
-        // building placements also provide the shells the rain is suppressed inside.
+        // geometry also provides the roofs the rain is suppressed under.
         _rain?.Dispose();
         _rain = new RainRenderer(_device, _logger);
         _rain.ReadParams(levelRoot);
         _snow?.Dispose();
         _snow = new SnowRenderer(_device, _logger);
         _snow.ReadParams(levelRoot);
+        _storm?.Dispose();
+        _storm = new StormRenderer(_device, _logger);
+        BuildShelterField(scene);
+
+        // The storm falls where the level says rain falls -- it is the same weather, drawn better -- so
+        // it inherits the vanilla renderer's reading of the RainEffect task rather than parsing it a
+        // second time, and shelters under the same roofs.
+        _storm.SetShelter(_shelterField);
         ApplyWeatherSettings();
-        _rainBuildingVolumes = RainRenderer.BuildBuildingVolumes(scene.Placements);
 
         // The soldiers the level places. Each names its own model, skeleton and stand animation
         // (player.md section 15); the sets they index were loaded when the packs opened. They are not
@@ -577,6 +597,282 @@ internal sealed partial class DesktopGame
                 // those faces are the room/window openings, and skipping them lets a guard see
                 // through a closed door and into the room on the other side.
                 WorldRayCast levelCast = WorldTrace.AsRayCast(worldTrace, tracePortals: true);
+
+                // The level's sun has to be known BEFORE the bakes below, not after: the Dirlight was read
+                // some hundreds of lines further down (the `if (!promoted)` block), so every probe field and
+                // path-traced lightmap was baked with `_sun` still null -- a zero sun direction and a fallback
+                // sky -- which is exactly why the baked GI came out dim. Read it here, unless a promoted
+                // backdrop already carried one in. The later read stays and simply re-confirms the same value.
+                if (_sun is null && DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings bakeSun))
+                {
+                    _sun = bakeSun;
+                }
+
+                // The probe field, traced against the level's collision on a WORKER. Inline it blocks for
+                // about three seconds in Release and half a minute in Debug, and by this point the window
+                // and its GL context are live -- so the process stops answering, the GPU is handed no
+                // work for the whole of it, and Windows' watchdog takes the context away. Loading mission
+                // 1 from the menu died that way, with exit 0xCFFFFFFF. The main thread carries on loading
+                // and presenting; IrradianceProbeBake hands the volume over when it is ready.
+                //
+                // It traces with every door SHUT, which is two things at once. A door standing open would
+                // otherwise be baked as a hole in the wall it belongs to, and the field is static, so the
+                // hole would outlast the door -- that is why this used to have to run before the doors
+                // did. And the shut cast is the only one that reads no state the game mutates, which is
+                // what makes running it alongside a live level safe rather than merely early.
+                //
+                // A level with no Dirlight has no sun to trace towards, so the field is sky and bounce
+                // alone -- which is what such a level looks like anyway.
+                // The shared bake inputs -- sun and a glass-passing cast -- are built when EITHER the probe
+                // field or the path-traced lightmaps are wanted; each bake below is then guarded on its own
+                // cvar, so r_lightmap works at a preset (ultra) that runs no probe field.
+                if (RenderCVars.GlobalIllumination.Value || RenderCVars.BakedLightmaps.Value > 0)
+                {
+                    Vector3f bakeSunDirection = _sun is { } declared && !declared.IsBelowHorizon
+                        ? declared.Direction
+                        : default;
+
+                    WorldRayCast shutObjectCast = solids.CasterWithDoorsShut();
+
+                    // A bake ray passes through glass and chain-link the way a line of sight does
+                    // (GameMaterial.IsSightTransparent), so daylight reaches a room through its windows
+                    // instead of stopping at the pane -- the very thing that left window rooms as dark as
+                    // sealed ones. It steps a hair past each see-through face and casts on until it meets
+                    // something solid or leaves the level. Portal polygons (doorway/window openings) are
+                    // already skipped by the cast itself. Terrain always blocks -- it reports material Air.
+                    WorldRayCast seeThroughObjectCast = (a, b, out blockedAt) =>
+                    {
+                        Vector3d origin = a;
+                        for (int pass = 0; pass < 8; pass++)
+                        {
+                            if (!shutObjectCast(origin, b, out WorldRayHit hit))
+                            {
+                                blockedAt = default;
+                                return false;
+                            }
+
+                            if (!GameMaterial.IsSightTransparent(hit.Material))
+                            {
+                                blockedAt = hit;
+                                return true;
+                            }
+
+                            Vector3d toEnd = new(b.X - hit.Position.X, b.Y - hit.Position.Y, b.Z - hit.Position.Z);
+                            double length = Math.Sqrt((toEnd.X * toEnd.X) + (toEnd.Y * toEnd.Y) + (toEnd.Z * toEnd.Z));
+                            if (length <= 1e-6)
+                            {
+                                blockedAt = default;
+                                return false;
+                            }
+
+                            // A few units past the pane (4/4096 m ~= 1 mm); thicker or layered glass is
+                            // cleared by the loop, one see-through face at a time.
+                            double scale = 4.0 / length;
+                            origin = new Vector3d(
+                                hit.Position.X + (toEnd.X * scale),
+                                hit.Position.Y + (toEnd.Y * scale),
+                                hit.Position.Z + (toEnd.Z * scale));
+                        }
+
+                        blockedAt = default;
+                        return false;
+                    };
+
+                    WorldRayCast bakeCast = (a, b, out blockedAt) =>
+                    {
+                        bool hitObject = seeThroughObjectCast(a, b, out WorldRayHit onObject);
+                        if (_playerTerrain is { } bakeGround
+                            && TerrainSightBlock.TryBlock(bakeGround, a, b, out WorldRayHit onGround)
+                            && (!hitObject || onGround.Distance < onObject.Distance))
+                        {
+                            blockedAt = onGround;
+                            return true;
+                        }
+
+                        blockedAt = onObject;
+                        return hitObject;
+                    };
+
+                    // Dev verification for the path-traced lightmapper (phases 1-2): when IGI_BAKELM_DIR is
+                    // set, enumerate the lightmapped texels, bake direct sun + sky, and dump the largest few
+                    // pages' normals and radiance so the texel map and the direct pass can be checked by eye.
+                    // Off unless the env var is set.
+                    if (Environment.GetEnvironmentVariable("IGI_BAKELM_DIR") is { Length: > 0 } lightmapDir
+                        && _scene is { } lightmapScene)
+                    {
+                        DumpLightmapVerification(lightmapScene, bakeCast, bakeSunDirection, lightmapDir);
+                    }
+
+                    // Path-traced object lightmaps (r_lightmap): re-bake the level's static object lighting
+                    // -- direct sun, sky and multi-bounce indirect -- and swap the pages in where the shipped
+                    // .olm ones would be sampled. Cached to disk like the probe field, so only a mission
+                    // without a bake pays to trace it, and traced on a worker so the load does not stall.
+                    // The sky is the daytime skylight (r_sky_light), not the dim raw ambient, so sky-lit
+                    // surfaces read closer to what the artists painted. r_lightmap 2 discards the shipped
+                    // lightmaps entirely; 1 keeps them where the bake produced nothing.
+                    bool discardRetailLightmaps = RenderCVars.BakedLightmaps.Value >= 2;
+                    if (RenderCVars.BakedLightmaps.Value > 0 && _scene is { } bakeScene && _world is not null)
+                    {
+                        Vector3f lmSun = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+
+                        // The LEVEL's ambient, not SkyFillColour's. That reads the effective sun -- the
+                        // authored one after the day/night sweep and the daylight re-point have had it,
+                        // which moves every frame and belongs to the frame before this load. The two
+                        // inputs beside it come from the level's own Dirlight, so mixing the two gave a
+                        // disk-cache key that could not be reproduced: entering the same mission twice in
+                        // a session missed its own bake and traced the level again.
+                        Vector3f lmSky = (_sun?.Ambient ?? new Vector3f(0.27f, 0.29f, 0.33f))
+                            * RenderCVars.SkyLight.Value;
+                        _lightmapBakeMission = id;
+                        _lightmapBakeSun = bakeSunDirection;
+                        _lightmapBakeSunColour = lmSun;
+                        _lightmapBakeSky = lmSky;
+
+                        if (_lightmapCache.TryLoad(id, bakeSunDirection, lmSun, lmSky) is { } cachedLightmaps)
+                        {
+                            _world.SetBakedLightmaps(cachedLightmaps, discardRetailLightmaps);
+                        }
+                        else
+                        {
+                            // Set the mode straight away so the worker's seconds are not spent showing the
+                            // shipped lightmaps under an exclusive (r_lightmap 2) request: with no bake yet,
+                            // lightmapped surfaces read black until the bake lands. Mode 1 keeps the shipped
+                            // pages meanwhile, which is what its fallback means.
+                            _world.SetBakedLightmaps(null, discardRetailLightmaps);
+
+                            // Resolving each surface's albedo reads the resource registry, so the texel
+                            // maps, textured triangles and their BVH are built here on the main thread; the
+                            // worker then does only the tracing, which touches immutable data and the cast.
+                            IReadOnlyList<LightmapBaker.LightmapTarget> lmTargets = LightmapBaker.EnumerateTargets(bakeScene);
+                            LightmapBaker.LightmapTriangle[] lmTris = LightmapBaker.BuildTriangles(bakeScene, lmTargets, _resources);
+                            LightmapBaker.LightmapBvh lmBvh = LightmapBaker.LightmapBvh.Build(lmTris);
+
+                            _lightmapBake?.Cancel();
+                            _lightmapBake = LightmapBake.Start(
+                                bakeScene, lmTargets, lmTris, lmBvh, bakeCast, bakeSunDirection, lmSun, lmSky,
+                                bounces: 4, hemisphereRays: 128, _logger);
+
+                            if (_options.Lockstep && _lightmapBake.WaitForResult() is { } readyLightmaps)
+                            {
+                                _world.SetBakedLightmaps(readyLightmaps, discardRetailLightmaps);
+                                _lightmapCache.Save(id, bakeSunDirection, lmSun, lmSky, readyLightmaps);
+                                _lightmapBake = null;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // The setting is off, or off since the last load: make sure no stale bake lingers.
+                        _world?.SetBakedLightmaps(null);
+                    }
+
+                    // The probe field, guarded on its own cvar so it does not trace under a lightmap-only
+                    // request (r_gi off, r_lightmap on -- the ultra preset is exactly that).
+                    if (RenderCVars.GlobalIllumination.Value)
+                    {
+                    // Whatever the console says, but never so fine that a big level spends a minute of
+                    // load tracing rays nobody asked for.
+                    float giSpacing = RenderCVars.GlobalIlluminationSpacing.Value;
+
+                    // Remembered so the live re-bake (F11) can trace the field again from exactly the
+                    // inputs this load used -- the same cast, sun and spacing -- whether the field arrived
+                    // from the cache or the tracer below.
+                    _bakeCast = bakeCast;
+                    _probeBakeMission = id;
+                    _probeBakeSpacing = giSpacing;
+                    _probeBakeSun = bakeSunDirection;
+
+                    // A shipped (or previously-written) bake loads instantly; only a mission without one
+                    // pays to trace it here, and then writes the result so no load pays for it again.
+                    if (_giCache.TryLoad(id, giSpacing, bakeSunDirection) is { } cachedField)
+                    {
+                        _probeField = cachedField;
+                    }
+                    else
+                    {
+                        _probeBake = IrradianceProbeBake.Start(
+                            _scene,
+                            bakeCast,
+                            bakeSunDirection,
+                            giSpacing,
+
+                            // One albedo for the whole level. The alternative is reading each hit's own
+                            // texture, which needs the ray to report a material rather than a triangle --
+                            // and IGI's palette is concrete, snow and dirt, so a warm grey is not far off
+                            // any of them.
+                            ProbeBakeAlbedo,
+                            _logger);
+
+                        if (_options.Lockstep)
+                        {
+                            // A capture is not allowed to race the worker: a reference image has to either
+                            // contain the field or not, never "whatever frame 30 caught". So a lockstep run
+                            // blocks for the finished field and writes the cache inline.
+                            _probeField = _probeBake.WaitForResult();
+                            _probeBake = null;
+
+                            if (_probeField is not null)
+                            {
+                                _giCache.Save(id, giSpacing, bakeSunDirection, _probeField);
+                            }
+                        }
+                        else
+                        {
+                            // Interactive play enters the level on flat ambient and watches the light
+                            // stream in: the render loop polls TryCollectLatest and eases each snapshot in
+                            // as it lands, so a room fills with light over the first seconds rather than the
+                            // load stalling until it is lit. The cache is written once the bake completes,
+                            // under the key already remembered above.
+                            _probeField = null;
+                        }
+                    }
+                    }
+                }
+
+                // The distance fields, on a worker beside the probe bake. Tracing every distinct
+                // model is arithmetic and moves off the render thread freely; only the upload cannot,
+                // because a GL texture belongs to the context that made it.
+                //
+                // Started here rather than built here: EnsureDistanceFields is the same call the render
+                // loop makes every frame, so a level begins its bake at load and a player who switches the
+                // lighting model on later gets one started for them. See DesktopGame.RealtimeGi.cs.
+                // The outgoing level's cards go first, before the incoming field is adopted. Adopting a
+                // field is one of the two moments that can complete the pair and converge the cache, and
+                // with the old cards still standing it would converge THOSE against the new level's field
+                // -- then latch, so the real convergence a few hundred lines below was skipped and the
+                // level opened on the ramp this is all meant to remove. It failed silently, because a
+                // converged-looking cache and a stale one differ only in the picture.
+                // Not on a promotion: the backdrop already carries this very mission's cards and field
+                // -- built or baking behind the menu, which is what lets the menu show the lit level --
+                // and discarding them here would throw the field away and bake it again in front of
+                // the player.
+                if (!promoted)
+                {
+                    DiscardSurfaceCache();
+                    DiscardDistanceFields();
+                }
+
+                EnsureDistanceFields();
+
+                // A capture must not race the worker, for the reason the probe bake records: a
+                // reference image has to either contain the field or not, never whichever frame
+                // the worker happened to reach.
+                if (_options.Lockstep && _sdfBake is { } pendingField
+                    && pendingField.WaitForResult() is { } readyField)
+                {
+                    _sdfBake = null;
+                    AdoptDistanceField(readyField.Scene, readyField.Atlas, fromCache: false);
+                }
+
+                // Every distinct model's surface is captured into the card atlas, but deliberately NOT
+                // here -- even though this is where the geometry first exists. Lighting the cache needs
+                // the level's own sun, which is not read until further down this load, and lighting the
+                // cards before that gave every page a zero sun direction and a picture of pure sky, which
+                // is exactly what the first run produced. EnsureSurfaceCache captures and lights in one
+                // go, so it is called once the sun is known; the outgoing cards were dropped above.
+
+                _device.SetIrradianceVolume(_probeField);
+                ApplyColourLookup(_options.StartMission);
 
                 // The level's doors, before the brains: a walker asks the registry for the nearest door
                 // on a door hop, and an open door is switched out of the collision index so the
@@ -897,6 +1193,10 @@ internal sealed partial class DesktopGame
             if (DirectionalLightSettings.TryRead(levelRoot, out DirectionalLightSettings readSun))
             {
                 _sun = readSun;
+
+                // At the hour the level's authors placed the sun for, not a fixed one: the cycle lands
+                // back on the authored direction only there.
+                _dayNight.ResetForLevel(readSun, RenderCVars.TimeOfDay.Value);
                 _logger.Information(
                     "Light",
                     FormattableString.Invariant(
@@ -913,6 +1213,7 @@ internal sealed partial class DesktopGame
             }
             else
             {
+                _dayNight.ResetForLevel(null, RenderCVars.TimeOfDay.Value);
                 _logger.Information("Light", "The level declares no Dirlight; the modern path will light it with a default sun.");
             }
 
@@ -940,6 +1241,39 @@ internal sealed partial class DesktopGame
                 ? new FreeCamera(new Vector3d(at.X, at.Y, at.Z), _options.CameraYaw, _options.CameraPitch)
                 : FreeCameraFactory.Create(scene, _options.CameraYaw, _options.CameraPitch, _options.CameraHeight);
         }
+
+        // Now that the sun is known. The pages hold unlit albedo by design, so this is the only thing
+        // that puts light into the cache -- and it runs once, because this game's sun is a fixed
+        // direction per mission, which is the bargain the whole surface cache is built on.
+        // The lamps this level implies but never declares, worked out once and used in three places: as
+        // EMISSION on the fixture geometry itself, so a lamp looks like the thing doing the lighting; as
+        // real lights in the deferred pass, so a windowless room has a source at all; and as emitters the
+        // surface cache bounces off, where there is one. All three matter together -- a room lit from a
+        // fixture that does not glow reads as lit by nothing, and a fixture that glows without lighting
+        // reads as a decal.
+        //
+        // Above the surface cache and not inside it. The cache is an ultra-only structure and none of
+        // this depends on it: the glow is a material and the lights are punctual, so binding the whole
+        // conclusion to whether the cards were captured would have switched a level's lamps off for
+        // anyone running ultra with r_surface_cache 0.
+        //
+        // A promoted backdrop surveyed its lamps on the preview worker and has been showing them for as
+        // long as the player was reading the briefing; surveying again here was the largest single cost
+        // of pressing Play, and it would have produced the same answer.
+        // A cold start has a NEW world renderer that has to be handed them either way.
+        if (_lampsMissionId != id || !promoted)
+        {
+            ApplyLamps(
+                RenderCVars.GlobalIlluminationLamps.Value != 0
+                    ? EmissiveLightProposer.Propose(_scene, _resources, _lampManifest, id, _logger)
+                    : EmissiveLightProposer.Proposal.None,
+                id);
+        }
+
+        // The surfaces, now that the sun and the fixtures they are lit by are both known. Captures the
+        // atlas and lights it in one step -- see DesktopGame.RealtimeGi.cs, which is also what the render
+        // loop calls when the lighting model is switched on mid-level.
+        EnsureSurfaceCache();
 
         // The player stands where the camera looks from, dropped onto whatever is under it. Terrain is
         // optional: Mission 14 is entirely inside placed building/tunnel models, whose collision floors
@@ -1333,6 +1667,18 @@ internal sealed partial class DesktopGame
                     _playerMode
                         ? $"Standing at {candidate.Position}; F1 for the free camera."
                         : $"Free camera; F1 to stand at {candidate.Position}.");
+
+                // The eye, spelled the way the capture flags take it. Walking and flying are supposed to
+                // draw the same picture from the same place, and the only way to check that is to put the
+                // free camera exactly where the walking eye is -- which needs the eye, not the feet the
+                // line above reports, and needs it before a capture run can be scripted around it.
+                Camera3D spawnEye = candidate.Camera;
+                _logger.Information(
+                    "Player",
+                    FormattableString.Invariant(
+                        $"Eye at -campos {spawnEye.Position.X:F3},{spawnEye.Position.Y:F3},{spawnEye.Position.Z:F3} ")
+                        + FormattableString.Invariant(
+                            $"-yaw {candidate.Body.Yaw:F4} -pitch {candidate.Body.Pitch:F4}"));
             }
             else
             {
@@ -1353,6 +1699,9 @@ internal sealed partial class DesktopGame
         // stopped being scenery.
         _backdrop = null;
         _arming = null;
+
+        // Built. What the hold is waiting on from here is the lighting, not the level.
+        NotifyMissionBuilt();
         _logger.Information("Mission", $"{(promoted ? "Promoted" : "Loaded")} {loaded}.");
     }
 
@@ -1393,6 +1742,19 @@ internal sealed partial class DesktopGame
         }
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        // The level is about to be built; it is not yet worth looking at. Everything temporal -- the
+        // probe gather, the radiance cache, the resolve's history, the eye -- needs frames rather than
+        // load time, so those frames are drawn with the picture withheld, under the entry shot's hold.
+        // See DesktopGame.MissionWarmUp.cs.
+        BeginMissionWarmUp(chosen);
+
+        // A mission with an authored intro is promoted straight from the menu with no shot to cover it,
+        // so it goes in behind the sequence's card, over the picture the menu held.
+        if (!_entry.IsRunning)
+        {
+            PresentLoadingFrame();
+        }
 
         // The schedule moves across before the incoming loop runs a single frame. A fresh GameLoop builds
         // its own GameClock starting at tick zero, and -lockstep derives its synthetic milliseconds FROM
@@ -1499,8 +1861,89 @@ internal sealed partial class DesktopGame
         return new Vector3d(start.X + (dx * t), start.Y + (dy * t), start.Z + (dz * t));
     }
 
+    /// <summary>Builds the level's top-down map of what the solid world stands over, and binds it.</summary>
+    /// <param name="scene">The mission's placed objects.</param>
+    /// <remarks>
+    /// <para>
+    /// The one answer to "can the sky reach this point", for the fog, the falling rain, its splashes and
+    /// the standing water alike. It is a raster of the collision geometry seen from above rather than a
+    /// list of building bounding boxes, because the boxes were wrong both ways round: on mission one a
+    /// quarter of the ground inside them has open sky over it — a building at an angle to the world axes
+    /// fills barely a third of its own box — while two fifths of the ground genuinely under a roof lay
+    /// outside every box, its shelter never having been labelled a building.
+    /// </para>
+    /// <para>
+    /// The CPU keeps the raster for its own questions and the GPU is handed a packed copy, so the puddle
+    /// a pixel draws and the drop the storm culls are decided by the same numbers.
+    /// </para>
+    /// </remarks>
+    private void BuildShelterField(WorldScene scene)
+    {
+        ReleaseShelterField();
+
+        long started = _loop.TimeSource.Milliseconds;
+        _shelterField = ShelterHeightField.Build(scene.Placements);
+        if (_shelterField.IsEmpty)
+        {
+            _logger.Information("Shelter", "the level places nothing solid; nothing is sheltered");
+            return;
+        }
+
+        Bgra32[] texels = _shelterField.Encode(out float scale);
+        _shelterMap = _device.CreateTexture(
+            new TextureDescription(
+                _shelterField.Width,
+                _shelterField.Depth,
+                MipLevels: 1,
+                TextureFilter.Point,
+                TextureAddressMode.Clamp),
+            texels);
+
+        _device.SetShelterMap(
+            _shelterMap,
+            new ShelterMapTransform(
+                (float)_shelterField.OriginX,
+                (float)_shelterField.OriginY,
+                (float)_shelterField.CellMetres,
+                _shelterField.Width,
+                _shelterField.Depth,
+                _shelterField.LowestZ,
+                scale,
+                (float)ShelterHeightField.SurfaceHeadroomMetres,
+                (float)ShelterHeightField.MaxOverheadMetres));
+
+        _logger.Information(
+            "Shelter",
+            FormattableString.Invariant(
+                $"{_shelterField.Width}x{_shelterField.Depth} at {_shelterField.CellMetres:0.00} m, z {_shelterField.LowestZ:0.0}..{_shelterField.HighestZ:0.0}, built in {_loop.TimeSource.Milliseconds - started} ms"));
+    }
+
+    /// <summary>Drops the level's shelter map, and tells the device there is none.</summary>
+    private void ReleaseShelterField()
+    {
+        _shelterField = ShelterHeightField.Empty;
+        _device.SetShelterMap(TextureHandle.None, ShelterMapTransform.None);
+        if (_shelterMap.IsValid)
+        {
+            _device.DestroyTexture(_shelterMap);
+            _shelterMap = TextureHandle.None;
+        }
+    }
+
     private void ReleasePlayedMission()
     {
+        // First, because both are worker threads tracing the level that is going and they hold the whole
+        // of what they trace: the lightmap bake's texel maps, triangles and BVH run to a few hundred
+        // megabytes, and nothing here released them. A bake was only ever cancelled by the NEXT one
+        // starting, so leaving a level left every core path-tracing a level nobody was in -- which is
+        // what the new level then had to load against -- and a session that entered a handful of missions
+        // carried a handful of those at once. The heap stood at one and a half gigabytes of lightmap
+        // texels alone by the sixth.
+        _probeBake?.Cancel();
+        _probeBake = null;
+        _lightmapBake?.Cancel();
+        _lightmapBake = null;
+
         _computerOpen = false;
         _computerFlight.Reset();
         _missionFailureTicks = 0;
@@ -1522,6 +1965,21 @@ internal sealed partial class DesktopGame
         _cameraMoveVoices.Clear();
         StopCutsceneSounds();
         _activeMission = null;
+
+        // The level's own sun goes with the level. It is read on load only when it is not already set --
+        // which is how a promoted backdrop hands its own in -- so a sun left standing here was taken for
+        // one that had been handed in, and the next mission was lit and BAKED by the one before it. The
+        // backdrop the menu puts up next sets its own in AdoptPreview, so nothing that needs one is left
+        // without.
+        _sun = null;
+        _effectiveSun = null;
+
+        // Before a single mesh is destroyed. The backend has assembled its own copy of the level from
+        // the frames it drew -- the traceable world, and the material records a hit is looked up in --
+        // and destroying the meshes one by one tells it each has gone without telling it the level has.
+        // Left to accumulate, the records ran up to their ceiling over half a dozen mission entries and
+        // the traced world went on holding structures nothing would place again.
+        _device.ReleaseWorld();
 
         _sky?.Dispose();
         _terrain?.Dispose();
@@ -1545,9 +2003,11 @@ internal sealed partial class DesktopGame
         _sky = null;
         _rain?.Dispose();
         _rain = null;
+        _storm?.Dispose();
+        _storm = null;
         _snow?.Dispose();
         _snow = null;
-        _rainBuildingVolumes = [];
+        ReleaseShelterField();
         _terrain = null;
         _world = null;
         _soldiers = null;
@@ -1590,6 +2050,111 @@ internal sealed partial class DesktopGame
         // an ambience bed outliving its level would follow the player into the menus.
         _sounds?.StopAll();
         _music?.Play(MusicPlayer.MenuMusic);
+    }
+
+    // The path-traced lightmapper's phase 1-2 verification: enumerate the lightmapped texels, bake the
+    // direct sun + sky, report coverage, and dump the largest few pages as normal and radiance images. A
+    // correct normal page reads as a UV unwrap of the object; a correct radiance page shows the sun and its
+    // shadows. Dev-only, driven by IGI_BAKELM_DIR, so it never runs in a normal load.
+    private void DumpLightmapVerification(
+        WorldScene scene, WorldRayCast cast, Vector3f sunDirection, string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+
+        IReadOnlyList<LightmapBaker.LightmapTarget> targets = LightmapBaker.EnumerateTargets(scene);
+
+        long covered = 0;
+        long total = 0;
+        foreach (LightmapBaker.LightmapTarget target in targets)
+        {
+            total += target.Texels.Length;
+            foreach (LightmapBaker.LightmapTexel texel in target.Texels)
+            {
+                if (texel.IsCovered)
+                {
+                    covered++;
+                }
+            }
+        }
+
+        _logger.Information(
+            "Lightmap", $"Enumerated {targets.Count} target(s); {covered}/{total} texels covered.");
+
+        Vector3f sunColour = _sun?.Colour ?? new Vector3f(1f, 1f, 1f);
+        Vector3f skyColour = _sun?.Ambient ?? new Vector3f(0.3f, 0.3f, 0.3f);
+        LightmapBaker.BakeDirectAndSky(targets, cast, sunDirection, sunColour, skyColour, hemisphereRays: 64);
+
+        // Phase 3: fold in the multi-bounce indirect. Build the lightmapped triangles and a BVH over them,
+        // then gather several bounces reading the last pass's light. Grey albedo for now (colour is 3b),
+        // so this verifies the bounce fills and brightens rather than the colour it carries.
+        LightmapBaker.LightmapTriangle[] triangles = LightmapBaker.BuildTriangles(scene, targets, _resources);
+        int coloured = triangles.Count(t => MathF.Abs(t.Albedo.X - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Y - 0.5f) > 0.02f || MathF.Abs(t.Albedo.Z - 0.5f) > 0.02f);
+        _logger.Information(
+            "Lightmap",
+            FormattableString.Invariant(
+                $"Albedo: {coloured}/{triangles.Length} triangles got a resolved colour; samples ({triangles[0].Albedo.X:F2},{triangles[0].Albedo.Y:F2},{triangles[0].Albedo.Z:F2}) ({triangles[triangles.Length / 2].Albedo.X:F2},{triangles[triangles.Length / 2].Albedo.Y:F2},{triangles[triangles.Length / 2].Albedo.Z:F2})."));
+        LightmapBaker.LightmapBvh bvh = LightmapBaker.LightmapBvh.Build(triangles);
+        _logger.Information("Lightmap", $"Built a BVH over {triangles.Length} triangle(s); gathering bounces.");
+        LightmapBaker.BakeBounces(targets, triangles, bvh, skyColour, passes: 4, hemisphereRays: 64);
+
+        // A numerical spot-check on the largest page: how many texels it covered, and a few of them with
+        // their world position (should sit near the placement) and baked radiance (sunlit near the sun
+        // colour, shadowed/skylit near the ambient). This settles what an image cannot show clearly.
+        if (targets.OrderByDescending(t => t.Texels.Length).FirstOrDefault() is { } sample)
+        {
+            int sampleCovered = 0;
+            foreach (LightmapBaker.LightmapTexel t in sample.Texels)
+            {
+                if (t.IsCovered)
+                {
+                    sampleCovered++;
+                }
+            }
+
+            Vector3d origin = scene.Placements[sample.PlacementIndex].Position;
+            _logger.Information(
+                "Lightmap",
+                FormattableString.Invariant(
+                    $"Largest page p{sample.PlacementIndex} {sample.Width}x{sample.Height}: {sampleCovered} covered, placement at ({origin.X:F1},{origin.Y:F1},{origin.Z:F1})."));
+
+            int shown = 0;
+            for (int i = 0; i < sample.Texels.Length && shown < 4; i++)
+            {
+                if (!sample.Texels[i].IsCovered)
+                {
+                    continue;
+                }
+
+                LightmapBaker.LightmapTexel t = sample.Texels[i];
+                Vector3f rad = sample.Radiance[i];
+                _logger.Information(
+                    "Lightmap",
+                    FormattableString.Invariant(
+                        $"  texel {i}: pos ({t.WorldPosition.X:F1},{t.WorldPosition.Y:F1},{t.WorldPosition.Z:F1}) n ({t.Normal.X:F2},{t.Normal.Y:F2},{t.Normal.Z:F2}) rad ({rad.X:F2},{rad.Y:F2},{rad.Z:F2})"));
+                shown++;
+            }
+        }
+
+        int dumped = 0;
+        foreach (LightmapBaker.LightmapTarget target in targets.OrderByDescending(t => t.Texels.Length).Take(6))
+        {
+            string stem = FormattableString.Invariant(
+                $"lm_p{target.PlacementIndex}_r{target.RecordIndex}_{target.Width}x{target.Height}");
+
+            Bgra32[] normals = new Bgra32[target.Texels.Length];
+            LightmapBaker.DumpTargetNormals(target, normals);
+            BitmapWriter.Write(
+                Path.Combine(outputDirectory, stem + "_normal.bmp"), target.Width, target.Height, normals);
+
+            Bgra32[] radiance = new Bgra32[target.Texels.Length];
+            LightmapBaker.DumpTargetRadiance(target, radiance, exposure: 1f);
+            BitmapWriter.Write(
+                Path.Combine(outputDirectory, stem + "_radiance.bmp"), target.Width, target.Height, radiance);
+
+            dumped++;
+        }
+
+        _logger.Information("Lightmap", $"Dumped {dumped} page(s) to {outputDirectory}.");
     }
 
     // Puts a weapon in the player's hands and loads the model its roster entry names.

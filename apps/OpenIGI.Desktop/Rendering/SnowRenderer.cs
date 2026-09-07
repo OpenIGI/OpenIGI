@@ -1,4 +1,4 @@
-using OpenIGI.Core.Diagnostics;
+﻿using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -130,9 +130,10 @@ public sealed class SnowRenderer : IDisposable
     }
 
     /// <summary>Applies the live weather settings without changing the level-authored particle band.</summary>
-    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier)
+    public void ApplySettings(bool enabled, WeatherKind kind, float speedMultiplier, bool force = false)
     {
-        _active = enabled && _authoredAvailable && kind == WeatherKind.Snow;
+        // See the rain renderer: forcing overrides the level, never the player's own switches.
+        _active = enabled && (_authoredAvailable || force) && kind == WeatherKind.Snow;
         _speedMultiplier = Math.Clamp(speedMultiplier, 0f, 2f);
     }
 

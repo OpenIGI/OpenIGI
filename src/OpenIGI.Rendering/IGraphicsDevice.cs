@@ -26,14 +26,6 @@ namespace OpenIGI.Rendering;
 /// </remarks>
 public interface IGraphicsDevice : IDisposable
 {
-    /// <summary>Occurs after the device has recreated resources following a device loss.</summary>
-    /// <remarks>
-    /// The original handles this inline in <c>DisplaySwapBuffers</c>: it evicts managed textures,
-    /// restores all surfaces and re-applies render state. Backends raise this once recovery has
-    /// completed so that callers holding cached device state can re-apply it.
-    /// </remarks>
-    event EventHandler? DeviceRestored;
-
     /// <summary>Gets what this device supports. Mirrors <c>GetGFXCaps</c>.</summary>
     GraphicsCapabilities Capabilities { get; }
 
@@ -43,21 +35,10 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets or sets a value indicating whether presentation waits for the vertical blank. Mirrors <c>DisplayVSync</c>.</summary>
     bool VSyncEnabled { get; set; }
 
-    /// <summary>Enumerates the display modes the adapter reports. Mirrors the <c>Enum</c> method.</summary>
-    /// <returns>The available modes. May be empty when the backend cannot enumerate, which is not an error.</returns>
-    IReadOnlyList<DisplayMode> EnumerateDisplayModes();
-
     /// <summary>Sets the back-buffer size and colour depth. Mirrors <c>DisplaySetMode</c>.</summary>
     /// <param name="mode">The mode to apply.</param>
     /// <exception cref="GraphicsDeviceException">The mode could not be applied.</exception>
     void SetMode(in DisplayMode mode);
-
-    /// <summary>Releases the current mode's resources without destroying the device. Mirrors <c>DisplayUnsetMode</c>.</summary>
-    void UnsetMode();
-
-    /// <summary>Recreates resources lost to a device reset. Mirrors <c>DisplayRestore</c>.</summary>
-    /// <remarks>Backends that cannot lose their device may implement this as a no-op.</remarks>
-    void Restore();
 
     /// <summary>Clears the colour and depth buffers. Mirrors <c>DisplayClear</c>.</summary>
     /// <param name="color">The colour to fill with. The alpha channel is ignored, as it is in the original.</param>
@@ -112,6 +93,16 @@ public interface IGraphicsDevice : IDisposable
     /// renderer only keeps one of.
     /// </remarks>
     void CopyFrameToTexture(TextureHandle texture, int width, int height);
+
+    /// <summary>Draws the loading backdrop over the whole frame: a held picture defocused and graded, or a procedural surface.</summary>
+    /// <param name="texture">The held picture, as captured by <see cref="CopyFrameToTexture"/>; ignored when the settings say there is none.</param>
+    /// <param name="settings">How far out of focus, how graded, how faded, and the rest.</param>
+    /// <remarks>
+    /// A fullscreen pass rather than sprites, because a defocus and a grade are per-pixel work no number
+    /// of tinted quads can imitate. Blended over the frame, so the reveal can fade it off the live level.
+    /// Drawn outside any sprite batch.
+    /// </remarks>
+    void DrawLoadingBackdrop(TextureHandle texture, in LoadingBackdropSettings settings);
 
     /// <summary>Allocates a texture and uploads its pixels. Mirrors <c>AllocTexture</c> + <c>DownloadTexture</c>.</summary>
     /// <param name="description">The texture's size, mip count and sampling.</param>
@@ -188,7 +179,7 @@ public interface IGraphicsDevice : IDisposable
     /// each <see cref="UpdateAnimatedMesh"/> makes the vertices it replaces the mesh's <em>previous
     /// pose</em> — a second vertex stream the shaders can reach. That stream is what makes two things
     /// possible for a skinned body that a rigid transform cannot express: exact per-vertex motion for
-    /// the temporal resolve (see <see cref="SetPreviousPose"/>), and drawing <em>between</em> two
+    /// the temporal resolve, and drawing <em>between</em> two
     /// simulation poses (see <see cref="SetPoseInterpolation"/>).
     /// </para>
     /// <para>
@@ -205,6 +196,42 @@ public interface IGraphicsDevice : IDisposable
     /// The handle is unknown, was not created animated, or the count differs.
     /// </exception>
     void UpdateAnimatedMesh(MeshHandle mesh, ReadOnlySpan<Vertex3D> vertices);
+
+    /// <summary>Allocates an empty mesh with fixed capacity, to be filled by <see cref="UploadMeshRange"/>.</summary>
+    /// <param name="vertexCapacity">How many vertices the mesh can ever hold.</param>
+    /// <param name="indexCapacity">How many indices the mesh can ever hold.</param>
+    /// <returns>A handle naming the mesh, which draws nothing until a range is uploaded.</returns>
+    /// <exception cref="ArgumentException">A capacity is not positive, or the vertex capacity exceeds 16-bit indexing.</exception>
+    /// <exception cref="GraphicsDeviceException">The mesh could not be created.</exception>
+    /// <remarks>
+    /// For meshes that grow by appending — the terrain's batch pages. A mesh from
+    /// <see cref="CreateMesh"/> is immutable, so growing one means destroying it and re-uploading
+    /// everything it held; done every time a streamed-in chunk joins a page, those re-uploads were the
+    /// single largest source of frame spikes. A storage mesh uploads each appended range once.
+    /// </remarks>
+    MeshHandle CreateMeshStorage(int vertexCapacity, int indexCapacity);
+
+    /// <summary>Writes a range of vertices and indices into a mesh made by <see cref="CreateMeshStorage"/>.</summary>
+    /// <param name="mesh">A mesh from <see cref="CreateMeshStorage"/>.</param>
+    /// <param name="vertexOffset">The first vertex slot written.</param>
+    /// <param name="vertices">The vertices to write; may be empty.</param>
+    /// <param name="indexOffset">The first index slot written.</param>
+    /// <param name="indices">The indices to write, addressing the mesh's own vertex slots; may be empty.</param>
+    /// <exception cref="ArgumentException">
+    /// The handle is unknown or not a storage mesh, a range runs past its capacity, or an index
+    /// addresses a slot past the vertex capacity.
+    /// </exception>
+    /// <remarks>
+    /// Ranges written are drawable immediately; the mesh's drawable index count is the highest index
+    /// slot ever written plus one. Callers append, so ranges beyond what the GPU has drawn are new
+    /// storage and never stall the pipeline.
+    /// </remarks>
+    void UploadMeshRange(
+        MeshHandle mesh,
+        int vertexOffset,
+        ReadOnlySpan<Vertex3D> vertices,
+        int indexOffset,
+        ReadOnlySpan<ushort> indices);
 
     /// <summary>Releases a mesh.</summary>
     /// <param name="mesh">The mesh to release. <see cref="MeshHandle.None"/> is ignored.</param>
@@ -277,6 +304,42 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetMaterialOverride(in SurfaceMaterial material);
 
+    /// <summary>Sets the headroom the following draws' lightmap pages were encoded with.</summary>
+    /// <param name="scale">
+    /// The value each sampled lightmap is multiplied by after it is decoded. One for the shipped LDR pages;
+    /// a path-traced HDR page stores the radiance divided by this before its sRGB encode, so scaling it back
+    /// up recovers a lightmap that keeps its bright values above one instead of clipping.
+    /// </param>
+    /// <remarks>Device state, like <see cref="SetMaterialOverride"/>: it spans a run of draws.</remarks>
+    void SetLightmapScale(float scale);
+
+    /// <summary>Marks the draws that follow as geometry that exists only in front of the eye.</summary>
+    /// <param name="firstPerson">Whether the following draws are the view model rather than the world.</param>
+    /// <remarks>
+    /// <para>
+    /// The arms and the held weapon are drawn into the same lit colour as the world, and two passes read
+    /// that colour back as though everything in it were world: the eye adaptation meters it, and the
+    /// screen-space indirect gather traces against it. Neither is true of a view model. A white knife
+    /// held up to the camera raises the metered luminance and darkens the whole frame, and bounces light
+    /// off itself onto the room -- so pressing the free-camera key, which simply stops drawing it,
+    /// visibly changes the lighting of a scene that has not moved.
+    /// </para>
+    /// <para>
+    /// Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws and must be cleared
+    /// after them. A backend that does not separate the two may ignore it.
+    /// </para>
+    /// </remarks>
+    void SetFirstPersonGeometry(bool firstPerson);
+
+    /// <summary>Sets the seed for the following draws' hashed alpha test, zero for the hard cut-out.</summary>
+    /// <param name="seed">
+    /// Zero draws cut-outs with a hard per-pixel test. A value above zero turns on the hashed test, whose
+    /// dithered coverage the temporal resolve averages into a smooth edge; vary it each frame so successive
+    /// frames dither differently and the average converges.
+    /// </param>
+    /// <remarks>Device state, like <see cref="SetLightmapScale"/>: it spans a run of draws.</remarks>
+    void SetAlphaHash(float seed);
+
     /// <summary>Attaches a derived surface-detail map to a diffuse texture.</summary>
     /// <param name="diffuse">The diffuse texture the map belongs to.</param>
     /// <param name="detail">
@@ -310,6 +373,10 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     void SetMaterialDetail(float strength);
 
+    /// <summary>Sets how much an up-facing surface's roughness is smoothed, so floors reflect while walls stay matte.</summary>
+    /// <param name="gloss">A multiplier on an up-facing surface's roughness; 1 leaves every surface as its material said.</param>
+    void SetFloorGloss(float gloss);
+
     /// <summary>Sets how textures are sampled.</summary>
     /// <param name="maxAnisotropy">
     /// The anisotropic filtering ratio, 1 for none. A ground plane seen at a grazing angle is the
@@ -317,15 +384,10 @@ public interface IGraphicsDevice : IDisposable
     /// sliver, mipmapping has to pick a level for its <em>widest</em> axis, and everything along the
     /// other axis is thrown away. That is what turns ground into a smear towards the horizon.
     /// </param>
-    /// <param name="generateMissingMipmaps">
-    /// Whether to build a mip chain for textures that arrive without one. The terrain's ground tiles
-    /// do: the atlas's layer descriptors carry no mip count, so every one is a single 128x128 level,
-    /// and minifying that without mips aliases into a crawling sparkle.
-    /// </param>
     /// <remarks>
     /// Applies to textures created afterwards, and re-applies the sampling to those already uploaded.
     /// </remarks>
-    void SetTextureQuality(int maxAnisotropy, bool generateMissingMipmaps);
+    void SetTextureQuality(int maxAnisotropy);
 
     /// <summary>Sets the participating medium the scene is seen through.</summary>
     /// <param name="fog">The medium, or <see cref="VolumetricFogSettings.Off"/> for none.</param>
@@ -348,6 +410,40 @@ public interface IGraphicsDevice : IDisposable
         Vector3f cameraPosition,
         ReadOnlySpan<LocalFogVolume> volumes);
 
+    /// <summary>Sets how wet the world is, which the lighting pass applies to every surface it shades.</summary>
+    /// <param name="wetness">The state of the ground, or <see cref="WetnessSettings.Dry"/> for none.</param>
+    /// <remarks>
+    /// <para>
+    /// Applied inside the deferred lighting pass, between unpacking the G-buffer and shading it: the
+    /// albedo is darkened, the roughness collapsed and the normal replaced by the water's, so the sun,
+    /// the lamps, the sky and the bounce all light the wet surface rather than the dry one underneath.
+    /// See <see cref="WetnessSettings"/> for why it cannot be done in the G-buffer instead.
+    /// </para>
+    /// <para>
+    /// A backend that has not implemented it does nothing, which is why this has a body: adding standing
+    /// water to one renderer should not stop the other one compiling, and a device that ignores it says
+    /// so through <see cref="GraphicsCapabilities.UnimplementedSettings"/> where the shell can report it.
+    /// </para>
+    /// </remarks>
+    void SetWetness(in WetnessSettings wetness);
+
+    /// <summary>Sets the top-down map of the level's roofs, which decides what the rain reaches.</summary>
+    /// <param name="map">
+    /// The raster, packed as <see cref="ShelterMapTransform"/> describes, or
+    /// <see cref="TextureHandle.None"/> for a level with no map.
+    /// </param>
+    /// <param name="transform">
+    /// How to read it, or <see cref="ShelterMapTransform.None"/> when nothing is sheltered. Set once
+    /// when a mission loads: the map is a property of the level rather than of the frame.
+    /// </param>
+    /// <remarks>
+    /// Ground under a roof stays dry however hard it is raining outside — without this the floor of
+    /// every building in the level pools with water while its own roof keeps the rain off it. Both the
+    /// shading and the reflection march read it, and they must read the same one: a reflection that
+    /// disagreed with the shading about where the water is would land beside it.
+    /// </remarks>
+    void SetShelterMap(TextureHandle map, in ShelterMapTransform transform);
+
     /// <summary>Sets what surfaces reflect and how far the frame is searched to find it.</summary>
     /// <param name="settings">The search, or <see cref="ReflectionSettings.Off"/> for none.</param>
     /// <remarks>
@@ -364,6 +460,73 @@ public interface IGraphicsDevice : IDisposable
     /// much of it to apply is a number per frame.
     /// </remarks>
     void SetColourLookup(ColourLookupTable? table);
+
+    /// <summary>Opens the surface cache atlas for capture.</summary>
+    /// <param name="width">The atlas width in texels.</param>
+    /// <param name="height">The atlas height in texels.</param>
+    /// <returns><see langword="true"/> when the atlas is ready and cards may be drawn into it.</returns>
+    /// <remarks>
+    /// <para>
+    /// Distinct from <see cref="BeginSceneCapture"/>, which describes a frame. This describes an atlas
+    /// that outlives every frame: each model is drawn into it a handful of times at load, through an
+    /// orthographic camera per card, and read for the rest of the level.
+    /// </para>
+    /// <para>
+    /// Clears the whole atlas, including the gutters between pages, which no card ever draws into and a
+    /// linear fetch near a page edge reaches.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">A capture is already open, or a dimension is not positive.</exception>
+    bool BeginCardCapture(int width, int height);
+
+    /// <summary>Restricts the following draws to one card's page of the atlas.</summary>
+    /// <param name="x">The page's left edge in texels.</param>
+    /// <param name="y">The page's bottom edge in texels.</param>
+    /// <param name="width">The page's width in texels.</param>
+    /// <param name="height">The page's height in texels.</param>
+    /// <remarks>
+    /// Scissors as well as sets the viewport. Geometry outside the card's orthographic box is clipped in
+    /// depth but not sideways, so without the scissor a model wider than its card bleeds into whichever
+    /// page was packed beside it.
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">No card capture is open.</exception>
+    void SetCardPage(int x, int y, int width, int height);
+
+    /// <summary>Closes the card capture.</summary>
+    /// <exception cref="GraphicsDeviceException">No card capture is open.</exception>
+    void EndCardCapture();
+
+    /// <summary>Reads one of the card atlas's targets back into memory.</summary>
+    /// <param name="attachment">Which target: 0 albedo, 1 normal, 2 material, 3 depth.</param>
+    /// <param name="destination">Receives the texels, row-major and top row first.</param>
+    /// <remarks>
+    /// <b>For looking at the atlas, and that is not a luxury.</b> A capture is the kind of thing only an
+    /// eye can judge: wrong winding shows as models captured inside-out, a wrong card rotation as
+    /// mirrored pages, a missing scissor as pages bleeding into each other — and all three produce a
+    /// perfectly plausible atlas full of perfectly plausible surfaces.
+    /// <para>
+    /// Synchronising, so it belongs at load or behind a developer switch rather than in a frame.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="GraphicsDeviceException">There is no atlas, or the span is too small.</exception>
+    void ReadCardAtlas(int attachment, Span<Bgra32> destination);
+
+    /// <summary>Gets the atlas texture holding each card's surface colour.</summary>
+    TextureHandle CardAlbedo { get; }
+
+    /// <summary>Gets the atlas texture holding each card's model-space normal.</summary>
+    TextureHandle CardNormal { get; }
+
+    /// <summary>Gets the atlas texture holding each card's roughness, metallic and emissive.</summary>
+    TextureHandle CardMaterial { get; }
+
+    /// <summary>Gets the atlas texture holding how far behind its card each surface sits.</summary>
+    /// <remarks>
+    /// A fraction of the card's own depth. Without it a card records only where on its plane a surface
+    /// lies, and the plane is the model's bounding box face — nowhere near the surface for anything but
+    /// a flat panel.
+    /// </remarks>
+    TextureHandle CardDepth { get; }
 
     /// <summary>Gets the current scene target's depth buffer, or <see cref="TextureHandle.None"/>.</summary>
     /// <remarks>
@@ -386,6 +549,56 @@ public interface IGraphicsDevice : IDisposable
     /// indirect term onto the frame the same way the reference composites the surface cache's bounce.
     /// </remarks>
     TextureHandle SceneColour { get; }
+
+    /// <summary>Copies the sky's irradiance harmonics into <paramref name="coefficients"/>.</summary>
+    /// <param name="coefficients">Room for 28 floats: seven vectors of four.</param>
+    /// <returns><see langword="true"/> when the backend has an atmosphere to report.</returns>
+    /// <remarks>
+    /// The seven coefficient vectors of the deferred sky term — third-order harmonics of the sky's light,
+    /// cosine-convolved with the Lambert one-over-pi folded in, exactly as the lighting pass consumes
+    /// them. A game-layer pass that traces its own rays evaluates these along each escaping ray so its
+    /// sky matches the sky the lighting shows, one frame behind (the values are read back from the
+    /// device). A backend with no atmosphere tables returns <see langword="false"/> and the caller keeps
+    /// whatever flat approximation it has.
+    /// </remarks>
+    bool TryGetSkyIrradiance(Span<float> coefficients);
+
+    /// <summary>Feeds a screen probe gather's indirect light into the deferred lighting.</summary>
+    /// <param name="indirect">The probe atlas of indirect irradiance, covering the frame.</param>
+    /// <param name="strength">How strongly to apply it. Zero, or an invalid handle, is a no-op.</param>
+    /// <param name="fullResolution">
+    /// When set, the handle is a full-resolution atlas the temporal resolve already upsampled, read straight
+    /// per pixel; when clear it is the sparse probe atlas the deferred fill upsamples itself.
+    /// </param>
+    /// <remarks>
+    /// Set while the G-buffer is live, before the geometry pass closes: the deferred lighting reads it
+    /// as its diffuse fill in place of the flat ambient, where the surface's own albedo and the light
+    /// scale are already applied -- so this is not a post-pass over the lit frame but part of the shade
+    /// itself, in the renderer's <c>albedo * E</c> convention with metals excluded. A no-op when the
+    /// target is not deferred or the strength is zero, so a preset that leaves it off pays nothing.
+    /// </remarks>
+    void SetScreenIndirect(TextureHandle indirect, float strength, bool fullResolution = false);
+
+    /// <summary>Sets the level's real-time local lights for the next deferred lighting pass.</summary>
+    /// <param name="lights">
+    /// The lights, in VIEW space; a set longer than <see cref="DeferredLocalLight.Maximum"/> is
+    /// truncated. View space because the level sits tens of kilometres from the world origin, where a
+    /// float has metres of resolution left: the camera-relative subtract has to happen in double
+    /// precision on the game's side, and by the time it arrives here it has already happened.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// Held rather than acted on, like <see cref="SetScreenIndirect"/>: this records what the next
+    /// lighting pass folds in, and the pass clears it after, so a frame that sets none lights from none.
+    /// Called each frame while the G-buffer is live, before the geometry pass closes.
+    /// </para>
+    /// <para>
+    /// These are the lamps a level implies and never declares — see the game layer's lamp detection.
+    /// They are what lights a windowless interior: there is no daylight to gather in a sealed room, so
+    /// no amount of exposure or bounce can find light that has no source, and this is the source.
+    /// </para>
+    /// </remarks>
+    void SetLocalLights(ReadOnlySpan<DeferredLocalLight> lights);
 
     /// <summary>Reads a two-dimensional texture back into memory.</summary>
     /// <param name="texture">The texture to read.</param>
@@ -651,6 +864,32 @@ public interface IGraphicsDevice : IDisposable
     /// <summary>Gets the rolling distribution of total timed GPU work per completed frame.</summary>
     GpuFrameTiming GpuTiming();
 
+    /// <summary>Gets the whole GPU frame measured end to end, rather than summed from its stages.</summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="GpuTiming"/> adds up the stages, so it can only report work somebody remembered to
+    /// bracket. A pass recorded outside every stage scope contributes to nothing and costs real time, and
+    /// the totals stay quietly wrong -- which is how a millisecond of lamp-shadow tracing read as free
+    /// here for an entire session. This is a single timestamp pair around the frame's whole command
+    /// buffer, so the difference between the two is precisely the work no stage claims.
+    /// </para>
+    /// <para>
+    /// Zero on a backend that does not measure it, which is how a caller should tell "no untimed work"
+    /// (a small difference) from "not measured" (zero).
+    /// </para>
+    /// </remarks>
+    GpuFrameTiming GpuMeasuredTiming();
+
+    /// <summary>Gets whether this frame's sun shadow will come from a ray trace rather than the cascades.</summary>
+    /// <remarks>
+    /// When it will, the cascaded shadow map is written and never read -- the deferred lighting samples
+    /// the traced mask as the only sun shadow -- so the app can skip rasterising the cascades entirely
+    /// and the picture cannot change. False by default, and false whenever the trace cannot actually run
+    /// this frame (no ray support, no acceleration structure yet), in which case the cascades are the
+    /// sun's only shadow and must keep rendering.
+    /// </remarks>
+    bool SunShadowTraced { get; }
+
     /// <summary>Creates one asynchronous occlusion query.</summary>
     OcclusionQueryHandle CreateOcclusionQuery();
 
@@ -672,6 +911,53 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetDebugView(DebugView view);
 
+    /// <summary>Hands over the level's baked probe field, or clears it.</summary>
+    /// <param name="volume">The baked volume, or <see langword="null"/> to forget the one held.</param>
+    /// <remarks>
+    /// Separate from <see cref="SetIrradianceVolumeSettings"/> and called only when the level changes:
+    /// the volume is megabytes of baked transfer that does not vary per frame, while the colours
+    /// applied to it do.
+    /// </remarks>
+    void SetIrradianceVolume(IrradianceVolume? volume);
+
+    /// <summary>Binds a real-time radiance-cache volume in place of the baked field, or leaves the last one.</summary>
+    /// <param name="red">The red-channel L1-SH volume, four coefficients per texel.</param>
+    /// <param name="green">The green-channel volume.</param>
+    /// <param name="blue">The blue-channel volume.</param>
+    /// <param name="distance">The distance-moment volume, for the Chebyshev leak test.</param>
+    /// <param name="origin">The world position of probe (0, 0, 0), in metres.</param>
+    /// <param name="spacing">The distance between neighbouring probes, in metres.</param>
+    /// <param name="countX">How many probes span X.</param>
+    /// <param name="countY">How many probes span Y.</param>
+    /// <param name="countZ">How many probes span Z.</param>
+    /// <remarks>
+    /// The volumes are owned by the pass that writes them each frame, so the device only references them --
+    /// it never allocates or frees them, unlike the baked field it uploads. When bound they take precedence
+    /// over the baked volume at the same sampler: the layout is identical, but the radiance is live and
+    /// already coloured, so the device applies no sky tint to it. Call
+    /// <see cref="ClearRealtimeProbeVolume"/> to fall back to the baked field.
+    /// </remarks>
+    void SetRealtimeProbeVolume(
+        TextureHandle red,
+        TextureHandle green,
+        TextureHandle blue,
+        TextureHandle distance,
+        Vector3f origin,
+        float spacing,
+        int countX,
+        int countY,
+        int countZ);
+
+    /// <summary>Stops sampling the real-time radiance cache, falling back to the baked field.</summary>
+    void ClearRealtimeProbeVolume();
+
+    /// <summary>Sets how this frame lights itself from the probe field.</summary>
+    /// <param name="settings">
+    /// The application, or <see cref="IrradianceVolumeSettings.Off"/> for none. With none, or with no
+    /// volume handed over, surfaces fall back to the flat ambient term.
+    /// </param>
+    void SetIrradianceVolumeSettings(in IrradianceVolumeSettings settings);
+
     /// <summary>Sets how much of the sky each surface can see, and what its neighbours bounce onto it.</summary>
     /// <param name="settings">
     /// The search, or <see cref="AmbientOcclusionSettings.Off"/> for none. With none, the lighting pass
@@ -684,29 +970,6 @@ public interface IGraphicsDevice : IDisposable
     /// </remarks>
     void SetAmbientOcclusion(in AmbientOcclusionSettings settings);
 
-    /// <summary>Says where the next meshes drawn stood in the previous frame.</summary>
-    /// <param name="previousModelView">
-    /// The object's previous pose seen through the <em>current</em> camera — the same matrix a draw
-    /// would have used last frame had the camera not moved since.
-    /// </param>
-    /// <remarks>
-    /// <para>
-    /// Only for geometry that moves of its own accord: soldiers, doors, trains, the player's body.
-    /// Everything static can ignore this entirely, because the temporal resolve already reprojects the
-    /// camera exactly and a static object's previous pose is its current one — which this reports as
-    /// zero motion without a renderer having to say anything.
-    /// </para>
-    /// <para>
-    /// The current camera rather than the previous one is not an approximation made for convenience: it
-    /// is what isolates the object's own movement from the camera's, so the two are recovered by
-    /// different means and neither is counted twice.
-    /// </para>
-    /// </remarks>
-    void SetPreviousPose(in Matrix4f previousModelView);
-
-    /// <summary>Stops reporting a previous pose; subsequent meshes are treated as not having moved.</summary>
-    void ClearPreviousPose();
-
     /// <summary>Sets how the next meshes drawn blend between their two poses.</summary>
     /// <param name="currentBlend">
     /// How much of the <em>previous-pose</em> vertex stream is mixed into the rasterised position, 0
@@ -714,16 +977,15 @@ public interface IGraphicsDevice : IDisposable
     /// with, since its previous stream is itself.
     /// </param>
     /// <param name="previousBlend">
-    /// The same mix for the position reported as <em>last frame's</em>, alongside
-    /// <see cref="SetPreviousPose"/>. The difference between the two blends is precisely the pose
+    /// The same mix for the position reported as <em>last frame's</em>. The difference between the
+    /// two blends is precisely the pose
     /// motion the frame reports: a fixed-tick simulation renders between two known poses, so last
     /// frame's vertex is a different mix of the same two streams, not a third buffer.
     /// </param>
     /// <remarks>
     /// Meaningful only for meshes from <see cref="CreateAnimatedMesh"/>; everywhere else both streams
     /// are one buffer and any blend of a value with itself is that value. Cleared by
-    /// <see cref="ClearPoseInterpolation"/>, and by <see cref="ClearPreviousPose"/> callers should
-    /// clear both together — a pose blend without its matching previous pose reports half a motion.
+    /// <see cref="ClearPoseInterpolation"/>.
     /// </remarks>
     void SetPoseInterpolation(float currentBlend, float previousBlend);
 
@@ -745,7 +1007,11 @@ public interface IGraphicsDevice : IDisposable
     /// </param>
     /// <param name="cameraPosition">
     /// The camera's world position in metres, used to work out how far it has travelled since the
-    /// previous frame.
+    /// previous frame. Supplied in double precision: this world's coordinates run to tens of thousands
+    /// of units, and the per-frame travel is often a fraction of one, so the backend must difference two
+    /// positions of that magnitude to recover it. Doing that in single precision loses the travel to
+    /// cancellation and smears the reprojection under translation; passing it double lets the backend
+    /// keep the subtraction exact and narrow only the small result to float.
     /// </param>
     /// <param name="viewToWorld">
     /// The rotation taking a view-space direction back into camera-relative world space.
@@ -758,7 +1024,7 @@ public interface IGraphicsDevice : IDisposable
     void SetTemporalAntiAliasing(
         in TemporalAaSettings settings,
         in Matrix4f projection,
-        Vector3f cameraPosition,
+        Vector3d cameraPosition,
         Matrix3f viewToWorld);
 
     /// <summary>Sets the sun's shadow map for this frame.</summary>
@@ -812,6 +1078,24 @@ public interface IGraphicsDevice : IDisposable
     /// <exception cref="GraphicsDeviceException">No capture is in progress, or a pass is still open.</exception>
     void EndSceneCapture();
 
+    /// <summary>Drops everything a backend has accumulated about the level being left.</summary>
+    /// <remarks>
+    /// <para>
+    /// Some of what a backend builds is discovered from the frames it draws rather than handed to it:
+    /// the traceable copy of the world is assembled from geometry-pass draws over a level's first
+    /// seconds, and it has no other way of learning that the level has gone. Destroying the meshes tells
+    /// it that each one has gone, which is not the same thing -- the material records a structure's hits
+    /// are looked up in are append-only by design, so a session that entered six missions carried six
+    /// missions' worth of them and the seventh would have overflowed the buffer they live in.
+    /// </para>
+    /// <para>
+    /// Called when a mission is released, before its meshes and textures are destroyed. It is not a
+    /// device reset: nothing the front end is still drawing with is touched, and a backend with nothing
+    /// accumulated does nothing.
+    /// </para>
+    /// </remarks>
+    void ReleaseWorld();
+
     /// <summary>Brings the captured scene to the back buffer.</summary>
     /// <param name="post">What to do to it on the way.</param>
     /// <remarks>
@@ -855,6 +1139,26 @@ public interface IGraphicsDevice : IDisposable
         TextureHandle diffuse,
         TextureHandle lightmap,
         BlendMode blend);
+
+    /// <summary>Offers a mesh to the ray-traced world for this frame only, as a shadow caster that is not drawn.</summary>
+    /// <param name="mesh">A mesh from <see cref="CreateMeshStorage"/> whose first <paramref name="indexCount"/> indices are the caster.</param>
+    /// <param name="modelView">The transform the mesh would be drawn with.</param>
+    /// <param name="indexCount">How many indices, from the start of the mesh, make up the caster.</param>
+    /// <remarks>
+    /// <para>
+    /// For geometry whose traceable shape is not what the rasteriser is handed: the terrain. Its pages
+    /// hold every chunk ever streamed into them at every level of detail, at positions the vertex stage
+    /// then slides towards the next level as the camera moves — so a structure built over a page casts
+    /// from a surface that is not the one on screen, and the ground shadows itself in patches. The
+    /// terrain instead writes the chunks it drew, at the positions it drew them, into a mesh of its own
+    /// and offers that here each frame; the placement lasts one frame, and the structure is rebuilt
+    /// whenever the mesh's contents change.
+    /// </para>
+    /// <para>
+    /// A backend without a traced world ignores the call, which is the default implementation.
+    /// </para>
+    /// </remarks>
+    void SubmitShadowCaster(MeshHandle mesh, in Matrix4f modelView, int indexCount);
 
     /// <summary>Draws a glowing selection outline around a mesh.</summary>
     /// <param name="mesh">The mesh to outline.</param>

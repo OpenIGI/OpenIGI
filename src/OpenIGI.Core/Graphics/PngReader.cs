@@ -49,6 +49,7 @@ public static class PngReader
         int width = 0;
         int height = 0;
         int channels = 0;
+        int bytesPerSample = 1;
         using MemoryStream compressed = new();
 
         int at = Signature.Length;
@@ -72,10 +73,19 @@ public static class PngReader
                 byte colourType = data[payload + 9];
                 byte interlace = data[payload + 12];
 
-                if (depth != 8)
+                // Eight and sixteen bits a sample. Sixteen is narrowed to eight on the way in — the
+                // pixel this returns is four bytes and there is nowhere to put the low half — which is
+                // exact for the authoring tools that write sixteen-bit files holding eight bits of real
+                // range, and a clean round-down for the ones that do not. Refusing them outright meant
+                // an asset exported at sixteen bits simply did not load, and the caller drew whatever
+                // it falls back to without ever saying why.
+                if (depth is not (8 or 16))
                 {
-                    throw new InvalidDataException($"Only 8-bit PNGs are supported, this one is {depth}-bit.");
+                    throw new InvalidDataException(
+                        $"Only 8- and 16-bit PNGs are supported, this one is {depth}-bit.");
                 }
+
+                bytesPerSample = depth / 8;
 
                 if (interlace != 0)
                 {
@@ -119,7 +129,7 @@ public static class PngReader
             inflate.CopyTo(raw);
         }
 
-        return (Unfilter(raw.GetBuffer(), (int)raw.Length, width, height, channels), width, height);
+        return (Unfilter(raw.GetBuffer(), (int)raw.Length, width, height, channels, bytesPerSample), width, height);
     }
 
     /// <summary>Undoes the per-scanline prediction and converts to pixels.</summary>
@@ -129,9 +139,14 @@ public static class PngReader
     /// and in place, because each row's prediction refers to the row above it <em>after</em> that row
     /// has itself been undone.
     /// </remarks>
-    private static Bgra32[] Unfilter(byte[] raw, int length, int width, int height, int channels)
+    private static Bgra32[] Unfilter(byte[] raw, int length, int width, int height, int channels, int bytesPerSample)
     {
-        int stride = (width * channels) + 1;
+        // The filters predict a byte from the byte one WHOLE PIXEL to its left, not one sample: at
+        // sixteen bits that is two bytes per sample, so the stride between a byte and its predictor
+        // doubles. Using the sample count here instead is the classic way to decode a sixteen-bit PNG
+        // into noise that still has roughly the right shape.
+        int bytesPerPixel = channels * bytesPerSample;
+        int stride = (width * bytesPerPixel) + 1;
 
         if (length < stride * height)
         {
@@ -139,8 +154,8 @@ public static class PngReader
                 $"Truncated PNG: {length} bytes of pixel data, {stride * height} expected.");
         }
 
-        byte[] previous = new byte[width * channels];
-        byte[] current = new byte[width * channels];
+        byte[] previous = new byte[width * bytesPerPixel];
+        byte[] current = new byte[width * bytesPerPixel];
         Bgra32[] pixels = new Bgra32[width * height];
 
         for (int row = 0; row < height; row++)
@@ -151,9 +166,9 @@ public static class PngReader
 
             for (int i = 0; i < current.Length; i++)
             {
-                int left = i >= channels ? current[i - channels] : 0;
+                int left = i >= bytesPerPixel ? current[i - bytesPerPixel] : 0;
                 int above = previous[i];
-                int aboveLeft = i >= channels ? previous[i - channels] : 0;
+                int aboveLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
 
                 current[i] = filter switch
                 {
@@ -168,14 +183,18 @@ public static class PngReader
 
             for (int column = 0; column < width; column++)
             {
-                int source = column * channels;
+                // The high byte of each sample, which for a big-endian sixteen-bit sample is the byte
+                // it starts on -- so one index step covers both depths.
+                int source = column * bytesPerPixel;
+                int step = bytesPerSample;
 
                 (byte r, byte g, byte b, byte a) = channels switch
                 {
                     1 => (current[source], current[source], current[source], (byte)255),
-                    2 => (current[source], current[source], current[source], current[source + 1]),
-                    3 => (current[source], current[source + 1], current[source + 2], (byte)255),
-                    _ => (current[source], current[source + 1], current[source + 2], current[source + 3]),
+                    2 => (current[source], current[source], current[source], current[source + step]),
+                    3 => (current[source], current[source + step], current[source + (2 * step)], (byte)255),
+                    _ => (current[source], current[source + step], current[source + (2 * step)],
+                          current[source + (3 * step)]),
                 };
 
                 pixels[(row * width) + column] = new Bgra32(b, g, r, a);

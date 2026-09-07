@@ -141,6 +141,10 @@ public sealed class WorldRendererRotorCullingTests
         Assert.All(before, d => Assert.Equal(BlendMode.AlphaBlend, d.Blend));
         Assert.All(before, d => Assert.Equal(DepthState.TestOnly, d.DepthState));
         scenario.Cutscenes.Tick();
+
+        // The renderer resolves every live transform once a frame and the later passes reuse it, so a
+        // tick only reaches the draw across a frame boundary -- which is what BeginFrame marks.
+        scenario.Renderer.BeginFrame(1f, smooth: false);
         scenario.Device.MeshDraws.Clear();
         scenario.Renderer.Draw(scenario.Scene, camera, projection, rotorsOnly: true);
         var after = scenario.Device.MeshDraws.Where(d => meshes.Contains(d.Mesh.Id)).ToArray();

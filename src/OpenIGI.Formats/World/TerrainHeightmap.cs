@@ -41,17 +41,19 @@ public sealed class TerrainHeightmap
         new(TerrainGridTable.Read(data, n => (n + 1) * (n + 1)));
 
     /// <summary>Gets the grid an id selects.</summary>
-    /// <param name="id">The heightmap id; <c>0</c> means "none".</param>
+    /// <param name="id">The grid's record index — a <c>HeightMap</c> task's <c>Bitmap ID</c>.</param>
     /// <param name="grid">Receives the grid.</param>
-    /// <returns><see langword="false"/> when the id is zero or carries no block.</returns>
+    /// <returns><see langword="false"/> when the id carries no block.</returns>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="id"/> is not a record index.</exception>
+    /// <remarks>
+    /// Zero is a valid record: <c>sub_507410</c> indexes the table straight by the task's <c>Bitmap ID</c>,
+    /// and level 1's first grid and level 3's only grid are both id 0. The zero that means "none" is the
+    /// run-time binding id a chunk descriptor carries, which is a texture-modifier slot plus one — a
+    /// different number, which an earlier reading of this method conflated with the record index.
+    /// </remarks>
     public bool TryGetGrid(int id, out TerrainHeightGrid grid)
     {
         grid = default;
-        if (id == 0)
-        {
-            return false;
-        }
 
         int size = _table.SizeOf(id);
         ReadOnlyMemory<byte> block = _table.BlockOf(id);
@@ -103,9 +105,20 @@ public readonly record struct TerrainHeightGrid(int Size, ReadOnlyMemory<byte> C
     /// <param name="y">The row in grid coordinates.</param>
     /// <returns>The height in engine units, zero outside the grid.</returns>
     /// <remarks>
+    /// <para>
     /// The original truncates towards zero to reach the cell and interpolates in <c>double</c>, and this
-    /// does the same. A sample outside the grid reads as flat rather than wrapping: the original would
-    /// read its neighbour's row, which is an artefact of the pointer arithmetic rather than intent.
+    /// does the same.
+    /// </para>
+    /// <para>
+    /// The far edge — <paramref name="x"/> or <paramref name="y"/> exactly <see cref="Size"/> — is
+    /// <em>inside</em> the grid: the row holds <c>Size + 1</c> samples so that the cell's last column
+    /// is covered, and the original reads it (its wrap-around neighbour is multiplied by a zero
+    /// fraction). Treating it as outside opened a crack of the full height along every boundary
+    /// between two cells, where the chunk on one side sampled its grid's last column as flat while the
+    /// chunk on the other side sampled its own grid's first. Beyond that, a sample outside the grid
+    /// reads as flat rather than wrapping: the original would read its neighbour's row, which is an
+    /// artefact of the pointer arithmetic rather than intent, and no bound chunk reaches it.
+    /// </para>
     /// </remarks>
     public double Sample(double x, double y)
     {
@@ -116,13 +129,27 @@ public readonly record struct TerrainHeightGrid(int Size, ReadOnlyMemory<byte> C
 
         int ix = (int)x;
         int iy = (int)y;
-        if (ix < 0 || iy < 0 || ix >= Size || iy >= Size)
+        if (ix < 0 || iy < 0 || ix > Size || iy > Size)
         {
             return 0.0;
         }
 
         double tx = x - ix;
         double ty = y - iy;
+
+        // On the far edge the sample is the last corner itself: step back one cell and interpolate all
+        // the way across it, which lands on that corner without reading past the row.
+        if (ix == Size)
+        {
+            ix--;
+            tx = 1.0;
+        }
+
+        if (iy == Size)
+        {
+            iy--;
+            ty = 1.0;
+        }
 
         ReadOnlySpan<byte> corners = Corners.Span;
         int row0 = iy * Stride;

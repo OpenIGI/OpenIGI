@@ -31,10 +31,11 @@ public readonly record struct TerrainSurfaceHit(
 /// span. Two rejections come first, on the triangle's X and Y bounds.
 /// </para>
 /// <para>
-/// <b>Divergence, recorded.</b> The original folds a level-of-detail morph into its vertex heights when
-/// a global patch is active — a bilinear sample biased by 64 and scaled by 256. That path is not
-/// reproduced here, because it only engages while the renderer is blending between detail levels and
-/// nothing in the port sets it. A query answered mid-morph would differ by the blend amount.
+/// The "global patch" the original folds into its vertex heights — a bilinear sample biased by 64 and
+/// scaled by 256 — is the level's heightmap, the same one the renderer adds to the fine chunks; an
+/// earlier reading took it for a level-of-detail morph and left it out. It comes in through
+/// <see cref="TerrainLeaf.Heights"/>, which <see cref="TerrainLeafQuery"/> resolves from the
+/// <see cref="TerrainHeightBindings"/> the level published.
 /// </para>
 /// </remarks>
 public static class TerrainSurfaceTest
@@ -106,6 +107,13 @@ public static class TerrainSurfaceTest
             xs[i] = ox * leaf.UnitScale;
             ys[i] = oy * leaf.UnitScale;
             zs[i] = vertex.Z * leaf.UnitScale;
+
+            // 0x4CA010 samples the bound heightmap at the vertex's world position and adds it to Z —
+            // the same displacement the renderer draws, so the ground is where it looks.
+            if (leaf.Heights.IsBound)
+            {
+                zs[i] += leaf.Heights.Sample(leaf.Origin.X + xs[i], leaf.Origin.Y + ys[i]);
+            }
         }
 
         // A mirrored leaf (orientation bit 2) reflects the vertices' X, which reverses every triangle's

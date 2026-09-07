@@ -214,10 +214,15 @@ public sealed class RetailTerrainGoldenTests
                     failures.Add($"level {level}: terrain.hmp consumed {heightmap.Table.BytesConsumed} of {heightmap.Table.Length}");
                 }
 
-                // Record 0 is the "none" id and never carries a grid.
-                Assert.False(heightmap.TryGetGrid(0, out _));
+                // Record 0 is a grid like any other: sub_507410 indexes the table straight by a HeightMap
+                // task's Bitmap ID, and levels 1 and 3 both name it. (The "none" id is the run-time
+                // binding slot, which is a different number.)
+                if (level is 1 or 3)
+                {
+                    Assert.True(heightmap.TryGetGrid(0, out _), $"level {level} has no grid 0");
+                }
 
-                for (int id = 1; id < TerrainGridTable.RecordCount; id++)
+                for (int id = 0; id < TerrainGridTable.RecordCount; id++)
                 {
                     if (heightmap.TryGetGrid(id, out TerrainHeightGrid grid))
                     {

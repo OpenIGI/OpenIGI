@@ -164,4 +164,45 @@ public sealed class CVarTests
         Assert.True(variable.IsDefault);
         Assert.Equal(2, variable.Value);
     }
+
+    /// <summary>
+    /// A value is recognised by what it parses to, not by how it happens to be spelled.
+    /// </summary>
+    /// <remarks>
+    /// The graphics presets and the settings menu's quality groups both work by recognising the values
+    /// they wrote. They used to do it by comparing against <see cref="ICVar.ValueText"/>, which renders a
+    /// float as its own shortest round trip -- so a preset declaring <c>0.70</c> assigned 0.7, read back
+    /// "0.7", failed its own comparison, and reported Custom from then on. Three shipped menu rows were
+    /// broken this way. The same trap catches a clamped value, and a boolean or enumeration spelled in any
+    /// of the forms it accepts but does not render.
+    /// </remarks>
+    [Fact]
+    public void MatchesText_RecognisesEveryFormThatWouldAssignTheSameValue()
+    {
+        NumericCVar<float> scale = new("r_test_scale", 1f, 0.5f, 2f) { Value = 0.7f };
+
+        Assert.Equal("0.7", scale.ValueText);
+        Assert.True(scale.MatchesText("0.70"));
+        Assert.True(scale.MatchesText("0.7"));
+        Assert.False(scale.MatchesText("0.85"));
+
+        // Clamped on the way in, so it is the value this variable would hold.
+        NumericCVar<int> directions = new("r_test_ao", 6, 0, 8) { Value = 8 };
+        Assert.True(directions.MatchesText("99"));
+        Assert.False(directions.MatchesText("6"));
+
+        BoolCVar cards = new("r_test_cards", false) { Value = true };
+        Assert.True(cards.MatchesText("1"));
+        Assert.True(cards.MatchesText("true"));
+        Assert.False(cards.MatchesText("0"));
+
+        EnumCVar<Quality> lighting = new("r_test_lighting", Quality.Off) { Value = Quality.High };
+        Assert.True(lighting.MatchesText("high"));
+        Assert.True(lighting.MatchesText("High"));
+        Assert.False(lighting.MatchesText("low"));
+
+        // Text that does not parse at all is not a match, and must not throw.
+        Assert.False(scale.MatchesText("banana"));
+        Assert.False(scale.MatchesText(string.Empty));
+    }
 }

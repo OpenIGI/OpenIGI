@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+
+    <!-- BenchmarkDotNet refuses to run a Debug build, and running one anyway would measure the JIT's
+         unoptimised output rather than what ships. Released here so `dotnet run` without -c Release
+         still measures something meaningful. -->
+    <Optimize>true</Optimize>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenIGI.Core\OpenIGI.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Formats\OpenIGI.Formats.csproj" />
+    <ProjectReference Include="..\..\src\OpenIGI.Game\OpenIGI.Game.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+</Project>

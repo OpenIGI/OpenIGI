@@ -67,8 +67,6 @@ public static class TerrainTraversal
         long cameraY = IgiMath.Trunc(view.Camera.Position.Y);
         long cameraZ = IgiMath.Trunc(view.Camera.Position.Z);
 
-        Matrix3f rotation = view.Camera.Orientation;
-
         // The eight octant offsets of the root, in world space and rotated into view space. Every level
         // below reuses them shifted right, which is why they are built once.
         Span<Octant> octants = stackalloc Octant[TerrainOrientation.Count];
@@ -83,11 +81,20 @@ public static class TerrainTraversal
         // The root is centred on the world origin, so the accumulators start at minus the camera.
         Vector3i world = new((int)-cameraX, (int)-cameraY, (int)-cameraZ);
 
+        // Materialised to an array once: the discard tests run at every visited node, and an
+        // interface indexer there is a virtual call per discard per node.
+        TerrainDiscardRegion[] discardRegions = discards switch
+        {
+            null => [],
+            TerrainDiscardRegion[] array => array,
+            _ => [.. discards],
+        };
+
         var state = new State(
             tree,
             view,
             chunks,
-            discards ?? Array.Empty<TerrainDiscardRegion>(),
+            discardRegions,
             new Vector3i((int)cameraX, (int)cameraY, (int)cameraZ),
             octants);
 
@@ -187,8 +194,11 @@ public static class TerrainTraversal
 
             bool discarded = false;
             bool refineForDiscard = false;
-            foreach (TerrainDiscardRegion discard in state.Discards)
+
+            TerrainDiscardRegion[] discards = state.Discards;
+            for (int i = 0; i < discards.Length; i++)
             {
+                TerrainDiscardRegion discard = discards[i];
                 if (discard.ContainsCube(childCentre, extent))
                 {
                     discarded = true;
@@ -262,14 +272,14 @@ public static class TerrainTraversal
         TerrainOctree tree,
         in TerrainView view,
         List<TerrainChunk> chunks,
-        IReadOnlyList<TerrainDiscardRegion> discards,
+        TerrainDiscardRegion[] discards,
         Vector3i camera,
         Span<Octant> octants)
     {
         public readonly TerrainOctree Tree = tree;
         public readonly TerrainView View = view;
         public readonly List<TerrainChunk> Chunks = chunks;
-        public readonly IReadOnlyList<TerrainDiscardRegion> Discards = discards;
+        public readonly TerrainDiscardRegion[] Discards = discards;
         public readonly Vector3i Camera = camera;
         public readonly Span<Octant> Octants = octants;
         public int Dropped;

@@ -76,7 +76,7 @@ internal sealed class MapComputerDeviceRenderer : IDisposable
                 _pack = pack;
                 _instance = instance;
                 _hasInstance = true;
-                _logger.Information(LogCategory, $"Loaded retail device '{ModelName}' ({_geometry.Subsets.Count} subset(s)).");
+                _logger.Information(LogCategory, $"Loaded retail device '{ModelName}' ({_geometry.Subsets.Length} subset(s)).");
                 return true;
             }
         }

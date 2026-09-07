@@ -109,8 +109,10 @@ public sealed class GraphicsPresetRegistry
 
             foreach ((ICVar variable, string?[] values) in _managed)
             {
-                if (values[index] is { } expected &&
-                    !string.Equals(expected, variable.ValueText, StringComparison.OrdinalIgnoreCase))
+                // MatchesText rather than a comparison against ValueText: a float renders as its own
+                // shortest round trip, so a preset declaring 0.70 would never be recognised again once
+                // it had been applied and read back as 0.7.
+                if (values[index] is { } expected && !variable.MatchesText(expected))
                 {
                     matches = false;
                     break;

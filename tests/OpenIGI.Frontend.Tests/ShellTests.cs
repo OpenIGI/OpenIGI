@@ -4,9 +4,11 @@ using OpenIGI.Core.Graphics;
 using OpenIGI.Frontend;
 using OpenIGI.Frontend.Saves;
 using OpenIGI.Frontend.Screens;
+using OpenIGI.Frontend.Settings;
 using OpenIGI.Game.Config;
 using OpenIGI.Game.Profiles;
 using OpenIGI.Input;
+using OpenIGI.Rendering;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.UI;
 using OpenIGI.UI.Layout;
@@ -39,10 +41,20 @@ public sealed class ShellTests
 
         public int AbandonCalls { get; private set; }
 
+        public MissionConditions Conditions { get; private set; } = MissionConditions.Default;
+
+        public int ConditionCalls { get; private set; }
+
         public void StartMission(int missionId, int difficulty)
         {
             StartedMission = missionId;
             StartedDifficulty = difficulty;
+        }
+
+        public void SetMissionConditions(MissionConditions conditions)
+        {
+            Conditions = conditions;
+            ConditionCalls++;
         }
 
         public void ResumeMission() => ResumeCalls++;
@@ -306,6 +318,62 @@ public sealed class ShellTests
         }
     }
 
+    /// <summary>
+    /// The campaign's hour and weather are a way to play the run, so they are told to the app as they are
+    /// chosen and they survive the screen being rebuilt.
+    /// </summary>
+    /// <remarks>
+    /// The second half is the half that would break silently. This panel is built fresh every time the
+    /// section is opened, so a choice held on the screen rather than in the context would show "Default"
+    /// back to a player three missions into a night run -- and the run would carry on at night while the
+    /// menu said it would not, which is worse than either behaviour on its own.
+    /// </remarks>
+    [Fact]
+    public void The_campaign_chooses_the_hour_and_the_weather_the_run_is_played_in()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            (Shell shell, FakeHost host) = BuildShell(dir);
+            Pump(shell, 0.1f);
+            Find<Button>(shell.Stack.Top!, b => b.Text == "Campaign")!.Activate();
+            Pump(shell, 0.6f);
+
+            var campaign = (CampaignScreen)shell.Stack.Top!;
+            Dropdown time = Find<Dropdown>(campaign, d => d.Label == "Time of day")!;
+            Dropdown weather = Find<Dropdown>(campaign, d => d.Label == "Weather")!;
+
+            Assert.Equal(MissionTimeOfDay.Default, (MissionTimeOfDay)time.SelectedIndex);
+            Assert.Equal(MissionWeather.Default, (MissionWeather)weather.SelectedIndex);
+
+            time.SelectedIndex = (int)MissionTimeOfDay.Night;
+            weather.SelectedIndex = (int)MissionWeather.Rain;
+
+            Assert.Equal(new MissionConditions(MissionTimeOfDay.Night, MissionWeather.Rain), host.Conditions);
+
+            // Away and back: the section is rebuilt from scratch and still shows the run being played.
+            shell.OpenOn("settings");
+            Pump(shell, 0.6f);
+            shell.OpenOn("campaign");
+            Pump(shell, 0.6f);
+
+            var reopened = (CampaignScreen)shell.Stack.Top!;
+            Assert.Equal(
+                MissionTimeOfDay.Night,
+                (MissionTimeOfDay)Find<Dropdown>(reopened, d => d.Label == "Time of day")!.SelectedIndex);
+            Assert.Equal(
+                MissionWeather.Rain,
+                (MissionWeather)Find<Dropdown>(reopened, d => d.Label == "Weather")!.SelectedIndex);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public void The_pause_menu_opens_on_its_own_page_and_asks_for_no_preview()
     {
@@ -477,8 +545,18 @@ public sealed class ShellTests
         }
     }
 
+    /// <summary>
+    /// Settings open on one graphics page: the preset, then a row per subject, and no second half.
+    /// </summary>
+    /// <remarks>
+    /// This used to assert the opposite — that a Basic/Advanced switch was present and reading Basic. The
+    /// Advanced half listed every graphics variable as its own row, which meant the menu offered a card
+    /// atlas density and a probe gather cadence as sliders. It is gone; the console is the advanced
+    /// interface. The pin now is that the switch does NOT come back, because the easiest way to undo this
+    /// is to add "just one" raw row.
+    /// </remarks>
     [Fact]
-    public void Settings_open_on_the_basic_graphics_page_with_advanced_a_tab_away()
+    public void Settings_open_on_one_graphics_page_with_no_advanced_half()
     {
         string dir = Path.Combine(Path.GetTempPath(), "openigi-shell-tests", Guid.NewGuid().ToString("N"));
         try
@@ -491,16 +569,15 @@ public sealed class ShellTests
             var screen = Assert.IsType<SettingsScreen>(shell.Stack.Top);
             TabStrip tabs = screen.Root!.Descendants().OfType<TabStrip>().First();
 
-            // Advanced is not a category beside Audio and Controls; it is the other half of Graphics.
             Assert.Equal(["Graphics", "Display", "Audio", "Controls", "Gameplay"], tabs.Tabs);
             Assert.Equal(0, tabs.SelectedIndex);
 
-            Button basic = Find<Button>(screen, b => b.Text == "Basic")!;
-            Button advanced = Find<Button>(screen, b => b.Text == "Advanced")!;
-            Assert.True(basic.Selected);
-            Assert.False(advanced.Selected);
+            Assert.Null(Find<Button>(screen, b => b.Text == "Basic"));
+            Assert.Null(Find<Button>(screen, b => b.Text == "Advanced"));
 
-            // The preset is on the basic half — it is the one control that answers the whole question.
+            // The preset leads: it is the one control that answers the whole question at once. It is also
+            // the only row this harness can show, its registry being empty -- what the page makes of a
+            // populated one is QualityBindingTests' business.
             Assert.NotNull(screen.Root!.Descendants().OfType<Dropdown>().FirstOrDefault(d => d.Label == "Preset"));
         }
         finally

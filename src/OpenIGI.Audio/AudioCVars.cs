@@ -106,6 +106,93 @@ public static class AudioCVars
         CVarOptions.Archive,
         "How many sounds may play at once. The original's limit is 32.");
 
+    /// <summary>Whether the weather is heard as well as seen.</summary>
+    /// <remarks>
+    /// A remaster addition with no counterpart in the original, which ships no weather sound at all —
+    /// its rain is a band of sprites and nothing more. Off leaves the picture exactly as it was.
+    /// </remarks>
+    public static readonly BoolCVar Rain = CVar.Bool(
+        "snd_rain",
+        true,
+        CVarOptions.Archive,
+        "Hear the weather: rain placed around the listener and reshaped by the building they are in.");
+
+    /// <summary>The gain of the rain bed, over and above the ambience bus.</summary>
+    /// <remarks>
+    /// Separate from <see cref="AmbienceVolume"/> because they answer different questions: the bus
+    /// says how loud the level's beds are against the gunfire, and this says how loud the rain is
+    /// against the rest of the beds. A player who wants a quieter storm and the same generators wants
+    /// this one.
+    /// </remarks>
+    public static readonly NumericCVar<float> RainVolume = CVar.Float(
+        "snd_rain_volume",
+        0.35f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "Volume of the rain, within the ambience bus.");
+
+    /// <summary>How much of the rain outside a wall is heard through it, as an amplitude.</summary>
+    /// <remarks>
+    /// <para>
+    /// The floor under the whole indoor mix, and the number that decides whether stepping inside
+    /// sounds like shelter or like a cellar. It has to carry the interior on its own wherever the roof
+    /// is too high to drum — a warehouse, a hangar, anything with a ceiling out of reach — because
+    /// there the drumming contributes nothing and this is all that is left.
+    /// </para>
+    /// <para>
+    /// Thirteen decibels down. Genuine transmission loss through a solid wall is rather more than
+    /// that, but the buildings in this game are sheds, huts and light industrial shells, and a storm
+    /// you can barely hear from inside one reads as a bug rather than as insulation.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> RainWallLevel = CVar.Float(
+        "snd_rain_wall",
+        0.22f,
+        0f,
+        1f,
+        CVarOptions.Developer | CVarOptions.Hidden,
+        "How much rain is heard through a wall, as an amplitude. Lower shuts interiors in.");
+
+    /// <summary>The cutoff the through-the-wall component is heard through, in hertz.</summary>
+    /// <remarks>
+    /// Rain's own energy peaks between one and two and a half kilohertz, so a cutoff below that takes
+    /// the rain out of the rain and leaves a rumble that could be anything. Just under a kilohertz
+    /// keeps enough of the peak for it to still be recognisable through the wall.
+    /// </remarks>
+    public static readonly NumericCVar<float> RainWallCutoffHz = CVar.Float(
+        "snd_rain_wall_cutoff",
+        900f,
+        60f,
+        24000f,
+        CVarOptions.Developer | CVarOptions.Hidden,
+        "The cutoff rain through a wall is heard through, in hertz. Lower is a thicker wall.");
+
+    /// <summary>How loud the drumming of rain on a roof overhead is, as an amplitude.</summary>
+    /// <remarks>
+    /// Well above the walls: a roof is thin, it is struck directly by the drops, and it is the sound
+    /// that makes a shed in a storm unmistakably a shed in a storm.
+    /// </remarks>
+    public static readonly NumericCVar<float> RainRoofLevel = CVar.Float(
+        "snd_rain_roof",
+        0.55f,
+        0f,
+        1f,
+        CVarOptions.Developer | CVarOptions.Hidden,
+        "How loud rain drumming on a roof overhead is, as an amplitude.");
+
+    /// <summary>Whether the rain mix is reported to the log as it is computed.</summary>
+    /// <remarks>
+    /// Once a second, not once a frame. What it prints is the whole state the mix is derived from —
+    /// the sky exposure, the roof, and every emitter's gain and cutoff — which is the only practical
+    /// way to tell "the doorway is not being found" from "the doorway is found and too quiet".
+    /// </remarks>
+    public static readonly BoolCVar RainDebug = CVar.Bool(
+        "snd_rain_debug",
+        false,
+        CVarOptions.Developer | CVarOptions.Hidden,
+        "Report the rain mix — sky exposure, roof and per-direction gain and cutoff — once a second.");
+
     /// <summary>Whether the left and right output channels are swapped.</summary>
     /// <remarks>Mirrors the original's reverse-stereo profile option, global <c>0x543914</c>.</remarks>
     public static readonly BoolCVar ReverseStereo = CVar.Bool(

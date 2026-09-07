@@ -1,10 +1,11 @@
-using OpenIGI.Audio;
+﻿using OpenIGI.Audio;
 using OpenIGI.Audio.OpenAL;
 using OpenIGI.Core.Configuration;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Graphics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Desktop.Audio;
+using OpenIGI.Desktop.World;
 using OpenIGI.Engine.Flow;
 using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
@@ -23,7 +24,6 @@ using OpenIGI.Game.World;
 using OpenIGI.Platform;
 using OpenIGI.Platform.Desktop;
 using OpenIGI.Rendering;
-using OpenIGI.Rendering.OpenGL;
 using OpenIGI.Rendering.Presets;
 using OpenIGI.UI;
 using OpenIGI.UI.Animation;
@@ -49,16 +49,20 @@ internal sealed partial class DesktopGame : IDisposable
     // its dome from it, and with the terrain traversal, which culls against the same frustum.
     private const float FarPlane = 4000f;
 
+    // How long a load will hold for the lighting before giving up and letting the player in anyway. A
+    // level that somehow never finishes tracing must not become a game that never starts.
+    private const int LightingWaitMilliseconds = 30_000;
+
     // --- Environment, supplied by the composition root ---
     private readonly DesktopPlatformHost _platform;
     private readonly SilkGameWindow _window;
-
     /// <summary>Gets the window width, or the authored 320 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowWidth => _window.Width > 0 ? _window.Width : 320;
 
     /// <summary>Gets the window height, or the authored 240 when a minimize/dock race reports 0x0.</summary>
     private int SafeWindowHeight => _window.Height > 0 ? _window.Height : 240;
-    private readonly GLGraphicsDevice _device;
+
+    private readonly IGraphicsDevice _device;
     private readonly VirtualFileSystem _fileSystem;
     private readonly DesktopOptions _options;
     private readonly string _gamePath;
@@ -90,6 +94,9 @@ internal sealed partial class DesktopGame : IDisposable
     // GameClock.AdoptScheduleFrom.
     private ITimeSource _timeSource = null!;
     private GameLoop _loop = null!;
+    private GiBakeCache _giCache = null!;
+    private DistanceFieldCache _sdfCache = null!;
+    private LightmapBakeCache _lightmapCache = null!;
     private MissionRegistry _missions = null!;
     private MagicObjectRegistry _magic = null!;
     private VehiclePhysicsRegistry _vehiclePhysics = null!;
@@ -127,6 +134,119 @@ internal sealed partial class DesktopGame : IDisposable
     private readonly Dictionary<SecurityCamera, (string Sound, AudioVoiceHandle Voice)> _cameraBeepVoices = [];
     private readonly Dictionary<SecurityCamera, AudioVoiceHandle> _cameraMoveVoices = [];
 
+    // --- Global illumination, distance fields and the surface cache ---
+    private IrradianceVolume? _probeField;
+    private IrradianceProbeBake? _probeBake;
+
+    // The newest bounce pass the display is easing towards. Held apart from _probeField (what is on the
+    // GPU right now) so a pass does not snap in: a bounce adds a chunk of indirect light, and eight snaps
+    // read as the room stepping brighter eight times. _probeField chases this instead.
+    private IrradianceVolume? _probeTarget;
+
+    // The cache key an in-flight interactive bake is written under once it finishes -- remembered here
+    // because the load no longer blocks for the field, so the save moves to the frame the bake completes.
+    // The cast is kept too, so the live re-bake (F11) can trace the field again from the same inputs.
+    private int _probeBakeMission;
+    private float _probeBakeSpacing;
+    private Vector3f _probeBakeSun;
+    private WorldRayCast? _bakeCast;
+
+    // The path-traced object-lightmap bake in flight, and the inputs its result is cached under once it
+    // lands -- remembered because the load no longer blocks for it, so the save moves to the frame it
+    // completes, exactly as the probe field's does.
+    private LightmapBake? _lightmapBake;
+    private int _lightmapBakeMission;
+    private Vector3f _lightmapBakeSun;
+    private Vector3f _lightmapBakeSunColour;
+    private Vector3f _lightmapBakeSky;
+
+    // One albedo for the whole level, shared by the load-time trace and the live re-bake. IGI's palette is
+    // concrete, snow and dirt, so a warm grey stands in for reading each hit's own texture.
+    private static readonly Vector3f ProbeBakeAlbedo = new(0.42f, 0.40f, 0.37f);
+
+    // How the displayed field eases towards the newest bounce pass. The rate is an exponential approach in
+    // reciprocal seconds -- at 2.0 the field covers ~86% of the gap in one second, which settles well
+    // before the next pass (~5 s apart) yet reads as a smooth fill rather than a step. The settle cut-off
+    // is the largest per-frame coefficient move below which the ease is treated as arrived and stops
+    // re-uploading, so a converging tail does not upload the volume forever.
+    private const float ProbeChaseRate = 2.0f;
+    private const float ProbeChaseSettle = 0.001f;
+    private SurfaceCacheLighting? _cardLighting;
+    private SurfaceCacheLookup? _cardLookup;
+
+    // The level's inferred lamp fixtures, kept so the frame loop can submit them to the deferred lighting
+    // as real point lights each frame (transformed into view space there), the honest way to light an
+    // interior the screen gather cannot reach. Also bounced through the surface cache. Empty until a
+    // mission loads one; see EmissiveLightProposer.
+    private IReadOnlyList<LightFixture> _lightFixtures = [];
+
+    // Which sub-meshes of this level are lamps, so a shared texture glows on the fixture and not on the
+    // furniture that happens to be skinned with the same page. Held here because the world renderer is
+    // rebuilt per mission and this outlives the rebuild.
+    private LampDetector.Lamps _lamps = LampDetector.Lamps.None;
+
+    // What a person has said outright about which models are lamps, which beats anything the detector
+    // works out. One file for the whole game; see Assets/lamps.json.
+    private LampManifest _lampManifest = LampManifest.Empty;
+
+    // Which of those lamps are actually lit at this moment, and how far through switching on or out they
+    // are. Built with the fixtures, and read by all three of the things a lamp is -- the punctual light
+    // below, the emission the world renderer puts on the fixture's own geometry, and the emitters the
+    // surface cache bounces off -- so none of them can disagree about a lamp being off. Null until a
+    // mission loads fixtures; see LampSwitchboard.
+    private LampSwitchboard? _lampSwitchboard;
+
+    // When the surface cache's emitter buffer last matched the switchboard. The bounce is a GPU upload
+    // rather than a uniform, so it follows a flickering lamp a few frames behind rather than every frame;
+    // the cache's own accumulation is slower than that anyway.
+    private int _lampBounceRevision = -1;
+    private int _lampMilliseconds;
+
+    // Reused each frame to hand the view-space lamp lights to the device without allocating, and without a
+    // stackalloc inside the frame loop. Sized to the shader's cap; only the first N entries are ever sent.
+    private readonly DeferredLocalLight[] _localLightScratch = new DeferredLocalLight[DeferredLocalLight.Maximum];
+
+    // Which fixtures this frame submits, and how far outside its own reach the camera stands for each.
+    // Held rather than allocated per frame: this runs on every frame of every level that has lamps.
+    private readonly int[] _localLightOrder = new int[DeferredLocalLight.Maximum];
+    private readonly float[] _localLightRank = new float[DeferredLocalLight.Maximum];
+    private int _cardBounceFrame;
+
+    // Stand-down state for the surface-cache retrace. The world-space relight and the amortised bounce
+    // re-derive the answer the cache already holds whenever nothing has moved -- and "moved" for a
+    // VIEW-INDEPENDENT cache means the distance field scrolled new coverage in (a real walk of metres) or
+    // the sun was scrubbed, NOT the camera turning or drifting a few centimetres. Once the cache has settled
+    // after the last such change the retrace idles, which is what takes out the periodic multi-millisecond
+    // spike that halved the frame rate at rest. It resumes the instant a level scrolls or the sun moves.
+    private int _giStaticFrames;
+    private bool _giSunValid;
+    private Vector3f _lastGiSunDirection;
+    private Vector3f _lastGiSunColour;
+
+    // How long after the last change the retrace keeps running before it idles -- twice the bounce's own
+    // temporal window, so the multi-bounce fill has fully converged first.
+    private const int GiSettleFrames = 64;
+
+    // Frames left in the exposure warm-up: for a moment after a level's GI starts converging, the adapted
+    // exposure eases fast so it tracks the light filling in rather than over-lifting the dark first frames
+    // and then walking visibly back down. Reset when the surface cache is (re)built, counted down per frame.
+    private int _giExposureWarmup;
+
+    // How long that warm-up lasts. The radiance cache's running average settles over maxFrames sweeps and
+    // one sweep is spread over several frames, so full convergence is a couple of seconds; this covers it.
+    private const int GiExposureWarmupFrames = 150;
+
+    // The exposure adaptation rate during the warm-up and in steady play. Fast while the GI converges so the
+    // exposure follows it and the picture holds its brightness; slow after, for an unobtrusive eye-adaptation.
+    private const float GiExposureWarmupRate = 0.35f;
+    private const float ExposureSteadyRate = 0.04f;
+    private SurfaceCacheCapture.Result? _capturedCards;
+    private SurfaceCacheInstances? _cardInstances;
+    private DistanceFieldBake? _sdfBake;
+    private SceneDistanceField? _sdfScene;
+    private GlobalDistanceField? _sdfClipmaps;
+    private bool _sdfValidated;
+
     // The last frame of the outgoing backdrop, held on the GPU so it can be dissolved off over the
     // incoming one. Sized to the window and re-made when that changes.
     private TextureHandle _dissolveTexture;
@@ -146,8 +266,16 @@ internal sealed partial class DesktopGame : IDisposable
     private TerrainRenderer? _terrain;
     private SkyRenderer? _sky;
     private RainRenderer? _rain;
+    private StormRenderer? _storm;
     private SnowRenderer? _snow;
-    private IReadOnlyList<RainRenderer.BuildingVolume> _rainBuildingVolumes = [];
+
+    // Where the level's roofs are, seen from above. One thing decides whether the sky can reach a point
+    // -- the fog, the falling rain, its splashes and the standing water all ask this -- and it is built
+    // once when the mission loads, out of the geometry itself rather than out of which tasks happen to
+    // be named after buildings.
+    private ShelterHeightField _shelterField = ShelterHeightField.Empty;
+    private TextureHandle _shelterMap = TextureHandle.None;
+    private Vector3d _stormEyeMetres;
     private ShadowCasterPass? _shadowPass;
 
     // The previewed mission's soldiers, built behind the menu and cast into the shadow map so the driver
@@ -160,7 +288,33 @@ internal sealed partial class DesktopGame : IDisposable
 
     // The shot that carries the player out of the menu and into their own eyes.
     private readonly MissionEntryCamera _entry = new();
+
+    // Which row -backdropcycle is on, so each is asked for once rather than on every frame past its mark.
+    private long _backdropCycleRow = -1;
+
+    /// <summary>Milliseconds since the process was started, for the start-up timings.</summary>
+    /// <remarks>
+    /// From the OS's own record of when the process began rather than a stopwatch this class starts, so
+    /// the runtime's own start-up -- assembly loading and the first JIT, which is a good share of the
+    /// wait -- is inside the number rather than before it.
+    /// </remarks>
+    private static double SinceProcessStart() =>
+        (DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds;
     private DirectionalLightSettings? _sun;
+
+    // The interactive day/night cycle, and the sun it produces for this frame -- the authored sun swept to
+    // the current time of day, which everything downstream (shadows, deferred, the surface cache and its
+    // radiance cache, the sky fill) lights from in place of the raw authored one. Recomputed each rendered
+    // frame; scrubbed on real elapsed time so holding a key sweeps smoothly whatever the frame rate.
+    private readonly DayNightCycle _dayNight = new();
+
+    // Chosen on the campaign screen beside the difficulty and held from there on, so a run started at
+    // night stays at night through every mission after it. Session state, never archived -- see
+    // MissionConditions.
+    private MissionConditions _conditions = MissionConditions.Default;
+    private readonly SunGizmo _sunGizmo = new();
+    private DirectionalLightSettings? _effectiveSun;
+    private int _dayNightMilliseconds;
     private FreeCamera? _camera;
 
     // --- The player, the held weapon, the HUD and the soldiers ---
@@ -177,6 +331,16 @@ internal sealed partial class DesktopGame : IDisposable
     private readonly MapComputerCamera _computerFlight = new();
     private readonly BinocularOptics _binocularOptics = new();
     private int _lastBinocularMilliseconds;
+    private int _lastMotionBlurMilliseconds;
+
+    // The performance overlay's managed-allocation sampler. The GPU stage timers see none of this: a frame
+    // that allocates megabytes churns Gen0 and, on the large-object heap, triggers the Gen2 collections that
+    // stall the render thread -- a cost that shows only as a gap between the frame's wall time and the GPU's.
+    private long _perfAllocBytes;
+    private long _perfAllocTicks;
+    private double _perfAllocRate;
+    private long _benchmarkAllocStart;
+    private (int, int, int) _benchmarkGcStart;
     private ComputerHighlightCatalog? _computerHighlights;
     private MissionObjectiveRuntime? _missionObjectives;
     private CutsceneRuntime? _cutscenes;
@@ -184,6 +348,11 @@ internal sealed partial class DesktopGame : IDisposable
     private LevelTask? _activeLevelRoot;
     private bool _computerOpen;
     private bool _computerCamFired;
+
+    // -missioncycle's bookkeeping: which leg of the abandon/replay cadence has been acted on, and the
+    // mission to go back into once the level has been let go of.
+    private long _missionCycleLeg;
+    private int _missionCycleMission;
 
     /// <summary>How much longer than the original the remaster holds a status message, in seconds.</summary>
     private const float RemasteredMessageHoldSeconds = 3f;
@@ -240,7 +409,7 @@ internal sealed partial class DesktopGame : IDisposable
     public DesktopGame(
         DesktopPlatformHost platform,
         SilkGameWindow window,
-        GLGraphicsDevice device,
+        IGraphicsDevice device,
         VirtualFileSystem fileSystem,
         DesktopOptions options,
         string gamePath,
@@ -277,6 +446,15 @@ internal sealed partial class DesktopGame : IDisposable
             }
 
             _logger.Information("Desktop", $"Framebuffer resize event: {width}x{height}.");
+
+            // A minimised window, and the occasional spurious event as the window is created, arrive as a
+            // zero dimension. There is nothing to project onto and the back buffer keeps its last real size,
+            // so ignore it rather than tear the viewport down to zero (which the projection rejects outright).
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
             _device.SetViewport(new Viewport(0, 0, width, height));
             _device.Set2DProjection(width, height);
         }
@@ -337,7 +515,16 @@ internal sealed partial class DesktopGame : IDisposable
 
         MenuStringTable strings = new(_resources);
         configHost.Strings = strings;
+
+        // Held so anything outside this method can name a mission the way the player saw it named. A
+        // descriptor's own Name is the table KEY -- it reads "Mission 1 Name" -- so a loading panel that
+        // showed it would be showing the campaign screen a different title than the one it just listed.
+        _menuStrings = strings;
         SpriteBatch batch = new(_device);
+
+        // Held so a loading frame can be drawn and swapped from outside this loop, before a mission
+        // load blocks it. See DesktopGame.MissionWarmUp.cs.
+        _batch = batch;
         _renderer = null;
         bool running = true;
 
@@ -357,8 +544,25 @@ internal sealed partial class DesktopGame : IDisposable
         // it draws, and the implementation already answers with nothing when no world is loaded.
         console.View.AttachWorld(this);
 
+        // Before Start, so a +lamp_switch on the command line and a settings.cfg that binds one both find
+        // the command already there.
+        RegisterLampCommands(console.System);
+
         console.Start(_fileSystem, _options.StartupCommands, useSavedSettings: !_options.Lockstep);
         _logger = console.WrapLogger(_logger);
+
+        WarnAboutSettingsTheBackendIgnores();
+
+        // The keys the game binds for itself, each only where the player has not bound it to something
+        // else, so a binding they saved is never stolen. What they are and the rule about what may be in
+        // the table is in DefaultBinds.
+        foreach ((string key, string statement) in Configuration.DefaultBinds.All)
+        {
+            if (!console.System.Binds.ContainsKey(key))
+            {
+                console.System.SetBind(key, statement);
+            }
+        }
 
         // -novsync is the older spelling of r_vsync 0. It forces the setting rather than shadowing it, so
         // the console and the flag can never report different things.
@@ -369,13 +573,17 @@ internal sealed partial class DesktopGame : IDisposable
 
         // Audio comes up here, after settings.cfg and the +statements, for the same reason the renderer's
         // settings do: the voice count and the output rate are read once, when the device opens.
-        OpenAudioDevice();
+        //
+        // On a worker, because opening OpenAL and decoding the menu track's ADPCM is a tenth of a second
+        // that nothing on this thread depends on, and start-up is the one time the player is waiting for
+        // this thread specifically. Everything that touches the audio device does so from the frame loop,
+        // which is collected below, before the first line that reads it.
+        Task audioReady = Task.Run(OpenAudioDevice);
 
-        // Set before anything uploads a texture: mip generation happens at upload, so a level loaded
-        // before this would keep the unfiltered tiles it started with.
-        _device.SetTextureQuality(RenderCVars.Anisotropy.Value, RenderCVars.GenerateMipmaps.Value);
-        RenderCVars.Anisotropy.Changed += (_, _) =>
-            _device.SetTextureQuality(RenderCVars.Anisotropy.Value, RenderCVars.GenerateMipmaps.Value);
+        // Set before anything uploads a texture: the sampler a texture is created with is the one it
+        // keeps, so a level loaded before this would keep the filtering it started with.
+        _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
+        RenderCVars.Anisotropy.Changed += (_, _) => _device.SetTextureQuality(RenderCVars.Anisotropy.Value);
 
         _device.VSyncEnabled = RenderCVars.VSync.Value;
         RenderCVars.VSync.Changed += (_, _) => _device.VSyncEnabled = RenderCVars.VSync.Value;
@@ -383,6 +591,9 @@ internal sealed partial class DesktopGame : IDisposable
         RenderCVars.WeatherEnabled.Changed += (_, _) => ApplyWeatherSettings();
         RenderCVars.WeatherStyle.Changed += (_, _) => ApplyWeatherSettings();
         RenderCVars.WeatherSpeed.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.WeatherForce.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.Storm.Changed += (_, _) => ApplyWeatherSettings();
+        RenderCVars.StormIntensity.Changed += (_, _) => ApplyWeatherSettings();
 
         // Timing is pushed on change rather than read per frame, because switching it off is what discards
         // the history -- the peaks after switching it back on should belong to the run being watched.
@@ -426,6 +637,30 @@ internal sealed partial class DesktopGame : IDisposable
         _timeSource = lockstepClock is not null ? lockstepClock : new SystemTimeSource();
         _loop = new(time: _timeSource, host: menuHost, renderer: _scheduler, logger: _logger);
 
+        // Baked global illumination: a mission's probe field is loaded from the shipped cache (Assets/gi)
+        // when present, else traced and written to the per-user cache so the next load is fast. This is what
+        // turns a level load from a few-seconds lighting trace into an instant read -- see GiBakeCache.
+        _giCache = GiBakeCache.Create(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "gi"),
+            Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
+            _logger);
+
+        // The level's distance fields, cached the same way and for a sharper reason. This is the one bake
+        // the real-time lighting model WAITS on -- until it lands the frame renders from the artists'
+        // lightmaps and then visibly crosses over -- and it is the most cacheable thing in the renderer,
+        // depending on nothing but the level's static geometry and one integer. See DistanceFieldCache.
+        _sdfCache = DistanceFieldCache.Create(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "sdf"),
+            Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "sdf"),
+            _logger);
+
+        // The path-traced object lightmaps, cached the same way: baked once, read instantly after. The
+        // shipped bakes live beside the probe fields; freshly-baked ones write to the per-user cache.
+        _lightmapCache = LightmapBakeCache.Create(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "gi"),
+            Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi"),
+            _logger);
+
         // The mission table is built the way the original builds it: walk LOCAL:missions and run every
         // mission.qvm, each of which publishes one descriptor through DefineMission. It has to happen
         // before the Select Mission screen asks for the list.
@@ -434,17 +669,16 @@ internal sealed partial class DesktopGame : IDisposable
         GameMissionState missionState = new();
         missionState.Register(_loop.Natives);
 
+        // The audio device, collected here: this is the first line that reads it, and everything between
+        // it and the Task.Run above -- the scheduler, the console, the cvar wiring -- is work the open
+        // ran alongside rather than after.
+        audioReady.GetAwaiter().GetResult();
+
         // Game_EnableMusic / Game_DisableMusic / Game_SetMusicVolume. Without these the options menu's
         // music slider -- whose script is literally Game_SetMusicVolume(this.vValue) -- moves and does
         // nothing.
         GameMusicNatives musicNatives = new(_music!);
         musicNatives.Register(_loop.Natives);
-
-        // What a menu backdrop needs to be promotable into the played mission rather than thrown away.
-        // Built here because every part of it is finished being written by this point and none of it is
-        // mutated afterwards, which is what makes it safe to hand to a worker.
-        _previewContext = new MissionPreviewContext(
-            _timeSource, menuHost, _scheduler, missionState, _sessionArchives);
 
         // The magic-object table is what turns a level's few hundred scripted objects into its full
         // contents: every model's attachments name an entry here. Loading it is a startup step, like the
@@ -546,6 +780,86 @@ internal sealed partial class DesktopGame : IDisposable
         float flightStartPitch = 0f;
         int flightFrame = 0;
 
+        _probeField = null;
+
+        // The bake in flight, while it is in flight. Non-null only between the level load starting one and
+        // the render thread collecting it; a lockstep capture never sees it, because that path waits.
+        _probeBake = null;
+        _lightmapBake?.Cancel();
+        _lightmapBake = null;
+
+        // When the probe field landed, in the loop's own milliseconds, or -1 for "no fade owed". The field
+        // is traced on a worker and arrives several seconds into a level; until it does, every surface is
+        // lit by one flat ambient colour, and swapping the two in a single frame relights the entire world
+        // at once. That reads as a fault rather than as a load finishing.
+        //
+        // A lockstep capture never fades: it waits for the field at load, so there is nothing to blend from
+        // and nothing time-dependent for a reference image to disagree about.
+        long probeArrivedAt = -1;
+
+        // How long the field takes to replace the ambient it stands in for. Long enough that the eye reads
+        // it as light settling rather than as a cut, short enough that nobody waits for it -- and well
+        // under the several seconds the bake itself takes, so the two do not read as one long event.
+        const float ProbeFadeMilliseconds = 600f;
+
+
+        // The level's signed distance fields, and the clipmaps that resample them around the camera. Baked
+        // on a worker for the same reason the probe field is; the clipmaps themselves are GL and are built
+        // on the render thread once the bake lands.
+        _cardLighting = null;
+        _cardLookup = null;
+        bool cardLightingDumped = false;
+
+        // How many times the bounce has been re-lit this mission. Zero converges in one shot; each relight
+        // after that accumulates over frames. Reset when a mission loads.
+        _cardBounceFrame = 0;
+
+        // One screen-space indirect dump per run, to verify the gather reads the G-buffer and reconstructs
+        // world positions correctly before it feeds the frame.
+        bool screenGiDumped = false;
+
+        // The live screen probe gather's atlases, sized to the frame divided by the probe step and reused
+        // across frames. Ping-ponged: each frame reads one pair and writes the other, so the accumulation
+        // reprojects onto its own past. giAccum holds the accumulated irradiance the deferred lighting reads;
+        // giPosition holds the world position each probe belongs to, for the reprojection's disocclusion test.
+        // Grown when the window changes, which drops the history with it.
+        TextureHandle[] giAccum = [default, default];
+        TextureHandle[] giPosition = [default, default];
+        TextureHandle giFiltered = default;
+        int giIndirectWidth = 0;
+        int giIndirectHeight = 0;
+        int giFrame = 0;
+        bool giHasHistory = false;
+        Matrix3f giPrevWorldToView = Matrix3f.Identity;
+        Vector3f giPrevCameraToCache = default;
+
+        // The full-resolution resolve runs EVERY frame even where the gather is amortised, so it keeps its
+        // own ping-pong cursor and its own previous camera. Sharing the gather's was the trap: on a frame
+        // the gather skipped, the resolve would have reprojected against a camera two frames old and read
+        // back the slot it was about to write.
+        int giResolveFrame = 0;
+        Matrix3f giResolvePrevWorldToView = Matrix3f.Identity;
+        Vector3f giResolvePrevCameraToCache = default;
+
+        // Which accumulation slot the last gather wrote, and the atlas the resolve should read. On a frame
+        // the gather skips, both simply stand.
+        int giLastWrite = 0;
+        int giCadenceCursor = 0;
+
+        // The full-resolution temporal resolve's atlases: the sparse probe atlas upsampled and accumulated
+        // per pixel so the indirect is pinned to the world rather than sliding with the sparse reprojection.
+        // Ping-ponged like the probe atlases, sized to the full render, and read directly by the deferred fill.
+        TextureHandle[] giResolve = [default, default];
+        TextureHandle[] giResolvePosition = [default, default];
+        int giResolveWidth = 0;
+        int giResolveHeight = 0;
+        bool giResolveHasHistory = false;
+        _capturedCards = null;
+        _cardInstances = null;
+        _sdfBake = null;
+        _sdfScene = null;
+        _sdfClipmaps = null;
+        _sdfValidated = false;
         bool climbSlideArmed = false;
         _shotRandom = new(20000101);
         int reportedHumanHits = 0;
@@ -562,6 +876,13 @@ internal sealed partial class DesktopGame : IDisposable
 
         _materials = MaterialLibrary.Load(
             Path.Combine(AppContext.BaseDirectory, "Assets", "materials.json"),
+            _logger);
+
+        // The lamps somebody has named by hand. One list for the whole game -- a model is a global
+        // asset and binds the same textures in every mission it appears in -- so this is read once for
+        // the session rather than per level.
+        _lampManifest = LampManifest.Load(
+            Path.Combine(AppContext.BaseDirectory, "Assets", "lamps.json"),
             _logger);
 
         // The derived surface detail this game never shipped -- normals, roughness, metal. Built by
@@ -582,11 +903,31 @@ internal sealed partial class DesktopGame : IDisposable
             _logger,
             Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "detail"));
 
+        // What a menu backdrop needs to be promotable into the played mission rather than thrown away,
+        // and what it needs to be LIT the way that mission will be: the lamp manifest its proposal is
+        // checked against and the field cache it reads. Built here because every part of it is finished
+        // being written by this point and none of it is mutated afterwards, which is what makes it safe
+        // to hand to a worker.
+        _previewContext = new MissionPreviewContext(
+            _timeSource,
+            menuHost,
+            _scheduler,
+            missionState,
+            _detailMaps,
+            _sessionArchives,
+            _lampManifest,
+            _sdfCache,
+            _device.Capabilities.SupportsCompute);
+
+
         // Skeleton 0's and skeleton 5's animation sets, read here rather than when a mission starts.
         // They live under common/, so they are the same 2.4 MB of IFF for every mission, and parsing
-        // them was the single largest thing standing a player up used to do on the render thread. Doing
-        // it at start-up costs a moment nobody is looking at instead of a moment everybody is.
-        ReadSharedAnimations();
+        // them was the single largest thing standing a player up used to do on the render thread.
+        //
+        // Started rather than done: at start-up the thing between the player and the first frame is this
+        // thread, and the read needs nothing from it. The first mission waits for the result, by when it
+        // has been sitting finished for several seconds.
+        BeginReadingSharedAnimations();
 
 
         // Re-graded for whatever is actually on screen: the mission being played, else the menu's
@@ -685,12 +1026,8 @@ internal sealed partial class DesktopGame : IDisposable
         UiFont? shellHeadingFont = null;
 
         // What the mission-entry shot types over its vantage. Filled when the shot begins.
-        string entryTitle = string.Empty;
-        string entrySubtitle = string.Empty;
 
         // Where the shot's character stands, in engine units, and which way it faces.
-        Vector3d entrySpawnPosition = default;
-        float entrySpawnGamma = 0f;
         bool menuMode = false;
 
         // The shell is up over a LIVE mission -- the pause menu -- rather than over the showcase. It always
@@ -699,6 +1036,7 @@ internal sealed partial class DesktopGame : IDisposable
         // world is frozen instead of advanced. Escape opens it and Escape closes it again.
         bool pauseMenu = false;
         bool showcasePending = false;
+        bool firstFrameReported = false;
 
         // -entrycam: Play has not been pressed yet. Set only when the flag asked for it.
         bool entryCamPending = false;
@@ -724,6 +1062,15 @@ internal sealed partial class DesktopGame : IDisposable
         bool holdFrameForDissolve = false;
         bool heldFrameReady = false;
         bool heldFrameIsPicture = false;
+        bool dissolveRevealPending = false;
+
+        // A field that finished baking for the backdrop, waiting for the frame after the hold to be
+        // adopted -- see the collect further down.
+        DistanceFieldBake.Result? bakedFieldForBackdrop = null;
+
+        // The menu is held to the display's rate rather than rendering as fast as it can. See FramePacer.
+        var menuPacer = new FramePacer();
+        bool lastPassRendered = false;
 
         // How long a mission has to stay selected before its level is built. Every selection re-arms the
         // timer, so running down the list faster than this builds nothing at all. It can be short now that
@@ -736,7 +1083,12 @@ internal sealed partial class DesktopGame : IDisposable
         // the cinematic shell. -mission still opens straight into a level — what it no longer does is leave
         // the shell unbuilt, because the pause menu IS the shell and Escape has to reach it from a mission
         // the menus were skipped into.
-        if (_options.VanillaMenu && _options.StartMission <= 0)
+        if (_options.BakeAll)
+        {
+            // The bake sweep runs after the window is shown (the probe wait pumps the message queue); the
+            // shell and menus are skipped entirely.
+        }
+        else if (_options.VanillaMenu && _options.StartMission <= 0)
         {
             _loop.Flow.Request(FlowEvent.MainMenu);
         }
@@ -746,7 +1098,7 @@ internal sealed partial class DesktopGame : IDisposable
                 Path.Combine(AppContext.BaseDirectory, "Assets", "menu-cameras.json"), _logger);
             missionWarmer = new MissionWarmer(_gamePath, _missions, _logger);
             previewLoader = new MissionPreviewLoader(
-                _gamePath, _missions, _magic, _menuCameras, _previewContext, _logger);
+                _gamePath, _missions, _magic, _giCache, _menuCameras, _previewContext, _logger);
 
             // Saira for body, Saira Condensed as a distance field for the headings the shell sets large.
             shellBodyFont = UiFontLibrary.Load(_device, UiFontLibrary.Body, 48f);
@@ -763,6 +1115,7 @@ internal sealed partial class DesktopGame : IDisposable
             // listed level 10 between level 1 and level 2. The retail menu walks the chain (0x405660) and
             // so does this.
             var shellMissions = new List<MissionInfo>();
+            _shellMissions = shellMissions;
             int missionNumber = 1;
             foreach (MissionDescriptor descriptor in _missions.InCampaignOrder())
             {
@@ -784,65 +1137,106 @@ internal sealed partial class DesktopGame : IDisposable
                         activeProfile.Difficulty = difficulty;
                     }
 
+                    // A load already under way owns the screen; a second press is nothing.
+                    if (_loadSequence.IsActive)
+                    {
+                        return;
+                    }
+
                     // Reachable from the pause menu as well as from the front end — the campaign is in the
                     // bar either way — so the shell is told it is no longer over a mission it was paused on.
-                    shell?.ClosePauseMenu();
-                    menuMode = false;
-                    pauseMenu = false;
-                    ApplyGameplayDepthOfField();
+                    // Deferred where a sequence covers the load: the menu keeps drawing under the departure
+                    // and is put away on the frame the load actually runs.
+                    void LeaveTheMenu()
+                    {
+                        shell?.ClosePauseMenu();
+                        menuMode = false;
+                        pauseMenu = false;
+                        ApplyGameplayDepthOfField();
+                    }
 
                     // The menu has been drawing this very level for as long as the player has been
                     // reading the briefing, built on a worker and complete. When it is the mission they
-                    // picked, the shot begins here and the level is PROMOTED partway through it rather
-                    // than loaded a second time — see MissionEntryCamera and PromoteBackdrop. `_backdrop`
-                    // is null over a played mission, so this cannot fire from the pause menu.
-                    //
-                    // -lockstep is excluded: the shot runs on wall-clock time, and a reference capture
-                    // has to land on the same frame every run.
-                    if (_backdrop is { } backdrop
-                        && backdrop.MissionId == id
-                        && !_options.Lockstep
-                        && _showcaseCamera is { } orbit
-                        && PlayerSpawn.TryFindGameplay(backdrop.LevelRoot, out PlayerSpawnPoint entrySpawn))
+                    // picked, the level is PROMOTED rather than loaded a second time — see
+                    // PromoteBackdrop — behind the same going-in sequence a restart gets: the picture
+                    // falls out of focus under the card, the promotion runs, and the shot opens over the
+                    // start. `_backdrop` is null over a played mission, so this cannot fire from the pause
+                    // menu. -lockstep is excluded: the sequence runs on wall-clock time, and a reference
+                    // capture has to land on the same frame every run.
+                    if (_backdrop is { } backdrop && backdrop.MissionId == id && !_options.Lockstep)
                     {
                         BeginWatchingFramePasses($"Entering mission {id}");
-                        // An explicitly requested authored intro owns the mission from its first frame,
-                        // so promote immediately and let its EditCamera take over. In the normal (no
-                        // -cutscene) path the cinematic is skipped during promotion; keep the shell's
-                        // continuous rise/travel/descent shot instead of cutting straight to gameplay.
-                        if (_options.PlayCutscenes && HasAuthoredCutscene(backdrop.LevelRoot))
+
+                        void Promote()
                         {
+                            LeaveTheMenu();
                             if (PromoteBackdrop(backdrop))
                             {
                                 _window.CursorVisible = false;
                                 ReportWatchedFramePassesIn(2);
-                                return;
+                            }
+                            else
+                            {
+                                StartMission(id);
+                                _window.CursorVisible = false;
                             }
                         }
 
-                        lastEntryMilliseconds = _loop.TimeSource.Milliseconds;
-                        entrySpawnPosition = entrySpawn.Position;
-                        entrySpawnGamma = entrySpawn.Gamma;
+                        if (CinematicLoadAvailable)
+                        {
+                            BeginCinematicLoad(Promote);
+                        }
+                        else
+                        {
+                            Promote();
+                        }
 
-                        MissionInfo? entering = shellMissions.FirstOrDefault(m => m.Id == id);
-                        entryTitle = entering is null
-                            ? string.Empty
-                            : $"{entering.Number:00}  {entering.Name}".ToUpperInvariant();
-                        // The player's word for it, not the settings.qsc row key -- NameOf answers with
-                        // GD_2, which is what this caption used to put on screen.
-                        entrySubtitle = AiDifficultyNames.Of(difficulty).ToUpperInvariant();
-
-                        _entry.Begin(
-                            CameraPose.FromCamera(orbit.Update(0f)),
-                            entrySpawn.Position,
-                            backdrop.Scene.GroundHeight);
-                        _window.CursorVisible = false;
                         return;
                     }
 
-                    BeginWatchingFramePasses($"Loading mission {id}");
-                    StartMission(id);
-                    ReportWatchedFramePassesIn(5);
+                    void LoadCold()
+                    {
+                        LeaveTheMenu();
+                        BeginWatchingFramePasses($"Loading mission {id}");
+                        StartMission(id);
+                        ReportWatchedFramePassesIn(5);
+                        _window.CursorVisible = false;
+                    }
+
+                    if (CinematicLoadAvailable)
+                    {
+                        BeginCinematicLoad(LoadCold);
+                    }
+                    else
+                    {
+                        LoadCold();
+                    }
+                },
+                setMissionConditions: conditions =>
+                {
+                    _conditions = conditions;
+
+                    // One variable carries the hour, because one already means exactly this:
+                    // r_time_of_day is "the hour a level opens at, or negative for the level's own", and
+                    // both the mission loader and the menu's backdrop already reset the cycle from it. It
+                    // is deliberately not archived, which is what makes a campaign choice safe to put in
+                    // it -- a night run lasts the session and does not become a preference.
+                    RenderCVars.TimeOfDay.Value = conditions.StartHour;
+
+                    // The weather gets no variable of its own. Forcing rain everywhere through
+                    // r_weather_force WOULD be archived, so a campaign choice would outlive the campaign
+                    // and rain on every mission of the next run; ApplyWeatherSettings reads the choice
+                    // straight off _conditions instead.
+                    ApplyWeatherSettings();
+
+                    // The level behind the menu is re-lit at once, so choosing night shows night while
+                    // the briefing is still being read. Never over a mission being played: the sky is not
+                    // to change under a player halfway through a level, and the hour they chose is picked
+                    // up by the next level they load.
+                    if (menuMode && !pauseMenu)
+                    {
+                        _dayNight.ResetForLevel(_sun, RenderCVars.TimeOfDay.Value);
+                    }
                 },
                 resumeMission: () =>
                 {
@@ -855,18 +1249,35 @@ internal sealed partial class DesktopGame : IDisposable
                 },
                 restartMission: () =>
                 {
-                    if (_activeMission is { } mission)
+                    if (_activeMission is { } mission && !_loadSequence.IsActive)
                     {
-                        shell?.ClosePauseMenu();
-                        menuMode = false;
-                        pauseMenu = false;
-                        ApplyGameplayDepthOfField();
-                        StartMission(mission.Id);
-                        _window.CursorVisible = false;
+                        // The frozen mission under the pause menu is the picture the sequence holds: the
+                        // menu leaves, the place falls out of focus, and it comes back reset.
+                        void Restart()
+                        {
+                            shell?.ClosePauseMenu();
+                            menuMode = false;
+                            pauseMenu = false;
+                            ApplyGameplayDepthOfField();
+                            StartMission(mission.Id);
+                            _window.CursorVisible = false;
+                        }
+
+                        if (CinematicLoadAvailable)
+                        {
+                            BeginCinematicLoad(Restart);
+                        }
+                        else
+                        {
+                            Restart();
+                        }
                     }
                 },
                 abandonMission: () =>
                 {
+                    // Before it was ever shown, possibly. Counting the rest of the warm-up down would
+                    // hold a loading panel over the campaign screen.
+                    CancelMissionWarmUp();
                     ReleasePlayedMission();
                     shell?.ClosePauseMenu();
                     shell?.OpenOn("campaign");
@@ -946,12 +1357,25 @@ internal sealed partial class DesktopGame : IDisposable
             }
             else
             {
-                // The showcase level is loaded a couple of frames into the loop, not here: loading it now
-                // would block for a few seconds before the window ever showed the menu (the "blue screen"
-                // that is just the frame's clear). Deferring it lets the menu draw first over a dark
-                // backdrop, then the showcase streams in behind it.
+                // The showcase level is ASKED FOR here and arrives when it arrives. It used to be
+                // requested a couple of frames into the loop, because building it once blocked for
+                // seconds and doing that before the window was shown was a blue screen where the menu
+                // should be. It has not blocked since the build moved to a worker, and the wait between
+                // asking and the backdrop appearing is that worker's -- so asking now rather than two
+                // frames later is the whole of it earlier. The menu still draws over its dark backdrop
+                // in the meantime, which is what the deferral was protecting.
                 menuMode = true;
-                showcasePending = true;
+                int firstShowcase = _options.EntryCamMission > 0 ? _options.EntryCamMission : ShowcaseMissionId;
+                currentShowcaseMissionId = firstShowcase;
+
+                if (previewLoader is { } opening)
+                {
+                    opening.Request(firstShowcase);
+                }
+                else
+                {
+                    showcasePending = true;
+                }
 
                 // Heavy depth of field behind the UI, on the deferred path the shell's preset leaves on.
                 // Through a helper because what it displaces has to be given back: these are Archive
@@ -985,7 +1409,10 @@ internal sealed partial class DesktopGame : IDisposable
 
         _window.CloseRequested += (_, _) => running = false;
         _window.Show();
-        _logger.Information("Desktop", $"{_platform.Name} up on {_device.Capabilities.Renderer}.");
+        _logger.Information(
+            "Desktop",
+            $"{_platform.Name} up on {_device.Capabilities.Renderer}; the window is on screen "
+            + $"{SinceProcessStart():0} ms after the process started.");
 
         // -poidump: build every mission, find the places its menu backdrop should circle, write them out
         // and quit. A tool run once; what it writes is then owned and edited by hand.
@@ -995,13 +1422,38 @@ internal sealed partial class DesktopGame : IDisposable
             running = false;
         }
 
-        // Kept as an opt-in diagnostic rather than a player-facing boot step. It compiles temporary
-        // shaders and reads their results back, so on a cold driver it can make an otherwise ready window
-        // appear to hang for seconds. A developer can still ask for the exact same proof with
-        // +r_compute_selftest 1.
-        if (RenderCVars.ComputeSelfTest.Value)
+        // -bakeall: trace every mission's probe field into the cache, then quit. Each StartMission loads the
+        // level and writes its .giv (the load path caches a fresh bake); the window is up so the probe wait
+        // can pump. Run once and ship the results.
+        if (_options.BakeAll)
         {
-            GLComputeSelfTest.Run(_device, _logger);
+            IReadOnlyList<MissionDescriptor> toBake = _missions.Missions;
+            _logger.Information("Bake", $"Baking global illumination for {toBake.Count} mission(s).");
+            int baked = 0;
+            foreach (MissionDescriptor descriptor in toBake)
+            {
+                if (_window.IsClosing)
+                {
+                    break;
+                }
+
+                _logger.Information("Bake", $"[{++baked}/{toBake.Count}] mission {descriptor.Id} '{strings.Get(descriptor.Name)}'.");
+                StartMission(descriptor.Id);
+            }
+
+            _logger.Information(
+                "Bake",
+                $"Baked {baked} mission(s). To ship them, copy the .giv files from "
+                    + $"{Path.Combine(SettingsPaths.GetUserDirectory(), "cache", "gi")} into apps/OpenIGI.Desktop/Assets/gi.");
+            running = false;
+        }
+
+        // The distance-field shader is compiled here, when the feature is on, rather than when a level
+        // first needs it -- a shader that does not compile would otherwise surface a long way into a run
+        // as a stage that silently did nothing. Gated so a device with the feature off pays nothing.
+        if (RenderCVars.DistanceFields.Value && _device.Capabilities.SupportsCompute)
+        {
+            GlobalDistanceField.ValidateShader(_device, _logger);
         }
 
         // Used only for a level that declares no Dirlight at all. The angles are mission 1's, which the
@@ -1025,6 +1477,8 @@ internal sealed partial class DesktopGame : IDisposable
         int lastConsoleMilliseconds = _loop.TimeSource.Milliseconds;
         int lastShellMilliseconds = _loop.TimeSource.Milliseconds;
         int lastMenuCameraMilliseconds = _loop.TimeSource.Milliseconds;
+        int lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+        int probeChaseFrame = 0;
 
         // A capture run is a background process as far as the person at the keyboard is concerned: it must
         // not read the mouse and must never grab the cursor out from under whatever they are actually doing.
@@ -1043,6 +1497,38 @@ internal sealed partial class DesktopGame : IDisposable
             // everything except the one frame it existed to measure.
             NoteFramePass(passStartedAt);
             FlushWatchedFramePasses();
+
+            // A load whose departure has played out runs here, between frames, where the picture it
+            // needs has already been held and nothing is half-drawn.
+            RunPendingLoadIfDue();
+
+            // The menu has nothing to gain past the display's rate, and a GPU kept at full load turns every
+            // small upload between frames into a hitch. Only after a pass that presented, or the pacing
+            // would throttle the simulation's ticks as well; never under a capture, whose clock is its own.
+            // A level held behind the loading screen while its field bakes is paced harder still: the
+            // withheld frames exist to advance the temporal passes, which thirty a second does as well as
+            // a hundred, and every core the render thread is not spinning on is one the bake gets.
+            if (lastPassRendered && !_options.Lockstep && !_options.IsBenchmark)
+            {
+                if (IsWarmingUp && _sdfBake is not null)
+                {
+                    menuPacer.Pace(30);
+                }
+                else if (menuMode && !RenderCVars.VSync.Value)
+                {
+                    menuPacer.Pace(_window.RefreshRate > 0 ? _window.RefreshRate : 60);
+                }
+                else
+                {
+                    menuPacer.Reset();
+                }
+            }
+            else
+            {
+                menuPacer.Reset();
+            }
+
+            lastPassRendered = false;
             passStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
 
             _window.PumpEvents();
@@ -1053,6 +1539,117 @@ internal sealed partial class DesktopGame : IDisposable
             // under vanilla and enhanced, and deriving maps the shader multiplies by nothing is waste.
             _detailMaps.DeriveMissing = RenderCVars.MaterialDetail.Value > 0f;
             _detailMaps.PumpDerived();
+
+            // The probe bake, if one is still tracing. Collected HERE rather than on the worker because
+            // what comes back becomes a GL texture, and the context belongs to this thread. TryCollect
+            // answers true once, so this costs a completed-flag read per frame until then and nothing after.
+            if (_probeBake is { } pendingBake)
+            {
+                // Each bounce pass becomes the field the display eases towards, not one shown outright:
+                // the smooth chase below fills the light in over about a second rather than stepping it.
+                if (pendingBake.TryCollectLatest(out IrradianceVolume? streamedField) && streamedField is not null)
+                {
+                    if (_probeField is null)
+                    {
+                        // First light: shown at once and faded up from flat ambient by the device's own
+                        // blend, so there is a starting field for later passes to ease away from.
+                        _probeField = streamedField;
+                        _probeTarget = streamedField;
+                        _device.SetIrradianceVolume(_probeField);
+                        probeArrivedAt = _loop.TimeSource.Milliseconds;
+                    }
+                    else
+                    {
+                        _probeTarget = streamedField;
+                    }
+                }
+
+                // Once the bake is done, the authoritative final field is both what the display settles on
+                // and what the cache keeps, so the next load reads it instead of tracing again.
+                if (pendingBake.IsComplete)
+                {
+                    if (pendingBake.TryCollect(out IrradianceVolume? finalField) && finalField is not null)
+                    {
+                        _probeTarget = finalField;
+                        _giCache.Save(_probeBakeMission, _probeBakeSpacing, _probeBakeSun, finalField);
+                    }
+
+                    _probeBake = null;
+                }
+            }
+
+            // The path-traced lightmap bake, once its worker finishes: swap the pages in and write them to
+            // the cache so the next load reads instead of tracing. Collected here for the same reason the
+            // probe field is -- the pages become GL textures, and the context belongs to this thread.
+            if (_lightmapBake is { } pendingLightmaps && pendingLightmaps.TryCollect(out BakedLightmaps? bakedLightmaps))
+            {
+                _lightmapBake = null;
+                if (bakedLightmaps is not null)
+                {
+                    _world?.SetBakedLightmaps(bakedLightmaps, RenderCVars.BakedLightmaps.Value >= 2);
+                    _lightmapCache.Save(
+                        _lightmapBakeMission, _lightmapBakeSun, _lightmapBakeSunColour, _lightmapBakeSky, bakedLightmaps);
+                }
+            }
+
+            // Ease the displayed field towards the newest baked pass. Framerate-independent, so the fill
+            // looks the same however fast frames go out, and it keeps running after the bake handle is gone
+            // until the last pass has settled -- at which point the field points straight at the target and
+            // the per-frame re-upload stops.
+            if (_probeTarget is not null && _probeField is not null && !ReferenceEquals(_probeField, _probeTarget)
+
+                // Every fourth frame, not every frame. The blend walks the whole field on the CPU and the
+                // re-upload sends the four probe volumes over again -- together roughly ten milliseconds
+                // and half a gigabyte a second while a bake streams. The ease runs over about a second, so
+                // a quarter-rate step is invisible; the elapsed-time step below keeps the pace identical.
+                && (++probeChaseFrame & 3) == 0)
+            {
+                int chaseNow = _loop.TimeSource.Milliseconds;
+                float chaseSeconds = MathF.Max(0f, (chaseNow - lastProbeChaseMilliseconds) / 1000f);
+                lastProbeChaseMilliseconds = chaseNow;
+
+                float step = 1f - MathF.Exp(-ProbeChaseRate * chaseSeconds);
+                float moved = _probeField.BlendToward(_probeTarget, step);
+                _device.SetIrradianceVolume(_probeField);
+
+                if (moved < ProbeChaseSettle)
+                {
+                    _probeField = _probeTarget;
+                }
+            }
+            else
+            {
+                // Keep the clock current while idle, so the first frame of the next ease steps by one
+                // frame's worth of time rather than the whole idle gap.
+                lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+            }
+
+            // Whatever the real-time lighting model needs and does not have yet. Every frame rather than
+            // at load, because the settings menu can ask for that model at any moment and the structures it
+            // reads have to be able to arrive afterwards -- see DesktopGame.RealtimeGi.cs. A no-op once
+            // they exist, which is every frame but the handful after the switch.
+            EnsureRealtimeGiStructures();
+
+            // This frame's share of a convergence in flight, so a level lights up behind the loading
+            // screen or under the entry shot's hold rather than in one stall.
+            StepGiConvergence();
+
+            // Same handover, same reason: the atlas becomes a GL volume, and the context belongs here.
+            // Behind the menu the adoption is deferred to the frame after the picture has been held, so
+            // the backdrop crossing over to its real-time lighting happens under the dissolve rather than
+            // in front of the player -- the same shape as a backdrop swap.
+            if (_sdfBake is { } pendingField && pendingField.TryCollect(out DistanceFieldBake.Result baked))
+            {
+                _sdfBake = null;
+                if (menuMode && !pauseMenu && _backdrop is not null)
+                {
+                    bakedFieldForBackdrop = baked;
+                }
+                else
+                {
+                    AdoptDistanceField(baked.Scene, baked.Atlas, fromCache: false);
+                }
+            }
 
             // One tick's worth of synthetic time per RENDERED FRAME, from an absolute target rather than
             // an accumulated step so the schedule cannot drift. Per loop pass would be wrong: the loop
@@ -1111,11 +1708,27 @@ internal sealed partial class DesktopGame : IDisposable
                 // showcase camera has held a place long enough to move to the next one. Either way the
                 // frame on screen is held first, so the two can be blended rather than cut between.
                 // None of it applies to the pause menu, whose picture is a level that is not going anywhere.
+                // Not while a load is departing: the held frame is the sequence's picture from here, and
+                // a backdrop swapped under a departure would be a different place from the one the card
+                // is over.
                 bool changeWanted = !pauseMenu
-                    && (previewLoader is { HasResult: true } || _showcaseCamera is { IsCutDue: true });
+                    && !_loadSequence.IsActive
+                    && (previewLoader is { HasResult: true }
+                        || _showcaseCamera is { IsCutDue: true }
+                        || bakedFieldForBackdrop is not null);
                 if (changeWanted && !holdFrameForDissolve && !heldFrameReady)
                 {
                     holdFrameForDissolve = true;
+                }
+
+                // The held picture stays up until the incoming level has converged its lighting, so what
+                // the dissolve reveals is the settled backdrop rather than one still lighting up. A field
+                // that is still baking is not waited for -- that is seconds, and it crosses over under its
+                // own hold when it lands.
+                if (dissolveRevealPending && !IsGiConverging)
+                {
+                    dissolveRevealPending = false;
+                    dissolve.Retarget(0f);
                 }
 
                 dissolve.Update(shellElapsed);
@@ -1141,8 +1754,9 @@ internal sealed partial class DesktopGame : IDisposable
                     liveOrbit,
                     _player is { } standing ? CameraPose.FromCamera(standing.Camera) : null);
 
-                // The hand-over, taken at the beat: the one moment in the shot where the camera is not
-                // travelling, so whatever it costs is spent against a picture that was holding anyway.
+                // The hand-over, taken as the travel begins: the fastest, most smeared moment of the shot,
+                // where the one frame the promotion still costs is least visible. What it used to cost --
+                // several hundred milliseconds -- has moved onto the preview worker; see AdoptPreview.
                 if (_entry.WantsPromotion)
                 {
                     if (_backdrop is { } entering && PromoteBackdrop(entering))
@@ -1158,6 +1772,15 @@ internal sealed partial class DesktopGame : IDisposable
                     }
                 }
 
+                // The beat holds until the picture under it is final -- the lighting built and converged,
+                // the temporal passes settled -- which is what the warm-up decides. The camera keeps
+                // drifting while it waits, so a cold first-time bake reads as a longer shot rather than a
+                // frozen one.
+                if (_entry.Phase == MissionEntryPhase.Hold && !IsWarmingUp && !_loadSequence.IsActive)
+                {
+                    _entry.NotifyReady();
+                }
+
                 // Nothing takes input for the length of the shot -- not the shell, not the player, not
                 // the free camera. The shell still ANIMATES, so its fade plays out; it just hears nothing.
                 if (_entry.IsCameraActive && !console.IsOpen)
@@ -1171,9 +1794,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // no pose until something puts one in it.
                 if (_soldiers is { } bodies)
                 {
-                    if (_entry.ShowPlayerBody)
+                    if (_entry.ShowPlayerBody && _player is { } standingBody)
                     {
-                        bodies.StandPlayerBodyAt(entrySpawnPosition, entrySpawnGamma);
+                        bodies.StandPlayerBodyAt(standingBody.Body.Position, standingBody.Body.Yaw);
                     }
                     else
                     {
@@ -1196,6 +1819,40 @@ internal sealed partial class DesktopGame : IDisposable
                     // entirely; without dropping the pair the first gameplay frame interpolates across
                     // the whole descent.
                     _logger.Information("Menu", "The mission-entry shot has handed over.");
+                }
+            }
+
+            // -missioncycle leaves the level and re-enters it on a fixed cadence, taking exactly the two
+            // paths the pause menu's Abandon and the campaign's Play take. It is here so it runs against
+            // a fully built frame rather than during start-up, and it is latched on the frame count so
+            // both legs happen once each rather than every frame past the mark.
+            if (_options.MissionCycleFrames > 0 && shell is not null)
+            {
+                long leg = _loop.Clock.FrameCount / _options.MissionCycleFrames;
+                if (leg != _missionCycleLeg)
+                {
+                    _missionCycleLeg = leg;
+                    if (_activeMission is { } cycling)
+                    {
+                        _logger.Information("Mission", $"-missioncycle: abandoning {cycling.Id}.");
+                        _missionCycleMission = cycling.Id;
+                        ReleasePlayedMission();
+                        shell.ClosePauseMenu();
+                        shell.OpenOn("campaign");
+                        menuMode = true;
+                        pauseMenu = false;
+                        showcasePending = true;
+                        ApplyMenuDepthOfField();
+                    }
+                    else if (_missionCycleMission > 0)
+                    {
+                        _logger.Information("Mission", $"-missioncycle: playing {_missionCycleMission} again.");
+                        shell.ClosePauseMenu();
+                        menuMode = false;
+                        pauseMenu = false;
+                        ApplyGameplayDepthOfField();
+                        StartMission(_missionCycleMission);
+                    }
                 }
             }
 
@@ -1397,6 +2054,31 @@ internal sealed partial class DesktopGame : IDisposable
                     _configuration.Active?.Difficulty ?? (int)AiDifficulty.Normal);
             }
 
+            // -backdropcycle walks the campaign's rows on a fixed cadence, taking the same path a player
+            // moving down the mission list takes: it asks the preview loader for the next mission and
+            // lets the ordinary handover below adopt it. Latched on the frame count so each row is asked
+            // for once, and only while the menu is actually up over a backdrop.
+            if (_options.BackdropCycleFrames > 0 && menuMode && !pauseMenu && previewLoader is not null)
+            {
+                long row = _loop.Clock.FrameCount / _options.BackdropCycleFrames;
+                if (row != _backdropCycleRow)
+                {
+                    _backdropCycleRow = row;
+                    int[] order = [.. _missions.InCampaignOrder().Select(m => m.Id)];
+                    if (order.Length > 0)
+                    {
+                        int next = order[(int)(row % order.Length)];
+                        if (next != currentShowcaseMissionId)
+                        {
+                            _logger.Information("Menu", $"-backdropcycle: selecting mission {next}.");
+                            pendingPreviewMissionId = null;
+                            currentShowcaseMissionId = next;
+                            previewLoader.Request(next);
+                        }
+                    }
+                }
+            }
+
             // The build request, once the campaign selection has held still for a moment. The debounce is
             // only there to stop a run down the list queueing fourteen builds; it costs the render thread
             // nothing either way, because the build happens on a worker.
@@ -1430,17 +2112,23 @@ internal sealed partial class DesktopGame : IDisposable
                     showcase.CommitCut();
                     changed = true;
                 }
+                else if (bakedFieldForBackdrop is { } landedField)
+                {
+                    // The backdrop's field, baked behind the menu, adopted under the held frame so the
+                    // level's cross-over to its real-time lighting is dissolved to rather than watched.
+                    bakedFieldForBackdrop = null;
+                    AdoptDistanceField(landedField.Scene, landedField.Atlas, fromCache: false);
+                    changed = true;
+                }
 
                 heldFrameReady = false;
 
-                // The held frame is now the whole picture; it dissolves off to reveal what is behind it.
+                // The held frame is now the whole picture; it dissolves off to reveal what is behind it,
+                // once the lighting behind it has converged.
                 if (changed)
                 {
                     dissolve.SnapTo(heldFrameIsPicture ? 1f : 0f);
-                    if (heldFrameIsPicture)
-                    {
-                        dissolve.Retarget(0f);
-                    }
+                    dissolveRevealPending = heldFrameIsPicture;
                 }
             }
 
@@ -1454,6 +2142,32 @@ internal sealed partial class DesktopGame : IDisposable
             if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F12))
             {
                 showDebug = !showDebug;
+            }
+
+            // F11 re-bakes the lighting from scratch, live. It throws away every cached field and the one
+            // on screen, then starts tracing again from the same inputs this level loaded with, so the
+            // light resolves back in from nothing over the next seconds -- the way to see a change to the
+            // bake without reloading the level, and to watch it generate. Ignored where there is nothing to
+            // bake (GI off, or the level's scene or cast not yet set up).
+            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.F11)
+                && RenderCVars.GlobalIllumination.Value
+                && _scene is not null
+                && _bakeCast is not null)
+            {
+                _probeBake?.Cancel();
+                int cleared = _giCache.DeleteAll();
+
+                _probeField = null;
+                _probeTarget = null;
+                _device.SetIrradianceVolume(null);
+                probeArrivedAt = -1;
+                lastProbeChaseMilliseconds = _loop.TimeSource.Milliseconds;
+
+                _probeBake = IrradianceProbeBake.Start(
+                    _scene, _bakeCast, _probeBakeSun, _probeBakeSpacing, ProbeBakeAlbedo, _logger);
+
+                _logger.Information(
+                    "GI", $"Re-baking the lighting from scratch (F11); cleared {cleared} cached field(s).");
             }
 
             // F1 swaps between flying and walking. The player takes the camera's position when it is
@@ -1479,6 +2193,44 @@ internal sealed partial class DesktopGame : IDisposable
                 }
 
                 _logger.Information("Player", _playerMode ? "Walking." : "Flying.");
+            }
+
+            // The day/night cycle is advanced on every pass, on real elapsed time, so holding [ or ] sweeps
+            // the sun smoothly whatever the frame rate -- the same reasoning the camera below is advanced by.
+            // The keyboard's own capture flag keeps the console's typing out of it.
+            //
+            // The automatic cycle, on top of the scrub, runs only while a mission is actually being played:
+            // menuMode covers the front end and the pause menu alike, and neither is time the player is
+            // spending in the level. The cycle banks the paused seconds nowhere, so coming back does not
+            // release a jump in the sun.
+            {
+                int dayNightNow = _loop.TimeSource.Milliseconds;
+                float dayNightElapsed = Math.Clamp((dayNightNow - _dayNightMilliseconds) / 1000f, 0f, 0.1f);
+                _dayNightMilliseconds = dayNightNow;
+                bool clockRuns = RenderCVars.DayNightCycle.Value && !menuMode && _activeMission is not null;
+                _dayNight.Update(
+                    _window.Input.Keyboard,
+                    dayNightElapsed,
+                    clockRuns ? RenderCVars.DayLength.Value * 60f : 0f);
+            }
+
+            // The level's lamps, on every pass and on real elapsed time, for exactly the reasons the sweep
+            // above is: a fitting takes a couple of hundred milliseconds to go out and about a second to
+            // come back, and a fade advanced once per rendered frame would be a different fade on every
+            // machine. Cheap enough to be unconditional -- a level nobody has touched walks an array of
+            // steady lamps and returns.
+            UpdateLamps(_loop.TimeSource.Milliseconds);
+
+            // G shows the sun gizmo, but only while flying: it takes the cursor to drag its rings, which the
+            // walking player needs for looking. Leaving the free camera puts it away.
+            if (_window.Input.Keyboard.WasPressed(Input.KeyCode.G) && !_playerMode)
+            {
+                _sunGizmo.Toggle();
+            }
+
+            if (_playerMode)
+            {
+                _sunGizmo.Hide();
             }
 
             if (_camera is not null)
@@ -1576,6 +2328,13 @@ internal sealed partial class DesktopGame : IDisposable
                     _player.Look(_window.Input, elapsed);
                     _window.CursorLocked = !captureMode && _player.IsCapturingMouse;
                 }
+                else if (_sunGizmo.Active)
+                {
+                    // The sun gizmo owns the cursor while it is up: free it so its rings can be dragged, and
+                    // leave the camera where it is so a drag turns the sun rather than the view. The gizmo is
+                    // a free-camera tool, so this only ever runs while flying.
+                    _window.CursorLocked = false;
+                }
                 else
                 {
                     _camera.Update(_window.Input, elapsed);
@@ -1612,14 +2371,30 @@ internal sealed partial class DesktopGame : IDisposable
             // doors and the level clock all stand still. The scheduler is left alone -- ticks keep arriving
             // and finding nothing to do -- which is what stops a menu held open for a minute from being
             // followed by a minute's worth of catch-up.
+            // And the level's half of the warm-up: a withheld level must not run. Its intro cut-scene,
+            // its patrols and its scripted clocks all start from the frame the player first SEES, not
+            // from the frame the load finished -- a cut-scene that played out behind the loading screen
+            // is one the player never gets to watch.
             if (_activeLevelRoot is { } pausableLevel)
             {
-                pausableLevel.IsPaused = pauseMenu;
+                pausableLevel.IsPaused = pauseMenu || PresentationHoldsLevel;
             }
 
             BeginStage();
             FrameOutcome outcome = _loop.RunFrame();
             EndStageIfSlow("the loop's own frame (present, ticks, task tree)");
+
+            // The number that says how long the player waited for a picture, said once. Everything above
+            // it -- the runtime coming up, the window, the device, the swapchain, the first pipelines --
+            // is time nobody can do anything during, and it is the only start-up figure that is about
+            // what a person experiences rather than about where the CPU went.
+            if (!firstFrameReported && outcome != FrameOutcome.Tick)
+            {
+                firstFrameReported = true;
+                _logger.Information(
+                    "Desktop",
+                    FormattableString.Invariant($"The first frame is on screen {SinceProcessStart():0} ms after the process started."));
+            }
 
             // Retire finished voices, refill streaming buffers and advance any crossfade. This sits
             // ABOVE the pause check on purpose: a paused game still has to feed the music, and a stream
@@ -1629,13 +2404,21 @@ internal sealed partial class DesktopGame : IDisposable
             // The retail in-game menu pauses the game task. Once LevelFlow failure has opened that menu --
             // or the player has opened the pause menu -- do not advance the desktop-owned player/AI
             // simulation until they choose an action.
-            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || pauseMenu))
+            // Likewise while the level is withheld: the desktop-owned simulation -- the player, the AI,
+            // the cut-scene runtime, the weather -- stands still until the level is revealed.
+            if (outcome == FrameOutcome.Tick && (_missionFailedMenu || pauseMenu || PresentationHoldsLevel))
             {
                 continue;
             }
 
             if (outcome == FrameOutcome.Tick)
             {
+                // The storm steps here rather than inside the player's own block, where the impact
+                // particles step: weather is ambient, and it has to keep falling in the free camera and
+                // while the player is down. Its spawn column follows the eye, so it is handed the
+                // position the last frame drew from -- one frame stale is nothing to a column forty
+                // metres across, and the tick has no camera of its own.
+                _storm?.Tick(_stormEyeMetres);
                 _cutscenes?.Tick();
                 if (_cutscenes is { } liveCutscenes && _scene is { } cinematicScene && _worldSolids is { } cinematicSolids)
                 {
@@ -1805,6 +2588,7 @@ internal sealed partial class DesktopGame : IDisposable
                     _impactParticles?.Tick();
                     _explosions?.Tick();
                     _missileSmoke?.Tick();
+
                     SpawnBallisticImpactParticles();
 
                     // The launcher rockets in the air lay their smoke trail, one column of puffs per
@@ -2272,9 +3056,13 @@ internal sealed partial class DesktopGame : IDisposable
                 continue;
             }
 
+            lastPassRendered = true;
+
             if (_options.IsBenchmark && _loop.Clock.FrameCount == BenchmarkSchedule.WarmUpFrames)
             {
                 framePerformance.Reset();
+                _benchmarkAllocStart = GC.GetTotalAllocatedBytes();
+                _benchmarkGcStart = (GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2));
             }
             if (!_options.IsBenchmark || _loop.Clock.FrameCount <= BenchmarkSchedule.MeasurementEndFrame)
             {
@@ -2298,9 +3086,12 @@ internal sealed partial class DesktopGame : IDisposable
                         flightStarted = true;
                     }
 
+                    // -flightframes shortens the move without shortening the capture, so the frames past it
+                    // hold the end pose and the flight comes to a stop. The clamp is what holds it.
                     int span = Math.Max(
                         1,
-                        (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames) - 1);
+                        (_options.FlightFrames
+                            ?? (_options.IsBenchmark ? BenchmarkSchedule.MeasurementEndFrame : _options.ExitAfterFrames)) - 1);
                     float t = Math.Clamp((float)flightFrame / span, 0f, 1f);
 
                     Vector3d endPos = _options.CameraEnd is { } e
@@ -2309,13 +3100,15 @@ internal sealed partial class DesktopGame : IDisposable
                     float endYaw = _options.CameraYawEnd ?? flightStartYaw;
                     float endPitch = _options.CameraPitchEnd ?? flightStartPitch;
 
+                    (float shakeYaw, float shakePitch) = HandheldShake(flightFrame, _options.CameraShake);
+
                     _camera.MoveTo(
                         new Vector3d(
                             flightStartPos.X + ((endPos.X - flightStartPos.X) * t),
                             flightStartPos.Y + ((endPos.Y - flightStartPos.Y) * t),
                             flightStartPos.Z + ((endPos.Z - flightStartPos.Z) * t)),
-                        flightStartYaw + ((endYaw - flightStartYaw) * t),
-                        flightStartPitch + ((endPitch - flightStartPitch) * t));
+                        flightStartYaw + ((endYaw - flightStartYaw) * t) + shakeYaw,
+                        flightStartPitch + ((endPitch - flightStartPitch) * t) + shakePitch);
                 }
 
                 // How far this frame sits between the last two simulation ticks. Compute it before
@@ -2336,20 +3129,43 @@ internal sealed partial class DesktopGame : IDisposable
                     && _cutscenes?.IsPlaying != true
                     && !_options.Lockstep
                     && RenderCVars.SmoothPresentation.Value;
+                double pacingWall = _loop.Clock.FrameInstantMilliseconds;
                 float tickBlend = smoothPresentation
-                    ? _loop.Clock.TickFraction(_loop.TimeSource.PreciseMilliseconds)
+                    ? _loop.Clock.TickFraction(pacingWall)
                     : 1f;
+
+                // Whether the picture's own clock keeps step with the wall clock, behind
+                // OPENIGI_PACING_DEBUG=1. Sampled here because this pair -- the tick and the blend --
+                // is exactly the moment in the simulation the frame is about to be drawn at.
+                Diagnostics.PresentationPacingProbe.Sample(
+                    pacingWall, _loop.Clock.TickCount, tickBlend, _loop.Clock.TickRate, smoothPresentation);
+                Diagnostics.PresentationPacingProbe.SampleGate(
+                    pauseMenu,
+                    _cutscenes?.IsPlaying == true,
+                    _options.Lockstep,
+                    RenderCVars.SmoothPresentation.Value);
+                if (_loop.Clock.FrameCount % 600 == 0)
+                {
+                    Diagnostics.PresentationPacingProbe.Report("vulkan");
+                }
                 SightZoomFrame sight = _playerMode && _player is not null
                     ? _player.SmoothedSightZoom(tickBlend)
                     : new SightZoomFrame(HumanView.DefaultTanX, HumanView.DefaultViewModelTanX);
 
                 float aspectRatio = (float)_window.Width / Math.Max(1, _window.Height);
+                // A window that reports no size at all -- which some window systems do for a frame
+                // during a minimize or a dock -- would divide the projection by zero.
                 if (aspectRatio <= 0f)
                 {
                     aspectRatio = 1.3333f;
                 }
 
-                float horizontalTangent = sight.TanX;
+                // A pinned lens for reference comparisons: -fov overrides the game's own ninety-degree
+                // horizontal, so a capture can be framed exactly as a reference render whose camera
+                // differs. The sight zoom still governs ordinary play.
+                float horizontalTangent = _options.FieldOfView is { } fixedFov
+                    ? MathF.Tan(fixedFov * (MathF.PI / 360f))
+                    : sight.TanX;
                 float verticalFieldOfView = VerticalFieldOfView(aspectRatio, horizontalTangent);
 
                 // Kept for the developer inspector, which projects a selected entity to the screen and
@@ -2402,6 +3218,12 @@ internal sealed partial class DesktopGame : IDisposable
                 // The binocular glass, raised on its own wall clock so the lens fades in at the same
                 // rate whatever the frame rate. Gated on the device being open (the fade sits at 0
                 // otherwise) and the lens cvar; the map tube above and this glass are never both up.
+                // How long this frame took, for the shutter the motion blur measures its smear against.
+                int motionNow = _loop.TimeSource.Milliseconds;
+                float frameDeltaSeconds =
+                    Math.Clamp((motionNow - _lastMotionBlurMilliseconds) / 1000f, 1f / 1000f, 1f / 10f);
+                _lastMotionBlurMilliseconds = motionNow;
+
                 int binocularNow = _loop.TimeSource.Milliseconds;
                 float binocularElapsed = Math.Clamp((binocularNow - _lastBinocularMilliseconds) / 1000f, 0f, 0.1f);
                 _lastBinocularMilliseconds = binocularNow;
@@ -2413,11 +3235,19 @@ internal sealed partial class DesktopGame : IDisposable
                 float binocularAberration = binocularDisplay.Amount * 2f;
                 PostProcessSettings postProcess = new(
                     RenderCVars.ToneMap.Value,
-                    RenderCVars.Exposure.Value,
+
+                    // The player's brightness less whatever the night is taking off it; see
+                    // RenderCVars.EffectiveExposure. Never r_exposure directly -- the night must not be
+                    // able to edit, and then have to put back, the setting the player chose.
+                    RenderCVars.EffectiveExposure,
                     RenderCVars.Bloom.Value,
                     RenderCVars.BloomThreshold.Value,
                     RenderCVars.WhitePoint.Value,
-                    SceneIsDisplayEncoded: true,
+                    // The dynamic model now composites in linear space -- albedo decoded before the multiply
+                    // -- so its scene buffer holds linear radiance and the resolve tone maps it directly. The
+                    // baked and vanilla models keep the original's gamma-space compositing, whose buffer is
+                    // display-encoded and has to be decoded before the tone map.
+                    SceneIsDisplayEncoded: EffectiveLighting != LightingModel.Dynamic,
                     Contrast: RenderCVars.Contrast.Value,
                     Saturation: RenderCVars.Saturation.Value,
                     Vignette: RenderCVars.Vignette.Value,
@@ -2435,7 +3265,23 @@ internal sealed partial class DesktopGame : IDisposable
                     AutoExposure: RenderCVars.AutoExposure.Value,
                     GreenPhosphor: mapScene is not null && TacticalComputer is null,
                     Tactical: computerDisplay,
-                    Binocular: binocularDisplay);
+                    Binocular: binocularDisplay,
+
+                    // Fast while the GI is still filling in after a load, slow once it has settled. Counted
+                    // down here so a frame that never reaches the cache update (a menu, a paused load) does
+                    // not burn the window; the cache's own reset above is what refills it.
+                    ExposureRate: _giExposureWarmup > 0 ? GiExposureWarmupRate : ExposureSteadyRate,
+
+                    // Read off the loop's own time source rather than the wall clock, which is what makes
+                    // a -lockstep capture reproducible: that mode swaps in a synthetic clock advanced a
+                    // fixed amount per pass, so every captured frame smears by exactly the same length.
+                    // Clamped because a frame that stalled on a load should not smear the whole screen.
+                    FrameDeltaSeconds: frameDeltaSeconds);
+
+                if (_giExposureWarmup > 0)
+                {
+                    _giExposureWarmup--;
+                }
                 if (mapScene is { } mapView)
                 {
                     aspectRatio = (float)mapView.Viewport.Width / Math.Max(1, mapView.Viewport.Height);
@@ -2527,6 +3373,37 @@ internal sealed partial class DesktopGame : IDisposable
                     eye = _player.SmoothedCamera(tickBlend);
                 }
 
+                // The pose the frame is actually drawn from, whichever camera supplied it, in the form
+                // -campos/-yaw/-pitch take. Without this a viewpoint reached by WALKING to it cannot be
+                // captured: the free camera opens over the middle of the level, so the two modes can only
+                // ever be compared at different places -- which is exactly the confusion that hid a
+                // difference between them.
+                if (_options.LogCamera)
+                {
+                    Vector3f eyeForward = eye.Orientation.Row3;
+                    float eyePitch = MathF.Asin(Math.Clamp(eyeForward.Z, -1f, 1f));
+                    float eyeYaw = MathF.Atan2(eyeForward.X, eyeForward.Y);
+
+                    // The sun rides along, because the pose alone does not reproduce a viewpoint any more.
+                    // The day/night keys sweep the sun's elevation AND its bearing, so a scene reached by
+                    // holding one of them cannot be captured from -campos/-yaw/-pitch: the harness would
+                    // render the authored noon sun and light a different room. With this the whole line
+                    // pastes onto a capture command and the frame comes back as it was seen. One frame
+                    // stale while the sun is being scrubbed, which does not matter for standing still.
+                    Vector3f loggedSun = _effectiveSun?.Direction ?? Vector3f.UnitZ;
+
+                    // Warning rather than Information, which reads wrong and is not: the shell's logger
+                    // is built at Warning, so every Information call in the app is discarded and this
+                    // flag produced no output at all -- the flag existed and did nothing. It is opt-in
+                    // and its whole purpose is to be read, so it has to be emitted at a level that
+                    // survives. The same is true of the older mouse-look line just above.
+                    _logger.Warning(
+                        "Camera",
+                        $"eye {(_playerMode ? "player" : "free")} -campos {eye.Position.X:0.###},{eye.Position.Y:0.###},"
+                            + $"{eye.Position.Z:0.###} -yaw {eyeYaw:0.#####} -pitch {eyePitch:0.#####}"
+                            + $" -sundir {loggedSun.X:0.######},{loggedSun.Y:0.######},{loggedSun.Z:0.######}");
+                }
+
                 // Behind the cinematic shell the eye is the slow menu orbit, on real elapsed time, whatever
                 // camera the scene would otherwise have used. Not behind the pause menu: the camera the
                 // scene would otherwise have used is the player's own, and orbiting away from where they
@@ -2588,7 +3465,7 @@ internal sealed partial class DesktopGame : IDisposable
                     // does the upsampling: without it these are two buffers holding a stretched copy.
                     OutputWidth: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Width : 0,
                     OutputHeight: wantsTemporal && RenderCVars.RenderScale.Value < 1f ? _window.Height : 0,
-                    GBuffer: (RenderCVars.Lighting.Value != LightingModel.Dynamic
+                    GBuffer: (EffectiveLighting != LightingModel.Dynamic
                             ? GBufferLayout.BakedLighting
                             : GBufferLayout.Compact)
                         | (wantsTemporal || RenderCVars.MotionBlur.Value > 0f
@@ -2600,8 +3477,57 @@ internal sealed partial class DesktopGame : IDisposable
                 // ARE the view axes, and Transform() applies the engine's row-vector convention which dots
                 // the columns -- the inverse rotation. Getting it wrong lights the world from a direction
                 // that swings as the player turns.
-                DirectionalLightSettings light = _sun ?? defaultSun;
+                // The authored sun swept to the current time of day. Held for the frame so every consumer
+                // -- this deferred light, the shadows, the surface cache's relight and its radiance cache,
+                // and the sky fill -- lights from the same swept sun rather than the raw authored one.
+                DirectionalLightSettings light;
+                if (_options.SunDirection is { } fixedSun)
+                {
+                    // A fixed sun for matching an external reference render: the level's own colour and
+                    // ambient, but a direction pinned to the reference's, bypassing the day/night sweep.
+                    Vector3f dir = new(fixedSun.X, fixedSun.Y, fixedSun.Z);
+                    float len = dir.Length;
+                    dir = len > 1e-5f ? dir / len : Vector3f.UnitZ;
+                    light = (_sun ?? defaultSun) with { Direction = dir };
+                }
+                else
+                {
+                    light = _dayNight.Apply(_sun ?? defaultSun);
+                }
+
+                // What the night is doing to the picture, published for the exposure. The sweep is the only
+                // thing that knows how far under the horizon the sun has gone, and the resolve is a long way
+                // from here, so it travels as the one hidden variable rather than as another argument
+                // threaded through every pass between. The fixed-sun path leaves it at nought, which is what
+                // a reference render wants: a pinned sun and an unmodified exposure.
+                RenderCVars.Nightfall.Value = _dayNight.Nightfall;
+
+                // The sun keeps the level's own authored chromaticity — the same warm (1, 0.77, 0.62) the
+                // reference scene lights with — because rewriting it to a neutral key is exactly the kind
+                // of grade that made the two renders impossible to compare channel for channel. Only the
+                // ambient is re-pointed, since the level's flat cool triple stands in for a sky the
+                // dynamic model now largely derives itself.
+                light = light with
+                {
+                    Ambient = DaylightColour(light.Ambient, new Vector3f(1.18f, 0.88f, 0.58f)),
+                };
+
+                _effectiveSun = light;
                 Vector3f viewSunDirection = eye.Orientation.Transposed().Transform(light.Direction);
+
+                // The sun gizmo, if it is up: projected against this frame's camera and dragged this frame,
+                // so there is no lag between the ring under the cursor and the sun it turns. Its rotation
+                // feeds straight back into the cycle, the same knob the numpad keys turn.
+                _sunGizmo.Update(
+                    eye,
+                    DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                    light.Direction,
+                    _window.Width,
+                    _window.Height,
+                    _window.Input.Mouse.X,
+                    _window.Input.Mouse.Y,
+                    _window.Input.Mouse.IsDown(Input.MouseButton.Left),
+                    (axis, delta) => _dayNight.RotateAxis(axis, delta));
 
                 bool wantsShadows = RenderCVars.OffscreenScene.Value
                     && RenderCVars.Deferred.Value
@@ -2615,6 +3541,18 @@ internal sealed partial class DesktopGame : IDisposable
                     {
                         ContactReach = RenderCVars.ContactShadows.Value,
                         FilterRadius = RenderCVars.ShadowSoftness.Value,
+
+                        // The live software/hardware switch: off, a tracing backend leaves the sun to the
+                        // cascaded map like everyone else. r_rt_shadows moves the sun's shadow on its own,
+                        // leaving every other trace in the frame alone, which is what makes the two shadow
+                        // systems comparable in place.
+                        TracedSun = RenderCVars.HardwareRayTracing.Value && RenderCVars.TracedSunShadows.Value,
+
+                        // The day/night cycle fades the colour to exactly nought a tenth below the
+                        // horizon; from there every sun-shadow mask is multiplied by zero, and the whole
+                        // pipeline -- trace, denoise, cascades -- can stand down. Colour, not
+                        // IsBelowHorizon: through twilight a dim sun still lights and still shadows.
+                        SunLit = light.Colour.X > 0f || light.Colour.Y > 0f || light.Colour.Z > 0f,
                     }
                     : ShadowSettings.Off;
 
@@ -2640,10 +3578,23 @@ internal sealed partial class DesktopGame : IDisposable
                 // a level that asked for thick fog gets thick fog, so the missions keep their own moods
                 // instead of all being handed one number. The colours come from the sun, so a fog bank is
                 // lit by the same light as the ground under it.
+                // Lighter than it was: the authored FogAmount, read at full strength, laid a haze dense
+                // enough to wash the yard white a few tens of metres out -- where the reference keeps its
+                // buildings crisp -- and it hung inside rooms besides. This carries the same shape at a
+                // fraction of the extinction, so distance still reads but the far wall of a compound stays
+                // legible.
                 float authoredDensity = _sky is { HasSky: true }
-                    ? 0.004f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.03f)
-                    : 0.014f;
+                    ? 0.002f + (Math.Clamp(_sky.FogAmount, 0f, 1f) * 0.010f)
+                    : 0.006f;
 
+                // Fog is an outdoor medium, and where it is outdoors is decided a froxel at a time inside
+                // the march itself -- see the shelter lookup in VolumetricFogShaderSource. It used to be
+                // decided once for the whole frame, standing the march down while the camera was inside a
+                // building, because the haze sitting between the eye and a window washed out the yard
+                // beyond it: fog marched straight through the wall. Switching the march off answers that
+                // by deleting the yard's fog too, so a compound seen from a doorway came up in clear air.
+                // The room is now dry and the yard beyond the window is not, which is what is actually
+                // out there.
                 bool wantsFog = RenderCVars.FogQuality.Value > 0
                     && RenderCVars.OffscreenScene.Value
                     && RenderCVars.Deferred.Value;
@@ -2662,13 +3613,250 @@ internal sealed partial class DesktopGame : IDisposable
 
                     // A console override beats the authored preset, so a value can be dialled in live and
                     // then written back into the file.
+                    //
+                    // "Overridden" is the variable having been moved off its own default, which is why
+                    // the graphics presets pin all four of these to their defaults on every tier: a
+                    // player choosing Ultra has not asked for one mission's authored atmosphere to be
+                    // replaced by a global number, and a preset that assigned one could not be told from
+                    // a player who had. Picking a preset therefore CLEARS an override and hands the
+                    // missions back their own air, which is the behaviour the settings page implies.
                     if (RenderCVars.FogDensity.Value > 0f)
                     {
                         medium = medium with { Density = RenderCVars.FogDensity.Value };
                     }
+
+                    if (!RenderCVars.FogHeightFalloff.IsDefault)
+                    {
+                        medium = medium with { HeightFalloff = RenderCVars.FogHeightFalloff.Value };
+                    }
+
+                    if (!RenderCVars.FogAnisotropy.IsDefault)
+                    {
+                        medium = medium with { Anisotropy = RenderCVars.FogAnisotropy.Value };
+                    }
+
+                    if (!RenderCVars.FogDistance.IsDefault)
+                    {
+                        medium = medium with { Distance = RenderCVars.FogDistance.Value };
+                    }
+                }
+
+                // The bake stored how much sky reaches each probe, never what colour it was, so the
+                // mission's own sky is applied here -- and a level whose sun sits below the horizon leans
+                // on its ambient exactly as the fog does.
+                // The clipmaps follow the camera. Each level is rebuilt only when the camera has left it,
+                // which for the outer levels is almost never -- I.G.I.'s geometry is static, so a clipmap
+                // only becomes wrong by being walked out of.
+                if (_sdfClipmaps is { } liveField)
+                {
+                    // The real-time GI's compute runs here, before the G-buffer, so this is where it is
+                    // timed. Without this bracket the bounce below -- the frame's single most expensive pass
+                    // when real-time GI is on -- was measured by nothing, and the overlay's total was a frame
+                    // that did not exist.
+                    _device.BeginStageTiming(RenderStage.GlobalIllumination);
+
+                    // Scrolls the clipmaps to follow the camera, rebuilding whichever level it walked out
+                    // of. How many rebuilt is the retrace's "did the cache's coverage actually change"
+                    // signal: nought means the camera only turned or drifted within a cell, and a
+                    // view-independent cache needs no retrace for that -- which is what lets it idle at rest.
+                    int giRebuilt = liveField.Update(eye.Position);
+
+                    // Once, after the first build, and only when asked. A wrong distance field produces a
+                    // picture that is merely subtly wrong several stages later, so the only way to know it
+                    // is right is to compare it against the exact answer at the same points.
+                    if (!_sdfValidated && RenderCVars.DistanceFieldValidate.Value && _sdfScene is { } exact)
+                    {
+                        _sdfValidated = true;
+                        // Every level, not just the innermost. A trace falls through to the outer
+                        // clipmaps as soon as it leaves the fine one, so an unbuilt level 2 is invisible to
+                        // a check that only ever looked at level 0 -- and it shadows everything.
+                        for (int level = 0; level < liveField.Settings.Levels; level++)
+                        {
+                            DistanceFieldValidation.Compare(_device, liveField, exact, level, _logger);
+                        }
+                    }
+
+                    // Re-lit whenever a clipmap level moved, and only then. The clipmaps follow the camera
+                    // and reach a few hundred metres, so a page on the far side of the level has no field
+                    // to trace against -- re-lighting as they move is what brings each page's shadow in as
+                    // the player approaches it. Doing it every frame regardless would be tens of thousands
+                    // of work groups spent re-deriving an answer that had not changed.
+                    // The second clause is what makes a dump deterministic. Re-lighting is otherwise driven
+                    // by a clipmap having moved, which is a race against the field bake landing on its
+                    // worker: the same command produced two dumps on one run and one on the next, and when
+                    // it produced one the file held the UNSHADOWED load-time pass while looking exactly
+                    // like the shadowed one. That is how a probe came back reporting nothing at all.
+                    bool wantDump = !cardLightingDumped
+                        && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 }
+
+                        // Not the first qualifying frame. On a backend that records a frame's compute and
+                        // submits it at the end, a readback taken on the same frame as the dispatches sees
+                        // the atlas as it was before them -- which reads exactly like a bounce that
+                        // produced nothing, and cost a long detour to tell apart from one.
+                        && _cardBounceFrame >= 8;
+
+                    // Whether the surface cache's inputs actually changed this frame: a level scrolled new
+                    // coverage in, the sun was scrubbed, or a dump was asked for. Turning or nudging the
+                    // camera changes nothing a view-independent cache holds, so it does not count -- which is
+                    // what lets the retrace idle while the player stands roughly still. The sun is fixed
+                    // unless [ or ] is held, so a plain per-frame compare catches a scrub and nothing else.
+                    bool giSunMoved = !_giSunValid
+                        || MathF.Abs(light.Direction.X - _lastGiSunDirection.X) > 1e-4f
+                        || MathF.Abs(light.Direction.Y - _lastGiSunDirection.Y) > 1e-4f
+                        || MathF.Abs(light.Direction.Z - _lastGiSunDirection.Z) > 1e-4f
+                        || MathF.Abs(light.Colour.X - _lastGiSunColour.X) > 1e-4f
+                        || MathF.Abs(light.Colour.Y - _lastGiSunColour.Y) > 1e-4f
+                        || MathF.Abs(light.Colour.Z - _lastGiSunColour.Z) > 1e-4f;
+                    _lastGiSunDirection = light.Direction;
+                    _lastGiSunColour = light.Colour;
+                    _giSunValid = true;
+
+                    // Reset the settle counter on any real change; otherwise let it climb. The retrace runs
+                    // while something is moving and for a settling window after, then idles -- the cache
+                    // keeps its converged atlas with none of the ray tracing, so a still scene stops paying
+                    // the periodic covering-slice spike that halved its frame rate.
+                    bool giChanged = wantDump || giRebuilt > 0 || giSunMoved;
+                    _giStaticFrames = giChanged ? 0 : Math.Min(_giStaticFrames + 1, GiSettleFrames + 1);
+                    bool retraceGi = _giStaticFrames <= GiSettleFrames;
+
+                    if (_cardLighting is { } litCards)
+                    {
+                        // How many frames the relight and the bounce spread their tiles across, from the cvar
+                        // so the per-frame GPU cost can be traded against GI fill-in latency without a rebuild.
+                        litCards.BounceFrameSpread = RenderCVars.GiAmortize.Value;
+
+                        // How many frames a tile's estimate accumulates over, the pair to the spread above:
+                        // the two together set how much of one retrace is admitted and how often, which is
+                        // what governs the slow ripple across interior surfaces. See r_gi_temporal_frames.
+                        litCards.TemporalFrames = RenderCVars.GiTemporalFrames.Value;
+
+                        // Where the steady-state refresh is centred and how far it reaches. The cache spans
+                        // the whole level and the cursor used to walk all of it every round, so a fixed
+                        // share of every frame went on cards in parts of a map the player is nowhere near --
+                        // and past the distance field's own reach, where the relight cannot even arrive at a
+                        // different answer. Relative to the cache's origin, as everything in its space is,
+                        // and differenced in double precision before the cast: the level sits kilometres out.
+                        litCards.ActiveCentre = new Vector3f(
+                            (float)(eye.Position.X - litCards.Origin.X),
+                            (float)(eye.Position.Y - litCards.Origin.Y),
+                            (float)(eye.Position.Z - litCards.Origin.Z));
+                        litCards.ActiveRadius = RenderCVars.GiCacheRadius.Value;
+
+                        // The direct relight: the whole cache at once for a deterministic dump, otherwise a
+                        // slice a frame. The sun is fixed, so the only thing the direct term has to track is
+                        // the clipmap scrolling new coverage under a card as the camera moves -- and doing
+                        // that over the whole cache on the scroll frame was a seventy-millisecond stall that
+                        // read as the game lurching every few steps. Sliced, the new shadows arrive over a
+                        // handful of frames with no spike, and the bounce keeps its long-running history
+                        // instead of being re-seeded from scratch on every scroll.
+                        // Skipped once the cache has settled and nothing is scrolling or scrubbing: the sun
+                        // is fixed and no new coverage is arriving, so the slice would re-trace the direct
+                        // term it already holds. That idle is the whole fix for the at-rest spike.
+                        if (retraceGi)
+                        {
+                            litCards.Light(
+                                light is { IsBelowHorizon: false } shadowSun ? shadowSun.Direction : default,
+
+                                // The SAME effective sun the deferred lighting shades with -- colour times
+                                // both scales -- or the bounce is lit by a different key than the screen and
+                                // the two disagree wherever indirect light dominates.
+                                light.Colour * (RenderCVars.SunScale.Value * RenderCVars.LightScale.Value),
+                                SkyFillColour(),
+                                liveField,
+                                RenderCVars.SurfaceCacheProbe.Value,
+                                amortize: !wantDump);
+                        }
+                    }
+
+                    // The bounce accumulates EVERY frame -- the reference's amortised radiosity. Each frame
+                    // reads last frame's final and folds ONE more bounce in, so a still scene keeps filling
+                    // with light toward its multi-bounce equilibrium (the "lighting up" over the first
+                    // second) instead of holding at the two bounces the load pass seeded. This was gated on
+                    // a clipmap rebuild, so a stationary interior never got past its first couple of bounces
+                    // -- which is most of why a sunless room read dark: bounces three, four and five are
+                    // what fill a room the sun never reaches. The feedback is clamped below one in the
+                    // shader, so it converges rather than running away, and the 1/(1+frames) blend gives the
+                    // ramp for free. Only when no diagnostic probe owns the direct atlas.
+                    // Same stand-down as the relight: once settled with nothing scrolling or scrubbing, the
+                    // scene has reached its multi-bounce equilibrium and folding another bounce in re-derives
+                    // the same final -- so the bounce, the frame's single most expensive pass, idles too. The
+                    // frame counter holds where it was, so the accumulation resumes rather than restarts when
+                    // motion or a scrub brings the retrace back.
+                    if (_cardLighting is { } bounceCards && RenderCVars.SurfaceCacheProbe.Value == 0 && retraceGi)
+                    {
+                        bounceCards.Bounce(
+                            liveField,
+                            boost: RenderCVars.GlobalIlluminationBoost.Value,
+                            temporalIndex: wantDump ? 0 : _cardBounceFrame);
+                        _cardBounceFrame++;
+
+                        // Dumped after the SHADOWED bounce rather than the load-time one, which runs before
+                        // there is any field to trace against and would show the unshadowed answer.
+                        if (wantDump && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } shadowInto)
+                        {
+                            cardLightingDumped = true;
+                            SurfaceCacheDebugDumps.CardLighting(
+                                _device, bounceCards, shadowInto, _logger, RenderCVars.SurfaceCacheProbe.Value);
+                        }
+                    }
+
+                    // The world-space radiance cache: a grid of probes tracing the just-lit surface cache
+                    // into the same L1-SH field the deferred pass samples, but held in world cells rather
+                    // than on the moving screen -- so it stays stable under motion where the screen gather
+                    // shimmers. Configured to the baked field's own layout so the two are interchangeable at
+                    // the sampler, updated a slab a frame off the freshly bounced cache, and bound in place
+                    // of the baked field for the deferred fill. Needs the baked field only for its grid.
+                    if (RenderCVars.RadianceCache.Value != 0
+                        && _cardLighting is { } cacheCards
+                        && _probeField is { } cacheGrid)
+                    {
+                        cacheCards.ConfigureRadianceCache(
+                            new Vector3d(cacheGrid.Origin.X, cacheGrid.Origin.Y, cacheGrid.Origin.Z),
+                            cacheGrid.Spacing,
+                            cacheGrid.CountX,
+                            cacheGrid.CountY,
+                            cacheGrid.CountZ);
+
+                        cacheCards.UpdateRadianceCache(
+                            liveField,
+                            SkyFillColour(),
+                            // A short running average while the level is warming up, so the cache climbs to
+                            // its converged value in a handful of frames rather than easing there over a
+                            // couple of seconds -- which is what read as the scene loading bright and dimming.
+                            // A long one after, where a slow average is what keeps the steady field from
+                            // shimmering under the per-sweep ray jitter.
+                            maxFrames: _giExposureWarmup > 0 ? 6 : 32,
+                            scale: RenderCVars.RadianceCacheScale.Value,
+                            skyReject: RenderCVars.GlobalIlluminationLeakReject.Value);
+
+                        _device.SetRealtimeProbeVolume(
+                            cacheCards.RadianceCacheRed,
+                            cacheCards.RadianceCacheGreen,
+                            cacheCards.RadianceCacheBlue,
+                            cacheCards.RadianceCacheDistance,
+                            cacheGrid.Origin,
+                            cacheGrid.Spacing,
+                            cacheGrid.CountX,
+                            cacheGrid.CountY,
+                            cacheGrid.CountZ);
+                    }
+                    else
+                    {
+                        _device.ClearRealtimeProbeVolume();
+                    }
+
+                    _device.EndStageTiming();
                 }
 
                 _device.SetDebugView(RenderCVars.Debug.Value);
+
+                // The hashed alpha test needs the temporal resolve to average its dither, so it follows the
+                // temporal path: a per-frame seed above zero turns it on, zero leaves the hard cut-out. The
+                // seed only has to change each frame for the dither to differ; the jitter counter does that.
+                _device.SetAlphaHash(
+                    RenderCVars.HashedAlpha.Value && wantsTemporal
+                        ? 1f + (float)(temporalFrame & 63)
+                        : 0f);
 
                 // The derived detail is a deferred-path feature: it changes the normal and the roughness
                 // written into the G-buffer, and without one there is nothing to write them into.
@@ -2676,6 +3864,10 @@ internal sealed partial class DesktopGame : IDisposable
                     RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
                         ? RenderCVars.MaterialDetail.Value
                         : 0f);
+                _device.SetFloorGloss(
+                    RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
+                        ? RenderCVars.FloorGloss.Value
+                        : 1f);
                 _device.SetReflections(
                     RenderCVars.OffscreenScene.Value && RenderCVars.Deferred.Value
                         ? new ReflectionSettings(
@@ -2683,6 +3875,37 @@ internal sealed partial class DesktopGame : IDisposable
                             RenderCVars.ReflectionIntensity.Value,
                             RenderCVars.ReflectionMaxRoughness.Value)
                         : ReflectionSettings.Off);
+
+                // How wet the ground is. Driven by the storm rather than by a number of its own: it is
+                // raining or it is not, and a road that stays dry through a downpour is the single thing
+                // that most gives away rain as an effect rather than as weather. Off the moment the storm
+                // is not drawing, so a level with no rain is not quietly shaded damp.
+                bool wetGround = RenderCVars.Wetness.Value
+                    && RenderCVars.OffscreenScene.Value
+                    && RenderCVars.Deferred.Value
+                    && _storm is { IsActive: true };
+                _device.SetWetness(
+                    wetGround
+                        ? WetnessSettings.Storm.AtIntensity(
+                            _storm!.Settings.Intensity,
+                            _loop.TimeSource.Milliseconds / 1000f)
+                        : WetnessSettings.Dry);
+
+                // Eased rather than linear. A linear ramp starts and stops abruptly, and the eye reads the
+                // stop as a second, smaller event -- which is the thing this exists to remove.
+                float probeFade = probeArrivedAt < 0
+                    ? 1f
+                    : Math.Clamp((_loop.TimeSource.Milliseconds - probeArrivedAt) / ProbeFadeMilliseconds, 0f, 1f);
+                probeFade = probeFade * probeFade * (3f - (2f * probeFade));
+
+                _device.SetIrradianceVolumeSettings(
+                    _probeField is not null && RenderCVars.GlobalIllumination.Value
+                        ? new IrradianceVolumeSettings(
+                            true,
+                            RenderCVars.GlobalIlluminationIntensity.Value,
+                            light.Ambient,
+                            probeFade)
+                        : IrradianceVolumeSettings.Off);
 
                 // Ambient occlusion needs the G-buffer's normals and depth, so it is offered only when
                 // there is a G-buffer; without one the lighting has no ambient term of its own to shade.
@@ -2706,7 +3929,7 @@ internal sealed partial class DesktopGame : IDisposable
                         jitterY,
                         RenderCVars.TemporalSharpening.Value),
                     unjitteredProjection,
-                    new Vector3f((float)eye.Position.X, (float)eye.Position.Y, (float)eye.Position.Z),
+                    eye.Position,
                     eye.Orientation.Transposed());
 
                 _device.SetVolumetricFog(
@@ -2716,8 +3939,17 @@ internal sealed partial class DesktopGame : IDisposable
 
                 // Filled BEFORE the scene capture opens: a cascade renders into its own framebuffer, and
                 // beginning a capture first would leave the shell holding two render targets at once.
+                //
+                // And not filled at all on a frame where nothing can read it: with the traced sun the
+                // ray mask is the ONLY sun shadow the lighting samples, and with the sun faded to
+                // nothing the sun term is nought before the shadow is asked -- either way the cascades
+                // are written and never read, raster spent on a map nobody looks at. The maps and their
+                // matrices stay allocated and uploaded, so the first frame that needs them again (the
+                // r_rt_shadows toggle, or a sunrise scrub) refits and refills BEFORE that frame's
+                // lighting reads -- no stall and no frame of wrong shadows.
+                bool cascadesRead = shadowSettings.SunLit && !_device.SunShadowTraced;
                 BeginStage();
-                if (cascadeCount > 0 && _shadowPass is not null)
+                if (cascadeCount > 0 && _shadowPass is not null && cascadesRead)
                 {
                     _shadowPass.Render(cascadeStorage, cascadeCount, eye, _scene, _world, shadowCasters);
                 }
@@ -2729,24 +3961,54 @@ internal sealed partial class DesktopGame : IDisposable
                     // The scheduler cleared the back buffer; the target it did not know about needs it too.
                     _device.Clear(_scheduler.ClearColour);
 
-                    // The live sun, lifted by r_sun_scale so a sunlit surface reads as sunlit rather than
-                    // as flat daylight -- the bakes carry the sun at full radiosity intensity, the dynamic
-                    // model adds it live at magnitude one, and only this makes up the difference. The baked
-                    // model ignores it (it never adds a live sun), so the scale is a no-op below ultra.
+                    // The live sun, calibrated against the independently-normalised sky by r_sun_scale.
+                    // The baked model ignores it (it never adds a live sun), so the scale is a no-op there.
                     Vector3f scaledSun = light.Colour * RenderCVars.SunScale.Value;
 
+                    // The atmospheric sky keeps its own source illuminance. Sharing scaledSun here made
+                    // r_sun_scale dim the sky SH together with the direct term, so their ratio could never
+                    // be corrected. Ultra's atmosphere remains at its already-measured source intensity.
+                    //
+                    // Under the moon the feed is knocked down hard rather than handed over at face
+                    // value: the atmosphere scatters whatever illuminance it is given, and the moon's
+                    // few thousandths of a sun still rendered as a dim but unmistakably blue daytime
+                    // sky where a night sky reads near black. The surfaces keep the full moonlight; the
+                    // sky keeps only a trace of it.
+                    Vector3f atmosphereSun = light.Colour * RenderCVars.AtmosphereSunScale.Value
+                        * (_dayNight.Moonrise > 0f ? 0.02f : 1f);
+
+                    // TEMPORARY (r_ambient_scale): the dynamic model fills every surface with this one flat
+                    // ambient, so a sealed room reads as lit as open ground. Scaling it here -- towards 0 --
+                    // is how that stand-in is dialled down or removed to confirm what lights enclosed spaces.
+                    Vector3f scaledAmbient = light.Ambient * RenderCVars.AmbientScale.Value;
+
                     _device.SetLighting(new SceneLighting(
-                        RenderCVars.Lighting.Value,
+                        EffectiveLighting,
                         viewSunDirection,
                         scaledSun,
+                        scaledAmbient,
+                        RenderCVars.LightScale.Value,
+
+                        // The fog scatters the level's OWN ambient, not the r_sky_light-boosted surface
+                        // fill: the fog was calibrated against this value and boosting it whites the frame
+                        // out. Kept independent of r_ambient_scale so the haze does not collapse when the
+                        // flat ambient is dialled to zero to watch the GI carry the surfaces.
                         light.Ambient,
-                        RenderCVars.LightScale.Value));
+
+                        // How brightly the sky lights the world, for a backend that models the sky as a
+                        // real light source rather than folding it into the flat ambient. Same dial that
+                        // scaled the flat stand-in, now driving the thing it stood in for.
+                        RenderCVars.SkyLight.Value,
+
+                        // The source that builds both the visible atmosphere and its diffuse SH. Separate
+                        // from scaledSun so direct-light calibration does not move the sky with it.
+                        atmosphereSun));
                     _device.BeginPass(ScenePass.Geometry);
 
                     // The sky is geometry as far as the G-buffer is concerned, so without this the dynamic
                     // model would multiply the dome by an ambient term and the horizon would go dark. It
                     // is not lit; it IS light.
-                    _device.SetMaterialOverride(new SurfaceMaterial(Emissive: 1f));
+                    _device.SetMaterialOverride(SurfaceMaterial.Sky);
                 }
                 else
                 {
@@ -2774,6 +4036,10 @@ internal sealed partial class DesktopGame : IDisposable
                 // of a black void.
                 if (mapScene is null || _computerFlight.IsFlying)
                 {
+                    // Warm the sky dome towards the horizon as the sun sinks, so a window shows a golden dusk
+                    // sky rather than a flat blue one and the screen-space bounce off it carries that warmth
+                    // into the room instead of a cool tint. Untouched with the sun high.
+                    _sky?.SetSunTint(SkyWarmthTint((_effectiveSun ?? _sun)?.Direction.Z ?? 1f));
                     _sky?.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
                 }
 
@@ -2781,6 +4047,30 @@ internal sealed partial class DesktopGame : IDisposable
                 {
                     _device.SetMaterialOverride(SurfaceMaterial.Default);
                 }
+
+                // The world draws BEFORE the terrain, deliberately: buildings are the pass's best
+                // occluders. Indoors the frustum still holds the whole outdoors, and with the ground
+                // drawn first every one of those terrain fragments was shaded and then buried under
+                // the walls; walls first, and early-Z rejects that fill instead. Outdoors the same
+                // holds for the ground behind every building.
+                bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
+                _world.Draw(_scene, eye, projection, occlusionCulling: RenderCVars.WorldOcclusion.Value);
+                EndStageIfSlow("the sky and the world's objects");
+
+                if (captured)
+                {
+                    // The world leaves its last sub-mesh's surface material in force; the terrain
+                    // must not wear it.
+                    _device.SetMaterialOverride(SurfaceMaterial.Default);
+                }
+
+                if (_terrain is not null)
+                {
+                    // Read per frame rather than latched at load, so changing the setting from the
+                    // console takes effect on the next frame the way every other render CVar does.
+                    _terrain.CacheLimit = RenderCVars.TerrainCache.Value;
+                }
+
                 _terrain?.Draw(
                     eye,
                     projection,
@@ -2792,11 +4082,11 @@ internal sealed partial class DesktopGame : IDisposable
                     _options.TerrainViewDistance > 0 ? _options.TerrainViewDistance : RenderCVars.TerrainDetail.Value,
                     GraphicsPresetRegistry.Default.Current != GraphicsPreset.Vanilla,
                     RenderCVars.TerrainOcclusion.Value);
-                EndStageIfSlow("the sky and the terrain");
-                bool cameraIndoors = IsCameraInsideBuilding(eye.Position);
-                _world.Draw(_scene, eye, projection);
+                EndStageIfSlow("the terrain");
 
-                EndStageIfSlow("the world's objects");
+                // With the world and the terrain both in the depth buffer, the world's occlusion
+                // queries can be answered honestly: walls hide the outdoors, and hills hide buildings.
+                _world.IssueOcclusionQueries(eye);
                 _gunPickupRenderer?.Draw(eye, projection);
 
                 // The grenades in the air, solid geometry among the world's own.
@@ -2879,6 +4169,320 @@ internal sealed partial class DesktopGame : IDisposable
                     _marks.Draw(_player.Marks, eye, projection);
                 }
 
+                // L6/L9: the live screen probe gather. Traced here, while the G-buffer the geometry pass just
+                // filled is still live and BEFORE the pass closes -- because closing it runs the deferred
+                // lighting, which reads the atlas as its diffuse fill. So the gather has to have written it
+                // first. Only without a card probe, which fills the cache atlas with a diagnostic rather than
+                // light. It replaces the ambient inside the shade rather than compositing over the frame, so
+                // there is no ambient to zero and nothing runs after the lighting.
+                const int giStep = 8;
+                const int giMaxAccum = 32;
+
+                // The screen trace tier: how far its rays reach across the frame and their step cap, plus the
+                // surface thickness its hit test assumes. Metres, save the step count.
+                const int giTraceSteps = 32;
+                const float giTraceDistance = 24f;
+                const float giTraceThickness = 0.5f;
+                float giStrength = RenderCVars.ScreenGather.Value;
+                bool giActive = captured
+                    && giStrength > 0f
+                    && _sdfClipmaps is not null
+                    && _cardLighting is not null
+                    && RenderCVars.SurfaceCacheProbe.Value == 0;
+
+                if (giActive && _sdfClipmaps is { } liveGiField && _cardLighting is { } liveGiCards)
+                {
+                    // Timed, at last. This gather is the most expensive thing in a real-time-GI frame and
+                    // NOTHING measured it: the bracket the surface-cache relight runs under closes long
+                    // before this, and the backend's own geometry range -- ranges cannot nest -- took over
+                    // the one the game opens around the world draws. So the overlay and the benchmark both
+                    // reported a frame four milliseconds shorter than the one being drawn, and the
+                    // difference read as a CPU cost that was never there. GlobalIllumination is the stage
+                    // its own documentation already says this belongs to; same-stage ranges in a frame sum,
+                    // so it joins the relight rather than displacing it.
+                    _device.EndStageTiming();
+                    _device.BeginStageTiming(RenderStage.GlobalIllumination);
+
+                    // The gather reads the G-buffer, which under a render scale is smaller than the
+                    // window — probes are laid over the pixels that exist, not the ones the window has.
+                    int giSourceWidth = sceneTarget.Width;
+                    int giSourceHeight = sceneTarget.Height;
+                    int wantWidth = (giSourceWidth + giStep - 1) / giStep;
+                    int wantHeight = (giSourceHeight + giStep - 1) / giStep;
+
+                    if (giIndirectWidth != wantWidth || giIndirectHeight != wantHeight)
+                    {
+                        // A resize drops the history: the atlases are a different shape, so nothing in them
+                        // reprojects onto the new frame.
+                        for (int i = 0; i < 2; i++)
+                        {
+                            if (giAccum[i].IsValid)
+                            {
+                                _device.DestroyTexture(giAccum[i]);
+                            }
+
+                            if (giPosition[i].IsValid)
+                            {
+                                _device.DestroyTexture(giPosition[i]);
+                            }
+
+                            giAccum[i] = _device.CreateStorageTexture(
+                                wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum");
+                            giPosition[i] = _device.CreateStorageTexture(
+                                wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.accum.pos");
+                        }
+
+                        // The spatial denoise's output, regenerated each frame from the accumulation, so a
+                        // single buffer rather than a ping-pong pair.
+                        if (giFiltered.IsValid)
+                        {
+                            _device.DestroyTexture(giFiltered);
+                        }
+
+                        giFiltered = _device.CreateStorageTexture(
+                            wantWidth, wantHeight, VolumeFormat.Rgba16F, "cards.screen.filtered");
+
+                        giIndirectWidth = wantWidth;
+                        giIndirectHeight = wantHeight;
+                        giHasHistory = false;
+                    }
+
+                    Vector3f giCameraToCache = new(
+                        (float)(eye.Position.X - liveGiCards.Origin.X),
+                        (float)(eye.Position.Y - liveGiCards.Origin.Y),
+                        (float)(eye.Position.Z - liveGiCards.Origin.Z));
+
+                    // The gather's cadence: it re-traces every Nth frame and the atlas stands in between.
+                    // See r_screen_gi_cadence for why that is sound and why it beats cutting the ray count.
+                    int giFilterRadius = RenderCVars.ScreenGatherFilter.Value;
+                    int giCadence = Math.Max(RenderCVars.ScreenGatherCadence.Value, 1);
+                    bool giTraceThisFrame = !giHasHistory || (giCadenceCursor % giCadence) == 0;
+                    giCadenceCursor++;
+
+                    int write = giFrame & 1;
+                    int read = 1 - write;
+
+                    if (giTraceThisFrame)
+                    {
+                        liveGiCards.GatherScreenTemporal(
+                            liveGiField,
+                            _device.SceneDepth,
+                            _device.SceneNormal,
+                            DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                            eye.Orientation.Transposed(),
+                            giCameraToCache,
+                            giSourceWidth,
+                            giSourceHeight,
+                            giStep,
+                            giAccum[write],
+                            giPosition[write],
+                            giAccum[read],
+                            giPosition[read],
+                            giPrevWorldToView,
+                            giPrevCameraToCache,
+                            giFrame,
+                            giMaxAccum,
+                            giHasHistory,
+
+                            // The screen trace tier (L5b): the previous frame's lit scene, read at on-screen hits
+                            // before the ray falls through to the surface cache. device.SceneColour holds last
+                            // frame's linear scene here -- this runs before the current frame is lit.
+                            _device.SceneColour,
+                            RenderCVars.ScreenGatherTrace.Value ? giTraceSteps : 0,
+                            giTraceDistance,
+                            giTraceThickness,
+
+                            // The sky-light fill (L9): a ray that escapes returns the mission's sky, the same sky
+                            // the surface cache lights its cards with, so the indirect that replaces the ambient
+                            // carries sky light -- with its occlusion, since a ray toward geometry hits it instead.
+                            SkyFillColour());
+
+                        // The spatial denoise (L6c), if on: smooths the accumulation into a separate atlas that
+                        // the deferred fill reads, leaving the history the next frame reprojects onto unfiltered.
+                        if (giFilterRadius > 0)
+                        {
+                            liveGiCards.FilterScreen(
+                                giAccum[write],
+                                giPosition[write],
+                                _device.SceneNormal,
+                                giFiltered,
+                                giIndirectWidth,
+                                giIndirectHeight,
+                                giFilterRadius);
+                        }
+
+                        // What this frame becomes to the NEXT GATHER: only a frame that actually traced moves
+                        // the gather's history and its camera on.
+                        giLastWrite = write;
+                        giPrevWorldToView = eye.Orientation;
+                        giPrevCameraToCache = giCameraToCache;
+                        giHasHistory = true;
+                        giFrame++;
+                    }
+
+                    TextureHandle giRead = giFilterRadius > 0 ? giFiltered : giAccum[giLastWrite];
+
+                    // The full-resolution temporal resolve (the reference's ScreenProbeTemporalReprojectionCS):
+                    // upsample the sparse atlas once and accumulate it per pixel, reprojecting against each
+                    // surface's own world position, so the indirect is pinned to the world instead of sliding
+                    // with the coarse sparse-probe reprojection. The deferred fill reads the full-res result.
+                    int resolveWrite = giResolveFrame & 1;
+                    int resolveRead = 1 - resolveWrite;
+
+                    int resolveW = giSourceWidth;
+                    int resolveH = giSourceHeight;
+                    if (giResolveWidth != resolveW || giResolveHeight != resolveH)
+                    {
+                        for (int i = 0; i < 2; i++)
+                        {
+                            if (giResolve[i].IsValid)
+                            {
+                                _device.DestroyTexture(giResolve[i]);
+                            }
+
+                            if (giResolvePosition[i].IsValid)
+                            {
+                                _device.DestroyTexture(giResolvePosition[i]);
+                            }
+
+                            giResolve[i] = _device.CreateStorageTexture(
+                                resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve");
+                            giResolvePosition[i] = _device.CreateStorageTexture(
+                                resolveW, resolveH, VolumeFormat.Rgba16F, "gi.resolve.pos");
+                        }
+
+                        giResolveWidth = resolveW;
+                        giResolveHeight = resolveH;
+                        giResolveHasHistory = false;
+                    }
+
+                    liveGiCards.ResolveScreenTemporal(
+                        giRead,
+                        _device.SceneDepth,
+                        _device.SceneNormal,
+                        DepthUnprojection.From(unjitteredProjection, 0.1f, FarPlane),
+                        eye.Orientation.Transposed(),
+                        giCameraToCache,
+                        giResolvePrevWorldToView,
+                        giResolvePrevCameraToCache,
+                        giResolve[resolveWrite],
+                        giResolvePosition[resolveWrite],
+                        giResolve[resolveRead],
+                        giResolvePosition[resolveRead],
+                        resolveW,
+                        resolveH,
+                        giResolveHasHistory,
+                        16);
+                    giResolveHasHistory = true;
+
+                    // Recorded for the deferred lighting to fold in when the pass closes. Full-resolution, so
+                    // it is read straight rather than upsampled from the sparse atlas a second time.
+                    _device.SetScreenIndirect(giResolve[resolveWrite], giStrength, fullResolution: true);
+
+                    // The resolve's own carry-forward, every frame: this camera is what the next frame's
+                    // per-pixel reprojection measures its motion against. The gather's equivalent is set
+                    // above, inside the branch, because only a frame that traced may move it.
+                    giResolvePrevWorldToView = eye.Orientation;
+                    giResolvePrevCameraToCache = giCameraToCache;
+                    giResolveFrame++;
+
+                    _device.EndStageTiming();
+                }
+                else
+                {
+                    // The gather did not run this frame, so next frame has nothing coherent to reproject onto.
+                    giHasHistory = false;
+                    giResolveHasHistory = false;
+                }
+
+                // The level's lamp fixtures, submitted as real point lights for the deferred pass that
+                // closes just below -- the same timing as the screen-space fill. Transformed into this
+                // frame's view space here, in double precision: the level sits at large world coordinates,
+                // so the camera-relative subtract is done before the cast to float. Only under a shading
+                // model and only when the scale asks for them; a windowless interior the gather cannot
+                // reach is exactly what these light. The shader also guards on the model and the count.
+                float localLightScale = RenderCVars.LocalLightScale.Value;
+                float localLightRange = RenderCVars.LocalLightRange.Value;
+                if (captured
+                    && localLightScale > 0f
+                    && EffectiveLighting != LightingModel.Baked
+                    && _lightFixtures.Count > 0)
+                {
+                    Matrix3f worldToView = eye.Orientation.Transposed();
+
+                    // WHICH lamps, before how they light. A level carries well over a hundred fixtures and
+                    // the shader's arrays hold thirty-two, so the set has to be chosen every frame rather
+                    // than taken off the top of a list -- the first thirty-two are the level's brightest,
+                    // which is a fact about the whole level and says nothing about where the player is
+                    // standing. Nearest to the camera, measured against each fixture's own reach so that a
+                    // long tube is not passed over for a desk lamp a metre closer.
+                    int localCount = SelectNearestLamps(eye.Position, localLightRange);
+
+                    for (int i = 0; i < localCount; i++)
+                    {
+                        LightFixture fixture = _lightFixtures[_localLightOrder[i]];
+                        Vector3f cameraRelative = new(
+                            (float)(fixture.Position.X - eye.Position.X),
+                            (float)(fixture.Position.Y - eye.Position.Y),
+                            (float)(fixture.Position.Z - eye.Position.Z));
+
+                        // Clamp the fixture's relative intensity before scaling. Intensity is area x
+                        // luminance, so a long fluorescent tube (area ~9) would outpower a desk lamp
+                        // (area ~0.5) sixteen to one and blow the room out around it -- but a bigger lamp
+                        // is not sixteen times brighter, only larger. The clamp flattens that to something
+                        // like real fixtures; the scale cvar then sets the overall level.
+                        //
+                        // Then by how much of that the lamp is actually giving out, which is one for
+                        // everything nobody has switched. The emission on the fixture's own geometry is
+                        // scaled by the same number in the world renderer, so a lamp fading out fades as
+                        // one thing rather than as a panel and a pool of light going at their own rates.
+                        int lampIndex = _localLightOrder[i];
+                        float output = _lampSwitchboard?.LevelOf(lampIndex) ?? 1f;
+
+                        // Clamp the fixture's relative intensity before scaling. Intensity is area x
+                        // luminance, so a long fluorescent tube (area ~9) would outpower a desk lamp
+                        // (area ~0.5) sixteen to one and blow the room out around it -- but a bigger lamp
+                        // is not sixteen times brighter, only larger. The clamp flattens that to something
+                        // like real fixtures; the scale cvar then sets the overall level.
+                        float intensity = MathF.Min(fixture.Intensity, 1.5f) * localLightScale * output;
+
+                        // A cooling filament is a colder black body and therefore a redder one, which is
+                        // the last thing anybody sees of a light going out. White whenever the lamp is
+                        // not on its way out.
+                        Vector3f colour = fixture.Colour;
+
+                        if (_lampSwitchboard?.TintOf(lampIndex) is { } tint && tint != Vector3f.One)
+                        {
+                            colour = new Vector3f(colour.X * tint.X, colour.Y * tint.Y, colour.Z * tint.Z);
+                        }
+
+                        // The way the fixture faces, rotated into the same space its position is in. A
+                        // rotation and not a transform: this is a direction, so the camera's translation
+                        // must not touch it. Zero stays zero, which the shader reads as a point light.
+                        Vector3f facing = fixture.IsDirectional
+                            ? worldToView.Transform(fixture.Direction)
+                            : default;
+
+                        _localLightScratch[i] = new DeferredLocalLight(
+                            worldToView.Transform(cameraRelative),
+                            fixture.Radius * localLightRange,
+                            colour,
+                            intensity,
+                            facing,
+
+                            // The fixture's own size, which is what gives its shadow a penumbra. Floored
+                            // rather than taken raw: a fixture the extractor measured as a few
+                            // centimetres across would cast an edge as hard as a point light's, and no
+                            // real fitting is that small.
+                            MathF.Max(fixture.Extent, 0.05f));
+                    }
+
+                    // Both backends, through the seam: a windowless interior needs its lamps whichever
+                    // renderer is drawing it, and the ultra preset -- the one that discards the shipped
+                    // bakes entirely and so has NOTHING else lighting an interior -- is the Vulkan path.
+                    _device.SetLocalLights(_localLightScratch.AsSpan(0, localCount));
+                }
+
                 if (mapScene is not null)
                 {
                     _device.SetViewport(new Viewport(
@@ -2893,7 +4497,6 @@ internal sealed partial class DesktopGame : IDisposable
                     _device.EndStageTiming();
                     _device.BeginStageTiming(RenderStage.Forward);
                 }
-
 
                 // The view model and anything translucent belong to the forward pass: it is drawn with its
                 // own narrower projection, so its depth must not end up in the buffer the fog and the
@@ -2968,8 +4571,68 @@ internal sealed partial class DesktopGame : IDisposable
                 // Rain environmental particles for levels featuring rain weather (e.g. RainEffect task).
                 // While the camera is inside a building's shell the rain is suppressed, exactly as the
                 // reference editor does per frame — buildings keep the weather outside.
-                if (_rain is { IsWeatherEnabled: true } rain)
+                _stormEyeMetres = eye.Position;
+                if (_storm is { } liveStorm)
                 {
+                    // Assigned BEFORE the active test, never inside it. IsActive reads Indoors, so
+                    // setting it under `if (IsActive)` latches: the first frame the eye passes through a
+                    // building shell turns the storm off, and the assignment that would turn it back on
+                    // is inside the branch that no longer runs. That is what stuck the free camera on
+                    // the original's rain for the rest of the mission.
+                    liveStorm.Indoors = cameraIndoors;
+
+                    // Rain lands on the ground the player is standing on. The free camera has no feet,
+                    // so it keeps whatever the player last supplied rather than dropping the splashes.
+                    // This is only the fallback now: the trace below is what the storm actually lands on,
+                    // and the plane is what it falls back to where the trace has not reached yet.
+                    if (_player is { } stormPlayer)
+                    {
+                        liveStorm.GroundHeightMetres =
+                            stormPlayer.Body.Position.Z / WorldScene.UnitsPerMetre;
+
+                        // The grenade caster, which is the one trace in the game that already covers the
+                        // terrain AND the placed collision meshes -- the same two things rain lands on.
+                        liveStorm.Ground = stormPlayer.GrenadeWalls;
+                        liveStorm.UnitsPerMetre = WorldScene.UnitsPerMetre;
+                    }
+                }
+
+                if (_storm is { IsActive: true } storm)
+                {
+                    // Direction and colour from the one effective sun the deferred pass shades with, and
+                    // the fill from the SAME sky the global illumination is seeded with — not the level's
+                    // raw ambient triple, which is a chromaticity that says what colour the fill is and
+                    // nothing about how much of it there is. The storm multiplies its colours by this, so
+                    // handing over a unit-magnitude tint is what pinned every drop at white in a dark
+                    // level and then let the auto-exposure make it worse.
+                    DirectionalLightSettings stormSun = _effectiveSun ?? default;
+                    Vector3f stormSunLight =
+                        stormSun.Colour * RenderCVars.SunScale.Value * RenderCVars.LightScale.Value;
+
+                    // What the reference multiplies by is the frame BEHIND the drop, and outdoors that
+                    // is overwhelmingly sky rather than the flat fill the interiors are lit by. The sky
+                    // fill alone left daylight rain almost invisible against a bright sky, which is the
+                    // one place rain is most obviously there. A fifth of the sun's own illuminance is a
+                    // rough stand-in for a daylit sky's radiance, and it goes to nothing at night with
+                    // the sun it is taken from.
+                    storm.Draw(
+                        eye,
+                        projection,
+                        smoothPresentation ? tickBlend : 1f,
+                        _effectiveSun is null ? Vector3f.UnitZ : stormSun.Direction,
+                        stormSunLight,
+                        SkyFillColour() + (stormSunLight * 0.2f),
+                        _loop.TimeSource.Milliseconds / 1000f);
+                }
+                else if (_storm is not { Enabled: true } && _rain is { IsWeatherEnabled: true } rain)
+                {
+                    // The original's band, drawn only where the storm is not the renderer in charge.
+                    // Enabled is the question, not IsActive: Enabled says which of the two owns the
+                    // weather -- the preset's r_storm, which only vanilla turns off -- while IsActive
+                    // says whether that owner has anything to draw this frame. Falling back on IsActive
+                    // made every reason the storm draws nothing into a reason to draw 1998's rain
+                    // instead, so dialling r_storm_intensity to zero on an ultra preset did not stop the
+                    // rain, it replaced it with the vanilla band.
                     rain.Indoors = cameraIndoors;
                     rain.Draw(eye, projection, _loop.TimeSource.Milliseconds / 1000f);
                 }
@@ -3123,6 +4786,10 @@ internal sealed partial class DesktopGame : IDisposable
                     // layer, so an already-rendered wall must not be allowed to cut through the hands or
                     // weapon. Resetting only depth keeps normal arm-versus-weapon self-occlusion.
                     ViewModelDepth.Begin(_device);
+                    // The arms and the weapon are not the world: the eye adaptation must not meter them
+                    // and the indirect gather must not bounce light off them, or holstering changes the
+                    // lighting of a room that has not moved.
+                    _device.SetFirstPersonGeometry(true);
                     _arms?.Draw(rig, eye, viewModelProjection, rigOriginUnits, previousPoseShare, rigOrientation);
 
                     // Cycling weapons changes the model as well as the animations, so the renderer has to
@@ -3148,6 +4815,25 @@ internal sealed partial class DesktopGame : IDisposable
                             WeaponDrawParts.All,
                             secondaryWeaponAttachment);
                     }
+
+                    _device.SetFirstPersonGeometry(false);
+                }
+
+                // L6a slice 2: gather screen-space indirect from the surface cache and dump it, once, while
+                // the G-buffer is still live inside the capture. Verifies the cross-layer bridge and the
+                // depth-to-world reconstruction before the gather feeds the frame. Only when no card probe is
+                // running, since that fills the cache atlas with a diagnostic rather than light.
+                if (captured
+                    && !screenGiDumped
+                    && RenderCVars.SurfaceCacheDump.Value is { Length: > 0 } giInto
+                    && _sdfClipmaps is { } giField
+                    && _cardLighting is { } giCards
+                    && RenderCVars.SurfaceCacheProbe.Value == 0)
+                {
+                    screenGiDumped = true;
+                    SurfaceCacheDebugDumps.ScreenGather(
+                        _device, giCards, giField, eye, unjitteredProjection, FarPlane,
+                        _window.Width, _window.Height, giInto, _logger);
                 }
 
                 // Everything 2D belongs AFTER the resolve, on the back buffer: the HUD, the damage wash,
@@ -3539,6 +5225,17 @@ internal sealed partial class DesktopGame : IDisposable
 
                 _device.EndStageTiming();
 
+                // The sun gizmo, over everything, whenever it is up -- not gated on the F12 overlay, since it
+                // is a tool being used rather than an inspection panel.
+                if (_sunGizmo.Active)
+                {
+                    _device.BeginStageTiming(RenderStage.DebugRendering);
+                    batch.Begin();
+                    _sunGizmo.Draw(batch);
+                    batch.End();
+                    _device.EndStageTiming();
+                }
+
                 // The F12 debug overlay and crosshair. Works in both the walking player and the free (flying)
                 // camera: the state lines come from whichever is active, the crosshair readout and the reticle
                 // are cast from the eye that is actually drawing.
@@ -3633,6 +5330,14 @@ internal sealed partial class DesktopGame : IDisposable
                         lines.Add(detect);
                     }
 
+                    // Which of the level's lamps the crosshair is on, if any -- so the switch keys can be
+                    // aimed rather than guessed at, and so a press that appeared to do nothing can be told
+                    // apart from a press that landed on a lamp whose light is off screen.
+                    if (DescribeAimedLamp() is { } aimedLamp)
+                    {
+                        lines.Add(aimedLamp);
+                    }
+
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     debugPanelHeight = debugOverlay.Draw(batch, lines, _window.Width, _window.Height);
@@ -3674,7 +5379,22 @@ internal sealed partial class DesktopGame : IDisposable
                     List<string> perf =
                     [
                         I($"{preset}  {_window.Width}x{_window.Height}  vsync {(_device.VSyncEnabled ? "on" : "off")}  indoor {(cameraIndoors ? "yes" : "no")}"),
+
+                        // Which of the two shadow systems is actually drawing, spelled out with the keys
+                        // that move it. Reading a shadow against the reference means knowing which one
+                        // produced it, and the answer is two cvars deep -- r_rt_shadows does nothing
+                        // while r_rt is off, and neither means anything with shadows turned off.
+                        I($"shadow   {ShadowModeLabel()}"),
                         I($"fps {frame.FramesPerSecond:0.0}  frame {frame.AverageMilliseconds:0.00} ms  1% {frame.OnePercentLowFramesPerSecond:0.0}"),
+
+                        // The whole GPU frame measured end to end, against the sum of the stages listed
+                        // below it. Everything else on this overlay is built from those stages, so a pass
+                        // recorded outside every one of them shows up nowhere -- and a millisecond of lamp
+                        // shadow did exactly that for a whole session while this panel read as though the
+                        // lamps were free. "lost" is that difference: a few hundredths is the timestamps'
+                        // own overhead, anything more is real work with nobody's name on it.
+                        MeasuredFrameLine(_device, gpu),
+
                         "gpu ms   avg    p95   peak  budget",
                     ];
                     foreach (RenderStageTiming timing in timings)
@@ -3698,6 +5418,29 @@ internal sealed partial class DesktopGame : IDisposable
                         ? I($"{"gpu total",-24} {gpu.Milliseconds,5:0.00} {gpu.P95Milliseconds,6:0.00} {gpu.PeakMilliseconds,6:0.00}")
                         : "measuring...");
 
+                    // The CPU side the GPU timers cannot see. cpu is how much longer the frame's wall time
+                    // is than the GPU's -- submission, game logic and GC that did not overlap the GPU. alloc
+                    // is the managed allocation rate, eased so it is readable; a high figure is what feeds the
+                    // GC collections whose pauses read as the frame's stutter, and the LOH share of it drives
+                    // the Gen2 collections that stall hardest. gc shows the Gen0/1/2 collection counts so a
+                    // climbing Gen2 is visible while playing rather than only under a profiler.
+                    long allocNow = GC.GetTotalAllocatedBytes();
+                    long nowTicks = System.Diagnostics.Stopwatch.GetTimestamp();
+                    if (_perfAllocTicks != 0)
+                    {
+                        double seconds = (nowTicks - _perfAllocTicks) / (double)System.Diagnostics.Stopwatch.Frequency;
+                        if (seconds > 1e-4)
+                        {
+                            double sample = (allocNow - _perfAllocBytes) / seconds / (1024.0 * 1024.0);
+                            _perfAllocRate = (_perfAllocRate * 0.9) + (sample * 0.1);
+                        }
+                    }
+
+                    _perfAllocBytes = allocNow;
+                    _perfAllocTicks = nowTicks;
+                    double cpuMilliseconds = Math.Max(0.0, frame.AverageMilliseconds - gpu.Milliseconds);
+                    perf.Add(I($"cpu {cpuMilliseconds,5:0.00} ms   alloc {_perfAllocRate,6:0} MB/s   gc {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}"));
+
                     _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                     batch.Begin();
                     float performanceTopOffset = debugPanelHeight > 0f
@@ -3718,7 +5461,7 @@ internal sealed partial class DesktopGame : IDisposable
                     reportedWorld = true;
                     _logger.Information(
                         "World",
-                        $"Drew {_world.LastDrawCount} sub-mesh(es), {_world.LastLightmappedCount} lightmapped, {_world.LastTriangleCount} triangles from {_camera.Position}.");
+                        $"Drew {_world.LastDrawCount} sub-mesh(es), {_world.LastLightmappedCount} lightmapped, {_world.LastTriangleCount} triangles, {_world.LastOccludedCount} placement(s) occlusion-culled from {_camera.Position}.");
 
                     if (_terrain is not null)
                     {
@@ -3747,6 +5490,10 @@ internal sealed partial class DesktopGame : IDisposable
                 _device.Set2DProjection(SafeWindowWidth, SafeWindowHeight);
                 var shellPainter = new UiPainter(batch, new LayoutContext(_window.Width, _window.Height));
                 batch.Begin();
+
+                // The going-in sequence's picture: the level exactly as it is drawn, before any of the
+                // interface goes over it. Taken here for the same reason the dissolve's hold is.
+                CaptureLoadPictureIfWanted();
 
                 // None of the backdrop machinery applies to the pause menu: its backdrop is the mission,
                 // already drawn on this very frame, and there is no swap for it to dissolve between.
@@ -3789,7 +5536,9 @@ internal sealed partial class DesktopGame : IDisposable
                 // each screen's own transition, because a screen deliberately draws its top bar outside
                 // that fade and the stack draws the pointer outside every screen — so only a push around
                 // the whole draw takes all of it, chrome and cursor included.
-                float shellOpacity = _entry.IsRunning ? _entry.ShellOpacity : 1f;
+                float shellOpacity = MathF.Min(
+                    _entry.IsRunning ? _entry.ShellOpacity : 1f,
+                    _loadSequence.ShellOpacity);
                 if (shellOpacity > 0.001f)
                 {
                     shellPainter.PushOpacity(shellOpacity);
@@ -3801,12 +5550,21 @@ internal sealed partial class DesktopGame : IDisposable
                 // belong to the cinematic, not to the menu, and they must not fade out with it.
                 if (_entry.IsRunning)
                 {
-                    DrawEntryFraming(shellPainter, entryTitle, entrySubtitle);
+                    DrawEntryFraming(shellPainter);
                 }
 
                 batch.End();
                 _device.EndStageTiming();
             }
+
+            // The level, withheld while it settles. Over the HUD and the menus because it stands in for
+            // the whole picture, and under the console because the console has to be usable while a level
+            // is warming -- that is exactly when somebody is looking into why it is.
+            DrawMissionWarmUp(batch);
+
+            // The mission's caption, standing in the level under the shot: over the defocus, so it is the
+            // one sharp thing while the lighting settles, and under the console.
+            DrawWorldTitle(batch);
 
             // The console goes over everything, including the menus, so it is the last thing drawn.
             // WantsDraw rather than IsOpen: the watch and performance panels can be pinned to stay up
@@ -3871,6 +5629,21 @@ internal sealed partial class DesktopGame : IDisposable
             IReadOnlyList<RenderStageTiming> gpuStages = _device.StageTimings();
             FramePerformanceStatistics frame = framePerformance.Statistics();
             GpuFrameTiming gpu = _device.GpuTiming();
+
+            if (_benchmarkAllocStart > 0)
+            {
+                long allocated = GC.GetTotalAllocatedBytes() - _benchmarkAllocStart;
+                int measured = Math.Max(1, frame.SampleCount);
+
+                // Warning, not Information: the shell builds its logger at Warning, so an Information call
+                // here is discarded and the benchmark's allocation report -- the one number that says
+                // whether a stutter is the collector rather than the GPU -- was written to nothing. The
+                // camera log had the same hole for the same reason.
+                _logger.Warning(
+                    "Benchmark",
+                    FormattableString.Invariant(
+                        $"Managed alloc over {measured} measured frames: {allocated / (1024.0 * 1024.0):0.0} MB, {allocated / (double)measured / 1024.0:0.0} KB/frame; gc {GC.CollectionCount(0) - _benchmarkGcStart.Item1}/{GC.CollectionCount(1) - _benchmarkGcStart.Item2}/{GC.CollectionCount(2) - _benchmarkGcStart.Item3}."));
+            }
             RenderPerformanceSnapshot snapshot = new(
                 GraphicsPresetRegistry.Default.Current.ToString(),
                 _window.Width,
@@ -3884,6 +5657,7 @@ internal sealed partial class DesktopGame : IDisposable
                 frame.SampleCount,
                 gpu.Milliseconds,
                 gpu.P95Milliseconds,
+                _device.GpuMeasuredTiming().Milliseconds,
                 gpuStages.ToArray());
 
             string? benchmarkDirectory = Path.GetDirectoryName(Path.GetFullPath(benchmarkPath));
@@ -3938,9 +5712,15 @@ internal sealed partial class DesktopGame : IDisposable
                 _logger.Information(
                     "Perf",
                     FormattableString.Invariant(
-                        $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 120 Hz frame has; {over} stage(s) over budget."));
+                        $"GPU total avg {gpu.Milliseconds:0.000} ms  p95 {gpu.P95Milliseconds:0.000} ms  peak {gpu.PeakMilliseconds:0.000} ms of the {RenderBudget.FrameMilliseconds:0.00} ms a 60 Hz frame has; {over} stage(s) over budget."));
             }
         }
+
+        // A bake still tracing at this point is tracing for a level nobody will see again. The worker is a
+        // thread-pool thread and cannot hold the process open, so this is not about shutting down cleanly --
+        // it is about not spending every core on it while the rest of the shutdown runs.
+        _probeBake?.Cancel();
+        _lightmapBake?.Cancel();
 
         if (!_options.IsBenchmark)
         {
@@ -3963,16 +5743,81 @@ internal sealed partial class DesktopGame : IDisposable
         return 0;
     }
 
+    /// <summary>
+    /// Says out loud which of the settings in force this backend does not act on yet.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only for settings moved off their default: a variable sitting where it shipped is not asking for
+    /// anything, and warning about it every launch would bury the ones that are. A variable that has been
+    /// turned up and then read past is the case worth a line, because nothing else in the run reports it —
+    /// the value persists, the options screen shows it, and the picture never changes, so it reads as a
+    /// broken effect rather than an absent one. It also silently divides a comparison: two renders of
+    /// "the same settings" are not the same picture if one backend honours a setting and the other drops it.
+    /// </para>
+    /// </remarks>
+    private void WarnAboutSettingsTheBackendIgnores()
+    {
+        IReadOnlyList<string> ignored = _device.Capabilities.UnimplementedSettings;
+        if (ignored.Count == 0)
+        {
+            return;
+        }
+
+        foreach (string name in ignored)
+        {
+            if (CVarRegistry.Default.TryGet(name, out ICVar? variable) && !variable.IsDefault)
+            {
+                _logger.Warning(
+                    "Render",
+                    $"{name} is {variable.ValueText}, but {_device.Capabilities.Renderer} does not implement it yet — "
+                        + $"the value is kept and does nothing until that pass lands (default {variable.DefaultText}).");
+            }
+        }
+    }
+
     private void ApplyWeatherSettings()
     {
+        // The campaign screen's choice overrides both the level's own data and the player's
+        // r_weather_kind, and it has to FORCE: eleven of the fourteen retail missions author no weather
+        // at all, so a choice that only asked politely would do nothing in most of the campaign and read
+        // as a broken setting. Default forces nothing and leaves every answer where it was.
+        WeatherKind weatherKind = _conditions.WeatherStyle(RenderCVars.WeatherStyle.Value);
+        bool forceWeather = RenderCVars.WeatherForce.Value || _conditions.ForcesWeather;
+
         _rain?.ApplySettings(
             RenderCVars.WeatherEnabled.Value,
-            RenderCVars.WeatherStyle.Value,
-            RenderCVars.WeatherSpeed.Value);
+            weatherKind,
+            RenderCVars.WeatherSpeed.Value,
+            forceWeather);
         _snow?.ApplySettings(
             RenderCVars.WeatherEnabled.Value,
-            RenderCVars.WeatherStyle.Value,
-            RenderCVars.WeatherSpeed.Value);
+            weatherKind,
+            RenderCVars.WeatherSpeed.Value,
+            forceWeather);
+
+        if (_storm is { } storm)
+        {
+            // Resolved after the rain renderer, not before it, so this reads the answer the console just
+            // produced rather than the one from the last time the level was loaded. The level decides
+            // whether it rains at all (unless r_weather_force overrides it); r_storm only decides which
+            // renderer draws it.
+            bool rains = _rain?.IsWeatherEnabled ?? false;
+            storm.Enabled = rains && RenderCVars.Storm.Value;
+            storm.Configure(storm.Settings with
+            {
+                Intensity = RenderCVars.StormIntensity.Value,
+                FallSpeedScale = RenderCVars.WeatherSpeed.Value,
+            });
+
+            // Reported every time rather than only on a change: the case worth seeing is the one where
+            // nothing changed and the storm is still not drawing, and a log that only fires on a
+            // transition is silent for exactly that.
+            _logger.Information(
+                "Storm",
+                FormattableString.Invariant(
+                    $"enabled={storm.Enabled} active={storm.IsActive} rains={rains} r_storm={RenderCVars.Storm.Value} r_weather_enabled={RenderCVars.WeatherEnabled.Value} kind={weatherKind} force={forceWeather} campaign={_conditions.Weather}/{_conditions.TimeOfDay} intensity={RenderCVars.StormIntensity.Value}"));
+        }
     }
 
     // The camera's projection, in one place: the terrain traversal needs the same field of view the
@@ -3984,23 +5829,199 @@ internal sealed partial class DesktopGame : IDisposable
     // to the view (0x4D9870) -- and it is HORIZONTAL, which the terrain traversal's own
     // viewDistance/sqrt(tanX) independently confirms. So the horizontal field of view is 90 degrees and the
     // vertical one follows from the window's aspect, rather than the other way round.
-    private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
-        2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
-
-    // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
-    // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.
-    private bool IsCameraInsideBuilding(Vector3d position)
+    /// <summary>Chooses which of the level's lamps this frame submits, nearest first.</summary>
+    /// <param name="eye">Where the camera stands, in world metres.</param>
+    /// <param name="range">Unused by the ranking; see the remarks on why it must not scale it.</param>
+    /// <returns>How many entries of <c>_localLightOrder</c> are valid.</returns>
+    /// <remarks>
+    /// <para>
+    /// A level's lamps outnumber the shader's array several times over, so this is a choice and not a
+    /// truncation. Each fixture is ranked by how far OUTSIDE its own reach the camera stands: a lamp the
+    /// camera is inside ranks negative and always makes the cut, and beyond that a long fluorescent
+    /// batten twenty metres off beats a desk lamp fifteen metres off, which is the right way round
+    /// because reach is what decides whether a lamp can light anything the player can see.
+    /// </para>
+    /// <para>
+    /// The camera's own position rather than the frustum: a lamp behind the player still lights the wall
+    /// in front of them, and culling to what is on screen would switch that light off as they turned.
+    /// </para>
+    /// <para>
+    /// A running insertion into an array of thirty-two rather than a sort of the whole list. The list is
+    /// a few hundred long and this runs every frame; an insertion sort over a fixed, tiny destination is
+    /// linear in the input and allocates nothing, where sorting the input is neither.
+    /// </para>
+    /// </remarks>
+    private int SelectNearestLamps(Vector3d eye, float range)
     {
-        foreach (RainRenderer.BuildingVolume volume in _rainBuildingVolumes)
+        int kept = 0;
+
+        for (int i = 0; i < _lightFixtures.Count; i++)
         {
-            if (volume.Contains(position))
+            LightFixture fixture = _lightFixtures[i];
+
+            // A lamp that has finished going out is not a dim light, it is not a light: passed over here
+            // rather than submitted at zero, because the shader's array is a budget and a dark fixture
+            // holding a slot switches a real one at the end of the corridor off instead.
+            if (_lampSwitchboard is { } board && board.LevelOf(i) <= 0f)
             {
-                return true;
+                continue;
+            }
+
+            double dx = fixture.Position.X - eye.X;
+            double dy = fixture.Position.Y - eye.Y;
+            double dz = fixture.Position.Z - eye.Z;
+            // The fixture's OWN size, not its size times the reach multiplier. Scaling this by the
+            // multiplier meant raising r_local_light_range -- which people raise to make lamps carry
+            // further -- also multiplied how much a fixture's size counted for a slot, so the big
+            // battens took the budget and the small near fittings went dark EARLIER than before. Reach
+            // decides how far a lamp lights; this decides which lamps are worth submitting, and the two
+            // should not move together.
+            float rank = (float)Math.Sqrt((dx * dx) + (dy * dy) + (dz * dz)) - fixture.Radius;
+
+            // Nothing to insert: this fixture is further out than every one already held, and the array
+            // is full. The common case by far once the level is more than thirty-two lamps deep.
+            if (kept == _localLightOrder.Length && rank >= _localLightRank[kept - 1])
+            {
+                continue;
+            }
+
+            int at = Math.Min(kept, _localLightOrder.Length - 1);
+
+            while (at > 0 && _localLightRank[at - 1] > rank)
+            {
+                _localLightRank[at] = _localLightRank[at - 1];
+                _localLightOrder[at] = _localLightOrder[at - 1];
+                at--;
+            }
+
+            _localLightRank[at] = rank;
+            _localLightOrder[at] = i;
+
+            if (kept < _localLightOrder.Length)
+            {
+                kept++;
             }
         }
 
-        return false;
+        return kept;
     }
+
+    private static float VerticalFieldOfView(float aspectRatio, float horizontalTangent) =>
+        2f * MathF.Atan(horizontalTangent / MathF.Max(aspectRatio, 0.0001f));
+
+    // The angular offset a hand holding a camera would add on a given frame, in radians.
+    //
+    // Modelled on a hand rather than on noise, because the two are not interchangeable for what this
+    // tests. A hand drifts: slow wandering of about a degree with a faster, much smaller tremor riding on
+    // it. Per-frame white noise would instead point somewhere new every frame, which no camera has ever
+    // done and which a temporal filter would rightly treat as unreprojectable and discard -- so it would
+    // measure the filter's give-up path rather than its reprojection.
+    //
+    // Summed sines at frequencies with no common multiple, so the pattern does not repeat over any
+    // capture worth taking, driven off the FRAME INDEX rather than the clock so -lockstep keeps a run
+    // repeatable. Weights sum to one per axis, which is what makes the amplitude mean what it says, and
+    // the two axes carry different frequencies and phases so the motion wanders instead of tracking a
+    // diagonal.
+    private static (float Yaw, float Pitch) HandheldShake(int frame, float degrees)
+    {
+        if (degrees <= 0f)
+        {
+            return (0f, 0f);
+        }
+
+        // Hand tremor is quoted in Hz, so the frequencies below are meaningless without a rate to read
+        // them against. The capture path steps at a fixed sixty under -lockstep.
+        const float FramesPerSecond = 60f;
+        float t = frame / FramesPerSecond;
+        float amplitude = degrees * (MathF.PI / 180f);
+
+        float yaw =
+            (0.60f * MathF.Sin((2f * MathF.PI * 0.37f * t) + 0.0f))
+            + (0.28f * MathF.Sin((2f * MathF.PI * 0.91f * t) + 1.7f))
+            + (0.12f * MathF.Sin((2f * MathF.PI * 7.30f * t) + 4.2f));
+
+        float pitch =
+            (0.55f * MathF.Sin((2f * MathF.PI * 0.29f * t) + 2.4f))
+            + (0.30f * MathF.Sin((2f * MathF.PI * 1.13f * t) + 5.1f))
+            + (0.15f * MathF.Sin((2f * MathF.PI * 6.10f * t) + 0.9f));
+
+        return (amplitude * yaw, amplitude * pitch);
+    }
+
+    // Whether the camera sits inside one of the current level's building shells, and so out of the rain.
+    // The volumes are the per-mission shells precomputed by RainRenderer.BuildBuildingVolumes.
+    /// <summary>Names the shadow system actually drawing this frame, for the performance overlay.</summary>
+    /// <returns>The mode, and the keys that move it.</returns>
+    /// <remarks>
+    /// Reads the same three conditions the renderer does, in the same order, rather than reporting a
+    /// cvar: r_rt_shadows means nothing while r_rt is off, r_rt means nothing on a backend that cannot
+    /// trace, and neither means anything with shadows turned off. Reporting the cvar rather than the
+    /// consequence is how someone ends up comparing two shadows they believe came from different systems.
+    /// </remarks>
+    /// <summary>The overlay's line comparing the measured GPU frame against the sum of its stages.</summary>
+    /// <remarks>
+    /// Reports "not measured" rather than a zero on a backend with no frame bracket, because a zero
+    /// difference and an absent measurement mean opposite things and the whole point of the line is that
+    /// it can be believed.
+    /// </remarks>
+    private static string MeasuredFrameLine(IGraphicsDevice device, GpuFrameTiming summed)
+    {
+        GpuFrameTiming measured = device.GpuMeasuredTiming();
+
+        if (measured.Milliseconds <= 0.0)
+        {
+            return FormattableString.Invariant(
+                $"gpu      {summed.Milliseconds:0.00} ms summed   (frame not measured)");
+        }
+
+        return FormattableString.Invariant(
+            $"gpu      {measured.Milliseconds:0.00} measured   {summed.Milliseconds:0.00} summed   lost {measured.Milliseconds - summed.Milliseconds:0.00}");
+    }
+
+    private string ShadowModeLabel()
+    {
+        bool enabled = RenderCVars.Shadows.Value > 0
+            && RenderCVars.OffscreenScene.Value
+            && RenderCVars.Deferred.Value;
+
+        if (!enabled)
+        {
+            return "off (r_shadows 0)";
+        }
+
+        if (!_device.Capabilities.SupportsRayQuery)
+        {
+            return FormattableString.Invariant(
+                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value} (no ray tracing on this backend)");
+        }
+
+        if (!RenderCVars.HardwareRayTracing.Value)
+        {
+            return FormattableString.Invariant(
+                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F6 traces everything]");
+        }
+
+        if (!RenderCVars.TracedSunShadows.Value)
+        {
+            return FormattableString.Invariant(
+                $"cascaded map, {RenderCVars.ShadowCascades.Value} cascades at {RenderCVars.Shadows.Value}  [F7 traces the sun; rest of the frame is traced]");
+        }
+
+        return FormattableString.Invariant(
+            $"ray query, sun disc {RenderCVars.SunAngle.Value:0.0} deg  [F7 back to the map, F6 back to software]");
+    }
+
+    /// <summary>Reports whether the camera has a roof over it, so the frame is drawn as an interior.</summary>
+    /// <param name="position">Where the camera stands, in world metres.</param>
+    /// <remarks>
+    /// This used to be "inside the bounding box of a task named <c>Building_</c>", and that box is not
+    /// the building: one standing at an angle to the world axes fills barely a third of it, so a quarter
+    /// of the ground the test called indoors on mission one has open sky over it. That is what stood the
+    /// fog down and stopped the rain over the middle of an open apron. What decides it now is whether
+    /// anything solid is actually overhead — see <see cref="ShelterHeightField.IsUnderCover"/>, which
+    /// takes a small vote around the eye so a pipe passing over does not read as a ceiling.
+    /// </remarks>
+    private bool IsCameraInsideBuilding(Vector3d position) => _shelterField.IsUnderCover(position);
 
     /// <summary>Determines whether an in-game menu holds the pointer, standing the cameras down.</summary>
     /// <remarks>
@@ -4024,6 +6045,7 @@ internal sealed partial class DesktopGame : IDisposable
     {
         _sky?.Dispose();
         _rain?.Dispose();
+        _storm?.Dispose();
         _terrain?.Dispose();
         _world?.Dispose();
         _soldiers?.Dispose();
@@ -4047,7 +6069,14 @@ internal sealed partial class DesktopGame : IDisposable
         _missileRenderer?.Dispose();
         _renderer?.Dispose();
         _arms?.Dispose();
+        _cardLighting?.Dispose();
+        _cardLookup?.Dispose();
+        _sdfClipmaps?.Dispose();
         _detailMaps?.Dispose();
+
+        // Before the device: the bed's taps are streams the device owns, and stopping them while it is
+        // still alive is what gives the voices back rather than leaving them to the device's teardown.
+        _rainAmbience?.Dispose();
         _audio.Dispose();
     }
 }

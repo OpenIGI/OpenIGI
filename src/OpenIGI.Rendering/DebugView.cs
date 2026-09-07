@@ -1,4 +1,4 @@
-namespace OpenIGI.Rendering;
+﻿namespace OpenIGI.Rendering;
 
 /// <summary>
 /// What the frame shows instead of the scene, for looking at a pass rather than at the picture.
@@ -51,4 +51,54 @@ public enum DebugView
     /// invisible once it has been multiplied by a dark surface.
     /// </summary>
     Probes = 9,
+
+    /// <summary>
+    /// The full lighting on a neutral grey material, the reference engine's "detail lighting". Base colour
+    /// is replaced by a flat mid-grey so what remains is the light itself -- the sun, its shadows, the
+    /// bounce and the sky fill, shaped by the surfaces' normals -- with the level's own textures taken out
+    /// of the picture. The view for comparing this renderer's lighting against another's without the
+    /// materials confusing the two.
+    /// </summary>
+    Lighting = 11,
+
+    /// <summary>
+    /// How much of the sun reaches each surface after shadowing, white for lit and black for occluded.
+    /// The view that separates "the sun never arrives" from "the surface faces away", because both look
+    /// identical once multiplied into the shaded scene.
+    /// </summary>
+    SunShadow = 12,
+
+    /// <summary>
+    /// The standing water: where it lies, and what shape its surface is. Red is how much of the pixel is
+    /// under water and green and blue are the water's own normal, so a puddle that is not rippling and a
+    /// puddle that is not there look nothing alike — which, once they are shaded, they very much do.
+    /// </summary>
+    Wetness = 13,
+
+    /// <summary>
+    /// The lamps' light alone, with the sun, the sky, the bounce and every surface's own colour taken
+    /// out — only what the level's local lights put on each surface, AFTER their shadowing. The view that
+    /// settles whether a lamp is lighting through a wall: if a surface the wall should hide is lit here,
+    /// the occlusion missed it; if it is black, the light on it in the finished picture came from
+    /// somewhere else.
+    /// </summary>
+    LampLight = 14,
+
+    /// <summary>
+    /// The temporal pass's parallax verdict: white where the reprojected history held this surface,
+    /// black where it was hidden behind something nearer and the history restarts.
+    /// </summary>
+    UpscaleParallax = 15,
+
+    /// <summary>
+    /// The temporal pass's shading verdict: white where the history's shading still agrees with this
+    /// frame, black where it has been contradicted and the history is clamped or rebuilt.
+    /// </summary>
+    UpscaleShading = 16,
+
+    /// <summary>
+    /// How many frames' worth of samples each history texel holds, as a fraction of the ceiling: white
+    /// is a fully converged history, black a texel that restarted this frame.
+    /// </summary>
+    UpscaleHistory = 17,
 }

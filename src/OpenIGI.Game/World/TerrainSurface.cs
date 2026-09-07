@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using OpenIGI.Core.Diagnostics;
 using OpenIGI.Core.Numerics;
 using OpenIGI.Engine.Tasks;
@@ -41,26 +40,37 @@ public sealed class TerrainSurface
     /// <summary>How many layers the original's stack holds at once.</summary>
     public const int MaximumActiveLayers = 4;
 
-    private readonly TerrainTileLayer[] _layers;
-    private readonly TerrainDiscardRegion[] _discards;
-
-    private TerrainSurface(TerrainData terrain, TerrainTileLayer[] layers, TerrainDiscardRegion[] discards)
+    private TerrainSurface(
+        TerrainData terrain,
+        TerrainTileLayer[] layers,
+        TerrainDiscardRegion[] discards,
+        TerrainHeightBindings heights)
     {
         Terrain = terrain;
-        _layers = layers;
-        _discards = discards;
-        Layers = new ReadOnlyCollection<TerrainTileLayer>(layers);
-        Discards = new ReadOnlyCollection<TerrainDiscardRegion>(discards);
+        Layers = layers;
+        Discards = discards;
+        Heights = heights;
     }
 
     /// <summary>Gets the terrain the layers belong to.</summary>
     public TerrainData Terrain { get; }
 
     /// <summary>Gets the layers, most specific first.</summary>
-    public IReadOnlyList<TerrainTileLayer> Layers { get; }
+    /// <remarks>
+    /// An array, not a wrapped list: the chunk builder consults it per vertex and the octree descent
+    /// consults <see cref="Discards"/> per visited node, so the interface indirection was measurable.
+    /// </remarks>
+    public TerrainTileLayer[] Layers { get; }
 
     /// <summary>Gets the octree cubes whose terrain the level removes, most specific first.</summary>
-    public IReadOnlyList<TerrainDiscardRegion> Discards { get; }
+    public TerrainDiscardRegion[] Discards { get; }
+
+    /// <summary>Gets the heightmap bindings the level's <c>HeightMap</c> tasks publish.</summary>
+    /// <remarks>
+    /// Bound here, beside the discards, because both are read by the same three consumers — the chunk
+    /// mesh, the ground query and the ray test — and the surface is what a level load hands them.
+    /// </remarks>
+    public TerrainHeightBindings Heights { get; }
 
     /// <summary>
     /// Builds the surface by walking a level's task tree for its <c>TextureModifier</c>s and
@@ -122,6 +132,7 @@ public sealed class TerrainSurface
         layers.Sort((a, b) => b.Level.CompareTo(a.Level));
         TerrainDiscardBinding discardBinding = TerrainDiscardBinding.Bind(terrain, levelRoot);
         TerrainDiscardRegion[] discards = [.. discardBinding.Regions];
+        TerrainHeightBindings heights = TerrainHeightBindings.Bind(terrain, levelRoot);
 
         log.Information(
             LogCategory,
@@ -129,9 +140,11 @@ public sealed class TerrainSurface
                 + (skippedModifiers > 0 ? $", {skippedModifiers} modifier(s) unresolved" : string.Empty)
                 + $", {discards.Length} terrain discard(s)"
                 + (discardBinding.Skipped > 0 ? $", {discardBinding.Skipped} discard(s) unresolved" : string.Empty)
+                + $", {heights.Entries.Count} heightmap binding(s)"
+                + (heights.Skipped > 0 ? $", {heights.Skipped} heightmap(s) unresolved" : string.Empty)
                 + $", {terrain.Materials.Count} material(s), {terrain.TileMaps.Count} tile map(s).");
 
-        return new TerrainSurface(terrain, [.. layers], discards);
+        return new TerrainSurface(terrain, [.. layers], discards, heights);
     }
 
     /// <summary>Builds a surface with no layers, so every point takes the base material.</summary>
@@ -141,7 +154,7 @@ public sealed class TerrainSurface
     public static TerrainSurface Bare(TerrainData terrain)
     {
         ArgumentNullException.ThrowIfNull(terrain);
-        return new TerrainSurface(terrain, [], [.. TerrainDiscardBinding.For(terrain).Regions]);
+        return new TerrainSurface(terrain, [], [.. TerrainDiscardBinding.For(terrain).Regions], TerrainHeightBindings.For(terrain));
     }
 
     /// <summary>Gets the material covering a world position.</summary>
@@ -156,7 +169,7 @@ public sealed class TerrainSurface
     public int MaterialAt(double worldX, double worldY)
     {
         int consulted = 0;
-        foreach (TerrainTileLayer layer in _layers)
+        foreach (TerrainTileLayer layer in Layers)
         {
             if (!Overlaps(layer, worldX, worldY))
             {
@@ -187,7 +200,7 @@ public sealed class TerrainSurface
 
     /// <inheritdoc/>
     public override string ToString() =>
-        $"terrain surface, {_layers.Length} layer(s), {_discards.Length} discard(s)";
+        $"terrain surface, {Layers.Length} layer(s), {Discards.Length} discard(s)";
 
     private static bool Overlaps(TerrainTileLayer layer, double worldX, double worldY)
     {

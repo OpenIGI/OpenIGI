@@ -95,16 +95,18 @@ public sealed class SettingsScreen : ShellScreen
         layout.RowDefinitions.Add(GridLength.Star); // the current category, filling the rest
         layout.RowDefinitions.Add(GridLength.Auto); // the per-row help footer
 
-        // Advanced is not a category. It is the second half of Graphics — the variables the graphics
-        // choices are made of — so it belongs behind a switch inside that page rather than as a sixth
-        // heading beside Audio and Controls, which would say it is a different subject.
+        // Five categories and no sixth. There used to be an Advanced half of Graphics, behind a switch,
+        // listing every r_ variable the renderer has as its own row. It is gone: a menu that offers
+        // "surface-cache relight amortisation" as a slider has not given the player more control, it has
+        // given them a decision they cannot make. The console reaches all of it, by name and with help,
+        // which is what an advanced interface should be. See GraphicsMenu.
         (string Title, Func<Panel> Build)[] categories =
         [
             ("Graphics", BuildGraphicsPanel),
-            ("Display", () => BuildCvarPanel(DisplayNames(), includePresets: false)),
+            ("Display", () => BuildSettingsPanel(GraphicsMenu.DisplaySettings)),
             ("Audio", () => BuildCvarPanel(NamesWithPrefix("snd_"), includePresets: false)),
             ("Controls", BuildControlsPanel),
-            ("Gameplay", () => BuildCvarPanel(GameplayNames(), includePresets: false)),
+            ("Gameplay", BuildGameplayPanel),
         ];
 
         string[] tabTitles = new string[categories.Length];
@@ -264,125 +266,133 @@ public sealed class SettingsScreen : ShellScreen
         Focus?.FocusFirst();
     }
 
-    /// <summary>The graphics category: the choices a player came for, with the variables behind a switch.</summary>
+    /// <summary>The graphics category: one page, the preset first and then a section per subject.</summary>
     /// <remarks>
     /// <para>
-    /// Both halves are built here and both stay built; the switch collapses one and shows the other. Which
-    /// means the category owns two sets of rows where every other category owns one, so the list the focus
-    /// walk reads is a single instance whose <em>contents</em> the switch replaces — see
-    /// <see cref="MoveFocus"/>, which walks the active category's rows in the order they were dealt.
+    /// The preset leads because it is the one control that answers the whole question at once. Under it,
+    /// each section heading introduces a run of rows, every row a name for an idea rather than for a
+    /// variable — see <see cref="GraphicsMenu"/>, which is where the rows and their words live.
     /// </para>
     /// <para>
-    /// Basic first: the preset, because it is the one control that answers the whole question at once, then
-    /// a group per subsystem, then the few settings that are one number and are better left as that number.
-    /// Every variable any of it writes is a row under Advanced — see <see cref="BasicGraphics"/>.
+    /// There is no second half any more. A row's tooltip still names the variables it drives, because
+    /// that is the handle somebody needs to go further with it from the console, and the console is now
+    /// the only advanced interface there is.
     /// </para>
     /// </remarks>
     private Panel BuildGraphicsPanel()
     {
         UiTheme theme = Context.Theme;
 
-        var basicRows = new List<Control> { BuildPresetControl(theme) };
-        foreach (QualityGroup group in BasicGraphics.Groups)
+        var rows = new List<UiElement> { BuildPresetControl(theme) };
+
+        foreach (GraphicsSection section in GraphicsMenu.Sections)
         {
-            if (QualityBinding.CreateControl(theme, Context.Cvars, group) is { } control)
+            rows.Add(BuildSectionHeading(theme, section.Title));
+
+            foreach (QualityGroup group in section.Groups)
             {
-                // The tooltip names the variables the row drives, so Advanced is discoverable from Basic
-                // rather than being somewhere you have to already know about.
-                control.Tooltip = $"{group.Help}\n\nSets: {string.Join(", ", group.Variables)}  (Advanced)";
-                basicRows.Add(control);
+                if (QualityBinding.CreateControl(theme, Context.Cvars, group) is not { } control)
+                {
+                    continue;
+                }
+
+                // A group can write a variable that only takes effect on the next level load. The player
+                // has to be told which, and the footer shows only the tooltip's first line, so the note
+                // goes there rather than at the end.
+                string restart = NamesRequiringRestart(group.Variables) ? "   [takes effect on the next level]" : string.Empty;
+                control.Tooltip =
+                    $"{group.Help}{restart}\n\nSets: {string.Join(", ", group.Variables)}\n\nReachable from the console by name.";
+                rows.Add(control);
             }
+
+            AddSettingRows(theme, rows, section.Settings);
         }
 
-        AddCvarRows(theme, basicRows, BasicGraphics.DirectVariables);
-
-        var advancedRows = new List<Control>();
-        AddCvarRows(theme, advancedRows, AdvancedGraphicsNames());
-
-        Panel basic = BuildColumns(theme, basicRows, register: false);
-        Panel advanced = BuildColumns(theme, advancedRows, register: false);
-        advanced.Visibility = Visibility.Collapsed;
-
-        // The one list the focus walk reads for this category; the switch swaps what is in it.
-        var active = new List<Control>(basicRows);
-        _tabRows.Add(active);
-
-        var layout = new Grid { RowSpacing = 8f };
-        layout.ColumnDefinitions.Add(GridLength.Star);
-        layout.RowDefinitions.Add(GridLength.Auto); // the basic / advanced switch
-        layout.RowDefinitions.Add(GridLength.Star); // whichever half is showing
-
-        Button? basicButton = null;
-        Button? advancedButton = null;
-
-        void Show(bool showAdvanced)
-        {
-            basic.Visibility = showAdvanced ? Visibility.Collapsed : Visibility.Visible;
-            advanced.Visibility = showAdvanced ? Visibility.Visible : Visibility.Collapsed;
-
-            if (basicButton is not null)
-            {
-                basicButton.Selected = !showAdvanced;
-            }
-
-            if (advancedButton is not null)
-            {
-                advancedButton.Selected = showAdvanced;
-            }
-
-            active.Clear();
-            active.AddRange(showAdvanced ? advancedRows : basicRows);
-
-            // The focused row belongs to the half that has just been collapsed, so it can no longer hold
-            // focus; dropping it and taking the first row of the other half keeps the keyboard working.
-            Focus?.Validate();
-            Focus?.FocusFirst();
-        }
-
-        var strip = new FlexPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Gap = 4f,
-            Justify = FlexJustify.Start,
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-
-        basicButton = BuildHalfButton(theme, "Basic", "The settings most players want, each standing for "
-            + "several of the renderer's own.", selected: true, () => Show(showAdvanced: false));
-        advancedButton = BuildHalfButton(theme, "Advanced", "Every graphics variable the renderer has, one "
-            + "row each — including the ones the basic choices write.", selected: false, () => Show(showAdvanced: true));
-
-        strip.Add(basicButton);
-        strip.Add(advancedButton);
-        layout.Add(strip, 0, 0);
-
-        var halves = new Panel();
-        halves.AddChild(basic);
-        halves.AddChild(advanced);
-        layout.Add(halves, 1, 0);
-
-        return new Panel().WithChild(layout);
+        return BuildColumns(theme, rows);
     }
 
-    private static Button BuildHalfButton(UiTheme theme, string text, string tooltip, bool selected, Action activated)
-    {
-        var button = new Button(theme, text)
+    /// <summary>A section heading: a label, not a row, so the focus walk steps straight over it.</summary>
+    private static Label BuildSectionHeading(UiTheme theme, string title) =>
+        new(theme.Heading, title.ToUpperInvariant(), theme.BodyTextSize * 0.85f, theme.TextMuted)
         {
-            TextSize = theme.BodyTextSize * 0.95f,
-            Padding = new Thickness(18f, 6f),
-            Accent = ButtonAccent.Underline,
-            Selected = selected,
-            Tooltip = tooltip,
+            Margin = new Thickness(0f, 14f, 0f, 2f),
         };
 
-        button.Activated += _ => activated();
-        return button;
+    /// <summary>Whether any of these variables only takes effect on the next level load.</summary>
+    private bool NamesRequiringRestart(IReadOnlyList<string> names)
+    {
+        foreach (string name in names)
+        {
+            if (Context.Cvars.TryGet(name, out ICVar? cvar)
+                && cvar is not null
+                && cvar.Flags.HasFlag(CVarOptions.RequiresRestart))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The gameplay category, with the interface and effect options that are not quality levels.</summary>
+    private Panel BuildGameplayPanel()
+    {
+        UiTheme theme = Context.Theme;
+        var rows = new List<UiElement>();
+
+        AddCvarRows(theme, rows, GameplayNames());
+
+        rows.Add(BuildSectionHeading(theme, "Interface and Effects"));
+        AddSettingRows(theme, rows, GraphicsMenu.InterfaceSettings);
+
+        return BuildColumns(theme, rows);
+    }
+
+    /// <summary>A page of single-variable rows carrying captions and help written for a player.</summary>
+    private Panel BuildSettingsPanel(IReadOnlyList<GraphicsSetting> settings)
+    {
+        UiTheme theme = Context.Theme;
+        var rows = new List<UiElement>();
+        AddSettingRows(theme, rows, settings);
+        return BuildColumns(theme, rows);
+    }
+
+    /// <summary>Adds a row per setting, captioned and explained in the page's own words.</summary>
+    /// <remarks>
+    /// Deliberately NOT <see cref="AddCvarRows"/>, which captions from the variable name and explains from
+    /// the variable's own help. That text is written for the console and says things like "windowed inverse
+    /// square"; the whole point of <see cref="GraphicsSetting"/> is that a player reads something else. The
+    /// variable name still ends the tooltip, as the handle for going further from the console.
+    /// </remarks>
+    private void AddSettingRows(UiTheme theme, List<UiElement> rows, IReadOnlyList<GraphicsSetting> settings)
+    {
+        foreach (GraphicsSetting setting in settings)
+        {
+            if (!Context.Cvars.TryGet(setting.Variable, out ICVar? cvar)
+                || cvar is null
+                || !CVarBinding.CanBind(cvar))
+            {
+                continue;
+            }
+
+            if (CVarBinding.CreateControl(theme, cvar, setting.Caption) is not { } control)
+            {
+                continue;
+            }
+
+            string restart = cvar.Flags.HasFlag(CVarOptions.RequiresRestart)
+                ? "   [takes effect on the next level]"
+                : string.Empty;
+
+            control.Tooltip = $"{setting.Help}{restart}\n\n{setting.Variable}";
+            rows.Add(control);
+        }
     }
 
     private Panel BuildCvarPanel(IReadOnlyList<string> names, bool includePresets)
     {
         UiTheme theme = Context.Theme;
-        var rows = new List<Control>();
+        var rows = new List<UiElement>();
 
         if (includePresets)
         {
@@ -423,7 +433,7 @@ public sealed class SettingsScreen : ShellScreen
         return presets;
     }
 
-    private void AddCvarRows(UiTheme theme, List<Control> rows, IReadOnlyList<string> names)
+    private void AddCvarRows(UiTheme theme, List<UiElement> rows, IReadOnlyList<string> names)
     {
         foreach (string name in names)
         {
@@ -454,17 +464,20 @@ public sealed class SettingsScreen : ShellScreen
     /// and folding on a number is predictable where folding on a measurement moves as the display changes.
     /// </remarks>
     /// <param name="theme">The theme the rows draw from.</param>
-    /// <param name="rows">The rows to deal.</param>
-    /// <param name="register">
-    /// Whether these rows are the category's own, for the focus walk. False for a category that owns more
-    /// than one set of them and registers the active one itself — the graphics page and its two halves.
-    /// </param>
-    private Panel BuildColumns(UiTheme theme, List<Control> rows, bool register = true)
+    /// <param name="rows">The elements to deal. Headings are elements rather than controls, so the focus
+    /// walk registered here steps over them.</param>
+    private Panel BuildColumns(UiTheme theme, List<UiElement> rows)
     {
-        if (register)
+        var focusable = new List<Control>(rows.Count);
+        foreach (UiElement row in rows)
         {
-            _tabRows.Add(rows);
+            if (row is Control control)
+            {
+                focusable.Add(control);
+            }
         }
+
+        _tabRows.Add(focusable);
 
         ScrollView scroll = BuildScrollHost(theme);
 
@@ -516,7 +529,7 @@ public sealed class SettingsScreen : ShellScreen
             return new Panel().WithChild(empty);
         }
 
-        var rows = new List<Control>(profile.Bindings.Count + 3);
+        var rows = new List<UiElement>(profile.Bindings.Count + 3);
 
         var resetBindings = new Button(theme, "RESET BINDINGS TO DEFAULTS")
         {
@@ -613,28 +626,13 @@ public sealed class SettingsScreen : ShellScreen
         return end < 0 ? text : text[..end];
     }
 
-    private List<string> NamesWithPrefix(string prefix, bool excludeDisplay = false)
+    private List<string> NamesWithPrefix(string prefix)
     {
         var names = new List<string>();
         foreach (ICVar cvar in Context.Cvars.All)
         {
             if (cvar.Name.StartsWith(prefix, StringComparison.Ordinal)
-                && !cvar.Flags.HasFlag(CVarOptions.Hidden)
-                && !(excludeDisplay && IsDisplayName(cvar.Name)))
-            {
-                names.Add(cvar.Name);
-            }
-        }
-
-        return names;
-    }
-
-    private List<string> DisplayNames()
-    {
-        var names = new List<string>();
-        foreach (ICVar cvar in Context.Cvars.All)
-        {
-            if (IsDisplayName(cvar.Name) && !cvar.Flags.HasFlag(CVarOptions.Hidden))
+                && !cvar.Flags.HasFlag(CVarOptions.Hidden))
             {
                 names.Add(cvar.Name);
             }
@@ -658,29 +656,6 @@ public sealed class SettingsScreen : ShellScreen
         return names;
     }
 
-    /// <summary>Every graphics variable that is not on the Display tab and not already a Basic row.</summary>
-    /// <remarks>
-    /// The variables the Basic groups <em>write</em> are deliberately still here: that is the relationship
-    /// the two pages have — Shadow Quality is a name for these five rows, not a replacement for them, and
-    /// moving one of them by hand is what turns the group's reading to Custom. Only the handful Basic shows
-    /// as themselves are dropped, because two rows for one number would be two places to change one thing.
-    /// </remarks>
-    private List<string> AdvancedGraphicsNames()
-    {
-        var names = new List<string>();
-        foreach (string name in NamesWithPrefix("r_", excludeDisplay: true))
-        {
-            if (!BasicGraphics.DirectVariables.Contains(name))
-            {
-                names.Add(name);
-            }
-        }
-
-        return names;
-    }
-
-    private static bool IsDisplayName(string name) =>
-        name is "r_vsync" or "r_scale" or "r_smooth" or "r_msaa";
 }
 
 /// <summary>Small fluent helper for one-line child wiring.</summary>

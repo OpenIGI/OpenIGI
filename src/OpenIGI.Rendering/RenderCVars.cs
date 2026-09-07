@@ -1,4 +1,4 @@
-using OpenIGI.Core.Configuration;
+﻿using OpenIGI.Core.Configuration;
 using OpenIGI.Rendering.Presets;
 
 namespace OpenIGI.Rendering;
@@ -99,11 +99,16 @@ public static class RenderCVars
     /// as much for diagnosis as for taste: decals are one of a handful of world-space quad renderers,
     /// and being able to rule them in or out from the console in seconds is worth a variable.
     /// </remarks>
-    public static readonly BoolCVar BulletMarks = CVar.Bool(
-        "r_bulletmarks",
-        true,
-        CVarOptions.Archive,
-        "Draw the marks rounds leave on surfaces.");
+    public static readonly BoolCVar BulletMarks = Presets.Define(
+        CVar.Bool(
+            "r_bulletmarks",
+            true,
+            CVarOptions.Archive,
+            "Draw the marks rounds leave on surfaces."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether the authored level weather is rendered.</summary>
     public static readonly BoolCVar WeatherEnabled = CVar.Bool(
@@ -128,6 +133,79 @@ public static class RenderCVars
         CVarOptions.Archive,
         "Weather particle speed multiplier: 0 stops falling, 1 is the tuned speed, 2 is twice as fast.");
 
+    /// <summary>Whether weather falls in levels the retail data never gave any.</summary>
+    /// <remarks>
+    /// Only three of the retail missions author a <c>RainEffect</c> task, so without this the weather
+    /// can only ever be looked at in those three -- which is not enough to tune it, and not enough to
+    /// find the places it goes wrong. Forcing it ignores the level's own answer and uses
+    /// <see cref="WeatherStyle"/> everywhere; the level's authored fall band is replaced by the
+    /// renderer's own defaults, since a level with no rain task has no band to read.
+    /// </remarks>
+    public static readonly BoolCVar WeatherForce = CVar.Bool(
+        "r_weather_force",
+        false,
+        CVarOptions.Archive,
+        "Make r_weather_kind fall in every level, not only the ones the retail data gives weather.");
+
+    /// <summary>Whether the remastered storm replaces the original's rain band.</summary>
+    /// <remarks>
+    /// <para>
+    /// Off under <c>vanilla</c>, because the original's rain is a fixed band of thin vertical streaks
+    /// and that is what vanilla means here. Everywhere above it the storm is a real particle system:
+    /// drops blown by a gusting wind, leaning the way they travel, sheltered by roofs and answered by
+    /// splashes on the ground.
+    /// </para>
+    /// <para>
+    /// The two never draw together. Rain that is drawn twice does not read as heavier rain, it reads
+    /// as rain with a second, wrong-looking layer behind it.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar Storm = Presets.Define(
+        CVar.Bool(
+            "r_storm",
+            true,
+            CVarOptions.Archive,
+            "Use the remastered particle storm instead of the original's rain band."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the storm wets the ground it falls on.</summary>
+    /// <remarks>
+    /// <para>
+    /// Separate from <see cref="Storm"/> because it is a different renderer doing different work: the
+    /// storm is particles in the forward pass, and this is every surface in the frame being shaded as
+    /// wet — darker, glossier, and holding standing water wherever the ground is level and low. That is
+    /// deferred work, so it needs the deferred path and it costs what a handful of extra instructions
+    /// per shaded pixel costs.
+    /// </para>
+    /// <para>
+    /// It is what the rain is <em>for</em>, visually. Drops falling past a bone-dry road read as an
+    /// effect laid over the level; the same drops over ground that darkens, pools and throws the sky
+    /// back up at the camera read as weather the level is in.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar Wetness = Presets.Define(
+        CVar.Bool(
+            "r_wetness",
+            true,
+            CVarOptions.Archive,
+            "Wet the ground while it rains: darker surfaces, standing water and rain ripples."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Multiplier on the storm's drop density, from a drizzle to a downpour.</summary>
+    public static readonly NumericCVar<float> StormIntensity = CVar.Float(
+        "r_storm_intensity",
+        1f,
+        0f,
+        1f,
+        CVarOptions.Archive,
+        "How much of the storm's tuned drop rate falls: 0 is dry, 1 is the full rate.");
+
     /// <summary>Whether the presentation interpolates between simulation ticks.</summary>
     /// <remarks>
     /// <para>
@@ -138,8 +216,13 @@ public static class RenderCVars
     /// reading tick states, so nothing behaves differently.
     /// </para>
     /// <para>
-    /// Off under vanilla by definition: the original presents exactly one tick's state per frame, and
-    /// the reference captures must keep doing so.
+    /// On under vanilla too. The original presents exactly one tick's state per frame and vanilla is
+    /// otherwise held to what the original did, but a 30 Hz slideshow is not a look anyone chose to
+    /// preserve -- it is what a 1998 target frame rate left behind, and the tier exists to show the
+    /// original's <em>picture</em>, not its schedule. Nothing the simulation observes moves either way,
+    /// so vanilla stays frame-for-frame identical in what it draws and only stops holding frames back.
+    /// The reference captures are unaffected: <c>-lockstep</c> pins the one-render-per-tick pairing on
+    /// its own, ahead of this setting, which is what those captures have always run under.
     /// </para>
     /// </remarks>
     public static readonly BoolCVar SmoothPresentation = Presets.Define(
@@ -148,7 +231,7 @@ public static class RenderCVars
             true,
             CVarOptions.Archive,
             "Draw between simulation ticks so movement is as smooth as the frame rate. Sim stays 30 Hz."),
-        vanilla: "0",
+        vanilla: "1",
         enhanced: "1",
         high: "1",
         ultra: "1");
@@ -159,13 +242,30 @@ public static class RenderCVars
     /// is the cheapest way to buy back frame time. Above one it is supersampling proper. The temporal
     /// upscaler added in stage R5 is what makes values below one look acceptable.
     /// </remarks>
-    public static readonly NumericCVar<float> RenderScale = CVar.Float(
-        "r_scale",
-        1.0f,
-        0.5f,
-        2.0f,
-        CVarOptions.Archive,
-        "Render resolution as a fraction of the window: below 1 is faster, above 1 is supersampled.");
+    public static readonly NumericCVar<float> RenderScale = Presets.Define(
+        CVar.Float(
+            "r_scale",
+            1.0f,
+            0.5f,
+            2.0f,
+            CVarOptions.Archive,
+            "Render resolution as a fraction of the window: below 1 is faster, above 1 is supersampled."),
+        vanilla: "1",
+        enhanced: "0.7",
+        high: "0.85",
+
+        // Native at ultra, and this is the ladder that separates the three real-time tiers. Everything the
+        // GI stack costs -- the probe gather, the lighting, the temporal upscaler resolve -- scales with pixel count, so
+        // internal resolution is the one lever that moves all of it at once and it is therefore where the
+        // tiers differ rather than in what they switch off. Ultra is native because ultra is the quality
+        // tier: temporal upscaler reconstructing from two-thirds costs about a quarter of the frame's edge energy, which
+        // is a real loss to a preset whose whole job is the best picture. The cheaper tiers spend exactly
+        // that, and buy back most of a traced-GI frame with it.
+        //
+        // The cut-out mip bias (VulkanGraphicsDevice's TextureMipLodBias) is derived from this, so a tier
+        // rendering below native still samples chain-link and foliage at the sharpness its output
+        // resolution wants rather than discarding it. At native the bias is zero, which is correct.
+        ultra: "1");
 
     /// <summary>Whether the scene is rendered offscreen instead of straight to the back buffer.</summary>
     /// <remarks>
@@ -192,12 +292,14 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Tone map: none reproduces the original exactly, neutral stays out of the way, aces and agx are filmic."),
         vanilla: "none",
-        enhanced: "neutral",
-        high: "neutral",
 
-        // ACES on ultra rather than AgX. Measured over the range this game actually occupies, ACES
-        // holds the most contrast of the four and AgX the least bar neutral -- AgX's strength is
-        // taming very bright highlights, and a world lit by LDR lightmaps does not have any.
+        // ACES filmic across the modern presets. Neutral was fine while the world had no highlights to tame,
+        // but with auto-exposure on and a window several stops brighter than the room it stands in, there is
+        // now a real highlight range: ACES' shoulder rolls the blown window off with its colour intact rather
+        // than clipping it to flat white, and holds more midtone contrast than AgX over the range this game
+        // occupies. Vanilla stays untouched -- none reproduces the original exactly.
+        enhanced: "aces",
+        high: "aces",
         ultra: "aces");
 
     /// <summary>The linear value that maps to display white.</summary>
@@ -206,39 +308,1148 @@ public static class RenderCVars
     /// this world is LDR textures multiplied by LDR lightmaps, so almost nothing exceeds one, and the
     /// old fixed value of 4 spent the curve's whole range compressing a span that was not there. One
     /// disables the roll-off completely.
+    /// <para>
+    /// <b>It is a Reinhard parameter, and only the Reinhard operator has one.</b> A white point is the
+    /// single number that curve is shaped by; the film curve the higher presets run is shaped by its own
+    /// slope, toe, shoulder and black/white levels instead, and has no scalar for this to be. So at any
+    /// preset above <c>r_tonemap 1</c> this setting is inert — not ignored by the backend, which would be
+    /// a bug, but meaningless to the curve in use. It was found by the cvar sweep reporting it as
+    /// reaching nothing with nothing saying why, which is exactly what that sweep is for.
+    /// </para>
     /// </remarks>
-    public static readonly NumericCVar<float> WhitePoint = CVar.Float(
-        "r_white_point",
-        1.1f,
-        1f,
-        8f,
-        CVarOptions.Archive,
-        "Linear value that maps to display white. Lower is more contrast; 1 disables the roll-off.");
+    public static readonly NumericCVar<float> WhitePoint = Presets.Define(
+        CVar.Float(
+            "r_white_point",
+            1.1f,
+            1f,
+            8f,
+            CVarOptions.Archive,
+            "Linear value that maps to display white. Lower is more contrast; 1 disables the roll-off."),
+        vanilla: "1.1",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
 
     /// <summary>A linear multiplier applied to the scene before tone mapping.</summary>
     /// <remarks>
+    /// <para>
     /// With <see cref="AutoExposure"/> on this becomes a bias on the adapted exposure rather than the
     /// whole of it: the eye adapts to the scene's own brightness and this nudges the result up or down.
+    /// </para>
+    /// <para>
+    /// This is the player's knob and nothing else writes it. The day/night cycle's own dimming is a
+    /// SEPARATE term -- see <see cref="Nightfall"/> and <see cref="EffectiveExposure"/> -- so that a
+    /// night which darkens the picture never rewrites, and never has to restore, the brightness the
+    /// player chose. Read <see cref="EffectiveExposure"/>, not this, wherever the frame is exposed.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<float> Exposure = Presets.Define(
         CVar.Float(
             "r_exposure",
-            1.0f,
-            0.05f,
+            1.414f,
+            MinimumExposure,
             16.0f,
             CVarOptions.Archive,
-            "Scene brightness before tone mapping. 1 leaves the level's own lighting alone."),
+            "Scene brightness before tone mapping. Half a stop over the level's own lighting."),
 
-        // Vanilla never tone maps, so its value is ignored. The others are calibrated so the scene reads
-        // right at a FIXED exposure -- no auto-exposure crutch. The dynamic model (ultra) lights from a GI
-        // bake and a live sun whose linear values sit well below one, so a room the sun fills through
-        // bounces still needs the frame lifted to read as lit; the bake-lit presets carry the artists'
-        // brighter lightmaps and need less. The tone map rolls off the sky, so lifting interiors this far
-        // does not blow the exterior -- measured across the outdoor, window and windowless views.
+        // Half a stop over unity on every modern preset, which is where this number started life: it is
+        // the reference renderer's own auto-exposure compensation, and it was matched when the point of
+        // the number was to land this port's frame on that reference's channel for channel.
+        //
+        // It was moved to a flat one on the argument that a calibration against another engine is not a
+        // default a player should inherit, and that a brightness slider reading 1.4 before anyone has
+        // touched it has a neutral that is not neutral. Played rather than compared, one is too dark --
+        // the dynamic model's own output does not fill the tone curve on its own -- so the argument loses
+        // to the picture, and the slider's neutral is simply not where its scale happens to read one.
+        //
+        // It belongs to a cluster that moves together -- r_sun_scale and r_atmosphere_sun_scale are read
+        // ONLY by the dynamic model, r_white_point and r_bloom_threshold were shaped against its curve,
+        // and r_screen_gi_max bounds its feedback loop. Change the lighting model on a preset without
+        // bringing all of them and the frame is mis-exposed, not merely cheaper.
+        //
+        // Vanilla stays at one, and not because it would be ignored: vanilla never tone maps, so the
+        // value genuinely does nothing there, and the preset that has to stay pixel-identical to the
+        // retail build is the last place to carry a number that says the picture was graded.
         vanilla: "1",
-        enhanced: "1.4",
-        high: "1.6",
-        ultra: "2.5");
+        enhanced: "1.414",
+        high: "1.414",
+        ultra: "1.414");
+
+    /// <summary>The least exposure the frame may be shown at, which is the floor on <see cref="Exposure"/>.</summary>
+    /// <remarks>
+    /// Named because <see cref="EffectiveExposure"/> subtracts from the player's value and has to land
+    /// somewhere: a night deep enough to take the whole of a low brightness setting must still leave a
+    /// picture, not a black screen.
+    /// </remarks>
+    public const float MinimumExposure = 0.05f;
+
+    /// <summary>How much brightness a full night takes off <see cref="Exposure"/>.</summary>
+    /// <remarks>
+    /// Subtractive, in the slider's own units, so a default brightness of one is shown at 0.7 under a
+    /// midnight sky. It is deliberately small: the lighting model already darkens a night scene on its
+    /// own, and this exists because the eye adaptation then spends most of that darkness lifting the
+    /// picture back towards day. Taking a little off the compensation is what lets a night read as one.
+    /// </remarks>
+    public const float NightBrightnessDrop = 0.3f;
+
+    /// <summary>How far into night the day/night cycle has taken the scene: 0 in daylight, 1 at full night.</summary>
+    /// <remarks>
+    /// <para>
+    /// Written by the day/night cycle once per frame from the swept sun's own elevation, and read only
+    /// through <see cref="EffectiveExposure"/>. It is the hidden half of the brightness: the player owns
+    /// <see cref="Exposure"/>, the sky owns this, and the two are combined at the point of use rather
+    /// than the sky editing the player's setting behind their back.
+    /// </para>
+    /// <para>
+    /// Published rather than kept as a private field so the console can be asked what the night is
+    /// currently doing to the picture; read-only there, because the next frame's sweep would overwrite
+    /// anything typed at it.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> Nightfall = CVar.Float(
+        "r_nightfall",
+        0f,
+        0f,
+        1f,
+        CVarOptions.Hidden | CVarOptions.ReadOnly,
+        "How far into night the sun has gone, 0 to 1. Dims the picture; not a setting.");
+
+    /// <summary>Whether the time of day runs on its own while a mission is played.</summary>
+    /// <remarks>
+    /// <para>
+    /// Off, a mission stays at the hour its authors lit it at, which is what every mission in the
+    /// original does and what its lighting was designed around. On, that authored hour is merely where
+    /// the mission opens: the sun then sweeps on from there at whatever <see cref="DayLength"/> is set
+    /// to, which is quick enough by default that a mission of ordinary length ends under a different sky
+    /// than it began under.
+    /// </para>
+    /// <para>
+    /// Default off, because it changes the look of every level away from the one its artists chose, and
+    /// because a mission whose sun set halfway through is a different mission to play.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar DayNightCycle = CVar.Bool(
+        "r_day_night_cycle",
+        false,
+        CVarOptions.Archive,
+        "Let the time of day run while a mission is played; r_day_length says how long a day takes.");
+
+    /// <summary>How long a whole day of the cycle takes, in real minutes.</summary>
+    /// <remarks>
+    /// <para>
+    /// Forty minutes by default: long enough that the light is a setting rather than a strobe, short
+    /// enough that a mission of ordinary length visibly ends under a different sky than it opened on. An
+    /// hour was the first figure tried and it was too slow to be worth having -- most missions finished
+    /// under the sun they started with, so the setting did nothing anybody could see.
+    /// </para>
+    /// <para>
+    /// Free to set to anything, including a minute, which is the honest way to LOOK at the sweep: a
+    /// whole sunrise-to-night pass in the time it takes to walk across a level. The cycle steps the
+    /// clock a fixed slice of the arc at a time rather than a fixed number of seconds, so the sweep is
+    /// equally smooth at a minute a day and at half a day a day; what changes is how often it steps.
+    /// </para>
+    /// <para>
+    /// Does nothing at all unless <see cref="DayNightCycle"/> is on. It is not the scrub keys' rate --
+    /// those sweep a day in thirty seconds and are meant to be held and watched.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> DayLength = CVar.Float(
+        "r_day_length",
+        40f,
+        0.5f,
+        720f,
+        CVarOptions.Archive,
+        "How long a whole day takes when the day/night cycle is on, in real minutes.");
+
+    /// <summary>The brightness the frame is actually exposed at: the player's, less the night's.</summary>
+    /// <remarks>
+    /// Every consumer of the exposure reads THIS, including the two that only want to divide a
+    /// display-referred colour by whatever the resolve is about to multiply it by -- the first-person
+    /// rig's lighting and the selection glow. Reading <see cref="Exposure"/> there instead would leave
+    /// them compensating for an exposure the frame is no longer using, so the arms and the marker would
+    /// drift brighter as the night came in.
+    /// </remarks>
+    public static float EffectiveExposure =>
+        MathF.Max(Exposure.Value - (NightBrightnessDrop * Nightfall.Value), MinimumExposure);
+
+    /// <summary>How much of the surface cache's bounced radiance a traced gather ray keeps.</summary>
+    /// <remarks>
+    /// <para>
+    /// One is the physical answer: the cache holds real outgoing radiance and a ray that hits a card
+    /// should keep all of it. This scales OUR cache's answer down without touching the sky, which the
+    /// reference resolves separately. Applies to the screen gather and the radiance cache alike.
+    /// </para>
+    /// <para>
+    /// <b>It was 0.15, then 0.35, and both were matched against a reference artifact.</b> The stored
+    /// comparison shot showed the office floor at 0.2 out of 255 — black — because the reference's
+    /// surface cache had no coverage over this level's imported geometry, so its rays hit surfaces with
+    /// nothing cached and came back with nothing. 0.15 existed to reproduce that darkness; 0.35 was half
+    /// a step back from it once the reference was recaptured, arrived at by a whole-frame sweep that
+    /// could not see what the deficit was doing to the exposure.
+    /// </para>
+    /// <para>
+    /// <b>It is back at the physical one, and the measurement that put it there is the fill, not the
+    /// frame.</b> Sampled over 1056 office-floor points at fixed exposure with no tone map, the tenth
+    /// percentile is the sky-and-bounce fill and the ninetieth is the same surface with the sun on it.
+    /// Against the reference's HDR scene colour at the same pose and the same points: fill 0.00437
+    /// against 0.01007 at 0.35 — the bounce was carrying under half the light it should — and 0.01208
+    /// against 0.01007 at one, while the sunlit end lands at 0.09053 against 0.09003. Twenty per cent
+    /// generous on the fill and within one per cent on the sun is the closest a single scalar gets, and
+    /// it is on the right side: the deficit was what pinned the auto-exposure against its ceiling.
+    /// </para>
+    /// <para>
+    /// What it costs is the office ceiling, which overshoots the reference. That region is a strip light
+    /// this port lights as an emissive fixture and the reference renders unlit, so most of the gap is a
+    /// material the two engines disagree about rather than bounce this value is delivering; the room's
+    /// floor, wall, window and sun pool all move toward the reference, and the exterior improves.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> GiBounce = Presets.Define(
+        CVar.Float(
+            "r_gi_bounce",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "Traced bounce strength off the surface cache. 1 is physical; lower matches the reference's sparser bounce."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+
+        // The physical one wherever the bounce is traced at all, which is now every preset above vanilla.
+        // Anything below it is this renderer throwing away light it has already computed, and the fill it
+        // was throwing away is what dropped the scene under the metering band.
+        ultra: "1");
+
+    /// <summary>Whether tracing uses the hardware ray query rather than the software distance field.</summary>
+    /// <remarks>
+    /// <para>
+    /// The switch between the two GI modes, live: on, every trace that can reach the acceleration
+    /// structure does — the screen gather, the radiance cache, the surface-cache relight and the sun's
+    /// shadow — and off, the same shaders march the signed distance field and the sun falls back to the
+    /// cascaded map. It only means anything on a backend that can trace at all; elsewhere the software
+    /// path is the only path and the flag is ignored. Bound to F6 by default so the two can be compared
+    /// in place.
+    /// </para>
+    /// <para>
+    /// <b>Deliberately NOT archived, and that is a fix rather than an oversight.</b> Every preset names
+    /// it 1 — there is no tier that wants the software path, only a comparison that does — so the only
+    /// way it is ever 0 is that somebody pressed the key. While it was archived, pressing that key wrote
+    /// itself into <c>settings.cfg</c>: the next launch came up on the software path, the preset read as
+    /// Custom because a managed value no longer matched, and the picture was quietly worse in a way
+    /// nothing on screen explained. A key for flipping between two implementations must not be able to
+    /// change what the game starts as. It is still named by the presets, so the settings screen still
+    /// reports Custom while it is flipped and still puts it back when a preset is chosen.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar HardwareRayTracing = Presets.Define(
+        CVar.Bool(
+            "r_rt",
+            true,
+            CVarOptions.None,
+            "Trace with the hardware ray query (1) or the software distance field (0). Toggle live to compare."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the sun's shadow is traced, on a backend already tracing.</summary>
+    /// <remarks>
+    /// The second half of the live switch. <see cref="HardwareRayTracing"/> moves every trace in the
+    /// frame between the hardware ray query and the software distance field at once; this one moves the
+    /// sun's shadow alone, so the ray-traced shadow can be compared against the cascaded map while the
+    /// indirect light, the reflections and the surface-cache relight all stay exactly as they were. That
+    /// is the comparison worth being able to make in place: the two shadow systems draw the same
+    /// geometry from the same sun and should agree about where a shadow falls, and only about how it
+    /// looks at its edge.
+    /// <para>
+    /// It does nothing where <see cref="HardwareRayTracing"/> is off, which already leaves the sun to
+    /// the cascades, and nothing on a backend that cannot trace at all.
+    /// </para>
+    /// <para>
+    /// Not archived, for the same reason as <see cref="HardwareRayTracing"/>: this exists to be flipped
+    /// while looking at something, and a key that is flipped while looking at something must not decide
+    /// what the game starts as tomorrow.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar TracedSunShadows = Presets.Define(
+        CVar.Bool(
+            "r_rt_shadows",
+            true,
+            CVarOptions.None,
+            "Trace the sun's shadow rather than reading the cascaded map. Needs r_rt; toggle live to compare."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the lamps' shadow is traced against the world, on a backend already tracing.</summary>
+    /// <remarks>
+    /// The lights' own switch, beside the sun's. It traces a ray per lamp against the world so a lamp
+    /// cannot light through a wall the camera cannot see -- the off-screen occluder the screen-space
+    /// march can never find. Off, the lamps keep the screen-space march alone, which still stops the
+    /// walls the view contains; so this is the difference between a lamp shadowed everywhere and one
+    /// shadowed only where its wall is on screen. Needs <see cref="HardwareRayTracing"/> and does
+    /// nothing without it; toggle live to weigh its cost against the leak it closes.
+    /// </remarks>
+    public static readonly BoolCVar TracedLampShadows = Presets.Define(
+        CVar.Bool(
+            "r_rt_lights",
+            true,
+            CVarOptions.None,
+            "Trace the lamps' shadow so they cannot light through off-screen walls. Needs r_rt; toggle live."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether reflections are traced against the world, on a backend already tracing.</summary>
+    /// <remarks>
+    /// The reflections' own switch. With it on, a reflected ray that the screen cannot answer is traced
+    /// against the world and its hit shaded, so a puddle or a pane shows what stands off-screen or behind
+    /// something nearer -- which screen-space reflection can never reach. Off, reflections keep the
+    /// screen-space march alone. Needs <see cref="HardwareRayTracing"/>; toggle live to compare.
+    /// </remarks>
+    public static readonly BoolCVar TracedReflections = Presets.Define(
+        CVar.Bool(
+            "r_rt_reflections",
+            true,
+            CVarOptions.None,
+            "Trace reflections against the world for what the screen cannot show. Needs r_rt; toggle live."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How strongly the temporal pass holds on to geometry only one pixel wide.</summary>
+    /// <remarks>
+    /// <para>
+    /// A hardware rasteriser draws a triangle only where it covers a pixel's centre, so a fence wire
+    /// narrower than a pixel is drawn or skipped depending on where the frame's jitter fell. That is what
+    /// makes a distant fence crawl, and what makes it fade out entirely as the wire narrows — a wire
+    /// covering a third of a pixel should be a third as bright, and instead it is absent two frames in
+    /// three. This lets the temporal pass keep what earlier frames saw on those pixels rather than
+    /// rejecting it, so the wire is averaged rather than gambled on.
+    /// </para>
+    /// <para>
+    /// <b>The reference has this switched off, deliberately, and we switch it on for an equally
+    /// deliberate reason.</b> It rasterises every mesh through a software visibility-buffer rasteriser, which resolves
+    /// sub-pixel coverage properly, so it has no thin-geometry problem to detect. We have no such rasteriser.
+    /// This is therefore a considered deviation rather than an oversight, and the thing it deviates from
+    /// is a setting whose justification we do not share.
+    /// </para>
+    /// <para>
+    /// Not one, at any preset. A thin thing that is genuinely moving still has to be able to reject its
+    /// own history, or it drags a smear behind it — and a wire is the shape that shows a smear most.
+    /// Zero restores the untreated behaviour.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> ThinGeometry = Presets.Define(
+        CVar.Float(
+            "r_thin_geometry",
+            0.75f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How strongly the temporal pass holds on to sub-pixel geometry such as fence wire."),
+        vanilla: "0",
+        enhanced: "0.75",
+        high: "0.75",
+        ultra: "0.75");
+
+    /// <summary>The temporal history's per-texel sample ceiling, which sets how much of the past it keeps.</summary>
+    /// <remarks>
+    /// <para>
+    /// The history holds four texels per rendered pixel. The reference budgets sixteen samples per
+    /// output pixel and so allows each texel four, which also zeroes its velocity weight clamp (the
+    /// clamp's amplitude is <c>1 - 4 / ceiling</c>). Measured here, four is the sharpest at rest but
+    /// four times as flickery on distant ridges, and without the clamp a walk ghosts; thirty-two keeps
+    /// the ridge stable, is marginally sharper in motion than sixteen, and leaves the clamp holding a
+    /// moving pixel to an eighth of its history.
+    /// </para>
+    /// <para>
+    /// Not archived: the preset carries it, and a stale saved value here would silently undo a
+    /// retune of the clamp it also governs.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> TemporalHistorySamples = Presets.Define(
+        CVar.Float(
+            "r_upscale_samples",
+            32f,
+            1f,
+            256f,
+            CVarOptions.None,
+            "How many frames' worth of samples each temporal history texel may accumulate."),
+        vanilla: "32",
+        enhanced: "32",
+        high: "32",
+        ultra: "32");
+
+    /// <summary>How wide the sun's disc is, in degrees, which is what gives a shadow its penumbra.</summary>
+    /// <remarks>
+    /// <para>
+    /// The sun is not a point. It subtends a little over half a degree from here, and that is the entire
+    /// reason a shadow is sharp where it meets its caster and soft a few metres away: near the contact a
+    /// surface sees almost all of the disc or almost none of it, and further away the two answers overlap
+    /// across several pixels. A point sun has no penumbra at any sample count, so this is not a quality
+    /// dial — it is the physical fact the softness is derived from.
+    /// </para>
+    /// <para>
+    /// Every preset carries the same figure for that reason, and it is the real one: 0.5357 degrees, which
+    /// is also what the reference render this preset is matched against uses. It only reaches the picture
+    /// where the sun's shadow is traced rather than sampled from the cascades, which today means ultra
+    /// with <c>r_rt</c> on; the cascaded path has no disc to sample.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> SunAngle = Presets.Define(
+        CVar.Float(
+            "r_sun_angle",
+            0.5357f,
+            0f,
+            10f,
+            CVarOptions.Archive,
+            "The sun's angular diameter in degrees; 0 makes it a point and its shadows hard-edged."),
+        vanilla: "0.5357",
+        enhanced: "0.5357",
+        high: "0.5357",
+        ultra: "0.5357");
+
+    /// <summary>How many frames the traced sun shadow is averaged over before it is turned into light.</summary>
+    /// <remarks>
+    /// <para>
+    /// The trace fires one ray per pixel per frame, so its answer is a coin toss weighted by how much of
+    /// the sun that pixel can see. The spatial reconstruction turns the worst of that into a penumbra, but
+    /// a mask built from eight samples of a binary signal still visibly differs frame to frame — and this
+    /// is what was seen as distant shadows redrawing themselves.
+    /// </para>
+    /// <para>
+    /// Leaving it to the temporal filter downstream does not work, and the reason is circular: shadow
+    /// noise arrives there as a colour that changed, a changed colour reads as a history that no longer
+    /// describes the surface, and rejecting the history is precisely refusing to do the averaging that
+    /// would have removed the noise. So the mask is averaged here, on its own, where nothing has to be
+    /// protected from being blurred — a shadow on static geometry carries no sub-pixel detail.
+    /// </para>
+    /// <para>
+    /// The number is a cap on a running mean rather than a fixed window, so a surface just come into view
+    /// is not held back by frames it never had. One switches the averaging off.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> ShadowAccumulate = Presets.Define(
+        CVar.Float(
+            "r_shadow_accumulate",
+            16f,
+            1f,
+            64f,
+            CVarOptions.Archive,
+            "How many frames the traced sun shadow is averaged over; 1 disables the averaging."),
+        vanilla: "1",
+        enhanced: "8",
+        high: "16",
+        ultra: "16");
+
+    /// <summary>How bright a single screen-traced ray may come back, before it feeds the next frame.</summary>
+    /// <remarks>
+    /// The screen trace resolves a hit from the previous frame's lit scene, and this frame's indirect is
+    /// built out of what it returns — which then lights the scene the next trace reads. Unbounded, that
+    /// loop does not settle: past a certain gather strength each pass is brighter than the last. The
+    /// reference bounds the same read for the same reason, and calls it the maximum ray intensity.
+    /// </remarks>
+    public static readonly NumericCVar<float> ScreenGatherMaxIntensity = Presets.Define(
+        CVar.Float(
+            "r_screen_gi_max",
+            10f,
+            0.1f,
+            1000f,
+            CVarOptions.Archive,
+            "Ceiling on a single screen-traced ray's radiance; stops the gather feeding itself."),
+        vanilla: "10",
+        enhanced: "50.1",
+        high: "50.1",
+        ultra: "50.1");
+
+    /// <summary>How strongly the screen probe gather's indirect light fills the deferred lighting.</summary>
+    /// <remarks>
+    /// Zero is off, which is vanilla alone: above zero, the gather traces the surface cache per
+    /// screen probe into an atlas and the deferred lighting reads it as its diffuse fill over the far-field
+    /// floor -- the stage where the traced global illumination reaches the screen. Not a name
+    /// clash with <see cref="GlobalIllumination"/> (<c>r_gi</c>), which is the baked probe field; this is
+    /// the live screen-space gather, and it needs the surface cache and the distance fields, so it does
+    /// nothing without both. The magnitude compensates for how the gather reads the cache: the surface
+    /// cache's final atlas holds each card's OUTGOING radiance -- the incident light already taken through
+    /// the surface's albedo and the Lambertian one-over-pi -- and the deferred fill then takes the
+    /// receiver's albedo again, so the raw gather lands roughly an order of magnitude below the ambient it
+    /// stands in for. A strength around two and a half lifts it back, so a shadowed wall reads as lit
+    /// concrete rather than black. It stays a knob while the look is tuned.
+    /// </remarks>
+    public static readonly NumericCVar<float> ScreenGather = Presets.Define(
+        CVar.Float(
+            "r_screen_gi",
+            0f,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "Strength of the screen probe gather's indirect light in the deferred fill. 0 is off."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+
+        // On at every preset above vanilla. The screen probe gather is a real-time indirect -- it traces the surface cache along
+        // the view so the bounce responds to the frame -- and it is what carries the warm bounced light the
+        // interior reads as: the world-space radiance cache alone, sampled straight, comes back markedly
+        // cooler than the reference (its far-field trace misses the near, sun-warmed bounce a screen ray
+        // catches), so the gather is not optional for the look, it is the look. Two things make it shippable
+        // where the raw screen estimate was not, both added with it. Its full-resolution temporal resolve
+        // now clamps each reprojected history into the current frame's own neighbourhood mean and spread --
+        // the reference's anti-shimmer -- so a stale or noisy history can no longer slide across a wall as
+        // the low-frequency shimmer that once shelved it. And the gather REPLACES the flat ambient, the
+        // far probe field and the additive sky term rather than being floored against them -- flooring
+        // against an unoccluded ambient is what washes an interior flat -- which is also why the bounce
+        // it carries has to be whole: with r_gi_bounce below one there is nothing behind the gather to
+        // make up the difference, and the fill it drops comes straight off the frame. One, because the
+        // gather returns physically-normalised irradiance -- the pi-over-N estimator with the sky
+        // integrated ray by ray -- and the deferred fill takes it through the Lambert response. Anything
+        // other than one is an artistic bias on real light transport, not a calibration.
+        ultra: "1");
+
+    /// <summary>Whether the world-space radiance cache updates and feeds the deferred fill's indirect.</summary>
+    /// <remarks>
+    /// The stable counterpart to the screen gather. A grid of world-anchored probes traces the surface
+    /// cache every frame into the same L1-SH layout the baked probe field uses, so the deferred pass samples
+    /// it unchanged -- but the radiance is live, not baked, so the sun and dynamic surfaces still feed it,
+    /// and because a probe lives in a world cell rather than on the moving screen it does not shimmer under
+    /// motion the way the gather does. It supersedes the baked field when on, and needs the surface cache
+    /// (<c>r_cards</c>) and the distance field (<c>r_sdf</c>) to trace against. On at every preset above
+    /// vanilla, each of which runs the surface cache and the distance field it needs. It is the shippable
+    /// form of the real-time indirect the screen gather could not steady.
+    /// </remarks>
+    public static readonly NumericCVar<int> RadianceCache = Presets.Define(
+        CVar.Int(
+            "r_radiance_cache",
+            0,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Update the world-space radiance cache and feed it to the indirect fill. Needs r_cards and r_sdf."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>Whether the world pass culls back faces, now that the mesh builder repairs triangle winding.</summary>
+    /// <remarks>
+    /// Culling was off because the port's flattened index order did not wind uniformly, so removing either
+    /// facing dropped real walls. The mesh builder now rewinds each triangle to agree with its vertices' own
+    /// outward normals, which gives back-face culling a consistent facing to remove -- and that is what stops
+    /// a thin object's two coincident faces from fighting over a pixel (the glittering z-fight on thin
+    /// geometry), while roughly halving the indoor fill. Off leaves both facings drawn, the old behaviour.
+    /// A true single-quad, two-sided surface (a chain-link fence read as one plane) loses its far side under
+    /// this; those are rare enough that the trade is worth the thin-geometry fix and the fill it saves.
+    /// </remarks>
+    public static readonly NumericCVar<int> WorldCull = Presets.Define(
+        CVar.Int(
+            "r_world_cull",
+            0,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Cull back faces in the world pass. Fixes thin-geometry z-fighting; needs the winding repair."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // On at ultra, where the winding repair makes it safe: validated on mission 1 (the office window's
+        // thin mullions stop z-fighting and read clean, and no wall is lost indoors or out). The lower
+        // presets stay off until the repair is validated across the other missions.
+        ultra: "1");
+
+    /// <summary>Calibration on the radiance cache's stored bounce, where 1 is the raw traced radiance.</summary>
+    /// <remarks>
+    /// The cache holds actual card radiance, and how strongly it is fed into the deferred fill is what turns
+    /// a sunlit floor into a room lit by the light it bounces up its walls. Half was far too timid: it left a
+    /// window room showing only the sun's own patches on the floor with no bounce climbing the walls, the
+    /// single-bounce indirect starved to almost nothing. Lifted so the bounce actually carries the room --
+    /// validated on mission 1's office, where the sun through the window now fills the whole room the way the
+    /// reference's does, and on the outdoor spawn, which does not blow out. The sealed-room leak this would
+    /// also amplify is cut at its source instead (see the sky-leak reject in the cache trace), not by keeping
+    /// the whole bounce dim.
+    /// </remarks>
+    public static readonly NumericCVar<float> RadianceCacheScale = Presets.Define(
+        CVar.Float(
+            "r_radiance_cache_scale",
+            3f,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "Calibration on the radiance cache's bounce; 1 is the raw traced radiance."),
+        vanilla: "3",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
+    /// <summary>How far from the camera the surface cache keeps refreshing itself, in metres.</summary>
+    /// <remarks>
+    /// <para>
+    /// The cache covers the whole level, and every frame the relight and the bounce advanced a cursor
+    /// through it — so a fixed share of every frame went on cards kilometres away, in parts of a map the
+    /// player will never stand in. These levels are enormous and a player sees a corner of one; on
+    /// mission 1 that was over two milliseconds a frame spent almost entirely outside the room.
+    /// </para>
+    /// <para>
+    /// It was not merely unseen work, it was work that could not produce an answer. The relight traces
+    /// its shadows against the distance-field clipmaps, which follow the camera and reach a few hundred
+    /// metres; past that there is no field, so a far card re-derived exactly the value it already held.
+    /// </para>
+    /// <para>
+    /// Beyond this radius a card keeps the lighting the load-time seed gave it — the seed still covers
+    /// the whole level, so nothing goes dark. What a far card stops doing is tracking change: a lamp
+    /// switched across the map will not relight the wall beside it until the player comes within this
+    /// distance. Nought restores the old behaviour of refreshing the entire level every cursor round.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> GiCacheRadius = Presets.Define(
+        CVar.Float(
+            "r_gi_cache_radius",
+            60f,
+            0f,
+            4000f,
+            CVarOptions.None,
+            "How far from the camera the surface cache keeps refreshing. 0 refreshes the whole level."),
+
+        // Sixty metres, chosen off the measured curve rather than picked. Against a full-level refresh at
+        // 1440p on mission 1 it saves a millisecond of the relight and the bounce for an RMSE of 0.39/255
+        // -- five times inside this project's 2/255 bar, and a worst single pixel of 29. Forty-five saves
+        // half as much again but puts a worst pixel at 71, which is a difference somebody can point at.
+        // A hundred and twenty is free and saves nothing: at that reach almost the whole cache is inside.
+        vanilla: "60",
+        enhanced: "60",
+        high: "60",
+        ultra: "60");
+
+
+    /// <summary>How many frames the surface-cache relight spreads its tiles across.</summary>
+    /// <remarks>
+    /// The real-time GI relight is world-space -- its cost is the same at any output resolution, so it is
+    /// the biggest single item in the budget on a high-resolution frame. It traces one slice of the cache a
+    /// frame and walks the cursor over this many frames; a static level under a fixed sun re-traces a tile to
+    /// the answer it already holds, so a wider spread is nearly free in a converged still and only slows how
+    /// fast a newly revealed surface fills its multi-bounce light. Raise it to trade that fill-in latency for
+    /// per-frame GPU time (roughly the whole GI stage divides by this), lower it for the snappiest response.
+    /// </remarks>
+    public static readonly NumericCVar<int> GiAmortize = Presets.Define(
+        CVar.Int(
+            "r_gi_amortize",
+            12,
+            2,
+            48,
+            CVarOptions.Archive,
+            "Frames the surface-cache relight spreads its tiles across; higher is cheaper per frame, lags more."),
+        vanilla: "12",
+        enhanced: "48",
+        high: "32",
+
+        // The world-space relight is the one GPU cost a render scale cannot touch -- it is the same work at
+        // any output resolution -- so it is the second tier ladder beside r_scale, and it runs the other
+        // way: the cheaper the tier, the wider the spread. A converged still is identical whatever this is
+        // (the 6-to-12 doubling measured 0.7% mean difference); what a wider spread costs is how quickly
+        // newly-revealed geometry fills its bounce, 48 frames at enhanced against 24 at ultra -- under a
+        // second either way. Enhanced sits on the declared maximum, so raising that ceiling later is the
+        // only way to spread it further.
+        ultra: "24");
+
+    /// <summary>How many frames a level is drawn for, unseen, before it is shown to the player.</summary>
+    /// <remarks>
+    /// <para>
+    /// Most of this renderer's lighting is defined in terms of frames rather than of state: the screen
+    /// probe gather accumulates per pixel, the radiance cache fills its probes, the temporal resolve
+    /// needs a history before it can reconstruct anything, and the eye adapts towards a scene instead of
+    /// snapping to it. A load cannot produce any of that, however long it takes -- there is no history
+    /// without frames -- so a level that is shown the instant it finishes loading is shown mid-converge,
+    /// and the player watches it settle over the next second or two.
+    /// </para>
+    /// <para>
+    /// This draws those frames with the picture withheld. The scene renders exactly as it will in play,
+    /// so every temporal pass advances normally; what is held back is only the presentation. It is what a
+    /// loading screen is actually for, and it is why no shipping game shows its world changing after the
+    /// loading screen has gone.
+    /// </para>
+    /// <para>
+    /// Forty-five, measured rather than picked: with <see cref="GiConverge"/> doing the view-independent
+    /// half at load, frame twenty is about 7% off the settled image and frame forty-five about 3%, which
+    /// is past telling apart. Zero shows the level the moment it loads, which is the old behaviour.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> MissionWarmUp = Presets.Define(
+        CVar.Int(
+            "r_mission_warmup",
+            45,
+            0,
+            240,
+            CVarOptions.Archive,
+            "Frames a level is drawn for, unseen, before it is revealed, so it appears settled."),
+
+        // Vanilla has no temporal pass to warm: it draws the frame the original drew and presents it.
+        vanilla: "0",
+        enhanced: "45",
+        high: "45",
+        ultra: "45");
+
+    /// <summary>How far the surface cache is converged at load, before the level's first frame is shown.</summary>
+    /// <remarks>
+    /// <para>
+    /// The bounce is a progressive radiosity solve: each pass folds one more bounce into the last one's
+    /// result, so the cache climbs towards its multi-bounce equilibrium over the frames after a load
+    /// rather than arriving at it. Run in front of the player that is the "lighting up" -- a level that
+    /// opens flat and visibly fills with light over the first second or two, which reads as the game
+    /// loading badly rather than as a renderer converging.
+    /// </para>
+    /// <para>
+    /// This runs that climb during the load instead, where the frame is already being held: the whole
+    /// cache is relit once WITH shadows and this many bounces are folded in, so the first frame the
+    /// player sees is the converged one. The direct term matters as much as the bounces -- in the steady
+    /// state it is spread over <see cref="GiAmortize"/> frames, so without this a level opens with its
+    /// cards unshadowed and darkens as the slices arrive.
+    /// </para>
+    /// <para>
+    /// It could not be done before the distance fields were cached: converging needs something to trace
+    /// shadows against, and the field used to arrive seconds after the level did. Zero restores the old
+    /// ramp, which is also what a device with no cached field falls back to.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> GiConverge = Presets.Define(
+        CVar.Int(
+            "r_gi_converge",
+            8,
+            0,
+            32,
+            CVarOptions.Archive,
+            "Bounces folded into the surface cache at load, so a level opens lit rather than filling in."),
+
+        // Vanilla has no surface cache to converge.
+        vanilla: "0",
+
+        // Eight everywhere else. The blend weight is one over one plus the pass, so the first few carry
+        // almost all of the difference and the tail is not worth the load time -- the cvar's own notes
+        // put bounces three, four and five as the ones that fill a room the sun never reaches.
+        enhanced: "8",
+        high: "8",
+        ultra: "8");
+
+    /// <summary>How many frames the surface-cache relight's temporal accumulation converges over.</summary>
+    /// <remarks>
+    /// <para>
+    /// The cap on the relight's accumulation weight: the blend's alpha bottoms out at one over this, so a
+    /// tile keeps adapting to a moving sun rather than freezing, while integrating far more hemisphere
+    /// directions than the sixteen a single trace covers.
+    /// </para>
+    /// <para>
+    /// This is the knob for the slow travelling ripple over interior surfaces -- the "heat haze", visible
+    /// with the camera standing perfectly still. Each time the relight's cursor reaches a tile it blends a
+    /// freshly traced estimate in at this alpha, and that estimate does not agree with the stored one: a
+    /// tile gathers from its neighbours' FINAL lighting, and under <see cref="GiAmortize"/> each neighbour
+    /// was last updated at a different point in the cursor's sweep, so every tile integrates a slightly
+    /// different snapshot of the room. The disagreement is systematic rather than random -- raising the
+    /// bounce gather's ray count from sixteen to thirty-six moved the shimmer 1.5%, while halving the
+    /// amortisation (twice the retrace rate) doubled it -- so the only lever that reaches it is how much of
+    /// one retrace is admitted. Thirty-two measured a 2.1x reduction against the old eight.
+    /// </para>
+    /// <para>
+    /// The cost is adaptation latency. With <see cref="GiAmortize"/> at 24 a tile is retraced every
+    /// twenty-four frames, so the accumulation's time constant runs about 3.5 seconds at eight and about
+    /// thirteen at thirty-two. That is only the multi-bounce term settling behind a sun the day/night keys
+    /// are actively scrubbing; the direct sun, its shadows and the screen gather's own trace are immediate.
+    /// Lower it if a scrubbed sun matters more than a still interior.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> GiTemporalFrames = Presets.Define(
+        CVar.Int(
+            "r_gi_temporal_frames",
+            8,
+            1,
+            64,
+            CVarOptions.Archive,
+            "Frames the surface-cache relight converges over; higher is steadier, adapts slower."),
+
+        // Paired with r_gi_amortize rather than chosen against it. What the eye actually experiences is the
+        // wall-clock time constant, which is the product of the two -- a tile is retraced every r_gi_amortize
+        // frames and each retrace is admitted at one over this -- so the ladder holds that product roughly
+        // even at about 770 frames: 48x16 at enhanced, 32x24 at high, 24x32 at ultra. A tier therefore buys
+        // its cheaper relight without also becoming slower to settle, and vanilla keeps 8 because its
+        // relight is not running at all.
+        vanilla: "8",
+        enhanced: "16",
+        high: "24",
+
+        // Highest at ultra, which retraces most often and so can afford to admit the least of each retrace.
+        // This is the knob the flat-interior-wall shimmer answers to; thirty-two measured a 2.1x reduction
+        // against the old eight.
+        ultra: "32");
+
+    /// <summary>The hour of day the interactive sun starts a level at, 0 to 24. Noon is the authored sun.</summary>
+    /// <remarks>
+    /// The day/night cycle sweeps the level's one authored sun across the sky by a time of day the player
+    /// scrubs live with the bracket keys; this is where that time starts each level. Twelve reproduces the
+    /// authored noon sun exactly, which is why it is the default -- a level opens looking as it always did.
+    /// Set it to open on a sunrise, a sunset or a night instead. It only seeds the starting hour; the keys
+    /// move it from there.
+    /// </remarks>
+    /// <summary>Whether the mission's briefing is posted on the nearest wall or fence at the player's start.</summary>
+    /// <remarks>
+    /// The mission caption proper is laid flat at the start and seen from the shot's altitude; this is
+    /// the briefing itself, stood a few centimetres off the nearest vertical surface the start has -- a
+    /// fence, a wall, a crate -- in the level's own space, so it is read the way a notice is read: by
+    /// walking up to it. With nothing to post it on it stands in the air a few metres ahead.
+    /// </remarks>
+    public static readonly BoolCVar WorldBriefing = CVar.Bool(
+        "r_world_briefing",
+        true,
+        CVarOptions.Archive,
+        "Posts the mission briefing on the nearest wall or fence at the player's start.");
+
+    /// <summary>The hour a level's sun starts at, or -1 for the hour the level's authors gave it.</summary>
+    /// <remarks>
+    /// <para>
+    /// The day-night cycle reproduces a level's authored sun EXACTLY only at the level's own authored
+    /// hour -- its elevation and bearing are fitted through that hour -- so a fixed start hour is the
+    /// authored sun for the levels authored at that hour and a different sky for every other. Negative
+    /// means "the level's own", which is what every mission should open on.
+    /// </para>
+    /// <para>
+    /// Not archived, deliberately. It used to be, and one scrub written to the settings file made every
+    /// mission afterwards open at night -- a preference nobody remembers making, and one whose effect
+    /// reads as the game being broken. A start hour set at the console or in the menu now lasts the
+    /// session and no longer.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> TimeOfDay = CVar.Float(
+        "r_time_of_day",
+        -1f,
+        -1f,
+        24f,
+        CVarOptions.None,
+        "Hour of day the sun starts a level at, 0-24; -1 (the default) is the level's own authored hour.");
+
+    /// <summary>How strongly the level's detected lamp fixtures light the scene as real lights.</summary>
+    /// <remarks>
+    /// <para>
+    /// The screen gather only carries light that already exists in the frame -- daylight through a window,
+    /// a sunlit wall -- so a windowless interior it cannot help: there is no source to gather. This turns
+    /// the fixtures the lamp detection proposes into direct lights, which is the honest way to light such
+    /// a room -- a real source with a real falloff, not exposure lifting a black frame into grey.
+    /// </para>
+    /// <para>
+    /// Each is punctual with a windowed inverse square, and DIRECTIONAL where the fixture's own geometry
+    /// says which way it faces: the light falls off as the cosine of the angle off that axis, so a ceiling
+    /// tube lights the floor and leaves the slab it is bolted to dark, which is what a real fitting does
+    /// and what an omnidirectional point emphatically does not. Scales the whole set; the fixtures'
+    /// relative intensities are the detection's, and this is the one number tuned by eye.
+    /// </para>
+    /// <para>
+    /// Off at vanilla, where the shipped bakes still carry the interiors and adding a second set of lights
+    /// on top of light that is already painted in would count the same lamp twice. Every preset above it
+    /// lights dynamically and so discards those bakes, which is exactly why they need this: without it a
+    /// windowless room has no source at all and reads black.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> LocalLightScale = Presets.Define(
+        CVar.Float(
+            "r_local_light_scale",
+            0f,
+            0f,
+            64f,
+            CVarOptions.Archive,
+            "Strength of the level's detected lamp fixtures as real lights. 0 is off."),
+        vanilla: "0",
+        enhanced: "6",
+        high: "6",
+        ultra: "6");
+
+    /// <summary>Whether the level's lamps cast shadows, traced against the world like the sun.</summary>
+    /// <remarks>
+    /// <para>
+    /// A punctual light with no shadow term passes through whatever stands between it and the surface.
+    /// So a corridor fitting lights the room on the other side of the partition, a floodlight lights the
+    /// inside of the building it is bolted to, and the more reach a lamp is given the further that
+    /// wrongness spreads -- which is what makes <see cref="LocalLightRange"/> a knob with a ceiling
+    /// rather than a number to turn up. This removes that ceiling.
+    /// </para>
+    /// <para>
+    /// One ray per lamp per pixel, and only for the lamps that survive the reach and facing culls, so
+    /// indoors it is a handful and outdoors usually none. Traced inside the shading pass rather than in
+    /// a pass of its own, which is what keeps it to that: there is no screen-sized buffer to allocate,
+    /// no ordering to agree with a second pass, and nothing is spent on a pixel no lamp reaches.
+    /// </para>
+    /// <para>
+    /// Needs an adapter that can trace, and does nothing without one -- the shading pass compiled for
+    /// such a device has no trace in it at all. Unlike the sun's shadow this one is OPAQUE: a wire fence
+    /// in front of a lamp casts a solid shadow rather than a patterned one.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> LocalLightShadows = Presets.Define(
+        CVar.Int(
+            "r_local_light_shadows",
+            1,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Trace the level's lamps against the world so they cannot light through walls."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+
+        // On wherever the lamps are lit at all, which is every preset above vanilla. It is not really
+        // optional there: a punctual light with no shadow term lights through the wall it is bolted to, and
+        // a dynamic preset has no bake underneath to disguise it.
+        //
+        // This was switched off once on a conclusion that turned out to be measured wrongly -- a crop of
+        // floor that the desk legitimately shadowed, read through an eye adaptation that moved with the
+        // picture. Standing under a lamp with the exposure pinned, the floor beneath it is lit, smooth
+        // and clean. tools/lamp-probe.ps1 is that measurement, kept so the next doubt can be settled in
+        // two minutes rather than a day.
+        ultra: "1");
+
+    /// <summary>Whether the lamp shadow is denoised before the shading reads it.</summary>
+    /// <remarks>
+    /// <para>
+    /// On, which is the only setting anybody should play with: one traced ray per pixel is a coin toss,
+    /// and drawing it straight is grain rather than a shadow. This exists so the denoiser can be
+    /// measured against its own absence in a single build — the pass still runs and still carries the
+    /// depth the shading's upsample needs, it simply stops filtering — which is the only honest way to
+    /// say what it is worth.
+    /// </para>
+    /// <para>
+    /// Not archived. A debug lever that persisted itself into settings.cfg would be a shipped
+    /// regression waiting for somebody to trip over, and this renderer has already been bitten once by
+    /// exactly that.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> LampDenoise = Presets.Define(
+        CVar.Int(
+            "r_lamp_denoise",
+            1,
+            0,
+            1,
+            CVarOptions.None,
+            "Filter the traced lamp shadow before shading with it. Off is for measurement only."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>The largest a fixture may be treated as when its shadow ray samples it, in metres.</summary>
+    /// <remarks>
+    /// <para>
+    /// A shadow's penumbra widens with the size of the source casting it, and the size this starts from
+    /// is the fixture's <em>extent</em> — a bound on the whole clustered housing, which for a merged
+    /// fitting can measure most of two metres. That is not the width of the thing actually emitting, and
+    /// treating it as though it were is where the grain came from: the wider the penumbra, the more of
+    /// it each of the two taps a pixel can afford has to stand for.
+    /// </para>
+    /// <para>
+    /// A quarter of a metre is about the glass of a real fitting. The softness the eye expects survives
+    /// and the variance does not. Raise it for a deliberately diffuse look and expect noise; lower it
+    /// towards nought for hard, cheap, obviously-computed edges.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> LocalLightSource = Presets.Define(
+        CVar.Float(
+            "r_local_light_source",
+            0.25f,
+            0.02f,
+            2f,
+            CVarOptions.Archive,
+            "Largest a fixture is treated as when sampling its shadow. Wider is softer and noisier."),
+        vanilla: "0.25",
+        enhanced: "0.25",
+        high: "0.25",
+        ultra: "0.25");
+
+    /// <summary>How far a detected lamp reaches, against the reach its own size and colour imply.</summary>
+    /// <remarks>
+    /// <para>
+    /// The extractor derives a reach from the fixture's size and brightness, and that derivation is
+    /// conservative: it comes from cutting an inverse square at a fixed threshold, so it stops where the
+    /// light becomes arithmetically negligible rather than where it stops being visible. On a dark
+    /// interior wall the difference is the whole tail of the falloff, and the symptom is a corridor whose
+    /// far end is black until the player walks into each lamp's reach in turn — the light appearing to
+    /// switch on rather than to fall off.
+    /// </para>
+    /// <para>
+    /// Two doubles every fixture's reach. The near field barely moves — the windowed inverse square is
+    /// still an inverse square, and a wider window only lifts what was being cut off at the edge — so
+    /// this extends the pool of light rather than brightening the middle of it.
+    /// </para>
+    /// <para>
+    /// It is a knob rather than a bigger constant because there IS an upper bound, and it is not about
+    /// taste: these lights cast no shadows. Nothing stops a lamp reaching through the wall it is mounted
+    /// on, so a reach much past the room the fixture stands in lights the rooms either side of it too,
+    /// and a level lit that way glows from the inside out. Raise it for a big hall; lower it if light is
+    /// appearing where a wall should have stopped it.
+    /// </para>
+    /// <para>
+    /// <b>Doubled to four, and the selection no longer scales with it.</b> Raising this used to do two
+    /// unrelated things at once: it widened the reach the shader culls and falls off against — which is
+    /// what anyone raising it wants — and it also scaled the term <c>SelectNearestLamps</c> ranks by,
+    /// <c>distance - radius * range</c>. The second is why raising it once made lamps go out EARLIER
+    /// than before: scaling the radius term scales how much a fixture's own size counts in the
+    /// comparison, so big distant battens crowded the small near fittings out of a budget only
+    /// sixty-four deep. The ranking now uses the unscaled radius, so this widens the light and nothing
+    /// else, and a lamp keeps its slot on where it is rather than on how big it is.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> LocalLightRange = Presets.Define(
+        CVar.Float(
+            "r_local_light_range",
+            3f,
+            0.25f,
+            8f,
+            CVarOptions.Archive,
+            "How far a detected lamp reaches, against its derived reach. Higher lights further, and leaks."),
+        vanilla: "3",
+        enhanced: "3",
+        high: "3",
+
+        // Brought down a notch from four now that the lamps are actually shadowed. Four was set to push
+        // the light pool past a wall it could not be stopped at, back when these lights cast no shadow of
+        // any kind and a corridor's far end went black between fittings; with the walls now stopping the
+        // light where they should, the reach no longer has to overshoot to fill a room, and a shorter
+        // one leaves less to leak on the paths a shadow ray cannot reach.
+        ultra: "3");
+
+    /// <summary>How bright the sky is as a source of indirect light, where 1 is the level's own ambient.</summary>
+    /// <remarks>
+    /// The GI reads the sky as the colour a ray that escapes the geometry returns -- the skylight that
+    /// fills every outdoor surface and reaches in through a window. The level's <c>Dirlight</c> carries
+    /// only a dim ambient triple (its "Back Color", around a quarter), authored as a subtle fill on top of
+    /// the flat ambient rather than as the sky's whole radiance; read literally as the sky it leaves the
+    /// open exterior reading like dusk. This scales it up to a daytime value. It touches only what looks at
+    /// the sky, so a sealed room is unaffected while the courtyard and the window-lit wall lift -- and it
+    /// only ever reaches a preset that runs the gather or the probe field, so vanilla and the baked path
+    /// are untouched.
+    /// </remarks>
+    public static readonly NumericCVar<float> SkyLight = Presets.Define(
+        CVar.Float(
+            "r_sky_light",
+
+            // The reference scene's SkyLight multiplies its captured sky by three; matching it here keeps
+            // the two renders' window light on the same scale.
+            3f,
+            0f,
+            16f,
+            CVarOptions.Archive,
+            "Skylight brightness the GI fill sees; 1 is the level's own ambient. Lifts outdoor and window-lit surfaces."),
+        vanilla: "3",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
+
+    /// <summary>Scales the sun that generates the atmospheric sky, independently of direct light.</summary>
+    /// <remarks>
+    /// The atmosphere produces both the visible sky and the diffuse SH that lights surfaces. It used to
+    /// read <see cref="SunScale"/>, which meant calibrating direct sunlight silently scaled the sky by the
+    /// same amount and could never change their balance. Keeping the old preset values here preserves the
+    /// measured sky while <see cref="SunScale"/> is corrected independently.
+    /// </remarks>
+    public static readonly NumericCVar<float> AtmosphereSunScale = Presets.Define(
+        CVar.Float(
+            "r_atmosphere_sun_scale",
+            1f,
+            0f,
+            16f,
+            CVarOptions.Archive,
+            "Sun source intensity used to generate the atmospheric sky and its diffuse irradiance."),
+        vanilla: "1",
+        enhanced: "7",
+        high: "7",
+
+        // Preserve the atmosphere and sky SH that ultra was already rendering when r_sun_scale was 7.
+        // This is a transport input, not the direct surface-response calibration in r_sun_scale.
+        ultra: "7");
+
+    /// <summary>Whether the screen probe gather traces on-screen geometry from the frame before the cache.</summary>
+    /// <remarks>
+    /// On by default, but only ever engaged while <see cref="ScreenGather"/> is up: each gather ray first
+    /// marches the depth buffer and, on an on-screen hit, reads the previous frame's lit colour there --
+    /// on-screen bounce at full frame detail rather than the surface cache's coarse card -- falling
+    /// through to the cache only when the ray leaves the screen or finds nothing. A knob to turn off for
+    /// comparison; it does nothing when the gather itself is off.
+    /// </remarks>
+    public static readonly BoolCVar ScreenGatherTrace = Presets.Define(
+        CVar.Bool(
+            "r_screen_gi_trace",
+            true,
+            CVarOptions.Archive,
+            "Trace on-screen geometry from the frame before falling back to the surface cache."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How many frames apart the screen probe gather re-traces. One is every frame.</summary>
+    /// <remarks>
+    /// <para>
+    /// The gather is the single most expensive pass in a real-time-GI frame -- it traces sixteen rays from
+    /// each probe of a grid covering the screen, and at 1440p that is nearly a million rays. This runs it
+    /// every N frames instead of every one, carrying the atlas forward in between.
+    /// </para>
+    /// <para>
+    /// What makes that sound is that a probe's value is a running average over <see cref="ScreenGather"/>'s
+    /// own accumulation -- dozens of frames -- so a probe is already a slow-moving estimate and re-tracing
+    /// it twice as often does not make it twice as right. What genuinely has to happen every frame is the
+    /// FULL-RESOLUTION RESOLVE, which reprojects the result against each pixel's own world position: that
+    /// is what pins the indirect to the world while the camera moves, and it keeps running at frame rate
+    /// here. So the indirect still tracks the view every frame; only the rate at which new light is traced
+    /// into it drops. The cost is how quickly newly revealed geometry fills in -- a frame or two longer.
+    /// </para>
+    /// <para>
+    /// Reducing the RAY COUNT instead was measured and is a worse trade: it makes every probe's estimate
+    /// noisier, which the spatial filter then spreads, where this leaves each estimate exactly as good and
+    /// only arrives less often.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> ScreenGatherCadence = Presets.Define(
+        CVar.Int(
+            "r_screen_gi_cadence",
+            1,
+            1,
+            4,
+            CVarOptions.Archive,
+            "Frames between screen probe gather re-traces. 1 is every frame; higher is cheaper, fills in slower."),
+        vanilla: "1",
+        enhanced: "2",
+        high: "1",
+
+        // ONE at high and ultra, where the accuracy is the point. This is the frame's largest pass and two
+        // measured a 1.5ms saving, but it is not free: the probe grid is anchored to the SCREEN, so an atlas
+        // carried over from the previous frame is misaligned with the depth buffer the resolve upsamples it
+        // against, and the resolve accumulates that misalignment into its per-pixel history every frame.
+        // Measured against the same three still-camera scenes the corner fix was validated on, it moved the
+        // whole image by a mean of 1.7/255 with visible structure across every surface -- a systematic bias
+        // rather than noise, though still inside this project's own 2/255 acceptance.
+        //
+        // Enhanced takes that trade and the tiers above it do not, which is exactly what separates them:
+        // enhanced is the tier that has to run on hardware the other two do not, and 1.5ms out of the
+        // largest pass in the frame is the single biggest saving available after r_scale.
+        ultra: "1");
+
+    /// <summary>How far the screen probe gather's spatial denoise blur reaches, in probes. Zero is off.</summary>
+    /// <remarks>
+    /// The spatial half of the gather's denoise, paired with its temporal accumulation. The per-frame
+    /// estimate is noisy and the temporal pass resets along depth edges, so the probes freshest near a
+    /// wall shimmer; blending each probe with its neighbours, weighted so light does not cross an edge,
+    /// smooths that. One probe each way is usually enough; higher is smoother but softer. Only ever runs
+    /// while <see cref="ScreenGather"/> is up.
+    /// </remarks>
+    public static readonly NumericCVar<int> ScreenGatherFilter = Presets.Define(
+        CVar.Int(
+            "r_screen_gi_filter",
+            2,
+            0,
+            4,
+            CVarOptions.Archive,
+            "Radius, in probes, of the screen probe gather's spatial denoise. 0 is off."),
+        vanilla: "2",
+        enhanced: "1",
+        high: "2",
+        ultra: "2");
 
     /// <summary>Whether the exposure adapts to the scene's own brightness over time.</summary>
     /// <remarks>
@@ -254,20 +1465,28 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Adapt exposure to the scene's average brightness over time. Only where a tone map is on."),
         vanilla: "0",
-        enhanced: "0",
-        high: "0",
 
-        // OFF at ultra now. It was on to rescue interiors that the real-time gather left dark, but that was
-        // papering over weak light: the multi-bounce GI bake and the calibrated fixed exposure (r_exposure
-        // ultra 2.5) now light interiors and exteriors together WITHOUT the eye adapting, which is the
-        // honest result -- a sunny scene that reads sunny at a fixed exposure rather than one the camera
-        // keeps rebalancing. Left as an opt-in for anyone who wants eye adaptation.
-        ultra: "0");
+        // ON for every modern preset. It was turned off in the fixed-exposure era on the theory that a
+        // calibrated exposure lit interiors and exteriors together -- but a fixed exposure tuned for a sunlit
+        // exterior crushes an interior to black, which is exactly what a windowed room looked like: dark and
+        // flat. Adapting the exposure to what the camera is actually looking at is what every modern engine
+        // does, and it is what lets a dim room read bright next to a blown-out window while the tone map's
+        // shoulder rolls the window off rather than clipping it. r_exposure is a bias on the adapted value
+        // here, no longer the whole of it. Vanilla keeps the original's fixed brightness.
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How many samples per pixel the scene is rasterised with.</summary>
     /// <remarks>
     /// Resolved down before anything samples the target, because the effects that follow read depth
     /// and a multisampled depth buffer is not something a shader can read usefully.
+    /// <para>
+    /// It applies ONLY on the original's forward path (<c>r_hdr 0</c>): the deferred/HDR path records into
+    /// a single-sample G-buffer and is anti-aliased by temporal upscaler instead, so MSAA there would be pure cost for no
+    /// effect. Every preset from enhanced up is deferred, so they set it to off — a value above one on
+    /// those presets did nothing but read as if it were working.
+    /// </para>
     /// </remarks>
     public static readonly NumericCVar<int> MultiSampling = Presets.Define(
         CVar.Int(
@@ -276,11 +1495,11 @@ public static class RenderCVars
             0,
             8,
             CVarOptions.Archive,
-            "Multisample count for the scene: 0 or 1 is off. Only applies when r_hdr is on."),
+            "Samples per pixel on the forward (r_hdr 0) path; off on the deferred path, where temporal upscaler is the AA."),
         vanilla: "0",
-        enhanced: "2",
-        high: "4",
-        ultra: "8");
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How far the terrain keeps subdividing before it settles for a coarser mesh.</summary>
     /// <remarks>
@@ -314,16 +1533,78 @@ public static class RenderCVars
         high: "320",
         ultra: "450");
 
+    /// <summary>How many uploaded terrain chunks the renderer keeps before evicting the oldest.</summary>
+    /// <remarks>
+    /// <para>
+    /// Paired with <see cref="TerrainDetail"/>, because how far the ground resolves is what decides how
+    /// much of it there is to hold. The number that matters is not what one frustum holds but what a
+    /// PANORAMA holds: a frustum is a quarter or so of the circle a player turns through, so a cache
+    /// sized to the view drops the ground behind them and rebuilds it as they turn back. Measured on
+    /// level 1 at the ultra distance, a frame draws about 2500 chunks and a full turn from one spot
+    /// touches about 9000; at 4096 that is a hundred chunks rebuilt every frame for as long as the
+    /// player keeps turning, and at 16384 or more the turn evicts nothing at all and settles at zero.
+    /// </para>
+    /// <para>
+    /// A whole turn from one spot on level 1 touches 2363 chunks at 220, 4681 at 320 and 8979 at 450,
+    /// costing 6.5, 12.5 and 23.0 MB of page buffers. Each tier is set to between two and three times
+    /// its own figure, so
+    /// that a player who walks while they turn keeps the headroom the fixed-spot measurement does not
+    /// show. Vanilla keeps retail's own 4096 — it also draws retail's much shorter view, which fits.
+    /// </para>
+    /// <para>
+    /// The cost of raising it is the geometry held, and that is only affordable because a batch page is
+    /// now created with room for what a page actually holds rather than for 4096 vertices apiece: the
+    /// same ultra panorama that would have charged 918 MB of buffers charges 23 MB.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> TerrainCache = Presets.Define(
+        CVar.Int(
+            "r_terrain_cache",
+            TerrainCacheDefault,
+            TerrainCacheDefault,
+            65536,
+            CVarOptions.Archive,
+            "How many terrain chunks stay uploaded. Sized to a whole turn, so turning back rebuilds nothing."),
+        vanilla: "4096",
+        enhanced: "8192",
+        high: "12288",
+        ultra: "24576");
+
+    /// <summary>Retail's own chunk bound, which is the smallest this cache is allowed to be.</summary>
+    private const int TerrainCacheDefault = 4096;
+
     /// <summary>Whether terrain batch pages use asynchronous visibility queries.</summary>
     /// <remarks>
     /// The query result is consumed only after OpenGL reports it ready, so this never stalls the CPU.
     /// Keeping this as a CVar also makes the query cost directly A/B testable on a given mission.
     /// </remarks>
-    public static readonly BoolCVar TerrainOcclusion = CVar.Bool(
-        "r_terrain_occlusion",
-        false,
-        CVarOptions.Archive,
-        "Cull fully hidden terrain batch pages with asynchronous GPU visibility queries. Opt-in because sparse scenes can cost more to query than they save.");
+    public static readonly BoolCVar TerrainOcclusion = Presets.Define(
+        CVar.Bool(
+            "r_terrain_occlusion",
+            false,
+            CVarOptions.Archive,
+            "Cull fully hidden terrain batch pages with asynchronous GPU visibility queries. Opt-in because sparse scenes can cost more to query than they save."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "1");
+
+    /// <summary>Whether placed world objects use asynchronous visibility queries in the geometry pass.</summary>
+    /// <remarks>
+    /// The frustum keeps most of a level's objects while the camera stands indoors — a wall hides
+    /// them, a frustum does not. On by default because interiors are where the geometry pass was
+    /// measured most over budget; a CVar so the gain is A/B testable per mission like the terrain's.
+    /// </remarks>
+    public static readonly BoolCVar WorldOcclusion = Presets.Define(
+        CVar.Bool(
+            "r_world_occlusion",
+            true,
+            CVarOptions.Archive,
+            "Cull placed objects hidden behind walls and hills with asynchronous GPU visibility queries."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>Whether surfaces are recorded into a G-buffer and lit afterwards.</summary>
     /// <remarks>
@@ -344,9 +1625,12 @@ public static class RenderCVars
 
     /// <summary>Where surfaces take their light from.</summary>
     /// <remarks>
-    /// Stays on <c>baked</c> for every preset until the sun of stage R3 and the probe irradiance of R7
-    /// exist. Promoting it before then would trade hand-authored lighting for a flat ambient term,
-    /// which is not an improvement in anybody's judgement.
+    /// This waited on <c>baked</c> for every preset until the sun of stage R3 and the probe irradiance of
+    /// R7 existed, because promoting it before then would have traded hand-authored lighting for a flat
+    /// ambient term. Both exist now, and every preset above vanilla has been promoted — see the note on the
+    /// rows below for what carries the surfaces the screen gather cannot resolve. Vanilla stays
+    /// <c>baked</c> for the same reason it stays on the forward path: it is the regression gate, and it has
+    /// to keep reproducing the picture the game shipped with.
     /// </remarks>
     public static readonly EnumCVar<LightingModel> Lighting = Presets.Define(
         CVar.Choice(
@@ -355,15 +1639,21 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Light source: baked reproduces the original, hybrid adds the sun, dynamic ignores the bakes."),
         vanilla: "baked",
-        enhanced: "baked",
-        high: "baked",
+        enhanced: "dynamic",
+        high: "dynamic",
 
-        // Dynamic remains available as an explicit development setting, but it is not a safe preset
-        // default until the probe-irradiance field exists. The current fallback is only flat ambient
-        // plus the live sun; close to Mission 9's tower it exposes the terrain's per-triangle normals
-        // as alternating black and bright facets and leaves interiors without their authored fill.
-        // Ultra therefore keeps the artists' bakes, just as the contract above says it should.
-        ultra: "baked");
+        // Enhanced, high and ultra are all real-time presets now, and they light identically: from the
+        // screen probe gather (r_screen_gi) over the world-space radiance cache (r_radiance_cache), with the
+        // level's own fixtures (r_local_light_scale) lighting the windowless rooms the gather has no source
+        // for. What separates the three is budget alone -- internal resolution, how widely the relight is
+        // spread, how often the gather re-traces -- and never which systems are running. That is the point
+        // of the arrangement: a machine that cannot afford ultra gets a cheaper version of the same picture
+        // rather than a different one.
+        //
+        // The baked probe volume (r_gi) is off at all three, so a surface none of the real-time systems can
+        // resolve falls back to the flat ambient term rather than to a traced estimate. See the note on
+        // r_gi: restoring that floor is a live question, and it applies to all three equally now.
+        ultra: "dynamic");
 
     /// <summary>The side length in texels of each shadow cascade, or 0 for no shadows.</summary>
     /// <remarks>
@@ -383,7 +1673,21 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "1024",
         high: "2048",
-        ultra: "2048");
+
+        // 4096 at ultra, and the reason is NOT the one this comment used to give. It said the window
+        // mullions read as a soft blur at 2048 and came in crisp doubled, which was measured on the
+        // cascaded path and is still true there: with the traced sun off, 1024 against 4096 moves 3.7% of
+        // the frame and 4.5% of the office's sunlit floor patch.
+        //
+        // With the traced sun ON -- which is what ultra runs -- the same comparison moves 0.01% of either
+        // view. The traced shadow supersedes the cascade everywhere it reaches, so its resolution buys
+        // nothing in the picture ultra actually renders, and a reader looking only at the frame would
+        // conclude the setting was inert and the memory wasted.
+        //
+        // It is neither, because r_rt is bound to a key and meant to be toggled in place. The cascade has
+        // to be sitting at full resolution the moment the trace is switched off, and a map resized on that
+        // keystroke would cost a stall and a frame of wrong shadows exactly when the eye is on them.
+        ultra: "4096");
 
     /// <summary>How many cascades the shadow distance is split across.</summary>
     public static readonly NumericCVar<int> ShadowCascades = Presets.Define(
@@ -415,7 +1719,11 @@ public static class RenderCVars
         vanilla: "220",
         enhanced: "150",
         high: "220",
-        ultra: "320");
+
+        // Pulled in from 320 to concentrate the cascades' resolution on the near field, where the window's
+        // shadow grid on the floor is -- the sharpness there is worth more than shadows out past the haze,
+        // which the fog swallows anyway. The near building and fence shadows outdoors still read.
+        ultra: "150");
 
     /// <summary>How far a screen-space contact ray reaches, in metres. Zero disables it.</summary>
     /// <remarks>
@@ -448,7 +1756,12 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1",
         high: "1.5",
-        ultra: "2.5");
+
+        // 3 at ultra. The reference's sun casts a soft penumbra -- a window's shadow grid lands on the
+        // floor with edges that widen with distance, not the hard stencil a single-tap shadow gives. A
+        // wider filter is what reads as that penumbra; the grid stays defined at this radius rather than
+        // smearing away, matching the reference's soft-but-legible shadows against a crisp one.
+        ultra: "3");
 
     /// <summary>How many directions each pixel searches for its horizons, or 0 for no occlusion.</summary>
     /// <remarks>
@@ -467,30 +1780,69 @@ public static class RenderCVars
         // Raised, because these are no longer averaged over frames. The horizon search is dithered
         // per pixel AND per frame on the assumption something converges it; with nothing to do that,
         // the only way to a clean result is to take the samples up front.
+        //
+        // Ultra was eight and is six. The search cost climbs with the square of this (directions AND the
+        // per-direction step count both scale with it), so eight is the most expensive stage on a
+        // high-resolution frame -- yet with the temporal accumulation and the edge-aware reconstruct
+        // behind it, eight, six and four are indistinguishable in a still (measured: 0.09% mean pixel
+        // difference between eight and four). Six keeps ultra at high's quality for roughly half the taps.
+        // That measurement is why high and ultra share a count: what actually separates them here is
+        // r_ao_radius, not the number of directions.
         vanilla: "0",
         enhanced: "4",
         high: "6",
-        ultra: "8");
+        ultra: "6");
 
     /// <summary>How far a surface may occlude another, in metres.</summary>
-    public static readonly NumericCVar<float> AmbientOcclusionRadius = CVar.Float(
-        "r_ao_radius",
-        1.5f,
-        0.05f,
-        16f,
-        CVarOptions.Archive,
-        "How far, in metres, one surface can shade another.");
+    public static readonly NumericCVar<float> AmbientOcclusionRadius = Presets.Define(
+        CVar.Float(
+            "r_ao_radius",
+            1.5f,
+            0.05f,
+            16f,
+            CVarOptions.Archive,
+            "How far, in metres, one surface can shade another."),
+        vanilla: "1.5",
+        enhanced: "13.61",
+        high: "13.61",
+        ultra: "13.61");
 
     /// <summary>How strongly the occlusion is applied, where 1 is the physical amount.</summary>
-    public static readonly NumericCVar<float> AmbientOcclusionIntensity = CVar.Float(
-        "r_ao_intensity",
-        1.2f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "How deeply ambient occlusion darkens; 1 is the physical amount.");
+    /// <remarks>
+    /// Above about one and a half this stops being occlusion and starts removing the picture. The radius
+    /// this backend uses is room-scale rather than contact-scale, so the term already overlaps what the
+    /// indirect gather computes; multiplying that overlap by three darkened an office corner until the
+    /// lockers standing in it dissolved into the noise floor, while the sunlit floor it could not reach
+    /// stayed too bright — the two errors then hid each other in any average over the frame. Measured
+    /// against the reference across five regions, three scored 8.2 levels of mean error against 5.6 at
+    /// the physical amount, and only the physical amount kept the corner readable.
+    /// </remarks>
+    public static readonly NumericCVar<float> AmbientOcclusionIntensity = Presets.Define(
+        CVar.Float(
+            "r_ao_intensity",
+            1.2f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How deeply ambient occlusion darkens; 1 is the physical amount."),
+        vanilla: "1.2",
+        enhanced: "1.2",
+        high: "1.2",
+        ultra: "1.2");
 
     /// <summary>How many samples gather bounced colour, or 0 for no screen-space bounce.</summary>
+    /// <remarks>
+    /// Off at every preset. This was the cheap screen-space stand-in for a bounce, and the world-space
+    /// radiance cache now carries that bounce on every preset that has one -- which is all of them above
+    /// vanilla. Running both stacked a second, screen-space estimate on top of the cache's: its occlusion
+    /// term read darker than the cache's own, dragging interiors down a stop, while the per-pixel screen
+    /// march added noise the cache does not have. Vanilla has no deferred pass to run it in.
+    /// <para>
+    /// Kept implemented rather than deleted, and reachable from the console, because it is the only bounce
+    /// available to a device that cannot run the surface cache -- and because a stand-in that still works is
+    /// what lets the real thing be measured against something.
+    /// </para>
+    /// </remarks>
     public static readonly NumericCVar<int> ScreenSpaceGi = Presets.Define(
         CVar.Int(
             "r_ssgi",
@@ -501,49 +1853,75 @@ public static class RenderCVars
             "Screen-space bounced light: samples per direction; 0 turns it off."),
         vanilla: "0",
         enhanced: "0",
-        high: "2",
-        ultra: "4");
+        high: "0",
+        ultra: "0");
 
     /// <summary>How strongly the bounced colour is added back.</summary>
-    public static readonly NumericCVar<float> ScreenSpaceGiIntensity = CVar.Float(
-        "r_ssgi_intensity",
-        1f,
-        0f,
-        4f,
-        CVarOptions.Archive,
-        "How strongly surfaces bounce their colour onto each other.");
+    public static readonly NumericCVar<float> ScreenSpaceGiIntensity = Presets.Define(
+        CVar.Float(
+            "r_ssgi_intensity",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How strongly surfaces bounce their colour onto each other."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
 
     /// <summary>How far, in metres, the camera is focused, or 0 for no depth of field.</summary>
     /// <remarks>
     /// Off by default and deliberately so: in a first-person shooter the player's eye chooses what to
     /// look at, and a renderer that blurs everything else is fighting them. Its place is the menu
     /// camera and the sniper scope, which decide where the eye is going anyway.
+    /// <para>
+    /// Ultra briefly carried 40 metres, which arrived with a preset seeded from a saved config rather
+    /// than from a decision — it contradicted the paragraph above, and it does not match the reference
+    /// render either, whose focal distance and depth blur radius are both zero and whose depth of field
+    /// is therefore switched off entirely. Every preset is back to off.
+    /// </para>
     /// </remarks>
-    public static readonly NumericCVar<float> FocalDistance = CVar.Float(
-        "r_dof",
-        0f,
-        0f,
-        500f,
-        CVarOptions.Archive,
-        "Focal distance in metres; 0 turns depth of field off.");
+    public static readonly NumericCVar<float> FocalDistance = Presets.Define(
+        CVar.Float(
+            "r_dof",
+            0f,
+            0f,
+            500f,
+            CVarOptions.Archive,
+            "Focal distance in metres; 0 turns depth of field off."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>Over how many metres a surface goes from sharp to fully defocused.</summary>
-    public static readonly NumericCVar<float> FocalRange = CVar.Float(
-        "r_dof_range",
-        12f,
-        0.5f,
-        200f,
-        CVarOptions.Archive,
-        "Metres from the focal plane over which a surface defocuses completely.");
+    public static readonly NumericCVar<float> FocalRange = Presets.Define(
+        CVar.Float(
+            "r_dof_range",
+            12f,
+            0.5f,
+            200f,
+            CVarOptions.Archive,
+            "Metres from the focal plane over which a surface defocuses completely."),
+        vanilla: "12",
+        enhanced: "12",
+        high: "12",
+        ultra: "18");
 
     /// <summary>The widest the defocus gets, in pixels.</summary>
-    public static readonly NumericCVar<float> FocalBlur = CVar.Float(
-        "r_dof_blur",
-        8f,
-        0f,
-        64f,
-        CVarOptions.Archive,
-        "The widest defocus, in pixels.");
+    public static readonly NumericCVar<float> FocalBlur = Presets.Define(
+        CVar.Float(
+            "r_dof_blur",
+            8f,
+            0f,
+            64f,
+            CVarOptions.Archive,
+            "The widest defocus, in pixels."),
+        vanilla: "8",
+        enhanced: "8",
+        high: "8",
+        ultra: "1");
 
     /// <summary>How much of a frame's movement is smeared.</summary>
     public static readonly NumericCVar<float> MotionBlur = Presets.Define(
@@ -562,7 +1940,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0",
-        ultra: "0.4");
+        ultra: "0.5");
 
     /// <summary>How many samples the defocus and motion gather takes.</summary>
     public static readonly NumericCVar<int> CameraTaps = Presets.Define(
@@ -611,7 +1989,39 @@ public static class RenderCVars
         // not survive a whole room. The generator itself (MaterialMapGenerator) wants gentler normals; until
         // then this is where the strength is held.
         high: "0.25",
-        ultra: "0.3");
+
+        // Off at ultra. The reference the ultra look is matched against renders the level's own diffuse
+        // textures flat, with no derived normal or roughness, so the derived relief -- however mild -- reads
+        // as a departure from it: a faint sparkle on surfaces the reference leaves matte. With the relief
+        // gone the two agree, and the low-frequency lighting the radiance cache carries is what the eye reads
+        // instead. High keeps a quarter for the presets not held to that reference.
+        ultra: "0");
+
+    /// <summary>How glossy an up-facing surface (a floor, a desk top) is made, so it takes a reflection.</summary>
+    /// <remarks>
+    /// The game ships one roughness for every surface, so a floor is as matte as a wall and reflects nothing,
+    /// where the reference render's floor is semi-glossy and mirrors the windows. This multiplies an up-facing
+    /// surface's roughness down towards a sheen while leaving the walls matte -- the split the reference has --
+    /// keyed off how far the surface faces the world up. One is off, every surface as its material said. Only
+    /// the dynamic model reflects, so it does nothing under the others.
+    /// </remarks>
+    public static readonly NumericCVar<float> FloorGloss = Presets.Define(
+        CVar.Float(
+            "r_floor_gloss",
+            1f,
+            0.05f,
+            1f,
+            CVarOptions.Archive,
+            "Roughness multiplier for up-facing surfaces, so floors reflect while walls stay matte. 1 is off."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+
+        // Off. The screen-space reflection a glossy floor takes cannot describe a thin object -- a chair's
+        // legs, a desk edge -- and smeared them across the floor as hard dark streaks, worse than the matte
+        // floor it replaced. A floor sheen wants a reflection that sees off-screen geometry cleanly, which the
+        // screen trace is not; left off until the probe field can carry the specular instead.
+        ultra: "1");
 
     /// <summary>Where the derived surface-detail maps are read from.</summary>
     /// <remarks>
@@ -626,6 +2036,161 @@ public static class RenderCVars
         CVarOptions.Archive | CVarOptions.RequiresRestart,
         "Directory of derived surface-detail maps; empty for none.");
 
+    /// <summary>Whether every model's surface is captured into the card atlas.</summary>
+    /// <remarks>
+    /// <para>
+    /// The structure that lets light bounce off geometry the camera cannot see: a ray hitting a model
+    /// reads its captured surface rather than needing the model drawn. On at every preset that gathers,
+    /// which is all of them above vanilla; off at vanilla, where an atlas nothing samples would be load
+    /// time and video memory spent on nothing.
+    /// </para>
+    /// <para>
+    /// <b>No longer restart-scope.</b> It was, along with <see cref="SurfaceCacheDensity"/>,
+    /// <see cref="DistanceFields"/> and <see cref="DistanceFieldResolution"/> — and that made switching a
+    /// preset a trap rather than a setting, because <c>r_lighting dynamic</c> applies at once and DISCARDS
+    /// the bakes while the thing meant to replace them could not arrive until the next launch. The frame
+    /// went flat and nothing said why. The capture is now made on demand and the lighting model waits for
+    /// it; see <c>DesktopGame.RealtimeGi.cs</c>. Turning it on mid-level costs one long frame, because the
+    /// capture is a render pass over every distinct model and cannot be anything else.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar SurfaceCache = Presets.Define(
+        CVar.Bool(
+            "r_cards",
+            false,
+            CVarOptions.Archive,
+            "Capture every model's surface so light can bounce off geometry the camera cannot see."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+
+        // The real-time global illumination is built on the surface cache: the screen probe gather and the
+        // radiance cache both trace it for the indirect fill, so every preset that runs them pays to
+        // capture it. Only vanilla, which lights from the artists' bakes, never reads a card.
+        //
+        // What the tiers vary is r_cards_density rather than whether the atlas exists, because the
+        // gather cannot fall back to anything if it is missing -- see the note there.
+        ultra: "1");
+
+    /// <summary>How many texels of card a world unit of surface is given.</summary>
+    /// <remarks>
+    /// The dial that decides both the atlas size and how much detail a bounce carries. Higher resolves
+    /// a doorway rather than averaging over a wall, and costs the square of itself — paid at load and in
+    /// video memory rather than per frame, which is what makes it a sensible thing to ladder by tier. It is
+    /// also the first thing a fresh install pays for, enhanced being the preset applied when no settings
+    /// file exists, so the cheapest tier is deliberately close to the floor.
+    /// </remarks>
+    public static readonly NumericCVar<float> SurfaceCacheDensity = Presets.Define(
+        CVar.Float(
+            "r_cards_density",
+            8f,
+            1f,
+            64f,
+            CVarOptions.Archive,
+            "Texels of card per world unit of surface."),
+        vanilla: "8",
+        enhanced: "12",
+        high: "18",
+        ultra: "23.05");
+
+    /// <summary>Where to write the captured atlas as images, or empty to write none.</summary>
+    /// <remarks>
+    /// A capture can only be judged by looking at it. Wrong winding shows as models captured
+    /// inside-out, a wrong card rotation as mirrored pages, a missing scissor as pages bleeding into
+    /// each other — and every one of those produces an atlas full of entirely plausible surfaces.
+    /// </remarks>
+    public static readonly StringCVar SurfaceCacheDump = CVar.Text(
+        "r_cards_dump",
+        string.Empty,
+        CVarOptions.Developer,
+        "Directory to write the captured card atlas to as PNGs; empty writes none.");
+
+    /// <summary>What the lighting pass writes into its atlas: light, or a chosen diagnostic.</summary>
+    /// <remarks>
+    /// A shadow trace that fails leaves nothing to look at — a black atlas is equally consistent with a
+    /// wrong world position, an unbound sampler, a uniform that never arrived and a field that is
+    /// genuinely closed over. Each probe writes one of those intermediates where the light would have
+    /// gone, so the dump can tell them apart: 1 writes what the trace sees at its start point, 2 the
+    /// reconstructed world position within the outermost clipmap, 3 the world normal, 4 how the trace
+    /// ended, 5 whether the card index sends a texel back to itself.
+    /// <para>
+    /// <b>Keep the maximum in step with the shader.</b> This clamps, silently and by design, so a probe
+    /// added to the shader but not added here runs as whichever probe the clamp lands on -- which
+    /// presents as the new probe reporting nothing whatsoever, and is indistinguishable from the thing
+    /// it was measuring being broken.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> SurfaceCacheProbe = CVar.Int(
+        "r_cards_probe",
+        0,
+        0,
+        5,
+        CVarOptions.Developer,
+        "Diagnostic the card lighting writes instead of light: 0 none, 1 trace start, 2 position, "
+        + "3 normal, 4 trace outcome, 5 card index self-test.");
+
+    /// <summary>Whether the level's signed distance fields are baked and resampled into clipmaps.</summary>
+    /// <remarks>
+    /// <para>
+    /// The structure everything in the realtime GI track traces through. A ray marched against
+    /// triangles tests every triangle it might cross; a ray marched against a distance field asks how
+    /// far the nearest surface is and steps exactly that far, which cannot overshoot.
+    /// </para>
+    /// <para>
+    /// Needs compute, so it is off wherever the context cannot honour it whatever this says. Off at
+    /// every preset until the stages that consume it exist — a field nothing traces is a load-time cost
+    /// with nothing to show for it.
+    /// </para>
+    /// </remarks>
+    public static readonly BoolCVar DistanceFields = Presets.Define(
+        CVar.Bool(
+            "r_sdf",
+            false,
+            CVarOptions.Archive,
+            "Bake the level's signed distance fields and keep clipmaps of them around the camera."),
+        vanilla: "0",
+        enhanced: "1",
+        high: "1",
+
+        // The screen probe gather traces the distance fields for the rays that leave the screen, so every
+        // preset bakes them for the same reason it captures the cards -- and needs both, since a gather with
+        // one and not the other returns nothing. Only vanilla needs neither.
+        ultra: "1");
+
+    /// <summary>How many voxels the longest axis of each model's distance field gets.</summary>
+    /// <remarks>
+    /// The cost of a bake is roughly this cubed per distinct model, and the memory exactly so — which is
+    /// why it is a tier ladder rather than a constant, and why the cheapest tier keeps the floor.
+    /// Thirty-two already gives this game's crates and huts voxels of a few centimetres, fine enough for a
+    /// trace to land on the right side of a wall; what the higher tiers buy is thin geometry a coarse field
+    /// rounds away. Paid at load and in video memory, never per frame.
+    /// </remarks>
+    public static readonly NumericCVar<int> DistanceFieldResolution = Presets.Define(
+        CVar.Int(
+            "r_sdf_resolution",
+            32,
+            8,
+            128,
+            CVarOptions.Archive,
+            "Voxels along the longest axis of each model's distance field."),
+        vanilla: "32",
+        enhanced: "32",
+        high: "40",
+        ultra: "46");
+
+    /// <summary>Whether the built clipmaps are checked against the exact field once, after a load.</summary>
+    /// <remarks>
+    /// Reads the clipmap back and compares every voxel against <c>SceneDistanceField</c>, which answers
+    /// the same question exactly. Costs a synchronising readback and a few hundred thousand CPU
+    /// evaluations, so it is a diagnostic rather than something to leave on — but a wrong distance field
+    /// is invisible in a rendered frame, and this is the only thing that can see it.
+    /// </remarks>
+    public static readonly BoolCVar DistanceFieldValidate = CVar.Bool(
+        "r_sdf_validate",
+        false,
+        CVarOptions.Developer,
+        "After a load, compare the built clipmap against the exact field and report the difference.");
+
     /// <summary>Scales the whole dynamically-computed irradiance.</summary>
     /// <remarks>
     /// Not a taste control, a calibration. I.G.I.'s diffuse textures are not albedo: they were painted
@@ -634,35 +2199,74 @@ public static class RenderCVars
     /// on the brightest textures -- which is why the sand and the snow blew out while the concrete
     /// looked right. The default is measured against the artists' own bakes rather than chosen.
     /// </remarks>
-    public static readonly NumericCVar<float> LightScale = CVar.Float(
-        "r_light_scale",
-        0.7f,
-        0.1f,
-        2f,
-        CVarOptions.Archive,
-        "Scales dynamic lighting to match what the level's textures were painted for.");
+    public static readonly NumericCVar<float> LightScale = Presets.Define(
+        CVar.Float(
+            "r_light_scale",
 
-    /// <summary>Scales the real-time sun so a sunlit surface reads as sunlit rather than as flat daylight.</summary>
+            // Seven eighths lands mission 1's authored sun — about eight lux along its warm chromaticity —
+            // on the reference scene's seven, so the two renders share an illuminance and every remaining
+            // difference is the transport's fault, not the key light's. Ultra carried a hand-set 0.96 for
+            // a while, about a tenth of a stop over; measured against the reference across five regions
+            // it was worth about half a level of error, and the derivation is the better authority.
+            0.875f,
+            0.1f,
+            2f,
+            CVarOptions.Archive,
+            "Scales dynamic lighting to match what the level's textures were painted for."),
+        vanilla: "0.875",
+        enhanced: "0.875",
+        high: "0.875",
+        ultra: "0.875");
+
+    /// <summary>Scales the flat ambient stand-in the dynamic model fills unlit surfaces with.</summary>
     /// <remarks>
-    /// The artists' lightmaps carry the sun at its full radiosity intensity (18 in every mission), so the
-    /// baked model has bright, high-contrast sunlight for free. The dynamic model adds the sun live from
-    /// its colour alone -- magnitude about one -- which is barely stronger than the ambient sky fill, so a
-    /// sunlit wall reads the same as a shaded one and the whole scene looks overcast rather than sunny.
-    /// This lifts the live sun back to where the contrast reads as direct sunlight. Only the dynamic model
-    /// touches it: the baked model lights from the lightmaps and never adds a live sun at all.
+    /// TEMPORARY. Until the probe volume of stage R7 gives ambient a sense of place, the dynamic model
+    /// lights every surface with one flat ambient colour from the level's Dirlight -- so a sealed,
+    /// windowless room reads as bright as open ground. This scales that stand-in so the effect can be
+    /// dialled down to see enclosed spaces go dark, or to nothing (0) to prove it is what lights them.
+    /// Not archived and not part of any preset: it exists to diagnose, not to ship. Only the dynamic
+    /// model reads it -- the baked model lights from the lightmaps and has no ambient term of its own.
+    /// </remarks>
+    public static readonly NumericCVar<float> AmbientScale = CVar.Float(
+        "r_ambient_scale",
+        0f,
+        0f,
+        2f,
+        CVarOptions.None,
+        "Scales the dynamic model's flat ambient fill; 0 removes it and lets the GI carry the indirect. Only the dynamic model reads it.");
+
+    /// <summary>Calibrates the real-time sun against the sky fill.</summary>
+    /// <remarks>
+    /// Only the dynamic model reads this; the baked model lights from its lightmaps and never adds a live
+    /// sun. The atmospheric source has its own independently normalised control so changing this value
+    /// does not move the sky with it.
     /// </remarks>
     public static readonly NumericCVar<float> SunScale = Presets.Define(
         CVar.Float(
             "r_sun_scale",
             1f,
             0.25f,
-            4f,
+            16f,
             CVarOptions.Archive,
-            "Scales the real-time sun so sunlit surfaces read as sunlit. Only the dynamic lighting model reads it."),
+            "Calibrates the real-time sun against the sky fill. Only the dynamic lighting model reads it."),
         vanilla: "1",
-        enhanced: "1",
-        high: "1",
-        ultra: "2");
+        enhanced: "7",
+        high: "7",
+
+        // Restored to 7. The 1.51 before it came from a fixed-exposure sample that read our sun as
+        // 1.714 times our sky against the reference's 0.369 and divided the sun by the difference; the
+        // sample points were a wall and its shade, not a sunlit floor and its shadow, and they put the
+        // reference's sun BELOW its own fill, which no sunlit exterior does. Measured again over 1056
+        // office-floor points against the reference's HDR scene colour at the same pose, the ninetieth
+        // percentile -- the same surface with the sun on it -- is 0.09053 here against 0.09003 there,
+        // and the sun's own share of it 0.0785 against 0.0800. The sun was never the term that was
+        // wrong; the bounce under it was, and r_gi_bounce carries that correction.
+        //
+        // Dividing it by 4.6 took the whole scene down with it, which is what made this visible: the
+        // frame's average luminance fell under AutoExposurePass's metering floor, the adapted exposure
+        // pinned against its ceiling of ten and could open no further, and every shadow slid into the
+        // tone curve's toe. That is the "shadows read as a solid slab" report.
+        ultra: "7");
 
     /// <summary>How strongly edges in the finished frame are smoothed, or 0 for no anti-aliasing.</summary>
     /// <remarks>
@@ -680,18 +2284,23 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Edge anti-aliasing strength; 0 turns it off. Spatial, so it never ghosts."),
         vanilla: "0",
-        enhanced: "0.75",
+        enhanced: "0",
         high: "0",
         ultra: "0");
 
     /// <summary>The contrast below which a pixel is left untouched.</summary>
-    public static readonly NumericCVar<float> SpatialAaThreshold = CVar.Float(
-        "r_aa_threshold",
-        0.05f,
-        0.005f,
-        0.5f,
-        CVarOptions.Archive,
-        "Luminance contrast below which a pixel is not treated as an edge.");
+    public static readonly NumericCVar<float> SpatialAaThreshold = Presets.Define(
+        CVar.Float(
+            "r_aa_threshold",
+            0.05f,
+            0.005f,
+            0.5f,
+            CVarOptions.Archive,
+            "Luminance contrast below which a pixel is not treated as an edge."),
+        vanilla: "0.05",
+        enhanced: "0.33",
+        high: "0.33",
+        ultra: "0.33");
 
     /// <summary>How much of the blurred bright pass is mixed back in, or 0 for no bloom.</summary>
     public static readonly NumericCVar<float> Bloom = Presets.Define(
@@ -705,18 +2314,52 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.25",
         high: "0.35",
-        ultra: "0.45");
+        ultra: "0.2");
 
-    /// <summary>The luminance above which a pixel starts to bloom.</summary>
-    public static readonly NumericCVar<float> BloomThreshold = CVar.Float(
-        "r_bloom_threshold",
-        1f,
-        0.1f,
-        8f,
-        CVarOptions.Archive,
-        "The brightness a pixel has to pass before it spills.");
+    /// <summary>The luminance above which a pixel starts to bloom, or negative to bloom everything.</summary>
+    /// <remarks>
+    /// <para>
+    /// Ultra is negative because the reference render this preset is matched against leaves its own bloom
+    /// threshold at minus one, which in that engine means do not threshold at all: every pixel spills in
+    /// proportion to its brightness rather than only those above a cut. That is also what makes its bloom
+    /// read as lens scatter instead of as a glow that switches on -- a hard cut shows as a contour where a
+    /// surface crosses it.
+    /// </para>
+    /// <para>
+    /// Zero is that "do not threshold" case here rather than the reference's own minus one, because a
+    /// console value beginning with a minus cannot be typed: the argument parser reads it as the next
+    /// option, so `+r_bloom_threshold -1` exits rather than setting anything. A value nobody can type is
+    /// not a control. Zero is unambiguous because a threshold of zero and no threshold at all differ --
+    /// the first still scales dim pixels down towards nothing, the second passes them through.
+    ///
+    /// The lower bound had to open to admit it: the range was 0.1 to 8, which cannot express the case at
+    /// all, so ultra carried 2.47 -- a number the backend ignored, because the bloom chain was written to
+    /// the reference's unthresholded behaviour directly. The value now says what the picture actually
+    /// does. Vanilla keeps a real threshold, having no tone curve for this to be calibrated against.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> BloomThreshold = Presets.Define(
+        CVar.Float(
+            "r_bloom_threshold",
+            1f,
+            0f,
+            8f,
+            CVarOptions.Archive,
+            "The brightness a pixel has to pass before it spills; 0 spills everything."),
+        vanilla: "1",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>How far colour is pushed away from mid-grey.</summary>
+    /// <remarks>
+    /// Ultra sits at 1, which is neutral, because the reference render this preset is matched
+    /// against grades to identity — its colour contrast, gamma and gain are all 1, its offset 0, and
+    /// it has no lookup table. It had been carrying a value that came in with a preset seeded from a
+    /// saved config, and tinting a picture that is supposed to match an untinted one only ever moves
+    /// it away. Enhanced and high keep a gentle grade of their own; it is taste rather than fidelity, and
+    /// the settings menu offers all four as one Image Style choice.
+    /// </remarks>
     public static readonly NumericCVar<float> Contrast = Presets.Define(
         CVar.Float(
             "r_contrast",
@@ -728,9 +2371,17 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1.04",
         high: "1.06",
-        ultra: "1.08");
+        ultra: "1");
 
     /// <summary>How far colour is pushed away from its own luminance.</summary>
+    /// <remarks>
+    /// Ultra sits at 1, which is neutral, because the reference render this preset is matched
+    /// against grades to identity — its colour saturation, gamma and gain are all 1, its offset 0, and
+    /// it has no lookup table. It had been carrying a value that came in with a preset seeded from a
+    /// saved config, and tinting a picture that is supposed to match an untinted one only ever moves
+    /// it away. Enhanced and high keep a gentle grade of their own; it is taste rather than fidelity, and
+    /// the settings menu offers all four as one Image Style choice.
+    /// </remarks>
     public static readonly NumericCVar<float> Saturation = Presets.Define(
         CVar.Float(
             "r_saturation",
@@ -742,7 +2393,7 @@ public static class RenderCVars
         vanilla: "1",
         enhanced: "1.05",
         high: "1.08",
-        ultra: "1.1");
+        ultra: "1");
 
     /// <summary>How much the corners of the frame are darkened.</summary>
     public static readonly NumericCVar<float> Vignette = Presets.Define(
@@ -756,7 +2407,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.25",
         high: "0.3",
-        ultra: "0.35");
+        ultra: "0.4");
 
     /// <summary>How much film grain is added.</summary>
     public static readonly NumericCVar<float> Grain = Presets.Define(
@@ -768,13 +2419,18 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Film grain. A little also hides the banding an 8-bit display gives a smooth gradient."),
 
-        // Off. It was added on the assumption that the temporal accumulation would keep it to a
-        // suggestion; with no accumulation it is one more source of noise on top of the stochastic
-        // passes, and the thing it was hiding -- 8-bit banding -- is the lesser complaint.
+        // A fifth of the slider's own range, which is a grain you have to look for rather than one that
+        // reads as noise. It was off on every preset for a while: added on the assumption that the
+        // temporal accumulation would keep it to a suggestion, then turned off when there was no
+        // accumulation to do that and it was one more source of noise on top of the stochastic passes.
+        // Both halves of that argument have moved -- the temporal resolve carries the frame now -- and the
+        // complaint it answers has not: an 8-bit display bands a smooth gradient (a sky, a wall falling
+        // into shadow) into visible steps, and a dither at this depth is what breaks them up. Off at
+        // vanilla, which has neither the gradients nor the resolve.
         vanilla: "0",
-        enhanced: "0",
-        high: "0",
-        ultra: "0");
+        enhanced: "0.03",
+        high: "0.03",
+        ultra: "0.03");
 
     /// <summary>How far the red and blue channels separate towards the corners.</summary>
     public static readonly NumericCVar<float> ChromaticAberration = Presets.Define(
@@ -788,7 +2444,11 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0",
         high: "0.8",
-        ultra: "1.2");
+
+        // Off at ultra. The reference the ultra look is matched against has no lens fringing, and against a
+        // window's high-contrast edges the aberration read as coloured fringes that made the frame look less
+        // clean, not more filmic. High keeps a little for the presets not held to that reference.
+        ultra: "0");
 
     /// <summary>How much of the level's authored colour table is applied.</summary>
     /// <remarks>
@@ -832,6 +2492,19 @@ public static class RenderCVars
         "Load Assets/luts/<name>.cube instead of the mission's own grade. Empty uses the mission's.");
 
     /// <summary>How much local contrast is restored after the temporal accumulation softens the frame.</summary>
+    /// <remarks>
+    /// Ultra takes 0, which is what the reference render this preset is matched against uses — its
+    /// tonemapper sharpen is left to the volume and the volume asks for none. That is not the reference
+    /// declining a free improvement: sharpening is a correction for a soft resolve, and ultra runs the same
+    /// temporal reconstruction the reference does at the same native resolution, so it inherits the same
+    /// answer.
+    /// <para>
+    /// Enhanced and high keep theirs, and the reason is now <see cref="RenderScale"/> rather than a cruder
+    /// resolve — they run the identical reconstruction, but from 70% and 85% of the output pixels, and
+    /// upsampling is exactly the soft resolve this corrects. The ladder follows the deficit: the further
+    /// below native a tier renders, the more of this it wants.
+    /// </para>
+    /// </remarks>
     public static readonly NumericCVar<float> Sharpen = Presets.Define(
         CVar.Float(
             "r_sharpen",
@@ -843,7 +2516,7 @@ public static class RenderCVars
         vanilla: "0",
         enhanced: "0.1",
         high: "0.15",
-        ultra: "0.2");
+        ultra: "0");
 
     /// <summary>How many steps a reflected ray takes, or 0 for the fallback alone.</summary>
     public static readonly NumericCVar<int> Reflections = Presets.Define(
@@ -855,27 +2528,249 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Screen-space reflections: steps per reflected ray; 0 leaves only the probe fallback."),
         vanilla: "0",
-        enhanced: "0",
-        high: "32",
+        enhanced: "32",
+        high: "48",
         ultra: "64");
 
     /// <summary>How strongly reflections are mixed in.</summary>
-    public static readonly NumericCVar<float> ReflectionIntensity = CVar.Float(
-        "r_ssr_intensity",
-        1f,
-        0f,
-        2f,
-        CVarOptions.Archive,
-        "How strongly surfaces reflect; 1 is the physical amount.");
+    public static readonly NumericCVar<float> ReflectionIntensity = Presets.Define(
+        CVar.Float(
+            "r_ssr_intensity",
+            1f,
+            0f,
+            2f,
+            CVarOptions.Archive,
+            "How strongly surfaces reflect; 1 is the physical amount."),
+        vanilla: "1",
+        enhanced: "1.7",
+        high: "1.7",
+        ultra: "1.7");
 
-    /// <summary>The roughness past which a surface stops reflecting sharply enough to march for.</summary>
-    public static readonly NumericCVar<float> ReflectionMaxRoughness = CVar.Float(
-        "r_ssr_max_roughness",
-        0.6f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "Roughest surface that still reflects. Rougher ones scatter too widely for one ray to describe.");
+    /// <summary>The roughness past which a surface stops marching a screen ray and keeps the smooth fallback.</summary>
+    /// <remarks>
+    /// Held low deliberately. A screen-marched reflection is a SINGLE ray, so on anything but a near-mirror
+    /// it reads the one surface that ray happens to hit -- for a parquet floor or a painted wall that is a
+    /// dark, shadowed patch of the room, which the march then substitutes for the smooth probe fallback and
+    /// the surface CRUSHES a stop or two darker than it should, besides shimmering as the ray wanders under
+    /// motion. That single-ray march is what made interiors read dark and noisy. At 0.22 only genuinely
+    /// glossy surfaces -- glass, a monitor, polished metal -- still march, where one ray IS the reflection;
+    /// everything rougher keeps the probe field's smooth, bright, stable fallback. The reference denoises a
+    /// many-ray reflection instead; this is the single-ray equivalent of not marching where it cannot help.
+    /// </remarks>
+    public static readonly NumericCVar<float> ReflectionMaxRoughness = Presets.Define(
+        CVar.Float(
+            "r_ssr_max_roughness",
+            0.22f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Roughest surface that still marches a screen ray; rougher ones keep the smooth probe fallback."),
+        vanilla: "0.22",
+        enhanced: "0.22",
+        high: "0.22",
+        ultra: "0.22");
+
+    /// <summary>Whether surfaces take their indirect light from the baked probe field.</summary>
+    /// <remarks>
+    /// Costs a trace of the level at load rather than anything per frame, which is why it is a
+    /// restart-scope setting in practice even though nothing enforces that: turning it on mid-level
+    /// finds no field baked and changes nothing until the next load.
+    /// </remarks>
+    public static readonly BoolCVar GlobalIllumination = Presets.Define(
+        CVar.Bool(
+            "r_gi",
+            false,
+            CVarOptions.Archive,
+            "Light surfaces from the level's baked probe field instead of a flat ambient term."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // TEMPORARILY off at every real-time preset, so nothing about them is traced at load and every bit
+        // of their indirect comes from the real-time path -- the surface cache, the screen gather and the
+        // radiance cache -- with nothing static underneath it. What that costs is the floor this field used
+        // to provide: it is a coarse, visibility-aware far field, and the deferred fill takes the max of the
+        // two, so a surface the screen probes cannot resolve (a merlon or a wire thinner than the probe
+        // spacing, a wall the screen never saw) falls back to the flat ambient term rather than to a traced
+        // estimate.
+        //
+        // This used to be on at high, which was the preset with no surface cache to gather from. High now
+        // gathers like the others, so the question is no longer "which presets have a real-time path" but
+        // "should the real-time path have a static floor at all" -- and the answer applies to all three
+        // equally. It is a live question, not a settled one: restoring the floor costs a load-time trace on
+        // every preset rather than one.
+        ultra: "0");
+
+    /// <summary>How the level's static object lightmaps are sourced: shipped, augmented, or our bake alone.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>0</b> uses the shipped <c>.olm</c> object lightmaps, exactly as retail. <b>1</b> re-bakes them with
+    /// the path tracer at load -- per-texel, coloured, multi-bounce, from the level's own sun and sky -- and
+    /// swaps a baked page in wherever there is one, falling back to the shipped page where the bake produced
+    /// nothing. <b>2</b> discards the shipped lightmaps entirely: a surface the bake did not reach reads
+    /// black rather than borrowing the artists' light, so what the frame shows is ONLY our own lighting --
+    /// the honest state of the system, gaps and all.
+    /// </para>
+    /// <para>
+    /// A restart-scope setting: the bake runs once at load (on a worker, cached to disk) and only ever
+    /// reaches the baked and hybrid models, which sample the lightmap; vanilla and the dynamic path are
+    /// untouched. Interiors a sealed room's sun cannot reach stay dark until the lamp fixtures are baked.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> BakedLightmaps = Presets.Define(
+        CVar.Int(
+            "r_lightmap",
+            0,
+            0,
+            2,
+            CVarOptions.Archive,
+            "Object lightmaps: 0 shipped, 1 path-traced bake over the shipped ones, 2 path-traced bake only."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+
+        // Off everywhere, and on the three real-time presets it would be doing nothing anyway: they light
+        // with r_lighting `dynamic`, which does not sample an object lightmap at all -- a frame drawn with
+        // the shipped pages and one drawn with every page forced black come out byte-identical there. So the
+        // forty seconds this spent path-tracing every level at load, across every core, holding a few
+        // hundred megabytes of texel maps while it ran, would produce pages nothing ever read.
+        //
+        // It was 2 at ultra, which discarded the shipped pages and showed our bake alone. It earns that back
+        // the moment a preset samples a lightmap again -- or on any preset set to `baked` or `hybrid` by
+        // hand, where 1 and 2 work exactly as they always did.
+        ultra: "0");
+
+    /// <summary>How far apart the probes sit, in metres.</summary>
+    public static readonly NumericCVar<float> GlobalIlluminationSpacing = Presets.Define(
+        CVar.Float(
+            "r_gi_probe_spacing",
+            6f,
+            1f,
+            32f,
+            CVarOptions.Archive,
+            "Metres between irradiance probes. Finer resolves smaller rooms and takes longer to bake."),
+        vanilla: "6",
+        enhanced: "3",
+        high: "3",
+        ultra: "3");
+
+    /// <summary>The escape fraction below which a radiance-cache probe's sky is treated as a wall leak.</summary>
+    /// <remarks>
+    /// A cache probe traces the whole sphere; the fraction of its rays reaching open sky says whether the
+    /// sky it sees is a real opening or a leak through a wall the coarse distance field cannot seal. Above
+    /// this fraction the sky is kept in full, below a third of it dropped entirely, so a sealed room -- whose
+    /// probes escape only on the few rays that slip through a wall -- falls dark rather than borrowing the
+    /// day outside, while a window room, whose probes escape freely, keeps its sky. A window room is lit
+    /// mostly by its sunlit floor bouncing regardless, so this can be firm without darkening it.
+    /// </remarks>
+    public static readonly NumericCVar<float> GlobalIlluminationLeakReject = Presets.Define(
+        CVar.Float(
+            "r_gi_leak_reject",
+            0.3f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "Escape fraction under which a cache probe's sky is treated as a wall leak and dropped."),
+        vanilla: "0.3",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
+
+    /// <summary>Whether the level's lamps are detected at all: as emission, as lights and in the bounce.</summary>
+    /// <remarks>
+    /// <para>
+    /// The level declares no point lights. Its lamps are worked out from what the artists baked around
+    /// each texture and from the SHAPE of the geometry that draws it -- small, above head height, flat,
+    /// facing down and painted near-white is a light fixture and very little else -- and the conclusion
+    /// then does three things at once: the fixture geometry is made emissive so a lamp looks like the
+    /// thing doing the lighting, a punctual light is placed at every one so a windowless room has a
+    /// source, and the same fixtures feed the surface cache so that room bounces. All three or none:
+    /// a lamp that lights a floor without glowing reads as a room lit by nothing, and a lamp that glows
+    /// without lighting reads as a decal.
+    /// </para>
+    /// <para>
+    /// Off is the honest reading of a level with no lamps at all -- a sealed interior goes dark, which is
+    /// what it would be. Turn it off to see what the level looks like on daylight alone, or when a
+    /// detection has gone wrong in a level whose fixtures file has not been corrected yet.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<int> GlobalIlluminationLamps = Presets.Define(
+        CVar.Int(
+            "r_gi_lamps",
+            1,
+            0,
+            1,
+            CVarOptions.Archive,
+            "Detect the level's lamps: emissive fixtures, real lights at each, and their bounce."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How brightly the detected lamp geometry itself glows, against what the detector proposed.</summary>
+    /// <remarks>
+    /// <para>
+    /// This is the FIXTURE, not the light it casts -- <see cref="LocalLightScale"/> is that. A lamp has to
+    /// be brighter in the frame than any surface it lights or it does not read as the source: at its own
+    /// albedo a fluorescent panel is a pale grey rectangle with a mysterious pool of light beneath it, and
+    /// what makes it a lamp is being written above what a lit surface can reach, where the bloom finds it.
+    /// </para>
+    /// <para>
+    /// One means the strength the detection proposed, which is a lamp at six times its albedo and a
+    /// merely-bright surface -- an advert panel, a lit sign -- proportionally less. The two knobs are
+    /// separate because they answer different complaints: a room that is too bright wants the light turned
+    /// down, and a fixture that looks like a sticker wants this turned up.
+    /// </para>
+    /// </remarks>
+    public static readonly NumericCVar<float> LampEmissiveScale = Presets.Define(
+        CVar.Float(
+            "r_lamp_emissive",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How brightly detected lamp geometry glows, against the detected strength. 0 stops it glowing."),
+        vanilla: "1",
+        enhanced: "1",
+        high: "1",
+        ultra: "1");
+
+    /// <summary>How strongly the probe field's light is applied.</summary>
+    public static readonly NumericCVar<float> GlobalIlluminationIntensity = Presets.Define(
+        CVar.Float(
+            "r_gi_intensity",
+            1f,
+            0f,
+            4f,
+            CVarOptions.Archive,
+            "How strongly the probe field lights surfaces; 1 is the amount the bake computed."),
+        vanilla: "1",
+        enhanced: "4",
+        high: "4",
+        ultra: "4");
+
+    /// <summary>The diffuse colour boost the surface cache reflects light through — the reference's DiffuseColorBoost.</summary>
+    /// <remarks>
+    /// The single lever for how bright the bounced light is. Each time light reflects off a card, the
+    /// surface's albedo is raised by <c>pow(luminance, boost)</c> before it passes light along, so a
+    /// <b>lower</b> value lifts a dark, low-albedo surface's reflectance towards one and lets a sunless
+    /// interior carry far more indirect -- which the raw retail albedos (~0.4) otherwise swallow after a
+    /// bounce or two. One is off (physical albedo). It never reaches one (the surface would return
+    /// everything it received and the feedback would diverge); the shader clamps it below. This is what to
+    /// reach for when interiors read dark, ahead of exposure or more bounces.
+    /// </remarks>
+    public static readonly NumericCVar<float> GlobalIlluminationBoost = Presets.Define(
+        CVar.Float(
+            "r_gi_boost",
+            0.8f,
+            0.1f,
+            1f,
+            CVarOptions.Archive,
+            "Diffuse colour boost for bounced light: LOWER lifts dark surfaces so interiors carry more indirect. 1 is off."),
+        vanilla: "0.8",
+        enhanced: "0.6",
+        high: "0.6",
+        ultra: "0.6");
 
     /// <summary>Whether each stage of the frame is timed on the GPU and shown in an overlay.</summary>
     /// <remarks>
@@ -896,24 +2791,12 @@ public static class RenderCVars
         CVarOptions.Developer,
         "Time each stage of the frame on the GPU and show the result. Costs a little of what it measures.");
 
-    /// <summary>Whether the load-time GPU compute diagnostic is run.</summary>
-    /// <remarks>
-    /// The diagnostic compiles temporary shaders and reads their results back to the CPU, which makes it
-    /// useful when bringing up a driver but needlessly delays every ordinary launch. It therefore stays
-    /// available to developers without being part of the player's startup path.
-    /// </remarks>
-    public static readonly BoolCVar ComputeSelfTest = CVar.Bool(
-        "r_compute_selftest",
-        false,
-        CVarOptions.Developer,
-        "Run the load-time GPU compute diagnostic. Off avoids a blocking driver synchronization at startup.");
-
     /// <summary>Which buffer to show instead of the scene.</summary>
     public static readonly EnumCVar<DebugView> Debug = CVar.Choice(
         "r_debug_view",
         DebugView.None,
         CVarOptions.Developer,
-        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight.");
+        "Show a render buffer instead of the scene: none, albedo, normal, depth, material, motion, bakedlight, wetness.");
 
     /// <summary>How much of the resolved pixel is this frame, or 1 for no accumulation.</summary>
     /// <remarks>
@@ -930,30 +2813,71 @@ public static class RenderCVars
             CVarOptions.Archive,
             "Temporal anti-aliasing: share of the pixel taken from this frame. 1 turns it off."),
 
-        // Back on at high and ultra. It was off at every preset because soldiers are SKINNED and
-        // their motion was reported as a rigid transform -- "where the body was, with the arm where
-        // it is now" -- a confidently wrong vector no feedback value could paper over. The G-buffer
-        // now takes the previous clip position from the previous frame's skinned VERTICES
-        // (CreateAnimatedMesh's second stream), so a walking guard's limbs reproject exactly and the
-        // smear that forced this off no longer exists.
+        // On at every preset above vanilla, and at the same value. It was off everywhere once because
+        // soldiers are SKINNED and their motion was reported as a rigid transform -- "where the body was,
+        // with the arm where it is now" -- a confidently wrong vector no feedback value could paper over.
+        // The G-buffer now takes the previous clip position from the previous frame's skinned VERTICES
+        // (CreateAnimatedMesh's second stream), so a walking guard's limbs reproject exactly and the smear
+        // that forced this off no longer exists.
         //
-        // The accumulation is also what pays for the noise in every stochastic pass after it -- the
-        // fog march, the horizon search, the reflection ray are all under-sampled on the assumption
-        // that this averages them. Ultra holds a longer history than high because it runs more of
-        // those passes at higher counts and benefits more from the convergence.
+        // Uniform rather than laddered, deliberately. The accumulation is what pays for the noise in every
+        // stochastic pass after it -- the fog march, the horizon search, the gather ray are all
+        // under-sampled on the assumption that this averages them -- and every preset above vanilla now
+        // runs all of those. It is also what reconstructs detail for the tiers rendering below native, so
+        // the cheapest tier needs the history most, not least. Weakening it there would take back exactly
+        // what r_scale is spending. The tiers differ in resolution and ray budget; the resolve is the
+        // same resolve.
         vanilla: "1",
-        enhanced: "1",
-        high: "0.15",
+        enhanced: "0.1",
+        high: "0.1",
         ultra: "0.1");
 
     /// <summary>How much of the history's resampling blur is subtracted back out.</summary>
-    public static readonly NumericCVar<float> TemporalSharpening = CVar.Float(
-        "r_taa_sharpen",
-        0.25f,
-        0f,
-        1f,
-        CVarOptions.Archive,
-        "How much of the temporal history's resampling blur is sharpened back out.");
+    public static readonly NumericCVar<float> TemporalSharpening = Presets.Define(
+        CVar.Float(
+            "r_taa_sharpen",
+            0.25f,
+            0f,
+            1f,
+            CVarOptions.Archive,
+            "How much of the temporal history's resampling blur is sharpened back out."),
+        vanilla: "0.25",
+        enhanced: "0.7",
+        high: "0.7",
+        ultra: "0.7");
+
+    /// <summary>Whether cut-outs use a temporally-resolved hashed alpha test rather than a hard one.</summary>
+    /// <remarks>
+    /// A hard cut-out keeps or drops whole pixels, so a chain-link fence or a wire thinner than a pixel
+    /// aliases into a shimmer. The hashed test recovers the edge's coverage from the alpha gradient and
+    /// dithers it, which the temporal resolve then averages into a smooth edge. It therefore only helps
+    /// where the temporal filter runs, so it follows the same presets: off where <see cref="TemporalFeedback"/>
+    /// is one, on above it.
+    /// </remarks>
+    /// <para>
+    /// <b>Off at every preset now, on two independent grounds.</b> The reference render this port is
+    /// matched against leaves its own dithered opacity mask switched off, so as-is parity says off. And
+    /// measured here it costs more than it buys: still-camera stability goes from 0.390% to 0.483%
+    /// consecutive-frame RMSE and detail from 45.9 to 44.5, because the dither is noise until a temporal
+    /// filter resolves it and ours does not fully resolve it even with the camera stopped. It buys a
+    /// slightly better yard whole-frame figure (12.76% to 12.48%) and that is not worth a quarter more
+    /// shimmer on the exact geometry the shimmer was complained about.
+    /// </para>
+    /// <para>
+    /// It is implemented rather than removed: the value used to be one here and the Vulkan backend
+    /// silently ignored it, which is the failure mode the settings sweep exists to catch. It now does
+    /// what it says, and says off.
+    /// </para>
+    public static readonly BoolCVar HashedAlpha = Presets.Define(
+        CVar.Bool(
+            "r_alpha_hash",
+            false,
+            CVarOptions.Archive,
+            "Dither cut-out edges and let the temporal resolve average them, instead of a hard alpha test."),
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>How many samples each fog ray takes, or 0 for no volumetric fog.</summary>
     /// <remarks>The single biggest cost in the pass, and the quality dial.</remarks>
@@ -973,32 +2897,66 @@ public static class RenderCVars
         ultra: "96");
 
     /// <summary>Extinction per metre at the fog's base height, or 0 to take the level's own.</summary>
-    public static readonly NumericCVar<float> FogDensity = CVar.Float(
-        "r_fog_density",
-        0f,
-        0f,
-        0.2f,
-        CVarOptions.Archive,
-        "Fog extinction per metre at its base height; 0 derives it from the level's own FlatSky data.");
+    public static readonly NumericCVar<float> FogDensity = Presets.Define(
+        CVar.Float(
+            "r_fog_density",
+            0f,
+            0f,
+            0.2f,
+            CVarOptions.Archive,
+            "Fog extinction per metre at its base height; 0 derives it from the level's own FlatSky data."),
+
+        // Ultra takes the level's own density like every other tier. It used to override it with 0.11,
+        // which is an extinction that leaves five per cent of a surface visible at twenty-seven metres --
+        // the whole frame a white wash. That went unnoticed because no backend rendered the medium at the
+        // time it was set: the OpenGL path that could have was removed, and the Vulkan one only reached
+        // its setter. A level's own FlatSky haze is both authored and per-mission, which is the right
+        // default now that the froxel volume actually integrates it.
+        vanilla: "0",
+        enhanced: "0",
+        high: "0",
+        ultra: "0");
 
     /// <summary>The height in metres over which fog density falls to a third.</summary>
     /// <remarks>What makes fog pool in valleys rather than hang as a flat sheet.</remarks>
-    public static readonly NumericCVar<float> FogHeightFalloff = CVar.Float(
-        "r_fog_height",
-        24f,
-        1f,
-        400f,
-        CVarOptions.Archive,
-        "Height in metres over which fog thins out. Lower pools it harder into valleys.");
+    public static readonly NumericCVar<float> FogHeightFalloff = Presets.Define(
+        CVar.Float(
+            "r_fog_height",
+            24f,
+            1f,
+            400f,
+            CVarOptions.Archive,
+            "Height in metres over which fog thins out. Lower pools it harder into valleys."),
+
+        // Pinned to the default on every tier, like the other three fog dials. These describe the SHAPE
+        // of a mission's atmosphere, which fog-presets.json authors per level; a quality tier has no
+        // business replacing a level's own air with one number, and the shell reads "the player moved
+        // this off its default" as the signal to override, so a tier that assigned a value would be
+        // indistinguishable from a player who had.
+        vanilla: "24",
+        enhanced: "24",
+        high: "24",
+        ultra: "24");
 
     /// <summary>How strongly the fog scatters forward.</summary>
-    public static readonly NumericCVar<float> FogAnisotropy = CVar.Float(
-        "r_fog_anisotropy",
-        0.7f,
-        -0.95f,
-        0.95f,
-        CVarOptions.Archive,
-        "Forward scattering, -0.95 to 0.95. Positive makes fog glow towards the sun.");
+    public static readonly NumericCVar<float> FogAnisotropy = Presets.Define(
+        CVar.Float(
+            "r_fog_anisotropy",
+            0.7f,
+            -0.95f,
+            0.95f,
+            CVarOptions.Archive,
+            "Forward scattering, -0.95 to 0.95. Positive makes fog glow towards the sun."),
+
+        // Pinned to the default on every tier, like the other three fog dials. These describe the SHAPE
+        // of a mission's atmosphere, which fog-presets.json authors per level; a quality tier has no
+        // business replacing a level's own air with one number, and the shell reads "the player moved
+        // this off its default" as the signal to override, so a tier that assigned a value would be
+        // indistinguishable from a player who had.
+        vanilla: "0.7",
+        enhanced: "0.7",
+        high: "0.7",
+        ultra: "0.7");
 
     /// <summary>How far, in metres, the fog is marched before the cheaper haze takes over.</summary>
     public static readonly NumericCVar<float> FogDistance = Presets.Define(
@@ -1009,10 +2967,19 @@ public static class RenderCVars
             2000f,
             CVarOptions.Archive,
             "How far volumetric fog is marched, in metres."),
+
+        // Pinned to the default on every tier, like the other three fog dials. These describe the SHAPE
+        // of a mission's atmosphere, which fog-presets.json authors per level; a quality tier has no
+        // business replacing a level's own air with one number, and the shell reads "the player moved
+        // this off its default" as the signal to override, so a tier that assigned a value would be
+        // indistinguishable from a player who had.
+        // Distance used to be tiered because a longer march cost more steps. It does not any more: the
+        // froxel volume has the same cell count whatever range it covers, so how far the fog reaches is
+        // a look rather than a price, and it belongs with the rest of the mission's atmosphere.
         vanilla: "500",
-        enhanced: "350",
+        enhanced: "500",
         high: "500",
-        ultra: "800");
+        ultra: "500");
 
     /// <summary>The anisotropic filtering ratio, 1 for none.</summary>
     /// <remarks>
