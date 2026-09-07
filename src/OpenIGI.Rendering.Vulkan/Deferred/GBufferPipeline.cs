@@ -27,7 +27,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     private readonly RenderPass _renderPass;
     private readonly VulkanShaderModule _vertex;
     private readonly VulkanShaderModule _fragment;
-    private readonly Dictionary<(DepthState Depth, CullMode Cull), Pipeline> _pipelines = [];
+    private readonly Dictionary<(DepthState Depth, CullMode Cull, bool Additive), Pipeline> _pipelines = [];
     private bool _disposed;
 
     /// <summary>Initialises a new instance of the <see cref="GBufferPipeline"/> class.</summary>
@@ -71,19 +71,26 @@ internal sealed unsafe class GBufferPipeline : IDisposable
     /// <summary>Gets the pipeline layout: the texture set and the 128-byte push constant.</summary>
     public PipelineLayout PipelineLayout { get; }
 
-    /// <summary>Gets, building if needed, the geometry pipeline for a depth-and-cull state.</summary>
-    /// <param name="depth">The depth behaviour.</param>
-    /// <param name="cull">The culling rule.</param>
-    /// <returns>The matching pipeline.</returns>
-    public Pipeline ForState(DepthState depth, CullMode cull)
+    /// <summary>Gets the pipeline for a draw's state, building it on first use.</summary>
+    /// <param name="depth">The draw's depth test and write.</param>
+    /// <param name="cull">Which facing the draw culls.</param>
+    /// <param name="blend">
+    /// How the draw blends. The G-buffer is opaque, and every mode but <see cref="BlendMode.Additive"/>
+    /// is drawn as such; additive is for the terrain's material passes, which add their weighted share
+    /// of the ground into the base colour over the base pass that wrote everything else (see
+    /// <c>TerrainChunkMesh</c>): the base colour alone blends, its alpha and the other attachments are
+    /// left as the base pass wrote them.
+    /// </param>
+    public Pipeline ForState(DepthState depth, CullMode cull, BlendMode blend = BlendMode.Opaque)
     {
-        if (_pipelines.TryGetValue((depth, cull), out Pipeline existing))
+        bool additive = blend == BlendMode.Additive;
+        if (_pipelines.TryGetValue((depth, cull, additive), out Pipeline existing))
         {
             return existing;
         }
 
-        Pipeline pipeline = CreatePipeline(depth, cull);
-        _pipelines[(depth, cull)] = pipeline;
+        Pipeline pipeline = CreatePipeline(depth, cull, additive);
+        _pipelines[(depth, cull, additive)] = pipeline;
         return pipeline;
     }
 
@@ -138,7 +145,7 @@ internal sealed unsafe class GBufferPipeline : IDisposable
         return layout;
     }
 
-    private Pipeline CreatePipeline(DepthState depth, CullMode cull)
+    private Pipeline CreatePipeline(DepthState depth, CullMode cull, bool additive)
     {
         nint entryPoint = SilkMarshal.StringToPtr("main", NativeStringEncoding.UTF8);
         try
@@ -226,13 +233,37 @@ internal sealed unsafe class GBufferPipeline : IDisposable
                 DepthCompareOp = CompareOp.GreaterOrEqual,
             };
 
-            // Four opaque colour attachments, all channels written.
+            // Four opaque colour attachments, all channels written -- except for an additive draw, which
+            // adds its colour into the base colour's rgb and touches nothing else: not that attachment's
+            // alpha, and none of the normal, material or baked attachments, which the opaque pass under
+            // it wrote for the same surface.
             const ColorComponentFlags writeAll = ColorComponentFlags.RBit | ColorComponentFlags.GBit
                 | ColorComponentFlags.BBit | ColorComponentFlags.ABit;
+            const ColorComponentFlags writeColour = ColorComponentFlags.RBit | ColorComponentFlags.GBit
+                | ColorComponentFlags.BBit;
             PipelineColorBlendAttachmentState* blends = stackalloc PipelineColorBlendAttachmentState[4];
             for (int i = 0; i < 4; i++)
             {
                 blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = writeAll, BlendEnable = false };
+            }
+
+            if (additive)
+            {
+                blends[0] = new PipelineColorBlendAttachmentState
+                {
+                    ColorWriteMask = writeColour,
+                    BlendEnable = true,
+                    ColorBlendOp = BlendOp.Add,
+                    SrcColorBlendFactor = BlendFactor.One,
+                    DstColorBlendFactor = BlendFactor.One,
+                    AlphaBlendOp = BlendOp.Add,
+                    SrcAlphaBlendFactor = BlendFactor.Zero,
+                    DstAlphaBlendFactor = BlendFactor.One,
+                };
+                for (int i = 1; i < 4; i++)
+                {
+                    blends[i] = new PipelineColorBlendAttachmentState { ColorWriteMask = 0, BlendEnable = false };
+                }
             }
 
             PipelineColorBlendStateCreateInfo colorBlend = new()

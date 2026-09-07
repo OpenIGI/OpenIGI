@@ -119,8 +119,29 @@ public static class TerrainChunkMesh
         int passCount = OrderMaterials(surface, materials, passesRented);
         ReadOnlySpan<int> passes = passesRented.AsSpan(0, passCount);
 
-        // Two texture passes per material: the band's first scale, and its second at twice the density,
-        // which the renderer fades in with proximity. sub_510010 emits both unconditionally.
+        // The material a vertex is sliding TOWARDS. An interpolated vertex morphs onto its source as the
+        // chunk recedes, and the source may stand on a different material; sub_510010 records the
+        // source's material beside the vertex's own when the two differ, and the draw weights each
+        // material pass by how far along the slide the vertex is, so the texture cross-fades with the
+        // shape. A base vertex, and an interpolated one whose source agrees with it, slides nowhere new.
+        Span<int> others = vertexCount <= 64 ? stackalloc int[vertexCount] : new int[vertexCount];
+        others.Fill(-1);
+        for (int i = block.BaseVertexCount; i < vertexCount; i++)
+        {
+            int source = block.Vertex(i).MorphSource;
+            if (source >= 0 && source < block.BaseVertexCount && source < vertexCount && materials[source] != materials[i])
+            {
+                others[i] = materials[source];
+            }
+        }
+
+        // Two texture passes per material: the band's first scale, which the original weights by the
+        // fade and which the next coarser level's second scale continues at the same density, and its
+        // second at twice the density, which it weights by the fade's complement -- the dense scale
+        // gives way to the sparse one as the chunk recedes, and the coarser chunk that replaces it
+        // starts at exactly the density the fine one ended on. (Every band of every retail material
+        // stores the same scale for both, so the ratio is fixed.) sub_510010 emits both
+        // unconditionally.
         // Every element of both is written by the loops below -- one layer's worth per pass per detail,
         // covering the whole length -- so a recycled array needs no clearing first.
         int vertexTotal = passes.Length * 2 * vertexCount;
@@ -152,11 +173,24 @@ public static class TerrainChunkMesh
                     Vector3d offset = offsets[i];
                     Vector3d morph = morphs[i];
 
-                    // The base pass fills the chunk, so it is opaque everywhere; every later pass shows
-                    // only where its own material was selected, and fades across the triangles that
-                    // straddle a boundary. A detail pass carries its material's coverage and the
-                    // distance fade multiplies on top in the shader.
-                    byte alpha = isBase || materials[i] == materialId ? (byte)255 : (byte)0;
+                    // Which of the original's per-vertex weights this pass takes at this vertex, as
+                    // sub_510010 selects it: one where the vertex's own material is this pass's and it
+                    // slides nowhere new; the near weight (one minus the fade) where its own material is
+                    // this pass's but it slides onto a source of another; the fade itself where the
+                    // SOURCE's material is this pass's; and nothing otherwise. The shader multiplies the
+                    // weight by the fade for the first texture scale and by the fade's complement for
+                    // the second, and the passes are added, so at every vertex the weights across every pass
+                    // and both scales sum to exactly one: the near scale cross-fades into the far scale
+                    // and a vertex's material into its source's as the chunk recedes, and the coarser
+                    // chunk that replaces it picks up where the weights left off. Held as a selector in
+                    // the colour's alpha -- thirds, so it survives a byte -- rather than as a weight,
+                    // because the weight depends on the fade the shader alone knows. Every pass covers
+                    // the whole chunk, the base one included: where a vertex belongs to another
+                    // material the base is simply black there, and the other material's pass adds the
+                    // texture in.
+                    byte alpha = materials[i] == materialId
+                        ? (others[i] < 0 ? (byte)255 : (byte)170)
+                        : (others[i] == materialId ? (byte)85 : (byte)0);
 
                     // Bits 6-7 (base) and 8-9 (detail) of the packed vertex choose the projection axes:
                     // zero maps the texture across the ground, anything else marks a steep face whose V

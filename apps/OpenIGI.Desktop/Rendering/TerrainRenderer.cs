@@ -548,7 +548,9 @@ public sealed class TerrainRenderer : IDisposable
                     modelView,
                     TileTexture(layer.TileIndex),
                     TextureHandle.None,
-                    layer.IsBase ? BlendMode.Opaque : BlendMode.AlphaBlend);
+                    // The original's ONE, ONE: every pass after the first adds its weighted share of
+                    // the ground (see TerrainChunkMesh), and the shares sum to one.
+                    layer.IsBase ? BlendMode.Opaque : BlendMode.Additive);
                 triangles += layer.TriangleCount;
                 passes++;
             }
@@ -616,7 +618,9 @@ public sealed class TerrainRenderer : IDisposable
             modelView,
             TileTexture(page.Key.TileIndex),
             TextureHandle.None,
-            page.Key.IsBase ? BlendMode.Opaque : BlendMode.AlphaBlend);
+            // The original's ONE, ONE: every pass after the first adds its weighted share of the ground
+            // (see TerrainChunkMesh), and the shares sum to one.
+            page.Key.IsBase ? BlendMode.Opaque : BlendMode.Additive);
         return true;
     }
 

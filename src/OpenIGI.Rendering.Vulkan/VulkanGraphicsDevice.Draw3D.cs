@@ -473,7 +473,7 @@ public sealed partial class VulkanGraphicsDevice
         // mesh pipeline on the back buffer when there is no capture.
         if (_capturing && _deferredStage == DeferredStage.Geometry)
         {
-            BindGeometry(mesh, modelView, diffuse, lightmap);
+            BindGeometry(mesh, modelView, diffuse, lightmap, blend);
         }
         else if (_capturing && _deferredStage == DeferredStage.Forward)
         {
@@ -569,12 +569,13 @@ public sealed partial class VulkanGraphicsDevice
         VulkanMesh mesh,
         in Matrix4f modelView,
         TextureHandle diffuse,
-        TextureHandle lightmap)
+        TextureHandle lightmap,
+        BlendMode blend)
     {
         Vk vk = _instance.Vk;
         CommandBuffer cmd = _frameCommandBuffer;
 
-        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode));
+        BindGraphicsPipeline(_deferred.Geometry.ForState(_depthState, _cullMode, blend));
         BindMeshBuffers(mesh);
         BindMeshTextures(_deferred.Geometry.PipelineLayout, diffuse, lightmap);
         BindSurfaceSet();
