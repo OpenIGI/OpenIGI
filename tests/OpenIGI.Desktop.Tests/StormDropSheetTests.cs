@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
+using OpenIGI.Rendering;
 using OpenIGI.TestSupport;
 using Xunit;
 
@@ -249,6 +250,57 @@ public sealed class StormSplashSheetTests
             Assert.InRange(column, 0, StormRenderer.SplashColumns - 1);
             Assert.InRange(row, 0, StormRenderer.SplashFrameRows - 1);
             Assert.Equal(frame, (row * StormRenderer.SplashColumns) + column);
+        }
+    }
+}
+
+/// <summary>
+/// Holds the splash to the size and the variety the reference gives it.
+/// </summary>
+/// <remarks>
+/// A splash sprite there is two to four CENTIMETRES — <c>Sprite Size Min (2,2)</c> to
+/// <c>Sprite Size Max (2.5,4)</c> in its own units, which are centimetres — and it is flipped
+/// horizontally at random, which is what stops a shower of them reading as one stamp repeated. This
+/// port drew them at a fifth of a metre, five to ten times over, which is most of why they were both
+/// too big and too bright: a splash covering twenty-five times the screen area emits twenty-five times
+/// the light, and a 128-texel cell magnified that far has nothing left to be smooth with.
+/// </remarks>
+public sealed class StormSplashSizeTests
+{
+    [Fact]
+    public void SplashSprite_IsTheReferencesTwoToFourCentimetres()
+    {
+        PrecipitationSettings settings = new();
+
+        // The renderer draws the quad at +/- radius, over the 0.7..1 band the spawn gives it.
+        float smallest = settings.SplashRadiusMetres * 0.7f * 2f;
+        float largest = settings.SplashRadiusMetres * 2f;
+
+        Assert.InRange(smallest, 0.018f, 0.032f);
+        Assert.InRange(largest, 0.030f, 0.045f);
+    }
+
+    [Fact]
+    public void SplashColumn_FlipsHorizontallyWhenAsked()
+    {
+        (float u0, float u1) = StormRenderer.SplashColumnUv(1, flip: false);
+        (float f0, float f1) = StormRenderer.SplashColumnUv(1, flip: true);
+
+        // The same cell, read the other way round: a mirrored splash, not a different one.
+        Assert.Equal(u0, f1, 6);
+        Assert.Equal(u1, f0, 6);
+        Assert.True(u1 > u0, "an unflipped cell must run left to right");
+        Assert.True(f1 < f0, "a flipped cell must run right to left");
+    }
+
+    [Fact]
+    public void SplashColumn_CoversItsOwnCellAndNoOther()
+    {
+        for (int column = 0; column < StormRenderer.SplashColumns; column++)
+        {
+            (float u0, float u1) = StormRenderer.SplashColumnUv(column, flip: false);
+            Assert.Equal(column / (float)StormRenderer.SplashColumns, u0, 6);
+            Assert.Equal((column + 1) / (float)StormRenderer.SplashColumns, u1, 6);
         }
     }
 }
