@@ -431,6 +431,11 @@ public static class GraphicsMenu
             "Outlines soldiers seen through the binoculars, so a distant figure against a hillside can be "
                 + "picked out."),
         new GraphicsSetting(
+            "r_world_briefing",
+            "Posted Briefing",
+            "Stands the mission briefing against the nearest wall or fence where you start, to be read "
+                + "by walking up to it. Off, the briefing is only in the menu."),
+        new GraphicsSetting(
             "r_weather_enabled",
             "Weather",
             "Draws the rain or snow the level authors gave each mission."),

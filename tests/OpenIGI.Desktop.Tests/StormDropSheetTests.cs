@@ -1,5 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
+using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -8,16 +9,26 @@ namespace OpenIGI.Desktop.Tests;
 /// Guards the facts about the storm's drop sheet that the renderer's arithmetic assumes.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The sheet is the one part of the storm whose shape is not decided by this repository: it is two
 /// strips of painted streaks, and every constant that addresses them — ten cells across, the sharp
 /// strip on top, a defocused streak that fills far more of its cell than a sharp one — is read off the
 /// images rather than declared by the code. A re-export that changed any of those would not throw and
 /// would not look obviously wrong in a still; it would quietly draw ten drops with the wrong tenth of
 /// the sheet. These tests are what makes that loud.
+/// </para>
+/// <para>
+/// The sheets are licensed artwork and are not in this repository. Without them the renderer draws
+/// streaks it generates itself, which satisfies most of what follows — the colour, the ten cells, the
+/// two focus levels — so those assertions stay <see cref="FactAttribute"/> and go on covering the
+/// fallback. The two that can only be true of the painted images, their size and their blank seam, are
+/// marked <see cref="RequiresWeatherSheetsFactAttribute"/> and skip when the images are absent rather
+/// than failing on every machine that has not been given them.
+/// </para>
 /// </remarks>
 public sealed class StormDropSheetTests
 {
-    [Fact]
+    [RequiresWeatherSheetsFact]
     public void DropSheet_StacksTheTwoStripsIntoOneImage()
     {
         (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
@@ -112,7 +123,7 @@ public sealed class StormDropSheetTests
         Assert.True(soft > 0.7f, $"the bottom strip fills {soft:P0} of its cells, which is not a defocused one");
     }
 
-    [Fact]
+    [RequiresWeatherSheetsFact]
     public void DropSheet_LeavesTheSeamBetweenTheStripsEmpty()
     {
         // Nothing stops a bilinear tap straddling the join; what stops it mattering is that both strips
