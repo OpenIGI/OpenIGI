@@ -1,4 +1,4 @@
-using OpenIGI.Rendering;
+﻿using OpenIGI.Rendering;
 
 namespace OpenIGI.Desktop;
 
@@ -50,7 +50,7 @@ internal sealed class BinocularOptics
         float step = Math.Clamp(elapsedSeconds, 0f, MaxStepSeconds);
         _seconds += step;
 
-        float rate = OpenSeconds > 0f ? step / OpenSeconds : 1f;
+        float rate = step / OpenSeconds;
         _amount = open
             ? MathF.Min(1f, _amount + rate)
             : MathF.Max(0f, _amount - (rate * CloseRateMultiplier));
