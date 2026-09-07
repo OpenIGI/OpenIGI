@@ -208,6 +208,75 @@ public sealed class ShelterHeightField
         return field;
     }
 
+    /// <summary>Wraps a raster that has already been filled in.</summary>
+    /// <param name="height">
+    /// One height per cell in world metres, row-major with X varying fastest, and
+    /// <see cref="OpenSky"/> where nothing stands. Taken as given, not copied.
+    /// </param>
+    /// <param name="width">How many cells along world X.</param>
+    /// <param name="depth">How many cells along world Y.</param>
+    /// <param name="originX">The world X of the low corner of cell zero, in metres.</param>
+    /// <param name="originY">The world Y of the low corner of cell zero, in metres.</param>
+    /// <param name="cellMetres">The side of one cell, in metres.</param>
+    /// <returns>The field, or <see cref="Empty"/> when the raster holds no cells.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="height"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="height"/> is not <c>width * depth</c> long.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A dimension is negative, or the cell size is not positive.</exception>
+    /// <remarks>
+    /// <see cref="Build(IEnumerable{WorldPlacement}, double)"/> is how a level gets one of these. This
+    /// is for the callers that already hold the answer: a test posing a shed with a door in it, and a
+    /// tool that has read a raster back from disk. It exists because the alternative for both is to
+    /// assemble a placement, a pack and a model whose container parses into a collision mesh, which
+    /// tests nothing about shelter and needs a retail installation to run at all.
+    /// </remarks>
+    public static ShelterHeightField FromHeights(
+        float[] height,
+        int width,
+        int depth,
+        double originX,
+        double originY,
+        double cellMetres = DefaultCellMetres)
+    {
+        ArgumentNullException.ThrowIfNull(height);
+        ArgumentOutOfRangeException.ThrowIfNegative(width);
+        ArgumentOutOfRangeException.ThrowIfNegative(depth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(cellMetres);
+
+        if (height.Length != width * depth)
+        {
+            throw new ArgumentException(
+                $"A {width}x{depth} raster needs {width * depth} heights; got {height.Length}.",
+                nameof(height));
+        }
+
+        if (height.Length == 0)
+        {
+            return Empty;
+        }
+
+        float lowest = float.PositiveInfinity;
+        float highest = float.NegativeInfinity;
+        foreach (float value in height)
+        {
+            if (float.IsNegativeInfinity(value))
+            {
+                continue;
+            }
+
+            lowest = Math.Min(lowest, value);
+            highest = Math.Max(highest, value);
+        }
+
+        // Every cell is open sky, so there is no surface for the encoded range to span.
+        if (float.IsPositiveInfinity(lowest))
+        {
+            lowest = 0f;
+            highest = 0f;
+        }
+
+        return new ShelterHeightField(height, width, depth, originX, originY, cellMetres, lowest, highest);
+    }
+
     /// <summary>The height of the highest solid surface over a square of ground, in world metres.</summary>
     /// <param name="x">The world X, in metres.</param>
     /// <param name="y">The world Y, in metres.</param>

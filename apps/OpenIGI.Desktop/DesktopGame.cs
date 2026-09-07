@@ -6073,6 +6073,10 @@ internal sealed partial class DesktopGame : IDisposable
         _cardLookup?.Dispose();
         _sdfClipmaps?.Dispose();
         _detailMaps?.Dispose();
+
+        // Before the device: the bed's taps are streams the device owns, and stopping them while it is
+        // still alive is what gives the voices back rather than leaving them to the device's teardown.
+        _rainAmbience?.Dispose();
         _audio.Dispose();
     }
 }

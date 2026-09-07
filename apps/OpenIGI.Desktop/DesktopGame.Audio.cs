@@ -293,6 +293,12 @@ internal sealed partial class DesktopGame
         _sounds?.PlayDefinition("pickup", priority: 180);
     }
 
+    /// <summary>The weather, heard. Null until the device is open; silent until a level rains.</summary>
+    private RainAmbience? _rainAmbience;
+
+    /// <summary>When the rain mix was last reported to the log, as a stopwatch timestamp.</summary>
+    private long _rainDebugTimestamp;
+
     /// <summary>When the score's fade was last advanced, as a stopwatch timestamp.</summary>
     private long _audioTimestamp;
 
@@ -322,6 +328,7 @@ internal sealed partial class DesktopGame
         _soldierWeaponSounds.Clear();
         MountMenuSounds();
         LoadExternalImpactSound();
+        LoadRainAmbience();
 
         // The original hard-cuts between menu and mission themes, so a fade is an addition and belongs
         // to the enhanced profile only. Under vanilla this stays zero and the cut is exact.
@@ -378,6 +385,7 @@ internal sealed partial class DesktopGame
 
         _audioTimestamp = now;
         _music?.Update(delta);
+        UpdateRainAmbience(delta);
     }
 
     /// <summary>Puts the listener where the player's eye is.</summary>
@@ -446,6 +454,7 @@ internal sealed partial class DesktopGame
             soldier.Reset();
         }
         _soldierWeaponSounds.Clear();
+        _rainAmbience?.Stop();
         _sounds?.UnloadBuffers();
         _soundBank?.Clear();
         MountMenuSounds();
@@ -645,6 +654,83 @@ internal sealed partial class DesktopGame
     /// thirty impacts. Six covers every automatic weapon's densest tick with room to spare.
     /// </remarks>
     private const int MaximumCustomImpactSoundsPerTick = 6;
+
+    /// <summary>Loads the rain recording the weather bed is built from.</summary>
+    /// <remarks>
+    /// A mono 16-bit PCM WAV under <c>Assets/sounds</c>, prepared as a seamless loop — see the notes
+    /// beside the asset. Mono is a requirement rather than a preference: only a mono source is placed
+    /// in three dimensions, and placing the rain is the whole point. A missing file is not a fault;
+    /// the weather simply stays silent, exactly as it did before this existed.
+    /// </remarks>
+    private void LoadRainAmbience()
+    {
+        _rainAmbience?.Dispose();
+        _rainAmbience = null;
+
+        if (_sounds is null)
+        {
+            return;
+        }
+
+        RainAmbience rain = new(_sounds, _logger);
+        if (rain.TryLoad(Path.Combine(AppContext.BaseDirectory, "Assets", "sounds", "rain-loop.wav")))
+        {
+            _rainAmbience = rain;
+        }
+    }
+
+    /// <summary>Drives the weather bed from the level the player is standing in.</summary>
+    /// <remarks>
+    /// <para>
+    /// After <see cref="UpdateListener"/> and from the listener's own position, so the ear the rain is
+    /// measured around is the same ear everything else is heard with. Taking the eye from the camera a
+    /// second time here would be one blend away from the first and would drift.
+    /// </para>
+    /// <para>
+    /// <b>Whether it rains is the renderer's answer, not a second opinion.</b> The level's own
+    /// <c>RainEffect</c> task decides, through the same <c>IsWeatherEnabled</c> the draw path reads,
+    /// so forcing the weather on from the console or the campaign screen is heard as well as seen.
+    /// What must NOT be consulted is the storm's <c>IsActive</c>: that goes false the moment the
+    /// camera is under a roof, which is precisely the case this whole system exists to sound different
+    /// in rather than to fall silent in.
+    /// </para>
+    /// </remarks>
+    private void UpdateRainAmbience(float delta)
+    {
+        if (_rainAmbience is not { } rain)
+        {
+            return;
+        }
+
+        // No player is the menu, where there is no ear to place the weather around.
+        bool raining = AudioCVars.Rain.Value && _player is not null && (_rain?.IsWeatherEnabled ?? false);
+        float intensity = raining
+            ? (_storm is { Enabled: true } ? RenderCVars.StormIntensity.Value : 1f)
+            : 0f;
+
+        rain.Update(
+            _audio.Listener.Position,
+            _shelterField,
+            _player?.GrenadeWalls,
+            WorldScene.UnitsPerMetre,
+            intensity,
+            AudioCVars.RainVolume.Value,
+            delta);
+
+        if (!AudioCVars.RainDebug.Value || !rain.IsSounding)
+        {
+            return;
+        }
+
+        long now = Stopwatch.GetTimestamp();
+        if (_rainDebugTimestamp != 0 && Stopwatch.GetElapsedTime(_rainDebugTimestamp, now).TotalSeconds < 1.0)
+        {
+            return;
+        }
+
+        _rainDebugTimestamp = now;
+        _logger.Information("Audio", $"Rain: {rain.Describe()}");
+    }
 
     /// <summary>Loads the port's own bullet-impact sound, when the asset ships beside the game.</summary>
     /// <remarks>
