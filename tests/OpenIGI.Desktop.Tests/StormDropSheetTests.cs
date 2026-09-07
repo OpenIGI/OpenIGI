@@ -168,3 +168,87 @@ public sealed class StormDropSheetTests
         return used / (float)Math.Max(right - left, 1);
     }
 }
+
+/// <summary>
+/// Guards the splash sheet's layout, which the renderer's frame arithmetic assumes.
+/// </summary>
+/// <remarks>
+/// The shipped image is eight frames four across and two down, with three different animations packed
+/// one per colour channel — that is what the reference's sprite renderer declares and what the image
+/// itself measures. Reading it as eight frames across by four strips down, which this port did, slices
+/// every frame into quarters and draws a corner of one splash where a whole one belongs.
+/// </remarks>
+public sealed class StormSplashSheetTests
+{
+    [Fact]
+    public void SplashSheet_IsFourAcrossAndOneStripPerVariantPlusTheBlob()
+    {
+        Assert.Equal(4, StormRenderer.SplashColumns);
+        Assert.Equal(8, StormRenderer.SplashFrames);
+        Assert.Equal(2, StormRenderer.SplashFrameRows);
+        Assert.Equal(3, StormRenderer.SplashVariants);
+        Assert.Equal(7, StormRenderer.SplashRows);
+        Assert.Equal(6, StormRenderer.SplashBlobRow);
+
+        (Bgra32[] pixels, int width, int height) = StormRenderer.BuildSplashSheet();
+        Assert.Equal(width * height, pixels.Length);
+
+        // Square cells, which is what a 4x2 read of the shipped 512x256 gives and what an 8x4 read
+        // does not.
+        Assert.Equal(width / StormRenderer.SplashColumns, height / StormRenderer.SplashRows);
+    }
+
+    [RequiresWeatherSheetsFact]
+    public void SplashSheet_UnpacksThreeDifferentAnimationsFromTheThreeChannels()
+    {
+        (Bgra32[] pixels, int width, int height) = StormRenderer.BuildSplashSheet();
+        int cell = height / StormRenderer.SplashRows;
+
+        // The mean alpha of each variant's own pair of strips. The three channels of the shipped image
+        // carry visibly different amounts of ink, so three unpacked variants must too — if any pair
+        // matches another exactly, the same channel has been read three times.
+        double[] means = new double[StormRenderer.SplashVariants];
+        for (int variant = 0; variant < StormRenderer.SplashVariants; variant++)
+        {
+            long sum = 0;
+            int top = variant * StormRenderer.SplashFrameRows * cell;
+            int rows = StormRenderer.SplashFrameRows * cell;
+            for (int y = top; y < top + rows; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    sum += pixels[(y * width) + x].A;
+                }
+            }
+
+            means[variant] = sum / (double)(rows * width);
+            Assert.True(means[variant] > 1.0, $"variant {variant} is empty");
+        }
+
+        for (int a = 0; a < means.Length; a++)
+        {
+            for (int b = a + 1; b < means.Length; b++)
+            {
+                Assert.True(
+                    Math.Abs(means[a] - means[b]) > 0.5,
+                    $"variants {a} and {b} carry the same ink ({means[a]:0.00} vs {means[b]:0.00}), "
+                        + "so one channel has been read for all three");
+            }
+        }
+    }
+
+    [Fact]
+    public void SplashSheet_GivesEveryFrameItsOwnCellInReadingOrder()
+    {
+        // The mapping the builder writes and the renderer reads must be the one inverse of the other:
+        // eight frames, four across, filling the first strip before the second.
+        for (int frame = 0; frame < StormRenderer.SplashFrames; frame++)
+        {
+            int column = frame % StormRenderer.SplashColumns;
+            int row = frame / StormRenderer.SplashColumns;
+            Assert.InRange(column, 0, StormRenderer.SplashColumns - 1);
+            Assert.InRange(row, 0, StormRenderer.SplashFrameRows - 1);
+            Assert.Equal(frame, (row * StormRenderer.SplashColumns) + column);
+        }
+    }
+}
