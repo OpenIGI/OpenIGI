@@ -3,7 +3,9 @@ using OpenIGI.Input;
 using Silk.NET.Core.Contexts;
 using Silk.NET.Input;
 using Silk.NET.Maths;
+using Silk.NET.Input.Glfw;
 using Silk.NET.Windowing;
+using Silk.NET.Windowing.Glfw;
 using SilkMouseButton = Silk.NET.Input.MouseButton;
 
 namespace OpenIGI.Platform.Desktop;
@@ -116,6 +118,28 @@ public sealed class SilkGameWindow : IGameWindow
 
         HookEvents();
         ApplyCursorMode();
+    }
+
+    /// <summary>Names the windowing and input backend, rather than leaving Silk to go looking.</summary>
+    /// <remarks>
+    /// <para>
+    /// Silk finds its platforms by reflecting over the assemblies it can see, and a SINGLE-FILE publish
+    /// takes that away: the backend assemblies are bundled inside the executable rather than sitting
+    /// beside it, nothing enumerates them, and <see cref="Window.Create"/> fails with "Couldn't find a
+    /// suitable window platform" before a frame is drawn. The game builds and runs perfectly from a
+    /// normal output directory and cannot start at all from a published one, which is a difference that
+    /// only shows up at the very end.
+    /// </para>
+    /// <para>
+    /// Registering the backend by name is the documented answer and costs nothing in the ordinary case
+    /// — it is the same platform the search would have found. Input needs saying separately from
+    /// windowing; registering only the window leaves the mouse and keyboard dead in the same builds.
+    /// </para>
+    /// </remarks>
+    static SilkGameWindow()
+    {
+        GlfwWindowing.RegisterPlatform();
+        GlfwInput.RegisterPlatform();
     }
 
     private static IWindow CreateWindow(WindowOptions options, DesktopDisplay display)
