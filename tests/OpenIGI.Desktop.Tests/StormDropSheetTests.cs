@@ -304,3 +304,44 @@ public sealed class StormSplashSizeTests
         }
     }
 }
+
+/// <summary>
+/// Holds the storm's sprite sheets to a description the device can actually upload.
+/// </summary>
+/// <remarks>
+/// Written after asking for zero mip levels took the whole storm off the screen. Zero is not a way to
+/// ask for a generated chain — <see cref="TextureDescription"/> counts levels, requires at least one,
+/// and makes level zero out of range when there are none, so the upload throws before a texel is
+/// written. The three sheets are resolved together inside one try at the top of the draw, so the rain,
+/// the splashes and the curtains all vanished together with the one that threw.
+/// </remarks>
+public sealed class StormSheetTextureTests
+{
+    [Fact]
+    public void SheetTexture_AsksForALevelThatCanBeUploaded()
+    {
+        TextureDescription description = StormRenderer.SheetTexture(512, 1024);
+
+        Assert.True(description.MipLevels >= 1, "a sheet must have at least one mip level");
+
+        // The exact call the upload makes for every level it is told exists. With no levels at all this
+        // throws for level zero, which is what took the storm off the screen.
+        for (int level = 0; level < description.MipLevels; level++)
+        {
+            _ = description.GetMipSize(level);
+        }
+    }
+
+    [Theory]
+    [InlineData(512, 1024)]
+    [InlineData(512, 896)]
+    [InlineData(512, 512)]
+    public void SheetTexture_DescribesTheSheetItWasGiven(int width, int height)
+    {
+        TextureDescription description = StormRenderer.SheetTexture(width, height);
+
+        Assert.Equal(width, description.Width);
+        Assert.Equal(height, description.Height);
+        Assert.Equal(TextureAddressMode.Clamp, description.AddressMode);
+    }
+}
