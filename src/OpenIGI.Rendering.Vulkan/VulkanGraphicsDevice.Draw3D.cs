@@ -688,15 +688,40 @@ public sealed partial class VulkanGraphicsDevice
         float lampFill = (lamps.X * 0.212639f) + (lamps.Y * 0.715169f) + (lamps.Z * 0.072192f);
         data[19] = _lighting.AmbientColour.Length + lampFill;
 
-        // The model-to-view rotation, row by row, each w carrying one channel of the key colour — the
-        // level's own sun tint plus whatever the lamps are contributing, so a weapon picks up the mood
-        // of the mission it is in and the colour of the light it is standing under.
-        data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
-        data[23] = _lighting.SunColour.X + lamps.X;
-        data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
-        data[27] = _lighting.SunColour.Y + lamps.Y;
-        data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
-        data[31] = _lighting.SunColour.Z + lamps.Z;
+        if (_detailFade.Mode > 0f && !litViewModel)
+        {
+            // Terrain slides each vertex between levels of detail, and the slide is measured along the
+            // world axes from the eye, so the vertex stage needs the ramp and where the chunk's origin
+            // sits relative to the camera. The rows below carry the rotation for the lit rig's normal
+            // and the key colour, and a terrain chunk is never the rig, so they carry these instead;
+            // the first row's w -- zero for every other draw below -- is what says so.
+            //
+            // A chunk is drawn unrotated, so the model-view's rotation is the view's own and its
+            // transpose undoes it: the offset is that transpose applied to the model-view's translation,
+            // which is exactly what the OpenGL shader computed per vertex as the view position times
+            // the model-view's 3x3.
+            data[20] = _detailFade.Scale; data[21] = _detailFade.Offset; data[22] = _detailFade.Slope;
+            data[23] = _detailFade.Mode;
+            data[24] = (modelView.M11 * modelView.M14) + (modelView.M21 * modelView.M24) + (modelView.M31 * modelView.M34);
+            data[25] = (modelView.M12 * modelView.M14) + (modelView.M22 * modelView.M24) + (modelView.M32 * modelView.M34);
+            data[26] = (modelView.M13 * modelView.M14) + (modelView.M23 * modelView.M24) + (modelView.M33 * modelView.M34);
+            data[27] = 0f;
+            data[28] = 0f; data[29] = 0f; data[30] = 0f; data[31] = 0f;
+        }
+        else
+        {
+            // The model-to-view rotation, row by row, each w carrying one channel of the key colour — the
+            // level's own sun tint plus whatever the lamps are contributing, so a weapon picks up the mood
+            // of the mission it is in and the colour of the light it is standing under. The key is read
+            // by the lit rig alone, so every other draw leaves the first w at zero: that is the terrain
+            // flag the vertex stage reads, and a sun tint there would morph the world.
+            data[20] = modelView.M11; data[21] = modelView.M12; data[22] = modelView.M13;
+            data[23] = litViewModel ? _lighting.SunColour.X + lamps.X : 0f;
+            data[24] = modelView.M21; data[25] = modelView.M22; data[26] = modelView.M23;
+            data[27] = _lighting.SunColour.Y + lamps.Y;
+            data[28] = modelView.M31; data[29] = modelView.M32; data[30] = modelView.M33;
+            data[31] = _lighting.SunColour.Z + lamps.Z;
+        }
 
         vk.CmdPushConstants(
             cmd,
