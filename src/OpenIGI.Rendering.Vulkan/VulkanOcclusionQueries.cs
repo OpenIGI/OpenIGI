@@ -102,7 +102,11 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
     public OcclusionQueryHandle Create()
     {
         uint id = _nextId++;
-        _queries[id] = new State();
+
+        // The all-zero state is the conservative one -- not hidden, not pending, no empty probes -- so a
+        // query that is never probed (the direct render path has no geometry pass to draw a box into)
+        // keeps its object drawn. See the note on State for the constructor trap this replaced.
+        _queries[id] = default;
         return new OcclusionQueryHandle(id);
     }
 
@@ -117,10 +121,10 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
     }
 
     /// <summary>Gets whether an object should be drawn — its last known visibility.</summary>
-    /// <param name="query">The query. An invalid or unknown handle is treated as visible.</param>
+    /// <param name="query">The query. An invalid, unknown or never-probed handle is treated as visible.</param>
     /// <returns><see langword="true"/> to draw the object.</returns>
     public bool Visible(OcclusionQueryHandle query)
-        => !query.IsValid || !_queries.TryGetValue(query.Id, out State state) || state.Visible;
+        => !query.IsValid || !_queries.TryGetValue(query.Id, out State state) || !state.Hidden;
 
     /// <summary>
     /// Opens the frame: reads back the results this slot last recorded, then resets its block so this
@@ -260,14 +264,23 @@ internal sealed unsafe class VulkanOcclusionQueries : IDisposable
             {
                 Pending = false,
                 EmptyFrames = emptyFrames,
-                Visible = passed || emptyFrames < 2,
+                Hidden = !passed && emptyFrames >= 2,
             };
         }
     }
 
     /// <summary>One object's visibility state, carried across frames.</summary>
+    /// <remarks>
+    /// Phrased so that <see langword="default"/> is the safe state: a struct's zero value is what an
+    /// unprobed query holds, and it must mean "draw it". This used to carry a <c>Visible</c> flag defaulted
+    /// to true in the primary constructor, and <see cref="Create"/> wrote <c>new State()</c> -- which on a
+    /// struct binds to the implicit zero-initialised constructor, not the primary one, so every query was
+    /// born hidden. The deferred presets probed and corrected that within two frames; the vanilla preset's
+    /// direct path never probes, and every placement vanished as soon as the camera held still long enough
+    /// for its verdict to be trusted.
+    /// </remarks>
     /// <param name="Pending">Whether a probe is in flight and the object must not be probed again yet.</param>
-    /// <param name="Visible">The last known visibility — the answer <see cref="Visible"/> returns.</param>
+    /// <param name="Hidden">Whether the last probes proved the object hidden — the inverse of <see cref="Visible"/>.</param>
     /// <param name="EmptyFrames">Consecutive probes that found nothing, for the two-frame hysteresis.</param>
-    private readonly record struct State(bool Pending = false, bool Visible = true, int EmptyFrames = 0);
+    private readonly record struct State(bool Pending, bool Hidden, int EmptyFrames);
 }
