@@ -23,7 +23,7 @@ namespace OpenIGI.Rendering.Vulkan.Tests;
 /// </remarks>
 public sealed class UpscaleShaderCompilationTests
 {
-    [Fact]
+    [RequiresShaderCompilerFact]
     public void TheRejectShadingShaderCompiles()
     {
         using ShaderCompiler compiler = new();
@@ -55,5 +55,52 @@ public sealed class UpscaleShaderCompilationTests
         Assert.Equal(6, declarations.Length);
         Assert.All(declarations, line => Assert.StartsWith("shared float ", line, StringComparison.Ordinal));
         Assert.All(declarations, line => Assert.EndsWith("* 3];", line, StringComparison.Ordinal));
+    }
+}
+
+/// <summary>A <see cref="FactAttribute"/> that skips when shaderc's native library will not load.</summary>
+/// <remarks>
+/// <para>
+/// This was a plain <see cref="FactAttribute"/>, on the reasoning that the renderer links shaderc
+/// anyway so the compiler is always there. It is not: a machine with no graphics stack — continuous
+/// integration, most obviously — has nothing for the native loader to find, and the test failed with
+/// <c>Could not load from any of the possible library names</c> on every Linux run while passing on
+/// every developer's box.
+/// </para>
+/// <para>
+/// A shader that will not compile must still fail loudly wherever a compiler exists, so this skips on
+/// the library being absent and on nothing else.
+/// </para>
+/// </remarks>
+public sealed class RequiresShaderCompilerFactAttribute : FactAttribute
+{
+    /// <summary>Initializes a new instance of the <see cref="RequiresShaderCompilerFactAttribute"/> class.</summary>
+    public RequiresShaderCompilerFactAttribute()
+    {
+        if (!ShaderCompilerProbe.IsAvailable)
+        {
+            Skip = "shaderc's native library is not loadable here, so the shaders cannot be compiled in a test.";
+        }
+    }
+}
+
+/// <summary>Whether shaderc can be loaded at all, asked once.</summary>
+internal static class ShaderCompilerProbe
+{
+    /// <summary>Gets a value indicating whether a compiler could be created.</summary>
+    public static bool IsAvailable { get; } = Probe();
+
+    private static bool Probe()
+    {
+        try
+        {
+            using ShaderCompiler compiler = new();
+            return true;
+        }
+        catch (Exception error) when (error is DllNotFoundException or FileNotFoundException
+            or EntryPointNotFoundException or TypeInitializationException or BadImageFormatException)
+        {
+            return false;
+        }
     }
 }

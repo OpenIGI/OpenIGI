@@ -27,21 +27,3 @@ public sealed class RequiresGameDataTheoryAttribute : TheoryAttribute
         }
     }
 }
-
-/// <summary>A <see cref="FactAttribute"/> that skips when the storm's painted sheets are not present.</summary>
-/// <remarks>
-/// For the tests that measure the shipped artwork rather than the streaks the renderer generates when
-/// it is missing. See <see cref="WeatherSheets"/> for why the images are not in the repository and
-/// where to put them.
-/// </remarks>
-public sealed class RequiresWeatherSheetsFactAttribute : FactAttribute
-{
-    /// <summary>Initializes a new instance of the <see cref="RequiresWeatherSheetsFactAttribute"/> class.</summary>
-    public RequiresWeatherSheetsFactAttribute()
-    {
-        if (!WeatherSheets.AreAvailable)
-        {
-            Skip = $"Put the storm's painted sheets in {WeatherSheets.AssetDirectory} to run this test.";
-        }
-    }
-}

@@ -93,12 +93,6 @@ a probe of the running original
 # ship with the binary they describe, or nobody downstream can tell what they are allowed to do with it.
 !apps/OpenIGI.Desktop/Assets/**/README.md
 
-# The storm's painted sheets and puddle textures. Licensed artwork that is not ours to
-# redistribute, exactly like the retail game files: the renderer falls back to streaks it generates
-# itself when they are absent, and the tests that measure the real images skip. Put them here to
-# work on the weather; they must not be committed. See tests/OpenIGI.TestSupport/WeatherSheets.cs.
-apps/OpenIGI.Desktop/Assets/weather/
-
 # Debug captures written next to the executable by the terrain/birdseye dumps.
 /out_*.bmp
 /out_*.png

@@ -1,7 +1,6 @@
 using OpenIGI.Core.Graphics;
 using OpenIGI.Desktop;
 using OpenIGI.Rendering;
-using OpenIGI.TestSupport;
 using Xunit;
 
 namespace OpenIGI.Desktop.Tests;
@@ -19,17 +18,15 @@ namespace OpenIGI.Desktop.Tests;
 /// the sheet. These tests are what makes that loud.
 /// </para>
 /// <para>
-/// The sheets are licensed artwork and are not in this repository. Without them the renderer draws
-/// streaks it generates itself, which satisfies most of what follows — the colour, the ten cells, the
-/// two focus levels — so those assertions stay <see cref="FactAttribute"/> and go on covering the
-/// fallback. The two that can only be true of the painted images, their size and their blank seam, are
-/// marked <see cref="RequiresWeatherSheetsFactAttribute"/> and skip when the images are absent rather
-/// than failing on every machine that has not been given them.
+/// The sheets ship with the game, so every one of these runs. The renderer still draws streaks it
+/// generates itself when a sheet cannot be read, and most of what follows — the colour, the ten cells,
+/// the two focus levels — holds for that fallback too; the size and the blank seam can only be true of
+/// the painted images, so those two are also what would catch the sheets going missing.
 /// </para>
 /// </remarks>
 public sealed class StormDropSheetTests
 {
-    [RequiresWeatherSheetsFact]
+    [Fact]
     public void DropSheet_StacksTheTwoStripsIntoOneImage()
     {
         (Bgra32[] pixels, int width, int height, float splitV) = StormRenderer.BuildDropSheet();
@@ -124,7 +121,7 @@ public sealed class StormDropSheetTests
         Assert.True(soft > 0.7f, $"the bottom strip fills {soft:P0} of its cells, which is not a defocused one");
     }
 
-    [RequiresWeatherSheetsFact]
+    [Fact]
     public void DropSheet_LeavesTheSeamBetweenTheStripsEmpty()
     {
         // Nothing stops a bilinear tap straddling the join; what stops it mattering is that both strips
@@ -199,7 +196,7 @@ public sealed class StormSplashSheetTests
         Assert.Equal(width / StormRenderer.SplashColumns, height / StormRenderer.SplashRows);
     }
 
-    [RequiresWeatherSheetsFact]
+    [Fact]
     public void SplashSheet_UnpacksThreeDifferentAnimationsFromTheThreeChannels()
     {
         (Bgra32[] pixels, int width, int height) = StormRenderer.BuildSplashSheet();
