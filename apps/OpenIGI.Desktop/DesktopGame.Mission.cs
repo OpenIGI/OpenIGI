@@ -211,6 +211,21 @@ internal sealed partial class DesktopGame
         // The mission's sounds and its score. Both routes into a mission come through here -- a cold
         // start and a backdrop being promoted -- and only the cold one passes the mission loader, so
         // the mount has to happen on this side or a promoted mission plays nothing at all.
+        //
+        // A cold start emptied the bank in StartMission, before the loader mounted into it. A PROMOTED
+        // backdrop never went near StartMission, so without this the bank still holds the mission the
+        // player last played -- and since the bank keeps the FIRST mount of a name, the mount below
+        // cannot replace it. Every level ships its own sounds/game_music.wav, so what leaked through was
+        // the previous level's score playing over the new one.
+        //
+        // Tearing the bank down costs a re-read of the menu archive and the common directory: 15 ms
+        // warm, 23 ms cold for all 375 sounds, which is the same bill the cold path already pays and is
+        // spent here under the going-in card rather than during play.
+        if (promoted)
+        {
+            ResetSoundsForMission();
+        }
+
         MountMissionSounds(loaded);
         _music?.Play(MusicPlayer.GameMusic);
 

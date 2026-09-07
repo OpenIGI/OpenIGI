@@ -440,9 +440,18 @@ internal sealed partial class DesktopGame
 
     /// <summary>Empties the bank and re-mounts what does not belong to a mission.</summary>
     /// <remarks>
+    /// <para>
     /// Called before each mission load, so the mission's own directory is mounted into a bank holding
     /// only the menu sounds. The original rebuilds its table the same way; leaving the previous level's
     /// sounds in place would let a name resolve to a sound the new level never shipped.
+    /// </para>
+    /// <para>
+    /// Clearing is the only thing that can retire a name, because the bank keeps the FIRST mount of one
+    /// — faithfully, since the original's loader reports <c>"SOUND - File %s already loaded!"</c> rather
+    /// than replacing. Every mission ships its own <c>sounds/game_music.wav</c>, and a mounted entry
+    /// holds the path it was found at rather than the <c>MISSION:</c> alias it was found through, so a
+    /// bank carried across a load answers <c>game_music</c> with the previous level's score forever.
+    /// </para>
     /// </remarks>
     private void ResetSoundsForMission()
     {
@@ -455,6 +464,13 @@ internal sealed partial class DesktopGame
         }
         _soldierWeaponSounds.Clear();
         _rainAmbience?.Stop();
+
+        // Before the buffers, and explicitly rather than through the device-wide stop UnloadBuffers
+        // does: the score has to be told, not merely silenced. It treats a repeat of the playing track
+        // as a no-op so that re-entering the mission state does not stutter the music, and a track it
+        // still believes is playing is a track the next Play(game_music) would decline to start.
+        _music?.Stop();
+
         _sounds?.UnloadBuffers();
         _soundBank?.Clear();
         MountMenuSounds();
