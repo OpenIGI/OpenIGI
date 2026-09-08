@@ -111,6 +111,45 @@ public sealed class ElevatorSwitchInteractionTests
         Assert.True(elevatorsTested > 0, "no callable elevator switch was found");
     }
 
+    [RequiresGameDataFact]
+    public void Mission5ExteriorHallCallBringsAnEmptyCabToThePlayer()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(5);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
+        WorldInteractionRegistry interactions = WorldInteractionRegistry.Build(
+            root, mission, doors, variables, elevators);
+        PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
+        DeclaredTask declared = Assert.IsType<DeclaredTask>(elevator.Task);
+
+        int startFloor = Settle(elevator, interactions, elevators, doors);
+        int targetFloor = startFloor == 0 ? 1 : 0;
+        WorldInteraction callSwitch = Assert.IsType<WorldInteraction>(
+            FindCallSwitch(interactions, declared, targetFloor, elevator));
+
+        // A hall call is made from outside the cab. The player provider remains outside for the
+        // entire ride, proving that the exterior switch source—not cab occupancy—authorises travel.
+        Vector3d outside = elevator.State.Position + new Vector3d(100000, 0, 0);
+        elevators.SetPlayerPositionProvider(() => outside);
+        callSwitch.Press();
+
+        bool arrived = false;
+        for (int tick = 0; tick < 10000; tick++)
+        {
+            elevators.Tick();
+            interactions.Tick();
+            doors.Tick();
+            if (elevator.State.CurrentFloorIndex == targetFloor && !elevator.State.IsMoving)
+            {
+                arrived = true;
+                break;
+            }
+        }
+
+        Assert.True(arrived,
+            $"Mission 5 exterior hall call did not bring Elevator_51 from floor {startFloor} to {targetFloor}");
+    }
+
     /// <summary>
     /// Exercises the real player-facing activation path rather than a direct task-id press: the player
     /// stands ~1.5 m in front of a floor's hall call switch and looks at it, <see cref="WorldInteractionRegistry.Resolve"/>

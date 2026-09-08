@@ -139,6 +139,34 @@ public sealed class ElevatorRideInteractionTests
     }
 
     [RequiresGameDataFact]
+    public void LiftWaitsForThePlayerToEnterTheSpecificCab()
+    {
+        (LevelTask root, ScriptVarRegistry variables, LoadedMission mission) = Load(5);
+        DoorRegistry doors = DoorRegistry.Build(root);
+        ElevatorRegistry elevators = ElevatorRegistry.Build(root, variables, doors);
+        PlacedElevator elevator = Assert.Single(elevators.Elevators, item => item.Task.Id == 51);
+
+        foreach (PlacedDoor door in doors.Doors)
+        {
+            door.State.CommandClosed();
+        }
+        for (int tick = 0; tick < 300; tick++)
+        {
+            doors.Tick();
+        }
+        _ = WorldInteractionRegistry.Build(root, mission, doors, variables, elevators);
+
+        elevators.SetPlayerPositionProvider(() => elevator.State.Position + new Vector3d(100000, 0, 0));
+        elevator.State.RequestFloor(1);
+        elevators.Tick();
+        Assert.False(elevator.State.IsMoving, "the Level 5 elevator started while the player was outside its cab");
+
+        elevators.SetPlayerPositionProvider(() => elevator.State.Position);
+        elevators.Tick();
+        Assert.True(elevator.State.IsMoving, "the Level 5 elevator did not start after the player entered its cab");
+    }
+
+    [RequiresGameDataFact]
     public void LiftDoesNotMoveWhenDoorsAreNotFullyClosed()
     {
         for (int missionId = 1; missionId <= 14; missionId++)
