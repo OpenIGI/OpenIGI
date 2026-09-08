@@ -4,9 +4,11 @@ using OpenIGI.Engine.Resources;
 using OpenIGI.Engine.Tasks;
 using OpenIGI.Engine.Time;
 using OpenIGI.Engine.Vfs;
+using OpenIGI.Core.Numerics;
 using OpenIGI.Game.Ai;
 using OpenIGI.Game.Player;
 using OpenIGI.Game.World;
+using OpenIGI.Scripting.Expressions;
 using OpenIGI.Scripting.Runtime;
 using OpenIGI.TestSupport;
 using Xunit;
@@ -16,6 +18,85 @@ namespace OpenIGI.Game.Tests;
 /// <summary>Retail-script lifecycle coverage for Mission 3's authored outro.</summary>
 public sealed class LevelThreeOutroFidelityTests
 {
+    [RequiresGameDataFact]
+    public void Scene700KeepsItsAuthoredHangarAndTakeoffTimeline()
+    {
+        (GameLoop loop, LevelTask root) = LoadLevelThree();
+        List<string> natives = [];
+        List<CutsceneSoundEvent> sounds = [];
+        CutsceneRuntime runtime = new(
+            root,
+            loop.Variables,
+            native: InvokeNative,
+            soundChanged: sounds.Add);
+        MissionObjectiveRuntime objectives = new(root, loop.Variables, native: runtime.TryInvokeNative);
+
+        runtime.RequestBreak();
+        Step(objectives, runtime);
+        natives.Clear();
+        Assert.True(loop.Variables.TryWrite("EditVariable_3068.nValue", QvmValue.FromInt32(1)));
+
+        Step(objectives, runtime);
+
+        CutSceneTask scene = Assert.IsType<CutSceneTask>(root.Tree.FromId(700));
+        ConditionalContainerTask hangar = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3445));
+        ConditionalContainerTask staticPlane = Assert.IsType<ConditionalContainerTask>(root.Tree.FromId(3446));
+        DeclaredTask takeoffPlane = Assert.IsType<DeclaredTask>(root.Tree.FromId(601));
+        Assert.Equal(700, runtime.ActiveScene?.Id);
+        Assert.True(scene.IsRun);
+        Assert.False(scene.IsFinished);
+        Assert.True(ConditionalContainerGate.IsTaskActive(hangar));
+        Assert.False(ConditionalContainerGate.IsTaskActive(staticPlane));
+        Assert.False(objectives.IsComplete);
+        Assert.Equal(
+            ["MenuManager_SetEnabled", "Game_DisableMusic", "Game_CutsceneDelete"],
+            natives.Take(3));
+        Assert.Contains(sounds, sound => sound.Name == "m3o_pl_tax" && sound.Playing);
+
+        Vector3d authoredPosition = Position(takeoffPlane);
+        while (scene.Ticks <= 8 * CutsceneRuntime.Frequency)
+        {
+            Assert.False(
+                runtime.TryGetDrawTransform(takeoffPlane, out _, out _),
+                "plane 601's AnimTask must not publish a dynamic pose through scene tick 240");
+            Step(objectives, runtime);
+            Assert.False(scene.IsFinished);
+        }
+
+        bool moved = false;
+        while (scene.Ticks < 12 * CutsceneRuntime.Frequency)
+        {
+            Step(objectives, runtime);
+            Assert.True(runtime.TryGetDrawTransform(takeoffPlane, out Vector3d position, out _));
+            moved |= position != authoredPosition;
+        }
+
+        Assert.True(moved, "AnimTask 3333 must first move plane 601 strictly after scene tick 240");
+        Step(objectives, runtime);
+        Assert.Contains(sounds, sound => sound.Name == "m3o_pl_behind" && sound.Playing);
+        Assert.False(objectives.IsComplete);
+
+        int budget = 2_000;
+        while (!scene.IsFinished && budget-- > 0)
+        {
+            Step(objectives, runtime);
+            if (!scene.IsFinished)
+            {
+                Assert.False(objectives.IsComplete);
+            }
+        }
+
+        Assert.True(scene.IsFinished);
+        Assert.True(scene.IsRun, "the completion-boundary frame retains the final authored camera");
+        Assert.True(objectives.IsComplete);
+
+        QvmValue? InvokeNative(string name, ScriptArguments _)
+        {
+            natives.Add(name);
+            return QvmValue.FromInt32(1);
+        }
+    }
+
     [RequiresGameDataFact]
     public void ProjectileCleanupKeepsScene700AliveUntilItsAuthoredFinalKnot()
     {
@@ -85,6 +166,9 @@ public sealed class LevelThreeOutroFidelityTests
         objectives.TickAfterLevelState();
         runtime.FinishExpressionTick();
     }
+
+    private static Vector3d Position(DeclaredTask task) =>
+        task.TryGetValue("Position", out object? value) && value is Vector3d position ? position : default;
 
     private static (GameLoop Loop, LevelTask Root) LoadLevelThree()
     {
