@@ -50,6 +50,7 @@ public sealed class CutsceneRuntime
     private readonly Dictionary<GameTask, TransformState> _taskTransforms = [];
     private readonly Dictionary<GameTask, int> _taskOrder = [];
     private readonly Dictionary<GameTask, AttachmentState> _attachments = [];
+    private readonly Dictionary<GameTask, CarWheel[]> _carWheels = [];
     private readonly Dictionary<GameTask, float> _trainTailOffsets = [];
     private readonly Func<string, ScriptArguments, QvmValue?>? _hostNative;
     private readonly Action<CutsceneSoundEvent>? _soundChanged;
@@ -539,6 +540,143 @@ public sealed class CutsceneRuntime
         return false;
     }
 
+    /// <summary>The magic-object task type retail gives a car's rolling wheels.</summary>
+    private const string WheelTaskTypeName = "TASKTYPE_WHEEL";
+
+    /// <summary>The two heights the vehicle obstacle probe sweeps, in metres above the body origin.</summary>
+    private static readonly double[] CarProbeHeightsMetres = [0.75d, 1.95d];
+
+    /// <summary>How far past the proposed step the obstacle probe reaches, in world units.</summary>
+    private const double CarProbeMarginUnits = 128d;
+
+    /// <summary>
+    /// The record a car falls back to when its model has no <c>physicsobj</c> entry: the shipped
+    /// truck's mass and dimensions with a single driven, unsteered wheel at the origin.
+    /// </summary>
+    private static readonly CarPhysicsDefinition DefaultCarPhysics = new(
+        3_000f,
+        new Vector3f(2.2f, 7.8f, 3f),
+        0,
+        [],
+        0.95f,
+        5_000f,
+        0.95f,
+        0,
+        [new CarWheelDefinition(false, true, 0f, 0, (float)WorldScene.UnitsPerMetre * 0.3f, 0.5f)],
+        []);
+
+    /// <summary>
+    /// Binds every car's drawn wheels to its physics record, in the order both are authored in.
+    /// </summary>
+    /// <param name="scene">The built world whose placements carry the wheel attachments.</param>
+    /// <remarks>
+    /// A car's wheels arrive as <c>TASKTYPE_WHEEL</c> magic-object attachments, one placement each,
+    /// in the same order as the record's wheel entries -- on the Mission 1 truck that pairing puts
+    /// both steered, driven entries exactly on the two front wheels. Their offsets from the body
+    /// origin are what the drive force and the tyre torque are applied at, so the physics reads them
+    /// from the model rather than guessing an axle layout.
+    /// </remarks>
+    public void BindVehicleWheels(WorldScene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        _carWheels.Clear();
+        Dictionary<GameTask, List<WorldPlacement>> byOwner = [];
+        foreach (WorldPlacement placement in scene.Placements)
+        {
+            if (!string.Equals(placement.MagicTaskTypeName, WheelTaskTypeName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!byOwner.TryGetValue(placement.Owner, out List<WorldPlacement>? list))
+            {
+                list = [];
+                byOwner[placement.Owner] = list;
+            }
+
+            list.Add(placement);
+        }
+
+        foreach ((GameTask owner, List<WorldPlacement> placements) in byOwner)
+        {
+            if (!_taskTransforms.TryGetValue(owner, out TransformState? state)
+                || state.CarPhysics is not { } physics)
+            {
+                continue;
+            }
+
+            CarWheel[] wheels = new CarWheel[placements.Count];
+            for (int i = 0; i < placements.Count; i++)
+            {
+                Vector3d placementUnits = placements[i].Position * WorldScene.UnitsPerMetre;
+                Vector3d offset = state.AuthoredOrientation.Transform(placementUnits - state.OriginPosition);
+                CarWheelDefinition definition = i < physics.Wheels.Count
+                    ? physics.Wheels[i]
+                    : new CarWheelDefinition(false, false, 0f, -1, 0f, 0f);
+                CarBodyDefinition? body = null;
+                for (int b = 0; b < physics.Bodies.Count; b++)
+                {
+                    if (physics.Bodies[b].Index == definition.BodyIndex)
+                    {
+                        body = physics.Bodies[b];
+                        break;
+                    }
+                }
+
+                wheels[i] = new CarWheel(
+                    definition,
+                    offset,
+                    body?.LateralFriction ?? 0.95f,
+                    body?.LongitudinalFriction ?? 0.05f);
+            }
+
+            _carWheels[owner] = wheels;
+        }
+    }
+
+    /// <summary>Clamps a record retention into the range the native blend assumes.</summary>
+    private static float CarRetention(float? retention) =>
+        retention is { } value && float.IsFinite(value) && value is >= 0f and <= 1f ? value : 0.95f;
+
+    /// <summary>Drops an axis into the ground plane, falling back when it is degenerate.</summary>
+    private static Vector3d FlattenAxis(Vector3f axis, Vector3d fallback)
+    {
+        Vector3d flat = new(axis.X, axis.Y, 0d);
+        double length = flat.Length;
+        return length > 1e-6d ? flat / length : fallback;
+    }
+
+    /// <summary>The wheels bound to a car, or one driven wheel at the origin when none are bound.</summary>
+    private CarWheel[] CarWheelsFor(GameTask? task, in CarPhysicsDefinition physics)
+    {
+        if (task is not null && _carWheels.TryGetValue(task, out CarWheel[]? wheels) && wheels.Length > 0)
+        {
+            return wheels;
+        }
+
+        // Without the drawn attachments the record's own entries still say how many wheels drive and
+        // steer; place them on the authored dimension box so the body still moves and turns.
+        CarWheel[] fallback = new CarWheel[Math.Max(1, physics.Wheels.Count)];
+        double halfLength = physics.Dimensions.Y * 0.25d * WorldScene.UnitsPerMetre;
+        double halfWidth = physics.Dimensions.X * 0.5d * WorldScene.UnitsPerMetre;
+        for (int i = 0; i < fallback.Length; i++)
+        {
+            CarWheelDefinition definition = i < physics.Wheels.Count
+                ? physics.Wheels[i]
+                : new CarWheelDefinition(false, true, 0f, 0, 0f, 0f);
+            fallback[i] = new CarWheel(
+                definition,
+                new Vector3d(
+                    (i % 2) == 0 ? halfWidth : -halfWidth,
+                    definition.Steerable ? halfLength : -halfLength,
+                    0d),
+                0.95f,
+                0.05f);
+        }
+
+        return fallback;
+    }
+
     /// <summary>Applies a moving task's rigid transform to one of its authored model placements.</summary>
     /// <remarks>
     /// A retail vehicle task expands into a root model plus all of its magic-object attachments. Those
@@ -620,8 +758,51 @@ public sealed class CutsceneRuntime
         {
             return false;
         }
+
+        if (TryGetWheelDraw(placement, out Matrix3f spun))
+        {
+            orientation *= spun;
+        }
+
         return true;
     }
+
+    /// <summary>Builds the roll and steer a car's drawn wheel carries this tick.</summary>
+    /// <param name="placement">The candidate placement.</param>
+    /// <param name="rotation">Receives the wheel's own rotation, in its placement frame.</param>
+    /// <returns><see langword="false"/> when the placement is not a car wheel.</returns>
+    /// <remarks>
+    /// A wheel rolls about its across axis by the distance the body has covered over the wheel
+    /// radius, and a steered wheel turns about the body's up axis by
+    /// <c>MaximumSteerDegrees * pi/180 * steering</c> -- the same angle <c>0x430D10</c> builds the
+    /// drive direction with. Without this the wheels are welded to the hull and the truck slides
+    /// along on frozen tyres.
+    /// </remarks>
+    public bool TryGetWheelDraw(WorldPlacement placement, out Matrix3f rotation)
+    {
+        ArgumentNullException.ThrowIfNull(placement);
+        rotation = Matrix3f.Identity;
+        if (!string.Equals(placement.MagicTaskTypeName, WheelTaskTypeName, StringComparison.Ordinal)
+            || !_carWheels.TryGetValue(placement.Owner, out CarWheel[]? wheels)
+            || !_taskTransforms.TryGetValue(placement.Owner, out TransformState? state))
+        {
+            return false;
+        }
+
+        int index = Array.FindIndex(wheels, wheel => wheel.OffsetUnits == WheelOffset(placement, state));
+        bool steerable = index >= 0 && wheels[index].Definition.Steerable;
+        rotation = Matrix3f.RotationX((float)state.CarMotion.WheelRoll);
+        if (steerable && state.CarMotion.WheelSteer != 0d)
+        {
+            rotation = Matrix3f.RotationZ((float)state.CarMotion.WheelSteer) * rotation;
+        }
+
+        return true;
+    }
+
+    private static Vector3d WheelOffset(WorldPlacement placement, TransformState state) =>
+        state.AuthoredOrientation.Transform(
+            (placement.Position * WorldScene.UnitsPerMetre) - state.OriginPosition);
 
     /// <summary>Builds the repeated orientations emitted by retail <c>RotorPrimitive::Draw</c>.</summary>
     public bool TryGetRotorDrawState(WorldPlacement placement, out RotorDrawState draw)
@@ -1219,7 +1400,6 @@ public sealed class CutsceneRuntime
             // helicopters and planes to the identity matrix on cutscene tick one.
             Euler = angles,
             Heading = angles.Z,
-            CarRoute = CarRouteProfile.For(declared),
         };
         if (string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
             && _vehiclePhysics?.TryGetCar(Text(declared, WorldScene.ModelParameter), out CarPhysicsDefinition car) == true)
@@ -1429,81 +1609,72 @@ public sealed class CutsceneRuntime
 
             // Car::Tick (0x42ECA0) blends each live control from the model record's retention:
             //     current = current * retention + target * (1 - retention)
-            // Prefer these native retention fields. The QVM header also publishes the complementary
-            // response value, which remains a defensive fallback for malformed legacy records.
+            // Retention is record +24 for steering and +32 for throttle; every shipped car publishes
+            // a value between 0.9 and 0.998 there.
             CarPhysicsDefinition? carPhysics = transform.CarPhysics;
-            float steeringRetention = carPhysics?.SteeringRetention ?? 0.95f;
-            float throttleRetention = carPhysics?.ThrottleRetention ?? 0.95f;
-            if (carPhysics is { } car)
-            {
-                if (!float.IsFinite(steeringRetention) || steeringRetention is < 0f or > 1f)
-                {
-                    steeringRetention = 1f - Math.Clamp(car.SteeringResponse, 0f, 1f);
-                }
-                if (!float.IsFinite(throttleRetention) || throttleRetention is < 0f or > 1f)
-                {
-                    throttleRetention = 1f - Math.Clamp(car.ThrottleResponse, 0f, 1f);
-                }
-            }
+            float steeringRetention = CarRetention(carPhysics?.SteeringRetention);
+            float throttleRetention = CarRetention(carPhysics?.ThrottleRetention);
             transform.Steering = (transform.Steering * steeringRetention)
                 + (transform.TargetSteering * (1f - steeringRetention));
             transform.Thrust = (transform.Thrust * throttleRetention)
                 + (transform.TargetThrust * (1f - throttleRetention));
             // Car::Tick zeroes a near-zero smoothed throttle at a zero target (0x42ECA0: if
-            // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0; constants 0x5333EC/0x533714 read live
-            // from IGI.EXE). Without it a commanded stop decays asymptotically and the truck
-            // freezes mid-route holding residual thrust (Level 2 held 29.88 engine units).
+            // +0x730 == 0 and |+0x720| < 0.01, +0x720 = 0). Without it a commanded stop decays
+            // asymptotically and the truck freezes mid-route holding residual thrust.
             if (transform.TargetThrust == 0f && MathF.Abs(transform.Thrust) < 0.01f)
             {
                 transform.Thrust = 0f;
             }
 
-            float targetSpeed = transform.ParkingBrake ? 0f : transform.Thrust * 1_200f;
-            transform.Speed += (targetSpeed - transform.Speed) * (transform.ParkingBrake ? 0.3f : 0.04f);
-
-            // Car::Tick (IGI.exe 0x42ECA0) integrates the authored steering around the vehicle's
-            // local-Y forward axis. The only shipped route needing the post-gate sign is the Level 1
-            // "Truck which Jones will steal" (model 622_01_1); Mission 2 reuses that model for a
-            // different inbound route. Keep the authored identity and its probe dimensions together
-            // instead of applying an ID- or model-wide exception to every Car.
-            CarRouteProfile? route = transform.CarRoute;
-            // Retail stops on the actual closed-door contact and resumes when the door's
-            // collision volume disappears (Door_401 is a normal Door task; the CAR tick
-            // 0x42ECA0 dispatches 0x42EF00 contact processing then the shared collision
-            // step). The latched-contact block below owns that transition. A cutscene-clock
-            // release here would free the truck ~13 m before Door401 without contact, so
-            // no tick-based gate release is applied.
             float previousHeading = transform.Heading;
             Matrix3f previousOrientation = transform.Orientation;
-            float headingDelta = transform.Steering * transform.Speed / (4_096f * 4.5f);
-            transform.Heading += -headingDelta;
+
+            // The orientation's second column is the body's forward axis and the first its across
+            // axis, which is how 0x430D10 reads them when it builds the drive direction.
+            Vector3f forwardAxis = transform.Orientation.Column2;
+            Vector3f lateralAxis = transform.Orientation.Column1;
+            Vector3d forward = FlattenAxis(forwardAxis, new Vector3d(0d, 1d, 0d));
+            Vector3d lateral = FlattenAxis(lateralAxis, new Vector3d(1d, 0d, 0d));
+
+            CarPhysicsDefinition physics = carPhysics ?? DefaultCarPhysics;
+            (Vector3d carTranslation, double carYaw) = CarDynamics.Step(
+                transform.CarMotion,
+                physics,
+                CarWheelsFor(target, physics),
+                forward,
+                lateral,
+                transform.Steering,
+                transform.Thrust,
+                transform.ParkingBrake);
+
+            transform.Heading += (float)carYaw;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
                 transform.Euler.X,
                 transform.Euler.Y,
                 transform.Heading);
-            Vector3f carForward = transform.Orientation.Column2;
-            Vector3d carDirection = new(carForward.X, carForward.Y, carForward.Z);
-            Vector3d proposedPosition = transform.Position + (carDirection * transform.Speed);
+            transform.Speed = (float)transform.CarMotion.Velocity.Length;
+            Vector3d proposedPosition = transform.Position + carTranslation;
 
+            // The obstacle probe is the body's own front, taken from the authored dimensions rather
+            // than from a per-level table: half the length ahead of the origin, swept at the two
+            // heights that bracket a car's bumper.
+            double halfLengthUnits = physics.Dimensions.Y * 0.5d * WorldScene.UnitsPerMetre;
             bool blocked = false;
             GameTask? obstacle = null;
-            if (route is not null && target is not null)
+            if (target is not null && _vehicleObstacleHit is not null && carTranslation.Length > 0d)
             {
-                for (int heightIndex = 0; heightIndex < route.ProbeHeightsMetres.Count && !blocked; heightIndex++)
+                Vector3d heading3 = carTranslation / carTranslation.Length;
+                for (int heightIndex = 0; heightIndex < CarProbeHeightsMetres.Length && !blocked; heightIndex++)
                 {
-                    double heightMetres = route.ProbeHeightsMetres[heightIndex];
                     Vector3d offset = new(
-                        0.0,
-                        0.0,
-                        heightMetres * WorldScene.UnitsPerMetre);
-                    Vector3d probeStart = transform.Position
-                        + (carDirection * (route.FrontBumperMetres * WorldScene.UnitsPerMetre))
-                        + offset;
+                        0d,
+                        0d,
+                        CarProbeHeightsMetres[heightIndex] * WorldScene.UnitsPerMetre);
+                    Vector3d probeStart = transform.Position + (heading3 * halfLengthUnits) + offset;
                     Vector3d probeEnd = proposedPosition
-                        + (carDirection * ((route.FrontBumperMetres * WorldScene.UnitsPerMetre) + route.ProbeMarginUnits))
+                        + (heading3 * (halfLengthUnits + CarProbeMarginUnits))
                         + offset;
-
-                    if (_vehicleObstacleHit?.Invoke(target, probeStart, probeEnd) is { } contact)
+                    if (_vehicleObstacleHit.Invoke(target, probeStart, probeEnd) is { } contact)
                     {
                         obstacle = contact.Owner;
                         blocked = true;
@@ -1539,10 +1710,15 @@ public sealed class CutsceneRuntime
 
             if (blocked)
             {
-                transform.Speed = 0f;
-                transform.Velocity = default;
+                // Retail resolves a contact by cancelling the motion into the obstacle and letting
+                // the body keep whatever is left, so a car that clips scenery slides along it and
+                // recovers. Latching the speed to nought instead parks the vehicle for good, which
+                // is what stranded the Mission 1 truck against the perimeter fence.
                 transform.Heading = previousHeading;
                 transform.Orientation = previousOrientation;
+                transform.CarMotion.Velocity = default;
+                transform.CarMotion.YawRate = 0d;
+                transform.Speed = 0f;
             }
             else
             {
@@ -2851,8 +3027,9 @@ public sealed class CutsceneRuntime
         public float Steering { get; set; }
         public float TargetSteering { get; set; }
         public bool ParkingBrake { get; set; }
-        public CarRouteProfile? CarRoute { get; set; }
         public CarPhysicsDefinition? CarPhysics { get; set; }
+
+        public CarMotionState CarMotion { get; } = new();
         public PlanePhysicsDefinition? PlanePhysics { get; set; }
         public GameTask? VehicleLatchedObstacle { get; set; }
         public bool VehicleGateReleased { get; set; }
@@ -2877,39 +3054,6 @@ public sealed class CutsceneRuntime
         public Vector3f QueuedRotorTorque { get; set; }
     }
 
-    /// <summary>The only retail car route that changes steering side after crossing an opening gate.</summary>
-    private sealed record CarRouteProfile(
-        IReadOnlyList<double> ProbeHeightsMetres,
-        double FrontBumperMetres,
-        double ProbeMarginUnits,
-        int GateTaskId,
-        int GateOpenTick)
-    {
-        // LEVEL1/OBJECTS.QVM declares task 1099 as label "Truck which Jones will steal", model
-        // 622_01_1. LEVEL2 deliberately reuses model 622_01_1 for label "Car which Jones drives into
-        // base", so both the authored label and model are the route identity. The bumper/heights are
-        // the established dimensions of this one retail truck, not a policy for every Car.
-        private const string LevelOneStolenTruckLabel = "Truck which Jones will steal";
-        private const string TruckModel = "622_01_1";
-
-        // Door_401 is the nearer leaf of the garage exit. LEVEL1/OBJECTS.QVM places it at
-        // (24979312, -56202112, 174413120) in the loaded placement and opens it after
-        // CutScene_1204's eleven-second mark. That authored clock gate means an already-open door
-        // follows the same transition as the normal closed-then-open route.
-        private static readonly CarRouteProfile LevelOneStolenTruck = new(
-            [0.75, 1.95],
-            3.9,
-            128.0,
-            GateTaskId: 401,
-            GateOpenTick: 11 * Frequency);
-
-        public static CarRouteProfile? For(DeclaredTask task) =>
-            string.Equals(task.Type.Name, "Car", StringComparison.Ordinal)
-            && string.Equals(task.Label, LevelOneStolenTruckLabel, StringComparison.Ordinal)
-            && string.Equals(Text(task, WorldScene.ModelParameter), TruckModel, StringComparison.Ordinal)
-                ? LevelOneStolenTruck
-                : null;
-    }
 }
 
 /// <summary>The camera and screen treatment produced by the active authored cutscene shot.</summary>

@@ -465,6 +465,10 @@ internal sealed partial class DesktopGame
 
         _cutscenes.CollisionIndex = id == 4 ? solids : null;
 
+        // Bind each car's drawn TASKTYPE_WHEEL attachments to its physics record so the drive force
+        // and the tyre torque act at the real axle offsets, and the wheels roll and steer.
+        _cutscenes.BindVehicleWheels(scene);
+
         _destructibles = DestructibleObjectRegistry.Build(
             levelRoot,
             scene.Placements,

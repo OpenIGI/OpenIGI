@@ -132,6 +132,15 @@ public sealed class VehiclePhysicsRegistry
     public bool TryGetRotor(string model, out RotorPhysicsDefinition definition) =>
         _rotors.TryGetValue(model, out definition);
 
+    private static float Single(QvmValue[] arguments, int index, float fallback) =>
+        (uint)index < (uint)arguments.Length ? arguments[index].ToSingle() : fallback;
+
+    private static int Integer(QvmValue[] arguments, int index, int fallback) =>
+        (uint)index < (uint)arguments.Length ? arguments[index].ToInt32() : fallback;
+
+    /// <summary>Every loaded car model name, for diagnostics.</summary>
+    public IReadOnlyCollection<string> CarModels => _cars.Keys;
+
     /// <summary>Looks up the proven common CAR physics header for a body model.</summary>
     public bool TryGetCar(string model, out CarPhysicsDefinition definition) =>
         _cars.TryGetValue(model, out definition);
@@ -200,29 +209,23 @@ public sealed class VehiclePhysicsRegistry
         }
         else if (taskType == _carType && call.ArgumentCount >= 20)
         {
-            // Every shipped CAR QVM uses this common header: mass and dimensions are
-            // arguments 2..5, wheel count is argument 9, and the steering/throttle
-            // retention/response pairs are 14..15 and 20..21. Keep the record limited
-            // to fields proven by native 0x42ECA0; contact-tail semantics are still
-            // being mapped in the separate vehicle audit.
             QvmValue[] arguments = new QvmValue[call.ArgumentCount];
             for (int i = 0; i < arguments.Length; i++)
             {
                 arguments[i] = call.GetValue(i);
             }
 
-            // DefinePhysicsObjType's native parser reads exactly six values per wheel after the
-            // wheel-count argument: three integer slots followed by three floating-point slots. Keep
-            // those records separate from the opaque task-specific tail. The slot names are
-            // intentionally positional: 0x42D1D0 consumes this structure, but its field semantics
-            // have not yet passed the paired native CFG/type-validation loop.
-            int declaredWheelCount = call.GetInt32(9);
-            int parsedWheelCount = Math.Clamp(declaredWheelCount, 0, (call.ArgumentCount - 10) / 6);
-            CarWheelDefinition[] wheels = new CarWheelDefinition[parsedWheelCount];
-            for (int wheel = 0; wheel < parsedWheelCount; wheel++)
+            // DefinePhysicsObjType (0x4EDD20) fills a 728-byte TYPE record: mass at +8, dimensions at
+            // +12..+20, the wheel-BODY count at +328 (argument 9) and that many 24-byte body records
+            // at +332 (three integers then three floats), then two trailing values. Everything after
+            // those is the task-specific tail, and TYPE+724 points at the record the physics reads.
+            int bodyCount = call.GetInt32(9);
+            int parsedBodies = Math.Clamp(bodyCount, 0, Math.Max(0, (call.ArgumentCount - 10) / 6));
+            CarBodyDefinition[] bodies = new CarBodyDefinition[parsedBodies];
+            for (int body = 0; body < parsedBodies; body++)
             {
-                int field = 10 + (wheel * 6);
-                wheels[wheel] = new CarWheelDefinition(
+                int field = 10 + (body * 6);
+                bodies[body] = new CarBodyDefinition(
                     call.GetInt32(field),
                     call.GetInt32(field + 1),
                     call.GetInt32(field + 2),
@@ -231,16 +234,55 @@ public sealed class VehiclePhysicsRegistry
                     call.GetSingle(field + 5));
             }
 
+            // The tail starts after the body records and their two trailing values. The base
+            // physics-object handler consumes fourteen 4-byte fields from there -- the same
+            // sequential fill the Heli record uses, read back by Heli::Tick (0x431E30) -- which puts
+            // steering retention at record +24, the engine force at +28 and throttle retention at +32
+            // (Car::Tick 0x42ECA0 and the wheel drive 0x430D10 read exactly those), and the
+            // aerodynamic-surface count at +40. Every shipped car publishes nought there.
+            int tail = 10 + (6 * parsedBodies) + 2;
+            const int BaseRecordFields = 14;
+            float steeringRetention = Single(arguments, tail + 6, 0.95f);
+            float engineForce = Single(arguments, tail + 7, 0f);
+            float throttleRetention = Single(arguments, tail + 8, 0.95f);
+            int aerodynamicSurfaces = Integer(arguments, tail + 10, 0);
+
+            // The CAR tail (0x42DB00) is a wheel count at record +280 followed by that many 20-byte
+            // entries at +284. Each entry is read as SIX values in the order
+            // int, int, float, int, float, float -- steerable, driven, maximum steer in DEGREES, the
+            // wheel-body index, the suspension length (scaled by 4096 into world units) and the
+            // spring stiffness. A negative body index has no collision body: the suspension sweep
+            // (0x42EF00) and the friction call (0x430D10) both skip it, though it still draws.
+            int wheelCountIndex = tail + BaseRecordFields;
+            int declaredWheels = Integer(arguments, wheelCountIndex, 0);
+            int parsedWheels = Math.Clamp(
+                declaredWheels,
+                0,
+                Math.Max(0, (call.ArgumentCount - wheelCountIndex - 1) / 6));
+            CarWheelDefinition[] wheels = new CarWheelDefinition[parsedWheels];
+            for (int wheel = 0; wheel < parsedWheels; wheel++)
+            {
+                int field = wheelCountIndex + 1 + (wheel * 6);
+                wheels[wheel] = new CarWheelDefinition(
+                    Integer(arguments, field, 0) != 0,
+                    Integer(arguments, field + 1, 0) != 0,
+                    Single(arguments, field + 2, 0f),
+                    Integer(arguments, field + 3, -1),
+                    Single(arguments, field + 4, 0f) * (float)WorldScene.UnitsPerMetre,
+                    Single(arguments, field + 5, 0f));
+            }
+
             _cars.TryAdd(model, new CarPhysicsDefinition(
                 call.GetSingle(2),
                 new(call.GetSingle(3), call.GetSingle(4), call.GetSingle(5)),
-                declaredWheelCount,
-                call.GetSingle(14),
-                call.GetSingle(15),
-                call.GetSingle(20),
-                call.GetSingle(21),
-                arguments,
-                wheels));
+                bodyCount,
+                bodies,
+                steeringRetention,
+                engineForce,
+                throttleRetention,
+                aerodynamicSurfaces,
+                wheels,
+                arguments));
         }
         else if (taskType == _planeType && call.ArgumentCount >= 9)
         {
@@ -284,17 +326,37 @@ public readonly record struct HelicopterPhysicsDefinition(
     float MaximumSpeed,
     IReadOnlyList<AerodynamicSurfaceDefinition> Aerodynamics);
 
-/// <summary>The common CAR header consumed by the native smoothing path.</summary>
+/// <summary>The CAR physics record, as the retail parsers build it.</summary>
+/// <param name="Mass">The body mass, from the TYPE record's <c>+8</c>.</param>
+/// <param name="Dimensions">The body extents in metres, used for the inertia box.</param>
+/// <param name="BodyCount">The declared wheel-body count (TYPE <c>+328</c>).</param>
+/// <param name="Bodies">The wheel bodies (TYPE <c>+332</c>, stride 24).</param>
+/// <param name="SteeringRetention">
+/// Record <c>+24</c>. <c>Car::Tick</c> (<c>0x42ECA0</c>) blends the live steering as
+/// <c>current * retention + target * (1 - retention)</c> once per 30 Hz tick.
+/// </param>
+/// <param name="EngineForce">
+/// Record <c>+28</c>. The wheel drive (<c>0x430D10</c>) turns it into
+/// <c>EngineForce * throttle * g / drivenWheelCount</c>, minus the body's speed.
+/// </param>
+/// <param name="ThrottleRetention">Record <c>+32</c>, the throttle's half of the same blend.</param>
+/// <param name="AerodynamicSurfaceCount">
+/// Record <c>+40</c>. <c>Car::Tick</c> only runs the drag pass when this is non-zero; every shipped
+/// car publishes nought, so cars carry no aerodynamics.
+/// </param>
+/// <param name="Wheels">The wheel entries (record <c>+284</c>, stride 20).</param>
+/// <param name="Arguments">The untouched definition values.</param>
 public readonly record struct CarPhysicsDefinition(
     float Mass,
     OpenIGI.Core.Numerics.Vector3f Dimensions,
-    int WheelCount,
+    int BodyCount,
+    IReadOnlyList<CarBodyDefinition> Bodies,
     float SteeringRetention,
-    float SteeringResponse,
+    float EngineForce,
     float ThrottleRetention,
-    float ThrottleResponse,
-    IReadOnlyList<QvmValue> Arguments,
-    IReadOnlyList<CarWheelDefinition> Wheels)
+    int AerodynamicSurfaceCount,
+    IReadOnlyList<CarWheelDefinition> Wheels,
+    IReadOnlyList<QvmValue> Arguments)
 {
     /// <summary>Number of values in the original <c>DefinePhysicsObjType</c> call.</summary>
     public int ArgumentCount => Arguments.Count;
@@ -302,23 +364,74 @@ public readonly record struct CarPhysicsDefinition(
     /// <summary>Returns an untouched definition value by its retail argument index.</summary>
     public QvmValue ArgumentAt(int index) =>
         (uint)index < (uint)Arguments.Count ? Arguments[index] : QvmValue.Zero;
+
+    /// <summary>Counts the driven wheels the engine force is divided between.</summary>
+    public int DrivenWheelCount
+    {
+        get
+        {
+            int driven = 0;
+            for (int i = 0; i < Wheels.Count; i++)
+            {
+                if (Wheels[i].Driven && Wheels[i].HasBody)
+                {
+                    driven++;
+                }
+            }
+
+            return driven;
+        }
+    }
 }
 
 /// <summary>
-/// One six-value wheel record as stored by IGI1's <c>DefinePhysicsObjType</c> parser.
+/// One 20-byte wheel entry from the CAR record (<c>0x42DB00</c> fills it; <c>0x42EF00</c> and
+/// <c>0x430D10</c> read it).
 /// </summary>
-/// <remarks>
-/// The native parser's storage shape is established, but the three integer and three floating-point
-/// slots are still positional until the CAR task callback has completed the native translation audit.
-/// Keeping the names positional prevents a guessed meaning from becoming a gameplay contract.
-/// </remarks>
+/// <param name="Steerable">Record <c>+284</c>: whether the wheel turns with the steering input.</param>
+/// <param name="Driven">Record <c>+285</c>: whether the engine force is applied at this wheel.</param>
+/// <param name="MaximumSteerDegrees">
+/// Record <c>+288</c>. The wheel's angle is <c>MaximumSteerDegrees * pi/180 * steering</c>.
+/// </param>
+/// <param name="BodyIndex">
+/// Record <c>+292</c>. Negative means the wheel has no collision body: retail skips it in the
+/// suspension sweep and the friction call, but it is still drawn.
+/// </param>
+/// <param name="SuspensionLengthUnits">Record <c>+296</c>, the authored length scaled by 4096.</param>
+/// <param name="SpringStiffness">Record <c>+300</c>.</param>
 public readonly record struct CarWheelDefinition(
-    int Integer0,
-    int Integer1,
-    int Integer2,
-    float Float0,
-    float Float1,
-    float Float2);
+    bool Steerable,
+    bool Driven,
+    float MaximumSteerDegrees,
+    int BodyIndex,
+    float SuspensionLengthUnits,
+    float SpringStiffness)
+{
+    /// <summary>Gets whether this wheel has a collision body and takes part in the physics.</summary>
+    public bool HasBody => BodyIndex >= 0;
+
+    /// <summary>Gets the maximum steering deflection in radians.</summary>
+    public float MaximumSteerRadians => MaximumSteerDegrees * (MathF.PI / 180f);
+}
+
+/// <summary>
+/// One 24-byte wheel body from the TYPE record. The two trailing floats are the pair the tyre model
+/// (<c>0x430960</c>) scales its wheel-space slip by; the handbrake raises the longitudinal one to the
+/// lateral value, which is how the two are told apart.
+/// </summary>
+/// <param name="Index">The body index the CAR wheel entries refer to.</param>
+/// <param name="Slot1">Second integer slot.</param>
+/// <param name="Slot2">Third integer slot.</param>
+/// <param name="Slot3">First float slot.</param>
+/// <param name="LateralFriction">Body <c>+472</c>: the across-the-wheel grip (0.95 on every car).</param>
+/// <param name="LongitudinalFriction">Body <c>+476</c>: the rolling resistance (0.05).</param>
+public readonly record struct CarBodyDefinition(
+    int Index,
+    int Slot1,
+    int Slot2,
+    float Slot3,
+    float LateralFriction,
+    float LongitudinalFriction);
 
 /// <summary>One local quadratic-drag sample from the Heli physics-object record.</summary>
 public readonly record struct AerodynamicSurfaceDefinition(

@@ -59,14 +59,38 @@ public sealed class RetailCutsceneRuntimeTests
         Assert.True(physics.TryGetCar("622_01_1", out CarPhysicsDefinition truck));
         Assert.Equal(3_000f, truck.Mass);
         Assert.Equal(new Vector3f(2.2f, 7.8f, 3f), truck.Dimensions);
-        Assert.Equal(4, truck.WheelCount);
+        // The TYPE record declares four wheel bodies (argument 9) as 24-byte entries from argument 10.
+        Assert.Equal(4, truck.BodyCount);
+        Assert.Equal(4, truck.Bodies.Count);
+        Assert.Equal(new CarBodyDefinition(0, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[0]);
+        Assert.Equal(new CarBodyDefinition(1, 0, 5, 0f, 0.95f, 0.05f), truck.Bodies[1]);
+
+        // Retention is record +24/+32 and the engine force +28 -- arguments 42, 44 and 43, which sit
+        // in the tail after the wheel bodies, not in the header. Cars carry no aerodynamics.
         Assert.Equal(0.95f, truck.SteeringRetention);
-        Assert.Equal(0.05f, truck.SteeringResponse);
         Assert.Equal(0.95f, truck.ThrottleRetention);
-        Assert.Equal(0.05f, truck.ThrottleResponse);
-        Assert.Equal(4, truck.Wheels.Count);
-        Assert.Equal(new CarWheelDefinition(0, 0, 5, 0f, 0.95f, 0.05f), truck.Wheels[0]);
-        Assert.Equal(new CarWheelDefinition(1, 0, 5, 0f, 0.95f, 0.05f), truck.Wheels[1]);
+        Assert.Equal(5_000f, truck.EngineForce);
+        Assert.Equal(0, truck.AerodynamicSurfaceCount);
+
+        // The CAR tail (0x42DB00) declares SIX wheels, each read as int, int, float, int, float,
+        // float. Both steered, driven entries are the front pair; the two negative body indices have
+        // no collision body and only draw.
+        Assert.Equal(6, truck.Wheels.Count);
+        Assert.Equal(
+            new CarWheelDefinition(true, true, 45f, 1, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            truck.Wheels[0]);
+        Assert.Equal(
+            new CarWheelDefinition(false, false, 0f, 0, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            truck.Wheels[1]);
+        Assert.Equal(-10, truck.Wheels[2].BodyIndex);
+        Assert.False(truck.Wheels[2].HasBody);
+        Assert.Equal(
+            new CarWheelDefinition(true, true, 45f, 2, 0.3f * (float)WorldScene.UnitsPerMetre, 0.5f),
+            truck.Wheels[3]);
+        Assert.Equal(-13, truck.Wheels[4].BodyIndex);
+        Assert.Equal(3, truck.Wheels[5].BodyIndex);
+        Assert.Equal(2, truck.DrivenWheelCount);
+        Assert.Equal(45f * (MathF.PI / 180f), truck.Wheels[0].MaximumSteerRadians, precision: 5);
 
         // The native Car parser receives the complete 95-value cutscene-truck record.  Keep the
         // unassigned tail available by index while its wheel/contact layout is being translated;
@@ -1041,8 +1065,13 @@ public sealed class RetailCutsceneRuntimeTests
         AssertAuthoredRightExit(alreadyOpen);
     }
 
+    /// <summary>
+    /// Mission 2 reuses the Mission 1 truck's model for a different inbound route. The obstacle
+    /// probe is now taken from the car's own authored dimensions rather than from a table keyed on
+    /// the Mission 1 task, so every car sweeps for obstacles and no level-specific route survives.
+    /// </summary>
     [RequiresGameDataFact]
-    public void MissionTwoTruckSharingTheModelDoesNotUseMissionOneGateRoute()
+    public void MissionTwoTruckSharingTheModelSweepsWithItsOwnDimensions()
     {
         VirtualFileSystem fs = new();
         fs.RegisterDevice(new LocalFileDevice(GameData.RequireRoot()));
@@ -1080,7 +1109,10 @@ public sealed class RetailCutsceneRuntimeTests
 
         Assert.True(runtime.TryGetDrawTransform(truck, out Vector3d after, out _));
         Assert.True((after - before).Length > 0.1d, "the Mission 2 truck did not run its authored cutscene movement");
-        Assert.Equal(0, liveRouteProbes);
+
+        // The probe is generic: it runs for this truck too, driven by its own body length, and is
+        // no longer gated on the Mission 1 label and model.
+        Assert.True(liveRouteProbes > 0, "the Mission 2 truck never swept for obstacles");
     }
 
 
