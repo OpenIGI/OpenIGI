@@ -33,7 +33,7 @@ public sealed class CarDynamicsTests
         for (int tick = 0; tick < 400; tick++)
         {
             (Vector3d step, _) = CarDynamics.Step(
-                motion, truck, wheels, Forward, Lateral, steering: 0f, thrust: 0.25f, handbrake: false);
+                motion, truck, wheels, default, Forward, Lateral, steering: 0f, thrust: 0.25f, handbrake: false);
             travelled += step;
         }
 
@@ -84,7 +84,7 @@ public sealed class CarDynamicsTests
             for (int tick = 0; tick < 350; tick++)
             {
                 (_, double delta) = CarDynamics.Step(
-                    motion, truck, wheels, forward, lateral,
+                    motion, truck, wheels, default, forward, lateral,
                     tick < 180 ? 0f : steering, thrust: 0.25f, handbrake: false);
                 forward = Rotate(forward, delta);
                 lateral = Rotate(lateral, delta);
@@ -123,13 +123,13 @@ public sealed class CarDynamicsTests
         CarWheel[] wheels = Wheels(truck);
         for (int tick = 0; tick < 200; tick++)
         {
-            CarDynamics.Step(motion, truck, wheels, Forward, Lateral, 0f, 0.25f, handbrake: false);
+            CarDynamics.Step(motion, truck, wheels, default, Forward, Lateral, 0f, 0.25f, handbrake: false);
         }
 
         Assert.True(Math.Abs(motion.WheelRoll) > 0d, "the drawn wheels never rolled");
         Assert.True(motion.WheelSpinRate != 0d);
 
-        CarDynamics.Step(motion, truck, wheels, Forward, Lateral, 0f, 0.25f, handbrake: true);
+        CarDynamics.Step(motion, truck, wheels, default, Forward, Lateral, 0f, 0.25f, handbrake: true);
         Assert.Equal(0d, motion.WheelSpinRate);
     }
 
@@ -140,8 +140,68 @@ public sealed class CarDynamicsTests
         CarPhysicsDefinition truck = Truck();
         CarMotionState motion = new();
         CarWheel[] wheels = Wheels(truck);
-        CarDynamics.Step(motion, truck, wheels, Forward, Lateral, steering: 1f, thrust: 0f, handbrake: false);
+        CarDynamics.Step(motion, truck, wheels, default, Forward, Lateral, steering: 1f, thrust: 0f, handbrake: false);
         Assert.Equal(-45f * (MathF.PI / 180f), motion.WheelSteer, precision: 5);
+    }
+
+    /// <summary>
+    /// The body rides its springs: dropped onto flat ground it settles, and settles where the four
+    /// springs carry its weight. At a stiffness of 0.5 that is a quarter of the travel into each
+    /// spring, so the wheels stand three quarters of their travel clear of the surface.
+    /// </summary>
+    [Fact]
+    public void TheBodySettlesOntoItsSprings()
+    {
+        CarPhysicsDefinition truck = Truck();
+        CarWheel[] wheels = Wheels(truck);
+        CarMotionState motion = new();
+
+        const double Ground = 42_000d;
+        double travel = truck.Wheels[0].SuspensionLengthUnits;
+        double axle = wheels[0].OffsetUnits.Z;
+
+        // Start a metre high and let it fall.
+        Vector3d position = new(0d, 0d, Ground + travel - axle + WorldScene.UnitsPerMetre);
+        double highest = double.MinValue;
+        double lowest = double.MaxValue;
+        for (int tick = 0; tick < 400; tick++)
+        {
+            (Vector3d step, _) = CarDynamics.Step(
+                motion, truck, wheels, position, Forward, Lateral,
+                steering: 0f, thrust: 0f, handbrake: false, groundHeightAt: _ => Ground);
+            position += step;
+            if (tick > 200)
+            {
+                highest = Math.Max(highest, position.Z);
+                lowest = Math.Min(lowest, position.Z);
+            }
+        }
+
+        // Where the springs balance the weight: compression = travel / (4 * stiffness) a wheel.
+        double compression = travel / (4d * truck.Wheels[0].SpringStiffness);
+        double expected = Ground + (travel - compression) - axle;
+        Assert.InRange(position.Z, expected - 200d, expected + 200d);
+
+        // And it is at rest there rather than still bouncing.
+        Assert.InRange(highest - lowest, 0d, 120d);
+    }
+
+    /// <summary>Without a ground probe the body keeps the height it was handed.</summary>
+    [Fact]
+    public void NoGroundProbeLeavesTheHeightAlone()
+    {
+        CarPhysicsDefinition truck = Truck();
+        CarWheel[] wheels = Wheels(truck);
+        CarMotionState motion = new();
+        double rise = 0d;
+        for (int tick = 0; tick < 60; tick++)
+        {
+            (Vector3d step, _) = CarDynamics.Step(
+                motion, truck, wheels, default, Forward, Lateral, 0f, 0.25f, handbrake: false);
+            rise += step.Z;
+        }
+
+        Assert.Equal(0d, rise);
     }
 
     /// <summary>The Mission 1 truck's record, as 0x42DB00 reads it.</summary>

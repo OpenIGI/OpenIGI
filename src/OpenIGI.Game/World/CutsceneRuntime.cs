@@ -840,7 +840,11 @@ public sealed class CutsceneRuntime
         bool steerable = _carWheelIndices.TryGetValue(placement, out int index)
             && index < wheels.Length
             && wheels[index].Definition.Steerable;
-        rotation = Matrix3f.RotationX((float)state.CarMotion.WheelRoll);
+        // Retail's accumulator counts DOWN as the car goes forward (Wheel::Tick subtracts the spin
+        // rate), and it is applied against the wheel's own axle axis, which points the opposite way
+        // from the placement frame's X here. Rolling by the raw accumulator spins the tyres
+        // backwards while the truck drives forwards.
+        rotation = Matrix3f.RotationX((float)-state.CarMotion.WheelRoll);
         if (steerable && state.CarMotion.WheelSteer != 0d)
         {
             rotation = Matrix3f.RotationZ((float)state.CarMotion.WheelSteer) * rotation;
@@ -1686,11 +1690,15 @@ public sealed class CutsceneRuntime
                 transform.CarMotion,
                 physics,
                 CarWheelsFor(target, physics),
+                transform.Position,
                 forward,
                 lateral,
                 transform.Steering,
                 transform.Thrust,
-                transform.ParkingBrake);
+                transform.ParkingBrake,
+                at => TryFindSupportHeight(at, target, allowDeepRecovery: false, out double height, out _)
+                    ? height
+                    : double.NaN);
 
             transform.Heading += (float)carYaw;
             transform.Orientation = Matrix3f.FromEngineEulerAngles(
@@ -1758,12 +1766,14 @@ public sealed class CutsceneRuntime
                 // Retail resolves a contact by cancelling the motion into the obstacle and letting
                 // the body keep whatever is left, so a car that clips scenery slides along it and
                 // recovers. Latching the speed to nought instead parks the vehicle for good, which
-                // is what stranded the Mission 1 truck against the perimeter fence.
+                // is what stranded the Mission 1 truck against the perimeter fence. The springs are
+                // not part of that contact, so the body still rides them.
                 transform.Heading = previousHeading;
                 transform.Orientation = previousOrientation;
                 transform.CarMotion.Velocity = default;
                 transform.CarMotion.YawRate = 0d;
                 transform.Speed = 0f;
+                transform.Position += new Vector3d(0d, 0d, carTranslation.Z);
             }
             else
             {

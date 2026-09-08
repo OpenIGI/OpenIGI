@@ -39,6 +39,9 @@ public sealed class CarMotionState
     /// <summary>Gets or sets the smoothed wheel spin rate in radians per tick.</summary>
     public double WheelSpinRate { get; set; }
 
+    /// <summary>Gets or sets the body's vertical velocity in world units per tick.</summary>
+    public double RiseRate { get; set; }
+
     /// <summary>Clears the motion, leaving the body parked.</summary>
     public void Reset()
     {
@@ -47,6 +50,7 @@ public sealed class CarMotionState
         WheelRoll = 0d;
         WheelSteer = 0d;
         WheelSpinRate = 0d;
+        RiseRate = 0d;
     }
 }
 
@@ -110,21 +114,28 @@ public static class CarDynamics
     /// <param name="motion">The body's live velocity and yaw rate, updated in place.</param>
     /// <param name="physics">The car's parsed physics record.</param>
     /// <param name="wheels">The car's wheels with their body-space offsets.</param>
+    /// <param name="position">The body's world position, which the suspension probes from.</param>
     /// <param name="forward">The body's forward axis in world space (the orientation's second column).</param>
     /// <param name="lateral">The body's across axis in world space (the orientation's first column).</param>
     /// <param name="steering">The smoothed steering control, -1 to 1.</param>
     /// <param name="thrust">The smoothed throttle control.</param>
     /// <param name="handbrake">Whether the parking brake is engaged.</param>
+    /// <param name="groundHeightAt">
+    /// Resolves the surface height under a wheel, in world units. Without it the body keeps whatever
+    /// height it was given and only the ground plane is simulated.
+    /// </param>
     /// <returns>The world-unit translation and the yaw change, both for this tick.</returns>
     public static (Vector3d Translation, double YawDelta) Step(
         CarMotionState motion,
         in CarPhysicsDefinition physics,
         IReadOnlyList<CarWheel> wheels,
+        Vector3d position,
         Vector3d forward,
         Vector3d lateral,
         float steering,
         float thrust,
-        bool handbrake)
+        bool handbrake,
+        Func<Vector3d, double>? groundHeightAt = null)
     {
         ArgumentNullException.ThrowIfNull(motion);
         ArgumentNullException.ThrowIfNull(wheels);
@@ -232,7 +243,8 @@ public static class CarDynamics
         motion.Velocity += force / mass;
         motion.YawRate += torque / inertia;
 
-        Vector3d translation = motion.Velocity;
+        double rise = Suspend(motion, physics, wheels, position, forward, lateral, mass, groundHeightAt);
+        Vector3d translation = motion.Velocity + new Vector3d(0d, 0d, rise);
         double yawDelta = motion.YawRate;
 
         motion.Velocity *= LinearRetention;
@@ -259,6 +271,85 @@ public static class CarDynamics
         motion.WheelRoll -= motion.WheelSpinRate;
         motion.WheelSteer = -MaximumSteerRadians(wheels) * steering;
         return (translation, yawDelta);
+    }
+
+    /// <summary>Rides the springs, returning how far the body rises this tick.</summary>
+    /// <remarks>
+    /// The wheel sweep (<c>0x42EF00</c>) drops a ray at each wheel and pushes the body up by
+    /// <c>compression / travel * stiffness * mass * g</c>, which at rest leaves every wheel sitting
+    /// a quarter of its travel into its spring for a stiffness of 0.5. A wheel driven under the
+    /// surface keeps the full travel and its force grows by another <c>1 + depth / 4096</c>, and the
+    /// body is lifted clear by the deepest of them. Gravity is the whole weight at the origin.
+    /// Without this the body holds whatever height it was handed: no settle when it is boarded, and
+    /// no ride over the ground it crosses.
+    /// </remarks>
+    private static double Suspend(
+        CarMotionState motion,
+        in CarPhysicsDefinition physics,
+        IReadOnlyList<CarWheel> wheels,
+        Vector3d position,
+        Vector3d forward,
+        Vector3d lateral,
+        double mass,
+        Func<Vector3d, double>? groundHeightAt)
+    {
+        if (groundHeightAt is null)
+        {
+            return 0d;
+        }
+
+        double spring = 0d;
+        double deepest = 0d;
+        bool grounded = false;
+        for (int i = 0; i < wheels.Count; i++)
+        {
+            CarWheel wheel = wheels[i];
+            double travel = wheel.Definition.SuspensionLengthUnits;
+            if (!wheel.Definition.HasBody || travel <= 0d)
+            {
+                continue;
+            }
+
+            Vector3d at = position
+                + (lateral * wheel.OffsetUnits.X)
+                + (forward * wheel.OffsetUnits.Y)
+                + new Vector3d(0d, 0d, wheel.OffsetUnits.Z);
+            double ground = groundHeightAt(at);
+            if (!double.IsFinite(ground))
+            {
+                continue;
+            }
+
+            double standing = at.Z - ground;
+            if (standing >= travel)
+            {
+                grounded = true;
+                continue;
+            }
+
+            double compression = travel - Math.Max(0d, standing);
+            double force = compression / travel * wheel.Definition.SpringStiffness * mass
+                * GravityUnitsPerTickSquared;
+            if (standing < 0d)
+            {
+                double depth = -standing;
+                force *= 1d + (depth / WorldScene.UnitsPerMetre);
+                deepest = Math.Max(deepest, depth);
+            }
+
+            spring += force;
+            grounded = true;
+        }
+
+        if (!grounded)
+        {
+            return 0d;
+        }
+
+        motion.RiseRate += (spring - (mass * GravityUnitsPerTickSquared)) / mass;
+        double rise = motion.RiseRate + deepest;
+        motion.RiseRate *= LinearRetention;
+        return rise;
     }
 
     /// <summary>Gets the largest steering deflection any of the car's wheels can reach.</summary>
